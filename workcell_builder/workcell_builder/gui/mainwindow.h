@@ -318,6 +318,13 @@ private:
   QString selected_scene_build_command() const;
   QString selected_scene_source_command() const;
   QString selected_scene_preview_command_block() const;
+  struct SelectedSceneReadiness {
+    bool generation_current{false};
+    bool validation_current{false};
+    bool ready{false};
+    QStringList blockers;
+  };
+  SelectedSceneReadiness selected_scene_readiness() const;
   bool selected_scene_preview_ready(QStringList * blockers = nullptr) const;
   bool preview_command_is_safe(const QString & command, QStringList * blockers = nullptr) const;
   void refresh_preview_launch_ui();

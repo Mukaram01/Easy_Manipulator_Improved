@@ -1280,21 +1280,6 @@ ActionGate build_generate_scene_gate(
   return {true, "Ready: Generate Scene Package prerequisites are satisfied."};
 }
 
-ActionGate build_plan_simulate_gate(
-  const workcell_builder::WorkcellStudioSceneInfo & s, bool launch_artifacts_ready)
-{
-  if (!s.has_package_xml) {
-    return {false, "Blocked: Missing package.xml/CMakeLists.txt. Generate Scene Package first."};
-  }
-  if (!s.has_launch_demo) {
-    return {false, "Blocked: Launch files missing — generate scene package next."};
-  }
-  if (!launch_artifacts_ready) {
-    return {false, "Blocked: Launch files missing — generate scene package next."};
-  }
-  return {true, "Ready: launch/demo.launch.py and launch readiness flags are present."};
-}
-
 ActionGate build_export_gate(const workcell_builder::WorkcellStudioSceneInfo & s)
 {
   if (!s.has_package_xml) {
@@ -2766,7 +2751,7 @@ void MainWindow::setup_studio_shell()
     append_studio_log(m);
     if (m.startsWith("Locked:", Qt::CaseInsensitive) && inspector_warning_label_) {
       inspector_warning_label_->setText(
-        "Warnings: " + m + " | Reachability: preview-only | Collision: preview-only | Safety zone: preview-only | Pick source reach: unknown | Place target reach: unknown | Warning count: 1 | Preview-only");
+        "Warning: " + m);
     }
   });
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_issue_requested, this,
@@ -3296,7 +3281,11 @@ void MainWindow::setup_studio_shell()
   scene_workflow_recommendation_button_ = new QPushButton("Open or create a scene", workflow_card);
   scene_workflow_recommendation_button_->setProperty("role", "primary");
   scene_workflow_recommendation_menu_ = new QMenu(scene_workflow_recommendation_button_);
-  scene_workflow_recommendation_button_->setMenu(scene_workflow_recommendation_menu_);
+  connect(scene_workflow_recommendation_button_, &QPushButton::clicked, this, [this]() {
+    const auto actions = resolve_recommended_workflow_actions();
+    const auto next = std::find_if(actions.begin(), actions.end(), [](const RecommendedWorkflowAction & action) { return action.enabled; });
+    if (next != actions.end()) trigger_recommended_workflow_action(next->handler);
+  });
   workflow_card_layout->addWidget(scene_workflow_recommendation_button_);
   auto * inspector_scroll = new QScrollArea(right_panel);
   inspector_scroll->setWidgetResizable(true);
@@ -3338,12 +3327,13 @@ void MainWindow::setup_studio_shell()
   selection_scene_robot_label_ = make_row(scene_card_layout, "Robot", "unknown", false);
   selection_scene_end_effector_label_ = make_row(scene_card_layout, "End Effector", "unknown", false);
   selection_scene_launch_label_ = make_row(scene_card_layout, "Launch", "(none)", true);
+  selection_scene_launch_label_->parentWidget()->hide();
 
   auto * task_intent = new QFrame(right_panel); task_intent->setObjectName("studioCard"); auto * task_intent_layout = new QVBoxLayout(task_intent);
   task_intent_layout->addWidget(new QLabel("<b>Task Intent</b>"));
   task_flow_label_ = new QLabel("Pick Source → Grasp Strategy → Place Target → Release"); task_flow_label_->setWordWrap(true); task_intent_layout->addWidget(task_flow_label_);
   task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
-  workflow_tab_layout->addWidget(workflow_card);
+  readiness_tab_layout->insertWidget(0, workflow_card);
   workflow_tab_layout->addWidget(task_intent);
   environment_task_editor_ = new QGroupBox("Edit task intent", right_panel);
   environment_task_editor_->setObjectName("environmentTaskEditor");
@@ -3367,6 +3357,10 @@ void MainWindow::setup_studio_shell()
   };
   task_target_class_edit_ = task_text("taskTargetClass", "Target class (perception)");
   task_min_confidence_edit_ = task_number("taskMinimumConfidence", "Minimum confidence", 1.0, "");
+  task_min_confidence_edit_->setSpecialValueText("Unset");
+  auto * confidence_policy = new QLabel("Unset — the current localization adapter does not provide confidence. A threshold requires a source with confidence; observation age and task safety checks still apply.", environment_task_editor_);
+  confidence_policy->setWordWrap(true);
+  task_edit_form->addRow(confidence_policy);
   task_max_age_edit_ = task_number("taskMaximumAge", "Maximum observation age", 60.0, " s");
   task_grasp_intent_edit_ = task_text("taskGraspIntent", "Grasp intent");
   task_approach_edit_ = task_number("taskApproachDistance", "Approach distance", 2.0, " m");
@@ -3380,7 +3374,7 @@ void MainWindow::setup_studio_shell()
   authored_task_notice->setWordWrap(true); task_edit_form->addRow(authored_task_notice);
   workflow_tab_layout->addWidget(environment_task_editor_);
 
-  auto * setup_checklist_group = new QGroupBox("Setup checklist", readiness_tab);
+  auto * setup_checklist_group = new QGroupBox("Advanced diagnostics", readiness_tab);
   setup_checklist_group->setCheckable(true);
   setup_checklist_group->setChecked(false);
   setup_checklist_group->setToolTip("Expand to review every setup gate. The recommended next action remains the primary workflow.");
@@ -3429,7 +3423,7 @@ void MainWindow::setup_studio_shell()
   launch_row_layout->addWidget(launch_key); launch_row_layout->addWidget(scene_builder_launch_command_label_, 1); launch_row_layout->addWidget(copy_launch_preview);
   command_preview_layout->addWidget(launch_row);
   scene_builder_command_preview_card_->setVisible(false);
-  readiness_card_layout->addWidget(scene_builder_command_preview_card_);
+  setup_checklist_contents_layout->addWidget(scene_builder_command_preview_card_);
   auto * pick_place = new QGroupBox("Pick-Place Configuration", right_panel); pick_place->setObjectName("studioCard"); pick_place->setCheckable(true); pick_place->setChecked(false); auto * pick_place_layout = new QVBoxLayout(pick_place);
   pick_source_button_ = new QPushButton("Bind selected as...", scene_builder);
   auto * task_binding_menu = new QMenu(pick_source_button_);
@@ -3449,13 +3443,23 @@ void MainWindow::setup_studio_shell()
   grasp_details_label_ = new QLabel("Strategy/ref: unknown\nTool/End Effector: unknown\nApproach axis: unknown\nOrientation mode: unknown\nAllowed roll/yaw: unknown"); grasp_details_label_->setWordWrap(true); grasp_layout->addWidget(grasp_details_label_);
   readiness_label_=new QLabel("Safety posture: guarded (fake hardware default, no uncontrolled robot motion)."); readiness_label_->setWordWrap(true); grasp_layout->addWidget(readiness_label_);
   workflow_tab_layout->addWidget(grasp_card);
+  setup_checklist_contents_layout->addWidget(readiness_label_);
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
   ar_layout->addWidget(new QLabel("<b>Perception Status</b>"));
   approach_retreat_details_label_ = new QLabel("Camera: unknown\nFrame: unknown\nFOV: unknown\nRange: unknown\nPick coverage: unknown\nDetection mode: Not Configured\nDetection status: Waiting for live nodes\nDetails: Perception preview unavailable until mode/config is selected.\nModes: Live EPD / RealSense | Saved EPD Snapshot | Simulated / Manual | Not Configured\nStatuses: Configured | Missing metadata | Preview only | Waiting for live nodes\nDetection count: 0\nWarnings: no camera item found | no pick source found | camera frame unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
-  auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); ar_layout->addWidget(open_perception_metadata_button);
-  auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); ar_layout->addWidget(open_epd_docs_button);
+  auto * task_diagnostics = new QGroupBox("Advanced task diagnostics", workflow_tab);
+  task_diagnostics->setCheckable(true); task_diagnostics->setChecked(false);
+  auto * task_diagnostics_layout = new QVBoxLayout(task_diagnostics);
+  auto * task_diagnostics_contents = new QWidget(task_diagnostics);
+  auto * task_diagnostics_actions = new QVBoxLayout(task_diagnostics_contents);
+  task_diagnostics_layout->addWidget(task_diagnostics_contents);
+  task_diagnostics_contents->hide();
+  connect(task_diagnostics, &QGroupBox::toggled, task_diagnostics_contents, &QWidget::setVisible);
+  workflow_tab_layout->addWidget(task_diagnostics);
+  auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); task_diagnostics_actions->addWidget(open_perception_metadata_button);
+  auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); task_diagnostics_actions->addWidget(open_epd_docs_button);
   auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
-  readiness_card_layout->addWidget(ar_card);
+  workflow_tab_layout->addWidget(ar_card);
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("", scene_builder); live_coordinate_label_->hide(); selected_item_card_layout->addWidget(live_coordinate_label_);
   auto * metadata_form = new QFormLayout();
@@ -3563,10 +3567,10 @@ void MainWindow::setup_studio_shell()
   robot_base_reset_button_ = new QPushButton("Reset", robot_pose_group); robot_pose_actions->addWidget(robot_base_reset_button_);
   robot_pose_layout->addLayout(robot_pose_actions);
   selection_tab_layout->addWidget(robot_pose_group);
-  inspector_warning_label_ = new QLabel("Warnings: none | Reachability: unknown | Collision: unknown | Safety zone: unknown | Pick reach: unknown | Place reach: unknown | Warning count: 0 | Preview-only", scene_builder); inspector_warning_label_->setWordWrap(true); readiness_card_layout->addWidget(inspector_warning_label_);
-  scene_builder_inspector_tabs_->addTab(selection_tab, "Selection");
-  scene_builder_inspector_tabs_->addTab(workflow_tab, "Workflow");
-  scene_builder_inspector_tabs_->addTab(readiness_tab, "Readiness");
+  inspector_warning_label_ = new QLabel("No item warnings", scene_builder); inspector_warning_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_warning_label_);
+  scene_builder_inspector_tabs_->addTab(selection_tab, "Inspector");
+  scene_builder_inspector_tabs_->addTab(workflow_tab, "Task");
+  scene_builder_inspector_tabs_->addTab(readiness_tab, "Checks");
   inspector_scroll_layout->addWidget(scene_builder_inspector_tabs_);
   inspector_scroll->setWidget(inspector_scroll_contents);
   right_layout->addWidget(inspector_scroll, 1);
@@ -4244,8 +4248,15 @@ void MainWindow::refresh_task_intent_panel()
   if (ti.grasp_strategy == "unknown") overlay_warnings << "unknown grasp strategy";
   if (ti.pick_source != "unknown" && ti.pick_source == ti.place_target) overlay_warnings << "pick/place overlap";
   if (ti.status == "MISSING_TASK_FILE") overlay_warnings << "Task overlay unavailable: missing task intent";
-  const QString missing = ti.status == "MISSING_TASK_FILE" ? QString("\nNo task intent file found.\nSearched:\n - %1").arg(ti.searched_paths.join("\n - ")) : "";
-  task_intent_details_label_->setText(QString("Scene: %1\nTask type: %2\nSource task file: %3\nPick source: %4\nPlace target: %5\nObject/class: %6\nStatus badge: %7%8").arg(QString::fromStdString(sc.scene_name), ti.task_type, ti.source_basename, ti.pick_source, ti.place_target, ti.object_class, ti.status, missing) + QString("\nPick zone: %1\nGrasp: %2\nCamera: %3\nSource type: %4").arg(ti.pick_zone, ti.grasp_strategy, ti.camera_id, ti.pick_source_type));
+  const QString missing = ti.status == "MISSING_TASK_FILE" ? "\nTask intent is missing. Configure task intent before planning." : "";
+  QString release = "Unconfigured";
+  try {
+    const auto intent = YAML::LoadFile((sc.scene_dir / "config/workcell_builder_task_intent.yaml").string());
+    release = QString::fromStdString(intent["place"]["release_strategy"].as<std::string>("Unconfigured"));
+    release.replace('_', ' ');
+  } catch (const std::exception &) {}
+  task_intent_details_label_->setText(QString("Target class: %1\nPick source: %2\nPick zone: %3\nGrasp: %4\nDestination: %5\nCamera: %6\nPerception source: %7%8")
+    .arg(ti.object_class, ti.pick_source, ti.pick_zone, ti.grasp_strategy, ti.place_target, ti.camera_id, ti.pick_source_type, missing) + "\nRelease: " + release);
   pick_place_details_label_->setText(QString("Pick source: %1\nPlace target: %2\nReject/bin target: %3\nLinked hierarchy item status: unknown").arg(ti.pick_source, ti.place_target, ti.reject_target));
   grasp_details_label_->setText(QString("Strategy/ref: %1\nTool/End Effector: %2\nApproach axis: %3\nOrientation mode: %4\nAllowed roll/yaw: %5").arg(ti.grasp_strategy, ti.tool_id, ti.approach_axis, ti.orientation_mode, ti.allowed_roll_yaw));
   const QString detection_mode_line = ti.perception_legacy_source.isEmpty() ? ti.perception_mode : QString("%1 (mapped from legacy: %2)").arg(ti.perception_mode, ti.perception_legacy_source);
@@ -4912,7 +4923,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
     (generated_or_preview_contract ? QStringLiteral("Locked preview item") : QStringLiteral("Locked item cannot be edited"));
   const bool is_locked_urdf_preview = state.locked && role.contains("urdf", Qt::CaseInsensitive);
   const QString locked_line = state.locked ? QString("locked_reason: %1").arg(state.lock_reason.isEmpty() ? QStringLiteral("item is locked") : state.lock_reason) : QStringLiteral("locked: no");
-  inspector_label_->setText(QString("%1\nType: %2\nState: %3").arg(display, state.type.isEmpty() ? type_class : state.type, selection_contract_label));
+  inspector_label_->setText(QString("%1\nRole: %2\nState: %3").arg(display, role, selection_contract_label));
   inspector_label_->setToolTip(display);
   advanced_lines << QString("Selected item name: %1").arg(display);
   advanced_lines << QString("Selected item role: %1").arg(role);
@@ -5431,15 +5442,17 @@ void MainWindow::refresh_selected_scene_details_card()
     return;
   }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_state_.index];
-  const QString status_chip = (s.status == "READY") ? "<span style='background:#DCFCE7;color:#15803D;border:1px solid #86EFAC;padding:2px 8px;border-radius:8px;'>READY</span>"
+  const auto readiness = selected_scene_readiness();
+  const QString status_chip = readiness.ready ? "<span style='background:#DCFCE7;color:#15803D;border:1px solid #86EFAC;padding:2px 8px;border-radius:8px;'>READY</span>"
     : (s.status == "WARNINGS") ? "<span style='background:#FEF3C7;color:#B45309;border:1px solid #FCD34D;padding:2px 8px;border-radius:8px;'>WARNINGS</span>"
     : "<span style='background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5;padding:2px 8px;border-radius:8px;'>BLOCKED</span>";
   const auto metadata = selected_scene_metadata_summary(s);
   dashboard_selected_scene_details_->setText(QString("<b>Scene:</b> %1<br/><b>Status:</b> %2<br/><b>Robot:</b> %3<br/><small>%4</small><br/><b>End effector:</b> %5<br/><small>%6</small><br/><b>Task Recipe:</b> %7<br/><b>Launch:</b> %8<br/><b>Source:</b> %9")
     .arg(metadata.scene_name).arg(status_chip).arg(metadata.robot).arg(metadata.robot_source).arg(metadata.end_effector).arg(metadata.end_effector_source).arg(s.has_task_recipe ? "present" : "missing").arg(metadata.launch).arg(metadata.scene_path));
+  if (!readiness.ready) dashboard_selected_scene_details_->setText(dashboard_selected_scene_details_->text() + "<br/><b>Plan / Simulate blocked:</b> " + readiness.blockers.join(" ").toHtmlEscaped());
   if (dashboard_last_updated_card_) dashboard_last_updated_card_->setText(QString("Source Path\n%1").arg(QString::fromStdString(scene_browser_result_.scene_root.string())));
   const ActionGate generate_gate = build_generate_scene_gate(s, validation_stale_);
-  const ActionGate plan_gate = build_plan_simulate_gate(s, launch_artifacts_ready_);
+  const ActionGate plan_gate{readiness.ready, readiness.blockers.join(" ")};
   const ActionGate export_gate = build_export_gate(s);
   if (dashboard_scene_actions_button_) dashboard_scene_actions_button_->setEnabled(true);
   if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(true);
@@ -5515,7 +5528,7 @@ QString MainWindow::scene_builder_activity_summary(
   const QString text = message.simplified();
   const QString lower = text.toLower();
   const bool is_error = severity == workcell_builder::StudioLogSeverity::Error ||
-    lower.startsWith(QStringLiteral("error")) || lower.contains(QStringLiteral(" failed")) ||
+    lower.startsWith(QStringLiteral("error")) || lower.contains(QStringLiteral("error required resource")) || lower.contains(QStringLiteral(" failed")) ||
     lower.contains(QStringLiteral("blocker")) || lower.contains(QStringLiteral("blocked:"));
   const bool is_warning = severity == workcell_builder::StudioLogSeverity::Warning ||
     lower.startsWith(QStringLiteral("warn")) || lower.contains(QStringLiteral(" warning:"));
@@ -6027,29 +6040,34 @@ QString MainWindow::selected_scene_build_command() const { if (selected_scene_in
 QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
 QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
 
+MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness() const
+{
+  SelectedSceneReadiness result;
+  if (!has_selected_scene() || selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) { result.blockers << "Select a scene."; return result; }
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  const auto content = workcell_builder::scene_content_readiness(scene);
+  result.generation_current = content.generation_current && !layout_dirty_;
+  result.validation_current = result.generation_current && content.validation_current;
+  if (layout_dirty_) result.blockers << "Save layout edits, then Generate Scene Package and Validate.";
+  else if (!content.blocker.empty()) result.blockers << QString::fromStdString(content.blocker);
+  const auto parity = scene3d_load_transform_parity_readiness(scene.scene_dir, QString::fromStdString(scene.scene_name));
+  const bool post_generation_blocked = canvas_generated_parity_state_ == CanvasGeneratedParityState::PostGenerationBlocked &&
+    canonical_scene_path_string(fs::path(canvas_generated_parity_report_path_.toStdString()).parent_path().parent_path()) == canonical_scene_path_string(scene.scene_dir);
+  if (parity.failed || post_generation_blocked) {
+    result.generation_current = result.validation_current = false;
+    result.blockers << (parity.failed ? parity.warning : "Generated scene differs from authored layout. Resolve parity blockers, Generate and Validate.");
+  }
+  const auto preview = workcell_builder::validate_readiness(scene, detect_workspace_root().toStdString());
+  if (!preview.ready) result.blockers << preview.blocker_reason;
+  result.ready = result.validation_current && result.blockers.isEmpty();
+  return result;
+}
+
 bool MainWindow::selected_scene_preview_ready(QStringList * blockers) const
 {
-  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
-    if (blockers) blockers->append("No scene selected");
-    return false;
-  }
-  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  const Scene3DTransformParityReadiness transform_parity =
-    scene3d_load_transform_parity_readiness(scene.scene_dir, QString::fromStdString(scene.scene_name));
-  if (transform_parity.failed) {
-    if (blockers) blockers->append(transform_parity.warning);
-    return false;
-  }
-  const fs::path layout_file = scene.scene_dir / "layout" / "workcell_studio_layout.yaml";
-  const fs::path merge_report = scene.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
-  if (fs::exists(layout_file) &&
-    (!fs::exists(merge_report) || fs::last_write_time(layout_file) > fs::last_write_time(merge_report))) {
-    if (blockers) blockers->append("Generated scene package is stale. Run Generate Scene Package before Build & Run RViz.");
-    return false;
-  }
-  const auto status = workcell_builder::validate_readiness(scene, detect_workspace_root().toStdString());
-  if (!status.ready && blockers) blockers->append(status.blocker_reason);
-  return status.ready;
+  const auto readiness = selected_scene_readiness();
+  if (blockers) *blockers += readiness.blockers;
+  return readiness.ready;
 }
 
 bool MainWindow::preview_command_is_safe(const QString & command, QStringList * blockers) const
@@ -6083,9 +6101,7 @@ void MainWindow::refresh_preview_launch_ui()
   QStringList blockers;
   if (has_scene) {
     const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-    if (!s.has_launch_demo && s.launch_file.empty()) readiness = "BLOCKED_MISSING_LAUNCH";
-    else if (!s.has_task_intent) readiness = "BLOCKED_MISSING_TASK_INTENT";
-    else if (!selected_scene_preview_ready(&blockers)) readiness = "WARNINGS_PRESENT";
+    if (!selected_scene_preview_ready(&blockers)) readiness = "BLOCKED";
     else readiness = "READY_FOR_FAKE_HARDWARE_PREVIEW";
     const auto metadata = selected_scene_metadata_summary(s);
     if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Selected Scene</b><br/>scene name: %1<br/>scene path: %2<br/>robot: %3<br/>robot source: %4<br/>end effector: %5<br/>end effector source: %6<br/>task file status: %7<br/>launch/demo.launch.py status: %8<br/>package.xml/CMakeLists status: %9<br/>preview snapshot path: %10")
@@ -6102,7 +6118,7 @@ void MainWindow::refresh_preview_launch_ui()
   if (run_build_button_) {
     const bool active = preview_state_=="PREVIEW_RUNNING" || preview_state_=="PREVIEW_STOPPING";
     run_build_button_->setText(active ? "Stop RViz" : "Build & Run RViz");
-    run_build_button_->setEnabled(active || (has_scene && has_ws && preview_state_!="BUILD_RUNNING" && preview_state_!="PACKAGE_CHECK_RUNNING" && preview_state_!="PREVIEW_LAUNCHING"));
+    run_build_button_->setEnabled(active || (has_scene && has_ws && selected_scene_readiness().ready && preview_state_!="BUILD_RUNNING" && preview_state_!="PACKAGE_CHECK_RUNNING" && preview_state_!="PREVIEW_LAUNCHING"));
   }
   if (run_preview_button_) run_preview_button_->hide();
   if (stop_preview_button_) stop_preview_button_->setEnabled(preview_state_=="PREVIEW_RUNNING"||preview_state_=="PREVIEW_STOPPING");
@@ -7486,7 +7502,7 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
   inspector_update_guard_ = true;
   refresh_selected_scene_item_labels(current_selected_scene_item());
   const QString warning_text = item->data(RoleWarning).toString().isEmpty() ? QString("none") : item->data(RoleWarning).toString();
-  inspector_warning_label_->setText("Warnings: " + warning_text + " | Reachability: preview-only | Collision: preview-only | Safety zone: preview-only | Pick source reach: unknown | Place target reach: unknown | Warning count: " + QString::number(warning_text == "none" ? 0 : 1) + " | Preview-only");
+  inspector_warning_label_->setText(warning_text == "none" ? "No item warnings" : "Warning: " + warning_text);
   append_studio_log("selected item reach status: preview-only");
   append_studio_log("selected item collision status: preview-only");
   if (pick_place_details_label_) pick_place_details_label_->setText(pick_place_details_label_->text() + QStringLiteral("\nLinked hierarchy item: %1").arg(item->data(RoleId).toString()));
@@ -14303,17 +14319,17 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const auto editable_layout_inspection = workcell_builder::inspect_editable_layout_entries(dir);
   const bool scene_xacro_ready = has("urdf/scene.urdf.xacro") || s.has_scene_urdf_xacro;
   const bool placeholder_launch_only = launch_ready && !scene_xacro_ready;
-  const bool validation_report_ready = has("validation/readiness_report.json") || has("diagnostics/readiness_report.json") || has("run_acceptance.txt");
   const bool scene_selected = has_selected_scene();
   const auto canvas_model = workcell_builder::build_workcell_studio_canvas_model(s.scene_dir, s.scene_name);
   const Scene3DTransformParityReadiness transform_parity =
     scene3d_load_transform_parity_readiness(s.scene_dir, QString::fromStdString(s.scene_name));
   const bool editable_layout_ready = editable_layout_inspection.valid && editable_layout_inspection.editable_item_count > 0;
   const bool has_warnings = !readiness_warning_details_.isEmpty();
-  const bool validation_gate_ready = validation_report_ready && !validation_stale_;
+  const auto readiness = selected_scene_readiness();
+  const bool validation_gate_ready = readiness.validation_current;
   const bool export_ready = yaml_ready && launch_ready;
-  const bool scene_package_gate_ready = package_xml_ready && cmake_ready && launch_ready && scene_xacro_ready && !placeholder_launch_only;
-  const bool fake_hardware_ready = scene_package_gate_ready && validation_gate_ready;
+  const bool scene_package_gate_ready = readiness.generation_current && package_xml_ready && cmake_ready && launch_ready && scene_xacro_ready && !placeholder_launch_only;
+  const bool fake_hardware_ready = readiness.ready;
 
   int classified_editable_count = 0;
   int classified_generated_count = 0;
@@ -14423,7 +14439,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     case LayoutStateModel::PREVIEW_UNAVAILABLE: layout_missing_detail = "Save Layout Needed: no editable items"; break;
     case LayoutStateModel::PATH_MISMATCH: layout_missing_detail = "Save Layout Blocked: scene path mismatch"; layout_status = SceneWorkflowStepStatus::Blocked; break;
     case LayoutStateModel::INVALID_LAYOUT_YAML: layout_missing_detail = "Save Layout Needed: invalid layout YAML"; layout_status = SceneWorkflowStepStatus::Warning; break;
-    case LayoutStateModel::EDITABLE_LAYOUT_PRESENT: layout_ready = workcell_builder::is_save_layout_workflow_ready(dir); layout_status = layout_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction; break;
+    case LayoutStateModel::EDITABLE_LAYOUT_PRESENT: layout_ready = !layout_dirty_ && workcell_builder::is_save_layout_workflow_ready(dir); layout_status = layout_ready ? SceneWorkflowStepStatus::Done : SceneWorkflowStepStatus::NeedsAction; break;
   }
   steps.push_back(compute_scene_workflow_step(
     "Save Layout",
@@ -14540,6 +14556,7 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
       ? "Blocked: validation results are stale; rerun validation before RViz/MoveIt fake-hardware launch."
       : "Blocked: validation/package gate has not passed; run offline validation before RViz/MoveIt fake-hardware launch.";
   }
+  if (!readiness.blockers.isEmpty()) fake_launch_missing_detail = readiness.blockers.join(" ");
   steps.push_back(compute_scene_workflow_step(
     "RViz/MoveIt Fake-Hardware Launch",
     fake_hardware_ready,
@@ -14654,7 +14671,7 @@ QString MainWindow::scene_workflow_details_tooltip(const std::vector<SceneWorkfl
 MainWindow::RecommendedWorkflowAction MainWindow::resolve_recommended_workflow_action() const
 {
   const auto actions = resolve_recommended_workflow_actions();
-  if (!actions.empty()) return actions.front();
+  for (const auto & action : actions) if (action.enabled) return action;
   RecommendedWorkflowAction fallback;
   fallback.token = "open_or_create_scene";
   fallback.label = "Open or create a scene";
@@ -14747,18 +14764,15 @@ std::vector<MainWindow::RecommendedWorkflowAction> MainWindow::resolve_recommend
     add_action("generate_scene_package", "Generate scene package", false, "Missing YAML file.", "Scene package generation needs cell_definition.yaml.", RecommendedWorkflowActionHandler::GenerateScenePackage);
     return actions;
   }
-  if (validation_stale_) {
-    add_action("validate_scene", "Validate scene", true, QString(),
-      "Re-run generated scene validation to clear stale checks after recent edits or YAML updates.",
-      RecommendedWorkflowActionHandler::ValidateScene);
-    add_action("generate_scene_package", "Generate scene package", false, "Validation is stale.", "Revalidate before packaging or previewing.", RecommendedWorkflowActionHandler::GenerateScenePackage);
+  const auto readiness = selected_scene_readiness();
+  if (!readiness.generation_current) {
+    add_action("generate_scene_package", "Generate scene package", true, QString(), readiness.blockers.join(" "), RecommendedWorkflowActionHandler::GenerateScenePackage);
+    add_action("plan_simulate", "Plan / Simulate", false, readiness.blockers.join(" "), "Generate and validate before preview.", RecommendedWorkflowActionHandler::PlanSimulate);
     return actions;
   }
-  if (!launch_artifacts_ready_) {
-    add_action("generate_scene_package", "Generate scene package", true, QString(),
-      "Build launch artifacts and package scaffolding so planning/simulation can run reliably.",
-      RecommendedWorkflowActionHandler::GenerateScenePackage);
-    add_action("plan_simulate", "Plan / Simulate", false, "Scene package artifacts are missing.", "Generate package before preview.", RecommendedWorkflowActionHandler::PlanSimulate);
+  if (!readiness.validation_current) {
+    add_action("validate_scene", "Validate scene", true, QString(), readiness.blockers.join(" "), RecommendedWorkflowActionHandler::ValidateScene);
+    add_action("plan_simulate", "Plan / Simulate", false, readiness.blockers.join(" "), "Validate before preview.", RecommendedWorkflowActionHandler::PlanSimulate);
     return actions;
   }
   QStringList preview_blockers;
@@ -14845,12 +14859,20 @@ void MainWindow::refresh_scene_workflow_rail()
     }
     html += "</div>";
   }
+  const auto current_readiness = selected_scene_readiness();
+  if (selection_scene_status_label_) selection_scene_status_label_->setText(current_readiness.ready
+    ? "Ready for fake hardware" : current_readiness.blockers.join(" "));
   scene_workflow_rail_label_->setText(html);
   scene_workflow_rail_label_->setToolTip(scene_workflow_details_tooltip(steps));
   const auto recommendations = resolve_recommended_workflow_actions();
-  const auto recommendation = recommendations.empty() ? RecommendedWorkflowAction{} : recommendations.front();
+  const auto enabled = std::find_if(recommendations.begin(), recommendations.end(),
+    [](const RecommendedWorkflowAction & action) { return action.enabled; });
+  const auto recommendation = enabled == recommendations.end() ? RecommendedWorkflowAction{} : *enabled;
   if (scene_workflow_recommendation_label_) {
-    scene_workflow_recommendation_label_->setText("<b>Next:</b> " + recommendation.label.toHtmlEscaped());
+    QString explanation = "<b>Next:</b> " + recommendation.label.toHtmlEscaped() + "<br/>" + recommendation.explanatory_text.toHtmlEscaped();
+    const auto readiness = selected_scene_readiness();
+    if (!readiness.ready) explanation += "<br/><b>Plan / Simulate blocked:</b> " + readiness.blockers.join(" ").toHtmlEscaped();
+    scene_workflow_recommendation_label_->setText(explanation);
     scene_workflow_recommendation_label_->setToolTip(recommendation.explanatory_text);
   }
   if (scene_workflow_recommendation_button_) {

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+from urllib.parse import urlsplit
 
 
 def main():
@@ -29,7 +30,14 @@ def main():
             pass
 
         def log_error(self, format, *values):
-            print(format % values, file=sys.stderr, flush=True)
+            # Only explicitly optional browser resources are non-fatal. Unknown paths,
+            # including all scene payloads and meshes, remain required failures.
+            path = urlsplit(self.path).path
+            status = values[0] if values else "unknown"
+            optional = status == 404 and path in {"/favicon.ico", "/.well-known/appspecific/com.chrome.devtools.json"}
+            kind = "optional browser resource" if optional else "ERROR required resource"
+            print(f"Product View HTTP {kind}: path={self.path!r} status={status} detail={format % values!r}",
+                  file=sys.stderr, flush=True)
 
     # The parent keeps the QProcess stdin pipe open. EOF also shuts the server
     # down if Studio crashes, without depending on a destructor or PID polling.

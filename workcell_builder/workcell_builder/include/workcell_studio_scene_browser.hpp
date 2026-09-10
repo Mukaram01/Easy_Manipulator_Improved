@@ -53,6 +53,14 @@ struct WorkcellStudioSceneBrowserResult
   std::vector<WorkcellStudioSceneInfo> scenes;
 };
 
+struct SceneContentReadiness
+{
+  bool generation_current{false};
+  bool validation_current{false};
+  std::string blocker;
+};
+SceneContentReadiness scene_content_readiness(const WorkcellStudioSceneInfo & scene);
+
 WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const boost::filesystem::path & workspace_root);
 
 // Scene identity is the resolved physical source directory, not the spelling by

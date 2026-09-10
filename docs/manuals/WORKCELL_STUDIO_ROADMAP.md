@@ -24,6 +24,8 @@ The immediate objective is not more breadth. It is to make one industrial scene 
 
 ### R1.1 — Fix the current Plan / Simulate readiness contradiction first
 
+Implementation and evidence: [canonical readiness contract](R1_1_CANONICAL_READINESS.md). The content-based gate and enabled corrective action are implemented; the final manual RViz round trip remains a workstation acceptance gate.
+
 Investigation on 2026-09-10 found a split-brain readiness path in Workcell Builder:
 
 - The visible workflow rail (`scene_workflow_steps`) can mark **Generate Scene Package**, **Validate**, and **RViz/MoveIt Fake-Hardware Launch** as `Done` from package/validation file state.

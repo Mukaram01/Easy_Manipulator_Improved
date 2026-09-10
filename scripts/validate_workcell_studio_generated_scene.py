@@ -38,7 +38,8 @@ def authored_input_fingerprint(scene: Path) -> str:
             relative_paths.extend(
                 path.relative_to(scene)
                 for path in root.rglob("*")
-                if path.is_file() and path.relative_to(scene) not in DERIVED_FINGERPRINT_EXCLUSIONS
+                if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+                and path.relative_to(scene) not in DERIVED_FINGERPRINT_EXCLUSIONS
             )
     digest = 0xcbf29ce484222325
     def update(data: bytes) -> None:
@@ -117,20 +118,23 @@ def validate(scene:Path)->dict[str,Any]:
         rpy_ok="-1.5708 -1.5708 0" in xacro_text
         checks.append({"name":"legacy generated gripper mount RPY marker is present","ok":rpy_ok,"optional":True})
 
+    # Durable acceptance is also a generation receipt for already accepted packages.
+    # Optional Product View / merge caches and filesystem timestamps are not evidence.
     merge_report = {}
-    acceptance_layout_stale=False
-    if (scene/"generated/workcell_studio_layout_merge_report.json").is_file():
-        merge_report = json.loads((scene/"generated/workcell_studio_layout_merge_report.json").read_text(encoding="utf-8"))
-    merge_exists=_has(scene,"generated/workcell_studio_layout_merge_report.json")
-    checks.append({"name":"generated/workcell_studio_layout_merge_report.json exists","ok":merge_exists,"optional":True})
-    if not merge_exists: warnings.append("Layout merge report missing; run Generate Scene to apply layout")
-    layout=_load_yaml(scene/"layout/workcell_studio_layout.yaml")
-    if layout.get("saved_at_utc") and merge_exists:
-        mt=(scene/"generated/workcell_studio_layout_merge_report.json").stat().st_mtime
-        lt=(scene/"layout/workcell_studio_layout.yaml").stat().st_mtime
-        stale=lt>mt
-        checks.append({"name":"layout merged after last save","ok":not stale,"optional":True})
-        if stale: warnings.append("Generated files stale: saved layout newer than merge artifacts"); acceptance_layout_stale=True
+    fingerprint = authored_input_fingerprint(scene)
+    generation_current = False
+    for relative in ("acceptance/generation_fingerprint.json", "acceptance/generated_scene_acceptance.json"):
+        try:
+            receipt = json.loads((scene / relative).read_text(encoding="utf-8"))
+            if relative.endswith("generated_scene_acceptance.json") and receipt.get("status") != "PASS":
+                continue
+            generation_current |= receipt.get("authored_input_fingerprint") == fingerprint
+        except (OSError, ValueError):
+            pass
+    acceptance_layout_stale = (scene / "layout/workcell_studio_layout.yaml").is_file() and not generation_current
+    checks.append({"name": "generated content matches authored inputs", "ok": not acceptance_layout_stale})
+    if acceptance_layout_stale:
+        blockers.append("Authored content changed or generation is unverified. Run Generate Scene Package, then Validate.")
 
     cmd=f"ros2 launch {scene.name} demo.launch.py use_fake_hardware:=true"
     checks.append({"name":"launch command contains use_fake_hardware:=true","ok":True})
