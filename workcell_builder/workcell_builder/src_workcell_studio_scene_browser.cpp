@@ -24,7 +24,8 @@ bool exists_file(const fs::path & p){ boost::system::error_code ec; return fs::e
 
 bool is_generator_owned_derived_input(const fs::path & relative)
 {
-  return relative.generic_string() == "urdf/generated_asset_metadata.yaml";
+  return relative.generic_string() == "urdf/generated_asset_metadata.yaml" ||
+    relative.generic_string().find("__pycache__/") != std::string::npos || relative.extension() == ".pyc";
 }
 
 std::string authored_input_fingerprint(const fs::path & scene_dir)
@@ -72,31 +73,6 @@ std::string authored_input_fingerprint(const fs::path & scene_dir)
   return encoded.str();
 }
 
-std::filesystem::file_time_type latest_authored_input_time(const fs::path & scene_dir)
-{
-  auto latest = std::filesystem::file_time_type::min();
-  const auto include_file = [&](const fs::path & path) {
-    std::error_code ec;
-    const std::filesystem::path std_path(path.string());
-    if (std::filesystem::is_regular_file(std_path, ec) && !ec)
-      latest = std::max(latest, std::filesystem::last_write_time(std_path, ec));
-  };
-  for (const char * relative : {
-      "package.xml", "CMakeLists.txt", "environment.yaml", "environment_layout.yaml",
-      "cell_definition.yaml", "scene_manifest.yaml", "layout/workcell_studio_layout.yaml"})
-    include_file(scene_dir / relative);
-  for (const char * relative : {"config", "launch", "urdf", "assets"}) {
-    const fs::path root = scene_dir / relative;
-    boost::system::error_code ec;
-    if (!fs::is_directory(root, ec) || ec) continue;
-    for (fs::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec)) {
-      const fs::path candidate = fs::relative(it->path(), scene_dir);
-      if (!is_generator_owned_derived_input(candidate)) include_file(it->path());
-    }
-  }
-  return latest;
-}
-
 void inspect_acceptance_report(WorkcellStudioSceneInfo * s)
 {
   const fs::path report = s->scene_dir / "acceptance/generated_scene_acceptance.json";
@@ -112,14 +88,8 @@ void inspect_acceptance_report(WorkcellStudioSceneInfo * s)
       !safety["runtime_execution_enabled"].as<bool>(true) &&
       !safety["motion_command_sent"].as<bool>(true);
     const std::string accepted_fingerprint = root["authored_input_fingerprint"].as<std::string>("");
-    if (!accepted_fingerprint.empty()) {
-      s->acceptance_report_current = accepted_fingerprint == authored_input_fingerprint(s->scene_dir);
-    } else {
-      std::error_code ec;
-      const auto report_time = std::filesystem::last_write_time(
-        std::filesystem::path(report.string()), ec);
-      s->acceptance_report_current = !ec && report_time >= latest_authored_input_time(s->scene_dir);
-    }
+    s->acceptance_report_current = !accepted_fingerprint.empty() &&
+      accepted_fingerprint == authored_input_fingerprint(s->scene_dir);
     s->acceptance_report_passed = s->acceptance_status == "PASS" &&
       (report_scene.empty() || report_scene == s->scene_name) && safe;
   } catch (const std::exception &) {
@@ -176,9 +146,10 @@ std::string compute_status(const WorkcellStudioSceneInfo & s)
   if (!s.has_launch_demo) return "MISSING_LAUNCH";
   const bool scaffold = s.has_environment_yaml && !s.has_package_xml && !s.has_scene_urdf_xacro && !s.has_arm_hand_srdf_xacro;
   if (scaffold) return "SCAFFOLD_ONLY";
-  if (s.parse_warning.empty() && s.has_package_xml && s.has_scene_urdf_xacro && s.has_arm_hand_srdf_xacro && s.has_task_recipe && s.acceptance_report_current && s.acceptance_report_passed) return "READY";
+  const auto readiness = scene_content_readiness(s);
+  if (s.parse_warning.empty() && s.has_package_xml && s.has_scene_urdf_xacro && s.has_arm_hand_srdf_xacro && s.has_task_recipe && readiness.validation_current) return "READY";
   if (s.acceptance_status == "BLOCKED") return "BLOCKED";
-  if (!s.parse_warning.empty() || !s.has_task_recipe || !s.acceptance_report_current || !s.acceptance_report_passed) return "WARNINGS";
+  if (!s.parse_warning.empty() || !s.has_task_recipe || !readiness.validation_current) return "WARNINGS";
   return "BLOCKED";
 }
 
@@ -192,9 +163,8 @@ void populate_readiness(WorkcellStudioSceneInfo * s)
     s->readiness_reasons.push_back("Scene package outputs are incomplete");
   if (s->status == "WARNINGS") {
     if (!s->has_task_recipe && !s->has_task_intent) s->readiness_reasons.push_back("Task intent is not configured");
-    if (!s->has_acceptance_report_json) s->readiness_reasons.push_back("Run validation to create a current offline report");
-    else if (!s->acceptance_report_current) s->readiness_reasons.push_back("Scene changed since validation; run validation again");
-    else if (!s->acceptance_report_passed) s->readiness_reasons.push_back("Offline validation did not pass");
+    const auto readiness = scene_content_readiness(*s);
+    if (!readiness.blocker.empty()) s->readiness_reasons.push_back(readiness.blocker);
     if (!s->parse_warning.empty()) s->readiness_reasons.push_back("Scene metadata contains a parse warning");
   }
   if (s->readiness_reasons.size() > 3U) s->readiness_reasons.resize(3U);
@@ -306,6 +276,25 @@ int find_scene_by_identity(
     return unique_match;
   }
   return -1;
+}
+
+SceneContentReadiness scene_content_readiness(const WorkcellStudioSceneInfo & scene)
+{
+  auto current = scene;
+  current.acceptance_report_current = false;
+  current.acceptance_report_passed = false;
+  inspect_acceptance_report(&current);
+  SceneContentReadiness result;
+  result.validation_current = current.acceptance_report_current && current.acceptance_report_passed;
+  result.generation_current = result.validation_current;
+  try {
+    const auto receipt = YAML::LoadFile((scene.scene_dir / "acceptance/generation_fingerprint.json").string());
+    result.generation_current = result.generation_current ||
+      receipt["authored_input_fingerprint"].as<std::string>("") == authored_input_fingerprint(scene.scene_dir);
+  } catch (const std::exception &) { /* A current committed acceptance is sufficient. */ }
+  if (!result.generation_current) result.blocker = "Scene content changed or generation is unverified. Generate Scene Package, then Validate.";
+  else if (!result.validation_current) result.blocker = "Validate the generated scene before Plan / Simulate.";
+  return result;
 }
 
 WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path & workspace_root)

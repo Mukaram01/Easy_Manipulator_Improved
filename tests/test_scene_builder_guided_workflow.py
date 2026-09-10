@@ -54,19 +54,11 @@ def test_generate_package_guard_contract_tokens_exist():
         assert token in MAINWINDOW_CPP
 
 
-def test_plan_simulate_guard_contract_and_launch_readiness_tokens_exist():
-    required_tokens = [
-        "build_plan_simulate_gate",
-        "has_package_xml",
-        "has_launch_demo",
-        "launch_artifacts_ready",
-        "Blocked: Missing package.xml/CMakeLists.txt. Generate Scene Package first.",
-        "Blocked: Missing launch/demo.launch.py. Generate Scene Package first.",
-        "Blocked: Launch readiness flag is not set yet. Generate Scene Package again.",
-        "Ready: launch/demo.launch.py and launch readiness flags are present.",
-    ]
-    for token in required_tokens:
-        assert token in MAINWINDOW_CPP
+def test_plan_simulate_guard_uses_canonical_readiness():
+    assert "const auto readiness = selected_scene_readiness();" in MAINWINDOW_CPP
+    assert "const ActionGate plan_gate{readiness.ready, readiness.blockers.join" in MAINWINDOW_CPP
+    assert "workcell_builder::validate_readiness(scene, detect_workspace_root()" in MAINWINDOW_CPP
+    assert "post_generation_blocked" in MAINWINDOW_CPP
 
 
 def test_fake_hardware_launch_default_token_exists():

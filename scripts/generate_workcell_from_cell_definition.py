@@ -1872,6 +1872,13 @@ def generate_package(
 
     final_contract_files = [final_package_dir / path.relative_to(staging_dir) for path in required_contract_files]
     missing_contract_files = [path for path in final_contract_files if not path.is_file()]
+    # Record only after successful publication, against final authored + runtime bytes.
+    if not missing_contract_files:
+        from validate_workcell_studio_generated_scene import authored_input_fingerprint
+        receipt = final_package_dir / "acceptance/generation_fingerprint.json"
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text(json.dumps({"schema": "workcell_generation_fingerprint/v1",
+            "authored_input_fingerprint": authored_input_fingerprint(final_package_dir)}, indent=2) + "\n", encoding="utf-8")
     status = "PASS" if not warnings and not missing_contract_files else "WARN"
     print(f"{status}: generated package at {final_package_dir}")
     for contract_path in final_contract_files:

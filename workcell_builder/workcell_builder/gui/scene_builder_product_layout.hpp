@@ -347,7 +347,7 @@ inline void simplify_inspector(QWidget * scene_page)
 {
   if (!scene_page) return;
   auto * tabs = tab_widget_with_labels(scene_page, {
-    QStringLiteral("Selection"), QStringLiteral("Workflow"), QStringLiteral("Readiness")});
+    QStringLiteral("Inspector"), QStringLiteral("Task"), QStringLiteral("Checks")});
   if (!tabs) return;
   tabs->setObjectName(QStringLiteral("sceneBuilderInspectorTabs"));
   tabs->setTabText(0, QStringLiteral("Inspector"));
