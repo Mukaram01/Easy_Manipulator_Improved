@@ -24,12 +24,12 @@ robot:
   tool_link: tool0
   home_named_target: home
   safe_joint_state:
-  - 0
-  - -1.57079632679
-  - 0
-  - -1.57079632679
-  - 0
-  - 0
+  - 0.0
+  - -1.5707963267948966
+  - 1.5707963267948966
+  - -1.5707963267948966
+  - -1.5707963267948966
+  - 0.0
   joint_names:
   - shoulder_pan_joint
   - shoulder_lift_joint
