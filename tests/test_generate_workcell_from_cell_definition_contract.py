@@ -691,6 +691,12 @@ def test_existing_package_refresh_owns_generated_asset_metadata():
         Path("urdf/generated_asset_metadata.yaml")
     )
 
+    assert mod._is_existing_package_generator_owned_output(
+        Path("config/moveit_collision_objects.yaml")
+    )
+    assert not mod._is_existing_package_generator_owned_output(
+        Path("config/ros2_controllers.yaml")
+    )
     # Curated runtime/source URDF files must remain protected.
     assert not mod._is_existing_package_generator_owned_output(
         Path("urdf/scene.urdf.xacro")

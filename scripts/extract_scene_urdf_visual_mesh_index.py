@@ -1822,6 +1822,18 @@ def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
 def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     root=ET.fromstring(xml_text); items=[]; idx=0
     initial_joint_positions, initial_joint_source, ur5_preview_joint_pose, joint_defaults_used = read_ur5_initial_joint_positions()
+    # Expanded ros2_control is the startup contract for this scene, including
+    # scene-local home overrides. Global preview defaults are fallback only.
+    for control in root.findall('ros2_control'):
+        for joint in control.findall('joint'):
+            initial = joint.find("state_interface[@name='position']/param[@name='initial_value']")
+            if initial is not None and initial.text is not None:
+                name = joint.attrib['name']
+                initial_joint_positions[name] = float(initial.text)
+                joint_defaults_used = [key for key in joint_defaults_used if key != name]
+                initial_joint_source = 'ros2_control.initial_value'
+    if initial_joint_source == 'ros2_control.initial_value':
+        ur5_preview_joint_pose = {'source': initial_joint_source, 'joints': dict(initial_joint_positions)}
     diagnostics={
         'root_links': [],
         'visual_parent_link_counts': {},
@@ -1855,7 +1867,7 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
         elif joint_name in joint_defaults_used:
             joint_value_source = 'fake-hardware default'
         elif joint_name in initial_joint_positions:
-            joint_value_source = 'initial_positions.yaml'
+            joint_value_source = initial_joint_source
         else:
             joint_value_source = 'zero_default'
         joints.append({'name':joint_name,'type':joint_type,'parent':parent.attrib.get('link',''),'child':child.attrib.get('link',''),'origin_xyz':xyz,'origin_rpy':rpy,'axis':axis_xyz,'value':joint_value,'value_source':joint_value_source})

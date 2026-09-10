@@ -55,7 +55,7 @@ def _is_existing_package_generator_owned_output(relative_path: Path) -> bool:
     """
     if len(relative_path.parts) > 1 and relative_path.parts[0] == "generated":
         return True
-    return relative_path.as_posix() == "urdf/generated_asset_metadata.yaml"
+    return relative_path.as_posix() in {"urdf/generated_asset_metadata.yaml", "config/moveit_collision_objects.yaml"}
 
 
 def _load_module(module_name: str, module_path: Path):
@@ -1842,6 +1842,22 @@ def generate_package(
         _run_optional_bundle_export(bundle_exporter, package_name, scene_manifest_path, package_dir / "generated", warnings)
 
     if existing_package_dir is not None:
+        # This manifest is derived planning truth, not curated controller/launch
+        # configuration. Rebuild it from saved layout so deleted IDs cannot
+        # survive Generate and reappear in the next PlanningScene.
+        collision_relative = Path("config/moveit_collision_objects.yaml")
+        if (existing_package_dir / collision_relative).is_file():
+            try:
+                collision = _load_module("scene_collision_manifest", SCRIPTS_DIR / "generate_moveit_collision_manifest.py")
+                manifest = collision.load_and_build(
+                    existing_package_dir / "layout/workcell_studio_layout.yaml", scene_name=package_name)
+                errors = collision.validate_manifest(manifest)
+                if errors:
+                    raise ValueError("; ".join(errors))
+                (package_dir / collision_relative).write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+            except Exception as exc:
+                print(f"FAIL: Cannot refresh authored collision manifest: {exc}")
+                return 2
         # In-place refresh is deliberately allowlisted: curated authored and ROS
         # runtime files in the selected package never inherit generic staged files.
         for staged_path in sorted(package_dir.rglob("*")):

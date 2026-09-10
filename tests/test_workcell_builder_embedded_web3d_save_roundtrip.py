@@ -163,9 +163,11 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
 const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
 const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',innerHTML:'',value:'',dataset:{},classList:{toggle(){},add(){},remove(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
-const context={console,assert,THREE_IMPL,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+const context={console,assert,THREE_IMPL,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{querySelectorAll(){return[]},getElementById(){return element()},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+context.window.__WORKCELL_VIEWER_LIFECYCLE__={registerCleanup(){}};
 vm.createContext(context);vm.runInContext(source+`
 THREE=THREE_IMPL;state.sceneJson={scene:{id:'ur5_2f_test'}};state.three.scene=new THREE.Scene();state.objects=[];state.pickRecords=[];state.dirtyTransforms=new Map();state.undoStack=[];state.redoStack=[];
+const productionSelectObject=selectObject, productionClearSelection=clearSelection;
 createLabelElement=()=>null;populateObjectList=()=>{};updateLabels=()=>{};renderSceneSummary=()=>{};bindExportedPhysicalTransformOwnership=()=>[];tryLoadMesh=()=>{};selectObject=id=>{state.selected=String(id||'')};clearSelection=()=>{state.selected=''};detachTransformGizmo=()=>{};updateDirtyState=()=>{};
 const item={id:'object_02',display_name:'Fixture Plate',role:'fixture',category:'object',editable:true,locked:false,source_layer:'editable_layout',world_pose:{xyz:[.95,.45,.16],rpy:[0,1.48352986419518,0]},dimensions:[.2,.2,.2],primitive:{type:'box',dimensions:[.2,.2,.2]}};
 let result=window.__WORKCELL_EDITOR_API_V1__.addItem(item);assert.strictEqual(state.objects.length,1);assert.strictEqual(state.three.scene.children.length,1);assert.strictEqual(result.selectedItemId,'object_02');
@@ -176,6 +178,14 @@ result=window.__WORKCELL_EDITOR_API_V1__.removeItem('object_02');assert.strictEq
 result=window.__WORKCELL_EDITOR_API_V1__.addItem(item);assert.strictEqual(state.objects.length,2,'native undo restores exactly one item');
 result=window.__WORKCELL_EDITOR_API_V1__.removeItem('object_02');assert.strictEqual(state.objects.length,1,'native redo removes it again');
 result=window.__WORKCELL_EDITOR_API_V1__.addItem({...item,display_name:'Fixture Plate'});assert.strictEqual(state.objects.length,2,'second undo restores the same stable ID');
+result=window.__WORKCELL_EDITOR_API_V1__.removeItem('object_02_copy');
+assert.ok(!state.objects.some(x=>x.item.id==='object_02_copy'));
+// The page handoff uses the public clear API, including a retained highlight.
+selectObject=productionSelectObject;clearSelection=productionClearSelection;
+state.three.selectionHighlight=new THREE.Box3Helper(new THREE.Box3(new THREE.Vector3(),new THREE.Vector3(1,1,1)));
+state.three.scene.add(state.three.selectionHighlight);state.selected='object_02';
+result=window.__WORKCELL_EDITOR_API_V1__.clearSelection();
+assert.strictEqual(result.selectedItemId,'');assert.strictEqual(state.three.selectionHighlight,null);
 assert.strictEqual(window.__WORKCELL_EDITOR_API_V1__.apiVersion,'1.1.0');
 const capabilities=window.__WORKCELL_EDITOR_API_V1__.getCapabilities();assert.strictEqual(capabilities.schemaVersion,'workcell_studio_live_authoring_capabilities/v1');assert.ok(capabilities.operations.includes('duplicateItem'));
 `,context);

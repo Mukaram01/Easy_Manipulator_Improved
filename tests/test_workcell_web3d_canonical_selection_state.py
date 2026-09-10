@@ -51,17 +51,14 @@ def test_ur5_2f_canonical_selection_excludes_only_the_derived_destination_area()
     ]
     canonical = [item for item in editable if item not in derived]
 
-    # Six canonical workcell records, three authored imports, and one derived
-    # destination area are persisted in the repository fixture.
-    assert len(editable) == 10
-    assert [item["id"] for item in derived] == ["place_zone_default"]
-    assert len(canonical) == 9
-    assert {"object_01", "object_02", "object_03"}.issubset(
-        {item["id"] for item in canonical}
-    )
-    assert "target_bin_default" in {item["id"] for item in canonical}
-    assert derived[0]["target_ref"] == "target_bin_default"
-    assert derived[0]["transform_group"] == "default_drop_destination"
+    # The canonical industrial cell contains only its five authored physical
+    # assets/zones; imported fixture records and the mounting plate are absent.
+    assert {item["id"] for item in editable} == {
+        "support_surface_table", "target_bin_default", "realsense_overhead",
+        "pick_zone_main", "place_zone_default",
+    }
+    assert not derived
+    assert len(canonical) == 5
 
 
 def test_save_logs_use_exported_patch_old_and_new_xyz_rpy() -> None:

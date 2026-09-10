@@ -1,0 +1,246 @@
+{
+  "valid": true,
+  "contacts": [],
+  "joints": {
+    "shoulder_pan_joint": 1.57,
+    "shoulder_lift_joint": -2.35,
+    "elbow_joint": 1.83,
+    "wrist_1_joint": -1.03,
+    "wrist_2_joint": -1.57,
+    "wrist_3_joint": 0.0,
+    "gripper_finger1_inner_knuckle_joint": 0.0,
+    "gripper_finger1_finger_tip_joint": 0.0,
+    "gripper_finger1_joint": 0.0,
+    "gripper_finger2_inner_knuckle_joint": 0.0,
+    "gripper_finger2_finger_tip_joint": 0.0,
+    "gripper_finger2_joint": 0.0
+  },
+  "objects": [
+    "workcell::support_surface_table",
+    "workcell::target_bin_default"
+  ],
+  "fk": {
+    "base_link": {
+      "xyz": [
+        0.0,
+        0.0,
+        1e-05
+      ],
+      "quaternion": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    "shoulder_link": {
+      "xyz": [
+        0.0,
+        0.0,
+        0.089169
+      ],
+      "quaternion": [
+        0.0,
+        0.0,
+        -0.7073882691671999,
+        0.7068251811053659
+      ]
+    },
+    "upper_arm_link": {
+      "xyz": [
+        0.0,
+        0.0,
+        0.089169
+      ],
+      "quaternion": [
+        0.6542233404483239,
+        0.26831291604242286,
+        -0.6540094681389106,
+        -0.2688338064345843
+      ]
+    },
+    "forearm_link": {
+      "xyz": [
+        -0.0002378254690503682,
+        -0.29865296293533394,
+        0.39154517493610885
+      ],
+      "quaternion": [
+        -0.6115940060638415,
+        0.3548982556301645,
+        0.6118764269819049,
+        -0.3544111143873817
+      ]
+    },
+    "wrist_1_link": {
+      "xyz": [
+        -0.10911671963773409,
+        0.04183592142307174,
+        0.5864464089829275
+      ],
+      "quaternion": [
+        -0.7070655712384615,
+        0.007634007583167543,
+        0.7070714260696036,
+        -0.007070949960599368
+      ]
+    },
+    "wrist_2_link": {
+      "xyz": [
+        -0.10904136359294185,
+        0.13646542469956607,
+        0.5844781785313649
+      ],
+      "quaternion": [
+        -0.7144208075357648,
+        0.0005689125521284602,
+        -1.4653029009169688e-10,
+        0.6997160753466035
+      ]
+    },
+    "wrist_3_link": {
+      "xyz": [
+        -0.10910826408810291,
+        0.13475406362917677,
+        0.5021960008279855
+      ],
+      "quaternion": [
+        0.9999457794110629,
+        -0.00040228202708354716,
+        -0.00040228181994081055,
+        0.010397815949034182
+      ]
+    },
+    "tool0": {
+      "xyz": [
+        -0.10910826408810291,
+        0.13475406362917677,
+        0.5021960008279855
+      ],
+      "quaternion": [
+        0.9999457794110629,
+        -0.0004022820270836594,
+        -0.0004022818199409204,
+        0.010397815949034182
+      ]
+    },
+    "ee_palm": {
+      "xyz": [
+        -0.10922206808959198,
+        0.1318428783332533,
+        0.3622263182219939
+      ],
+      "quaternion": [
+        0.9999457794110629,
+        -0.0004022820270836594,
+        -0.0004022818199409204,
+        0.010397815949034182
+      ]
+    }
+  },
+  "product_view_moveit_fk_parity": {
+    "shoulder_link": {
+      "position_max_error_m": 0.0,
+      "rotation_matrix_max_error": 2.340792490396204e-16
+    },
+    "upper_arm_link": {
+      "position_max_error_m": 0.0,
+      "rotation_matrix_max_error": 3.3306690738754696e-16
+    },
+    "forearm_link": {
+      "position_max_error_m": 1.8539857149502126e-17,
+      "rotation_matrix_max_error": 4.006127027333939e-16
+    },
+    "wrist_1_link": {
+      "position_max_error_m": 2.7755575615628914e-17,
+      "rotation_matrix_max_error": 4.003741782554471e-15
+    },
+    "wrist_2_link": {
+      "position_max_error_m": 2.7755575615628914e-17,
+      "rotation_matrix_max_error": 2.185751579730777e-16
+    },
+    "wrist_3_link": {
+      "position_max_error_m": 1.1102230246251565e-16,
+      "rotation_matrix_max_error": 1.1102230246251565e-16
+    },
+    "tool0": {
+      "position_max_error_m": 1.1102230246251565e-16,
+      "rotation_matrix_max_error": 2.2540563165973637e-16
+    }
+  },
+  "joint_limits": {
+    "shoulder_pan_joint": [
+      -6.283185307179586,
+      6.283185307179586
+    ],
+    "shoulder_lift_joint": [
+      -6.283185307179586,
+      6.283185307179586
+    ],
+    "elbow_joint": [
+      -3.141592653589793,
+      3.141592653589793
+    ],
+    "wrist_1_joint": [
+      -6.283185307179586,
+      6.283185307179586
+    ],
+    "wrist_2_joint": [
+      -6.283185307179586,
+      6.283185307179586
+    ],
+    "wrist_3_joint": [
+      -6.283185307179586,
+      6.283185307179586
+    ],
+    "gripper_finger1_inner_knuckle_joint": [
+      -3.14,
+      3.14
+    ],
+    "gripper_finger1_finger_tip_joint": [
+      -3.14,
+      3.14
+    ],
+    "gripper_finger1_joint": [
+      0.0,
+      0.804
+    ],
+    "gripper_finger2_inner_knuckle_joint": [
+      -3.14,
+      3.14
+    ],
+    "gripper_finger2_finger_tip_joint": [
+      -3.14,
+      3.14
+    ],
+    "gripper_finger2_joint": [
+      -3.14,
+      3.14
+    ]
+  },
+  "commands": [
+    "ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=false",
+    "/get_planning_scene",
+    "/check_state_validity (group_name empty: full robot)",
+    "/compute_fk (world frame)"
+  ],
+  "shutdown": {
+    "cycles": 2,
+    "ros2_control": "clean exit in both cycles; no std::out_of_range",
+    "owned_process_groups": "gone after each stop",
+    "move_group": "upstream Humble shutdown segfault reproduced in both cycles; all descendants removed"
+  },
+  "source_sha256": {
+    "environment.yaml": "c42a026144f433492375018650ef65d88f5004106353317afd4dfce1f380ca70",
+    "layout/workcell_studio_layout.yaml": "b63e4c4dec4924455b50ec3911429c4c37eadc7510537d4872b84709845bff49",
+    "urdf/scene.urdf.xacro": "be2c14f791c27f55ffd79b5cf00673e0523a18f63ff738b45a86513c4561052b",
+    "config/moveit_collision_objects.yaml": "631208ec4c94e5e6f068152e26c95b2f221d951e945ad8e2c29b249ba2806d6d"
+  },
+  "manual_gui_acceptance": "Not run; Scene -> Plan/RViz -> Stop -> Scene requires display acceptance.",
+  "evidence_scope": "Local fake-hardware workstation run; the user camera orientation edit was preserved locally and excluded from the commit. No GUI acceptance or real hardware run.",
+  "validation": {
+    "focused_tests": "31 passed",
+    "build": "workcell_builder and ur5_2f_test succeeded; Node DEP0147 deprecation warning only",
+    "broader_legacy_failures": "Five unresolved older checks: missing viewer lifecycle stub in linked undo harness; linked-zone and table fixture assumptions; two native compatibility source-text assertions."
+  }
+}

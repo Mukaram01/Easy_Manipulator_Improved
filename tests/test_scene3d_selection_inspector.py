@@ -11,7 +11,7 @@ def test_inspector_exposes_transform_editor_controls_and_units():
                   'inspector_dim_x_', 'inspector_dim_y_', 'inspector_dim_z_', 'inspector_apply_button_', 'inspector_revert_button_']:
         assert token in MAIN_CPP
     assert 'X position in metres' in MAIN_CPP
-    assert 'Roll in radians' in MAIN_CPP
+    assert 'Roll in degrees' in MAIN_CPP
 
 
 def test_selection_refresh_restore_and_clear_logs_present():
@@ -52,3 +52,19 @@ def test_inspector_prioritizes_authoritative_transform_controls():
     assert MAIN_CPP.count('Selected item source_path: %1') == 1
     for token in ['Read-only details:', 'detection_label:', 'snapshot_source_file:', 'locked_reason:', 'camera_id:', 'frame_id:', 'confidence:', 'Selected item ID: %1', 'Selected item active_visual_source: %1']:
         assert token in MAIN_CPP
+
+
+def test_scene_plan_stop_scene_handoff_uses_canonical_selection_clear():
+    handoff = MAIN_CPP.split('connect(studio_pages_, &QStackedWidget::currentChanged', 1)[1].split('});', 1)[0]
+    assert 'apply_scene_selection(QString(), QStringLiteral("page_handoff"), true, false)' in handoff
+    clear = MAIN_CPP.split('if (selected_id.isEmpty()) {', 1)[1].split('return;', 2)[1]
+    for token in ['current_selected_scene_item_id_.clear()', 'scene_hierarchy_tree_->clearSelection()',
+                  'digital_twin_scene_->clearSelection()', 'scene_hierarchy_tree_->setCurrentItem(nullptr)', 'select_preview_item(QString())',
+                  'sync_selected_item_state()']:
+        assert token in clear
+    select = PREVIEW_CPP.split('void ScenePreviewWidget::select_preview_item(', 1)[1].split('QString ScenePreviewWidget::selected_preview_item_id', 1)[0]
+    assert 'embedded_browser_selected_item_id_ = stable_id' in select
+    assert '} else if (stable_id.isEmpty())' not in select
+    assert '.clearSelection()' in select
+    handoff_clear = PREVIEW_CPP.split('void ScenePreviewWidget::clear_embedded_editor_state_for_scene_handoff()', 1)[1].split('void ScenePreviewWidget::', 1)[0]
+    assert 'select_preview_item(QString())' in handoff_clear

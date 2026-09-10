@@ -49,43 +49,6 @@ items:
     source: environment.yaml
     scene_name: ur5_2f_test
     scene_path: .
-  - id: robot_mount_plate
-    type: fixture
-    role: fixture
-    display_name: Robot Mounting Plate
-    category: environment
-    frame: world
-    layout_item_ref: robot_mount_plate
-    geometry_type: box
-    dimensions:
-      - 0.20000000000000001
-      - 0.20000000000000001
-      - 0.012
-    asset_class: primitive
-    collision:
-      enabled: true
-      mode: primitive_box
-    material:
-      color:
-        - 0.32
-        - 0.34
-        - 0.36
-        - 1
-    pose:
-      xyz:
-        - 0
-        - 0
-        - 0.0070000000000000001
-      rpy:
-        - 0
-        - 0
-        - 0
-    editable: true
-    locked: false
-    source_layer: editable_layout
-    source: environment.yaml
-    scene_name: ur5_2f_test
-    scene_path: .
   - id: target_bin_default
     type: target_bin
     role: target_bin
