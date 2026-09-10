@@ -2,6 +2,8 @@
 
 #include <QRegularExpression>
 
+#include <vector>
+
 namespace workcell_builder
 {
 
@@ -55,6 +57,22 @@ bool command_is_safe(const QString & command, QString * reason)
   }
 
   return true;
+}
+
+QString preview_group_supervisor_path(
+  const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root)
+{
+  const std::vector<boost::filesystem::path> candidates{
+    scene_info.scene_dir.parent_path().parent_path() / "scripts" / "workcell_preview_process_group.py",
+    workspace_root / "src" / "easy_manipulation_deployment" / "scripts" / "workcell_preview_process_group.py"};
+  for (const auto & candidate : candidates) {
+    boost::system::error_code ec;
+    if (boost::filesystem::is_regular_file(candidate, ec) && !ec) {
+      return QString::fromStdString(candidate.string());
+    }
+  }
+  return QString::fromStdString(candidates.front().string());
 }
 
 }  // namespace
@@ -116,17 +134,28 @@ QString build_launch_shell_command(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root)
 {
+  // The QProcess tracks a small supervisor rather than ros2 launch directly.
+  // The supervisor creates an isolated POSIX session/process group for the
+  // launch and owns every descendant. QProcess::terminate() therefore asks the
+  // supervisor to shut down only that owned group (SIGINT -> TERM -> KILL) and
+  // the supervisor does not exit until the group is gone. This prevents RViz,
+  // MoveIt or ros2_control descendants from being orphaned while Studio falsely
+  // reports PREVIEW_STOPPED.
+  const QString supervisor = preview_group_supervisor_path(scene_info, workspace_root);
+
   // All generated scenes currently use the global controller-manager namespace.
   // Starting a second preview therefore creates ambiguous ROS services and can
   // make one spawner load a controller on one manager and configure it on
-  // another.  Fail closed instead of launching a conflicting runtime.  The
+  // another. Fail closed instead of launching a conflicting runtime. The
   // bracketed pgrep pattern intentionally does not match the pgrep process itself.
   return QString(
     "source /opt/ros/humble/setup.bash && source '%1' && "
     "if pgrep -f '[c]ontroller_manager/ros2_control_node' >/dev/null 2>&1; "
     "then echo 'Workcell Studio BLOCKER: another ros2_control preview is already running. Stop the existing simulation before launching a new one.' >&2; exit 73; fi && "
-    "export RCUTILS_COLORIZED_OUTPUT=0 && exec %2")
+    "if [ ! -f '%2' ]; then echo 'Workcell Studio BLOCKER: preview process-group supervisor is missing: %2' >&2; exit 74; fi && "
+    "export RCUTILS_COLORIZED_OUTPUT=0 && exec python3 '%2' -- %3")
     .arg(QString::fromStdString((workspace_root / "install" / "setup.bash").string()),
+      supervisor,
       build_command(scene_info));
 }
 
