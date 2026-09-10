@@ -16,9 +16,11 @@
  <xacro:arg name="table_world_rpy" default=""/>
  <xacro:arg name="camera_world_xyz" default=""/>
  <xacro:arg name="camera_world_rpy" default=""/>
- <xacro:arg name="environment_file" default="$(find ur5_2f_test)/environment.yaml"/>
+ <xacro:arg name="environment_file" default="$(dirname)/../environment.yaml"/>
 
- <!-- The canonical scene-local Robot Home is authored in environment.yaml. -->
+ <!-- The canonical scene-local Robot Home is authored next to this scene package.
+      Use a path relative to this Xacro so source-tree Web3D extraction and the
+      installed ROS package resolve the same file without package discovery. -->
  <xacro:property name="environment_file" default="$(arg environment_file)"/>
  <xacro:property name="workcell_environment" value="${xacro.load_yaml(environment_file)}"/>
  <xacro:property name="workcell_home_joint_state" value="${workcell_environment['robot']['home_joint_state']['joints']}"/>
@@ -76,7 +78,6 @@
  <xacro:sensor_d435i parent="$(arg world_frame)" use_nominal_extrinsics="$(arg use_nominal_extrinsics)">
     <origin xyz="$(arg camera_world_xyz)" rpy="$(arg camera_world_rpy)"/>
  </xacro:sensor_d435i>
-
 
  <link name="camera_frame" />
  <joint name="d435i_to_camera" type="fixed">
