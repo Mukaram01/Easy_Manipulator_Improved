@@ -68,7 +68,11 @@ def test_safe_return_and_cell_definition_match_canonical_home():
 def test_scene_xacro_drives_fake_hardware_initial_state_from_environment_home():
     xacro = (SCENE / "urdf" / "scene.urdf.xacro").read_text(encoding="utf-8")
 
-    assert 'name="environment_file" default="$(find ur5_2f_test)/environment.yaml"' in xacro
+    # Resolve the scene contract relative to the Xacro itself. This must work
+    # both directly from a checkout (Web3D extraction/CI) and from the installed
+    # package without requiring `ur5_2f_test` to be discoverable via ament first.
+    assert 'name="environment_file" default="$(dirname)/../environment.yaml"' in xacro
+    assert '$(find ur5_2f_test)/environment.yaml' not in xacro
     assert 'xacro.load_yaml(environment_file)' in xacro
     assert "['robot']['home_joint_state']['joints']" in xacro
     assert 'initial_positions="${workcell_home_joint_state}"' in xacro
