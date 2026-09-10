@@ -16,11 +16,12 @@
  <xacro:arg name="table_world_rpy" default=""/>
  <xacro:arg name="camera_world_xyz" default=""/>
  <xacro:arg name="camera_world_rpy" default=""/>
- <xacro:arg name="environment_file" default="$(dirname)/../environment.yaml"/>
+ <xacro:arg name="environment_file" default="$(find ur5_2f_test)/environment.yaml"/>
 
- <!-- The canonical scene-local Robot Home is authored next to this scene package.
-      Use a path relative to this Xacro so source-tree Web3D extraction and the
-      installed ROS package resolve the same file without package discovery. -->
+ <!-- The canonical scene-local Robot Home is installed with this package.
+      Resolve it through the ROS package index. `$(dirname)` is not valid here
+      when xacro is expanded through the launch helper because xacro has no
+      substitution file/directory context for that expression. -->
  <xacro:property name="environment_file" default="$(arg environment_file)"/>
  <xacro:property name="workcell_environment" value="${xacro.load_yaml(environment_file)}"/>
  <xacro:property name="workcell_home_joint_state" value="${workcell_environment['robot']['home_joint_state']['joints']}"/>
