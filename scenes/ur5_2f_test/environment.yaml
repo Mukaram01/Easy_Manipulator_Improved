@@ -19,13 +19,22 @@ robot:
   - 0
   - 0
   home_named_target: home
+  home_joint_state:
+    source: canonical_scene
+    joints:
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707963267948966
+      elbow_joint: 1.5707963267948966
+      wrist_1_joint: -1.5707963267948966
+      wrist_2_joint: -1.5707963267948966
+      wrist_3_joint: 0.0
   safe_joint_state:
-  - 0
-  - -1.57079632679
-  - 0
-  - -1.57079632679
-  - 0
-  - 0
+  - 0.0
+  - -1.5707963267948966
+  - 1.5707963267948966
+  - -1.5707963267948966
+  - -1.5707963267948966
+  - 0.0
   joint_names:
   - shoulder_pan_joint
   - shoulder_lift_joint

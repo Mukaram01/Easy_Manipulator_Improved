@@ -119,7 +119,7 @@ jobs:
           rc=$?
           if [ $rc -ne 0 ]; then
             printf '%s\n' "$output"
-            MATRIX_FAILURE_REASON="Run static acceptance tests failed; see job log for details." python3 - <<'PY'
+            MATRIX_FAILURE_REASON="Run static acceptance tests failed: $output" python3 - <<'PY'
           import json, os
           from pathlib import Path
           path = Path('build/web3d_supported_scenes_matrix.json')
