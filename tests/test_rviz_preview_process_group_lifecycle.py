@@ -47,7 +47,7 @@ def _cleanup(process: subprocess.Popen, pgid: int) -> None:
     if process.poll() is None:
         process.terminate()
         try:
-            process.wait(timeout=4)
+            process.wait(timeout=8)
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=1)
@@ -76,7 +76,7 @@ def test_preview_group_is_isolated_and_stop_removes_descendants_without_touching
         # into graceful SIGINT for the isolated preview group and waits for every
         # descendant before the tracked supervisor exits.
         process.terminate()
-        assert process.wait(timeout=5) == 0
+        assert process.wait(timeout=8) == 0
         assert not _group_alive(pgid)
         assert unrelated.poll() is None
 
@@ -109,7 +109,7 @@ def test_preview_group_escalates_to_term_and_kill_when_children_ignore_graceful_
         ready = {process.stdout.readline().strip(), process.stdout.readline().strip()}
         assert ready == {"parent-ready", "child-ready"}
         process.terminate()
-        assert process.wait(timeout=6) == 0
+        assert process.wait(timeout=8) == 0
         diagnostics = process.stderr.read()
         assert "signal=SIGINT" in diagnostics
         assert "signal=SIGTERM" in diagnostics
@@ -128,7 +128,7 @@ def test_leader_exit_with_live_descendant_is_cleaned_and_not_reported_as_success
     code = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child!r}])"
     process, _leader_pid, pgid, _sid = _start_supervised_python(code)
     try:
-        assert process.wait(timeout=6) == 75
+        assert process.wait(timeout=8) == 75
         diagnostics = process.stderr.read()
         assert "leader exited" in diagnostics
         assert "still had descendants" in diagnostics
@@ -147,7 +147,7 @@ def test_second_preview_launch_after_stop_gets_a_fresh_owned_group():
         try:
             assert process.stdout.readline().strip() == "preview-ready"
             process.terminate()
-            assert process.wait(timeout=5) == 0
+            assert process.wait(timeout=8) == 0
             assert not _group_alive(pgid)
         finally:
             _cleanup(process, pgid)
@@ -163,3 +163,46 @@ def test_product_launch_command_routes_only_the_preview_through_supervisor():
     assert "[c]ontroller_manager/ros2_control_node" in source
     assert "killall" not in source
     assert "pkill ros2" not in source
+
+
+def test_launch_leader_cascades_sigint_to_child_exactly_once():
+    child = """import signal,time
+count=0
+def stop(sig, frame):
+ global count
+ count+=1
+ print('child-sigint',flush=True)
+ time.sleep(.2)
+ raise SystemExit(0)
+signal.signal(signal.SIGINT,stop)
+print('child-ready',flush=True)
+while True: time.sleep(.05)
+"""
+    code = f"""import subprocess,signal,sys,time
+child=subprocess.Popen([sys.executable,'-c',{child!r}])
+def stop(sig, frame):
+ child.send_signal(signal.SIGINT)
+ child.wait()
+ raise SystemExit(0)
+signal.signal(signal.SIGINT,stop)
+while True: time.sleep(.05)
+"""
+    process, _, pgid, _ = _start_supervised_python(code)
+    try:
+        assert process.stdout.readline().strip() == 'child-ready'
+        process.terminate()
+        assert process.wait(timeout=8) == 0
+        assert process.stdout.read().splitlines() == ['child-sigint']
+        assert not _group_alive(pgid)
+        assert 'signal=SIGTERM' not in process.stderr.read()
+    finally:
+        _cleanup(process, pgid)
+
+
+def test_gui_watchdog_outlasts_supervisor_cleanup():
+    import runpy
+    supervisor = runpy.run_path(str(SUPERVISOR))
+    budget = sum(supervisor[key] for key in ('SIGINT_GRACE_SECONDS', 'SIGTERM_GRACE_SECONDS', 'SIGKILL_VERIFY_SECONDS')) + .3
+    main = (REPO_ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text()
+    assert 'QTimer::singleShot(8000' in main
+    assert budget < 8

@@ -10,7 +10,7 @@ import time
 from typing import Sequence
 
 POLL_INTERVAL_SECONDS = 0.05
-SIGINT_GRACE_SECONDS = 1.0
+SIGINT_GRACE_SECONDS = 5.0
 SIGTERM_GRACE_SECONDS = 0.7
 SIGKILL_VERIFY_SECONDS = 0.4
 
@@ -62,8 +62,14 @@ def _signal_group(pgid: int, sig: int) -> bool:
 
 
 def _shutdown_group(proc: subprocess.Popen, pgid: int) -> bool:
+    # ros2 launch cascades SIGINT itself. Signalling its children concurrently
+    # races controller teardown; retain group signalling for hard fallback only.
+    if proc.poll() is None:
+        print(f"Workcell Studio preview leader shutdown: pid={proc.pid} signal=SIGINT",
+              file=sys.stderr, flush=True)
+        proc.send_signal(signal.SIGINT)
+        _wait_group_gone(proc, pgid, SIGINT_GRACE_SECONDS)
     stages = (
-        (signal.SIGINT, SIGINT_GRACE_SECONDS, "SIGINT"),
         (signal.SIGTERM, SIGTERM_GRACE_SECONDS, "SIGTERM"),
         (signal.SIGKILL, SIGKILL_VERIFY_SECONDS, "SIGKILL"),
     )

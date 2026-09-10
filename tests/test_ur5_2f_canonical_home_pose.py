@@ -18,11 +18,11 @@ JOINT_ORDER = [
     "wrist_3_joint",
 ]
 EXPECTED_HOME = {
-    "shoulder_pan_joint": 0.0,
-    "shoulder_lift_joint": -math.pi / 2.0,
-    "elbow_joint": math.pi / 2.0,
-    "wrist_1_joint": -math.pi / 2.0,
-    "wrist_2_joint": -math.pi / 2.0,
+    "shoulder_pan_joint": 1.57,
+    "shoulder_lift_joint": -2.35,
+    "elbow_joint": 1.83,
+    "wrist_1_joint": -1.03,
+    "wrist_2_joint": -1.57,
     "wrist_3_joint": 0.0,
 }
 
@@ -89,13 +89,27 @@ def test_product_view_preview_home_matches_canonical_scene_home():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    # Product View currently uses this deterministic preview posture when the
-    # shared UR5 MoveIt initial-position file is all zero. Keep it in parity with
-    # the canonical scene home until the extractor consumes scene home directly.
+    # Exercise the actual expanded-URDF startup boundary, not a second pose constant.
+    controls = ''.join(
+        f'<joint name="{name}"><state_interface name="position">'
+        f'<param name="initial_value">{value}</param></state_interface></joint>'
+        for name, value in canonical_home.items())
+    links = '<link name="world"/>'
+    parent = 'world'
     for name in JOINT_ORDER:
-        assert math.isclose(
-            float(module.UR5_PREVIEW_HOME_JOINT_POSE[name]),
-            float(canonical_home[name]),
-            rel_tol=0.0,
-            abs_tol=1e-4,
-        ), name
+        links += f'<link name="{name}_link"/><joint name="{name}" type="revolute"><parent link="{parent}"/><child link="{name}_link"/><axis xyz="0 0 1"/></joint>'
+        parent = name + '_link'
+    _, diagnostics = module.extract_from_urdf(
+        f'<robot name="test">{links}<ros2_control name="test" type="system">{controls}</ros2_control></robot>',
+        {}, include_diagnostics=True)
+    assert diagnostics['initial_joint_source'] == 'ros2_control.initial_value'
+    _assert_joint_map_close(diagnostics['ur5_preview_joint_pose']['joints'], canonical_home)
+
+
+def test_direct_workbench_mount_has_only_mesh_precision_clearance():
+    environment = _load_yaml(SCENE / "environment.yaml")
+    layout = _load_yaml(SCENE / "layout/workcell_studio_layout.yaml")
+    assert 'robot_mount_plate' not in {item['id'] for item in layout['items']}
+    assert 'robot_mount_plate' not in {item['id'] for item in environment['assets']}
+    table = next(item for item in layout['items'] if item['id'] == 'support_surface_table')
+    assert math.isclose(environment['robot']['pose_xyz'][2] - table['surface_z_m'], 1e-5, abs_tol=1e-10)

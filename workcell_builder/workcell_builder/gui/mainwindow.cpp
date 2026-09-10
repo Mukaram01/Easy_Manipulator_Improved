@@ -3719,6 +3719,9 @@ void MainWindow::setup_studio_shell()
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
   connect(studio_pages_, &QStackedWidget::currentChanged, this, [this](int idx) {
+    // A page handoff clears selection through the same owner as hierarchy,
+    // Inspector and both renderers, including a retained Product View page.
+    apply_scene_selection(QString(), QStringLiteral("page_handoff"), true, false);
     if (idx == static_cast<int>(StudioPage::DashboardPage)) refresh_scene_browser_ui();
   });
   show_studio_page(StudioPage::DashboardPage);
@@ -4220,7 +4223,10 @@ bool MainWindow::save_authored_environment_from_layout(QString * error)
   QProcess process;
   // The merge helper takes the scene directory as its positional argument.
   // Keep this call aligned with the helper used by Generate/Validate.
-  process.start("python3", {script, selected_scene_path()});
+  QStringList arguments{script, selected_scene_path()};
+  for (const auto & id : deleted_layout_item_ids_)
+    arguments << QStringLiteral("--deleted-item-id") << id;
+  process.start("python3", arguments);
   if (!process.waitForFinished(60000)) {
     process.kill(); process.waitForFinished(1000);
     if (error) *error = "Save failed: authored layout projection timed out; inspect environment.yaml and retained layout edits";
@@ -6307,7 +6313,24 @@ void MainWindow::run_fake_hardware_preview()
   // Compatibility entry point: all previews use the guarded build/discover/launch pipeline.
   run_preview_build();
 }
-void MainWindow::stop_preview_process(){ if(!preview_process_ || preview_process_->state()==QProcess::NotRunning) return; preview_stop_requested_=true; set_preview_state("PREVIEW_STOPPING"); append_studio_log("Stopping RViz..."); preview_process_->terminate(); QTimer::singleShot(3000, this, [this]() { if(preview_process_ && preview_process_->state()!=QProcess::NotRunning){ append_studio_log("RViz graceful shutdown timed out; killing only the Workcell Studio-owned preview process."); preview_process_->kill(); } }); }
+void MainWindow::stop_preview_process()
+{
+  if (!preview_process_ || preview_process_->state() == QProcess::NotRunning || preview_stop_requested_) return;
+  preview_stop_requested_ = true;
+  set_preview_state("PREVIEW_STOPPING");
+  append_studio_log("Stopping RViz...");
+  const qint64 stopping_pid = preview_process_->processId();
+  preview_process_->terminate();
+  // Supervisor: 5s launch-led SIGINT + .7s TERM + .4s KILL verification.
+  // Bind the watchdog to this invocation so it cannot kill a second launch.
+  QTimer::singleShot(8000, this, [this, stopping_pid]() {
+    if (preview_process_ && preview_process_->state() != QProcess::NotRunning &&
+        preview_process_->processId() == stopping_pid) {
+      append_studio_log("RViz graceful shutdown timed out; killing only the Workcell Studio-owned preview process.");
+      preview_process_->kill();
+    }
+  });
+}
 void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out=QString::fromUtf8(preview_process_->readAllStandardOutput()); preview_output_tail_=(preview_output_tail_+out).right(4000); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[process stdout] "+out.trimmed()); }
 void MainWindow::handle_preview_stderr(){ if(!preview_process_) return; const QString err=QString::fromUtf8(preview_process_->readAllStandardError()); preview_output_tail_=(preview_output_tail_+err).right(4000); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[process stderr] "+err.trimmed()); }
 void MainWindow::handle_preview_started(){ append_studio_log(preview_state_=="PREVIEW_LAUNCHING" ? "Launching RViz..." : QString("Process started: stage=%1 pid=%2").arg(preview_state_).arg(preview_process_->processId())); if(preview_state_=="PREVIEW_LAUNCHING"){ set_preview_state("PREVIEW_RUNNING"); append_studio_log("RViz running"); } }
@@ -7519,7 +7542,10 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     if (!intentional_clear) return;
     current_selected_scene_item_id_.clear();
     selection_update_guard_ = true;
-    if (scene_hierarchy_tree_) scene_hierarchy_tree_->clearSelection();
+    if (scene_hierarchy_tree_) {
+      scene_hierarchy_tree_->clearSelection();
+      scene_hierarchy_tree_->setCurrentItem(nullptr);
+    }
     if (digital_twin_scene_) digital_twin_scene_->clearSelection();
     if (scene_preview_widget_) scene_preview_widget_->select_preview_item(QString());
     selection_update_guard_ = false;

@@ -10,10 +10,11 @@ robot:
   base_frame: base_link
   planning_group: manipulator
   tool_mount_link: tool0
+  # Direct mount on surface_z_m=0; 10 um clears collision-mesh rounding.
   pose_xyz:
   - 0
   - 0
-  - 0.0135
+  - 0.00001
   pose_rpy:
   - 0
   - 0
@@ -22,18 +23,18 @@ robot:
   home_joint_state:
     source: canonical_scene
     joints:
-      shoulder_pan_joint: 0.0
-      shoulder_lift_joint: -1.5707963267948966
-      elbow_joint: 1.5707963267948966
-      wrist_1_joint: -1.5707963267948966
-      wrist_2_joint: -1.5707963267948966
+      shoulder_pan_joint: 1.57
+      shoulder_lift_joint: -2.35
+      elbow_joint: 1.83
+      wrist_1_joint: -1.03
+      wrist_2_joint: -1.57
       wrist_3_joint: 0.0
   safe_joint_state:
-  - 0.0
-  - -1.5707963267948966
-  - 1.5707963267948966
-  - -1.5707963267948966
-  - -1.5707963267948966
+  - 1.57
+  - -2.35
+  - 1.83
+  - -1.03
+  - -1.57
   - 0.0
   joint_names:
   - shoulder_pan_joint
@@ -150,37 +151,6 @@ environment:
     catalog_asset_id: table_standard_1200
     surface_z_m: 0.0
   assets:
-  - &id013
-    id: robot_mount_plate
-    type: fixture
-    role: fixture
-    display_name: Robot Mounting Plate
-    category: environment
-    frame: world
-    pose_xyz:
-    - 0
-    - 0
-    - 0.007
-    pose_rpy:
-    - 0
-    - 0
-    - 0
-    layout_item_ref: robot_mount_plate
-    geometry_type: box
-    dimensions:
-    - 0.2
-    - 0.2
-    - 0.012
-    asset_class: primitive
-    collision:
-      enabled: true
-      mode: primitive_box
-    material:
-      color:
-      - 0.32
-      - 0.34
-      - 0.36
-      - 1
   - &id014
     id: target_bin_default
     type: target_bin
@@ -423,7 +393,6 @@ task_zones:
 support_surfaces:
 - *id012
 assets:
-- *id013
 - *id014
 - *id015
 perception:

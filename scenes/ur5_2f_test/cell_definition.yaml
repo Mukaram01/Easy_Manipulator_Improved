@@ -15,7 +15,7 @@ robot:
     xyz: &id001
     - 0
     - 0
-    - 0.0135
+    - 0.00001
     rpy: &id002
     - 0
     - 0
@@ -24,11 +24,11 @@ robot:
   tool_link: tool0
   home_named_target: home
   safe_joint_state:
-  - 0.0
-  - -1.5707963267948966
-  - 1.5707963267948966
-  - -1.5707963267948966
-  - -1.5707963267948966
+  - 1.57
+  - -2.35
+  - 1.83
+  - -1.03
+  - -1.57
   - 0.0
   joint_names:
   - shoulder_pan_joint

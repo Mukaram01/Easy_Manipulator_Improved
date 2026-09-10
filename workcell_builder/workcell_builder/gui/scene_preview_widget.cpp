@@ -1578,7 +1578,7 @@ void ScenePreviewWidget::clear_embedded_editor_state_for_scene_handoff()
   cancel_embedded_asset_placement();
   ++embedded_editor_state_request_token_;
   embedded_editor_polling_ = false;
-  selected_preview_item_id_.clear();
+  select_preview_item(QString());
   embedded_browser_selected_item_id_.clear();
   native_authoring_can_undo_ = false;
   native_authoring_can_redo_ = false;
@@ -3846,11 +3846,18 @@ void ScenePreviewWidget::select_preview_item(const QString & id){
     return;
   }
   selected_preview_item_id_ = stable_id;
-  if (auto * v = active_native_viewport()) {
-    v->selected_id = stable_id;
-    v->update();
-  } else if (stable_id.isEmpty()) {
-    run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.clearSelection()"));
+  embedded_browser_selected_item_id_ = stable_id;
+  for (auto * v : {qobject_cast<Scene3DViewportWidget *>(simple_3d_view_), compatibility_scene3d_viewport_}) {
+    if (v) { v->selected_id = stable_id; v->update(); }
+  }
+  if (stable_id.isEmpty()) {
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+    // Selection clearing is also required on a retained, hidden browser page.
+    // It is not a live authoring edit and must not depend on the active backend.
+    ++embedded_editor_state_request_token_;
+    if (embedded_web_view_) embedded_web_view_->page()->runJavaScript(QStringLiteral(
+      "window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.clearSelection()"));
+#endif
   } else {
     run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__&&window.__WORKCELL_EDITOR_API_V1__.selectItem(%1)").arg(QString::fromUtf8(QJsonDocument(QJsonArray{stable_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1)));
   }
@@ -3925,7 +3932,7 @@ void ScenePreviewWidget::on_fit_scene_clicked(){ auto *v = active_native_viewpor
 void ScenePreviewWidget::on_fit_robot_clicked(){ auto *v = active_native_viewport(); if (v) v->fit_robot(); fit_fallback_scene_to_items(false); }
 void ScenePreviewWidget::on_fit_overlays_clicked(){ auto *v = active_native_viewport(); const QRectF physical_bounds = rendered_items_bounds_2d(false); const QRectF overlay_bounds = rendered_items_bounds_2d(true); maybe_warn_overlay_fit_dominance(this, physical_bounds, overlay_bounds); if (v) { v->fit_include_overlays = true; v->fit_scene(); } fit_fallback_scene_to_items(true); if (v) v->fit_include_overlays = false; } // Fit overlays includes overlay bounds for explicit overlay-focused framing.
 void ScenePreviewWidget::on_focus_selected_clicked(){ if (auto * v = active_native_viewport()) v->focus_selected(); }
-void ScenePreviewWidget::on_clear_selection_clicked(){ selected_preview_item_id_.clear(); if (auto * v = active_native_viewport()) { v->selected_id.clear(); v->update(); } if (simple_3d_view_) simple_3d_view_->update(); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
+void ScenePreviewWidget::on_clear_selection_clicked(){ select_preview_item(QString()); emit studio_log_requested("Cleared preview selection."); emit preview_item_selected(QString(), QStringLiteral("unknown")); }
 void ScenePreviewWidget::refresh_toolbar_visibility()
 {
   if (view_actions_selector_) {

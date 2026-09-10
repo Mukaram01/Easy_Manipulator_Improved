@@ -10,7 +10,7 @@
  <xacro:arg name="gripper_profile" default="robotiq_85_gripper"/>
  <xacro:arg name="grasp_frame" default="ee_palm"/>
  <xacro:arg name="use_fake_hardware" default="true"/>
- <xacro:arg name="robot_world_xyz" default="0 0 0.0135"/>
+ <xacro:arg name="robot_world_xyz" default="0 0 0.00001"/>
  <xacro:arg name="robot_world_rpy" default="0 0 0"/>
  <xacro:arg name="table_world_xyz" default=""/>
  <xacro:arg name="table_world_rpy" default=""/>

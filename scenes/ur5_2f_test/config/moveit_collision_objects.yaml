@@ -3,42 +3,12 @@ scene_name: ur5_2f_test
 planning_frame: world
 source:
   canonical_layout: layout/workcell_studio_layout.yaml
-  canonical_layout_sha256: 5cea23b60c2e44e8868a0dba3387af68991561379a958a611f46e7bbadcbe519
+  canonical_layout_sha256: 526b9be7a8c61c8475c19ce42c1064767ba2bf698bb06ce6c0f3fdf3533df173
 truth_boundary:
   authoring_visualization: Workcell Studio Web3D
   viewer_aabb_feedback: advisory_only
   collision_and_planning_truth: MoveIt PlanningScene
 objects:
-- id: workcell::robot_mount_plate
-  source_item_id: robot_mount_plate
-  frame_id: world
-  semantic_role: fixture
-  operation: ADD
-  pose:
-    xyz:
-    - 0.0
-    - 0.0
-    - 0.007
-    rpy:
-    - 0.0
-    - 0.0
-    - 0.0
-    quaternion_xyzw:
-    - 0.0
-    - 0.0
-    - 0.0
-    - 1.0
-  source_geometry:
-    type: box
-  collision_geometry:
-    type: box
-    dimensions_m:
-    - 0.2
-    - 0.2
-    - 0.012
-    fidelity: primitive_box
-    review_required: false
-    bounds_source: authored_dimensions
 - id: workcell::support_surface_table
   source_item_id: support_surface_table
   frame_id: world
@@ -90,7 +60,7 @@ objects:
   operation: ADD
   pose:
     xyz:
-    - 0.45
+    - 0.47
     - 0.22
     - 0.1
     rpy:
@@ -1562,7 +1532,7 @@ excluded_items:
 - id: realsense_overhead
   reason: collision supplied by robot_description link camera_link
 summary:
-  collision_object_count: 3
+  collision_object_count: 2
   excluded_item_count: 3
   box_proxy_count: 1
   exact_mesh_collision_count: 1

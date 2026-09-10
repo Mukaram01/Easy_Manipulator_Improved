@@ -23,7 +23,7 @@ def _index(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             out[str(it['id'])] = dict(it)
     return out
 
-def merge(scene_dir: Path) -> dict[str, Any]:
+def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None) -> dict[str, Any]:
     if not scene_dir.exists() or not scene_dir.is_dir():
         return {
             'status': 'BLOCKED',
@@ -40,6 +40,25 @@ def merge(scene_dir: Path) -> dict[str, Any]:
     layout = _load(scene_dir/'layout'/'workcell_studio_layout.yaml')
     intent = _load(scene_dir/'config'/'workcell_builder_task_intent.yaml')
     recipe = _load(scene_dir/'config'/'task_recipe.yaml')
+    # Native Save owns structural edits. Consume its tombstones before clearing
+    # them: an additive cache merge cannot delete canonical environment records.
+    deleted = set(deleted_item_ids or [])
+    def without_deleted(value):
+        if isinstance(value, list):
+            return [without_deleted(item) for item in value
+                    if not (isinstance(item, dict) and
+                            (str(item.get('id', '')) in deleted or
+                             str(item.get('layout_item_ref', '')) in deleted))]
+        if isinstance(value, dict):
+            return {key: without_deleted(item) for key, item in value.items()}
+        return value
+    if deleted:
+        if any(str(item.get('id', '')) in deleted for item in layout.get('items', []) if isinstance(item, dict)):
+            raise ValueError('Deleted IDs still exist in saved layout; refusing environment projection')
+        env = without_deleted(env)
+        manifest = without_deleted(manifest)
+        _save_yaml(scene_dir/'environment.yaml', env)
+        _save_yaml(scene_dir/'scene_manifest.yaml', manifest)
     generated = scene_dir/'generated'; generated.mkdir(exist_ok=True)
 
     warnings: list[str] = []
@@ -104,6 +123,7 @@ def merge(scene_dir: Path) -> dict[str, Any]:
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('scene_dir', type=Path); ap.add_argument('--json', action='store_true')
-    a = ap.parse_args(); rep = merge(a.scene_dir)
+    ap.add_argument('--deleted-item-id', action='append', default=[])
+    a = ap.parse_args(); rep = merge(a.scene_dir, a.deleted_item_id)
     if a.json: print(json.dumps(rep, indent=2))
     raise SystemExit(0 if rep.get('status') == 'READY' else 2)
