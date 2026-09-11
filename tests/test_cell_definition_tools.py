@@ -738,3 +738,26 @@ class CellDefinitionCapabilityRegistryPathTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+
+def test_mesh_support_surface_uses_collision_geometry_without_primitive_dimensions(tmp_path):
+    import copy
+    fixture = FIXTURES / 'cell_definition_pick_place.yaml'
+    data, parser, notes = validator.load_yaml(fixture)
+    surface = data['environment']['support_surfaces'][0]
+    surface.pop('dimensions', None)
+    surface['geometry_type'] = 'mesh'
+    surface['mesh'] = {'path': 'package://workbench_description/meshes/visual/table.stl', 'scale': [0.001] * 3}
+    surface['collision'] = {'enabled': True, 'mode': 'box_proxy'}
+    result = validator.validate_cell_definition(data, tmp_path / 'cell_definition.yaml', parser, notes)
+    assert not [e for e in result.errors if 'support_surfaces' in e], result.errors
+    broken = copy.deepcopy(data)
+    broken['environment']['support_surfaces'][0]['mesh']['path'] = 'missing_fixture.stl'
+    result = validator.validate_cell_definition(broken, tmp_path / 'cell_definition.yaml', parser, notes)
+    assert any('mesh/collision contract' in e for e in result.errors)
+    primitive = copy.deepcopy(data)
+    surface = primitive['environment']['support_surfaces'][0]
+    surface.pop('mesh')
+    surface['geometry_type'] = 'box'
+    result = validator.validate_cell_definition(primitive, tmp_path / 'cell_definition.yaml', parser, notes)
+    assert any('dimensions' in e for e in result.errors)

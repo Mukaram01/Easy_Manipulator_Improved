@@ -21,15 +21,6 @@ UR5_INITIAL_JOINT_DEFAULTS = {
     "wrist_2_joint": 0.0,
     "wrist_3_joint": 0.0,
 }
-UR5_PREVIEW_HOME_JOINT_POSE = {
-    "shoulder_pan_joint": 0.0,
-    "shoulder_lift_joint": -1.5708,
-    "elbow_joint": 1.5708,
-    "wrist_1_joint": -1.5708,
-    "wrist_2_joint": -1.5708,
-    "wrist_3_joint": 0.0,
-}
-UR5_PREVIEW_ALL_ZERO_EPSILON = 1e-6
 UR5_VISUAL_MESH_URI_PREFIX = "package://ur_description/meshes/ur5/visual/"
 UR5_ARM_LINK_ALLOWLIST = {
     "base_link_inertia",
@@ -869,10 +860,14 @@ def _extract_scene_launch_xacro_request(scene_dir, cli_xacro_args):
                     key = _literal_or_name_value(key_node, constants, launch_config_vars, cli_xacro_args)
                     if key:
                         mappings[key] = _literal_or_name_value(value_node, constants, launch_config_vars, cli_xacro_args)
-        canonical_layout = Path(scene_dir) / "layout" / "workcell_studio_layout.yaml"
+        canonical_layout = Path(scene_dir) / "environment.yaml"
         if canonical_layout.exists():
             try:
-                layout_data = yaml.safe_load(canonical_layout.read_text()) or {}
+                environment_data = yaml.safe_load(canonical_layout.read_text()) or {}
+                physical = environment_data.get("environment", {})
+                layout_data = {"items": [dict(item, pose=item.get("pose") or {"xyz": item.get("pose_xyz"), "rpy": item.get("pose_rpy")})
+                                         for section in ("assets", "sensors", "support_surfaces")
+                                         for item in physical.get(section, [])]}
                 mapping_contract = {
                     "table_world_xyz": ("support_surface", "xyz"),
                     "table_world_rpy": ("support_surface", "rpy"),
@@ -1433,8 +1428,6 @@ def build_ur5_fk_preview_model(joint_positions=None, ur5_config=None):
     kin = ur5_config.get('kinematics') or {}
     joints = dict(UR5_INITIAL_JOINT_DEFAULTS)
     joints.update({str(k): float(v) for k, v in (joint_positions or {}).items()})
-    if all(abs(float(joints.get(name, 0.0))) <= UR5_PREVIEW_ALL_ZERO_EPSILON for name in UR5_INITIAL_JOINT_DEFAULTS):
-        joints.update(UR5_PREVIEW_HOME_JOINT_POSE)
     specs = [
         ('base_link', '', '', 'fixed', {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, 0.0]}, 0.0),
         ('base_link_inertia', 'base_link', 'base_link-base_link_inertia', 'fixed', {'xyz': [0.0, 0.0, 0.0], 'rpy': [0.0, 0.0, math.pi]}, 0.0),
@@ -1565,7 +1558,7 @@ def append_static_ur5_mesh_visuals(items, package_map, authoritative_links=None)
         link_world_pose = fk['world_pose']
         parent_link = fk.get('parent_link') or 'world'
         joint_value_source = 'zero_default' if fk.get('joint_type') == 'fixed' else (
-            'workcell_preview_home_pose_all_zero_initial_positions'
+            joint_source
             if preview_joint_pose else
             ('fake-hardware default' if fk.get('joint_name') in joint_defaults_used else joint_source)
         )
@@ -1806,22 +1799,13 @@ def read_ur5_initial_joint_positions(path=UR5_INITIAL_POSITIONS_PATH):
     joint_defaults_used = sorted(name for name in defaults if name not in provided)
     source = 'initial_positions.yaml'
     print(f'[scene_visual_mesh_index] UR5 initial joint source: {path.name}')
-    if all(abs(float(resolved.get(name, 0.0))) <= UR5_PREVIEW_ALL_ZERO_EPSILON for name in UR5_INITIAL_JOINT_DEFAULTS):
-        resolved = dict(UR5_PREVIEW_HOME_JOINT_POSE)
-        joint_defaults_used = sorted(UR5_PREVIEW_HOME_JOINT_POSE.keys())
-        preview_pose_metadata = {
-            'source': 'workcell_preview_home_pose_all_zero_initial_positions',
-            'joints': dict(resolved),
-        }
-        print('[scene_visual_mesh_index] UR5 initial joint values were all zero; using Workcell Studio preview home pose')
-        print('[scene_visual_mesh_index] UR5 preview joint values:')
-        for name in UR5_INITIAL_JOINT_DEFAULTS:
-            print(f'[scene_visual_mesh_index]   {name}: {resolved[name]}')
     return resolved, source, preview_pose_metadata, joint_defaults_used
 
 def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
     root=ET.fromstring(xml_text); items=[]; idx=0
-    initial_joint_positions, initial_joint_source, ur5_preview_joint_pose, joint_defaults_used = read_ur5_initial_joint_positions()
+    initial_joint_positions = {joint.get('name'): 0.0 for joint in root.findall('joint')
+                               if joint.get('type') in {'revolute', 'continuous', 'prismatic'}}
+    initial_joint_source, ur5_preview_joint_pose, joint_defaults_used = 'zero_default', {}, []
     # Expanded ros2_control is the startup contract for this scene, including
     # scene-local home overrides. Global preview defaults are fallback only.
     for control in root.findall('ros2_control'):
@@ -1832,6 +1816,18 @@ def extract_from_urdf(xml_text, package_map, include_diagnostics=False):
                 initial_joint_positions[name] = float(initial.text)
                 joint_defaults_used = [key for key in joint_defaults_used if key != name]
                 initial_joint_source = 'ros2_control.initial_value'
+    mimic_joints = {joint.get('name'): joint.find('mimic') for joint in root.findall('joint')
+                    if joint.find('mimic') is not None}
+    def initial_value(name, seen=()):
+        if name in seen:
+            raise ValueError(f'Cyclic URDF mimic joint: {name}')
+        mimic = mimic_joints.get(name)
+        if mimic is None:
+            return initial_joint_positions.get(name, 0.0)
+        return (initial_value(mimic.get('joint'), (*seen, name)) * float(mimic.get('multiplier', 1))
+                + float(mimic.get('offset', 0)))
+    for name in mimic_joints:
+        initial_joint_positions[name] = initial_value(name)
     if initial_joint_source == 'ros2_control.initial_value':
         ur5_preview_joint_pose = {'source': initial_joint_source, 'joints': dict(initial_joint_positions)}
     diagnostics={

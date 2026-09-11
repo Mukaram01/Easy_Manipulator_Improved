@@ -55,7 +55,7 @@ def _is_existing_package_generator_owned_output(relative_path: Path) -> bool:
     """
     if len(relative_path.parts) > 1 and relative_path.parts[0] == "generated":
         return True
-    return relative_path.as_posix() in {"urdf/generated_asset_metadata.yaml", "config/moveit_collision_objects.yaml"}
+    return relative_path.as_posix() in {"urdf/generated_asset_metadata.yaml", "config/moveit_collision_objects.yaml", "cell_definition.yaml"}
 
 
 def _load_module(module_name: str, module_path: Path):
@@ -1357,6 +1357,14 @@ def _build_contract_layout(package_name: str, loaded: dict[str, Any], source_sna
             "metadata": {"generated_by": "generate_workcell_from_cell_definition.py", "source": "empty_fallback"},
         }
     normalized = _normalize_workcell_studio_layout(copy.deepcopy(layout))
+    physical = (source_snapshot.get("environment") or {}).get("environment")
+    if isinstance(physical, dict):
+        # The layout representation here feeds generated physical inventories.
+        # Its editor-only records cannot introduce runtime assets.
+        normalized["items"] = [dict(copy.deepcopy(item), pose=item.get("pose") or {
+            "xyz": item.get("pose_xyz", [0, 0, 0]), "rpy": item.get("pose_rpy", [0, 0, 0])})
+            for section in ("support_surfaces", "assets", "sensors", "task_zones")
+            for item in physical.get(section, [])]
     metadata = normalized.get("metadata") if isinstance(normalized.get("metadata"), dict) else {}
     metadata.setdefault("generated_by", "generate_workcell_from_cell_definition.py")
     metadata.setdefault("scene_package", package_name)
@@ -1668,6 +1676,25 @@ def generate_package(
             return 2
         final_package_dir = existing_package_dir
     source_snapshot = _snapshot_scene_package_inputs(cell_definition_path, final_package_dir, loaded, warnings)
+    # The handoff carries authored physical state; layout remains editor metadata.
+    authored_physical = (source_snapshot.get("environment") or {}).get("environment")
+    if isinstance(authored_physical, dict):
+        loaded["environment"] = copy.deepcopy(authored_physical)
+        surfaces = loaded["environment"].get("support_surfaces", [])
+        if any(not surface.get("dimensions") and surface.get("mesh") for surface in surfaces):
+            collision = _load_module("scene_collision_manifest", SCRIPTS_DIR / "generate_moveit_collision_manifest.py")
+            manifest = collision.load_and_build(Path(source_snapshot["source_scene_dir"]) / "layout/workcell_studio_layout.yaml", scene_name=package_name)
+            objects = {item["source_item_id"]: item for item in manifest["objects"]}
+            for surface in surfaces:
+                if not surface.get("dimensions") and surface.get("mesh"):
+                    geometry = objects.get(surface["id"], {}).get("collision_geometry", {})
+                    dimensions = geometry.get("dimensions_m")
+                    if not dimensions:
+                        raise ValueError(f"Cannot derive support-surface dimensions from authoritative mesh: {surface['id']}")
+                    surface["dimensions"] = dimensions
+                    surface["dimensions_source"] = "derived_from_environment_mesh_bounds"
+        source_snapshot["cell_definition_text"] = yaml.safe_dump(loaded, sort_keys=False)
+
     if final_package_dir.exists() and not force and existing_package_dir is None:
         print(f"FAIL: Output package already exists: {final_package_dir} (use --force to overwrite)")
         return 1

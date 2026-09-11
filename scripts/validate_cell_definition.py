@@ -454,7 +454,28 @@ def validate_cell_definition(
                 result.errors.append(f"environment.support_surfaces[{idx}] must be a mapping.")
                 continue
             _validate_pose(result, f"environment.support_surfaces[{idx}]", surface)
-            _validate_dimensions(result, f"environment.support_surfaces[{idx}]", surface.get("dimensions"))
+            mesh = surface.get("mesh")
+            if surface.get("geometry_type") == "mesh" or mesh:
+                # Reuse the collision generator's mesh resolution, scale,
+                # bounds and fidelity checks; mesh assets need no primitive size.
+                try:
+                    try:
+                        from scripts.generate_moveit_collision_manifest import build_manifest, LAYOUT_SCHEMA
+                    except ImportError:
+                        from generate_moveit_collision_manifest import build_manifest, LAYOUT_SCHEMA
+                    record = dict(surface, role="support_surface", geometry_type="mesh")
+                    if isinstance(mesh, str):
+                        record["mesh"] = {"path": mesh}
+                    record["pose"] = surface.get("pose") or {
+                        "xyz": surface.get("pose_xyz", [0, 0, 0]),
+                        "rpy": surface.get("pose_rpy", [0, 0, 0])}
+                    build_manifest({"schema_version": LAYOUT_SCHEMA, "items": [record]},
+                                   scene_name="validation", source_path=str(path), source_sha256="",
+                                   layout_root=path.parent)
+                except Exception as exc:
+                    result.errors.append(f"environment.support_surfaces[{idx}] mesh/collision contract: {exc}")
+            else:
+                _validate_dimensions(result, f"environment.support_surfaces[{idx}]", surface.get("dimensions"))
             if isinstance(surface.get("mesh"), str) and surface.get("mesh").strip():
                 mesh_path = (Path(__file__).resolve().parents[1] / surface.get("mesh")).resolve()
                 if not mesh_path.exists():

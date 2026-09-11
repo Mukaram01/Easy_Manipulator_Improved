@@ -48,6 +48,7 @@ SCENE_INPUT_RELS = (
 GENERATOR_INPUT_RELS = (
     "scripts/extract_scene_urdf_visual_mesh_index.py",
     "scripts/export_workcell_studio_web_scene.py",
+    "scripts/export_workcell_studio_web_scene_impl.py",
     "assets/robots/universal_robot/ur_description/config/ur5/default_kinematics.yaml",
     "assets/robots/universal_robot/ur_description/config/ur5/visual_parameters.yaml",
     "assets/robots/universal_robot/ur_description/config/ur5/physical_parameters.yaml",
@@ -55,9 +56,10 @@ GENERATOR_INPUT_RELS = (
 )
 
 # The mesh index is generated evidence for locked robot/tool visuals. Authored
-# environment and layout files still invalidate the Web3D export, but they do
-# not require strict xacro re-extraction of otherwise-valid robot visuals.
+# environment owns home, mounts, and physical geometry; edits require fresh FK.
 MESH_INDEX_SCENE_INPUT_RELS = (
+    "environment.yaml",
+    "layout/workcell_studio_layout.yaml",
     "scene_manifest.yaml",
     "urdf/scene.urdf.xacro",
     "launch/demo.launch.py",

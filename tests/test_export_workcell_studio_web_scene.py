@@ -1403,3 +1403,25 @@ def test_visual_bounds_checker_ignores_non_authoritative_diagnostic_camera():
 
     assert errors == []
     assert summary["camera_item_count"] == 1
+
+
+def test_runtime_joint_values_preserve_canonical_home_and_legitimate_zero():
+    xml = '''<robot name="cell"><link name="base_link"/><link name="arm"/>
+    <joint name="arm_joint" type="revolute"><parent link="base_link"/><child link="arm"/></joint>
+    <joint name="zero_joint" type="prismatic"/>
+    <joint name="fixed_joint" type="fixed"/>
+    <ros2_control><joint name="arm_joint"><state_interface name="position">
+    <param name="initial_value">1.57</param></state_interface></joint></ros2_control></robot>'''
+    assert exporter._runtime_initial_joint_values(xml) == {'arm_joint': 1.57, 'zero_joint': 0.0}
+
+
+def test_urdf_camera_relative_visual_preserves_ros_rotation_in_xyz_viewer():
+    import math
+    parent = {'xyz': [0.4, -0.25, 0.85], 'rpy': [0, 1.57, 0]}
+    child = {'xyz': [0.4125118613, -0.25, 0.8351099588], 'rpy': [math.pi - 0.00079632679, 0, math.pi / 2]}
+    relative = exporter._parent_to_child_pose(parent, child, child_ros_rpy=True)
+    actual = exporter._matrix_multiply(exporter._rpy_xyz_matrix(parent['rpy']), exporter._rpy_xyz_matrix(relative['rpy']))
+    roll = child['rpy'][0]
+    # Rz(pi/2) * Ry(0) * Rx(roll), the URDF fixed-axis convention.
+    expected = [[0, -math.cos(roll), math.sin(roll)], [1, 0, 0], [0, math.sin(roll), math.cos(roll)]]
+    assert max(abs(actual[r][c] - expected[r][c]) for r in range(3) for c in range(3)) < 1e-8

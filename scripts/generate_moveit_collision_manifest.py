@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic MoveIt collision geometry from the canonical layout.
+"""Generate deterministic MoveIt collision geometry from authored physical state.
 
 This is deliberately an offline conversion step.  Workcell Studio Web3D owns
 authoring and visualization; the generated manifest is the reviewed input to
@@ -363,6 +363,8 @@ def build_manifest(layout: Mapping[str, Any], *, scene_name: str, source_path: s
         "scene_name": scene_name,
         "planning_frame": planning_frame,
         "source": {
+            "physical_state_source": source_path,
+            "physical_state_sha256": source_sha256,
             "canonical_layout": source_path,
             "canonical_layout_sha256": source_sha256,
         },
@@ -389,20 +391,31 @@ def build_manifest(layout: Mapping[str, Any], *, scene_name: str, source_path: s
 
 def load_and_build(layout_path: Path, *, scene_name: str | None = None,
                    planning_frame: str = "world") -> dict[str, Any]:
+    scene_dir = layout_path.parent.parent
+    environment_path = scene_dir / "environment.yaml"
     try:
-        source_bytes = layout_path.read_bytes()
-        layout = yaml.safe_load(source_bytes)
+        source_bytes = environment_path.read_bytes()
+        environment = yaml.safe_load(source_bytes)
     except (OSError, yaml.YAMLError) as exc:
-        raise CollisionManifestError(f"cannot read canonical layout {layout_path}: {exc}") from exc
-    effective_scene = scene_name or (layout.get("scene_name") if isinstance(layout, Mapping) else None) or layout_path.parent.parent.name
+        raise CollisionManifestError(f"cannot read authoritative environment {environment_path}: {exc}") from exc
+    physical = environment.get("environment", {})
+    items = []
+    for collection in ("support_surfaces", "assets", "sensors", "task_zones"):
+        for item in physical.get(collection, []):
+            record = dict(item)
+            record["pose"] = item.get("pose") or {"xyz": item.get("pose_xyz", [0, 0, 0]),
+                                                   "rpy": item.get("pose_rpy", [0, 0, 0])}
+            items.append(record)
+    effective_scene = scene_name or environment.get("scene_name") or scene_dir.name
     return build_manifest(
-        layout,
+        {"schema_version": LAYOUT_SCHEMA, "items": items},
         scene_name=str(effective_scene),
-        source_path="layout/workcell_studio_layout.yaml",
+        source_path="environment.yaml",
         source_sha256=hashlib.sha256(source_bytes).hexdigest(),
         planning_frame=planning_frame,
-        layout_root=layout_path.parent.parent,
+        layout_root=scene_dir,
     )
+
 
 
 def validate_manifest(data: Mapping[str, Any]) -> list[str]:

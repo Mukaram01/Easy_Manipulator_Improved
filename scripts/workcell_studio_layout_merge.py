@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import yaml
+import copy
+from authored_yaml import write_preserving
 
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
@@ -23,7 +25,7 @@ def _index(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             out[str(it['id'])] = dict(it)
     return out
 
-def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None) -> dict[str, Any]:
+def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_authored: bool = False) -> dict[str, Any]:
     if not scene_dir.exists() or not scene_dir.is_dir():
         return {
             'status': 'BLOCKED',
@@ -57,28 +59,62 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None) -> dict[st
             raise ValueError('Deleted IDs still exist in saved layout; refusing environment projection')
         env = without_deleted(env)
         manifest = without_deleted(manifest)
-        _save_yaml(scene_dir/'environment.yaml', env)
+        write_preserving(scene_dir/'environment.yaml', env)
         _save_yaml(scene_dir/'scene_manifest.yaml', manifest)
     generated = scene_dir/'generated'; generated.mkdir(exist_ok=True)
 
     warnings: list[str] = []
     blockers: list[str] = []
     layout_items = layout.get('items') if isinstance(layout.get('items'), list) else []
-    env_items = env.get('objects') if isinstance(env.get('objects'), list) else []
-    merged = _index(env_items)
-    for mid, m in _index(manifest.get('objects') if isinstance(manifest.get('objects'), list) else []).items():
-        merged[mid] = {**merged.get(mid, {}), **m}
-
-    for item in layout_items:
-        if not isinstance(item, dict):
-            continue
-        iid = str(item.get('id') or f"layout_{len(merged)+1}")
-        base = merged.get(iid, {})
-        merged[iid] = {**base, **item, 'pose': item.get('pose', base.get('pose')), 'size': item.get('size', base.get('size'))}
-        if not (item.get('mesh_path') or item.get('urdf_path') or item.get('source_path')):
-            warnings.append(f"{iid}: missing mesh/URDF path (PREVIEW_ONLY)")
-        if item.get('metadata_only') is True:
-            warnings.append(f"{iid}: metadata-only PREVIEW_ONLY")
+    if save_authored:
+        physical = env.setdefault('environment', {})
+        for item in layout_items:
+            if not isinstance(item, dict) or item.get('locked') is True or item.get('editable') is False:
+                continue
+            iid = item.get('id')
+            if not iid:
+                raise ValueError('Physical authored item requires a stable ID')
+            collection = ('task_zones' if item.get('category') == 'zone' else
+                          'support_surfaces' if item.get('role') == 'support_surface' else 'assets')
+            target = None
+            for key in ('support_surfaces', 'assets', 'sensors', 'task_zones'):
+                for record in physical.get(key, []):
+                    if record.get('id') == iid:
+                        target = record
+            if target is None:
+                target = {'id': iid}
+                physical.setdefault(collection, []).append(target)
+            for key in ('type', 'role', 'display_name', 'category', 'frame', 'geometry_type',
+                        'mesh', 'collision', 'dimensions', 'asset_class', 'description',
+                        'catalog_asset_id', 'support_surface_ref', 'task_zone_ref'):
+                if key in item:
+                    target[key] = copy.deepcopy(item[key])
+            if item.get('mesh') and 'collision' not in target:
+                target['collision'] = {'enabled': True, 'mode': 'mesh'}
+            target['layout_item_ref'] = iid
+            pose = item.get('pose', {})
+            for key in ('xyz', 'rpy'):
+                if key in pose:
+                    target['pose_' + key] = copy.deepcopy(pose[key])
+            # Existing top-level compatibility mirrors must not retain stale
+            # physical values. Never create additional mirror records.
+            for key in ('support_surfaces', 'assets', 'sensors', 'placed_objects', 'objects', 'task_zones'):
+                records = env.get(key, [])
+                if isinstance(records, dict):
+                    records = records.values()
+                for mirror in records:
+                    if isinstance(mirror, dict) and mirror.get('id') == iid and mirror is not target:
+                        mirror.update(copy.deepcopy(target))
+        write_preserving(scene_dir/'environment.yaml', env)
+    # Generated physical state is a projection of environment.yaml only.
+    physical = env.get('environment', {})
+    merged = _index(env.get('objects', []) if isinstance(env.get('objects'), list) else [])
+    for collection in ('support_surfaces', 'assets', 'sensors', 'task_zones'):
+        for item in physical.get(collection, []):
+            record = copy.deepcopy(item)
+            record['pose'] = {'xyz': record.get('pose_xyz', [0, 0, 0]),
+                              'rpy': record.get('pose_rpy', [0, 0, 0])}
+            merged[str(record['id'])] = record
 
     # propagate task bindings
     bindings = layout.get('task_bindings') if isinstance(layout.get('task_bindings'), dict) else {}
@@ -124,6 +160,7 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None) -> dict[st
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('scene_dir', type=Path); ap.add_argument('--json', action='store_true')
     ap.add_argument('--deleted-item-id', action='append', default=[])
-    a = ap.parse_args(); rep = merge(a.scene_dir, a.deleted_item_id)
+    ap.add_argument('--save-authored', action='store_true')
+    a = ap.parse_args(); rep = merge(a.scene_dir, a.deleted_item_id, save_authored=a.save_authored)
     if a.json: print(json.dumps(rep, indent=2))
     raise SystemExit(0 if rep.get('status') == 'READY' else 2)

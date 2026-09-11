@@ -76,14 +76,18 @@ ROBOTIQ_85_FALLBACK_LINK_TRANSFORMS = {
 UR_VISUAL_MESH_TOKEN = "package://ur_description/meshes/"
 ROBOTIQ_VISUAL_MESH_TOKEN = "package://robotiq_85_description/meshes/visual/"
 
-DEFAULT_ROBOT_PREVIEW_JOINT_VALUES = {
-    "shoulder_pan_joint": 0.0,
-    "shoulder_lift_joint": -1.5708,
-    "elbow_joint": 1.5708,
-    "wrist_1_joint": -1.5708,
-    "wrist_2_joint": -1.5708,
-    "wrist_3_joint": 0.0,
-}
+def _runtime_initial_joint_values(xml_text: str) -> Dict[str, float]:
+    """Use the expanded controller startup contract, retaining legitimate zeros."""
+    root = ET.fromstring(xml_text)
+    values = {joint.get("name"): 0.0 for joint in root.findall("joint")
+              if joint.get("type") in {"revolute", "continuous", "prismatic"}
+              and joint.find("mimic") is None}
+    for joint in root.findall("./ros2_control/joint"):
+        initial = joint.find("./state_interface[@name='position']/param[@name='initial_value']")
+        if initial is not None and joint.get("name") in values:
+            values[joint.get("name")] = float(initial.text)
+    return values
+
 
 HELPER_TOKENS = (
     "overlay",
@@ -733,8 +737,10 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
         source = scene_dir / "generated" / "expanded_scene_preview.urdf"
     synthesized_text = None
     scene_id = str(payload.get("scene", {}).get("id") or scene_dir.name)
-    canonical_scene_requires_real_expanded_urdf = False
+    canonical_scene_requires_real_expanded_urdf = bool(data.get("xacro_real_command_succeeded"))
     if not source.is_file():
+        if canonical_scene_requires_real_expanded_urdf:
+            raise BlockingExportError(f"Expanded runtime URDF is missing: {source}; regenerate the scene")
         synthesized_text = _synthesize_robot_preview_urdf_from_rows(payload)
         if not synthesized_text:
             _warn(warnings, "expanded_robot_urdf_missing", "Expanded robot URDF was not available for browser robot preview; legacy rows remain as fallback metadata only.", rel)
@@ -778,7 +784,7 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
             "urdf_url": os.path.relpath(dest, repo_root).replace(os.sep, "/"),
             "robot_root_link": "base_link",
             "rviz_parity": rviz_parity,
-            "joint_values": dict(DEFAULT_ROBOT_PREVIEW_JOINT_VALUES),
+            "joint_values": _runtime_initial_joint_values(source.read_text(encoding="utf-8")) if source.is_file() else {},
             **_expanded_urdf_visual_readiness_metadata(ET.fromstring(text)),
         }
         return
@@ -888,7 +894,7 @@ def _stage_expanded_robot_urdf(payload: Json, scene_dir: Path, output_path: Path
         "urdf_url": os.path.relpath(dest, repo_root).replace(os.sep, "/"),
         "robot_root_link": "base_link",
         "rviz_parity": rviz_parity,
-        "joint_values": dict(DEFAULT_ROBOT_PREVIEW_JOINT_VALUES),
+        "joint_values": _runtime_initial_joint_values(source.read_text(encoding="utf-8")) if source.is_file() else {},
         **_expanded_urdf_visual_readiness_metadata(root),
     }
 
@@ -1588,7 +1594,7 @@ def _annotate_owner_relative_physical_visual_transforms(
             visual_world_pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
             source_owner = owner
             owner_world_pose = source_owner.get("pose") or source_owner.get("world_pose") or source_owner.get("final_transform")
-            relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose)
+            relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose, child_ros_rpy=True)
             if relative_pose is None:
                 continue
             # This is the transform of the generated item root in its authored
@@ -1930,7 +1936,7 @@ def _rpy_from_xyz_matrix(m: Sequence[Sequence[float]]) -> List[float]:
     return [roll, pitch, yaw]
 
 
-def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any) -> Optional[Json]:
+def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any, *, child_ros_rpy: bool = False) -> Optional[Json]:
     parent_xyz = _pose_xyz(parent_world_pose)
     child_xyz = _pose_xyz(child_world_pose)
     if parent_xyz is None or child_xyz is None:
@@ -1939,7 +1945,14 @@ def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any) -> Opti
     child_rpy = _as_list(_as_map(child_world_pose).get("rpy") or [0.0, 0.0, 0.0])
     try:
         parent_rot = _rpy_xyz_matrix([float(v) for v in parent_rpy[:3]])
-        child_rot = _rpy_xyz_matrix([float(v) for v in child_rpy[:3]])
+        if child_ros_rpy:
+            # URDF FK emits fixed-axis RPY (Rz Ry Rx); editable Three.js owners
+            # and owner-relative transforms use intrinsic XYZ. Convert through
+            # the rotation matrix, never reinterpret the URDF angles as XYZ.
+            from extract_scene_urdf_visual_mesh_index import tf_from_xyz_rpy
+            child_rot = [row[:3] for row in tf_from_xyz_rpy([0, 0, 0], child_rpy)[:3]]
+        else:
+            child_rot = _rpy_xyz_matrix([float(v) for v in child_rpy[:3]])
         parent_inv = _matrix_transpose(parent_rot)
         delta = [child_xyz[i] - parent_xyz[i] for i in range(3)]
         local_xyz = _matrix_vec_multiply(parent_inv, delta)
@@ -3202,6 +3215,11 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
         and item.get("id")
         and (_has_mesh_reference(item) or _item_local_bounds(item) is not None)
     }
+    urdf_camera_ids = {
+        str(item.get("camera_id") or item.get("canonical_scene_item_id") or "")
+        for item in _as_list(payload.get("sensors"))
+        if item.get("source_kind") == "generated_preview" and _has_mesh_reference(item)
+    } - {""}
     canonical_support_surface_ids = {
         str(owner.get("id"))
         for owner in _as_list(payload.get("ui_selection_owners"))
@@ -3273,6 +3291,13 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
                 continue
 
             category = _core_mesh_category(item, section)
+            if category == "camera_realsense" and item.get("source_kind") == "user_authored" and item_id in urdf_camera_ids:
+                item.update(render_policy="diagnostic_only", render_owner="editable_layout",
+                            render_identity=_source_identity_for_item(scene_id, section, item, index),
+                            render_expected=False, mesh_load_required=False, exclude_from_fit_bounds=True,
+                            render_policy_reason="expanded_urdf_owns_camera_visual")
+                counters["diagnostic_only_records"] += 1
+                continue
             if (
                 category == "table_workbench"
                 and item.get("source_kind") == "user_authored"
@@ -3320,7 +3345,7 @@ def _apply_render_ownership_contract(payload: Json, *, expanded_urdf_active: boo
                     str(item.get("support_surface_ref") or ""),
                     str(item.get("canonical_scene_item_id") or ""),
                 } & canonical_support_surface_ids
-                if logical_keys & authored_physical_keys or (category == "table_workbench" and canonical_support_ref):
+                if category != "camera_realsense" and (logical_keys & authored_physical_keys or (category == "table_workbench" and canonical_support_ref)):
                     item["render_policy"] = "diagnostic_only"
                     item["render_owner"] = "environment_mesh"
                     item["render_identity"] = _generated_render_identity(scene_id, "environment_mesh", item, index)
@@ -3499,9 +3524,11 @@ def build_web_scene(
     scene_name = _first_present(scene_meta.get("name"), cell_scene.get("name"), cell_scene.get("id"), env_scene.get("name"), env_scene.get("id"), scene_dir.name)
 
     generated = _generated_preview_items(_as_map(data.get("visual_mesh_index")), scene_dir, warnings) if data.get("visual_mesh_index") is not None else {section: [] for section in GENERATED_OUTPUT_SECTIONS}
-    _supplement_missing_tool_meshes(data, generated)
+    if not _as_map(data.get("visual_mesh_index")).get("xacro_real_command_succeeded"):
+        _supplement_missing_tool_meshes(data, generated)
     _annotate_urdf_assembly_metadata(generated, scene_name)
-    _apply_web_scene_transform_parity_fallbacks(data, generated, warnings)
+    if not _as_map(data.get("visual_mesh_index")).get("xacro_real_command_succeeded"):
+        _apply_web_scene_transform_parity_fallbacks(data, generated, warnings)
     _annotate_parent_to_child_poses(generated)
     _suppress_unresolved_placeholder_robot_visuals(generated, warnings)
     authored = _authored_sections(data, scene_dir, warnings, _load_visual_asset_catalog(scene_dir, warnings))

@@ -701,3 +701,15 @@ def test_existing_package_refresh_owns_generated_asset_metadata():
     assert not mod._is_existing_package_generator_owned_output(
         Path("urdf/scene.urdf.xacro")
     )
+
+
+def test_generated_inventory_uses_environment_not_editor_only_assets():
+    from scripts.generate_workcell_from_cell_definition import _build_contract_layout
+    source = {'environment': {'environment': {'assets': [
+        {'id': 'physical', 'type': 'object', 'pose_xyz': [1, 2, 3], 'pose_rpy': [0, 0, 0],
+         'mesh': {'path': 'fixture.stl'}}]}},
+        'canonical_layout_data': {'schema_version': 'workcell_studio_layout/v1', 'items': [
+            {'id': 'editor_only', 'type': 'object', 'pose': {'xyz': [9, 9, 9], 'rpy': [0, 0, 0]}}]}}
+    result = _build_contract_layout('cell', {}, source)
+    assert [item['id'] for item in result['items']] == ['physical']
+    assert result['items'][0]['pose']['xyz'] == [1, 2, 3]

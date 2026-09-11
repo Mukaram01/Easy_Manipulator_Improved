@@ -57,25 +57,9 @@ def _load_yaml(path: Path) -> Any:
 
 def _write_yaml(path: Path, data: Any) -> None:
     """Atomically replace one approved YAML file in its original directory."""
-    assert yaml is not None
-    payload = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+    from authored_yaml import write_preserving
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if path.exists():
-            os.chmod(temporary, path.stat().st_mode)
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
-        raise
+    write_preserving(path, data)
 
 
 def _write_bytes_atomic(path: Path, payload: bytes) -> None:
@@ -314,19 +298,8 @@ def main(argv: list[str] | None = None) -> int:
             raise
         canonical_layout = scene_dir / "layout" / "workcell_studio_layout.yaml"
         if canonical_layout in by_file:
-            try:
-                from generate_moveit_collision_manifest import load_and_build
-                collision_manifest = load_and_build(canonical_layout, scene_name=_scene_id(web_scene))
-                collision_output = scene_dir / "config" / "moveit_collision_objects.yaml"
-                collision_output.parent.mkdir(parents=True, exist_ok=True)
-                _write_yaml(collision_output, collision_manifest)
-                print(f"updated MoveIt collision truth: {collision_output}")
-            except Exception as exc:
-                print(
-                    "WARNING: canonical layout was saved, but MoveIt collision truth is stale or unavailable: "
-                    f"{exc}",
-                    file=sys.stderr,
-                )
+            from workcell_studio_layout_merge import merge
+            merge(scene_dir, save_authored=True)
         print("skipped/rejected edits: none")
         print(f"next suggested command: python3 scripts/export_workcell_studio_web_scene.py --scene {args.scene} --output {args.web_scene}")
         return 0
