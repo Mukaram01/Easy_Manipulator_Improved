@@ -50,11 +50,11 @@ def _format_xacro_vector(values):
 
 
 def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
-    """Load required world poses from Workcell Studio's authored layout."""
+    """Load runtime mount poses from authoritative environment.yaml."""
     if layout_path is None:
         layout_path = os.path.join(
             get_package_share_directory(package_name),
-            CANONICAL_LAYOUT_REL_PATH,
+            "environment.yaml",
         )
 
     try:
@@ -66,18 +66,13 @@ def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
             "Save the scene layout in Workcell Studio and relaunch."
         ) from exc
 
-    if not isinstance(layout, dict) or layout.get("schema_version") != CANONICAL_LAYOUT_SCHEMA:
-        actual_schema = layout.get("schema_version") if isinstance(layout, dict) else None
-        raise RuntimeError(
-            f"Canonical Workcell Studio layout '{layout_path}' must use schema_version "
-            f"'{CANONICAL_LAYOUT_SCHEMA}', got {actual_schema!r}."
-        )
-
-    items = layout.get("items")
-    if not isinstance(items, list):
-        raise RuntimeError(
-            f"Canonical Workcell Studio layout '{layout_path}' must contain an 'items' list."
-        )
+    if not isinstance(layout, dict) or not isinstance(layout.get("environment"), dict):
+        raise RuntimeError(f"Authoritative environment mapping missing: {layout_path}")
+    physical = layout["environment"]
+    items = [dict(item, pose=item.get("pose") or {
+        "xyz": item.get("pose_xyz"), "rpy": item.get("pose_rpy")})
+        for section in ("support_surfaces", "assets", "sensors")
+        for item in physical.get(section, [])]
 
     poses = {}
     for required_id in REQUIRED_AUTHORED_POSE_IDS:

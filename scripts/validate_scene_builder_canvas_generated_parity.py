@@ -138,7 +138,134 @@ def _asset_id(asset: dict[str, Any]) -> str | None:
             return value.strip()
     return None
 
-def build_report(scene_dir: Path | None = None, mode: str = "post_generation") -> dict[str, object]:
+def _final_transform_mismatches(scene_dir: Path, payload_path: Path | None = None) -> list[dict[str, Any]]:
+    """Compare the payload actually served to Product View with fresh runtime FK."""
+    import contextlib
+    import io
+    import subprocess
+    import xml.etree.ElementTree as ET
+    import extract_scene_urdf_visual_mesh_index as urdf
+    payload_path = payload_path or ROOT / "build/workcell_studio_web_scene" / f"{scene_dir.name}.web_scene.json"
+    payload = _safe_load_json(payload_path)
+    request = urdf._extract_scene_launch_xacro_request(scene_dir, {})
+    if not request:
+        raise ValueError("Cannot resolve the runtime launch xacro request")
+    command, available, reason = urdf.discover_xacro_command()
+    if not available:
+        raise ValueError(f"Runtime xacro unavailable: {reason}")
+    command += [str(scene_dir / request["rel_path"])]
+    command += [f"{key}:={value}" for key, value in request["mappings"].items()]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60,
+                            env=urdf.xacro_env(scene_dir, workspace_root=ROOT.parents[1]))
+    if result.returncode:
+        raise ValueError(f"Runtime xacro failed: {result.stderr[-1500:]}")
+    preview = payload.get("robot_preview", {})
+    if preview.get("mode") != "expanded_urdf_loader":
+        raise ValueError("Product View has no expanded runtime robot assembly")
+    staged = ROOT / str(preview["urdf_url"]).lstrip("/")
+    rendered = ET.fromstring(staged.read_text())
+    control = ET.SubElement(rendered, "ros2_control")
+    for name, value in preview.get("joint_values", {}).items():
+        joint = ET.SubElement(control, "joint", name=name)
+        state = ET.SubElement(joint, "state_interface", name="position")
+        ET.SubElement(state, "param", name="initial_value").text = str(value)
+    with contextlib.redirect_stdout(io.StringIO()):
+        expected = urdf.extract_from_urdf(result.stdout, {})
+        actual_robot = urdf.extract_from_urdf(ET.tostring(rendered, encoding="unicode"), {})
+    def indexed(rows):
+        groups = {}
+        for row in rows:
+            if row.get("geometry_type") != "mesh":
+                continue
+            link = row.get("link")
+            groups.setdefault(link, []).append(row)
+        return groups
+    runtime = indexed(expected)
+    actual = indexed(actual_robot)
+    for section in ("assets", "sensors"):
+        for row in payload.get(section, []):
+            if row.get("render_policy") == "primary" and row.get("link"):
+                actual.setdefault(row["link"], []).append(row)
+    mismatches = []
+    environment = _safe_load_yaml(scene_dir / "environment.yaml").get("environment", {})
+    physical = {str(item["id"]): item for section in ("assets", "sensors", "support_surfaces")
+                for item in environment.get(section, [])}
+    layout = _safe_load_yaml(scene_dir / "layout/workcell_studio_layout.yaml")
+    for item in layout.get("items", []):
+        if not item.get("mesh") or item.get("locked") is True:
+            continue
+        canonical = physical.get(str(item.get("id")))
+        if canonical is None:
+            mismatches.append({"asset_id": item.get("id"), "reason": "physical editor asset missing from environment.yaml; Save required"})
+            continue
+        expected_pose = canonical.get("pose") or {"xyz": canonical.get("pose_xyz"), "rpy": canonical.get("pose_rpy")}
+        if any(abs(float(a) - float(b)) > 1e-8 for key in ("xyz", "rpy")
+               for a, b in zip(item["pose"][key], expected_pose[key])):
+            mismatches.append({"asset_id": item["id"], "reason": "editor pose differs from authoritative environment.yaml"})
+        if item.get("mesh") != canonical.get("mesh"):
+            mismatches.append({"asset_id": item["id"], "reason": "editor mesh differs from authoritative environment.yaml"})
+    def viewer_matrix(pose):
+        from export_workcell_studio_web_scene_impl import _rpy_xyz_matrix
+        rotation = _rpy_xyz_matrix(pose["rpy"])
+        return [rotation[r] + [pose["xyz"][r]] for r in range(3)] + [[0, 0, 0, 1]]
+    owners = {str(item.get("id")): item for item in payload.get("ui_selection_owners", [])}
+    def matrix(row, runtime=False):
+        pose = (row.get("baked_world_visual_pose") if runtime else None) or row.get("final_transform") or row.get("world_from_visual") or row.get("pose")
+        if not runtime and row.get("owner_relative_visual_transform"):
+            owner_id = str(row.get("canonical_scene_item_id") or row.get("camera_id") or row.get("support_surface_ref"))
+            owner = owners[owner_id]
+            local = row["owner_relative_visual_transform"]
+            return urdf.matmul4(viewer_matrix(owner["pose"]), viewer_matrix(local))
+        return urdf.tf_from_xyz_rpy(pose["xyz"], pose["rpy"])
+    def delta(left, right):
+        import math
+        if not all(math.isfinite(matrix[r][c]) for matrix in (left, right) for r in range(4) for c in range(4)):
+            raise ValueError("Non-finite final visual world matrix")
+        return max(abs(left[r][c] - right[r][c]) for r in range(4) for c in range(4))
+    active_assets = {str(item.get("id")): item for section in ("assets", "sensors")
+                     for item in payload.get(section, []) if item.get("render_policy") == "primary"}
+    for item_id, canonical in physical.items():
+        mesh = canonical.get("mesh")
+        if not isinstance(mesh, dict) or canonical.get("collision", {}).get("mode") == "urdf":
+            continue
+        item = active_assets.get(item_id)
+        if item is None:
+            mismatches.append({"asset_id": item_id, "reason": "authored physical visual missing from Product View"})
+            continue
+        expected_pose = canonical.get("pose") or {"xyz": canonical["pose_xyz"], "rpy": canonical["pose_rpy"]}
+        expected_local = {"xyz": mesh.get("origin_offset", [0, 0, 0]), "rpy": mesh.get("rpy", [0, 0, 0])}
+        actual_local = item.get("mesh_local_transform", {})
+        left = urdf.matmul4(matrix({"pose": expected_pose}), matrix({"pose": expected_local}))
+        right = urdf.matmul4(viewer_matrix(item["pose"]), matrix({"pose": {"xyz": actual_local.get("xyz", [0, 0, 0]), "rpy": actual_local.get("rpy", [0, 0, 0])}}))
+        expected_scale = mesh.get("scale", [1, 1, 1])
+        actual_scale = actual_local.get("scale", item.get("mesh_scale", [1, 1, 1]))
+        rotation_and_position_delta = delta(left, right)
+        for r in range(3):
+            for c in range(3):
+                left[r][c] *= expected_scale[c]
+                right[r][c] *= actual_scale[c]
+        distance = max(rotation_and_position_delta, delta(left, right))
+        if distance > 1e-5:
+            mismatches.append({"asset_id": item_id, "reason": "authored mesh final world transform differs", "max_matrix_delta": distance})
+    for link, rows in runtime.items():
+        candidates = actual.get(link, [])
+        # Authored non-URDF geometry is checked through the physical contract
+        # below; all robot/tool and sensor URDF visual links must be represented.
+        if not candidates:
+            mismatches.append({"asset_id": link, "reason": "runtime visual missing from Product View"})
+            continue
+        for index, row in enumerate(rows):
+            if index >= len(candidates):
+                mismatches.append({"asset_id": link, "reason": "runtime visual count differs"})
+                continue
+            left, right = matrix(row, True), matrix(candidates[index], candidates[index] in actual_robot)
+            distance = delta(left, right)
+            if distance > 1e-5:
+                mismatches.append({"asset_id": link, "reason": "final world visual transform differs", "max_matrix_delta": distance})
+    return mismatches
+
+
+def build_report(scene_dir: Path | None = None, mode: str = "post_generation", web_scene: Path | None = None) -> dict[str, object]:
     warnings: list[str] = []
     errors: list[str] = []
 
@@ -272,6 +399,14 @@ def build_report(scene_dir: Path | None = None, mode: str = "post_generation") -
                     {"asset_id": aid, "layout_mesh_references": layout_meshes, "generated_mesh_references": generated_meshes}
                 )
 
+    if scene_dir is not None and mode == "post_generation":
+        try:
+            transform_mismatches.extend(_final_transform_mismatches(scene_dir, web_scene))
+        except Exception as exc:
+            errors.append(f"Final runtime/Product View transform parity unavailable: {exc}")
+        if transform_mismatches or mesh_reference_mismatches:
+            errors.append("Product View differs from runtime physical state; regenerate and resolve transform mismatches")
+
     mismatch_count = len(transform_mismatches) + len(mesh_reference_mismatches)
     warning_count = len(warnings) + len(unsupported_assets)
     blocker_count = len(errors)
@@ -313,6 +448,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Scene Builder canvas/generated parity contract.")
     parser.add_argument("scene_dir", nargs="?", help="Optional scene directory to perform scene-aware parity checks.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON report.")
+    parser.add_argument("--web-scene", type=Path, help="Actual Product View payload to compare (defaults to the served scene payload).")
     parser.add_argument("--output", help="Optional JSON report output path.")
     parser.add_argument(
         "--mode",
@@ -323,7 +459,7 @@ def main() -> int:
     args = parser.parse_args()
 
     scene_dir = Path(args.scene_dir).expanduser() if args.scene_dir else None
-    report = build_report(scene_dir, mode=args.mode)
+    report = build_report(scene_dir, mode=args.mode, web_scene=args.web_scene)
 
     if args.output:
         out = Path(args.output).expanduser()

@@ -11,7 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SCENE = ROOT / "scenes" / "ur5_2f_test"
 LAUNCH = SCENE / "launch" / "demo.launch.py"
 XACRO = SCENE / "urdf" / "scene.urdf.xacro"
-LAYOUT = SCENE / "layout" / "workcell_studio_layout.yaml"
+LAYOUT = SCENE / "environment.yaml"
+
+def _environment_items(document):
+    return document["environment"].get("support_surfaces", []) + document["environment"].get("assets", [])
+
 CANONICAL_POSE_ARGS = {
     "table_world_xyz",
     "table_world_rpy",
@@ -65,7 +69,8 @@ def test_launch_maps_required_canonical_layout_world_poses_to_xacro():
     ):
         assert mapping in source
 
-    assert '<origin xyz="$(arg table_world_xyz)" rpy="$(arg table_world_rpy)"/>' in xacro
+    # Table geometry is supplied by the authored collision/mesh manifest.
+    assert '<xacro:arg name="table_world_xyz"' in xacro
     assert '<xacro:sensor_d435i parent="$(arg world_frame)"' in xacro
     assert '<origin xyz="$(arg camera_world_xyz)" rpy="$(arg camera_world_rpy)"/>' in xacro
     assert 'parent="table_"' not in xacro
@@ -88,19 +93,23 @@ def test_canonical_pose_xacro_args_have_empty_humble_compatible_defaults():
 
 def test_canonical_support_surface_uses_tabletop_world_z_convention():
     document = yaml.safe_load(LAYOUT.read_text(encoding="utf-8"))
-    table = next(item for item in document["items"] if item["id"] == "support_surface_table")
+    table = next(item for item in _environment_items(document) if item["id"] == "support_surface_table")
 
-    assert table["pose"]["xyz"][2] == pytest.approx(0.0)
+    from scripts.generate_moveit_collision_manifest import _resolve_local_mesh, _mesh_bounds
+    mesh = table["mesh"]
+    bounds = _mesh_bounds(_resolve_local_mesh(mesh["path"], SCENE))
+    assert bounds is not None
+    assert table["pose_xyz"][2] + bounds[1][2] * mesh["scale"][2] == pytest.approx(0.0)
 
 
-def test_changed_temp_layout_changes_xacro_pose_mappings_without_rewriting_yaml(tmp_path):
+def test_changed_environment_changes_xacro_pose_mappings_without_rewriting_yaml(tmp_path):
     helpers = _layout_helpers()
     copied_layout = tmp_path / "layout.yaml"
     canonical_before = LAYOUT.read_bytes()
     document = yaml.safe_load(LAYOUT.read_text(encoding="utf-8"))
-    by_id = {item["id"]: item for item in document["items"]}
-    by_id["support_surface_table"]["pose"]["xyz"][0] += 0.20
-    by_id["realsense_overhead"]["pose"]["xyz"][1] += 0.15
+    by_id = {item["id"]: item for item in _environment_items(document)}
+    by_id["support_surface_table"]["pose_xyz"][0] += 0.20
+    by_id["realsense_overhead"]["pose_xyz"][1] += 0.15
     copied_layout.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
     before = copied_layout.read_bytes()
 
@@ -113,10 +122,10 @@ def test_changed_temp_layout_changes_xacro_pose_mappings_without_rewriting_yaml(
     }
 
     assert [float(value) for value in mappings["table_world_xyz"].split()] == pytest.approx(
-        by_id["support_surface_table"]["pose"]["xyz"]
+        by_id["support_surface_table"]["pose_xyz"]
     )
     assert [float(value) for value in mappings["camera_world_xyz"].split()] == pytest.approx(
-        by_id["realsense_overhead"]["pose"]["xyz"]
+        by_id["realsense_overhead"]["pose_xyz"]
     )
     assert copied_layout.read_bytes() == before
     assert LAYOUT.read_bytes() == canonical_before
@@ -125,17 +134,17 @@ def test_changed_temp_layout_changes_xacro_pose_mappings_without_rewriting_yaml(
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (lambda doc: doc.update(schema_version="wrong/v1"), "must use schema_version"),
+        (lambda doc: doc.pop("environment"), "environment mapping missing"),
         (
-            lambda doc: doc.__setitem__(
-                "items", [item for item in doc["items"] if item["id"] != "realsense_overhead"]
+            lambda doc: doc["environment"].__setitem__(
+                "assets", [item for item in doc["environment"]["assets"] if item["id"] != "realsense_overhead"]
             ),
             "realsense_overhead'; found 0",
         ),
         (
             lambda doc: next(
-                item for item in doc["items"] if item["id"] == "support_surface_table"
-            )["pose"].update(xyz=[0, math.inf, 0]),
+                item for item in _environment_items(doc) if item["id"] == "support_surface_table"
+            ).update(pose_xyz=[0, math.inf, 0]),
             "support_surface_table' pose.xyz",
         ),
     ],

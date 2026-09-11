@@ -53,3 +53,39 @@ def test_native_save_passes_tombstones_before_clearing_them():
     assert '--deleted-item-id' in projection
     save = source.split('bool MainWindow::save_native_layout_changes', 1)[1]
     assert save.index('save_authored_environment_from_layout(error)') < save.index('deleted_layout_item_ids_.clear()')
+
+
+def test_save_physical_add_delete_and_generation_use_environment(tmp_path):
+    import sys
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    from workcell_studio_layout_merge import merge
+    from generate_moveit_collision_manifest import load_and_build
+    scene = tmp_path / 'cell'
+    (scene / 'layout').mkdir(parents=True)
+    env = scene / 'environment.yaml'
+    env.write_text('# author comment\nrobot: &robot {epsilon: 0.00001}\nrobot_copy: *robot\nenvironment: {assets: []}\n')
+    item = {'id': 'imported_fixture', 'type': 'object', 'geometry_type': 'box',
+            'dimensions': [0.1, 0.2, 0.3], 'pose': {'xyz': [1, 2, 3], 'rpy': [0, 0, 0]},
+            'collision': {'enabled': True, 'mode': 'box_proxy'}, 'editable': True}
+    layout = scene / 'layout/workcell_studio_layout.yaml'
+    layout.write_text(yaml.safe_dump({'items': [item]}))
+    merge(scene)
+    assert yaml.safe_load(env.read_text())['environment']['assets'] == []
+    merge(scene, save_authored=True)
+    saved = env.read_bytes()
+    physical = yaml.safe_load(saved)['environment']['assets'][0]
+    assert physical['id'] == item['id']
+    assert physical['pose_xyz'] == [1, 2, 3]
+    assert b'# author comment' in saved and b'0.00001' in saved and b'*robot' in saved
+    merge(scene, save_authored=True)
+    assert env.read_bytes() == saved
+    manifest = load_and_build(layout)
+    assert any(obj['id'] == 'workcell::imported_fixture' for obj in manifest['objects'])
+    item['pose']['xyz'] = [9, 9, 9]
+    layout.write_text(yaml.safe_dump({'items': [item]}))
+    assert load_and_build(layout) == manifest  # Unsaved editor state is not physical truth.
+    layout.write_text('items: []\n')
+    merge(scene, ['imported_fixture'], save_authored=True)
+    merge(scene)
+    assert not yaml.safe_load(env.read_text())['environment']['assets']
+    assert 'imported_fixture' not in (scene / 'generated/workcell_studio_merged_environment.yaml').read_text()

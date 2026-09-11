@@ -198,7 +198,7 @@ def test_append_static_ur5_mesh_visuals_emits_fk_baked_mesh_rows_from_temp_ur_de
         assert item['primitive_fallback'] is False
 
 
-def test_append_static_ur5_mesh_visuals_all_zero_initial_joints_use_preview_home_pose(monkeypatch, tmp_path):
+def test_append_static_ur5_mesh_visuals_preserve_all_zero_initial_joints(monkeypatch, tmp_path):
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
 
     ur_pkg = _write_minimal_ur_description_visual_assets(tmp_path)
@@ -226,12 +226,12 @@ def test_append_static_ur5_mesh_visuals_all_zero_initial_joints_use_preview_home
 
     assert added == 7
     joint_values = {item['joint_name']: item['joint_value'] for item in items if item.get('joint_name')}
-    for joint_name, expected_value in mesh_index.UR5_PREVIEW_HOME_JOINT_POSE.items():
+    for joint_name, expected_value in mesh_index.UR5_INITIAL_JOINT_DEFAULTS.items():
         assert joint_values[joint_name] == expected_value
     movable_items = [item for item in items if item.get('joint_type') != 'fixed']
     assert movable_items
     assert all(
-        item['joint_value_source'] == 'workcell_preview_home_pose_all_zero_initial_positions'
+        item['joint_value_source'] == 'initial_positions.yaml'
         for item in movable_items
     )
 

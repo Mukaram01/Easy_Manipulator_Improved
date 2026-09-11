@@ -4223,7 +4223,7 @@ bool MainWindow::save_authored_environment_from_layout(QString * error)
   QProcess process;
   // The merge helper takes the scene directory as its positional argument.
   // Keep this call aligned with the helper used by Generate/Validate.
-  QStringList arguments{script, selected_scene_path()};
+  QStringList arguments{script, selected_scene_path(), QStringLiteral("--save-authored")};
   for (const auto & id : deleted_layout_item_ids_)
     arguments << QStringLiteral("--deleted-item-id") << id;
   process.start("python3", arguments);

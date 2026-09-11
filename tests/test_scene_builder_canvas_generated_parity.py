@@ -52,8 +52,9 @@ def test_cli_scene_dir_json_output_file_and_stdout_json(tmp_path: Path) -> None:
 
     out_path = tmp_path / "reports" / "parity.json"
     result = subprocess.run([sys.executable, str(SCRIPT), str(scene_dir), "--json", "--output", str(out_path)], cwd=REPO_ROOT, check=False, capture_output=True, text=True)
-    assert result.returncode == 0
+    assert result.returncode == 1  # Metadata alone cannot prove runtime parity.
     stdout_report = json.loads(result.stdout)
+    assert stdout_report["blocker_count"] > 0
     assert out_path.is_file()
     file_report = json.loads(out_path.read_text(encoding="utf-8"))
     assert stdout_report == file_report
@@ -168,3 +169,33 @@ def test_legacy_wrapper_prints_deprecation_and_delegates_to_canonical() -> None:
     assert "DEPRECATED:" in result.stderr
     report = json.loads(result.stdout)
     assert report["status"] in {"PASS", "WARN", "FAIL"}
+
+
+def test_final_parity_blocks_wrong_renderer_joint_state(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(REPO_ROOT / 'scripts'))
+    import validate_scene_builder_canvas_generated_parity as parity
+    import extract_scene_urdf_visual_mesh_index as urdf
+    from types import SimpleNamespace
+    scene = tmp_path / 'scene'
+    (scene / 'layout').mkdir(parents=True)
+    (scene / 'environment.yaml').write_text('environment: {assets: []}\n')
+    (scene / 'layout/workcell_studio_layout.yaml').write_text('items: []\n')
+    xml = '''<robot name="test"><link name="world"/><link name="base_link">
+    <visual><geometry><mesh filename="fixture.stl"/></geometry></visual></link>
+    <joint name="movable" type="revolute"><parent link="world"/><child link="base_link"/>
+    <axis xyz="0 0 1"/></joint></robot>'''
+    runtime = xml.replace('</robot>', '''<ros2_control><joint name="movable"><state_interface name="position">
+    <param name="initial_value">1.57</param></state_interface></joint></ros2_control></robot>''')
+    (tmp_path / 'preview.urdf').write_text(xml)
+    payload_path = tmp_path / 'payload.json'
+    payload = {'robot_preview': {'mode': 'expanded_urdf_loader', 'urdf_url': 'preview.urdf', 'joint_values': {'movable': 0.0}}}
+    monkeypatch.setattr(parity, 'ROOT', tmp_path)
+    monkeypatch.setattr(urdf, '_extract_scene_launch_xacro_request', lambda *_: {'rel_path': 'scene.xacro', 'mappings': {}})
+    monkeypatch.setattr(urdf, 'discover_xacro_command', lambda: (['xacro'], True, ''))
+    monkeypatch.setattr(urdf, 'xacro_env', lambda *a, **kw: {})
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=0, stdout=runtime))
+    payload_path.write_text(json.dumps(payload))
+    assert parity._final_transform_mismatches(scene, payload_path)
+    payload['robot_preview']['joint_values']['movable'] = 1.57
+    payload_path.write_text(json.dumps(payload))
+    assert parity._final_transform_mismatches(scene, payload_path) == []
