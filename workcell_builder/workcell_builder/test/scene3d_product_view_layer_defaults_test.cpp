@@ -147,3 +147,27 @@ TEST(Scene3DProductViewLayerDefaults, EditablePhysicalItemWithHelperLikeNameRema
   EXPECT_FALSE(defaults.primitive_fallback);
   EXPECT_TRUE(workcell_builder::include_preview_item_for_scene3d(physical_item, enabled_layers));
 }
+
+TEST(Scene3DProductViewLayerDefaults, AuthoredTaskZoneVisualUsesHelpersWithoutChangingProvenance)
+{
+  for (const QString & role : {QStringLiteral("pick_zone"), QStringLiteral("place_zone"),
+       QStringLiteral("drop_zone"), QStringLiteral("task_zone")}) {
+    auto zone = make_item(QStringLiteral("editable_layout"), QStringLiteral("semantic_primitive"), QStringLiteral("authored_region"));
+    zone.role = role;
+    zone.editable = true;
+    zone.linked_to_editable_layout_state = true;
+    zone.semantic_task_zone_helper = true;
+    const auto defaults = workcell_builder::compute_scene3d_default_layer_visibility({zone});
+    expect_clean_product_layers(defaults);
+    EXPECT_FALSE(defaults.primitive_fallback);
+    EXPECT_FALSE(workcell_builder::include_preview_item_for_scene3d(zone, {QStringLiteral("editable_layout"), QStringLiteral("mesh_preview")}));
+    EXPECT_TRUE(workcell_builder::include_preview_item_for_scene3d(zone, {QStringLiteral("overlay")}));
+    EXPECT_TRUE(zone.editable);
+    EXPECT_TRUE(zone.linked_to_editable_layout_state);
+    EXPECT_EQ(zone.source_layer, QStringLiteral("editable_layout"));
+    // A genuine diagnostic is not hidden behind the helper toggle.
+    zone.mesh_load_warning = QStringLiteral("mesh resolution failed");
+    EXPECT_FALSE(workcell_builder::include_preview_item_for_scene3d(zone, {QStringLiteral("overlay")}));
+    EXPECT_TRUE(workcell_builder::include_preview_item_for_scene3d(zone, {QStringLiteral("warning")}));
+  }
+}

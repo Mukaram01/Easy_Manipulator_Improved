@@ -121,4 +121,11 @@ bool is_helper_overlay_identity(const ScenePreviewWidget::PreviewItem & item)
   return identity_contains_helper_overlay_token(item);
 }
 
+bool has_actionable_visual_warning(const ScenePreviewWidget::PreviewItem & item)
+{
+  // Helpers can carry real metadata/transform errors too. Informational lock
+  // and intentional primitive state must not be inserted into warnings.
+  return item.status.contains("warning", Qt::CaseInsensitive) || !item.mesh_load_warning.trimmed().isEmpty() || !item.warnings.isEmpty();
+}
+
 }  // namespace workcell_builder::scene3d_visual_classification

@@ -66,6 +66,7 @@ QByteArray serialized_preview_item(const ScenePreviewWidget::PreviewItem & item)
   stream << item.mesh_scale_x << item.mesh_scale_y << item.mesh_scale_z << item.mesh_roll << item.mesh_pitch << item.mesh_yaw;
   write_bool(item.mesh_available);
   stream << item.mesh_load_warning;
+  stream << item.semantic_task_zone_helper;
   write_bool(item.selectable); write_bool(item.editable); write_bool(item.locked);
   stream << item.lock_reason << item.metadata_tags << item.target_ref << item.transform_group
          << item.source_layer << item.active_visual_source;
@@ -1764,6 +1765,7 @@ ScenePreviewWidget::PreviewItem ScenePreviewWidget::preview_item_from_canvas_ite
 {
   PreviewItem preview;
   preview.id = QString::fromStdString(item.id);
+  preview.semantic_task_zone_helper = item.semantic_task_zone_helper;
   preview.display_name = QString::fromStdString(item.label);
   preview.category = QString::fromStdString(item.category.empty() ? item.type : item.category);
   preview.catalog_asset_id = QString::fromStdString(item.catalog_asset_id);

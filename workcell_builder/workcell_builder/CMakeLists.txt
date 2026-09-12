@@ -437,6 +437,14 @@ if(BUILD_TESTING)
     src_workcell_studio_canvas_model.cpp
     src_workcell_warning_once.cpp
     src_workcell_yaml_utils.cpp)
+  # Canvas metadata and Scene3D must resolve package-owned meshes identically.
+  foreach(canvas_target
+      workcell_scene_status_test workcell_rviz_preview_metadata_command_test
+      workcell_scene_preview_widget_ui_test workcell_studio_canvas_model_mesh_test)
+    target_sources(${canvas_target} PRIVATE src_visual_mesh_source_resolver.cpp)
+    target_link_libraries(${canvas_target} Qt5::Core)
+  endforeach()
+  target_sources(workcell_studio_canvas_model_mesh_test PRIVATE test/canvas_package_mesh_health_test.cpp)
   ament_add_gtest(workcell_asset_catalog_discovery_test
     test/asset_catalog_discovery_test.cpp
     gui/asset_catalog_model.cpp
@@ -457,6 +465,7 @@ if(BUILD_TESTING)
     gui/preview_item_suppression.cpp)
   ament_add_gtest(workcell_scene3d_product_view_layer_defaults_test
     test/scene3d_product_view_layer_defaults_test.cpp
+    test/scene3d_actionable_warning_test.cpp
     gui/scene3d_candidate_assembly.cpp
     gui/scene3d_visual_classification.cpp)
   ament_add_gtest(workcell_layout_serialization_contract_test
@@ -476,6 +485,8 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_preview_process_state_test
     test/preview_process_state_test.cpp)
   if(TARGET workcell_scene_identity_test)
+    target_sources(workcell_scene_identity_test PRIVATE src_visual_mesh_source_resolver.cpp)
+    target_link_libraries(workcell_scene_identity_test Qt5::Core)
     target_link_libraries(workcell_scene_identity_test yaml-cpp ${Boost_LIBRARIES})
     target_compile_definitions(workcell_scene_identity_test PRIVATE
       WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
@@ -770,6 +781,8 @@ if(BUILD_TESTING)
     scene3d_render_role_classifier_test.cpp
     scene3d_ur5_baked_transform_test.cpp
     scene3d_product_view_layer_defaults_test.cpp
+    scene3d_actionable_warning_test.cpp
+    canvas_package_mesh_health_test.cpp
     scene_load_diagnostic_context_test.cpp
     command_builders_test.cpp
     scene_preview_widget_ui_test.cpp

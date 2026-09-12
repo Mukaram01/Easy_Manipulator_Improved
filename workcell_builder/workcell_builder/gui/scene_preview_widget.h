@@ -64,6 +64,7 @@ public:
     double mesh_roll{ 0.0 }, mesh_pitch{ 0.0 }, mesh_yaw{ 0.0 };
     bool mesh_available{ false };
     QString mesh_load_warning;
+    bool semantic_task_zone_helper{ false };
     bool selectable{ true };
     bool editable{ true };
     bool locked{ false };
