@@ -1,6 +1,7 @@
 #include "workcell_studio_canvas_model.hpp"
 #include "workcell_yaml_utils.hpp"
 #include "workcell_warning_once.hpp"
+#include "visual_mesh_source_resolver.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -432,6 +433,11 @@ static fs::path resolve_mesh_candidate(const std::string & c, const fs::path & s
   fs::path path(c);
   if (c.rfind("package://", 0) == 0) {
     const std::string rest = c.substr(std::string("package://").size());
+    // Use the same package ownership as Product View; package:// is not a
+    // scene-relative assets path. Retain the legacy bundled-asset fallback.
+    const QString resolved = resolve_visual_mesh_source_path(
+      QString(), QString::fromStdString(c), scene_dir, QString());
+    if (!resolved.isEmpty()) return fs::path(resolved.toStdString());
     path = scene_dir / "assets" / rest;
   } else if (!path.is_absolute()) {
     path = scene_dir / path;
@@ -709,6 +715,9 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
 
   const auto should_add_default_preview_item = [&](const std::string & id) {
     if (!canonical_layout_has_items) return true;
+    // An authored cell need not contain a conveyor or a static workpiece.
+    // Inventing either creates phantom geometry and missing-mesh warnings.
+    if (id == "conveyor" || id == "object_a") return false;
     if (id == "table") return !canonical_layout_has_semantic({"table", "support_surface", "work_surface"});
     if (id == "pick_zone") return !canonical_layout_has_semantic({"pick_zone"});
     if (id == "place_zone") return !canonical_layout_has_semantic({"place_zone"});
@@ -1046,6 +1055,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
     item.mesh_path.clear();
     item.mesh_load_warning = "mesh metadata missing or legacy; using primitive preview";
     const auto candidates = gather_mesh_candidates(env, manifest, layout_items, item.id);
+    bool declared_mesh = item.has_mesh_metadata;
     fs::path visual;
     fs::path collision;
     for (const auto & c : candidates) {
@@ -1077,6 +1087,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
         if (!node.IsMap() || yaml_map_value_or_empty(node, "id") != item.id) continue;
         const YAML::Node mesh = yaml_map_key(node, "mesh");
         const std::string geometry_type = get_optional_string(node, "geometry_type", "");
+        declared_mesh = declared_mesh || yaml_node_is_defined(mesh) || geometry_type == "mesh";
         const bool authored_primitive = !yaml_node_is_defined(mesh) &&
           (geometry_type == "box" || geometry_type == "cylinder" || geometry_type == "sphere");
         if (authored_primitive) {
@@ -1125,6 +1136,25 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           }
         }
       }
+    }
+    // Task-zone footprints are semantic geometry, not failed physical meshes.
+    // An explicit mesh request, unsupported primitive, or emergency fallback
+    // must retain its diagnostics even when the item's role is a zone.
+    const auto is_semantic_zone_kind = [](const std::string & value) {
+      return value == "zone" || value == "pick_zone" || value == "pick_source_zone" ||
+        value == "place_zone" || value == "drop_zone" || value == "task_zone" || value == "safety_zone";
+    };
+    const bool semantic_zone = is_semantic_zone_kind(item.type) ||
+      is_semantic_zone_kind(item.category) || is_semantic_zone_kind(item.role);
+    const bool supported_primitive = item.primitive_geometry_type.empty() ||
+      item.primitive_geometry_type == "box" || item.primitive_geometry_type == "cylinder" ||
+      item.primitive_geometry_type == "sphere";
+    item.semantic_task_zone_helper = semantic_zone && supported_primitive &&
+      item.provenance != WorkcellStudioItemProvenance::StaticFallbackPreview &&
+      !declared_mesh && candidates.empty() && !item.mesh_available && item.mesh_path.empty();
+    if (item.semantic_task_zone_helper &&
+        item.mesh_load_warning == "mesh metadata missing or legacy; using primitive preview") {
+      item.mesh_load_warning.clear();
     }
   }
 

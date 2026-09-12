@@ -147,10 +147,10 @@ TEST(WorkcellStudioCanvasMesh, ResolvesAbsoluteAndPackagePaths)
   fs::remove_all(root);
   fs::create_directories(root);
 
-  const fs::path visual = root / "assets" / "table_description" / "meshes" / "visual" / "table.stl";
+  const fs::path visual = root / "assets" / "canvas_test_bundled_table_description" / "meshes" / "visual" / "table.stl";
   write_file(visual, "solid x\nendsolid x\n");
 
-  write_file(root / "environment.yaml", "mesh_path: package://table_description/meshes/visual/table.stl\n");
+  write_file(root / "environment.yaml", "mesh_path: package://canvas_test_bundled_table_description/meshes/visual/table.stl\n");
   write_file(root / "scene_manifest.yaml", "template_name: demo\n");
   write_file(root / "config" / "task_recipe.yaml", "pick_source: a\nplace_target: b\n");
   write_file(root / "layout" / "workcell_studio_layout.yaml", "schema_version: workcell_studio_layout/v1\nitems: []\n");
@@ -1673,5 +1673,41 @@ TEST(WorkcellStudioCanvasMesh, AuthoredPrimitiveIsNotAMissingMesh)
   ASSERT_NE(mesh, model.items.end());
   EXPECT_FALSE(mesh->mesh_available);
   EXPECT_FALSE(mesh->mesh_load_warning.empty());
+  fs::remove_all(root);
+}
+
+
+TEST(WorkcellStudioCanvasMesh, SemanticZonesWithoutMeshAreExpectedHelpers)
+{
+  const fs::path root = fs::temp_directory_path() / "wc_canvas_semantic_zone_helpers";
+  fs::remove_all(root);
+  write_file(root / "environment.yaml", "environment: {}\n");
+  write_file(root / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(root / "config/task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+  write_file(root / "layout/workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\nitems:\n"
+    "  - {id: zone_a, type: zone, role: pick_zone, editable: true, pose: {xyz: [0, 0, 0], rpy: [0, 0, 0]}}\n"
+    "  - {id: zone_b, type: zone, role: place_zone, editable: true, pose: {xyz: [1, 0, 0], rpy: [0, 0, 0]}}\n"
+    "  - {id: zone_c, type: zone, role: drop_zone, editable: true, geometry_type: box, pose: {xyz: [2, 0, 0], rpy: [0, 0, 0]}}\n"
+    "  - {id: typed_zone, type: task_zone, editable: true}\n"
+    "  - {id: broken_zone, type: zone, role: pick_zone, mesh: {path: absent.stl}}\n"
+    "  - {id: incomplete_zone, type: zone, role: place_zone, mesh: {}}\n"
+    "  - {id: unsupported_zone, type: zone, role: place_zone, geometry_type: torus}\n"
+    "  - {id: broken_fixture, type: object, role: fixture, mesh: {path: absent.stl}}\n");
+  const auto model = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  for (const std::string id : {"zone_a", "zone_b", "zone_c", "typed_zone"}) {
+    const auto item = std::find_if(model.items.begin(), model.items.end(), [&](const auto & row) { return row.id == id; });
+    ASSERT_NE(item, model.items.end());
+    EXPECT_TRUE(item->semantic_task_zone_helper) << id;
+    EXPECT_TRUE(item->mesh_load_warning.empty()) << id;
+    EXPECT_FALSE(item->mesh_available) << id;
+    EXPECT_TRUE(item->editable) << id;
+  }
+  for (const std::string id : {"broken_zone", "incomplete_zone", "unsupported_zone", "broken_fixture"}) {
+    const auto item = std::find_if(model.items.begin(), model.items.end(), [&](const auto & row) { return row.id == id; });
+    ASSERT_NE(item, model.items.end());
+    EXPECT_FALSE(item->semantic_task_zone_helper) << id;
+    EXPECT_FALSE(item->mesh_load_warning.empty()) << id;
+  }
   fs::remove_all(root);
 }

@@ -19,6 +19,7 @@
 #include "gui/layout_item_serializer.hpp"
 #include "gui/environment_task_editor.hpp"
 #include "gui/scene3d_viewport_widget.h"
+#include "gui/scene3d_visual_classification.h"
 #include "gui/preview_item_suppression.h"
 #include "visual_mesh_source_resolver.hpp"
 #include "workcell_warning_once.hpp"
@@ -10140,7 +10141,15 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   const QString selected_id = item->data(0, TreeRoleId).toString().trimmed();
   const QString selected_role = item->data(0, TreeRoleRole).toString().trimmed();
   const auto * preview_item = scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(selected_id) : nullptr;
-  if (preview_item && preview_item->source_layer == QStringLiteral("overlay") &&
+  // Hidden visuals are absent from the filtered viewport, but their authored
+  // rows remain in the complete hierarchy/canvas model.
+  if (!preview_item) {
+    for (const auto & candidate : all_scene_preview_items_) {
+      if (candidate.id == selected_id) { preview_item = &candidate; break; }
+    }
+  }
+  if (preview_item && (preview_item->semantic_task_zone_helper ||
+      preview_item->source_layer == QStringLiteral("overlay")) &&
       preview_layer_overlays_helpers_box_ && !preview_layer_overlays_helpers_box_->isChecked()) {
     // An explicit hierarchy choice is deterministic opt-in to seeing that
     // helper. Hidden helpers never participate in ordinary canvas picking.
@@ -10357,8 +10366,11 @@ void MainWindow::apply_scene3d_preview_layer_filters(bool log_change)
     const QString category = token(item.category);
     const QString combined = role + "|" + category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();
     const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !item.mesh_load_warning.trimmed().isEmpty();
-    const bool is_overlay_or_helper = combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
+    const bool is_overlay_or_helper = item.semantic_task_zone_helper || combined.contains("overlay") || combined.contains("helper") || combined.contains("safety zone");
 
+    if (item.semantic_task_zone_helper) {
+      return is_warning_or_missing ? QString("layer_disabled:warning") : QString("layer_disabled:overlay");
+    }
     if (source_layer == "editable_layout" && !enabled_layers.contains("editable_layout")) return QString("layer_disabled:editable_layout");
     if ((source_layer == "locked_generated_urdf_visual" || source_layer == "generated_urdf_visual") &&
       !enabled_layers.contains("locked_generated_urdf_visual"))
@@ -10962,10 +10974,11 @@ void MainWindow::populate_scene_hierarchy()
         p.linked_to_editable_layout_state = false;
         break;
     }
+    if (p.semantic_task_zone_helper) p.active_visual_source = QStringLiteral("semantic_primitive");
     if (item.locked) {
       const QString base_reason = p.warnings.isEmpty() ? QStringLiteral("item is locked") : p.warnings.front();
       p.lock_reason = base_reason;
-      p.warnings << QStringLiteral("Locked: %1").arg(base_reason);
+      // Lock state is inspector metadata, not a visual-health failure.
     }
     preview_items.push_back(p);
 
@@ -11151,6 +11164,8 @@ void MainWindow::populate_scene_hierarchy()
     p.source_path = source_file;
     p.source_layer = linked_to_layout ? QStringLiteral("editable_layout") : QStringLiteral("overlay");
     p.active_visual_source = QStringLiteral("semantic_primitive");
+    p.semantic_task_zone_helper = concept == QStringLiteral("pick_zone") ||
+      concept == QStringLiteral("place_zone") || concept == QStringLiteral("safety_zone");
     p.linked_to_editable_layout_state = linked_to_layout;
     p.editable = linked_to_layout;
     p.locked = !linked_to_layout;
@@ -12293,7 +12308,8 @@ void MainWindow::populate_scene_hierarchy()
             id.startsWith(QStringLiteral("urdf_static_fallback_"));
           const bool authoritative_expanded_mesh_payload =
             visual_index_safe_for_preview &&
-            (visual_index_extraction_mode == QStringLiteral("xacro_expanded") ||
+            (visual_index_extraction_mode == QStringLiteral("real_xacro_expanded") ||
+             visual_index_extraction_mode == QStringLiteral("xacro_expanded") ||
              visual_index_extraction_mode == QStringLiteral("xacro_lite_expanded"));
           if (authoritative_expanded_mesh_payload && static_robot_fallback_visual) {
             ++skipped_semantic_helper_visual_rows;
@@ -13005,7 +13021,8 @@ void MainWindow::populate_scene_hierarchy()
                                  skip_reason_counts.value(QStringLiteral("zero_triangle_mesh"), 0);
   const int unsupported_extension_count = skip_reason_counts.value(QStringLiteral("unsupported_format"), 0);
   const bool authoritative_mesh_index_healthy =
-    (visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0 ||
+    (visual_index_extraction_mode.trimmed().compare(QStringLiteral("real_xacro_expanded"), Qt::CaseInsensitive) == 0 ||
+     visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0 ||
      visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_lite_expanded"), Qt::CaseInsensitive) == 0) &&
     visual_index_safe_for_preview &&
     mesh_item_count > 0 &&
@@ -13677,7 +13694,8 @@ void MainWindow::populate_scene_hierarchy()
   const int scene_mesh_rendered = scene3d_mesh_count;
   const int scene_fallback_rendered = scene3d_fallback_count;
   const bool scene3d_clean_product_view =
-    visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0 &&
+    (visual_index_extraction_mode.trimmed().compare(QStringLiteral("real_xacro_expanded"), Qt::CaseInsensitive) == 0 ||
+     visual_index_extraction_mode.trimmed().compare(QStringLiteral("xacro_expanded"), Qt::CaseInsensitive) == 0) &&
     visual_index_safe_for_preview &&
     missing_mesh_count == 0 &&
     unresolved_package_uri_count == 0 &&
@@ -14380,19 +14398,15 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
 
   const int preview_received_count = all_scene_preview_items_.size();
   const auto preview_item_visible_for_active_layers = [this](const ScenePreviewWidget::PreviewItem & p) {
-    const QString source_layer = p.source_layer.trimmed().toLower();
-    const QString visual_source = p.active_visual_source.trimmed().toLower();
-    const QString category = p.category.trimmed().toLower();
-    const QString status = p.status.trimmed().toLower();
-    const bool is_overlay_or_helper = category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
-    const bool is_warning_or_missing = status.contains("warning") || p.mesh_load_warning.contains("missing", Qt::CaseInsensitive);
-    if (source_layer == "editable_layout") return preview_layer_editable_layout_box_ ? preview_layer_editable_layout_box_->isChecked() : true;
-    if (source_layer == "generated_urdf_visual" || source_layer == "locked_generated_urdf_visual") return preview_layer_generated_urdf_visual_box_ ? preview_layer_generated_urdf_visual_box_->isChecked() : true;
-    if (source_layer == "primitive_fallback") return preview_layer_primitive_fallback_box_ ? preview_layer_primitive_fallback_box_->isChecked() : true;
-    if (visual_source == "mesh_preview") return preview_layer_mesh_preview_box_ ? preview_layer_mesh_preview_box_->isChecked() : true;
-    if (is_overlay_or_helper) return preview_layer_overlays_helpers_box_ ? preview_layer_overlays_helpers_box_->isChecked() : true;
-    if (is_warning_or_missing) return preview_layer_warnings_missing_assets_box_ ? preview_layer_warnings_missing_assets_box_->isChecked() : true;
-    return true;
+    const QSet<QString> enabled_layers = {
+      !preview_layer_editable_layout_box_ || preview_layer_editable_layout_box_->isChecked() ? "editable_layout" : "",
+      !preview_layer_generated_urdf_visual_box_ || preview_layer_generated_urdf_visual_box_->isChecked() ? "locked_generated_urdf_visual" : "",
+      !preview_layer_mesh_preview_box_ || preview_layer_mesh_preview_box_->isChecked() ? "mesh_preview" : "",
+      !preview_layer_primitive_fallback_box_ || preview_layer_primitive_fallback_box_->isChecked() ? "primitive_fallback" : "",
+      !preview_layer_overlays_helpers_box_ || preview_layer_overlays_helpers_box_->isChecked() ? "overlay" : "",
+      !preview_layer_warnings_missing_assets_box_ || preview_layer_warnings_missing_assets_box_->isChecked() ? "warning" : ""
+    };
+    return workcell_builder::include_preview_item_for_scene3d(p, enabled_layers);
   };
   const int preview_visible_count = std::count_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(), preview_item_visible_for_active_layers);
   const int preview_rendered_count = preview_visible_count;
@@ -14400,17 +14414,16 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   int classified_warning_count = 0;
   int classified_diagnostic_count = 0;
   int visible_fallback_count = 0;
-  int visible_overlay_count = 0;
   int visible_warning_count = 0;
   int visible_diagnostic_count = 0;
   for (const auto & item : all_scene_preview_items_) {
-    if (!preview_item_visible_for_active_layers(item)) continue;
+    // Health counts include hidden content; layer toggles only affect visible counts.
     const QString source_layer = item.source_layer.trimmed().toLower();
     const QString visual_source = item.active_visual_source.trimmed().toLower();
     const QString category = item.category.trimmed().toLower();
     const QString status = item.status.trimmed().toLower();
-    const bool is_overlay = category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
-    const bool is_warning = status.contains("warning") || item.mesh_load_warning.contains("missing", Qt::CaseInsensitive);
+    const bool is_overlay = item.semantic_task_zone_helper || category.contains("overlay") || category.contains("helper") || source_layer.contains("overlay");
+    const bool is_warning = workcell_builder::scene3d_visual_classification::has_actionable_visual_warning(item);
     const bool is_diagnostic = category.contains("diagnostic") || source_layer.contains("diagnostic") || status.contains("diagnostic");
     const bool is_fallback = source_layer.contains("fallback") || visual_source.contains("fallback");
     if (is_overlay) ++classified_overlay_count;
@@ -14418,7 +14431,6 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     if (is_diagnostic) ++classified_diagnostic_count;
     if (preview_item_visible_for_active_layers(item)) {
       if (is_fallback) ++visible_fallback_count;
-      if (is_overlay) ++visible_overlay_count;
       if (is_warning) ++visible_warning_count;
       if (is_diagnostic) ++visible_diagnostic_count;
     }
@@ -14532,29 +14544,26 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
       preview_detail = QString("%1 Source: %2 %3 %4")
         .arg(transform_parity.warning, transform_parity.source, native_preview_counts, launch_gate_detail);
     }
-    const bool visual_quality_needs_review = !preview_in_compatibility_mode && !scene3d_clean_product_view_ && (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
-      classified_overlay_count > 0 || classified_warning_count > 0 || classified_editable_count == 0 ||
-      classified_diagnostic_count > 0 || has_warnings);
+    const bool visual_quality_needs_review = !preview_in_compatibility_mode && (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
+      classified_warning_count > 0 || classified_editable_count == 0 ||
+      classified_diagnostic_count > 0 || has_warnings || !scene3d_counters.visual_quality_warnings.isEmpty());
     if (visual_quality_needs_review && transform_parity.warning.isEmpty()) {
       preview_status = SceneWorkflowStepStatus::Warning;
       QStringList preview_warnings;
       if (editable_layout_yaml_malformed) {
         preview_warnings << "editable/layout YAML is malformed; fix YAML to restore editable preview health";
       }
-      if (visible_fallback_count > 0) {
-        preview_warnings << "fallback content is visible from scene metadata or URDF mesh index";
+      if (classified_fallback_count > 0) {
+        preview_warnings << "fallback content is present in scene metadata";
       }
-      if (visible_overlay_count > 0) {
-        preview_warnings << "overlays/helpers remain visible and should be checked against the intended demo view";
-      }
-      if (visible_warning_count > 0) {
+      if (classified_warning_count > 0) {
         preview_warnings << "warning or missing-asset items remain in the preview";
       }
       if (classified_editable_count == 0) {
         preview_warnings << "no editable layout items are classified yet; create editable layout from preview when appropriate";
       }
-      if (visible_diagnostic_count > 0) {
-        preview_warnings << "diagnostic preview items remain visible";
+      if (classified_diagnostic_count > 0) {
+        preview_warnings << "diagnostic preview items are present";
       }
       if (has_warnings) {
         preview_warnings << "validation/readiness warnings are present";

@@ -13,5 +13,6 @@ QStringList canonical_helper_overlay_tokens();
 bool identity_contains_helper_overlay_token(const ScenePreviewWidget::PreviewItem & item);
 bool is_generated_urdf_visual_identity(const ScenePreviewWidget::PreviewItem & item);
 bool is_helper_overlay_identity(const ScenePreviewWidget::PreviewItem & item);
+bool has_actionable_visual_warning(const ScenePreviewWidget::PreviewItem & item);
 
 }  // namespace workcell_builder::scene3d_visual_classification

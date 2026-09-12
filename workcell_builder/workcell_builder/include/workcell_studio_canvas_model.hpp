@@ -41,6 +41,7 @@ struct WorkcellStudioCanvasItem {
   double origin_offset_x{0.0}, origin_offset_y{0.0}, origin_offset_z{0.0};
   bool mesh_available{false};
   std::string mesh_load_warning;
+  bool semantic_task_zone_helper{false};
   WorkcellStudioItemProvenance provenance{WorkcellStudioItemProvenance::GeneratedOrLegacyPreview};
   bool locked{false};
   bool editable{true};

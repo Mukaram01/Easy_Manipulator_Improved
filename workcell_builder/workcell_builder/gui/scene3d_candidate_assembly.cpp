@@ -26,7 +26,7 @@ bool include_preview_item_for_scene3d(
   const QString role = token(item.role);
   const QString category = token(item.category);
   const QString combined = source_layer + "|" + visual_source + "|" + role + "|" + category + "|" + token(item.status) + "|" + item.warnings.join("|").toLower();
-  const bool is_warning_or_missing = combined.contains("warning") || combined.contains("missing") || !item.mesh_load_warning.trimmed().isEmpty();
+  const bool is_warning_or_missing = workcell_builder::scene3d_visual_classification::has_actionable_visual_warning(item) || combined.contains("missing");
   const bool is_overlay_or_helper = workcell_builder::scene3d_visual_classification::is_helper_overlay_identity(item);
 
   // Treat generated robot visuals as a first-class layer, equivalent to the
@@ -38,6 +38,11 @@ bool include_preview_item_for_scene3d(
   // before downstream normalisation; these are also authoritative generated
   // URDF visuals and must not be dropped before the viewport renderer.
   if (is_generated_robot_visual(item)) return enabled_layers.contains("locked_generated_urdf_visual");
+  // Visual policy is independent of authored provenance. A meshless task
+  // zone remains editable data while its geometry belongs to Helpers.
+  if (item.semantic_task_zone_helper) {
+    return enabled_layers.contains(is_warning_or_missing ? "warning" : "overlay");
+  }
   if (source_layer == "editable_layout") return enabled_layers.contains("editable_layout");
   if (source_layer == "primitive_fallback") return enabled_layers.contains("primitive_fallback");
   if (visual_source == "mesh_preview") return enabled_layers.contains("mesh_preview");
