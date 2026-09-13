@@ -79,7 +79,7 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
             target = None
             for key in ('support_surfaces', 'assets', 'sensors', 'task_zones'):
                 for record in physical.get(key, []):
-                    if record.get('id') == iid:
+                    if isinstance(record, dict) and (record.get('id') == iid or record.get('layout_item_ref') == iid):
                         target = record
             if target is None:
                 target = {'id': iid}
@@ -103,8 +103,11 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
                 if isinstance(records, dict):
                     records = records.values()
                 for mirror in records:
-                    if isinstance(mirror, dict) and mirror.get('id') == iid and mirror is not target:
+                    if (isinstance(mirror, dict) and mirror is not target and
+                            (mirror.get('id') in (iid, target['id']) or mirror.get('layout_item_ref') == iid)):
+                        canonical_id = mirror.get('id', target['id'])
                         mirror.update(copy.deepcopy(target))
+                        mirror['id'] = canonical_id
         write_preserving(scene_dir/'environment.yaml', env)
     # Generated physical state is a projection of environment.yaml only.
     physical = env.get('environment', {})

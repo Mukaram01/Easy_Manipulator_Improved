@@ -1594,7 +1594,7 @@ def _annotate_owner_relative_physical_visual_transforms(
             visual_world_pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
             source_owner = owner
             owner_world_pose = source_owner.get("pose") or source_owner.get("world_pose") or source_owner.get("final_transform")
-            relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose, child_ros_rpy=True)
+            relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose, parent_ros_rpy=True, child_ros_rpy=True)
             if relative_pose is None:
                 continue
             # This is the transform of the generated item root in its authored
@@ -1936,7 +1936,7 @@ def _rpy_from_xyz_matrix(m: Sequence[Sequence[float]]) -> List[float]:
     return [roll, pitch, yaw]
 
 
-def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any, *, child_ros_rpy: bool = False) -> Optional[Json]:
+def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any, *, parent_ros_rpy: bool = False, child_ros_rpy: bool = False) -> Optional[Json]:
     parent_xyz = _pose_xyz(parent_world_pose)
     child_xyz = _pose_xyz(child_world_pose)
     if parent_xyz is None or child_xyz is None:
@@ -1944,12 +1944,13 @@ def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any, *, chil
     parent_rpy = _as_list(_as_map(parent_world_pose).get("rpy") or [0.0, 0.0, 0.0])
     child_rpy = _as_list(_as_map(child_world_pose).get("rpy") or [0.0, 0.0, 0.0])
     try:
-        parent_rot = _rpy_xyz_matrix([float(v) for v in parent_rpy[:3]])
+        from extract_scene_urdf_visual_mesh_index import tf_from_xyz_rpy
+        parent_rot = ([row[:3] for row in tf_from_xyz_rpy([0, 0, 0], parent_rpy)[:3]]
+                      if parent_ros_rpy else _rpy_xyz_matrix([float(v) for v in parent_rpy[:3]]))
         if child_ros_rpy:
-            # URDF FK emits fixed-axis RPY (Rz Ry Rx); editable Three.js owners
-            # and owner-relative transforms use intrinsic XYZ. Convert through
-            # the rotation matrix, never reinterpret the URDF angles as XYZ.
-            from extract_scene_urdf_visual_mesh_index import tf_from_xyz_rpy
+            # Authored owners and URDF FK use fixed-axis RPY (Rz Ry Rx).
+            # The derived owner-relative visual stays intrinsic XYZ; convert
+            # through matrices rather than reinterpreting either set of angles.
             child_rot = [row[:3] for row in tf_from_xyz_rpy([0, 0, 0], child_rpy)[:3]]
         else:
             child_rot = _rpy_xyz_matrix([float(v) for v in child_rpy[:3]])

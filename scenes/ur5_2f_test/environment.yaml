@@ -10,11 +10,10 @@ robot:
   base_frame: base_link
   planning_group: manipulator
   tool_mount_link: tool0
-  # Direct mount on surface_z_m=0; 10 um clears collision-mesh rounding.
   pose_xyz:
   - 0
   - 0
-  - 0.00001
+  - 1.0e-05
   pose_rpy:
   - 0
   - 0
@@ -113,7 +112,7 @@ environment:
   frame: world
   layout: layout/workcell_studio_layout.yaml
   support_surfaces:
-  - &id012
+  - &id011
     id: support_surface_table
     type: table
     role: support_surface
@@ -121,7 +120,7 @@ environment:
     category: environment
     frame: world
     pose_xyz:
-    - 0.3
+    - 0.6906668243408203
     - -0.2
     - -0.0008999994993209839
     pose_rpy:
@@ -151,7 +150,7 @@ environment:
     catalog_asset_id: table_standard_1200
     surface_z_m: 0.0
   assets:
-  - &id014
+  - &id012
     id: target_bin_default
     type: target_bin
     role: target_bin
@@ -159,8 +158,8 @@ environment:
     category: environment
     frame: world
     pose_xyz:
-    - 0.45
-    - 0.22
+    - 0.9099999999999443
+    - 0.27
     - 0.1
     pose_rpy:
     - 0
@@ -189,7 +188,7 @@ environment:
     catalog_asset_id: bin_standard
     support_surface_ref: support_surface_table
     task_zone_ref: default_drop_zone
-  - &id015
+  - &id013
     id: realsense_overhead
     type: realsense
     role: camera
@@ -197,12 +196,12 @@ environment:
     category: environment
     frame: world
     pose_xyz:
-    - 0.4
+    - 0.71
     - -0.25
-    - 0.8499999999999998
+    - 0.84
     pose_rpy:
     - 0
-    - 1.570000000000127
+    - 0
     - 0
     layout_item_ref: realsense_overhead
     geometry_type: mesh
@@ -228,7 +227,7 @@ environment:
       - 0.15
       - 1
   task_zones:
-  - &id010
+  - &id009
     id: pick_zone_main
     type: pick_zone
     role: pick_zone
@@ -252,14 +251,14 @@ environment:
     asset_class: primitive
     support_surface_ref: support_surface_table
     shape: box
-  - &id011
+  - &id010
     id: default_drop_zone
     type: place_zone
     role: place_zone
     display_name: Place Free Region
     category: zone
     frame: world
-    pose_xyz: &id009
+    pose_xyz:
     - 0.45
     - 0.22
     - 0.13
@@ -322,7 +321,10 @@ task:
   destinations:
   - id: default_drop_zone
     frame: world
-    pose_xyz: *id009
+    pose_xyz:
+    - 0.45
+    - 0.22
+    - 0.13
     pose_rpy:
     - 0
     - 0
@@ -388,13 +390,13 @@ metadata:
   runtime_generation: registered_asset_descriptions
   generator_version: industrial_cell/v1
 task_zones:
+- *id009
 - *id010
-- *id011
 support_surfaces:
-- *id012
+- *id011
 assets:
-- *id014
-- *id015
+- *id012
+- *id013
 perception:
   enabled: true
   mode: live_epd

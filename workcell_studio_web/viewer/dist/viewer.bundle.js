@@ -40397,7 +40397,8 @@ function selectionIsEditable(rendered) {
   return Boolean(rendered && !rendered.readOnlyPick && !isTaskOnlyHelperItem(rendered.item) && !isDebugOverlayItem(rendered.item) && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
 }
 function transformFromObject(object) {
-  return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
+  const rpy = new THREE.Euler().setFromQuaternion(object.quaternion, "ZYX");
+  return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: rpy.x, y: rpy.y, z: rpy.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
 }
 function translationSnapValue() {
   const v = Number(el.translationSnap?.value || 0);
@@ -40429,7 +40430,7 @@ function applyTransformToObject(object, transform) {
   if (!isFiniteTransform(transform))
     return false;
   object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
-  object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, "XYZ");
+  applyRosRpy(object, transform.pose.rpy);
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   return true;
 }
@@ -41185,7 +41186,10 @@ function applyPose(object, item) {
     return false;
   const pose = validation.pose;
   object.position.copy(pose.xyz);
-  object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, "XYZ");
+  if (isGeneratedUrdfItem(item))
+    object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, "XYZ");
+  else
+    applyRosRpy(object, pose.rpy);
   const s = validation.scale;
   object.scale.set(s.x, s.y, s.z);
   return true;
@@ -44677,34 +44681,19 @@ function beginTransientPivotDrag(owner) {
   state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis };
   return true;
 }
-function canonicalRotatePreviewTransform(start, axis, angle) {
-  if (!start || !["X", "Y", "Z"].includes(axis) || !Number.isFinite(angle))
-    return null;
-  const next = cloneTransform(start);
-  const component = axis.toLowerCase();
-  next.pose.rpy[component] = start.pose.rpy[component] + angle;
-  return next;
-}
 function previewTransientPivotDrag(owner) {
   const start = state.gizmoPivotDragStart;
   const pivot = state.gizmoPivot;
   if (!start || !pivot || pivot.owner !== owner)
     return false;
-  let next = null;
-  if (state.editorMode === "rotate") {
-    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle);
-  } else {
-    pivot.group.updateWorldMatrix(true, false);
-    const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());
-    const ownerWorld = delta.multiply(start.ownerWorld);
-    const ownerLocal = owner.object3d.parent ? owner.object3d.parent.matrixWorld.clone().invert().multiply(ownerWorld) : ownerWorld;
-    ownerLocal.decompose(owner.object3d.position, owner.object3d.quaternion, owner.object3d.scale);
-    owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
-    owner.object3d.updateMatrixWorld(true);
-    next = transformFromObject(owner.object3d);
-  }
-  if (!next)
-    return false;
+  pivot.group.updateWorldMatrix(true, false);
+  const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());
+  const ownerWorld = delta.multiply(start.ownerWorld);
+  const ownerLocal = owner.object3d.parent ? owner.object3d.parent.matrixWorld.clone().invert().multiply(ownerWorld) : ownerWorld;
+  ownerLocal.decompose(owner.object3d.position, owner.object3d.quaternion, owner.object3d.scale);
+  owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
+  owner.object3d.updateMatrixWorld(true);
+  const next = transformFromObject(owner.object3d);
   applyTransformChanges(linkedTransformChanges(owner, state.gizmoDragStart, next, state.gizmoDragGroupStart));
   syncInspectorTransformFields(owner);
   updateLabels();
@@ -45089,8 +45078,10 @@ function updateDirtyState() {
 }
 function clearPreviewEdits() {
   cancelDirectMoveDrag("Move cancelled");
-  for (const rendered of state.objects)
-    applyTransformToObject(rendered.object3d, rendered.originalTransform);
+  for (const rendered of state.objects) {
+    if (canEditItem(rendered.item))
+      applyTransformToObject(rendered.object3d, rendered.originalTransform);
+  }
   state.dirtyTransforms.clear();
   state.undoStack = [];
   state.redoStack = [];
@@ -45679,14 +45670,13 @@ function rebasePersistedPatch(patch) {
     if (!itemId3 || edit?.operation !== "update_transform" || !isFiniteTransform(edit?.old_transform) || !isFiniteTransform(edit?.new_transform)) {
       return { ok: false, error: "invalid_persisted_edit", itemId: itemId3 };
     }
-    let rendered = renderedById(itemId3);
-    rendered = canonicalTransformOwner(rendered) || rendered;
-    if (!rendered || String(rendered.item?.id || "") !== itemId3 || !canEditItem(rendered.item)) {
+    const rendered = selectionOwnerRenderedById(itemId3);
+    if (!rendered || String(rendered.item?.id || "") !== itemId3 || !canEditItem(rendered.item) || isGeneratedUrdfItem(rendered.item)) {
       return { ok: false, error: "persisted_owner_unavailable", itemId: itemId3 };
     }
     const persisted = cloneTransform(edit.new_transform);
     const dirty = state.dirtyTransforms.get(itemId3);
-    const current = cloneTransform(dirty?.newTransform || transformFromObject(rendered.object3d));
+    const current = cloneTransform(dirty?.newTransform || (rendered.object3d ? transformFromObject(rendered.object3d) : transformOf(rendered.item)));
     rendered.originalTransform = cloneTransform(persisted);
     rendered.authoredBaselineTransform = cloneTransform(persisted);
     const poseBlock = {
@@ -45706,11 +45696,13 @@ function rebasePersistedPatch(patch) {
         oldTransform: cloneTransform(persisted),
         newTransform: cloneTransform(current)
       });
-      applyTransformToObject(rendered.object3d, current);
+      if (rendered.object3d)
+        applyTransformToObject(rendered.object3d, current);
       preservedCount += 1;
     } else {
       state.dirtyTransforms.delete(itemId3);
-      applyTransformToObject(rendered.object3d, persisted);
+      if (rendered.object3d)
+        applyTransformToObject(rendered.object3d, persisted);
       clearedCount += 1;
     }
     rebasedItemIds.push(itemId3);
@@ -45723,7 +45715,7 @@ function rebasePersistedPatch(patch) {
   updateLabels();
   const selected = renderedById(String(state.selected || ""));
   if (selected && typeof populateInspector === "function") {
-    populateInspector(canonicalTransformOwner(selected) || selected);
+    populateInspector(selectionOwnerRenderedById(selected.item.id) || selected);
   }
   emitDirtyChanged();
   if (typeof pushEditorEvent === "function") {
@@ -47830,7 +47822,7 @@ function transformFromInspector(documentRef) {
   const transform = {
     pose: {
       xyz: { x: read("x"), y: read("y"), z: read("z") },
-      rpy: { x: read("roll"), y: read("pitch"), z: read("yaw") }
+      rpy: { x: read("roll") * Math.PI / 180, y: read("pitch") * Math.PI / 180, z: read("yaw") * Math.PI / 180 }
     },
     scale: { x: read("scale_x"), y: read("scale_y"), z: read("scale_z") }
   };
@@ -47854,17 +47846,18 @@ function writeInspectorTransform(documentRef, transform) {
     x: transform.pose.xyz.x,
     y: transform.pose.xyz.y,
     z: transform.pose.xyz.z,
-    roll: transform.pose.rpy.x,
-    pitch: transform.pose.rpy.y,
-    yaw: transform.pose.rpy.z,
+    roll: transform.pose.rpy.x * 180 / Math.PI,
+    pitch: transform.pose.rpy.y * 180 / Math.PI,
+    yaw: transform.pose.rpy.z * 180 / Math.PI,
     scale_x: transform.scale.x,
     scale_y: transform.scale.y,
     scale_z: transform.scale.z
   };
   for (const [field, value] of Object.entries(values)) {
     const input = inspector.querySelector(`[data-transform-field="${field}"]`);
-    if (input)
+    if (input && input !== documentRef.activeElement && input.dataset?.transformDirty !== "true") {
       input.value = Number(value).toFixed(6);
+    }
   }
   writeInspectorSummary(inspector, "pose xyz", [transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z].map((value) => Number(value).toFixed(3)).join(", "));
   writeInspectorSummary(inspector, "pose rpy", [transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z].map((value) => Number(value).toFixed(3)).join(", "));

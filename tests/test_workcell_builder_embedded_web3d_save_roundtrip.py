@@ -208,22 +208,36 @@ def test_versioned_capability_handshake_fails_closed_for_stale_bundle():
     assert "schemaVersion: 'workcell_studio_live_authoring_capabilities/v1'" in viewer
 
 
-def test_successful_live_save_rebases_in_place_without_product_view_regeneration():
+def test_successful_live_save_rebases_then_refreshes_canonical_payload():
     controller = CONTROLLER.read_text(encoding="utf-8")
-    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+    request = controller.split("void requestSave()", 1)[1].split("void startWorkflow", 1)[0]
+    assert request.index("native_save_(patch, &native_error)") < request.index("invalidate_persisted_product_view()")
+    assert request.index("invalidate_persisted_product_view()") < request.index("rebaseBrowserAfterPersistedWrite()")
+    assert "startWorkflow(" not in request
+    assert "requestPostSaveProductViewRefresh();" in request  # native-only edits too
+    rebase = controller.split("void rebaseBrowserAfterPersistedWrite()", 1)[1].split("bool resolveSaveContext", 1)[0]
+    success = rebase.split("if (browser_rebase_succeeded_)", 1)[1].split("} else {", 1)[0]
+    assert "requestPostSaveProductViewRefresh();" in success
+    assert 'result.value(QStringLiteral("dirtyCount")).toInt() > 0' in success
+    assert "save newer edits before Generate" in success
+    assert "no Product View regeneration required" not in controller
 
-    request_save = controller.split("void requestSave()", 1)[1].split("void startWorkflow", 1)[0]
-    assert "live authored session retained; no Product View regeneration required" in request_save
-    assert "native_save_(patch, &native_error)" in request_save
-    assert "startWorkflow(" not in request_save
-    assert "requestPostSaveProductViewRefresh" not in request_save
-    rebase_success = controller.split("if (browser_rebase_succeeded_)", 1)[1].split(
-        "} else {", 1
-    )[0]
-    assert "browser baseline rebased in place; no Product View regeneration required" in rebase_success
-    assert "requestPostSaveProductViewRefresh" not in rebase_success
-    assert "live authored session retained without Product View regeneration" in mainwindow
-    assert "Save Layout persisted authored YAML only" in mainwindow
+
+def test_generate_and_parity_reject_stale_saved_payload_until_matching_ready():
+    mainwindow = MAINWINDOW.read_text(encoding="utf-8")
+    preview = (GUI / "scene_preview_widget.cpp").read_text(encoding="utf-8")
+    for start, end, work in [
+        ("void MainWindow::generate_scene_package_for_selected_scene()", "void MainWindow::", "generate_yaml_draft_for_selected_scene();"),
+        ("bool MainWindow::run_canvas_generated_parity_check(", "void MainWindow::", "process.start("),
+    ]:
+        body = mainwindow.split(start, 1)[1].split(end, 1)[0]
+        gate = body.index("!scene_preview_widget_->persisted_product_view_current()")
+        assert gate < body.index(work)
+        assert "return" in body[gate:body.index(work)]
+    finish = preview.split("bool ScenePreviewWidget::finish_post_save_product_view_refresh(", 1)[1].split("void ScenePreviewWidget::", 1)[0]
+    assert finish.index("identity.generation != post_save_refresh_generation_") < finish.index("if (success) persisted_product_view_stale_ = false;")
+    assert finish.index("identity.payload_revision) != post_save_refresh_payload_revision_") < finish.index("if (success) persisted_product_view_stale_ = false;")
+    assert "if (persisted_product_view_stale_) {\n    force = true;\n    source_policy = EmbeddedWebSourcePolicy::PersistedCanonical;" in preview
 
 
 def test_open_authoring_session_pins_one_canonical_scene_directory():
@@ -332,12 +346,12 @@ def test_qt_logs_patch_summary_before_unified_native_save():
     assert request_save.index("logPatchSummary(patch)") < request_save.index("native_save_(patch, &native_error)")
 
 
-def test_successful_qt_save_does_not_invoke_legacy_workflow_or_refresh():
+def test_successful_qt_save_refreshes_without_invoking_legacy_save_workflow():
     controller = CONTROLLER.read_text(encoding="utf-8")
     request_save = controller.split("void requestSave()", 1)[1].split("void startWorkflow", 1)[0]
     assert "scripts/run_workcell_studio_web_edit_workflow.py" not in request_save
     assert "request_post_save_product_view_refresh" not in request_save
-    assert "requestPostSaveProductViewRefresh" not in request_save
+    assert "requestPostSaveProductViewRefresh" in request_save
     assert "native_save_(patch, &native_error)" in request_save
 
 
@@ -352,8 +366,11 @@ def test_post_save_refresh_renews_all_lifecycle_identities_and_rejects_stale_rea
     assert "++preview_payload_revision_" in refresh
     assert "++preview_payload_generation_" in refresh
     assert 'true, QStringLiteral("post_save"), EmbeddedWebSourcePolicy::PersistedCanonical' in refresh
-    assert "post_save_refresh_generation_ = embedded_web_request_generation_" in refresh
-    assert "post_save_refresh_payload_revision_ = preview_payload_revision_" in refresh
+    request = preview.split("void ScenePreviewWidget::request_embedded_web_product_view_refresh(", 1)[1].split("ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_request_identity", 1)[0]
+    assert request.index("post_save_refresh_generation_ = identity.generation") < request.index("maybe_start_next_embedded_web_prepare();")
+    assert "post_save_refresh_payload_revision_ = static_cast<int>(identity.payload_revision)" in request
+    controller_refresh = controller.split("void requestPostSaveProductViewRefresh()", 1)[1].split("void rebaseBrowserAfterPersistedWrite", 1)[0]
+    assert controller_refresh.index("saved_reload_revision_ = preview_->preview_payload_revision() + 1") < controller_refresh.index("preview_->request_post_save_product_view_refresh()")
     assert "post_save_product_view_refresh_finished" in header
     assert "revision != saved_reload_revision_" in controller
     assert "builder_revision != expected_builder_revision" in preview

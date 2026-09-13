@@ -199,3 +199,34 @@ def test_final_parity_blocks_wrong_renderer_joint_state(tmp_path, monkeypatch):
     payload['robot_preview']['joint_values']['movable'] = 1.57
     payload_path.write_text(json.dumps(payload))
     assert parity._final_transform_mismatches(scene, payload_path) == []
+
+
+def test_final_parity_uses_ros_authored_owner_and_still_rejects_pose_drift(tmp_path, monkeypatch):
+    import yaml
+    monkeypatch.syspath_prepend(str(REPO_ROOT / 'scripts'))
+    import validate_scene_builder_canvas_generated_parity as parity
+    import extract_scene_urdf_visual_mesh_index as urdf
+    from types import SimpleNamespace
+    scene = tmp_path / 'scene'
+    (scene / 'layout').mkdir(parents=True)
+    pose = {'xyz': [-0.52, 0.19, 0.85], 'rpy': [0.3, 1.2, -0.4]}
+    physical = {'id': 'fixture', 'pose': pose, 'mesh': {'scale': [1, 1, 1]}}
+    (scene / 'environment.yaml').write_text(yaml.safe_dump({'environment': {'assets': [physical]}}))
+    (scene / 'layout/workcell_studio_layout.yaml').write_text('items: []\n')
+    xml = '<robot name="test"><link name="world"/></robot>'
+    (tmp_path / 'preview.urdf').write_text(xml)
+    payload_path = tmp_path / 'payload.json'
+    payload = {
+        'robot_preview': {'mode': 'expanded_urdf_loader', 'urdf_url': 'preview.urdf'},
+        'assets': [{'id': 'fixture', 'pose': pose, 'render_policy': 'primary'}],
+    }
+    monkeypatch.setattr(parity, 'ROOT', tmp_path)
+    monkeypatch.setattr(urdf, '_extract_scene_launch_xacro_request', lambda *_: {'rel_path': 'scene.xacro', 'mappings': {}})
+    monkeypatch.setattr(urdf, 'discover_xacro_command', lambda: (['xacro'], True, ''))
+    monkeypatch.setattr(urdf, 'xacro_env', lambda *a, **kw: {})
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=0, stdout=xml))
+    payload_path.write_text(json.dumps(payload))
+    assert parity._final_transform_mismatches(scene, payload_path) == []
+    payload['assets'][0]['pose']['rpy'][1] += 0.1
+    payload_path.write_text(json.dumps(payload))
+    assert parity._final_transform_mismatches(scene, payload_path)

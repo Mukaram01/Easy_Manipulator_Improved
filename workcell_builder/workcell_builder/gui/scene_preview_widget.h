@@ -256,6 +256,7 @@ public:
   bool is_native_product_view_backend() const;
   bool embedded_web_product_view_presented() const;
   bool embedded_web_authoring_active() const;
+  void run_embedded_editor_command(const QString & script);
   QString embedded_web_authoring_contract_error() const;
   void set_authoring_mode(const QString & mode);
   void undo_authoring_edit();
@@ -339,6 +340,12 @@ public:
   int preview_payload_revision() const;
   quint64 preview_payload_generation() const;
   quint64 embedded_web_preparation_request_count() const;
+  void invalidate_persisted_product_view() {
+    persisted_product_view_stale_ = true;
+    post_save_refresh_generation_ = 0;
+    post_save_refresh_payload_revision_ = 0;
+  }
+  bool persisted_product_view_current() const { return !persisted_product_view_stale_; }
   int request_post_save_product_view_refresh();
   bool preview_payload_matches(const QVector<PreviewItem> & items) const;
 
@@ -530,7 +537,6 @@ private:
   bool native_compatibility_viewport_has_usable_content() const;
   Scene3DViewportWidget * active_native_viewport() const;
   void show_embedded_web_product_view();
-  void run_embedded_editor_command(const QString & script);
   void verify_embedded_editor_contract(const EmbeddedWebRequestIdentity & identity);
   void poll_embedded_editor_contract(
     const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
@@ -634,6 +640,8 @@ private:
   bool embedded_editor_polling_{ false };
   bool embedded_editor_contract_ready_{ false };
   QString embedded_editor_contract_error_;
+  QSet<QString> pending_live_visible_item_ids_;
+  bool pending_live_visible_item_ids_valid_{ false };
   QDateTime embedded_editor_contract_deadline_;
   int embedded_editor_contract_attempt_{ 0 };
   quint64 embedded_editor_state_request_token_{ 0 };
@@ -703,6 +711,7 @@ private:
   quint64 embedded_web_preparation_request_count_{ 0 };
   quint64 post_save_refresh_generation_{ 0 };
   int post_save_refresh_payload_revision_{ 0 };
+  bool persisted_product_view_stale_{ false };
   QByteArray preview_payload_fingerprint_;
   int last_visual_quality_revision_logged_{ -1 };
   SceneLoadDiagnosticContext scene_load_diagnostics_;

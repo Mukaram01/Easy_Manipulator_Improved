@@ -60,7 +60,7 @@ def test_save_roundtrip_preserves_metadata_and_updates_task_zones_contract_prese
 def test_save_roundtrip_reselects_by_stable_id_and_preserves_selection_when_missing():
     for token in [
         'stable_selected_id_before_refresh',
-        'Save Layout: live authored session retained without Product View regeneration',
+        'Save Layout: authored session saved; embedded Save will refresh the canonical Product View payload',
         'apply_scene_selection(stable_selected_id_before_refresh',
         'Ignored selection id absent from active scene payload; existing selection preserved',
     ]:

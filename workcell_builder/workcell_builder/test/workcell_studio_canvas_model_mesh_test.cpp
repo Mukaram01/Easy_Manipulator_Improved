@@ -189,6 +189,7 @@ TEST(WorkcellStudioCanvasMesh, FallsBackToCollisionAndWarns)
       found = true;
       EXPECT_TRUE(item.mesh_available);
       EXPECT_EQ(item.mesh_path, collision.generic_string());
+      EXPECT_FALSE(item.semantic_task_zone_helper);
       EXPECT_NE(item.mesh_load_warning.find("Mesh preview fallback for object_a"), std::string::npos);
     }
   }
@@ -261,6 +262,10 @@ TEST(WorkcellStudioCanvasMesh, UsesEnvironmentLayoutAsEditableFallback)
   for (const auto & item : model.items) {
     if (item.provenance != workcell_builder::WorkcellStudioItemProvenance::EditableLayout) continue;
     editable_ids.insert(item.id);
+    if (item.id == "zone_a") {
+      EXPECT_TRUE(item.semantic_task_zone_helper);
+      EXPECT_TRUE(item.mesh_load_warning.empty());
+    }
     EXPECT_EQ(item.source_file, "environment_layout.yaml");
     if (item.id == "table") {
       saw_table = true;
@@ -317,6 +322,29 @@ TEST(WorkcellStudioCanvasMesh, UsesSafeManifestLayoutOnlyAfterCanonicalAndLegacy
     EXPECT_EQ(item.source_file, "generated/editor_layout.yaml");
   }
   EXPECT_TRUE(found);
+  EXPECT_EQ(model.layout_source_kind, "manifest");
+
+  write_file(root / "environment_layout.yaml",
+    "schema_version: environment_layout/v1\nitems: [{id: legacy_zone, type: zone, role: place_zone}]\n");
+  const auto legacy = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  EXPECT_EQ(legacy.layout_source_kind, "legacy");
+  EXPECT_EQ(std::count_if(legacy.items.begin(), legacy.items.end(), [](const auto & item) {
+    return item.id == "legacy_zone" && item.provenance == workcell_builder::WorkcellStudioItemProvenance::EditableLayout &&
+      item.semantic_task_zone_helper && item.mesh_load_warning.empty();
+  }), 1);
+  EXPECT_EQ(std::count_if(legacy.items.begin(), legacy.items.end(), [](const auto & item) { return item.id == "manifest_item"; }), 0);
+
+  write_file(root / "layout/workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\nitems: [{id: authored_zone, type: zone, role: pick_zone}]\n");
+  const auto canonical = workcell_builder::build_workcell_studio_canvas_model(root, "demo");
+  EXPECT_EQ(canonical.layout_source_kind, "canonical");
+  EXPECT_EQ(std::count_if(canonical.items.begin(), canonical.items.end(), [](const auto & item) {
+    return item.id == "authored_zone" && item.provenance == workcell_builder::WorkcellStudioItemProvenance::EditableLayout &&
+      item.semantic_task_zone_helper && item.mesh_load_warning.empty();
+  }), 1);
+  EXPECT_EQ(std::count_if(canonical.items.begin(), canonical.items.end(), [](const auto & item) {
+    return item.id == "manifest_item" || item.id == "legacy_zone";
+  }), 0);
 }
 
 TEST(WorkcellStudioCanvasMesh, RejectsUnsafeManifestLayoutPath)
@@ -879,12 +907,20 @@ TEST(WorkcellStudioCanvasMesh, PreviewStarterLayoutCopiesLockedGeneratedPhysical
 
 TEST(WorkcellStudioCanvasMesh, Ur5CanonicalLayoutSuppressesGenericSemanticPlaceholders)
 {
-#ifndef WORKCELL_BUILDER_REPO_ROOT
-  GTEST_SKIP() << "WORKCELL_BUILDER_REPO_ROOT is not configured for ur5_2f_test layout coverage";
-#else
-  const fs::path repo_root = fs::path(WORKCELL_BUILDER_REPO_ROOT);
-  const fs::path source_scene = repo_root / "scenes" / "ur5_2f_test";
-  ASSERT_TRUE(fs::exists(source_scene)) << "expected ur5_2f_test scene fixture";
+  // Keep the commissioning contract independent of edits to the live scene.
+  const fs::path source_scene = fs::temp_directory_path() / "wc_canonical_semantic_commissioning";
+  fs::remove_all(source_scene);
+  write_file(source_scene / "environment.yaml", "environment: {}\n");
+  write_file(source_scene / "scene_manifest.yaml", "template_name: demo\n");
+  write_file(source_scene / "config/task_recipe.yaml", "pick_source: a\nplace_target: b\n");
+  write_file(source_scene / "layout/workcell_studio_layout.yaml",
+    "schema_version: workcell_studio_layout/v1\nitems:\n"
+    "  - {id: support_surface_table, type: table, role: support_surface, editable: true}\n"
+    "  - {id: pick_zone_commissioning, type: zone, role: pick_zone, editable: true}\n"
+    "  - {id: place_zone_default, type: zone, role: place_zone, editable: true}\n"
+    "  - {id: target_bin_default, type: bin, role: bin, editable: true}\n"
+    "  - {id: realsense_overhead, type: camera, role: camera, editable: true}\n"
+    "  - {id: home_pose_safe, type: safety, role: home_pose, editable: true}\n");
 
   const fs::path editable_layout_path = source_scene / "layout" / "workcell_studio_layout.yaml";
   ASSERT_TRUE(fs::exists(editable_layout_path));
@@ -911,6 +947,14 @@ TEST(WorkcellStudioCanvasMesh, Ur5CanonicalLayoutSuppressesGenericSemanticPlaceh
   std::map<std::string, int> id_counts;
   for (const auto & item : model.items) {
     ++id_counts[item.id];
+    if (expected_editable_ids.count(item.id)) {
+      EXPECT_EQ(item.provenance, workcell_builder::WorkcellStudioItemProvenance::EditableLayout);
+      EXPECT_TRUE(item.editable);
+    }
+    if (item.id == "pick_zone_commissioning" || item.id == "place_zone_default") {
+      EXPECT_TRUE(item.semantic_task_zone_helper);
+      EXPECT_TRUE(item.mesh_load_warning.empty());
+    }
   }
 
   for (const auto & id : expected_editable_ids) {
@@ -926,7 +970,7 @@ TEST(WorkcellStudioCanvasMesh, Ur5CanonicalLayoutSuppressesGenericSemanticPlaceh
 
   EXPECT_EQ(id_counts["robot_base"], 1) << "locked robot preview should remain separate from editable layout items";
   EXPECT_EQ(id_counts["robot_reach"], 1) << "locked reach preview should remain separate from editable layout items";
-#endif
+  fs::remove_all(source_scene);
 }
 
 TEST(WorkcellStudioCanvasMesh, StarterLayoutAcceptanceCopiesSceneAndFiltersUnsafePreviewItems)

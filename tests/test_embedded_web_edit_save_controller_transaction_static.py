@@ -29,7 +29,7 @@ def test_postwrite_target_check_tolerates_same_scene_navigation_churn():
     assert "canonicalPath(current.absolute_scene_dir.trimmed()) == scene_dir_" in active
 
 
-def test_successful_write_is_classified_before_context_churn_and_starts_one_refresh():
+def test_successful_write_is_classified_before_context_churn_and_starts_one_rebase():
     source = CONTROLLER.read_text(encoding="utf-8")
     callback = _section(
         source,
@@ -43,10 +43,13 @@ def test_successful_write_is_classified_before_context_churn_and_starts_one_refr
     )
     failure_index = callback.index("if (!ok)")
     write_target_index = callback.index("if (!saveTargetContextIsActive())")
-    refresh_index = callback.index("request_post_save_product_view_refresh()")
+    rebase_index = callback.index("rebaseBrowserAfterPersistedWrite()")
 
-    assert ok_index < dry_run_context_index < failure_index < write_target_index < refresh_index
-    assert callback.count("request_post_save_product_view_refresh()") == 1
+    assert ok_index < dry_run_context_index < failure_index < write_target_index < rebase_index
+    assert callback.count("rebaseBrowserAfterPersistedWrite()") == 1
+    rebase = _section(source, "void rebaseBrowserAfterPersistedWrite()", "bool resolveSaveContext")
+    success = rebase.split("if (browser_rebase_succeeded_)", 1)[1].split("} else {", 1)[0]
+    assert success.count("requestPostSaveProductViewRefresh();") == 1
     assert "reportSavedButSceneChanged();" in callback
 
 

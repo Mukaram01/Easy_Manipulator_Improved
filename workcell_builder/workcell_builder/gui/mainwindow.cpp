@@ -2695,15 +2695,14 @@ void MainWindow::setup_studio_shell()
   scene_files_tree_->setAlternatingRowColors(true);
   files_card_layout->addWidget(scene_files_tree_, 1);
 
-  auto * files_actions_layout = new QHBoxLayout();
+  auto * files_actions_layout = new QGridLayout();
   auto * open_scene_folder_button = new QPushButton("Open Scene Folder", files_card);
   auto * copy_scene_path_button = new QPushButton("Copy Scene Path", files_card);
   auto * refresh_scene_files_button = new QPushButton("Refresh Files", files_card);
 
-  files_actions_layout->addWidget(open_scene_folder_button);
-  files_actions_layout->addWidget(copy_scene_path_button);
-  files_actions_layout->addWidget(refresh_scene_files_button);
-  files_actions_layout->addStretch(1);
+  files_actions_layout->addWidget(open_scene_folder_button, 0, 0);
+  files_actions_layout->addWidget(copy_scene_path_button, 0, 1);
+  files_actions_layout->addWidget(refresh_scene_files_button, 1, 0, 1, 2);
   files_card_layout->addLayout(files_actions_layout);
 
   connect(open_scene_folder_button, &QPushButton::clicked, this, [this]() {
@@ -3817,28 +3816,42 @@ void MainWindow::setup_studio_shell()
   connect_button(copy_build_cmd, [this](){ QApplication::clipboard()->setText("source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select workcell_builder"); });
   connect_button(copy_source_cmd, [this](){ QApplication::clipboard()->setText("source install/setup.bash"); });
   connect_button(open_logs_cmd, [this](){ open_diagnostics_folder(); });
-  connect_action(fit_button, [this](){
+  auto embedded_view_command = [this](const QString & expression) {
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+      scene_preview_widget_->run_embedded_editor_command(
+        QStringLiteral("window.__WORKCELL_EDITOR_API_V1__ && window.__WORKCELL_EDITOR_API_V1__.%1").arg(expression));
+      return true;
+    }
+    return false;
+  };
+  connect_action(fit_button, [this, embedded_view_command](){
+    if (embedded_view_command("fitScene()")) return;
     if (!digital_twin_canvas_ || !digital_twin_canvas_->scene()) return;
     auto * scene = digital_twin_canvas_->scene();
     if (!scene->property("workcellPhysicalBoundsValid").toBool()) return;
     const QRectF bounds = scene->property("workcellPhysicalBounds").toRectF();
     if (bounds.isValid() && !bounds.isNull()) digital_twin_canvas_->fitInView(bounds.adjusted(-24,-24,24,24), Qt::KeepAspectRatio);
   });
-  connect_action(fit_robot_button, [this](){
+  connect_action(fit_robot_button, [this, embedded_view_command](){
+    if (embedded_view_command("fitSelection()")) return;
     if (!scene_preview_widget_) return;
     auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
     if (!viewport) return;
     viewport->fit_robot();
   });
-  connect_action(reset_button, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
+  connect_action(reset_button, [this, embedded_view_command](){
+    if (embedded_view_command("applyCameraPreset('isometric')")) return;
+    if (digital_twin_canvas_) digital_twin_canvas_->resetTransform();
+    rebuild_digital_twin_canvas();
+  });
   connect_action(zoom_in, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
   connect_action(zoom_out, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(0.85,0.85); });
-  connect_action(perspective_action, [this](){ scene_builder_is_3d_view_ = true; refresh_scene_builder_view_chips(); });
-  auto set_2d_layout_view = [this]() { scene_builder_is_3d_view_ = false; refresh_scene_builder_view_chips(); };
-  connect_action(top_action, set_2d_layout_view);
-  connect_action(left_action, set_2d_layout_view);
-  connect_action(right_action, set_2d_layout_view);
-  connect_action(front_action, set_2d_layout_view);
+  connect_action(perspective_action, [this, embedded_view_command](){ if (!embedded_view_command("applyCameraPreset('isometric')")) { scene_builder_is_3d_view_ = true; refresh_scene_builder_view_chips(); } });
+  auto set_2d_layout_view = [this, embedded_view_command](QString preset) { if (!embedded_view_command(QString("applyCameraPreset('%1')").arg(preset))) { scene_builder_is_3d_view_ = false; refresh_scene_builder_view_chips(); } };
+  connect_action(top_action, [set_2d_layout_view](){ set_2d_layout_view("top"); });
+  connect_action(left_action, [set_2d_layout_view](){ set_2d_layout_view("left"); });
+  connect_action(right_action, [set_2d_layout_view](){ set_2d_layout_view("right"); });
+  connect_action(front_action, [set_2d_layout_view](){ set_2d_layout_view("front"); });
   connect(toggle_grid_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Snap to Grid"); });
   connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
@@ -4422,6 +4435,10 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
 
 void MainWindow::generate_scene_package_for_selected_scene() {
   if (selected_scene_index_ < 0) return;
+  if (scene_preview_widget_ && !scene_preview_widget_->persisted_product_view_current()) {
+    append_studio_log("Generate blocked: saved Product View payload is not current. Wait for Save refresh to finish; if it failed, retry Product View refresh. Save any newer edits first.");
+    return;
+  }
   // Generation and the YAML refresh must not change which same-named package is authoritative.
   const auto selected_scene = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path selected_scene_dir = workcell_builder::canonical_scene_identity(
@@ -6220,6 +6237,13 @@ bool MainWindow::run_canvas_generated_parity_check(CanvasGeneratedParityMode mod
 {
   if (user_warning) user_warning->clear();
   if (severe_mismatch) *severe_mismatch = false;
+  if (scene_preview_widget_ && !scene_preview_widget_->persisted_product_view_current()) {
+    const QString reason = QStringLiteral("Parity blocked: saved Product View payload is not current. Finish or retry the post-save refresh before checking parity.");
+    if (user_warning) *user_warning = reason;
+    if (severe_mismatch) *severe_mismatch = true;
+    append_studio_log(reason);
+    return false;
+  }
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
     append_studio_log("Check Canvas/RViz Parity: no scene selected.");
     return false;
@@ -6826,12 +6850,12 @@ void MainWindow::populate_scene_files_tab()
     {"CMake File", "CMakeLists.txt"},
     {"Demo Launch", "launch/demo.launch.py"},
     {"Task Intent", "config/workcell_builder_task_intent.yaml"},
-    {"Task Recipe (fallback)", "config/task_recipe.yaml"},
-    {"Legacy Task Recipe (fallback)", "task_recipe.yaml"},
-    {"Readiness Dashboard", "readiness/readiness_dashboard.html"},
-    {"Readiness Summary", "readiness/readiness_summary.txt"},
-    {"Preview HTML", "preview/static_preview.html"},
-    {"Preview SVG", "preview/static_preview.svg"}
+    {"Task Recipe (optional)", "config/task_recipe.yaml"},
+    {"Legacy Task Recipe (legacy)", "task_recipe.yaml"},
+    {"Readiness Dashboard (optional)", "readiness/readiness_dashboard.html"},
+    {"Readiness Summary (optional)", "readiness/readiness_summary.txt"},
+    {"Preview HTML (optional)", "preview/static_preview.html"},
+    {"Preview SVG (optional)", "preview/static_preview.svg"}
   };
   boost::system::error_code ec;
   for (const auto & artifact : required_artifacts) {
@@ -6843,8 +6867,11 @@ void MainWindow::populate_scene_files_tab()
     auto * item = new QTreeWidgetItem(scene_files_tree_);
     item->setText(0, artifact.first);
     item->setText(1, artifact.second);
-    item->setText(2, exists ? "present" : "missing");
-    item->setForeground(2, exists ? QBrush(QColor("#15803D")) : QBrush(QColor("#B91C1C")));
+    const bool optional = artifact.first.contains("optional") || artifact.first.contains("legacy");
+    item->setText(2, exists ? "present" : (optional ? (artifact.first.contains("legacy") ? "legacy" : "optional") : "missing"));
+    item->setForeground(2, exists || optional ? QBrush(QColor("#15803D")) : QBrush(QColor("#B91C1C")));
+    item->setToolTip(0, artifact.first);
+    item->setToolTip(1, QString("Scene artifact: %1").arg(artifact.second));
   }
 }
 
@@ -8512,7 +8539,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
 
   append_studio_log(QString("Save Layout: serialized %1 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.")
     .arg(static_cast<int>(editable_saved_count)));
-  append_studio_log(QString("Save Layout: live authored session retained without Product View regeneration (selection id='%1').")
+  append_studio_log(QString("Save Layout: authored session saved; embedded Save will refresh the canonical Product View payload (selection id='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(scene_dir, "save_layout");
   capture_active_editable_layout_session();

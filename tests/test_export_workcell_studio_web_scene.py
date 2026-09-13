@@ -1425,3 +1425,18 @@ def test_urdf_camera_relative_visual_preserves_ros_rotation_in_xyz_viewer():
     # Rz(pi/2) * Ry(0) * Rx(roll), the URDF fixed-axis convention.
     expected = [[0, -math.cos(roll), math.sin(roll)], [1, 0, 0], [0, math.sin(roll), math.cos(roll)]]
     assert max(abs(actual[r][c] - expected[r][c]) for r in range(3) for c in range(3)) < 1e-8
+
+
+def test_owner_relative_visual_uses_ros_owner_and_retains_xyz_local_contract():
+    from extract_scene_urdf_visual_mesh_index import tf_from_xyz_rpy
+    parent = {'xyz': [-0.52, 0.19, 0.85], 'rpy': [0.3, 1.2, -0.4]}
+    child = {'xyz': [-0.51, 0.17, 0.83], 'rpy': [2.8, -0.2, 1.4]}
+    relative = exporter._parent_to_child_pose(parent, child, parent_ros_rpy=True, child_ros_rpy=True)
+    parent_matrix = tf_from_xyz_rpy(parent['xyz'], parent['rpy'])
+    expected = tf_from_xyz_rpy(child['xyz'], child['rpy'])
+    parent_rot = [row[:3] for row in parent_matrix[:3]]
+    actual_rot = exporter._matrix_multiply(parent_rot, exporter._rpy_xyz_matrix(relative['rpy']))
+    offset = exporter._matrix_vec_multiply(parent_rot, relative['xyz'])
+    for row in range(3):
+        assert parent['xyz'][row] + offset[row] == pytest.approx(expected[row][3], abs=1e-10)
+        assert actual_rot[row] == pytest.approx(expected[row][:3], abs=1e-10)

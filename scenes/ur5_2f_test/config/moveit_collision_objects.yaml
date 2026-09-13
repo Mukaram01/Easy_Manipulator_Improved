@@ -2,8 +2,10 @@ schema_version: moveit_planning_scene_manifest/v1
 scene_name: ur5_2f_test
 planning_frame: world
 source:
-  canonical_layout: layout/workcell_studio_layout.yaml
-  canonical_layout_sha256: 526b9be7a8c61c8475c19ce42c1064767ba2bf698bb06ce6c0f3fdf3533df173
+  physical_state_source: environment.yaml
+  physical_state_sha256: 7bc70764118e9b228c7f8dbd149e7e0ef2d63b266684b32b3e84528d428f5e1b
+  canonical_layout: environment.yaml
+  canonical_layout_sha256: 7bc70764118e9b228c7f8dbd149e7e0ef2d63b266684b32b3e84528d428f5e1b
 truth_boundary:
   authoring_visualization: Workcell Studio Web3D
   viewer_aabb_feedback: advisory_only
@@ -16,7 +18,7 @@ objects:
   operation: ADD
   pose:
     xyz:
-    - 0.09933317565917968
+    - 0.49
     - 0.0022999572753906183
     - -0.4531188535094261
     rpy:
@@ -60,8 +62,8 @@ objects:
   operation: ADD
   pose:
     xyz:
-    - 0.47
-    - 0.22
+    - 0.9099999999999443
+    - 0.27
     - 0.1
     rpy:
     - 0.0
@@ -1525,9 +1527,9 @@ objects:
     mesh_reference: package://sorting_bin_description/meshes/sorting_bin.stl
     sha256: 7bcbede3a459b4658e042ccf3f85851e242eab097d7d9c5b9920ae64fd232e75
 excluded_items:
-- id: pick_zone_main
+- id: default_drop_zone
   reason: semantic authoring marker; not physical collision geometry
-- id: place_zone_default
+- id: pick_zone_main
   reason: semantic authoring marker; not physical collision geometry
 - id: realsense_overhead
   reason: collision supplied by robot_description link camera_link

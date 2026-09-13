@@ -1484,6 +1484,7 @@ bool ScenePreviewWidget::finish_post_save_product_view_refresh(
       identity.generation != post_save_refresh_generation_ ||
       static_cast<int>(identity.payload_revision) != post_save_refresh_payload_revision_) return false;
   const int revision = post_save_refresh_payload_revision_;
+  if (success) persisted_product_view_stale_ = false;
   post_save_refresh_generation_ = 0;
   post_save_refresh_payload_revision_ = 0;
   emit post_save_product_view_refresh_finished(
@@ -1789,6 +1790,11 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(
   return;
 #else
   if (!embedded_web_view_) return;
+  // Retry after a saved-payload failure must also read authoritative YAML.
+  if (persisted_product_view_stale_) {
+    force = true;
+    source_policy = EmbeddedWebSourcePolicy::PersistedCanonical;
+  }
   const QString request_origin = origin.trimmed().isEmpty() ? QStringLiteral("automatic") : origin.trimmed();
   const EmbeddedWebRequestIdentity request_key = embedded_web_request_identity(0);
   const bool context_ready = !request_key.scene_id.isEmpty() &&
@@ -1894,6 +1900,10 @@ void ScenePreviewWidget::request_embedded_web_product_view_refresh(
   pending_embedded_web_request_ = true;
   pending_embedded_web_force_ = force;
   pending_embedded_web_source_policy_ = source_policy;
+  if (persisted_product_view_stale_ && source_policy == EmbeddedWebSourcePolicy::PersistedCanonical) {
+    post_save_refresh_generation_ = identity.generation;
+    post_save_refresh_payload_revision_ = static_cast<int>(identity.payload_revision);
+  }
   emit studio_log_requested(QStringLiteral("Product View lifecycle requested: scene=%1 generation=%2 payload_revision=%3 origin=%4 force=%5.")
     .arg(identity.scene_id).arg(identity.generation).arg(identity.payload_revision).arg(request_origin)
     .arg(force ? QStringLiteral("true") : QStringLiteral("false")));
@@ -2858,6 +2868,13 @@ void ScenePreviewWidget::poll_embedded_editor_contract(
       embedded_editor_contract_ready_ = true;
       embedded_editor_contract_error_.clear();
       embedded_editor_polling_ = true;
+      if (pending_live_visible_item_ids_valid_) {
+        QJsonArray values;
+        for (const QString & id : pending_live_visible_item_ids_) values.push_back(id);
+        run_embedded_editor_command(QStringLiteral(
+          "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;return a&&typeof a.setVisibleItemIds==='function'?a.setVisibleItemIds(%1):{error:'missing_setVisibleItemIds'};})()")
+          .arg(QString::fromUtf8(QJsonDocument(values).toJson(QJsonDocument::Compact))));
+      }
       emit studio_log_requested(QStringLiteral(
         "Embedded Product View live-authoring capability handshake accepted: schema=workcell_studio_live_authoring_capabilities/v1 api=1.1.0; %1")
           .arg(diagnostic_line));
@@ -3377,6 +3394,8 @@ void ScenePreviewWidget::remove_authoring_item(const QString & id)
 
 void ScenePreviewWidget::set_live_visible_item_ids(const QSet<QString> & ids)
 {
+  pending_live_visible_item_ids_ = ids;
+  pending_live_visible_item_ids_valid_ = true;
   if (!embedded_web_authoring_active()) return;
   QJsonArray values;
   for (const QString & id : ids) values.push_back(id);
@@ -3738,16 +3757,15 @@ int ScenePreviewWidget::request_post_save_product_view_refresh()
   return 0;
 #else
   if (!embedded_web_view_ || normalized_preview_context(preview_context_).scene_id.isEmpty()) return 0;
+  persisted_product_view_stale_ = true;
   // A save changes authored inputs even when the in-memory PreviewItem list is
   // byte-identical. Renew every identity used by preparation/readiness so an
   // earlier load completion or scene_ready can never complete this refresh.
-  ++preview_payload_revision_;
+  const int requested_revision = ++preview_payload_revision_;
   ++preview_payload_generation_;
   request_embedded_web_product_view_refresh(
     true, QStringLiteral("post_save"), EmbeddedWebSourcePolicy::PersistedCanonical);
-  post_save_refresh_generation_ = embedded_web_request_generation_;
-  post_save_refresh_payload_revision_ = preview_payload_revision_;
-  return post_save_refresh_payload_revision_;
+  return requested_revision;
 #endif
 }
 bool ScenePreviewWidget::preview_payload_matches(const QVector<PreviewItem> & items) const
@@ -3761,6 +3779,9 @@ void ScenePreviewWidget::set_preview_scene_name(const QString & scene_name)
 
   cancel_embedded_web_lifecycle(false);
   preview_scene_name_ = normalized_scene_name;
+  persisted_product_view_stale_ = false;
+  post_save_refresh_generation_ = 0;
+  post_save_refresh_payload_revision_ = 0;
   preview_payload_revision_ = 0;
   last_visual_quality_revision_logged_ = -1;
   emitted_scene_diagnostic_keys_.clear();

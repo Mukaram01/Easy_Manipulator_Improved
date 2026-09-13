@@ -1,0 +1,23 @@
+schema_version: detected_objects/v1
+source:
+  mode: replayed_snapshot
+  description: Deterministic conservative object bounds; not authored scene geometry.
+objects:
+- object_id: sample-cup
+  class_id: cup
+  confidence: 0.99
+  age_seconds: 0.0
+  pose:
+    frame_id: world
+    xyz: [0.26, -0.08, 0.051]
+    rpy: [0.0, 0.0, 0.0]
+  dimensions: [0.06, 0.06, 0.10]
+- object_id: sample-bottle
+  class_id: bottle
+  confidence: 0.99
+  age_seconds: 0.0
+  pose:
+    frame_id: world
+    xyz: [0.40, -0.08, 0.091]
+    rpy: [0.0, 0.0, 0.0]
+  dimensions: [0.06, 0.06, 0.18]

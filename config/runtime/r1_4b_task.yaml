@@ -1,0 +1,6 @@
+action: pick_and_place
+target_class: cup
+source_zone: pick_zone_main
+destination_zone: default_drop_zone
+max_age_seconds: 180.0
+min_confidence: 0.8

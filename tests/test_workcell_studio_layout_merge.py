@@ -89,3 +89,42 @@ def test_save_physical_add_delete_and_generation_use_environment(tmp_path):
     merge(scene)
     assert not yaml.safe_load(env.read_text())['environment']['assets']
     assert 'imported_fixture' not in (scene / 'generated/workcell_studio_merged_environment.yaml').read_text()
+
+
+def test_save_resolves_layout_ref_preserves_canonical_id_and_is_idempotent(tmp_path):
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    from workcell_studio_layout_merge import merge
+    scene = tmp_path / 'cell'
+    (scene / 'layout').mkdir(parents=True)
+    zone = {'id': 'canonical_drop', 'layout_item_ref': 'editor_place',
+            'type': 'place_zone', 'custom_metadata': 'keep', 'pose_xyz': [0, 0, 0]}
+    env = scene / 'environment.yaml'
+    env.write_text(yaml.safe_dump({'environment': {'task_zones': [zone]}, 'task_zones': [zone]}))
+    layout = scene / 'layout/workcell_studio_layout.yaml'
+    items = [
+        {'id': 'editor_place', 'category': 'zone', 'type': 'place_zone',
+         'pose': {'xyz': [1, 2, 3], 'rpy': [0, 0, 0.5]}},
+        {'id': 'new_place', 'category': 'zone', 'type': 'place_zone',
+         'pose': {'xyz': [4, 5, 6], 'rpy': [0, 0, 0]}},
+    ]
+    layout.write_text(yaml.safe_dump({'items': items}))
+    merge(scene, save_authored=True)
+    saved = env.read_bytes()
+    merge(scene, save_authored=True)
+    assert env.read_bytes() == saved
+    data = yaml.safe_load(saved)
+    records = data['environment']['task_zones']
+    assert [record['id'] for record in records] == ['canonical_drop', 'new_place']
+    assert records[0]['layout_item_ref'] == 'editor_place'
+    assert records[0]['pose_xyz'] == [1, 2, 3]
+    assert records[0]['custom_metadata'] == 'keep'
+    assert data['task_zones'] == [records[0]]
+    # Both identity forms must delete the same canonical record and its mirror.
+    for tombstone in ('canonical_drop', 'editor_place'):
+        env.write_bytes(saved)
+        layout.write_text(yaml.safe_dump({'items': items[1:]}))
+        merge(scene, [tombstone], save_authored=True)
+        merge(scene, save_authored=True)
+        deleted = yaml.safe_load(env.read_text())
+        assert [record['id'] for record in deleted['environment']['task_zones']] == ['new_place']
+        assert deleted['task_zones'] == []

@@ -59,7 +59,7 @@ function transformFromInspector(documentRef) {
   const transform = {
     pose: {
       xyz: { x: read('x'), y: read('y'), z: read('z') },
-      rpy: { x: read('roll'), y: read('pitch'), z: read('yaw') },
+      rpy: { x: read('roll') * Math.PI / 180, y: read('pitch') * Math.PI / 180, z: read('yaw') * Math.PI / 180 },
     },
     scale: { x: read('scale_x'), y: read('scale_y'), z: read('scale_z') },
   };
@@ -81,16 +81,18 @@ function writeInspectorTransform(documentRef, transform) {
     x: transform.pose.xyz.x,
     y: transform.pose.xyz.y,
     z: transform.pose.xyz.z,
-    roll: transform.pose.rpy.x,
-    pitch: transform.pose.rpy.y,
-    yaw: transform.pose.rpy.z,
+    roll: transform.pose.rpy.x * 180 / Math.PI,
+    pitch: transform.pose.rpy.y * 180 / Math.PI,
+    yaw: transform.pose.rpy.z * 180 / Math.PI,
     scale_x: transform.scale.x,
     scale_y: transform.scale.y,
     scale_z: transform.scale.z,
   };
   for (const [field, value] of Object.entries(values)) {
     const input = inspector.querySelector(`[data-transform-field="${field}"]`);
-    if (input) input.value = Number(value).toFixed(6);
+    if (input && input !== documentRef.activeElement && input.dataset?.transformDirty !== 'true') {
+      input.value = Number(value).toFixed(6);
+    }
   }
   writeInspectorSummary(inspector, 'pose xyz', [transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z].map(value => Number(value).toFixed(3)).join(', '));
   writeInspectorSummary(inspector, 'pose rpy', [transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z].map(value => Number(value).toFixed(3)).join(', '));

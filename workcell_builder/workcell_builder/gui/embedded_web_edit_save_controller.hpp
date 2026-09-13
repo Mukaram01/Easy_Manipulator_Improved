@@ -103,6 +103,7 @@ public:
         if (!saved_reload_pending_ || revision != saved_reload_revision_) return;
         saved_reload_pending_ = false;
         saved_reload_revision_ = 0;
+        if (view_) view_->setEnabled(true);
         busy_ = false;
         if (!success) {
           const bool baseline_rebased = browser_rebase_succeeded_;
@@ -287,6 +288,7 @@ private:
     clearActiveSaveTransaction();
     saved_reload_pending_ = false;
     saved_reload_revision_ = 0;
+    if (view_) view_->setEnabled(true);
     busy_ = false;
     if (save_button_) save_button_->setEnabled(false);
     setStatus(QStringLiteral("Saved; active scene changed before Product View refresh"), QStringLiteral("warning"));
@@ -303,9 +305,14 @@ private:
       return;
     }
     setStatus(QStringLiteral("Saved; refreshing Product View…"), QStringLiteral("success"));
+    // Prevent new browser edits from being lost during canonical navigation.
+    view_->setEnabled(false);
     saved_reload_pending_ = true;
-    saved_reload_revision_ = preview_->request_post_save_product_view_refresh();
-    if (saved_reload_revision_ <= 0) {
+    // Register before starting: a preparation failure may be synchronous.
+    saved_reload_revision_ = preview_->preview_payload_revision() + 1;
+    const int requested_revision = preview_->request_post_save_product_view_refresh();
+    if (requested_revision <= 0) {
+      view_->setEnabled(true);
       saved_reload_pending_ = false;
       busy_ = false;
       reload_required_after_save_ = !browser_rebase_succeeded_;
@@ -331,9 +338,8 @@ private:
     if (active_patch_.isEmpty() || !view_) {
       browser_rebase_succeeded_ = false;
       reload_required_after_save_ = true;
-      busy_ = false;
-      logPhase(QStringLiteral("browser rebase failed closed: persisted patch transaction is unavailable; no Product View regeneration was requested"));
-      setStatus(QStringLiteral("Saved; editor contract lost—reopen required"), QStringLiteral("error"));
+      logPhase(QStringLiteral("browser rebase unavailable: persisted patch transaction is unavailable; refreshing from authoritative saved YAML"));
+      requestPostSaveProductViewRefresh();
       return;
     }
     const quint64 transaction = active_save_transaction_;
@@ -357,34 +363,31 @@ private:
             .arg(result.value(QStringLiteral("clearedCount")).toInt())
             .arg(result.value(QStringLiteral("preservedCount")).toInt())
             .arg(result.value(QStringLiteral("dirtyCount")).toInt()));
-          busy_ = false;
-          active_patch_ = QJsonObject{};
-          setStatus(QStringLiteral("Saved"), QStringLiteral("success"));
-          logPhase(QStringLiteral(
-            "saved: browser baseline rebased in place; no Product View regeneration required"));
-          browser_rebase_succeeded_ = false;
-          pollEditorState();
+          // Do not discard an edit made while the asynchronous rebase ran.
+          // The persisted payload stays gated until that newer edit is saved.
+          if (result.value(QStringLiteral("dirtyCount")).toInt() > 0) {
+            busy_ = false;
+            active_patch_ = QJsonObject{};
+            setStatus(QStringLiteral("Saved; save newer edits before Generate"), QStringLiteral("warning"));
+            pollEditorState();
+            return;
+          }
+          requestPostSaveProductViewRefresh();
           return;
         } else {
-          logPhase(QStringLiteral("browser rebase failed closed: %1; reopen before another save; no Product View regeneration was requested")
+          logPhase(QStringLiteral("browser rebase failed: %1; refreshing from authoritative saved YAML")
             .arg(result.value(QStringLiteral("error")).toString().isEmpty() ?
               QStringLiteral("no result from editor") : result.value(QStringLiteral("error")).toString()));
         }
-        busy_ = false;
-        active_patch_ = QJsonObject{};
-        setStatus(QStringLiteral("Saved; editor contract lost—reopen required"), QStringLiteral("error"));
-        pollEditorState();
+        requestPostSaveProductViewRefresh();
       });
     QTimer::singleShot(2500, this, [this, transaction]() {
       if (!browser_rebase_pending_ || transaction != active_save_transaction_) return;
       browser_rebase_pending_ = false;
       browser_rebase_succeeded_ = false;
       reload_required_after_save_ = true;
-      busy_ = false;
-      active_patch_ = QJsonObject{};
-      logPhase(QStringLiteral("browser rebase timed out; failed closed without Product View regeneration"));
-      setStatus(QStringLiteral("Saved; editor rebase timed out—reopen required"), QStringLiteral("error"));
-      pollEditorState();
+      logPhase(QStringLiteral("browser rebase timed out; refreshing from authoritative saved YAML"));
+      requestPostSaveProductViewRefresh();
     });
   }
 
@@ -583,18 +586,15 @@ private:
         pollEditorState();
         return;
       }
+      preview_->invalidate_persisted_product_view();
       logPhase(QStringLiteral(
         "unified authored transaction complete: metadata, structure, and validated Web3D transforms serialized by stable item ID"));
       if (!edits.isEmpty()) {
         rebaseBrowserAfterPersistedWrite();
       } else {
-        busy_ = false;
-        active_patch_ = QJsonObject{};
+        browser_rebase_succeeded_ = true;
         reload_required_after_save_ = false;
-        setStatus(QStringLiteral("Saved"), QStringLiteral("success"));
-        logPhase(QStringLiteral(
-          "saved: live authored session retained; no Product View regeneration required"));
-        pollEditorState();
+        requestPostSaveProductViewRefresh();
       }
     });
   }

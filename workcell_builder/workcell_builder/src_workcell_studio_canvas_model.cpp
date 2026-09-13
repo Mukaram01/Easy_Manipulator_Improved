@@ -461,7 +461,7 @@ static double yaml_double_or_default(const YAML::Node & node, double fallback)
   return yaml_read_double(node, &out) ? out : fallback;
 }
 
-[[maybe_unused]] static fs::path manifest_declared_canvas_layout_path(const fs::path & scene_dir, const YAML::Node & manifest)
+static fs::path manifest_declared_canvas_layout_path(const fs::path & scene_dir, const YAML::Node & manifest)
 {
   try {
     const YAML::Node files = yaml_map_key(manifest, "files");
@@ -859,6 +859,25 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       append_layout_load_message("Failed to load layout " + legacy_layout_path.string() + ": " +
                                  layout_parse_reason(legacy_layout_status) + "; using next fallback");
     }
+    // A manifest may nominate an editor layout only when both preferred files
+    // are absent; it must not mask a malformed canonical or legacy source.
+    if (!layout_ok && !canonical_layout_status.exists && !legacy_layout_status.exists) {
+      const fs::path declared_path = manifest_declared_canvas_layout_path(scene_dir, manifest);
+      YAML::Node declared_layout;
+      const YamlLoadStatus declared_status = declared_path.empty() ? YamlLoadStatus{} : read_yaml(declared_path, &declared_layout);
+      if (declared_status.loaded && yaml_node_is_map(declared_layout)) {
+        const std::string declared_schema = yaml_map_value_or_empty(declared_layout, "schema_version");
+        if ((declared_schema == "workcell_studio_layout/v1" || declared_schema.empty()) &&
+            yaml_node_is_sequence(yaml_map_key(declared_layout, "items"))) {
+          effective_layout = declared_layout;
+          layout_ok = true;
+          layout_source_file = fs::relative(declared_path, scene_dir).generic_string();
+          m.layout_source_path = declared_path.string();
+          m.layout_source_kind = "manifest";
+          append_layout_load_message("Loaded manifest-declared editable layout from " + declared_path.string());
+        }
+      }
+    }
   }
 
   if (layout_ok) {
@@ -905,8 +924,8 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           if (!explicit_type.empty()) item.type = explicit_type;
           if (!explicit_category.empty()) item.category = explicit_category;
           if (!explicit_role.empty()) item.role = explicit_role;
-          if (layout_source_is_environment_layout) {
-            item.source_file = "environment_layout.yaml";
+          if (layout_source_is_environment_layout || m.layout_source_kind == "manifest") {
+            item.source_file = layout_source_file;
             bool locked = false;
             item.locked = yaml_read_bool(yaml_map_key(node, "locked"), &locked) ? locked : false;
           }
@@ -1014,7 +1033,13 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
       }
     }
     if (incomplete_placement_metadata) {
-      enable_deterministic_fallback("layout/workcell_studio_layout.yaml has incomplete placement metadata");
+      if (layout_source_is_environment_layout) {
+        // Legacy records may omit poses. Retain per-item defaults and authored
+        // provenance; one incomplete record must not reset every loaded item.
+        m.warnings.push_back("environment_layout.yaml has incomplete placement metadata; using per-item pose defaults");
+      } else {
+        enable_deterministic_fallback("layout/workcell_studio_layout.yaml has incomplete placement metadata");
+      }
     }
   } else if (layout_ok) {
     enable_deterministic_fallback(layout_source_file + " has invalid or missing schema_version");

@@ -187,7 +187,7 @@ assert.equal(state.canonicalSelectedOwnerId, 'realsense_overhead');
 assert.deepEqual(state.canonicalTransform, second);
 assert.equal(state.canonicalTransformSource, 'edit_patch');
 assert.equal(inspectorOne.fields.x.value, '-0.220000');
-assert.equal(inspectorOne.fields.yaw.value, '-2.443461');
+assert.equal(inspectorOne.fields.yaw.value, (second.pose.rpy.z * 180 / Math.PI).toFixed(6));
 assert.equal(inspectorOne.rows.get('pose xyz').dd.textContent, '-0.220, -0.160, 0.060');
 assert.equal(inspectorOne.rows.get('pose rpy').dd.textContent, '0.000, 0.000, -2.443');
 
@@ -197,7 +197,7 @@ assert.equal(diagnostics.gizmoAttachedTargetId, 'realsense_overhead');
 assert.equal(diagnostics.gizmoOwnerMatchesSelection, true);
 assert.deepEqual(diagnostics.canonicalTransform, second);
 assert.deepEqual(diagnostics.gizmoTransform, second);
-assert.deepEqual(diagnostics.inspectorTransform, {{...second, pose:{{...second.pose, rpy:{{...second.pose.rpy, z:-2.443461}}}}}});
+assert.ok(Math.abs(diagnostics.inspectorTransform.pose.rpy.z - second.pose.rpy.z) < 1e-8);
 assert.deepEqual(diagnostics.patchTransform, second);
 assert.deepEqual(apiOne.getEditPatch().edits[0].new_transform, second);
 

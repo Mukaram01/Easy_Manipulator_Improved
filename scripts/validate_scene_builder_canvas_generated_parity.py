@@ -215,7 +215,9 @@ def _final_transform_mismatches(scene_dir: Path, payload_path: Path | None = Non
             owner_id = str(row.get("canonical_scene_item_id") or row.get("camera_id") or row.get("support_surface_ref"))
             owner = owners[owner_id]
             local = row["owner_relative_visual_transform"]
-            return urdf.matmul4(viewer_matrix(owner["pose"]), viewer_matrix(local))
+            # Editable owners use ROS RPY; only the exported visual-local
+            # transform is intrinsic XYZ (the generated visual contract).
+            return urdf.matmul4(urdf.tf_from_xyz_rpy(owner["pose"]["xyz"], owner["pose"]["rpy"]), viewer_matrix(local))
         return urdf.tf_from_xyz_rpy(pose["xyz"], pose["rpy"])
     def delta(left, right):
         import math
@@ -236,7 +238,7 @@ def _final_transform_mismatches(scene_dir: Path, payload_path: Path | None = Non
         expected_local = {"xyz": mesh.get("origin_offset", [0, 0, 0]), "rpy": mesh.get("rpy", [0, 0, 0])}
         actual_local = item.get("mesh_local_transform", {})
         left = urdf.matmul4(matrix({"pose": expected_pose}), matrix({"pose": expected_local}))
-        right = urdf.matmul4(viewer_matrix(item["pose"]), matrix({"pose": {"xyz": actual_local.get("xyz", [0, 0, 0]), "rpy": actual_local.get("rpy", [0, 0, 0])}}))
+        right = urdf.matmul4(urdf.tf_from_xyz_rpy(item["pose"]["xyz"], item["pose"]["rpy"]), matrix({"pose": {"xyz": actual_local.get("xyz", [0, 0, 0]), "rpy": actual_local.get("rpy", [0, 0, 0])}}))
         expected_scale = mesh.get("scale", [1, 1, 1])
         actual_scale = actual_local.get("scale", item.get("mesh_scale", [1, 1, 1]))
         rotation_and_position_delta = delta(left, right)
