@@ -1,624 +1,429 @@
-# AGENTS.md — Workcell Studio / Easy Manipulation Deployment
+# AGENTS.md - Workcell Studio / Easy Manipulation Deployment
 
-## Purpose and authority
+## 0. Authority and mission
 
-This file is the operating contract for AI/Codex work in this repository.
+This file is the repository-level operating contract for Codex/AI contributors.
 
-Use it to keep development aligned with the evidence-driven Workcell Studio roadmap. When repository evidence, runtime evidence, and old planning notes disagree, prefer the newest verified repository/runtime evidence and update the documentation rather than preserving an optimistic claim.
+Workcell Studio is an internal configurable industrial robotic-cell platform. The product is not a one-off sorting demo and it is not a collection of validators. The product must let an engineer author a cell, save it, regenerate it, validate it, launch it safely, plan a task, simulate a complete manipulation cycle, consume perception, and produce evidence that the same authored truth survived every boundary.
 
-### Instruction-document authority
+The primary product UI is `workcell_builder`. Improve it directly. Do not replace it with Streamlit, notebooks, a second engineering GUI, or a demo-only application.
 
-- `AGENTS.md` is the authoritative contributor and AI/Codex operating contract.
-- `docs/manuals/WORKCELL_STUDIO_ROADMAP.md` is the current product roadmap; use other manuals only when they are relevant to the scoped change.
-- `Workcell_Studio_AI_Operating_Guardrail.md` is not a current or historical tracked path in the available repository refs. It was not renamed to the roadmap. Treat requests to read it as stale references to this `AGENTS.md`, and do not recreate a second operating contract under that name.
+The current product priority is singular:
 
-Do not measure progress by PR count, test count, or the amount of scaffolding added. Measure progress by user-visible acceptance evidence for the canonical Workcell Studio workflow.
+> **Make one complete industrial cycle work correctly, repeatably, observably, and safely on `scenes/ur5_2f_test` before broadening the platform.**
 
-## Project identity
+A change that does not materially advance that full-cycle closure is normally not the next change.
 
-This repository is the primary Workcell Studio / Easy Manipulation Deployment workspace.
+Authoritative planning documents:
 
-Workcell Studio is an internal configurable robotic-cell platform for authoring, generating, validating, simulating, demonstrating, and eventually commissioning industrial robotic cells.
+- `AGENTS.md` - AI/Codex operating contract.
+- `docs/manuals/WORKCELL_STUDIO_ROADMAP.md` - human-readable product roadmap and current execution order.
+- `docs/manuals/workcell_studio_master_roadmap.yaml` - machine-readable milestone/gate contract for agents and automation.
 
-This is not only a sorting demo. Sorting, inspection, machine tending, conveyor picking, binning, palletising, and similar workflows are templates inside Workcell Studio.
+When old docs, generated artifacts, source code, and verified runtime evidence disagree, prefer the newest verified repository/runtime evidence and update the docs. Never preserve an optimistic claim merely because it is already written down.
 
-The primary product UI is `workcell_builder`. Improve `workcell_builder` directly.
+## 1. North-star industrial cycle
 
-Do not replace the product with Streamlit, notebooks, dashboards, or separate demo UIs. Those may exist only as optional reports, exports, validation summaries, or demo artifacts.
+### Canonical scene
 
-Keep Easy Manipulation Deployment / Workcell Builder separate from EPD. Do not merge the EPD GUI or perception implementation into Workcell Builder.
+`scenes/ur5_2f_test`
 
-## Product boundary
+### Canonical first-cycle hardware/model contract
+
+- Robot: UR5.
+- Tool: Robotiq 2F / finger gripper.
+- Planning stack: ROS 2 Humble + MoveIt 2 + RViz.
+- Default execution mode: fake hardware.
+- Camera/perception source: RealSense D435i through normalized EPD input.
+- First target class: `bottle` unless the canonical task config is intentionally changed.
+- Destination: the scene-authored default place/drop destination.
+- Perceived workpiece is runtime data. Do not add authored fake bottles/cups merely to make the cycle look complete.
+
+### The full cycle
+
+```text
+open Workcell Builder
+-> select ur5_2f_test
+-> inspect/edit authored physical scene
+-> edit task intent if required
+-> Save Layout
+-> close/reopen and recover identical authored state
+-> Generate Scene Package
+-> validate generated package and authored/generated parity
+-> build/discover ROS package
+-> launch RViz/MoveIt with fake hardware
+-> start replay or live perception input
+-> accept only the configured target class
+-> reject stale/unreachable/collision-invalid/grasp-invalid candidates
+-> create/update PlanningScene object
+-> generate grasp candidates
+-> plan approach
+-> move to pre-grasp
+-> grasp/close
+-> attach object
+-> retreat
+-> transfer
+-> plan/place at authored destination
+-> release/detach
+-> retreat
+-> return home/safe state
+-> report success/failure reason and evidence
+-> stop runtime cleanly
+-> return to the same Workcell Studio session
+-> edit/save/run again without restarting the application
+```
+
+The scene is not "done" until that cycle passes the acceptance gates below.
+
+## 2. Full-cycle acceptance gates - R1
+
+Every gate must have an explicit PASS/BLOCKED result and evidence. Do not skip a gate because a later layer appears to work.
+
+### G0 - Reproducible workspace baseline
+
+Pass when:
+
+- supported baseline is Ubuntu 22.04 + ROS 2 Humble;
+- repository/workspace path is unambiguous;
+- required packages are discoverable after the documented build/bootstrap path;
+- `xacro`, `ament_index_python`, `workcell_builder`, MoveIt packages, grasp packages, and required scene/asset packages resolve;
+- a clean checkout does not rely on undocumented manual file copying.
+
+### G1 - Authored source-of-truth correctness
+
+Pass when:
+
+- physical editable state has one clear authority;
+- task intent/destination semantics have one clear authority;
+- cache/mirror/generated artifacts are not treated as authored truth;
+- stable IDs survive load/save/regeneration;
+- the canonical scene contains valid robot/tool/camera/environment/task metadata.
+
+### G2 - Workcell Builder authoring round-trip
+
+Pass when, in the GUI:
+
+- the intended editable item can be selected from Product View and hierarchy;
+- inspector, hierarchy, 3D selection, and authored item identity stay synchronized;
+- XYZ/RPY editing is deterministic;
+- undo/redo is correct;
+- Save succeeds visibly;
+- close/reopen restores identical authored transforms and task bindings;
+- no Product View cache or transient patch is required to recover state.
+
+### G3 - Deterministic generation
+
+Pass when:
+
+- Generate Scene Package consumes canonical authored inputs;
+- regenerated outputs are deterministic apart from explicitly allowed provenance fields;
+- generated package contains the required ROS/package/launch/URDF/task/runtime contract;
+- generation never silently preserves stale derived state;
+- generated artifacts record honest provenance/source hashes/version where supported.
+
+### G4 - Authored -> generated -> Product View parity
+
+Pass when:
+
+- physical asset IDs, poses, mesh identities/scales, robot base, tool mount, camera pose, and destination semantics match across authored state and generated runtime state;
+- Product View is derived from current canonical state;
+- a stale Web3D payload cannot be mistaken for current truth;
+- post-generation parity reports zero blockers for the canonical scene.
+
+### G5 - ROS build and package discovery
+
+Pass when:
+
+- the generated/refreshed canonical package builds in the documented Humble workspace;
+- package discovery resolves the same scene path the builder authored;
+- there is no duplicate/mirror path ambiguity;
+- no manual repair of generated files is required after generation.
+
+### G6 - Fake-hardware launch and frame truth
+
+Pass when:
+
+- `ur5_2f_test` launches with fake hardware explicitly enabled;
+- robot state is valid;
+- base/world/tool/grasp frames are correct;
+- planning group and end-effector are correct;
+- table/bin/camera/environment appear at the authored transforms;
+- planning-scene collision objects match physical scene intent;
+- no real robot motion path is enabled by default.
+
+### G7 - Perception ingress parity
+
+Pass in replay mode first, then live mode:
+
+- normalized detected-object input carries timestamp, frame, identity/track, class, pose/localization, and quality fields available from EPD;
+- scene/camera/frame binding is explicit;
+- transforms into the planning frame are valid and timestamp-aware;
+- replay and live use the same downstream contract;
+- missing perception blocks perception-backed execution clearly instead of corrupting scene state.
+
+### G8 - Candidate eligibility and selection
+
+Pass when every candidate is evaluated by explicit policy:
+
+- class matches configured target;
+- observation is fresh enough;
+- pose is transformable to planning frame;
+- object is in configured pick region when required;
+- object is reachable;
+- grasp strategy is compatible with tool/object;
+- candidate grasp is collision valid;
+- destination is valid;
+- non-target classes are never picked merely because they are visible.
+
+The decision and rejection reason for each candidate must be inspectable.
+
+### G9 - Grasp planning correctness
+
+Pass when:
+
+- grasp candidates are generated from tool capability + task intent, not scene-name hacks;
+- pre-grasp/grasp/retreat poses are valid;
+- TCP/grasp frame offsets are correct;
+- collision checking is enabled;
+- planner failure exposes actionable reasons;
+- at least one valid target can produce a complete planned manipulation sequence.
+
+### G10 - Complete simulated manipulation cycle
+
+Pass when fake-hardware execution completes:
+
+```text
+approach -> grasp -> attach -> retreat -> transfer -> place -> release/detach -> retreat -> home
+```
+
+Required invariants:
+
+- no unexplained teleport/reset;
+- attached object follows the tool correctly;
+- place/release uses authored destination semantics;
+- collision objects are updated consistently;
+- timeout/failure stops safely;
+- success is reported only after return-home/safe terminal state.
+
+### G11 - Recovery, retry, and idempotence
+
+Pass when:
+
+- a failed candidate can be rejected and the next candidate evaluated without restarting the stack;
+- retries are bounded and reason-coded;
+- repeated detections do not create duplicate PlanningScene objects;
+- completed/attached objects are not re-selected incorrectly;
+- stop/cancel leaves the scene in a known safe state;
+- the full cycle can run twice consecutively in one session.
+
+### G12 - Workcell Studio lifecycle closure
+
+Pass when:
+
+- closing/stopping RViz or task execution does not kill Workcell Builder;
+- Workcell Builder reconnects to the same scene state;
+- generation/readiness status refreshes correctly;
+- another edit/save/generate/simulate cycle works without application restart;
+- background Product View processes/ports are owned and cleaned up correctly.
+
+### G13 - Evidence bundle and support claim
+
+Pass when the canonical run emits or records:
+
+- authored input hashes/identity;
+- generation/validation report;
+- parity report;
+- build command/result;
+- fake-hardware launch transcript;
+- planning/task trace;
+- candidate accept/reject reasons;
+- final task outcome;
+- screenshots or recording of Workcell Builder + RViz/MoveIt;
+- explicit statement that real execution remained locked.
+
+Only after G0-G13 pass may `ur5_2f_test` be treated as a proven canonical full-cycle scene.
+
+## 3. Perfection bar - non-functional requirements
+
+"Works once" is not enough. R1 must also satisfy:
+
+### Determinism
+
+- same authored inputs produce the same semantic generated outputs;
+- stable IDs do not drift;
+- generation order does not change behavior;
+- no mtime-only truth for readiness when content fingerprints are available.
+
+### Observability
+
+Every major state transition exposes:
+
+- state;
+- reason;
+- relevant scene/object ID;
+- source file/config where applicable;
+- next corrective action on failure.
+
+No generic `failed` message where a precise reason can be produced.
+
+### Idempotence
+
+- Save can be repeated safely;
+- Generate can be repeated safely;
+- perception updates do not duplicate world objects;
+- start/stop/start does not accumulate stale processes or ports.
+
+### Fail-safe behavior
+
+- fake hardware first;
+- no uncontrolled motion/publishing;
+- invalid transforms, frames, task bindings, collisions, stale perception, or missing controllers block execution;
+- no fallback that silently weakens collision or safety semantics.
+
+### Product clarity
+
+The novice happy path should remain obvious:
+
+```text
+Open/Create -> Edit -> Save -> Generate -> Validate -> Plan/Simulate -> Review evidence
+```
+
+Developer diagnostics are secondary. Disabled actions explain why they are disabled.
+
+### Architecture quality
+
+Prefer reusable capability/contract fixes over scene-specific branches. A canonical-scene exception is acceptable only when the underlying requirement is truly scene-specific and documented.
+
+## 4. Source-of-truth ownership
+
+Before editing, identify all five layers:
+
+1. authored source;
+2. generated handoff;
+3. cached Product View/UI payload;
+4. runtime artifact/state;
+5. compatibility mirror/workspace exposure path.
+
+Rules:
+
+### `environment.yaml`
+
+Canonical authored physical/runtime scene semantics where currently used: physical assets, stable IDs, robot/tool/camera/environment pose/state, task/environment metadata.
+
+### `layout/workcell_studio_layout.yaml`
+
+Canonical editor-state/layout layer for editable visual layout metadata. It must round-trip to the authoritative physical scene through the supported save path. It must never silently become a competing runtime truth.
+
+### task intent file
+
+Canonical authored statement of what the cell should do: target class, pick source, destination, grasp intent, constraints.
+
+### task recipe
+
+Executable/derived runtime recipe. Prefer deriving it from task intent + robot/tool capabilities rather than hand-maintaining a second mission truth.
+
+### `cell_definition.yaml`
+
+Generated exchange/handoff model. Fix its generator/source contract rather than hand-editing it around defects.
+
+### `scene_manifest.yaml`
+
+Generated inventory/provenance/readiness contract. It reports state; it is not a competing authored source.
+
+### Product View/Web3D payloads and transient UI patches
+
+Caches/transient deltas only. Never store business-critical state solely here.
+
+### generated URDF/SRDF/launch/runtime files
+
+Derived runtime artifacts. Fix source/generator logic rather than patching them manually as the primary solution.
+
+If path or authority is ambiguous, fail loudly and name the candidate paths. Do not save to one tree while runtime resolves another.
+
+## 5. Architecture boundary
 
 `Easy_Manipulator_Improved` owns:
 
-- Workcell Studio product shell
-- `workcell_builder`
-- scene and cell authoring
-- environment and task authoring contracts
-- generated scene/workcell packages
-- validation and readiness reporting
-- RViz/MoveIt orchestration
-- grasp-planner and grasp-execution wiring
-- fake-hardware simulation
-- runtime readiness checks
-- consumption of normalized EPD results
-- review/demo/commissioning bundles
+- Workcell Studio product shell and `workcell_builder`;
+- cell/scene/environment/task authoring;
+- capability-aware package generation;
+- validation/readiness/parity;
+- MoveIt/RViz fake-hardware orchestration;
+- grasp-planner/execution integration;
+- normalized perception consumption;
+- operator/review/commissioning artifacts.
 
 `epd_Improved` owns:
 
-- RealSense input
-- detection
-- localization
-- tracking
-- classification
-- perception algorithms
-- EPD GUI and perception-specific configuration
-- the authoritative perception-adapter implementation/configuration where appropriate
+- RealSense acquisition;
+- detection/localization/tracking/classification;
+- perception algorithms and perception-specific GUI/configuration.
 
 Boundary:
 
 ```text
 EPD produces normalized perception results.
-Workcell Studio consumes those results as runtime task inputs.
-Workcell Studio owns cell authoring, generation, validation, planning, simulation, and task orchestration.
+Workcell Studio consumes them.
+EPD does not own cell definition, scene generation, task intent, planning, or Workcell Studio UI state.
 ```
 
-Do not make EPD own cell definition, scene generation, task definition, task planning, or Workcell Studio UI state.
+Do not merge EPD into Workcell Builder.
 
-## North-star workflow
+## 6. Workcell Builder and Product View rules
 
-The product workflow is:
+Primary UI concepts:
 
-```text
-open or create cell
-→ edit physical scene and task intent
-→ save
-→ close and reopen with identical state
-→ generate/refresh the scene package
-→ validate the generated handoff
-→ build in Ubuntu 22.04 + ROS 2 Humble
-→ launch RViz/MoveIt with fake hardware
-→ plan and simulate the task/grasp
-→ consume replayed or live perception when required
-→ export review evidence
-→ guarded real hardware later
-```
-
-The north-star scene is:
-
-```text
-scenes/ur5_2f_test
-```
-
-The second canonical scene is:
-
-```text
-scenes/suction_test
-```
-
-Do not broaden fixes to the full scene catalog until the relevant contract has been proven on `ur5_2f_test`. Apply the same proven contract to `suction_test` before claiming modality breadth.
-
-## Evidence standard
-
-A file existing, a static test passing, or a launch command being documented does not by itself prove product readiness.
-
-Use these evidence labels:
-
-- **CONFIRMED** — directly inspected or run with attached evidence.
-- **PARTIALLY CONFIRMED** — some contract or command is verified, but the full user workflow is not.
-- **INFERRED** — a reasonable conclusion that still needs direct proof.
-- **BLOCKED** — required evidence cannot currently be collected or a real blocker prevents completion.
-- **UNVERIFIED** — no reliable evidence has been inspected.
-
-Never call a scene `supported` solely because it is present in the repository or passes static validation. A supported label must be backed by workstation acceptance evidence appropriate to the milestone.
-
-When a required environment is unavailable:
-
-- do not invent success;
-- do not replace runtime evidence with a synthetic fixture and call the milestone complete;
-- report exactly what was run;
-- report exactly what was skipped and why;
-- identify the smallest next action on a real ROS Humble workstation.
-
-## Current roadmap position
-
-The immediate sequence is M0 followed directly by M1.
-
-### M0 — Honest executable baseline
-
-Goal:
-
-- define what is authored, generated, cached, and runtime;
-- reset optimistic scene-support claims;
-- name canonical scenes;
-- define acceptance evidence and provenance requirements.
-
-M0 does not mean adding more validators. It means making project claims honest and unambiguous.
-
-### M1 — Complete `ur5_2f_test` authoring round-trip
-
-Goal:
-
-- open the canonical scene;
-- select the intended editable physical item;
-- move/rotate it;
-- update task/destination bindings where applicable;
-- undo/redo correctly;
-- save;
-- close and reopen;
-- recover identical transforms and task bindings;
-- regenerate from the saved authored state.
-
-M1 is not complete merely because the robot, bin, or mesh is visible. Visual correctness is necessary, but the milestone is the complete edit/save/reopen/regenerate contract.
-
-### Current priority order
-
-When choosing the next change, prefer this order:
-
-1. Repair a regression introduced by the latest merged change when it blocks the canonical workflow.
-2. Remove ambiguity between authored, generated, cached, mirror, and runtime state.
-3. Make `ur5_2f_test` selection, transforms, task bindings, save, reopen, and regeneration deterministic.
-4. Make the generated `ur5_2f_test` package build and launch in fake hardware.
-5. Prove a complete simulated 2F pick/place flow with safe return home.
-6. Apply the same contract to `suction_test`.
-7. Propagate proven contracts to the rest of the scene catalog.
-8. Simplify the Workcell Builder user flow.
-9. Strengthen deterministic generation and provenance.
-10. Harden task/grasp authoring and runtime introspection.
-11. Formalize replay/live EPD integration.
-12. Produce the demo/review bundle.
-13. Add optional Gazebo/Isaac backends only after the core path works.
-14. Add guarded physical commissioning last.
-
-Do not let visual polish, broad cleanup, optional simulators, or another validator loop displace the current canonical workflow blocker.
-
-## Milestone ladder
-
-### M0 — Establish an honest executable baseline
-
-Exit gate:
-
-- authored/generated/cached/runtime ownership is documented;
-- canonical scenes are named;
-- unproven scene support labels are blocked or experimental;
-- acceptance evidence requirements are explicit.
-
-### M1 — Make `ur5_2f_test` pass the complete authoring workflow
-
-Exit gate:
-
-- one recorded edit/save/reopen/regenerate round-trip;
-- identical transforms and task bindings after reopen;
-- no silent save or selection failure.
-
-### M2 — Make `ur5_2f_test` build and launch correctly in fake hardware
-
-Exit gate:
-
-- canonical workspace build succeeds;
-- generated package is discoverable;
-- RViz/MoveIt fake-hardware launch succeeds;
-- robot, tool, environment, destination semantics, and frames are correct;
-- launch evidence is captured.
-
-### M3 — skip
-
-### M4 — Complete the second canonical suction scene
-
-Exit gate:
-
-- `suction_test` passes the same relevant authoring, generation, build, launch, and simulation checklist.
-
-### M5 — Spread proven contracts across supported scenes
-
-Exit gate:
-
-- every scene labelled supported has attached acceptance evidence;
-- unproven scenes remain blocked or experimental with a specific blocker.
-
-### M6 — Simplify and productize Workcell Builder UX
-
-Exit gate:
-
-```text
-open scene → edit → save → generate → validate → launch
-```
-
-is an obvious novice flow without developer-only clutter.
-
-### M7 — Strengthen deterministic scene/package generation
-
-Exit gate:
-
-- generated artifacts declare schema version, generator name/version, generator commit, source hashes, and generation timestamp;
-- authored and derived layers are unambiguous.
-
-### M8 — Harden task/grasp authoring and simulation
-
-Exit gate:
-
-- task intent and executable recipe responsibilities are explicit;
-- runtime objective/behavior state is inspectable;
-- failures have actionable reasons.
-
-### M9 — Formalize replay/live EPD integration
-
-Exit gate:
-
-- stable adapter schema exists;
-- canonical replay evidence exists;
-- live mode uses the same normalized runtime contract.
-
-### M10 — Produce customer/investor demo and commissioning bundle
-
-Exit gate:
-
-- reproducible bundle contains screenshots, scene metadata, validation summary, runtime evidence, and visible real-execution lock state.
-
-### M11 — Add optional Gazebo/Isaac backends
-
-Exit gate:
-
-- optional adapters only;
-- neither simulator is required by the core authoring/fake-hardware workflow.
-
-### M12 — Add guarded physical commissioning
-
-Exit gate:
-
-- real execution is explicit, opt-in, preflight-guarded, and separately documented;
-- normal authoring and simulation cannot accidentally trigger robot motion.
-
-## Source-of-truth ownership
-
-Do not allow multiple files to silently compete as the authority for the same state.
-
-### `environment.yaml`
-
-Role:
-
-- authored physical scene/environment definition.
-
-Authority:
-
-- canonical for physical assets, stable IDs, placements, and editable environment state unless the repository has an explicitly newer canonical schema.
-
-### `layout/workcell_studio_layout.yaml`
-
-Role:
-
-- authored editor-state layer.
-
-Authority:
-
-- authoritative only for editor-specific layout/transform metadata assigned to it;
-- must not silently override runtime task or planning semantics.
-
-### `task_intent.yaml` or the repository's canonical task-intent file
-
-Role:
-
-- authored statement of what the workcell should achieve.
-
-Authority:
-
-- canonical task goal and destination semantics;
-- not the low-level execution trace.
-
-### `task_recipe.yaml` or scene-local task recipe
-
-Role:
-
-- executable or semi-authored recipe.
-
-Authority:
-
-- derived from task intent and capability mappings unless explicitly designed as an authored layer;
-- never the sole source of mission truth.
-
-### `cell_definition.yaml`
-
-Role:
-
-- generated runtime handoff.
-
-Authority:
-
-- canonical generated exchange model consumed by downstream generation/validation/runtime stages;
-- do not hand-edit around generator defects unless the repository explicitly supports that workflow.
-
-### `scene_manifest.yaml`
-
-Role:
-
-- generated scene inventory, package index, and provenance summary.
-
-Authority:
-
-- derived contract report, not a competing hand-authored source.
-
-### Web3D/Product View exported payloads
-
-Role:
-
-- cached UI/runtime view payloads.
-
-Authority:
-
-- never authoritative;
-- regenerate from authored state.
-
-### UI edit patches
-
-Role:
-
-- transient deltas.
-
-Authority:
-
-- apply into the correct authored source, verify persistence, then treat the patch as non-authoritative cache.
-
-### Generated URDF/SRDF, launch files, and runtime plans
-
-Role:
-
-- generated runtime artifacts.
-
-Authority:
-
-- derived from the canonical handoff and asset packages;
-- fix the generator or source contract instead of creating one-off generated-file patches.
-
-### Perception adapter config
-
-Role:
-
-- integration configuration.
-
-Authority:
-
-- EPD-owned where it controls perception behavior;
-- Workcell Studio may generate or reference scene-local bindings without duplicating perception ownership.
-
-Before editing scene state, identify:
-
-1. the authored source;
-2. the generated handoff;
-3. the cached view payload;
-4. the runtime artifact;
-5. any compatibility mirror.
-
-Never write business-critical state to a mirror or cache merely because it is the easiest file to modify.
-
-## Canonical paths and mirrors
-
-The repository has historically contained asset/scene compatibility mirrors and workspace-exposure helpers.
-
-Rules:
-
-- confirm the authoritative repository path from current code and README before editing;
-- treat helper-created workspace links/copies as build-discovery mechanisms, not new authorities;
-- do not make users reason about mirror paths in the normal Workcell Builder flow;
-- do not save successfully to one tree while runtime resolves a different tree;
-- when path ambiguity is detected, fail clearly with the candidate paths and selected authority.
-
-## Workcell Builder rules
-
-Improve the existing Workcell Builder rather than creating a parallel product.
-
-The main UI should keep these concepts visible:
-
-- scene/library selector;
-- active scene and evidence-backed readiness state;
-- 3D canvas;
+- active scene;
+- Product View/3D canvas;
 - scene hierarchy;
 - inspector;
+- task intent;
+- Checks/readiness;
 - Save;
-- Generate/Refresh;
+- Generate;
 - Validate;
 - Plan/Simulate;
 - logs/evidence;
-- fake-hardware/real-execution lock state.
-
-Contextual controls may include:
-
-- tool/TCP settings;
-- destination bindings;
-- task-area metadata;
-- perception source;
-- diagnostic overlays.
-
-Hide under advanced/developer surfaces:
-
-- compatibility mirror repair;
-- source-overlay debugging;
-- optional simulator backends;
-- synthetic test utilities;
-- migration tooling.
-
-UI rules:
-
-- no silent no-op buttons;
-- no placeholder actions in the primary flow;
-- every disabled action explains the blocker;
-- errors name the failed action, responsible file/command, and next corrective step;
-- secondary actions belong in menus, dropdowns, or advanced panels;
-- do not add more always-visible buttons unless essential to the north-star workflow.
-
-## 3D editing and Product View rules
-
-The 3D surface must become a trustworthy editor, not only a preview.
+- visible fake-hardware/real-execution lock state.
 
 Required behavior:
 
-- mesh-backed visuals where assets exist;
-- primitive fallback only where a mesh is unavailable or intentionally disabled;
-- reliable camera controls;
-- stable selection/picking of the intended item;
-- inspector-based XYZ/RPY editing;
-- deterministic transform round-trip;
-- correct undo/redo;
-- scene hierarchy ↔ 3D selection ↔ inspector synchronization;
-- clear distinction between editable authored items and locked generated previews.
+- no silent no-op buttons;
+- every disabled action has a visible blocker;
+- stable scene/item selection across refresh;
+- inspector <-> hierarchy <-> Product View identity parity;
+- editable authored items are editable;
+- generated robot/tool/URDF visuals are locked unless an explicit authored control owns them;
+- mesh-backed visuals where available;
+- primitive fallback only when honest and necessary;
+- selection, transform, save, generation, preview, and reload failures name the responsible state/file/action;
+- Product View cache is refreshed from canonical state, never treated as authority.
 
-Near-term model:
+Hide developer-only complexity from the default user path: mirror repair, raw provenance internals, synthetic fixtures, parser traces, optional simulator backends.
 
-```text
-Editable physical layout item = select, move, rotate, inspect, save.
-Generated robot/tool/URDF preview = locked, provenance-backed visual.
-Task overlay = semantic object, not physical geometry.
-Inspector = authoritative manual XYZ/RPY editing surface.
-Cached Product View payload = regenerated, never authoritative.
-```
+## 7. Robot/tool/grasp rules
 
-Product View should show physical/product content first:
+Support is capability-based, not scene-name based.
 
-- generated robot visuals;
-- tool/gripper meshes;
-- editable environment items;
-- table/workbench;
-- camera body;
-- bins, fixtures, conveyors, and other authored physical assets.
+The first proven contract is UR5 + Robotiq 2F. The second is UR5 + suction. Broader robot/tool support comes after the canonical contracts are closed.
 
-Hide by default unless explicitly enabled:
+Tool/capability metadata should own, where applicable:
 
-- helper bounds;
-- diagnostic labels;
-- warning anchors/badges;
-- safety, pick, and place zones;
-- reachability overlays;
-- collision overlays;
-- work envelope;
-- task route;
-- approach/retreat arrows;
-- camera FOV;
-- pick coverage;
-- EPD detections and labels;
-- primitive robot fallback boxes when generated robot meshes exist.
+- mount link;
+- TCP/grasp frame;
+- mount transform;
+- TCP offset;
+- grasp methods;
+- allowed touch links;
+- opening/width/cup capabilities;
+- approach/orientation defaults;
+- actuator/runtime IO requirements.
 
-When classifying preview content, inspect all relevant identity/provenance fields, not only `role` or `category`:
+Grasp logic should consume capability + task + perception/object state. Do not hardcode a valid grasp merely to satisfy the demo.
 
-- `source_layer`;
-- `active_visual_source`;
-- `role`;
-- `category`;
-- `id`;
-- `display_name`;
-- `status`;
-- warnings and mesh-load warnings;
-- source path and mesh metadata.
+## 8. Perception contract rules
 
-No canvas action may silently fail. Selection, transform, save, load, mesh preview, or regeneration failures must identify the responsible state/file.
-
-## Robot, tool, environment, and capability rules
-
-Support must be capability-based, not hardcoded per scene.
-
-Initial practical combinations include:
-
-- UR5 + Robotiq 2F;
-- UR5 + suction;
-- UR3 + suction;
-- UR10 + 2F;
-- UR5 + AirPick-style suction where supported;
-- simple delta/cartesian placeholder + suction later.
-
-Future support may include Fanuc, ABB, SCARA, gantry/cartesian, delta robots, custom arms, tool changers, and custom end effectors.
-
-Do not add one-off logic that prevents future robot/tool swaps.
-
-Tool behavior, TCP, mount link, grasp frames, orientation defaults, offsets, suction-cup layout, and capabilities should be described in inspectable metadata/config where practical.
-
-Fix generator/capability defaults instead of hand-patching one generated xacro when the defect is systemic.
-
-## Scene support rules
-
-Important scenes may include:
-
-- `ur5_2f_test` — canonical first scene;
-- `suction_test` — canonical second scene;
-- `ur5_3f_test`;
-- `ur3_suction_test`;
-- `ur10_2f_test`;
-- `ur5_airpick4_test`;
-- builder-generated pick/place demos;
-- sorting/conveyor scenarios.
-
-Presence does not equal support.
-
-Every scene status should answer:
-
-- What is the intended support level?
-- Which authored files exist?
-- Which generated files exist?
-- Can it save/reopen?
-- Can it regenerate deterministically?
-- Can it validate?
-- Can it build as a ROS 2 package?
-- Can it launch in fake hardware?
-- Can it simulate the intended task?
-- Which acceptance artifacts prove this?
-- What exact blocker remains?
-
-Do not hide a broken scene by silently removing it from the catalog. Change its status only with an explicit reason and evidence.
-
-## Generated package and provenance rules
-
-Generated packages must be reproducible and traceable.
-
-A mature scene package should consistently include or reference the repository's canonical equivalents of:
-
-- package metadata (`package.xml`, `CMakeLists.txt` where applicable);
-- authored environment/task inputs;
-- `cell_definition.yaml`;
-- `scene_manifest.yaml`;
-- `layout/workcell_studio_layout.yaml` where applicable;
-- `launch/demo.launch.py`;
-- `urdf/scene.urdf.xacro` and related planning artifacts;
-- generated visual/mesh index where used;
-- validation/readiness summary.
-
-Generated artifacts should declare:
-
-- schema version;
-- generator name/version;
-- generator commit SHA;
-- source file paths and hashes;
-- generation timestamp;
-- scene ID;
-- relevant asset/capability versions where practical.
-
-Do not stamp misleading provenance. If source hashes or commits cannot be resolved, mark them unavailable rather than fabricating values.
-
-## RViz/MoveIt, grasp planning, and execution rules
-
-RViz/MoveIt with fake hardware is the primary short-term runtime foundation.
-
-A generated scene is not manipulation-ready unless it can prove:
-
-- package discovery succeeds;
-- robot model and state are valid;
-- robot base frame is correct;
-- planning group is valid;
-- end-effector/tool frames are correct;
-- environment objects are in the planning scene;
-- destination/task semantics are available;
-- object/task input is available or replayable;
-- grasp planner can produce a useful candidate where required;
-- approach/grasp/retreat/transfer/place can be planned in simulation;
-- simulated execution can complete safely;
-- real execution remains locked.
-
-A green build or a loaded RViz window is not proof of a complete task flow.
-
-Failures should expose actionable runtime state, not only stack traces or generic `failed` flags.
-
-## EPD/RealSense bridge rules
-
-Keep replay and live perception as explicit modes using one normalized contract.
-
-Recommended modes:
+Supported modes should converge on:
 
 ```text
 perception: off
@@ -626,300 +431,158 @@ perception: replayed_snapshot
 perception: live_epd
 ```
 
-The normalized result should support, as applicable:
+Replay and live must feed the same normalized downstream object contract.
+
+At minimum support, where available:
 
 - scene ID;
 - camera ID;
 - timestamp;
-- frame ID;
-- object ID or track ID;
+- source frame;
+- object/track ID;
 - class/label;
-- pose or localized centroid;
-- dimensions/orientation where available;
+- localized pose/centroid;
+- dimensions/orientation;
 - confidence/quality;
-- task binding or object-role metadata.
+- task/object role metadata.
 
-A missing perception runtime should block perception-backed execution clearly. It must not crash Workcell Builder, rewrite authored scene state, or make EPD the task owner.
+Perception data is runtime state, not authored geometry.
 
-Simulation should be able to use replayed perception so the north-star task is not dependent on a live camera for every validation run.
+## 9. Safety law
 
-## Safety rules
+Never weaken safety gates to make a test pass.
 
-Never weaken safety gates.
-
-Defaults must remain safe:
+Defaults:
 
 - fake hardware by default;
 - no real robot motion by default;
-- no automatic runtime send by default;
+- no automatic runtime send;
 - no uncontrolled service/topic publishing;
-- real-hardware mode requires explicit guarded flags;
-- dry-run/preview-first path remains available;
+- explicit dry-run/preview path;
+- explicit real-hardware opt-in only after separate commissioning milestones;
 - validation reports are not safety certificates.
 
-Generated packages may support `use_fake_hardware:=true/false`, but real hardware must never become the default path.
+If a change touches launch, controllers, execution, hardware parameters, services, or motion publishing, explicitly verify the fake-hardware default and the real-motion lock.
 
-If a change touches launch files, controllers, execution nodes, hardware parameters, services, or runtime publishing:
+## 10. Codex / Astra Ultra execution protocol
 
-- verify fake hardware remains the default;
-- verify real motion requires explicit opt-in;
-- document new preflight blockers;
-- do not claim physical readiness from simulation-only evidence.
+The agent is expected to behave like a senior robotics/platform engineer, not a patch generator.
 
-## ROS and platform rules
+### Before editing
 
-Current supported baseline:
+1. Read this file and `docs/manuals/WORKCELL_STUDIO_ROADMAP.md`.
+2. Read `docs/manuals/workcell_studio_master_roadmap.yaml` when present.
+3. Inspect the exact source-of-truth files and the relevant recent commits/PRs.
+4. Reproduce the blocker with the smallest meaningful command or GUI flow.
+5. Name the current gate (G0-G13) and the concrete acceptance criterion being closed.
+6. Identify whether evidence can be collected in the current environment or requires the real ROS/GUI workstation.
 
-- Ubuntu 22.04;
-- ROS 2 Humble;
-- MoveIt 2 / RViz as the primary planning and visualization foundation.
+### While editing
 
-Do not migrate ROS distributions unless explicitly requested.
+1. Fix the root contract, not the symptom.
+2. Prefer the smallest robust change that removes the class of defect.
+3. Preserve working canonical behavior.
+4. Do not hand-edit derived artifacts as the primary fix.
+5. Do not add a new fallback that hides invalid state.
+6. Do not broaden into unrelated cleanup.
+7. Add focused regression coverage for the real defect.
+8. Run the relevant tests/commands immediately after the fix.
+9. If another failure appears in the same gate and is caused by the same root contract, continue until the gate closes or an external blocker is proven.
+10. Stop only at a real external dependency/hardware/display blocker, not at the first inconvenient error.
 
-Do not make Gazebo, Ignition/Gazebo Sim, or Isaac Sim mandatory for the core workflow yet.
+### When blocked
 
-Optional simulation backends must consume the same canonical scene/task contracts rather than creating a second source of truth.
+Report:
 
-## Validation and acceptance evidence
+- exact command/action;
+- exact failure;
+- responsible layer/file;
+- evidence gathered;
+- why the current environment cannot complete the gate;
+- smallest real-workstation action required next.
 
-Always choose the smallest command set that proves the requested change, but distinguish static, GUI, build, launch, and task evidence.
+Never mark the gate complete.
 
-### Static/unit evidence
+### Completion output
 
-Use targeted tests for the changed contract. Do not run the entire suite by habit when a focused test is sufficient, and do not add a test-only PR unless it protects a real product fix or catches an escaped defect.
+Every substantial task should end with:
 
-### Workcell Builder evidence
-
-For authoring changes, collect on a real display-enabled workstation where possible:
-
-- scene opened;
-- intended physical item selected;
-- transform/task edit performed;
-- undo/redo checked where relevant;
-- save result identified;
-- close/reopen persistence checked;
-- generated output/diff inspected.
-
-### Build evidence
-
-Confirm the actual workspace path before running ROS commands. Typical layouts are `/home/user/workcell_ws` or `/home/ubuntu/workcell_ws`; Codex containers may only support static inspection.
-
-Canonical pattern:
-
-```bash
-cd /home/user/workcell_ws
-source /opt/ros/humble/setup.bash
-./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh
-rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
-colcon build --parallel-workers 2
-source install/setup.bash
-```
-
-Use the repository's current documented script/paths if they differ. Do not blindly copy commands without checking that they exist.
-
-### Fake-hardware launch evidence
-
-Canonical intent:
-
-```bash
-ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true
-```
-
-If the current launch signature differs, inspect the launch file and use the real supported arguments. Never omit fake-hardware intent when validating the safe path.
-
-### North-star evidence bundle
-
-Success ultimately requires:
-
-1. Workcell Builder opens `ur5_2f_test`.
-2. The intended physical bin/environment item is selected.
-3. Transform edit and save are recorded.
-4. Reopen proves persistence.
-5. Generation/refresh artifact contains honest provenance.
-6. Humble build log is clean for the required packages.
-7. Fake-hardware launch is recorded.
-8. Planning scene shows correct robot, tool, environment, frames, and destination semantics.
-9. Replay or live EPD input is traced where required.
-10. Simulated pick/place completes and returns home.
-11. Review/demo bundle is exported.
-12. Real execution is visibly locked.
-
-## PR rules
-
-Use small incremental PRs that close a real product gap.
-
-Branch naming:
-
-- use the milestone/intent-oriented branch requested by the current plan when one is explicitly defined;
-- otherwise use `codex/<short-task-name>` or another clear scoped prefix;
-- do not create a broad umbrella branch for unrelated fixes.
-
-Each PR should:
-
-- target one repository unless a cross-repo interface change is genuinely required;
-- state the milestone and user-visible blocker;
-- avoid broad refactors;
-- preserve ROS 2 Humble compatibility;
-- preserve working scenes and safety gates;
-- identify authored/generated/runtime files affected;
-- include focused tests or validation commands;
-- include manual workstation checks when the milestone requires them;
-- state commands not run and why;
-- include risks and rollback notes;
-- avoid generated/minified/binary churn unless essential.
-
-For every validator/test-only PR, prefer at least two product-fix PRs before adding another validator layer, unless a real escaped defect proves the validator is necessary.
-
-PR summary template:
-
-```text
-Milestone / blocker:
-- roadmap milestone
-- user-visible blocker being closed
-
-Summary:
-- what changed
-- why it matters for Workcell Studio
-- affected authored/generated/runtime layers
-
-Validation:
-- static/unit commands and results
-- GUI/workstation checks and results
-- build/launch/task checks and results
-- commands not run and exact reason
-
-Evidence:
-- screenshots/logs/recordings/artifacts produced
-- support status justified by this evidence
-
-Safety:
-- fake hardware remains default
-- no real-hardware path was enabled accidentally
-
-Risks / rollback:
-- known limitations
-- safe revert path
-```
-
-## Codex/AI task behavior
-
-Before editing:
-
-1. Read `AGENTS.md`, `docs/manuals/WORKCELL_STUDIO_ROADMAP.md`, and only the additional manuals relevant to the scoped change. Do not request the obsolete `Workcell_Studio_AI_Operating_Guardrail.md` path.
-2. Inspect the actual repository files that own the state.
-3. Inspect recent merged PRs or commits relevant to the blocker when available.
-4. Identify authored, generated, cached, mirror, and runtime layers.
-5. State the current milestone and acceptance gate.
-6. Keep the task scoped to one blocker.
-
-While editing:
-
-1. Fix product code/contracts before changing tests that expose a real mismatch.
-2. Prefer deterministic failure with actionable context over silent fallback.
-3. Preserve canonical working behavior.
-4. Avoid scene-specific hacks when the root cause is generator/capability/path logic.
-5. Do not hand-edit derived artifacts as the primary fix.
-6. Do not claim success without the evidence required by the milestone.
-7. Do not broaden scope merely because nearby cleanup is attractive.
-
-When blocked:
-
-- name the exact missing dependency, file, environment, display, hardware, or runtime condition;
-- show the command/result that established the blocker;
-- propose the smallest next action;
-- do not label the milestone complete.
-
-## User communication rules
-
-Do not automatically provide a Codex prompt.
-
-When the user asks “what next?”, “is this correct?”, “what is going on?”, or “are we going in the right direction?”, answer with:
-
-1. current milestone;
-2. what the latest PR actually changed;
-3. evidence collected;
-4. what remains broken or unproven;
-5. the next product action;
-6. whether a Codex prompt is needed.
-
-Only write a Codex prompt when the user explicitly asks for one.
-
-A Codex prompt should contain:
-
-- one repository;
-- one branch;
-- one milestone/blocker;
-- exact source-of-truth files to inspect;
-- prohibited broad changes;
-- acceptance criteria;
-- focused tests;
-- real-workstation manual validation where required;
+- gate/milestone closed;
+- files changed;
+- root cause;
+- automated validation run and result;
+- manual validation still required;
 - safety statement;
-- rollback expectation.
+- risks/rollback;
+- next highest-value gate.
 
-## Next-change selection questions
-
-Before recommending or implementing a change, ask:
-
-1. Does it close M0 ambiguity or M1 authoring round-trip risk?
-2. Does it make `ur5_2f_test` save/reopen/regenerate correctly?
-3. Does it improve the generated runtime handoff or fake-hardware launch?
-4. Does it produce missing acceptance evidence?
-5. Does it preserve the Easy/EPD boundary?
-6. Does it avoid another test/validator-only loop?
-
-If the answer is no to all six, it is probably not the next task.
-
-## Anti-goals
+## 11. Anti-loop and anti-bloat rules
 
 Do not:
 
-- rewrite the whole architecture;
-- merge EPD into Workcell Builder;
-- combine the EPD GUI with the Workcell Builder UI;
-- replace `workcell_builder` with Streamlit or another parallel product;
-- broaden the scene catalog before canonical contracts are proven;
-- call a scene supported without workstation evidence;
-- treat static green checks as end-to-end proof;
 - add validators as milestones by themselves;
-- create synthetic-only evidence and present it as runtime proof;
-- make Isaac or Gazebo mandatory before the core flow is stable;
-- start real robot motion as an early milestone;
-- enable real robot motion by default;
-- weaken fake-hardware-first safety;
-- add primary-UI clutter or placeholder buttons;
-- leak compatibility-mirror/path-repair complexity into the normal user flow;
-- create scene-specific generated-file hacks;
-- hide missing files or broken metadata behind vague success messages;
-- store business-critical scene state in cached Product View payloads or transient patches;
-- make perception own task planning or scene generation;
-- claim simulation/execution works without a trace or acceptance artifact;
-- optimize large bundles/minified files while the canonical workflow is blocked;
-- use one passing scene as proof that the full platform is stable.
+- write test-only PRs unless protecting a real fix or catching an escaped defect;
+- polish Scene3D metrics while the canonical cycle is broken;
+- create synthetic-only success evidence;
+- call a scene supported without workstation evidence;
+- add scene-specific hacks for a systemic generator/path/capability defect;
+- perform broad architecture rewrites before R1 closure;
+- make Gazebo/Isaac mandatory;
+- merge EPD and Workcell Builder;
+- add a third engineering source of truth;
+- hide broken metadata behind permissive fallbacks;
+- weaken collision checking/ACM/safety merely to make motion succeed;
+- introduce real-hardware motion into the normal authoring/simulation path;
+- optimize PR count, test count, or code volume instead of user-visible acceptance.
 
-## Definition of done
+A useful heuristic: for every test/validator-only change, prefer at least two concrete product-fix changes unless the test catches a newly escaped defect.
 
-A change is done only when:
+## 12. PR and branch rules
 
-- the requested blocker is closed at the correct source-of-truth layer;
-- relevant authored/generated/runtime files are updated consistently;
-- focused automated validation passes;
-- required manual/workstation evidence is attached or explicitly marked blocked;
-- fake-hardware and real-execution safety defaults are preserved;
-- user-facing behavior is documented when needed;
-- the PR explains what changed, why, evidence, risks, and rollback;
-- no unsupported readiness claim was introduced.
+Prefer small milestone-oriented PRs.
 
-For the canonical Workcell Studio path, “done” ultimately means:
+Branch naming:
+
+- `fix/<gate>-<short-root-cause>` for defects;
+- `feat/<gate>-<short-capability>` for scoped capabilities;
+- `docs/<topic>` for roadmap/documentation-only work;
+- `codex/<short-task-name>` when no stronger convention exists.
+
+Each PR must state:
+
+- R1 gate/milestone;
+- user-visible blocker;
+- source-of-truth layer affected;
+- root cause;
+- implementation summary;
+- focused tests/commands and results;
+- manual workstation checks and status;
+- evidence artifacts;
+- fake-hardware/real-motion safety status;
+- risk and rollback.
+
+Do not combine unrelated gates in one PR unless the same root cause spans them and splitting would make the fix less correct.
+
+## 13. Definition of done
+
+A code change is done when the requested gate is closed at the correct layer, relevant tests pass, required manual evidence is either attached or explicitly blocked, and safety defaults remain intact.
+
+R1 is done only when the north-star cycle is proven end to end and repeatably:
 
 ```text
-honest scene contract
-+ deterministic edit/save/reopen
-+ repeatable generation with provenance
-+ clean ROS 2 Humble build
-+ RViz/MoveIt fake-hardware launch
-+ complete simulated task/grasp
-+ replay/live perception contract
-+ reviewable demo evidence
-+ guarded real-hardware future
+author -> save -> reopen -> generate -> parity -> build -> fake launch
+-> perception -> select -> grasp plan -> approach -> grasp/attach
+-> transfer -> place/release -> retreat -> home -> report -> stop
+-> return to builder -> edit/save/run again
 ```
+
+Required confidence bar:
+
+- cold-start pass;
+- second consecutive pass without restart;
+- close/reopen persistence pass;
+- at least one intentional failure/rejection path reports the correct reason and recovers safely;
+- evidence bundle attached;
+- real hardware remains locked.
+
+Only after this bar is met should roadmap priority move from "make one full cycle perfect" to "generalize the proven contract across scenes, tools, and use cases."
