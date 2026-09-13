@@ -19,13 +19,23 @@ def fixtures():
     return cell, task, snapshot
 
 
-def test_normalized_contract_and_class_filter_preserve_obstacle():
+@pytest.mark.parametrize("reverse_order", [False, True], ids=["cup-first", "bottle-first"])
+def test_normalized_contract_and_class_filter_preserve_obstacle(reverse_order):
     cell, task, snapshot = fixtures()
+    if reverse_order:
+        snapshot["objects"].reverse()
     objects = inputs.normalize(snapshot, 100, geometry)
     selected, rejected = inputs.filter_targets(objects, task, cell, 100, geometry)
     assert len(objects) == 2
-    assert [o['class_id'] for o in selected] == ['cup']
-    assert list(rejected.values()) == ['class_mismatch']
+    assert task['target_class'] == 'cup'
+    assert [(o['id'], o['class_id']) for o in selected] == [('runtime::sample-cup', 'cup')]
+    assert rejected == {'runtime::sample-bottle': 'class_mismatch'}
+    target, = selected
+    grasp_target = geometry.build_grasp_target(target)
+    assert grasp_target['perceived_object_id'] == target['id']
+    candidates = geometry.generate_box_grasp_candidates(grasp_target)
+    assert candidates
+    assert all(pose[:2] == target['pose'][:2] for pose in candidates)
     task['target_class'] = 'bottle'
     assert inputs.filter_targets(objects, task, cell, 100, geometry)[0][0]['class_id'] == 'bottle'
 
