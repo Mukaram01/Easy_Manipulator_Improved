@@ -70,7 +70,7 @@ def support_penetration_correction(selected, objects, clearance=0.001):
     return best
 
 
-def load_canonical_place_target(package_share):
+def load_canonical_place_target(package_share, destination_zone=None):
     import yaml
     package = Path(package_share)
     cell_path = package / "cell_definition.yaml"
@@ -94,7 +94,7 @@ def load_canonical_place_target(package_share):
                 "frame_id": "world", "pose_xyz": [float(value) for value in xyz]}
     cell = yaml.safe_load(cell_path.read_text(encoding="utf-8")) or {}
     task = cell.get("task") or {}
-    target_id = str((task.get("place") or {}).get("target_ref") or "")
+    target_id = destination_zone or str((task.get("place") or {}).get("target_ref") or "")
     zones = ((cell.get("environment") or {}).get("task_zones")
              if isinstance(cell.get("environment"), dict) else []) or []
     zone = next((item for item in zones if str(item.get("id")) == target_id), None)
@@ -306,479 +306,520 @@ def candidate_indices(count, preferred=3):
     return [preferred] + [index for index in range(count) if index != preferred]
 
 
+class CandidateFailure(RuntimeError):
+    def __init__(self, stage, reason):
+        super().__init__(reason)
+        self.stage = stage
+
+
+def choose_cycle(targets, indices, preplan, attempts):
+    """First fully feasible pair in confidence/id then preferred-grasp order."""
+    for target in sorted(targets, key=lambda o: (-o['confidence'], o['id'])):
+        for index in indices:
+            record = {'object_id': target['id'], 'grasp_index': index, 'stages': []}
+            attempts.append(record)
+            try:
+                result = preplan(target, index, record)
+                record['full_cycle_prevalidated'] = True
+                return result
+            except CandidateFailure as exc:
+                record.update(full_cycle_prevalidated=False, failed_stage=exc.stage, reason=str(exc))
+    last = attempts[-1] if attempts else {}
+    raise CandidateFailure(last.get('failed_stage','ENUMERATE_TARGETS'),
+        'no target/grasp has a feasible complete cycle; last failure: ' + last.get('reason','no eligible targets'))
+
+
+def require_prevalidated_execution(start, cycle):
+    if not start or not cycle.get('full_cycle_prevalidated'):
+        raise RuntimeError('execution requires --start and a fully prevalidated cycle')
+
+
+def updated_state(state, positions, mimics=()):
+    result = copy.deepcopy(state)
+    values = dict(zip(result.joint_state.name, result.joint_state.position))
+    values.update(positions)
+    for name, parent, multiplier, offset in mimics:
+        values[name] = values[parent] * multiplier + offset
+    result.joint_state.position = [float(values[n]) for n in result.joint_state.name]
+    result.is_diff = False
+    return result
+
+
+def assert_joint_match(actual, expected, tolerance=0.005):
+    values = dict(zip(actual.joint_state.name, actual.joint_state.position))
+    for name, value in zip(expected.joint_state.name, expected.joint_state.position):
+        if name not in values or not math.isfinite(values[name]) or abs(values[name] - value) > tolerance:
+            raise RuntimeError(f'joint state diverged: {name}, expected={value}, actual={values.get(name)}')
+
+
+
+def wait_for_robot_baseline(read_scene, home, mimics=(), timeout=10.0):
+    """Wait for initial state publication; never command home or relax tolerance."""
+    required = dict(home, gripper_finger1_joint=0.0)
+    deadline = time.monotonic() + timeout
+    while True:
+        scene = read_scene()
+        try:
+            if not set(required).issubset(scene.robot_state.joint_state.name):
+                raise RuntimeError('required arm/gripper joint state not received')
+            assert_joint_match(scene.robot_state,
+                updated_state(scene.robot_state, required, mimics), 0.001)
+            return scene
+        except RuntimeError as exc:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f'canonical home/open-gripper state unavailable: {exc}') from exc
+            time.sleep(0.1)
+
+
+def private_attachment(scene, original, frame, frame_pose, touch_links):
+    """Attach in a private predicted state using an explicit link-relative transform."""
+    result = copy.deepcopy(scene)
+    obj = copy.deepcopy(original)
+    geometry = collision_object_dict(obj)
+    relative = _PLANNER.compose_pose(_PLANNER.inverse_pose(pose_values(frame_pose)), geometry['pose'])
+    from geometry_msgs.msg import Pose
+    obj.pose = Pose()
+    (obj.pose.position.x, obj.pose.position.y, obj.pose.position.z,
+     obj.pose.orientation.x, obj.pose.orientation.y, obj.pose.orientation.z, obj.pose.orientation.w) = relative
+    obj.primitive_poses = [Pose()]
+    obj.primitive_poses[0].orientation.w = 1.0
+    obj.header.frame_id = frame
+    result.robot_state.attached_collision_objects = attachment_diff(obj, frame, touch_links, False).robot_state.attached_collision_objects
+    result.robot_state.is_diff = False
+    result.world.collision_objects = [o for o in result.world.collision_objects if o.id != obj.id]
+    return result
+
+
+def assert_scene_match(actual, expected, selected_id=None):
+    """Reject changed obstacles, ACM, attachments or robot state before continuing."""
+    assert_joint_match(actual.robot_state, expected.robot_state)
+    if collision_matrix_signature(actual.allowed_collision_matrix) != collision_matrix_signature(expected.allowed_collision_matrix):
+        raise RuntimeError('allowed collision matrix diverged')
+    def geometry_equal(a, b):
+        ga, gb = collision_object_dict(a), collision_object_dict(b)
+        if a.header.frame_id != b.header.frame_id:
+            return False
+        if ga is not None and gb is not None:
+            tol = 0.003 if a.id == selected_id else 1e-7
+            qa, qb = ga['pose'][3:], gb['pose'][3:]
+            return (all(abs(x-y) < 1e-7 for x,y in zip(ga['dimensions'], gb['dimensions']))
+                    and math.dist(ga['pose'][:3], gb['pose'][:3]) <= tol
+                    and min(math.dist(qa,qb), math.dist(qa,[-v for v in qb])) <= (0.005 if a.id == selected_id else 1e-7))
+        a, b = copy.deepcopy(a), copy.deepcopy(b)
+        a.header.stamp.sec = b.header.stamp.sec = 0
+        a.header.stamp.nanosec = b.header.stamp.nanosec = 0
+        # Compare ROS fields, not CDR bytes: transport alignment padding is
+        # not geometry and may differ between equivalent messages.
+        return a == b
+    aw = {o.id:o for o in actual.world.collision_objects}
+    ew = {o.id:o for o in expected.world.collision_objects}
+    if set(aw) != set(ew) or any(not geometry_equal(aw[k],ew[k]) for k in ew):
+        details = [dict(id=k,actual_pose=pose_values(aw[k].pose),expected_pose=pose_values(ew[k].pose),
+                        actual_frame=aw[k].header.frame_id,expected_frame=ew[k].header.frame_id)
+                   for k in set(aw).intersection(ew) if not geometry_equal(aw[k],ew[k])]
+        raise RuntimeError(f'world collision geometry diverged: missing={set(ew)-set(aw)}, extra={set(aw)-set(ew)}, changed={details}')
+    aa = {o.object.id:o for o in actual.robot_state.attached_collision_objects}
+    ea = {o.object.id:o for o in expected.robot_state.attached_collision_objects}
+    if set(aa) != set(ea) or any(aa[k].link_name != ea[k].link_name or
+            set(aa[k].touch_links) != set(ea[k].touch_links) or
+            not geometry_equal(aa[k].object,ea[k].object) for k in ea):
+        raise RuntimeError('attached object state diverged')
+    if (actual.world.octomap != expected.world.octomap or
+            actual.link_padding != expected.link_padding or actual.link_scale != expected.link_scale):
+        raise RuntimeError('collision map/padding/scale diverged')
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--summary-output", required=True)
-    parser.add_argument("--scene-package", default="ur5_2f_test")
-    parser.add_argument("--timeout", type=float, default=90.0)
-    parser.add_argument("--retreat-distance", type=float, default=None)
+    parser.add_argument('--summary-output', required=True)
+    parser.add_argument('--scene-package', default='ur5_2f_test')
+    parser.add_argument('--task-request', required=True)
+    parser.add_argument('--detections', required=True)
+    parser.add_argument('--replay', action='store_true')
+    parser.add_argument('--start', action='store_true')
+    parser.add_argument('--timeout', type=float, default=180.0, help='Total candidate search budget in seconds')
+    parser.add_argument('--retreat-distance', type=float)
     args = parser.parse_args()
-
+    import yaml
+    import xml.etree.ElementTree as ET
     import rclpy
-    from ament_index_python.packages import get_package_share_directory
-    from control_msgs.action import FollowJointTrajectory
-    from geometry_msgs.msg import PoseStamped
-    from moveit_msgs.action import ExecuteTrajectory
-    from moveit_msgs.msg import Constraints, JointConstraint, MoveItErrorCodes, PlanningSceneComponents
-    from moveit_msgs.srv import ApplyPlanningScene, GetMotionPlan, GetPlanningScene, GetPositionFK, GetPositionIK, GetCartesianPath, GetStateValidity
-    from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
-    from rcl_interfaces.srv import GetParameters, SetParameters
-    from controller_manager_msgs.srv import ListHardwareComponents
     from rclpy.action import ActionClient
-
+    from ament_index_python.packages import get_package_share_directory
+    from geometry_msgs.msg import Pose, PoseStamped
+    from moveit_msgs.action import MoveGroup, ExecuteTrajectory
+    from moveit_msgs.msg import (PlanningScene, PlanningSceneComponents, Constraints,
+        JointConstraint, MotionPlanRequest)
+    from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene, GetPositionFK, GetPositionIK, GetStateValidity
+    from rcl_interfaces.srv import GetParameters
+    from controller_manager_msgs.srv import ListHardwareComponents
+    spec = importlib.util.spec_from_file_location('runtime_pick_inputs', Path(__file__).with_name('runtime_pick_inputs.py'))
+    inputs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inputs)
     rclpy.init()
-    node = rclpy.create_node("perceived_object_grasp_execute")
-    summary = {"result": "FAIL", "execution_attempted": False,
-               "real_hardware": None, "cleanup_performed": False}
+    node = rclpy.create_node('perceived_object_grasp_execute')
+    summary = dict(result='FAIL', execution_attempted=False, full_cycle_prevalidated=False,
+                   full_cycle_execution_success=False, stages=[], candidate_attempts=[])
+    def stage(name):
+        if summary.get('current_stage') == name:
+            return
+        summary['current_stage'] = name
+        summary.setdefault('stage_events', []).append(dict(stage=name, timestamp=time.time()))
+        print(json.dumps({'stage':name}), flush=True)
+    stage('IDLE')
+    scene_client = node.create_client(GetPlanningScene, '/get_planning_scene')
+    apply_client = node.create_client(ApplyPlanningScene, '/apply_planning_scene')
+    fk_client = node.create_client(GetPositionFK, '/compute_fk')
+    ik_client = node.create_client(GetPositionIK, '/compute_ik')
+    validity_client = node.create_client(GetStateValidity, '/check_state_validity')
+    params_client = node.create_client(GetParameters, '/move_group/get_parameters')
+    hardware_client = node.create_client(ListHardwareComponents, '/controller_manager/list_hardware_components')
+    plan_client = ActionClient(node, MoveGroup, '/move_action')
+    execute_client = ActionClient(node, ExecuteTrajectory, '/execute_trajectory')
     selected_id = None
-    summary["stages"] = []
-    attached = False
-
-    def service(service_type, name):
-        return node.create_client(service_type, name)
-
-    scene_client = service(GetPlanningScene, "/get_planning_scene")
-    apply_client = service(ApplyPlanningScene, "/apply_planning_scene")
-    ik_client = service(GetPositionIK, "/compute_ik")
-    fk_client = service(GetPositionFK, "/compute_fk")
-    plan_client = service(GetMotionPlan, "/plan_kinematic_path")
-    cartesian_client = service(GetCartesianPath, "/compute_cartesian_path")
-    validity_client = service(GetStateValidity, "/check_state_validity")
-    parameter_client = service(GetParameters, "/move_group/get_parameters")
-    ownership_client = service(
-        SetParameters, "/epd_dynamic_planning_scene_bridge/set_parameters")
-    hardware_client = service(ListHardwareComponents, "/controller_manager/list_hardware_components")
-    execute_client = ActionClient(node, ExecuteTrajectory, "/execute_trajectory")
-    arm_controller_client = ActionClient(
-        node, FollowJointTrajectory, "/ur5_arm_controller/follow_joint_trajectory")
-
-    def call(client, request, timeout=10.0):
-        if not client.wait_for_service(timeout_sec=timeout):
-            raise RuntimeError(f"service unavailable: {client.srv_name}")
+    def call(client, request):
+        if not client.wait_for_service(timeout_sec=10):
+            raise RuntimeError(f'service unavailable: {client.srv_name}')
         future = client.call_async(request)
-        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=10)
         if not future.done() or future.result() is None:
-            raise RuntimeError(f"service timed out: {client.srv_name}")
+            raise RuntimeError(f'service timeout: {client.srv_name}')
         return future.result()
-
-    def get_scene(components):
-        request = GetPlanningScene.Request()
-        request.components.components = components
-        return call(scene_client, request).scene
-
-    def set_ownership(object_id):
-        parameter = Parameter()
-        parameter.name = "owned_object_id"
-        parameter.value = ParameterValue(
-            type=ParameterType.PARAMETER_STRING, string_value=object_id)
-        response = call(
-            ownership_client, SetParameters.Request(parameters=[parameter]), timeout=5.0)
-        if len(response.results) != 1 or not response.results[0].successful:
-            raise RuntimeError("perception bridge rejected manipulation ownership")
-        return object_id
-
-    def plan_to_joint_state(start_state, joint_state):
-        goal = Constraints()
-        for name, position in zip(joint_state.name, joint_state.position):
-            if any(name.endswith(suffix) for suffix in ARM_JOINT_SUFFIXES):
-                constraint = JointConstraint()
-                constraint.joint_name = name
-                constraint.position = position
-                constraint.tolerance_above = 0.001
-                constraint.tolerance_below = 0.001
-                constraint.weight = 1.0
-                goal.joint_constraints.append(constraint)
-        request = GetMotionPlan.Request()
-        motion = request.motion_plan_request
-        motion.group_name = grasp_contract["planning_group"]
-        motion.start_state = copy.deepcopy(start_state)
-        motion.start_state.is_diff = True
-        motion.goal_constraints = [goal]
-        motion.num_planning_attempts = 3
-        motion.allowed_planning_time = 5.0
-        motion.max_velocity_scaling_factor = 0.2
-        motion.max_acceleration_scaling_factor = 0.2
-        return call(plan_client, request, timeout=12.0).motion_plan_response
-
-    def apply_matrix(matrix):
-        from moveit_msgs.msg import PlanningScene
-        diff = PlanningScene(is_diff=True, allowed_collision_matrix=matrix)
+    def scene_now():
+        req = GetPlanningScene.Request()
+        req.components.components = 1023
+        return call(scene_client, req).scene
+    def apply(diff):
         if not call(apply_client, ApplyPlanningScene.Request(scene=diff)).success:
-            raise RuntimeError("PlanningScene rejected contact ACM update/restore")
-        actual = get_scene(PlanningSceneComponents.ALLOWED_COLLISION_MATRIX).allowed_collision_matrix
-        if collision_matrix_signature(actual) != collision_matrix_signature(matrix):
-            raise RuntimeError("PlanningScene contact ACM verification failed")
-
-    def validate_state(scene, label):
-        result = call(validity_client, GetStateValidity.Request(
-            robot_state=scene.robot_state, group_name=""))
-        if not result.valid:
-            contacts = [{"a": c.contact_body_1, "b": c.contact_body_2,
-                         "depth_m": c.depth} for c in result.contacts]
-            summary["blocked_contacts"] = contacts
-            raise RuntimeError(f"{label} state is in collision: {contacts}")
-
-    def execute(trajectory, label):
-        if not execute_client.wait_for_server(timeout_sec=5.0):
-            raise RuntimeError("MoveIt execute_trajectory action unavailable")
-        summary["execution_attempted"] = True
-        goal = ExecuteTrajectory.Goal()
-        goal.trajectory = trajectory
-        sent = execute_client.send_goal_async(goal)
-        rclpy.spin_until_future_complete(node, sent, timeout_sec=5.0)
+            raise RuntimeError('PlanningScene rejected transition')
+    def action(client, goal, timeout):
+        if not client.wait_for_server(timeout_sec=5):
+            raise RuntimeError('MoveIt action unavailable')
+        sent = client.send_goal_async(goal)
+        rclpy.spin_until_future_complete(node, sent, timeout_sec=5)
+        if not sent.done():
+            # A late accepted goal must not keep running after the caller fails.
+            sent.add_done_callback(lambda f: f.result().cancel_goal_async() if f.result() and f.result().accepted else None)
+            raise RuntimeError('action acceptance timed out')
         handle = sent.result()
-        if handle is None or not handle.accepted:
-            raise RuntimeError(f"{label} execution goal rejected")
-        result_future = handle.get_result_async()
-        rclpy.spin_until_future_complete(node, result_future, timeout_sec=30.0)
-        if not result_future.done() or result_future.result() is None:
+        if not handle or not handle.accepted:
+            raise RuntimeError('action goal rejected')
+        future = handle.get_result_async()
+        try:
+            rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+            if not future.done() or future.result() is None:
+                raise RuntimeError('action result timed out')
+        except BaseException:
             cancel = handle.cancel_goal_async()
-            rclpy.spin_until_future_complete(node, cancel, timeout_sec=5.0)
-            raise RuntimeError(f"{label} execution timed out")
-        result = result_future.result().result
-        if result.error_code.val != MoveItErrorCodes.SUCCESS:
-            raise RuntimeError(f"{label} execution failed: {result.error_code.val}")
-        summary["stages"].append(label)
-        return result.error_code.val
-
-    def plan_pose(start_scene, pose, label):
-        request = GetPositionIK.Request()
-        request.ik_request.group_name = grasp_contract["planning_group"]
-        request.ik_request.ik_link_name = grasp_contract["tool_link"]
-        request.ik_request.pose_stamped = pose
-        request.ik_request.robot_state = start_scene.robot_state
-        # Select a collision-free IK branch before constraining the
-        # authoritative motion plan.  OMPL still validates the complete motion
-        # against the current PlanningScene (including the attached object).
-        request.ik_request.avoid_collisions = True
-        request.ik_request.timeout.sec = 3
-        ik = call(ik_client, request, timeout=6.0)
-        if ik.error_code.val != MoveItErrorCodes.SUCCESS:
-            raise RuntimeError(f"{label} IK failed: {ik.error_code.val}")
-        plan = plan_to_joint_state(start_scene.robot_state, ik.solution.joint_state)
-        points = len(plan.trajectory.joint_trajectory.points)
-        if plan.error_code.val != MoveItErrorCodes.SUCCESS or not points:
-            raise RuntimeError(f"{label} planning failed: {plan.error_code.val}")
-        return plan, points
-
+            rclpy.spin_until_future_complete(node, cancel, timeout_sec=5)
+            summary['cancellation_confirmed'] = bool(cancel.done() and cancel.result() and cancel.result().goals_canceling)
+            raise
+        response = future.result()
+        if response.status != 4 or response.result.error_code.val != 1:
+            raise RuntimeError(f'MoveIt action failed: status={response.status}, code={response.result.error_code.val}')
+        return response.result
+    def fk(state, link):
+        req = GetPositionFK.Request()
+        req.header.frame_id = 'world'
+        req.fk_link_names = [link]
+        req.robot_state = state
+        result = call(fk_client, req)
+        if result.error_code.val != 1 or len(result.pose_stamped) != 1:
+            raise RuntimeError(f'FK failed: {result.error_code.val}')
+        return result.pose_stamped[0]
+    def pose_message(values):
+        p = PoseStamped()
+        p.header.frame_id = 'world'
+        (p.pose.position.x,p.pose.position.y,p.pose.position.z,
+         p.pose.orientation.x,p.pose.orientation.y,p.pose.orientation.z,p.pose.orientation.w) = values
+        return p
+    def joint_constraints(values):
+        return Constraints(joint_constraints=[JointConstraint(joint_name=n, position=float(v),
+            tolerance_above=0.0001, tolerance_below=0.0001, weight=1.0) for n,v in values.items()])
+    def plan_segment(view, name, goal, group=None, straight=False):
+        stage(name)
+        if time.monotonic() > deadline:
+            raise RuntimeError('candidate search budget exhausted')
+        before = copy.deepcopy(view)
+        request = MotionPlanRequest(group_name=group or contract['planning_group'],
+            start_state=copy.deepcopy(view.robot_state), num_planning_attempts=1,
+            allowed_planning_time=3.0, max_velocity_scaling_factor=0.2, max_acceleration_scaling_factor=0.2)
+        request.start_state.is_diff = False
+        if isinstance(goal, dict):
+            request.goal_constraints = [joint_constraints(goal)]
+        if straight:
+            # Chain short collision-planned moves in the same private scene.
+            # Validate FK along each returned trajectory, rather than treating
+            # endpoint feasibility as proof of a straight collision-safe path.
+            start_pose = fk(view.robot_state, contract['tool_link'])
+            a, b = pose_values(start_pose.pose), pose_values(goal.pose)
+            if math.dist(a[:2], b[:2]) > 0.002:
+                raise RuntimeError('contact/retreat requires a vertical path')
+            count = max(1, math.ceil(math.dist(a[:3], b[:3]) / 0.005))
+            combined = None
+            elapsed_ns = 0
+            total_planning_time = 0.0
+            for i in range(1, count+1):
+                waypoint = pose_message([x+(y-x)*i/count for x,y in zip(a[:3],b[:3])] + b[3:])
+                part = plan_segment(view, name, waypoint, group)
+                trajectory = part['trajectory']
+                for point in trajectory.joint_trajectory.points:
+                    sample = updated_state(view.robot_state, dict(zip(trajectory.joint_trajectory.joint_names, point.positions)), mimics)
+                    actual_pose = pose_values(fk(sample, contract['tool_link']).pose)
+                    if (math.dist(actual_pose[:2], b[:2]) > 0.0025 or
+                            not min(a[2],b[2])-0.001 <= actual_pose[2] <= max(a[2],b[2])+0.001 or
+                            min(math.dist(actual_pose[3:],b[3:]),math.dist(actual_pose[3:],[-q for q in b[3:]])) > 0.005):
+                        raise RuntimeError('planned contact/retreat path leaves the Cartesian corridor')
+                if combined is None:
+                    combined = copy.deepcopy(trajectory)
+                else:
+                    if combined.joint_trajectory.joint_names != trajectory.joint_trajectory.joint_names:
+                        raise RuntimeError('waypoint trajectory joint order changed')
+                    for point in trajectory.joint_trajectory.points[1:]:
+                        point = copy.deepcopy(point)
+                        stamp = point.time_from_start.sec*1000000000 + point.time_from_start.nanosec + elapsed_ns
+                        point.time_from_start.sec, point.time_from_start.nanosec = divmod(stamp,1000000000)
+                        combined.joint_trajectory.points.append(point)
+                last = combined.joint_trajectory.points[-1].time_from_start
+                elapsed_ns = last.sec*1000000000+last.nanosec
+                total_planning_time += part['metadata']['planning_time']
+                view = copy.deepcopy(part['after'])
+            return dict(kind='motion',stage=name,before=before,after=view,trajectory=combined,
+                metadata=dict(stage=name,success=True,moveit_code=1,planning_time=total_planning_time,
+                    points=len(combined.joint_trajectory.points),cartesian_waypoints=count,
+                    attached_ids=[o.object.id for o in before.robot_state.attached_collision_objects],
+                    world_ids=[o.id for o in before.world.collision_objects]))
+        if not isinstance(goal, dict):
+            ik_request = GetPositionIK.Request()
+            ik_request.ik_request.group_name = contract['planning_group']
+            ik_request.ik_request.ik_link_name = contract['tool_link']
+            ik_request.ik_request.pose_stamped = goal
+            ik_request.ik_request.robot_state = view.robot_state
+            # Seed continuity only. Collision feasibility is established by
+            # MoveGroup's private-scene plan, never by this IK result alone.
+            ik_request.ik_request.avoid_collisions = False
+            ik_request.ik_request.timeout.sec = 1
+            ik = call(ik_client, ik_request)
+            if ik.error_code.val != 1:
+                raise RuntimeError(f'IK failed: {ik.error_code.val}')
+            values = dict(zip(ik.solution.joint_state.name,ik.solution.joint_state.position))
+            request.goal_constraints = [joint_constraints({n:values[n] for n in contract['home_joint_names']})]
+        goal_msg = MoveGroup.Goal(request=request)
+        goal_msg.planning_options.plan_only = True
+        goal_msg.planning_options.replan = False
+        goal_msg.planning_options.look_around = False
+        goal_msg.planning_options.planning_scene_diff = copy.deepcopy(view)
+        result = action(plan_client, goal_msg, 12)
+        trajectory = result.planned_trajectory
+        if not trajectory.joint_trajectory.points:
+            raise RuntimeError('MoveIt returned empty trajectory')
+        # Reject start-state adapters silently moving the start out of collision.
+        assert_joint_match(result.trajectory_start, before.robot_state, 0.001)
+        first = updated_state(before.robot_state, dict(zip(trajectory.joint_trajectory.joint_names,
+                    trajectory.joint_trajectory.points[0].positions)), mimics)
+        assert_joint_match(first, before.robot_state, 0.001)
+        after = copy.deepcopy(view)
+        after.robot_state = updated_state(view.robot_state, dict(zip(trajectory.joint_trajectory.joint_names,
+                    trajectory.joint_trajectory.points[-1].positions)), mimics)
+        return dict(kind='motion', stage=name, before=before, after=after, trajectory=trajectory,
+                    metadata=dict(stage=name, success=True, moveit_code=result.error_code.val,
+                        planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
+                        attached_ids=[o.object.id for o in view.robot_state.attached_collision_objects],
+                        world_ids=[o.id for o in view.world.collision_objects]))
     try:
-        scene_package = Path(args.scene_package)
-        if not scene_package.is_dir():
-            scene_package = Path(get_package_share_directory(args.scene_package))
-        grasp_contract = _PLANNER.load_grasp_contract(str(scene_package))
-        retreat_distance = (float(args.retreat_distance)
-                            if args.retreat_distance is not None
-                            else float(grasp_contract["retreat_distance_m"]))
-        param_request = GetParameters.Request(names=["use_fake_hardware"])
-        params = call(parameter_client, param_request).values
-        hardware = call(hardware_client, ListHardwareComponents.Request()).component
-        summary["fake_hardware_guard"] = fake_hardware_evidence(params, hardware)
-        summary["real_hardware"] = False
-        execution_setting = call(parameter_client, GetParameters.Request(
-            names=["allow_trajectory_execution"])).values
-        if not execution_setting or not execution_setting[0].bool_value:
-            raise RuntimeError("fake trajectory execution is disabled; launch with allow_trajectory_execution:=true")
-        summary["arm_controller_action_available"] = arm_controller_client.wait_for_server(
-            timeout_sec=2.0)
-        if not summary["arm_controller_action_available"]:
-            raise RuntimeError("fake arm controller action unavailable")
-
-        initial_scene = get_scene(PlanningSceneComponents.ROBOT_STATE | PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS)
-        validate_state(initial_scene, "initial")
-        summary["initial_state_valid"] = True
-        from sensor_msgs.msg import JointState
-        home = JointState(name=grasp_contract["home_joint_names"], position=[float(v) for v in grasp_contract["home_joint_positions"]])
-        current = dict(zip(initial_scene.robot_state.joint_state.name, initial_scene.robot_state.joint_state.position))
-        if any(abs(current[name] - position) > 0.001 for name, position in zip(home.name, home.position)):
-            home_plan = plan_to_joint_state(initial_scene.robot_state, home)
-            if home_plan.error_code.val != MoveItErrorCodes.SUCCESS or not home_plan.trajectory.joint_trajectory.points:
-                raise RuntimeError(f"HOME planning failed: {home_plan.error_code.val}")
-            execute(home_plan.trajectory, "HOME")
-        else:
-            summary["stages"].append("HOME")
-        deadline = time.monotonic() + args.timeout
-        original = None
-        scene = None
-        while time.monotonic() < deadline:
-            components = (PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
-                          | PlanningSceneComponents.ROBOT_STATE)
-            scene = get_scene(components)
-            perceived = [(obj, collision_object_dict(obj))
-                         for obj in scene.world.collision_objects
-                         if str(obj.id).startswith("epd::") or str(obj.id).isdigit()]
-            valid = [(obj, item) for obj, item in perceived if item]
+        stage('PREFLIGHT')
+        package = Path(args.scene_package)
+        if not package.is_dir():
+            package = Path(get_package_share_directory(args.scene_package))
+        contract = _PLANNER.load_grasp_contract(package)
+        cell = yaml.safe_load((package/'cell_definition.yaml').read_text())
+        task = inputs.task_request(yaml.safe_load(Path(args.task_request).read_text()), cell)
+        stage('ACQUIRE_OBJECTS')
+        snapshot = yaml.safe_load(Path(args.detections).read_text())
+        if args.replay:
+            snapshot = inputs.replay_snapshot(snapshot, time.time())
+        objects = inputs.normalize(snapshot, time.time(), _PLANNER)
+        stage('FILTER_TARGETS')
+        eligible, rejected = inputs.filter_targets(objects, task, cell, time.time(), _PLANNER)
+        summary.update(task_request=task, normalized_objects=objects, rejected_objects=rejected)
+        params = call(params_client, GetParameters.Request(names=['use_fake_hardware','allow_trajectory_execution','robot_description'])).values
+        summary['fake_hardware_guard'] = fake_hardware_evidence(params, call(hardware_client,ListHardwareComponents.Request()).component)
+        if args.start and not params[1].bool_value:
+            raise RuntimeError('fake execution disabled; launch allow_trajectory_execution:=true')
+        mimics = [(j.attrib['name'], m.attrib['joint'], float(m.get('multiplier',1)), float(m.get('offset',0)))
+            for j in ET.fromstring(params[2].string_value).findall('joint') for m in j.findall('mimic')]
+        stage('UPDATE_PLANNING_SCENE')
+        home = dict(zip(contract['home_joint_names'],contract['home_joint_positions']))
+        initial = wait_for_robot_baseline(scene_now, home, mimics, min(10.0, args.timeout))
+        if initial.robot_state.attached_collision_objects:
+            raise RuntimeError('existing attachment requires explicit recovery')
+        existing_ids = {o.id for o in initial.world.collision_objects}
+        if existing_ids.intersection(o['id'] for o in objects):
+            raise RuntimeError('runtime IDs already exist; reset the fake scene before replay')
+        manifest = yaml.safe_load((package/'config/moveit_collision_objects.yaml').read_text())
+        if not {o['id'] for o in manifest['objects']}.issubset(existing_ids):
+            raise RuntimeError('generated environment collisions missing')
+        apply(inputs.scene_diff(objects))
+        initial = scene_now()
+        initial.robot_state.is_diff = False
+        initial.is_diff = True
+        summary['inserted_object_ids'] = [o['id'] for o in objects]
+        actual = {o.id:collision_object_dict(o) for o in initial.world.collision_objects}
+        for obj in objects:
+            if actual.get(obj['id']) is None or any(abs(a-b)>1e-7 for a,b in
+                    zip(obj['pose']+obj['dimensions'],actual[obj['id']]['pose']+actual[obj['id']]['dimensions'])):
+                raise RuntimeError('normalized scene insertion mismatch')
+        # A non-home start is not silently corrected with motion before validation.
+        assert_joint_match(initial.robot_state, updated_state(initial.robot_state, dict(home, gripper_finger1_joint=0.0), mimics),0.001)
+        baseline = copy.deepcopy(initial.allowed_collision_matrix)
+        destination = load_canonical_place_target(package, task['destination_zone'])
+        retreat = args.retreat_distance if args.retreat_distance is not None else contract['retreat_distance_m']
+        if not math.isfinite(retreat) or retreat <= 0:
+            raise RuntimeError('retreat distance must be finite and positive')
+        deadline = time.monotonic()+args.timeout
+        def preplan(target, index, record):
+            steps = []
+            view = copy.deepcopy(initial)
+            def motion(name, goal, group=None, straight=False):
+                nonlocal view
+                step = plan_segment(view,name,goal,group,straight)
+                steps.append(step)
+                record['stages'].append(step['metadata'])
+                view = copy.deepcopy(step['after'])
+                return view
             try:
-                chosen = select_graspable_box([item for _, item in valid])
-                original = next(obj for obj, item in valid if item["id"] == chosen["id"])
-                break
-            except ValueError as exc:
-                if valid:
-                    raise RuntimeError(f"live objects rejected: {exc}; dimensions="
-                                       f"{[item['dimensions'] for _, item in valid]}") from exc
-                time.sleep(0.1)
-        if original is None:
-            raise RuntimeError("timed out waiting for one valid live perceived object")
-
-        target = build_grasp_target(chosen)
-        selected_id = target["perceived_object_id"]
-        summary["ownership_claimed_id"] = set_ownership(selected_id)
-        # Refresh after the bridge acknowledges ownership so the selected
-        # geometry and the subsequent plans use the same protected version.
-        scene = get_scene(PlanningSceneComponents.WORLD_OBJECT_GEOMETRY | PlanningSceneComponents.ROBOT_STATE)
-        matches = [obj for obj in scene.world.collision_objects if obj.id == selected_id]
-        if len(matches) != 1:
-            raise RuntimeError("owned target disappeared or is not unique")
-        original = matches[0]
-        target = build_grasp_target(collision_object_dict(original))
-        candidates = [_PLANNER.tool_pose_for_grasp(values, grasp_contract) for values in
-                      generate_box_grasp_candidates(target, clearance=grasp_contract["approach_distance_m"])]
-        contact_candidates = [_PLANNER.tool_pose_for_grasp(values, grasp_contract) for values in
-                              generate_box_grasp_candidates(target, clearance=0.0)]
-        touch_links = grasp_contract["allowed_touch_links"]
-        validate_state(scene, "approach start")
-        ids = [obj.id for obj in scene.world.collision_objects
-               if str(obj.id).startswith("epd::") or str(obj.id).isdigit()]
-        place_target = load_canonical_place_target(scene_package)
-        live_extents = oriented_box_extents(target)
-        if any(extent > limit + 1e-6
-               for extent, limit in zip(live_extents, place_target["dimensions"])):
-            raise RuntimeError(
-                "live perceived box does not fit the authored destination region "
-                f"without a commanded reorientation: extents={live_extents}, "
-                f"region={place_target['dimensions']}")
-        summary.update({
-            "selected_object_id": selected_id,
-            "object_frame": target["planning_frame"],
-            "object_pose": target["target_pose"],
-            "object_dimensions": target["target_dimensions"],
-            "approach_distance_m": grasp_contract["approach_distance_m"],
-            "retreat_distance_m": retreat_distance,
-            "geometry_valid": True,
-            "grasp_candidates_generated": len(candidates),
-            "planning_scene_selected_id_count": ids.count(selected_id),
-            "duplicate_ids": sorted({item for item in ids if ids.count(item) > 1}),
-            "place_target": place_target,
-        })
-        if ids.count(selected_id) != 1 or summary["duplicate_ids"]:
-            raise RuntimeError("perceived object identity is not unique")
-
-        grasp_plan = None
-        for index in candidate_indices(len(candidates)):
-            values = candidates[index]
-            pose = PoseStamped()
-            pose.header.frame_id = target["planning_frame"]
-            (pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
-             pose.pose.orientation.x, pose.pose.orientation.y,
-             pose.pose.orientation.z, pose.pose.orientation.w) = values
-            request = GetPositionIK.Request()
-            request.ik_request.group_name = grasp_contract["planning_group"]
-            request.ik_request.ik_link_name = grasp_contract["tool_link"]
-            request.ik_request.pose_stamped = pose
-            request.ik_request.robot_state = scene.robot_state
-            request.ik_request.avoid_collisions = True
-            request.ik_request.timeout.sec = 2
-            ik = call(ik_client, request, timeout=5.0)
-            if ik.error_code.val != MoveItErrorCodes.SUCCESS:
-                continue
-            plan = plan_to_joint_state(scene.robot_state, ik.solution.joint_state)
-            points = len(plan.trajectory.joint_trajectory.points)
-            if plan.error_code.val == MoveItErrorCodes.SUCCESS and points:
-                grasp_plan = plan
-                summary.update({"successful_candidate_index": index,
-                                "grasp_moveit_error_code": plan.error_code.val,
-                                "grasp_trajectory_point_count": points})
-                break
-        if grasp_plan is None:
-            raise RuntimeError("no grasp candidate produced a non-empty MoveIt plan")
-
-        summary["grasp_execution_error_code"] = execute(grasp_plan.trajectory, "APPROACH")
-        contact_pose = copy.deepcopy(pose)
-        values = contact_candidates[summary["successful_candidate_index"]]
-        (contact_pose.pose.position.x, contact_pose.pose.position.y, contact_pose.pose.position.z,
-         contact_pose.pose.orientation.x, contact_pose.pose.orientation.y,
-         contact_pose.pose.orientation.z, contact_pose.pose.orientation.w) = values
-        baseline = get_scene(PlanningSceneComponents.ALLOWED_COLLISION_MATRIX).allowed_collision_matrix
-        with temporary_target_contact(baseline, selected_id, touch_links, apply_matrix):
-            contact_scene = get_scene(PlanningSceneComponents.ROBOT_STATE | PlanningSceneComponents.WORLD_OBJECT_GEOMETRY)
-            if not any(obj.id == selected_id for obj in contact_scene.world.collision_objects):
-                raise RuntimeError("selected target disappeared before contact")
-            request = GetCartesianPath.Request()
-            request.header = contact_pose.header
-            request.start_state = contact_scene.robot_state
-            request.start_state.is_diff = True
-            request.group_name = grasp_contract["planning_group"]
-            request.link_name = grasp_contract["tool_link"]
-            request.waypoints = [contact_pose.pose]
-            request.max_step = 0.005
-            request.revolute_jump_threshold = 0.2
-            request.avoid_collisions = True
-            contact = call(cartesian_client, request)
-            summary["contact_fraction"] = contact.fraction
-            summary["contact_allowed_touch_links"] = touch_links
-            if contact.error_code.val != MoveItErrorCodes.SUCCESS or contact.fraction < 1.0 or not contact.solution.joint_trajectory.points:
-                raise RuntimeError(f"GRASP CONTACT incomplete: code={contact.error_code.val}, fraction={contact.fraction}")
-            execute(contact.solution, "GRASP CONTACT")
-            # Restore normal rules briefly, with the arm stopped, to measure
-            # which links actually contact the target before attaching it.
-            apply_matrix(baseline)
-            measured_scene = get_scene(PlanningSceneComponents.ROBOT_STATE)
-            measured = call(validity_client, GetStateValidity.Request(
-                robot_state=measured_scene.robot_state, group_name=""))
-            summary["grasp_contacts"] = [{"a": c.contact_body_1, "b": c.contact_body_2,
-                                          "depth_m": c.depth} for c in measured.contacts]
-            verify_selected_contacts(measured.contacts, selected_id, touch_links)
-            pre_attach_scene = get_scene(PlanningSceneComponents.WORLD_OBJECT_GEOMETRY)
-            if not any(obj.id == selected_id for obj in pre_attach_scene.world.collision_objects):
-                raise RuntimeError("selected target disappeared before attachment")
-            diff = attachment_diff(original, grasp_contract["grasp_frame"], touch_links)
-            attached = True  # Retain ownership if the service response is lost.
-            if not call(apply_client, ApplyPlanningScene.Request(scene=diff)).success:
-                raise RuntimeError("PlanningScene rejected object attachment")
-            verify_components = (PlanningSceneComponents.WORLD_OBJECT_GEOMETRY
-                                 | PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS
-                                 | PlanningSceneComponents.ROBOT_STATE)
-            attached_scene = get_scene(verify_components)
-            summary["attachment"] = attachment_status(attached_scene, selected_id, grasp_contract["grasp_frame"])
-            if not summary["attachment"]["valid"]:
-                raise RuntimeError("attachment verification failed")
-            summary["stages"].append("ATTACH")
-        summary["contact_acm_restored"] = True
-        attached_scene = get_scene(verify_components)
-        validate_state(attached_scene, "attached")
-
-        fk_request = GetPositionFK.Request()
-        fk_request.header.frame_id = target["planning_frame"]
-        fk_request.fk_link_names = [grasp_contract["tool_link"]]
-        fk_request.robot_state = attached_scene.robot_state
-        fk = call(fk_client, fk_request)
-        if fk.error_code.val != MoveItErrorCodes.SUCCESS or len(fk.pose_stamped) != 1:
-            raise RuntimeError(f"retreat FK failed: {fk.error_code.val}")
-        current_tool_pose = copy.deepcopy(fk.pose_stamped[0])
-        lift_pose = translated_pose(current_tool_pose, dz=retreat_distance)
-        lift_plan, lift_points = plan_pose(attached_scene, lift_pose, "attached lift")
-        summary.update({"attached_lift_moveit_error_code": lift_plan.error_code.val,
-                        "attached_lift_trajectory_point_count": lift_points,
-                        "attached_lift_execution_error_code": execute(
-                            lift_plan.trajectory, "RETREAT_ATTACHED")})
-        lifted_scene = get_scene(verify_components)
-
-        place_target = summary["place_target"]["pose_xyz"]
-        place_dx = place_target[0] - target["target_pose"][0]
-        place_dy = place_target[1] - target["target_pose"][1]
-        place_dz = place_target[2] - target["target_pose"][2]
-        above_place_pose = translated_pose(
-            current_tool_pose, place_dx, place_dy,
-            place_dz + retreat_distance)
-        transfer_plan, transfer_points = plan_pose(
-            lifted_scene, above_place_pose, "above-place transfer")
-        summary.update({"transfer_moveit_error_code": transfer_plan.error_code.val,
-                        "transfer_trajectory_point_count": transfer_points,
-                        "transfer_execution_error_code": execute(
-                            transfer_plan.trajectory, "TRANSFER")})
-        above_place_scene = get_scene(verify_components)
-
-        place_pose = translated_pose(current_tool_pose, place_dx, place_dy, place_dz)
-        place_plan, place_points = plan_pose(above_place_scene, place_pose, "place")
-        summary.update({"place_moveit_error_code": place_plan.error_code.val,
-                        "place_trajectory_point_count": place_points,
-                        "place_execution_error_code": execute(place_plan.trajectory, "PLACE")})
-
-        # Detach at the achieved FK pose, never teleport to the ideal goal.
-        at_place = get_scene(verify_components)
-        validate_state(at_place, "place")
-        fk_request.robot_state = at_place.robot_state
-        reached = call(fk_client, fk_request)
-        if reached.error_code.val != MoveItErrorCodes.SUCCESS or len(reached.pose_stamped) != 1:
-            raise RuntimeError("place FK unavailable")
-        achieved = object_pose_after_motion(original, current_tool_pose.pose, reached.pose_stamped[0].pose)
-        place_diff = place_detachment_diff(original, grasp_contract["grasp_frame"], achieved[:3], achieved[3:])
-        placed_geometry = collision_object_dict(place_diff.world.collision_objects[0])
-        summary["achieved_place_pose"] = placed_geometry["pose"]
-        if math.dist(placed_geometry["pose"][:3], place_target) > 0.005:
-            raise RuntimeError("achieved attached-object position differs from the authored place goal by more than 5 mm")
-        if not call(apply_client, ApplyPlanningScene.Request(scene=place_diff)).success:
-            raise RuntimeError("PlanningScene rejected place detachment")
-        attached = False
-        placed_scene = get_scene(verify_components)
-        placed_status = attachment_status(placed_scene, selected_id, grasp_contract["grasp_frame"])
-        placed_world = [obj for obj in placed_scene.world.collision_objects
-                        if obj.id == selected_id]
-        summary["detachment"] = {
-            "attached_object_present": placed_status["attached_object_present"],
-            "world_object_count": len(placed_world),
-            "world_object_present": len(placed_world) == 1,
-        }
-        if placed_status["attached_object_present"] or len(placed_world) != 1:
-            raise RuntimeError("place detachment verification failed")
-        summary["stages"].append("DETACH")
-
-        retreat_pose = translated_pose(reached.pose_stamped[0], dz=retreat_distance)
-        # Fingertips can initially remain in contact after detachment. Only
-        # allow those pairs during a straight departure, then restore normal
-        # collision rules and verify the separated state before returning home.
-        release_baseline = get_scene(PlanningSceneComponents.ALLOWED_COLLISION_MATRIX).allowed_collision_matrix
-        with temporary_target_contact(release_baseline, selected_id, touch_links, apply_matrix):
-            request = GetCartesianPath.Request()
-            request.header = retreat_pose.header
-            request.start_state = placed_scene.robot_state
-            request.start_state.is_diff = True
-            request.group_name = grasp_contract["planning_group"]
-            request.link_name = grasp_contract["tool_link"]
-            request.waypoints = [retreat_pose.pose]
-            request.max_step = 0.005
-            request.revolute_jump_threshold = 0.2
-            request.avoid_collisions = True
-            departure = call(cartesian_client, request)
-            if departure.error_code.val != MoveItErrorCodes.SUCCESS or departure.fraction < 1.0 or not departure.solution.joint_trajectory.points:
-                raise RuntimeError(f"place retreat incomplete: code={departure.error_code.val}, fraction={departure.fraction}")
-            execute(departure.solution, "RETREAT_AFTER_PLACE")
-        summary["release_acm_restored"] = True
-        final_scene = get_scene(verify_components)
-        validate_state(final_scene, "place retreat")
-        final_world = [obj for obj in final_scene.world.collision_objects
-                       if obj.id == selected_id]
-        final_attached = [item for item in final_scene.robot_state.attached_collision_objects
-                          if item.object.id == selected_id]
-        summary["final_planning_scene"] = {
-            "world_object_count": len(final_world),
-            "attached_object_count": len(final_attached),
-            "duplicate_ids": len(final_world) > 1,
-            "valid": len(final_world) == 1 and not final_attached,
-        }
-        if not summary["final_planning_scene"]["valid"]:
-            raise RuntimeError("final PlanningScene verification failed")
-        home_plan = plan_to_joint_state(final_scene.robot_state, home)
-        if home_plan.error_code.val != MoveItErrorCodes.SUCCESS or not home_plan.trajectory.joint_trajectory.points:
-            raise RuntimeError(f"return HOME planning failed: {home_plan.error_code.val}")
-        execute(home_plan.trajectory, "HOME")
-        validate_state(get_scene(verify_components), "final HOME")
-        summary["result"] = "PASS"
-    except Exception as exc:
-        summary["failure"] = str(exc)
-        if attached and selected_id:
-            # A failed transfer does not make the held object disappear.
-            # Preserve its actual attachment and bridge ownership for recovery.
-            summary["attachment_retained_for_recovery"] = selected_id
+                if time.monotonic() > deadline:
+                    raise RuntimeError('candidate search budget exhausted')
+                stage('GENERATE_GRASPS')
+                if time.time()-target['timestamp'] > task['max_age_seconds']:
+                    raise RuntimeError('observation expired before candidate planning')
+                geometry = build_grasp_target(target)
+                extents = oriented_box_extents(geometry)
+                if min(extents[:2]) > 0.085:
+                    raise RuntimeError('target exceeds Robotiq aperture')
+                if any(a>b for a,b in zip(extents,destination['dimensions'])):
+                    raise RuntimeError('target exceeds destination bounds')
+                original = next(o for o in initial.world.collision_objects if o.id==target['id'])
+                approach = pose_message(_PLANNER.tool_pose_for_grasp(generate_box_grasp_candidates(geometry,contract['approach_distance_m'])[index],contract))
+                contact = pose_message(_PLANNER.tool_pose_for_grasp(generate_box_grasp_candidates(geometry,0.0)[index],contract))
+                motion('PREPLAN_APPROACH',approach)
+                view.allowed_collision_matrix = target_contact_matrix(baseline,target['id'],contract['allowed_touch_links'])
+                motion('PREPLAN_GRASP',contact,straight=True)
+                stage('PREPLAN_CLOSE_GRIPPER')
+                close = None
+                # Live scene remains unchanged, so this validity query evaluates
+                # the predicted un-attached grasp against the original obstacles.
+                for i in range(1,81):
+                    trial = updated_state(view.robot_state,{'gripper_finger1_joint':0.804*i/80},mimics)
+                    response = call(validity_client,GetStateValidity.Request(robot_state=trial,group_name=''))
+                    if response.contacts:
+                        verify_selected_contacts(response.contacts,target['id'],contract['allowed_touch_links'])
+                        close = 0.804*i/80
+                        break
+                if close is None:
+                    raise RuntimeError('no allowed fingertip contact in closing range')
+                motion('PREPLAN_CLOSE_GRIPPER',{'gripper_finger1_joint':close},group='gripper')
+                tool_at_grasp = fk(view.robot_state,contract['tool_link'])
+                frame_at_grasp = fk(view.robot_state,contract['grasp_frame'])
+                before = copy.deepcopy(view)
+                view = private_attachment(view,original,contract['grasp_frame'],frame_at_grasp.pose,contract['allowed_touch_links'])
+                view.allowed_collision_matrix = copy.deepcopy(baseline)
+                steps.append(dict(kind='attach',stage='ATTACH',before=before,after=copy.deepcopy(view),original=original))
+                motion('PREPLAN_LIFT',translated_pose(tool_at_grasp,dz=retreat))
+                delta = [a-b for a,b in zip(destination['pose_xyz'],target['pose'][:3])]
+                motion('PREPLAN_TRANSFER',translated_pose(tool_at_grasp,*[delta[0],delta[1],delta[2]+retreat]))
+                motion('PREPLAN_PLACE',translated_pose(tool_at_grasp,*delta))
+                reached = fk(view.robot_state,contract['tool_link'])
+                achieved = object_pose_after_motion(original,tool_at_grasp.pose,reached.pose)
+                if math.dist(achieved[:3],destination['pose_xyz']) > 0.003:
+                    raise RuntimeError('planned placement differs from destination by more than 3 mm')
+                motion('PREPLAN_OPEN_GRIPPER',{'gripper_finger1_joint':0.0},group='gripper')
+                before = copy.deepcopy(view)
+                placed = place_detachment_diff(original,contract['grasp_frame'],achieved[:3],achieved[3:]).world.collision_objects[0]
+                view = copy.deepcopy(view)
+                view.robot_state.attached_collision_objects = []
+                view.world.collision_objects.append(placed)
+                steps.append(dict(kind='detach',stage='DETACH',before=before,after=copy.deepcopy(view),original=original,tool_at_grasp=tool_at_grasp))
+                view.allowed_collision_matrix = target_contact_matrix(baseline,target['id'],contract['allowed_touch_links'])
+                motion('PREPLAN_RETREAT',translated_pose(reached,dz=retreat),straight=True)
+                view.allowed_collision_matrix = copy.deepcopy(baseline)
+                motion('PREPLAN_HOME',home)
+                stage('CANDIDATE_READY')
+                return dict(object_id=target['id'],grasp_index=index,steps=steps,full_cycle_prevalidated=True)
+            except Exception as exc:
+                record['stages'].append(dict(stage=summary['current_stage'],success=False,reason=str(exc)))
+                raise CandidateFailure(summary['current_stage'],str(exc)) from exc
+        stage('ENUMERATE_TARGETS')
+        cycle = choose_cycle(eligible,candidate_indices(8),preplan,summary['candidate_attempts'])
+        selected_id = cycle['object_id']
+        summary.update(selected_object_id=selected_id,selected_grasp_index=cycle['grasp_index'],full_cycle_prevalidated=True,
+                       full_cycle_plan_success=True,plan_metadata=[s['metadata'] for s in cycle['steps'] if s['kind']=='motion'])
+        stage('VERIFY_PREPLAN_UNCHANGED')
+        assert_scene_match(scene_now(),initial)
+        summary['prevalidation_left_live_scene_unchanged'] = True
+        if not args.start:
+            summary['result'] = 'PLAN_ONLY'
+            return 0
+        fresh, _ = inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)
+        if selected_id not in {o['id'] for o in fresh}:
+            raise RuntimeError('selected observation expired before execution')
+        expected = initial
+        for step in cycle['steps']:
+            label = step['stage'].replace('PREPLAN_','EXECUTE_')
+            stage(label)
+            assert_scene_match(scene_now(),expected,selected_id)
+            matrix = step['before'].allowed_collision_matrix
+            if collision_matrix_signature(matrix) != collision_matrix_signature(expected.allowed_collision_matrix):
+                apply(PlanningScene(is_diff=True,allowed_collision_matrix=matrix))
+            assert_scene_match(scene_now(),step['before'],selected_id)
+            if step['kind']=='motion':
+                require_prevalidated_execution(args.start, cycle)
+                summary['execution_attempted'] = True
+                result = action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),60)
+                summary.setdefault('execution_results',[]).append(dict(stage=label,code=result.error_code.val))
+            elif step['kind']=='attach':
+                apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
+                measured = call(validity_client,GetStateValidity.Request(robot_state=scene_now().robot_state,group_name=''))
+                verify_selected_contacts(measured.contacts,selected_id,contract['allowed_touch_links'])
+                apply(attachment_diff(step['original'],contract['grasp_frame'],contract['allowed_touch_links'],False))
+            else:
+                actual_tool = fk(scene_now().robot_state,contract['tool_link'])
+                achieved = object_pose_after_motion(step['original'],step['tool_at_grasp'].pose,actual_tool.pose)
+                apply(place_detachment_diff(step['original'],contract['grasp_frame'],achieved[:3],achieved[3:]))
+                summary['achieved_place_pose'] = achieved
+            expected = step['after']
+            # Restore baseline immediately after attachment, or stage contact
+            # allowances only when the next planned segment requires them.
+            if collision_matrix_signature(matrix) != collision_matrix_signature(expected.allowed_collision_matrix):
+                apply(PlanningScene(is_diff=True,allowed_collision_matrix=expected.allowed_collision_matrix))
+            assert_scene_match(scene_now(),expected,selected_id)
+            summary['stages'].append(label)
+        final = scene_now()
+        summary['final_planning_scene'] = dict(world_ids=[o.id for o in final.world.collision_objects],
+            attached_ids=[o.object.id for o in final.robot_state.attached_collision_objects],distractors_unchanged=True)
+        stage('COMPLETE')
+        summary.update(result='PASS',full_cycle_execution_success=True)
+    except (Exception,KeyboardInterrupt) as exc:
+        summary.update(failed_stage=exc.stage if isinstance(exc,CandidateFailure) else summary['current_stage'],failure=str(exc))
+        stage('FAILED')
+        summary['recovery_required'] = summary['execution_attempted']
+        # Do not erase held/placed objects or command a recovery trajectory.
     finally:
-        retain_ownership = attached or "detachment" in summary
-        if retain_ownership:
-            # Fake execution does not physically move the camera-observed
-            # object. Keep its ID protected until explicit scene recovery/reset
-            # so live observations cannot teleport the simulated object back.
-            summary["ownership_retained_for_scene_recovery"] = selected_id
-        if summary.get("ownership_claimed_id") and not summary.get("ownership_released") and not retain_ownership:
+        if summary['execution_attempted'] and summary['result'] != 'PASS':
             try:
-                set_ownership("")
-                summary["ownership_released"] = True
-            except Exception as ownership_exc:
-                summary["ownership_release_failure"] = str(ownership_exc)
-        Path(args.summary_output).write_text(
-            json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        print(json.dumps(summary, indent=2, sort_keys=True))
+                apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
+                recovery = scene_now()
+                summary['recovery_scene'] = dict(
+                    attached_ids=[o.object.id for o in recovery.robot_state.attached_collision_objects],
+                    world_ids=[o.id for o in recovery.world.collision_objects],
+                    contact_acm_restored=collision_matrix_signature(recovery.allowed_collision_matrix)==collision_matrix_signature(baseline))
+            except Exception as recovery_error:
+                summary['recovery_inspection_failure'] = str(recovery_error)
+        Path(args.summary_output).write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+        print(json.dumps(summary,indent=2,sort_keys=True))
         node.destroy_node()
         rclpy.shutdown()
-    return 0 if summary["result"] == "PASS" else 1
+    return 0 if summary['result']=='PASS' else 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

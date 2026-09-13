@@ -997,10 +997,12 @@ void grasp_planner::GraspScene<sensor_msgs::msg::PointCloud2>::setup(std::string
     "execution_in_progress_gate_enabled",
     execution_gate_enabled,
     true);
+#if EPD_ENABLED == 1
   node->get_parameter_or(
     "easy_perception_deployment.pause_epd_triggers_while_execution_in_progress",
     pause_epd_triggers_while_execution_in_progress,
     true);
+#endif
 
   std::string selected_reliability;
   const auto perception_qos = build_perception_qos(
