@@ -75,6 +75,8 @@ def load_canonical_place_target(package_share, destination_zone=None):
     package = Path(package_share)
     cell_path = package / "cell_definition.yaml"
     if not cell_path.exists():
+        if destination_zone is not None:
+            raise RuntimeError(f'authored destination requires generated cell handoff: {cell_path}')
         # Compatibility for older offline fixtures. The generated cell
         # handoff remains authoritative whenever it exists.
         layout_path = package / "layout" / "workcell_studio_layout.yaml"
@@ -97,16 +99,25 @@ def load_canonical_place_target(package_share, destination_zone=None):
     target_id = destination_zone or str((task.get("place") or {}).get("target_ref") or "")
     zones = ((cell.get("environment") or {}).get("task_zones")
              if isinstance(cell.get("environment"), dict) else []) or []
-    zone = next((item for item in zones if str(item.get("id")) == target_id), None)
-    if not isinstance(zone, dict):
-        raise RuntimeError(f"authored destination zone is missing: {target_id}")
+    matches = [item for item in zones if str(item.get("id")) == target_id]
+    if len(matches) != 1:
+        raise RuntimeError(f"authored destination zone is missing or ambiguous: {target_id}")
+    zone = matches[0]
+    if zone.get('type') != 'place_zone' or zone.get('role', 'place_zone') not in ('place', 'place_zone'):
+        raise RuntimeError(f'authored destination is not a place_zone: {target_id}')
+    if zone.get('frame', 'world') != 'world':
+        raise RuntimeError(f'authored destination requires a world transform: {target_id}')
+    rpy = zone.get('pose_rpy', [0.0, 0.0, 0.0])
+    if (not isinstance(rpy, list) or len(rpy) != 3 or
+            not all(type(v) in (int, float) and math.isfinite(v) for v in rpy)):
+        raise RuntimeError('authored destination zone orientation is invalid')
     xyz = zone.get("pose_xyz") or (zone.get("pose") or {}).get("xyz")
     dimensions = zone.get("dimensions")
     if (not isinstance(xyz, list) or len(xyz) != 3 or
-            not all(isinstance(v, (int, float)) and math.isfinite(v) for v in xyz)):
+            not all(type(v) in (int, float) and math.isfinite(v) for v in xyz)):
         raise RuntimeError("authored destination zone pose is invalid")
     if (not isinstance(dimensions, list) or len(dimensions) != 3 or
-            not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0 for v in dimensions)):
+            not all(type(v) in (int, float) and math.isfinite(v) and v > 0 for v in dimensions)):
         raise RuntimeError("authored destination zone dimensions are invalid")
     destination = next((item for item in task.get("destinations", [])
                         if str(item.get("id")) == target_id), {})
@@ -115,7 +126,7 @@ def load_canonical_place_target(package_share, destination_zone=None):
             "frame_id": str(zone.get("frame") or "world"),
             "pose_xyz": [float(v) for v in xyz],
             "dimensions": [float(v) for v in dimensions],
-            "pose_rpy": [float(v) for v in (zone.get("pose_rpy") or [0.0, 0.0, 0.0])]}
+            "pose_rpy": [float(v) for v in rpy]}
 
 
 def fake_hardware_evidence(parameter_values, hardware_components):
@@ -299,6 +310,15 @@ def translated_pose(pose, dx=0.0, dy=0.0, dz=0.0):
     return result
 
 
+def place_motion_targets(tool_at_grasp, target, destination, retreat):
+    """Translate the held object to the authored zone center; retain grasp rotation."""
+    delta = [a - b for a, b in zip(destination['pose_xyz'], target['pose'][:3])]
+    return (
+        translated_pose(tool_at_grasp, delta[0], delta[1], delta[2] + retreat),
+        translated_pose(tool_at_grasp, *delta),
+    )
+
+
 def candidate_indices(count, preferred=3):
     """Try a preferred orientation, followed by every remaining candidate."""
     if not 0 <= preferred < count:
@@ -310,6 +330,17 @@ class CandidateFailure(RuntimeError):
     def __init__(self, stage, reason):
         super().__init__(reason)
         self.stage = stage
+
+
+def eligible_grasp_target(target, destination):
+    """2F aperture/destination bounds gate; MoveIt decides actual feasibility."""
+    geometry = build_grasp_target(target)
+    extents = oriented_box_extents(geometry)
+    if min(extents[:2]) > 0.085:
+        raise CandidateFailure('GENERATE_GRASPS', 'target exceeds Robotiq aperture')
+    if any(a > b for a, b in zip(extents, destination['dimensions'])):
+        raise CandidateFailure('GENERATE_GRASPS', 'target exceeds destination bounds')
+    return geometry
 
 
 def choose_cycle(targets, indices, preplan, attempts):
@@ -692,12 +723,7 @@ def main():
                 stage('GENERATE_GRASPS')
                 if time.time()-target['timestamp'] > task['max_age_seconds']:
                     raise RuntimeError('observation expired before candidate planning')
-                geometry = build_grasp_target(target)
-                extents = oriented_box_extents(geometry)
-                if min(extents[:2]) > 0.085:
-                    raise RuntimeError('target exceeds Robotiq aperture')
-                if any(a>b for a,b in zip(extents,destination['dimensions'])):
-                    raise RuntimeError('target exceeds destination bounds')
+                geometry = eligible_grasp_target(target, destination)
                 original = next(o for o in initial.world.collision_objects if o.id==target['id'])
                 approach = pose_message(_PLANNER.tool_pose_for_grasp(generate_box_grasp_candidates(geometry,contract['approach_distance_m'])[index],contract))
                 contact = pose_message(_PLANNER.tool_pose_for_grasp(generate_box_grasp_candidates(geometry,0.0)[index],contract))
@@ -725,9 +751,10 @@ def main():
                 view.allowed_collision_matrix = copy.deepcopy(baseline)
                 steps.append(dict(kind='attach',stage='ATTACH',before=before,after=copy.deepcopy(view),original=original))
                 motion('PREPLAN_LIFT',translated_pose(tool_at_grasp,dz=retreat))
-                delta = [a-b for a,b in zip(destination['pose_xyz'],target['pose'][:3])]
-                motion('PREPLAN_TRANSFER',translated_pose(tool_at_grasp,*[delta[0],delta[1],delta[2]+retreat]))
-                motion('PREPLAN_PLACE',translated_pose(tool_at_grasp,*delta))
+                transfer_pose, place_pose = place_motion_targets(
+                    tool_at_grasp, target, destination, retreat)
+                motion('PREPLAN_TRANSFER', transfer_pose)
+                motion('PREPLAN_PLACE', place_pose)
                 reached = fk(view.robot_state,contract['tool_link'])
                 achieved = object_pose_after_motion(original,tool_at_grasp.pose,reached.pose)
                 if math.dist(achieved[:3],destination['pose_xyz']) > 0.003:

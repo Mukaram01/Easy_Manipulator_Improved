@@ -205,6 +205,69 @@ def convert_epd_message_to_detected_objects(
     return payload, warnings
 
 
+def convert_epd_runtime_message(msg: Any, topic: str, scene_package: str,
+                                *, missing_confidence: float) -> dict[str, Any]:
+    """Strict EPDObjectLocalization/Tracking -> existing runtime contract.
+
+    EPD LocalizedObject has no score: caller must choose the confidence policy.
+    No pose/dimension/frame defaults. Localization IDs are deterministic observation
+    IDs (not tracks); tracking preserves EPD object_ids. TF remains capture-owned.
+    """
+    from runtime_pick_inputs import vector
+    from validate_detected_objects import _stable_object_id
+
+    confidence = vector([missing_confidence], 1, 'missing_confidence')[0]
+    if not 0 <= confidence <= 1:
+        raise ValueError('missing_confidence must be in [0, 1]')
+    header = _get(msg, 'header')
+    frame = _get(header, 'frame_id')
+    if not isinstance(frame, str) or not frame.strip():
+        raise ValueError('EPD header.frame_id required; no frame fallback')
+    stamp = _get(header, 'stamp')
+    sec, ns = _get(stamp, 'sec'), _get(stamp, 'nanosec')
+    if (type(sec) is not int or type(ns) is not int or sec < 0 or
+            not 0 <= ns < 1_000_000_000 or sec + ns == 0):
+        raise ValueError('EPD header.stamp must be a nonzero ROS observation time')
+    raw_objects = _get(msg, 'objects')
+    if not isinstance(raw_objects, (list, tuple)) or not raw_objects:
+        raise ValueError('EPD objects must be a nonempty sequence')
+    ids = _get(msg, 'object_ids')
+    if ids is not None and (not isinstance(ids, (list, tuple)) or len(ids) != len(raw_objects)):
+        raise ValueError('EPD object_ids must align with objects')
+    objects, seen = [], set()
+    for i, raw in enumerate(raw_objects, 1):
+        label = _get(raw, 'name')
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError(f'EPD object {i}: name required')
+        pose = _get(raw, 'pose')
+        xyz = vector([_get(_get(pose, 'position'), a) for a in 'xyz'], 3, f'object {i} pose.position')
+        q = vector([_get(_get(pose, 'orientation'), a) for a in 'xyzw'], 4, f'object {i} pose.orientation')
+        if abs(sum(v*v for v in q) - 1.0) > 1e-3:
+            raise ValueError(f'EPD object {i}: pose quaternion must be normalized')
+        dims = vector([_get(raw, a) for a in ('length', 'breadth', 'height')], 3, f'object {i} dimensions')
+        if any(d <= 0 for d in dims):
+            raise ValueError(f'EPD object {i}: dimensions must be positive')
+        obj = dict(name=label, class_id=label, confidence=confidence,
+                   timestamp=sec + ns / 1e9,
+                   pose=dict(frame_id=frame, xyz=xyz, rpy=list(_rpy_from_quaternion(*q))),
+                   dimensions=dims, attributes=dict(confidence_available=False,
+                   confidence_policy='explicit_missing_confidence',
+                   geometry_source='EPD length/breadth/height and pose'))
+        obj['raw_pose'] = dict(obj['pose'])
+        oid = ids[i-1] if ids is not None else _stable_object_id(obj, i)
+        if not isinstance(oid, str) or not oid.strip() or oid in seen:
+            raise ValueError(f'EPD object {i}: object_id must be nonempty and unique')
+        seen.add(oid)
+        obj['object_id'] = oid
+        objects.append(obj)
+    return dict(schema_version='detected_objects/v1', objects=objects,
+                source=dict(type='epd_tracking' if ids is not None else 'epd_localization',
+                            mode='live_epd', topic=topic, scene_package=scene_package,
+                            frame_id=frame, source_stamp_ns=sec*1_000_000_000+ns,
+                            missing_confidence=confidence,
+                            identity_policy='epd_track_id' if ids is not None else 'observation_hash'))
+
+
 def _write_output(payload: dict[str, Any], output: Path, as_json: bool) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     if as_json:
@@ -248,14 +311,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tf-timeout", type=float, default=2.0)
     parser.add_argument("--require-transform", action="store_true", default=True)
     parser.add_argument("--allow-untransformed", action="store_true")
+    parser.add_argument('--runtime-pick', action='store_true',
+                        help='Strict detected_objects/v1 input for runtime_pick_inputs')
+    parser.add_argument('--missing-confidence', type=float,
+                        help='Explicit runtime confidence policy: EPD localization has no score')
+    parser.add_argument('--message-type', choices=('localization', 'tracking'), default='localization')
     args = parser.parse_args(argv)
+    if args.runtime_pick and args.missing_confidence is None:
+        parser.error('--runtime-pick requires --missing-confidence (EPD has no score)')
+    if args.runtime_pick and (args.target_frame != 'world' or args.allow_untransformed):
+        parser.error('--runtime-pick requires a world transform and forbids --allow-untransformed')
 
     try:
         import rclpy  # type: ignore
         from rclpy.node import Node  # type: ignore
-        from epd_msgs.msg import EPDObjectLocalization  # type: ignore
+        from epd_msgs.msg import EPDObjectLocalization, EPDObjectTracking  # type: ignore
 
-        msg_type = EPDObjectLocalization
+        msg_type = EPDObjectTracking if args.message_type == 'tracking' else EPDObjectLocalization
     except Exception as exc:
         print(json.dumps({"status": "FAIL", "error": f"ROS/EPD imports failed: {exc}"}, indent=2))
         return 2
@@ -293,7 +365,8 @@ def main(argv: list[str] | None = None) -> int:
         from rclpy.duration import Duration  # type: ignore
         pose = PoseStamped()
         pose.header.frame_id = src_frame
-        pose.header.stamp = node.get_clock().now().to_msg()
+        pose.header.stamp = latest_message.header.stamp if args.runtime_pick else node.get_clock().now().to_msg()
+        import tf2_geometry_msgs  # Register PoseStamped with TF2
         pose.pose.position.x, pose.pose.position.y, pose.pose.position.z = float(xyz[0]), float(xyz[1]), float(xyz[2])
         qx, qy, qz, qw = _quaternion_from_rpy(float(rpy[0]), float(rpy[1]), float(rpy[2]))
         pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w = qx, qy, qz, qw
@@ -314,9 +387,13 @@ def main(argv: list[str] | None = None) -> int:
             rclpy.spin_once(node, timeout_sec=0.1)
             if latest_message is None:
                 continue
-            payload, warnings = convert_epd_message_to_detected_objects(
-                latest_message, args.topic, args.scene_package, args.frame_fallback
-            )
+            if args.runtime_pick:
+                payload = convert_epd_runtime_message(latest_message, args.topic,
+                    args.scene_package, missing_confidence=args.missing_confidence)
+            else:
+                payload, warnings = convert_epd_message_to_detected_objects(
+                    latest_message, args.topic, args.scene_package, args.frame_fallback
+                )
             if len(payload.get("objects", [])) >= max(1, args.min_objects):
                 if args.once:
                     break
@@ -356,6 +433,11 @@ def main(argv: list[str] | None = None) -> int:
             "tf_listener_ready": tf_ready,
         }
 
+        if args.runtime_pick:
+            import runtime_pick_inputs
+            import perceived_object_grasp_plan
+            runtime_pick_inputs.normalize(payload, node.get_clock().now().nanoseconds / 1e9,
+                                          perceived_object_grasp_plan)
         validation = validate_detected_objects(payload, strict=False, allow_generate_ids=True)
         warnings.extend(validation.warnings)
 
@@ -366,6 +448,9 @@ def main(argv: list[str] | None = None) -> int:
         _write_output(payload, args.output, args.json)
         print(json.dumps({"status": "FAIL" if transform_status == "FAIL" else ("WARN" if (warnings or transform_status == "WARN") else "PASS"), "output": str(args.output), "objects": len(payload.get("objects", [])), "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
         return 0
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        print(json.dumps({'status': 'FAIL', 'error': str(exc)}))
+        return 1
     finally:
         node.destroy_node()
         rclpy.shutdown()
