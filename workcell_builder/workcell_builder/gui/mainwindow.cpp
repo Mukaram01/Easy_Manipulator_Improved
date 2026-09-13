@@ -4422,6 +4422,9 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
 
 void MainWindow::generate_scene_package_for_selected_scene() {
   if (selected_scene_index_ < 0) return;
+  QObject::disconnect(generated_refresh_connection_);
+  const quint64 serial = ++generated_refresh_serial_;
+  launch_artifacts_ready_ = false;
   // Generation and the YAML refresh must not change which same-named package is authoritative.
   const auto selected_scene = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path selected_scene_dir = workcell_builder::canonical_scene_identity(
@@ -4523,7 +4526,7 @@ void MainWindow::generate_scene_package_for_selected_scene() {
     launch_artifacts_ready_ = false;
     return;
   }
-  launch_artifacts_ready_ = true;
+  launch_artifacts_ready_ = false;
   append_studio_log("Generate ROS Scene Package: " + plan.display_command());
   append_studio_log(QString("Generated package location: %1/%2").arg(output_dir, scene_name));
   append_studio_log(QString("Next: colcon build --symlink-install --packages-select %1").arg(scene_name));
@@ -4531,22 +4534,6 @@ void MainWindow::generate_scene_package_for_selected_scene() {
   append_studio_log(QString("Next: ros2 launch %1 demo.launch.py use_fake_hardware:=true launch_rviz:=true").arg(scene_name));
   workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(selected_scene_dir, "generation");
   if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400));
-  QString post_warning;
-  bool post_blocked = false;
-  const bool post_parity_ran = run_canvas_generated_parity_check(
-    CanvasGeneratedParityMode::PostGeneration, &post_warning, &post_blocked);
-  if (post_parity_ran) {
-    refresh_canvas_generated_parity_ui();
-    if (post_blocked) {
-      launch_artifacts_ready_ = false;
-      append_studio_log("Generated package created but Canvas/Generated parity has blockers.");
-      if (!post_warning.isEmpty()) {
-        append_studio_log("Post-generation parity recommendation: " + post_warning);
-      }
-    } else if (!post_warning.isEmpty()) {
-      append_studio_log("Generate ROS Scene Package post-generation parity: " + post_warning);
-    }
-  }
   refresh_scene_browser_ui();
   const int refreshed_selection = workcell_builder::find_scene_by_identity(
     scene_browser_result_, selected_scene_dir, selected_scene_name);
@@ -4556,6 +4543,51 @@ void MainWindow::generate_scene_package_for_selected_scene() {
   }
   refresh_scene_builder_selected_scene_ui();
   refresh_new_cell_checklist();
+  // Only a fresh PersistedCanonical payload may establish post-generation parity.
+  auto * preview = active_scene_preview_widget();
+  if (!preview) {
+    append_studio_log("Generated package created, but final generated/Product View parity could not be established: no preview.");
+    launch_artifacts_ready_ = false;
+    return;
+  }
+  const int revision = preview->request_post_save_product_view_refresh();
+  const quint64 generation = preview->post_save_refresh_generation();
+  launch_artifacts_ready_ = false;
+  if (revision <= 0 || generation == 0) {
+    append_studio_log("Generated package created, but final generated/Product View parity could not be established: refresh unavailable.");
+    refresh_new_cell_checklist();
+    return;
+  }
+  generated_refresh_connection_ = connect(preview,
+    &ScenePreviewWidget::post_save_product_view_refresh_finished, this,
+    [this, serial, revision, generation, selected_scene_dir](int completed_revision,
+      quint64 completed_generation, quint64, bool success, const QString & detail) {
+      if (serial != generated_refresh_serial_ || revision != completed_revision ||
+          generation != completed_generation) return;
+      QObject::disconnect(generated_refresh_connection_);
+      if (selected_scene_index_ < 0 ||
+          workcell_builder::canonical_scene_identity(
+            scene_browser_result_.scenes[(size_t)selected_scene_index_].canonical_scene_dir.empty() ?
+            scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir :
+            scene_browser_result_.scenes[(size_t)selected_scene_index_].canonical_scene_dir) != selected_scene_dir) return;
+      launch_artifacts_ready_ = false;
+      if (!success) {
+        append_studio_log("Generated package created, but final generated/Product View parity could not be established: " + detail);
+      } else {
+        QString post_warning;
+        bool post_blocked = false;
+        const bool ran = run_canvas_generated_parity_check(
+          CanvasGeneratedParityMode::PostGeneration, &post_warning, &post_blocked);
+        launch_artifacts_ready_ = ran && !post_blocked;
+        if (post_blocked) append_studio_log("Generated package created but Canvas/Generated parity has blockers.");
+        if (!ran) append_studio_log("Generated package created, but final generated/Product View parity could not be established: parity did not run.");
+        if (!post_warning.isEmpty()) append_studio_log("Post-generation parity recommendation: " + post_warning);
+        refresh_canvas_generated_parity_ui();
+      }
+      refresh_scene_builder_selected_scene_ui();
+      refresh_new_cell_checklist();
+    });
+
 }
 void MainWindow::validate_generated_scene_for_selected_scene() {
   if (selected_scene_index_ < 0) return;

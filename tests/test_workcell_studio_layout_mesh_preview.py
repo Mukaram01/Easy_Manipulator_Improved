@@ -234,3 +234,42 @@ def test_unknown_non_ros_application_argument_still_fails():
 
     with pytest.raises(SystemExit):
         preview.parse_runtime_arguments(argv, remove_test_ros_args)
+
+@pytest.mark.parametrize('shutdown', ['keyboard', 'external', 'defect'])
+def test_ros_spin_shutdown_preserves_real_failures(monkeypatch, shutdown):
+    import types
+
+    class ExternalShutdownException(Exception):
+        pass
+
+    calls = []
+    node = types.SimpleNamespace(
+        create_publisher=lambda *args: types.SimpleNamespace(publish=lambda msg: None),
+        destroy_node=lambda: calls.append('destroy'))
+    error = {'keyboard': KeyboardInterrupt, 'external': ExternalShutdownException,
+             'defect': ValueError}[shutdown]
+
+    def spin(node):
+        raise error('spin ended')
+
+    modules = {
+        'rclpy': types.SimpleNamespace(init=lambda **kw: None, spin=spin,
+            ok=lambda: shutdown != 'external', shutdown=lambda: calls.append('shutdown')),
+        'rclpy.executors': types.SimpleNamespace(ExternalShutdownException=ExternalShutdownException),
+        'rclpy.node': types.SimpleNamespace(Node=lambda name: node),
+        'rclpy.qos': types.SimpleNamespace(
+            DurabilityPolicy=types.SimpleNamespace(TRANSIENT_LOCAL=1),
+            ReliabilityPolicy=types.SimpleNamespace(RELIABLE=1),
+            QoSProfile=lambda **kw: types.SimpleNamespace()),
+        'visualization_msgs.msg': types.SimpleNamespace(MarkerArray=object),
+    }
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(preview, 'load_layout_meshes', lambda *args: [])
+    monkeypatch.setattr(preview, 'build_marker_array', lambda *args: object())
+    if shutdown == 'defect':
+        with pytest.raises(ValueError, match='spin ended'):
+            preview.run_ros_node('/tmp/layout.yaml', 'world', '/markers', [])
+    else:
+        preview.run_ros_node('/tmp/layout.yaml', 'world', '/markers', [])
+    assert calls == (['destroy'] if shutdown == 'external' else ['destroy', 'shutdown'])

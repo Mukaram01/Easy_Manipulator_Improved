@@ -175,3 +175,17 @@ def test_baseline_timeout_does_not_accept_wrong_home_or_closed_gripper(positions
     state = NS(joint_state=NS(name=['shoulder_pan_joint', 'gripper_finger1_joint'], position=positions), is_diff=False)
     with pytest.raises(RuntimeError, match='canonical home/open-gripper state unavailable'):
         executor.wait_for_robot_baseline(lambda: NS(robot_state=state), {'shoulder_pan_joint': 1.57}, timeout=0)
+
+
+def test_candidate_search_preserves_missing_confidence():
+    targets = eligible()
+    targets[0]['confidence'] = None
+    calls = []
+    def plan(target, index, record):
+        calls.append(target['id'])
+        return dict(full_cycle_prevalidated=True)
+    executor.choose_cycle(targets, [0], plan, [])
+    assert calls == [targets[1]['id']]
+    targets[1]['confidence'] = None
+    executor.choose_cycle(targets, [0], plan, [])
+    assert calls[-1] == min(t['id'] for t in targets)

@@ -1,0 +1,1 @@
+$ env -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH -u COLCON_PREFIX_PATH bash --noprofile --norc -c "source /opt/ros/humble/setup.bash && source '/home/user/workcell_ws/install/setup.bash' && cd '/home/user/workcell_ws' && colcon build --symlink-install --packages-select 'ur5_2f_test' --allow-overriding 'ur5_2f_test'"

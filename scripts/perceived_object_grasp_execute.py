@@ -314,7 +314,7 @@ class CandidateFailure(RuntimeError):
 
 def choose_cycle(targets, indices, preplan, attempts):
     """First fully feasible pair in confidence/id then preferred-grasp order."""
-    for target in sorted(targets, key=lambda o: (-o['confidence'], o['id'])):
+    for target in sorted(targets, key=lambda o: (o['confidence'] is None, -(o['confidence'] or 0.0), o['id'])):
         for index in indices:
             record = {'object_id': target['id'], 'grasp_index': index, 'stages': []}
             attempts.append(record)
@@ -642,6 +642,7 @@ def main():
         eligible, rejected = inputs.filter_targets(objects, task, cell, time.time(), _PLANNER)
         summary.update(task_request=task, normalized_objects=objects, rejected_objects=rejected)
         params = call(params_client, GetParameters.Request(names=['use_fake_hardware','allow_trajectory_execution','robot_description'])).values
+        summary['trajectory_execution_enabled'] = params[1].bool_value
         summary['fake_hardware_guard'] = fake_hardware_evidence(params, call(hardware_client,ListHardwareComponents.Request()).component)
         if args.start and not params[1].bool_value:
             raise RuntimeError('fake execution disabled; launch allow_trajectory_execution:=true')
@@ -662,6 +663,11 @@ def main():
         initial = scene_now()
         initial.robot_state.is_diff = False
         initial.is_diff = True
+        from rosidl_runtime_py.convert import message_to_ordereddict
+        def evidence_scene(name, scene):
+            path = Path(args.summary_output).parent / (name + '.json')
+            path.write_text(json.dumps(message_to_ordereddict(scene), indent=2)+'\n')
+        evidence_scene('planning_scene_before', initial)
         summary['inserted_object_ids'] = [o['id'] for o in objects]
         actual = {o.id:collision_object_dict(o) for o in initial.world.collision_objects}
         for obj in objects:
@@ -749,6 +755,10 @@ def main():
                 record['stages'].append(dict(stage=summary['current_stage'],success=False,reason=str(exc)))
                 raise CandidateFailure(summary['current_stage'],str(exc)) from exc
         stage('ENUMERATE_TARGETS')
+        summary['grasp_candidates'] = {target['id']: generate_box_grasp_candidates(
+            build_grasp_target(target), 0.0) for target in eligible}
+        summary['grasp_candidate_source'] = 'canonical_box_geometry_robotiq_2f'
+        summary['grasp_candidate_count'] = sum(len(v) for v in summary['grasp_candidates'].values())
         cycle = choose_cycle(eligible,candidate_indices(8),preplan,summary['candidate_attempts'])
         selected_id = cycle['object_id']
         summary.update(selected_object_id=selected_id,selected_grasp_index=cycle['grasp_index'],full_cycle_prevalidated=True,
@@ -791,11 +801,22 @@ def main():
             # allowances only when the next planned segment requires them.
             if collision_matrix_signature(matrix) != collision_matrix_signature(expected.allowed_collision_matrix):
                 apply(PlanningScene(is_diff=True,allowed_collision_matrix=expected.allowed_collision_matrix))
-            assert_scene_match(scene_now(),expected,selected_id)
+            measured_scene = scene_now()
+            assert_scene_match(measured_scene,expected,selected_id)
+            if step['kind'] == 'attach':
+                evidence_scene('planning_scene_attached', measured_scene)
+                summary['attach_verified'] = attachment_status(measured_scene, selected_id, contract['grasp_frame'])['valid']
+            elif step['kind'] == 'detach':
+                evidence_scene('planning_scene_after', measured_scene)
+                summary['detach_verified'] = not measured_scene.robot_state.attached_collision_objects and any(
+                    o.id == selected_id for o in measured_scene.world.collision_objects)
             summary['stages'].append(label)
         final = scene_now()
         summary['final_planning_scene'] = dict(world_ids=[o.id for o in final.world.collision_objects],
             attached_ids=[o.object.id for o in final.robot_state.attached_collision_objects],distractors_unchanged=True)
+        evidence_scene('planning_scene_final', final)
+        summary['home_verified'] = True  # Final assert_scene_match includes planned home joints.
+        summary['destination_verified'] = math.dist(summary['achieved_place_pose'][:3], destination['pose_xyz']) <= 0.003
         stage('COMPLETE')
         summary.update(result='PASS',full_cycle_execution_success=True)
     except (Exception,KeyboardInterrupt) as exc:

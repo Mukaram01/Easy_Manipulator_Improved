@@ -43,5 +43,8 @@ def test_mainwindow_parity_mode_and_generation_ordering_contract():
     assert "--mode %4" in text
     assert "Generated package created but Canvas/Generated parity has blockers." in text
     assert "Generated artifacts are not present yet. Run Generate Scene Package for strict parity." in text
-    assert text.index("run_canvas_generated_parity_check(CanvasGeneratedParityMode::PreGeneration") < text.index("generate_workcell_from_cell_definition.py")
-    assert text.index("generate_workcell_from_cell_definition.py") < text.index("run_canvas_generated_parity_check(CanvasGeneratedParityMode::PostGeneration")
+    body = text.split("void MainWindow::generate_scene_package_for_selected_scene() {", 1)[1].split(
+        "void MainWindow::validate_generated_scene_for_selected_scene()", 1)[0]
+    assert body.index("CanvasGeneratedParityMode::PreGeneration") < body.index("generate_workcell_from_cell_definition.py")
+    assert body.index("generate_workcell_from_cell_definition.py") < body.index("post_save_product_view_refresh_finished")
+    assert body.index("post_save_product_view_refresh_finished") < body.index("CanvasGeneratedParityMode::PostGeneration")
