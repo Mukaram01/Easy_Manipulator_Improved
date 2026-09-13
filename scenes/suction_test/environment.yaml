@@ -51,6 +51,78 @@ compatibility:
   notes:
     - Metadata describes a fake-hardware-first suction commissioning scene.
     - Suction behavior is capability metadata only; no runtime IO or real-hardware command path is enabled.
+
+environment:
+  frame: world
+  layout: layout/workcell_studio_layout.yaml
+  support_surfaces:
+    - id: table_main
+      type: table
+      role: support_surface
+      category: work_surface
+      frame: world
+      pose_xyz: [0.5, 0.0, 0.0]
+      pose_rpy: [0.0, 0.0, 0.0]
+      layout_item_ref: table_main
+      geometry_type: mesh
+      mesh:
+        path: assets/environment/table_description/meshes/visual/table.stl
+        scale: [0.001, 0.001, 0.001]
+      collision:
+        enabled: true
+        mode: urdf
+  assets:
+    - id: suction_target_default
+      type: target_bin
+      role: target_bin
+      category: target_bin
+      frame: world
+      pose_xyz: [0.5, -0.3, 0.1]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [0.22, 0.22, 0.12]
+      support_surface_ref: table_main
+      task_zone_ref: default_drop_zone
+      layout_item_ref: suction_target_default
+      geometry_type: box
+  sensors:
+    - id: realsense_suction_overhead
+      type: realsense
+      role: camera
+      category: camera
+      frame: world
+      pose_xyz: [-0.58, 0.225, 0.65]
+      pose_rpy: [3.14159, 1.57079506, 0.0]
+      layout_item_ref: realsense_suction_overhead
+      geometry_type: box
+      dimensions: [0.08, 0.08, 0.06]
+      collision:
+        enabled: true
+        mode: urdf
+  task_zones:
+    - id: pick_zone_main
+      type: pick_zone
+      role: pick
+      frame: world
+      shape: box
+      pose_xyz: [0.43, 0.04, 0.08]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [0.18, 0.18, 0.08]
+      support_surface_ref: table_main
+      layout_item_ref: pick_zone_main
+    - id: default_drop_zone
+      type: place_zone
+      role: place
+      legacy_type: place_target
+      frame: world
+      shape: box
+      pose_xyz: [0.5, -0.3, 0.1]
+      pose_rpy: [0.0, 0.0, 0.0]
+      dimensions: [0.22, 0.22, 0.01]
+      target_ref: suction_target_default
+      support_surface_ref: table_main
+      layout_item_ref: place_zone_main
+      compatible_destination_id: default_drop_zone
+
 placed_objects: []
 camera:
   enabled: true
