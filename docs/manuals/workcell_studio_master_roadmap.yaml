@@ -1,0 +1,493 @@
+schema_version: workcell_studio_master_roadmap/v2
+updated: '2026-09-13'
+project: Workcell Studio
+repository: Mukaram01/Easy_Manipulator_Improved
+baseline:
+  branch: integration/workcell-studio-r15
+  commit: 59004aaa0af667ba769699285d4902dbe01cf390
+  commit_title: 'R1.5: consolidate runtime selection retry destination and EPD bridge'
+
+north_star:
+  milestone: R1
+  title: One complete industrial cycle
+  scene_id: ur5_2f_test
+  robot: ur5
+  tool: robotiq_2f
+  ros_distribution: humble
+  operating_system: ubuntu_22_04
+  planning_stack: moveit2_rviz
+  execution_mode: fake_hardware
+  perception:
+    regression_mode: replayed_snapshot
+    live_mode: live_epd
+    camera: realsense_d435i
+    normalized_contract: detected_objects/v1
+  target_class_policy:
+    requirement: one_authoritative_class_end_to_end
+    current_recommended_acceptance_class: cup
+    reason: current_r1_runtime_config_and_retry_fixture_use_cup_with_bottle_distractor
+    blocker: scene_and_runtime_task_metadata_must_be_converged_before_acceptance
+  destination_policy:
+    requirement: authored_destination_id_end_to_end
+    canonical_runtime_id: default_drop_zone
+
+full_cycle:
+  - open_workcell_builder
+  - select_ur5_2f_test
+  - edit_authored_scene
+  - edit_task_intent_if_required
+  - save_layout
+  - close_and_reopen_identical_state
+  - generate_scene_package
+  - validate_and_check_parity
+  - build_ros_workspace
+  - launch_fake_hardware_rviz_moveit
+  - ingest_replay_or_live_perception
+  - filter_and_rank_candidates
+  - plan_pregrasp
+  - approach
+  - grasp
+  - attach
+  - retreat
+  - transfer
+  - place
+  - release
+  - detach
+  - retreat_from_place
+  - return_home
+  - emit_terminal_result_and_evidence
+  - stop_runtime_cleanly
+  - return_to_same_builder_session
+  - edit_save_and_run_again_without_restart
+
+product_laws:
+  - one_source_of_truth_per_state
+  - fake_hardware_first
+  - no_silent_fallback
+  - no_scene_name_hacks_for_systemic_behavior
+  - runtime_workpieces_come_from_perception
+  - visual_preview_is_not_runtime_proof
+  - tests_do_not_replace_runtime_evidence
+  - no_validator_treadmill
+  - no_manual_patch_after_generate
+  - repeatability_is_part_of_correctness
+
+quality_bar:
+  deterministic: true
+  observable: true
+  idempotent: true
+  fail_safe: true
+  restart_free_second_cycle: true
+  machine_readable_failure_reasons: true
+  evidence_backed_support_claims: true
+  real_motion_locked: true
+
+r1_gates:
+  - id: G0
+    title: Reproducible workspace baseline
+    status: active_or_needs_reconfirmation
+    depends_on: []
+    acceptance:
+      - documented_humble_bootstrap_works
+      - required_packages_are_discoverable
+      - xacro_and_ament_index_available
+      - no_undocumented_manual_copy_required
+      - no_ambiguous_scene_or_asset_tree_wins
+    evidence:
+      - bootstrap_transcript
+      - build_transcript
+
+  - id: G1
+    title: Authored source-of-truth convergence
+    status: next
+    depends_on: [G0]
+    acceptance:
+      - physical_scene_has_one_authority
+      - task_intent_has_one_authority
+      - target_class_is_consistent_end_to_end
+      - destination_id_is_consistent_end_to_end
+      - robot_tool_camera_frames_have_clear_owners
+      - caches_and_generated_files_are_not_authored_truth
+    evidence:
+      - source_of_truth_matrix
+      - authored_file_diff
+
+  - id: G2
+    title: Workcell Builder authoring round-trip
+    status: partially_implemented_needs_full_acceptance
+    depends_on: [G1]
+    acceptance:
+      - stable_item_selection
+      - hierarchy_inspector_product_view_identity_parity
+      - deterministic_xyz_rpy_edit
+      - undo_redo_correct
+      - save_visible_and_successful
+      - close_reopen_restores_identical_state
+      - generated_locked_visuals_not_accidentally_authored
+    evidence:
+      - gui_recording
+      - before_after_authored_yaml
+
+  - id: G3
+    title: Deterministic generation
+    status: partially_implemented_needs_strict_proof
+    depends_on: [G2]
+    acceptance:
+      - generator_consumes_current_authored_state
+      - malformed_or_ambiguous_state_blocks_generation
+      - generated_package_contract_complete
+      - repeat_generation_semantically_equivalent
+      - provenance_honest
+      - no_manual_generated_file_edit_required
+    evidence:
+      - generation_transcript
+      - semantic_artifact_comparison
+      - provenance_record
+
+  - id: G4
+    title: Authored generated Product View parity
+    status: known_priority
+    depends_on: [G3]
+    acceptance:
+      - current_generation_publishes_current_product_view_payload
+      - no_stale_payload_false_pass_or_false_fail
+      - zero_unexplained_transform_mismatches
+      - zero_unexplained_mesh_mismatches
+      - robot_tool_camera_destination_semantics_match
+    evidence:
+      - scene_builder_canvas_generated_parity_report
+
+  - id: G5
+    title: ROS build and package discovery
+    status: needs_current_workstation_proof
+    depends_on: [G4]
+    acceptance:
+      - canonical_package_discovered_from_expected_path
+      - colcon_build_passes
+      - dependencies_resolve
+      - no_manual_post_generation_repair
+    evidence:
+      - colcon_log
+      - package_discovery_output
+
+  - id: G6
+    title: Fake-hardware launch and frame truth
+    status: needs_current_end_to_end_proof
+    depends_on: [G5]
+    acceptance:
+      - fake_hardware_explicitly_enabled
+      - valid_robot_state
+      - correct_planning_group
+      - correct_base_world_tool_grasp_frames
+      - environment_and_destination_at_authored_transforms
+      - collision_scene_correct
+      - real_motion_disabled
+    evidence:
+      - launch_transcript
+      - rviz_recording
+      - frame_and_planning_scene_snapshot
+
+  - id: G7
+    title: Perception ingress parity
+    status: implementation_advanced_needs_acceptance
+    depends_on: [G6]
+    acceptance:
+      - replay_and_live_share_normalized_contract
+      - observation_timestamp_preserved
+      - source_frame_preserved
+      - world_transform_valid
+      - object_identity_policy_explicit
+      - confidence_policy_explicit_if_epd_does_not_supply_score
+    evidence:
+      - normalized_detected_objects_snapshot
+      - tf_diagnostics
+      - live_replay_contract_comparison
+
+  - id: G8
+    title: Candidate eligibility and selection
+    status: implementation_advanced_needs_decision_trace
+    depends_on: [G7]
+    acceptance:
+      - class_gate
+      - confidence_gate
+      - freshness_gate
+      - transform_gate
+      - source_zone_gate_when_configured
+      - gripper_geometry_gate
+      - reachability_gate
+      - collision_gate
+      - grasp_validity_gate
+      - destination_gate
+      - deterministic_ranking
+      - stable_rejection_reason_codes
+    required_scenario:
+      - obstructed_highest_rank_target_rejected
+      - second_valid_target_selected
+      - non_target_distractor_never_selected
+    evidence:
+      - candidate_decision_report
+
+  - id: G9
+    title: Grasp planning integrity
+    status: partially_implemented_needs_full_sequence
+    depends_on: [G8]
+    acceptance:
+      - tool_capability_drives_grasp_constraints
+      - tcp_and_grasp_frame_correct
+      - pregrasp_grasp_retreat_valid
+      - collision_check_enabled
+      - destination_from_authored_contract
+      - stage_specific_failure_reason
+      - complete_pick_place_plan_available
+    evidence:
+      - grasp_plan_trace
+
+  - id: G10
+    title: Complete fake-hardware manipulation cycle
+    status: not_yet_proven
+    depends_on: [G9]
+    acceptance:
+      - approach_executes
+      - grasp_executes
+      - gripper_closes
+      - object_attaches
+      - retreat_executes
+      - transfer_executes
+      - place_executes
+      - release_executes
+      - object_detaches_or_updates_correctly
+      - retreat_from_place_executes
+      - home_return_executes
+      - success_only_after_safe_terminal_state
+    evidence:
+      - runtime_task_trace
+      - rviz_recording
+
+  - id: G11
+    title: Recovery retry and state hygiene
+    status: partially_implemented_needs_runtime_proof
+    depends_on: [G10]
+    acceptance:
+      - bounded_retry
+      - failed_candidate_cleanup
+      - duplicate_observation_does_not_duplicate_planning_scene_object
+      - stale_candidate_not_reused
+      - cancel_reaches_known_safe_state
+      - success_after_retry_proven
+      - clean_terminal_failure_proven
+    evidence:
+      - retry_trace
+      - failure_trace
+
+  - id: G12
+    title: Workcell Studio lifecycle closure
+    status: not_yet_proven
+    depends_on: [G11]
+    acceptance:
+      - stopping_rviz_does_not_kill_builder
+      - product_view_processes_and_ports_cleaned_up
+      - same_scene_state_retained
+      - readiness_refresh_correct
+      - second_full_cycle_runs_without_app_restart
+    evidence:
+      - two_cycle_gui_recording
+      - process_cleanup_snapshot
+
+  - id: G13
+    title: Acceptance evidence bundle
+    status: not_started
+    depends_on: [G12]
+    acceptance:
+      - commit_sha_recorded
+      - source_hashes_recorded
+      - generation_provenance_recorded
+      - parity_report_included
+      - build_and_launch_transcripts_included
+      - perception_snapshot_included
+      - candidate_decisions_included
+      - grasp_and_execution_trace_included
+      - screenshots_or_recording_included
+      - fake_hardware_and_real_motion_lock_explicit
+    evidence:
+      - exported_r1_acceptance_bundle
+
+r1_pr_queue:
+  - sequence: 1
+    branch: fix/r1-source-of-truth-convergence
+    closes: [G1]
+    scope:
+      - converge_target_class
+      - converge_destination_owner
+      - verify_runtime_config_against_authored_task_intent
+    do_not:
+      - redesign_ui
+      - add_new_scene
+
+  - sequence: 2
+    branch: fix/r1-generation-product-view-parity
+    closes: [G3, G4]
+    scope:
+      - generation_to_current_product_view_publication_order
+      - strict_post_generation_parity_on_current_payload
+      - atomic_builder_readiness_refresh
+    do_not:
+      - weaken_parity
+      - accept_stale_payload
+
+  - sequence: 3
+    branch: fix/r1-humble-fake-launch-proof
+    closes: [G5, G6]
+    scope:
+      - clean_build
+      - package_discovery
+      - frame_tool_planning_group_truth
+      - canonical_fake_launch_evidence
+
+  - sequence: 4
+    branch: feat/r1-candidate-decision-trace
+    closes: [G8]
+    scope:
+      - one_candidate_policy_pipeline
+      - stable_reason_codes
+      - deterministic_ranking
+      - replay_retry_fixture_acceptance
+
+  - sequence: 5
+    branch: feat/r1-manipulation-state-machine
+    closes: [G9, G10]
+    scope:
+      - explicit_task_states
+      - attach_detach_lifecycle
+      - stage_timeouts
+      - return_home_before_success
+
+  - sequence: 6
+    branch: fix/r1-retry-state-hygiene
+    closes: [G11]
+    scope:
+      - failed_attempt_cleanup
+      - duplicate_object_protection
+      - bounded_retry
+      - cancel_cleanup
+
+  - sequence: 7
+    branch: feat/r1-builder-runtime-orchestration
+    closes: [G12]
+    scope:
+      - plan_simulate_starts_approved_runtime_path
+      - builder_runtime_status
+      - selected_object_and_rejection_reason_visibility
+      - stop_control
+
+  - sequence: 8
+    branch: fix/r1-repeat-cycle-lifecycle
+    closes: [G12]
+    scope:
+      - rviz_teardown
+      - product_view_server_ownership
+      - stale_port_cleanup
+      - second_cycle_without_restart
+
+  - sequence: 9
+    branch: feat/r1-live-epd-acceptance
+    closes: [G7]
+    scope:
+      - live_timestamp_frame_identity
+      - observation_time_tf
+      - explicit_confidence_policy
+      - calibrated_live_acceptance
+
+  - sequence: 10
+    branch: feat/r1-acceptance-bundle
+    closes: [G13]
+    scope:
+      - export_evidence_bundle
+      - gate_matrix_summary
+      - evidence_backed_support_claim
+
+r1_required_failure_cases:
+  - non_target_class_rejected
+  - stale_detection_rejected
+  - missing_or_invalid_tf_blocks_motion
+  - obstructed_candidate_rejected_then_next_candidate_selected
+  - no_valid_grasp_fails_cleanly
+  - invalid_destination_blocks_execution
+  - duplicate_detection_does_not_duplicate_runtime_object
+  - user_cancel_reaches_safe_state
+
+r1_completion:
+  required:
+    - all_gates_G0_to_G13_pass
+    - cold_start_full_cycle_pass
+    - second_consecutive_full_cycle_pass_without_restart
+    - close_reopen_authored_state_persistence_pass
+    - at_least_one_success_after_retry_pass
+    - at_least_one_clean_terminal_failure_pass
+    - acceptance_bundle_exported
+    - real_hardware_remains_locked
+
+post_r1:
+  - id: R2
+    title: Second canonical modality - suction_test
+    goal: apply_the_same_proven_acceptance_contract_to_suction
+  - id: R3
+    title: Evidence-backed supported scene catalog
+    goal: propagate_proven_contracts_and_honest_support_labels
+  - id: R4
+    title: Workcell Builder productization
+    goal: simplify_happy_path_after_functional_truth_is_proven
+  - id: R5
+    title: Capability-driven robot tool environment breadth
+    goal: prove_swapability_without_scene_specific_hacks
+  - id: R6
+    title: Formal replay live perception product contract
+    goal: versioned_adapter_schema_and_generated_scene_bindings
+  - id: R7
+    title: Operator HMI
+    goal: safe_end_user_runtime_surface_consuming_approved_contracts
+  - id: R8
+    title: Customer investor evidence bundle
+    goal: polished_artifacts_generated_from_real_acceptance_evidence
+  - id: R9
+    title: Optional Gazebo and Isaac backends
+    goal: higher_fidelity_without_becoming_core_dependency
+  - id: R10
+    title: Guarded physical commissioning
+    goal: explicit_preflight_guarded_real_hardware_mode
+
+safety:
+  fake_hardware_default: true
+  real_hardware_default: false
+  automatic_motion_send_default: false
+  validation_is_safety_certificate: false
+  rules:
+    - never_weaken_collision_or_safety_to_make_demo_pass
+    - real_motion_requires_explicit_future_commissioning_gate
+    - invalid_frame_transform_controller_tool_or_destination_blocks_execution
+
+agent_protocol:
+  before_editing:
+    - read_AGENTS_md
+    - read_human_roadmap
+    - read_this_machine_roadmap
+    - identify_current_gate
+    - reproduce_real_blocker
+    - identify_source_generated_cache_runtime_layers
+  while_editing:
+    - fix_root_contract_not_symptom
+    - prefer_small_robust_change
+    - preserve_working_canonical_behavior
+    - add_focused_regression_for_real_defect
+    - run_relevant_validation_immediately
+    - continue_same_root_cause_until_gate_closes_or_external_blocker_proven
+    - avoid_unrelated_cleanup
+  completion_report:
+    - gate_status
+    - root_cause
+    - files_changed
+    - commands_and_tests_run
+    - gui_runtime_checks
+    - evidence_produced
+    - safety_status
+    - residual_blocker
+    - next_gate
