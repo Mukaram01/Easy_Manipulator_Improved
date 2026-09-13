@@ -199,3 +199,18 @@ def test_final_parity_blocks_wrong_renderer_joint_state(tmp_path, monkeypatch):
     payload['robot_preview']['joint_values']['movable'] = 1.57
     payload_path.write_text(json.dumps(payload))
     assert parity._final_transform_mismatches(scene, payload_path) == []
+
+
+def test_final_parity_records_provenance_not_dictionary_membership(tmp_path, monkeypatch):
+    # Exercise the same dynamic renderer test with a keyed collection whose
+    # iteration yields visual records: membership of a record raises TypeError.
+    monkeypatch.syspath_prepend(str(REPO_ROOT / 'scripts'))
+    import extract_scene_urdf_visual_mesh_index as urdf
+    original = urdf.extract_from_urdf
+    class KeyedVisuals(dict):
+        def __iter__(self):
+            return iter(self.values())
+    def keyed(*args, **kwargs):
+        return KeyedVisuals(enumerate(original(*args, **kwargs)))
+    monkeypatch.setattr(urdf, 'extract_from_urdf', keyed)
+    test_final_parity_blocks_wrong_renderer_joint_state(tmp_path, monkeypatch)

@@ -181,13 +181,14 @@ def _final_transform_mismatches(scene_dir: Path, payload_path: Path | None = Non
             groups.setdefault(link, []).append(row)
         return groups
     runtime = indexed(expected)
-    actual = indexed(actual_robot)
+    actual = {link: [(row, True) for row in rows] for link, rows in indexed(actual_robot).items()}
     for section in ("assets", "sensors"):
         for row in payload.get(section, []):
             if row.get("render_policy") == "primary" and row.get("link"):
-                actual.setdefault(row["link"], []).append(row)
+                actual.setdefault(row["link"], []).append((row, False))
     mismatches = []
-    environment = _safe_load_yaml(scene_dir / "environment.yaml").get("environment", {})
+    from workcell_scene_sections import physical_sections
+    environment = physical_sections(_safe_load_yaml(scene_dir / "environment.yaml"))
     physical = {str(item["id"]): item for section in ("assets", "sensors", "support_surfaces")
                 for item in environment.get(section, [])}
     layout = _safe_load_yaml(scene_dir / "layout/workcell_studio_layout.yaml")
@@ -258,7 +259,8 @@ def _final_transform_mismatches(scene_dir: Path, payload_path: Path | None = Non
             if index >= len(candidates):
                 mismatches.append({"asset_id": link, "reason": "runtime visual count differs"})
                 continue
-            left, right = matrix(row, True), matrix(candidates[index], candidates[index] in actual_robot)
+            candidate, is_runtime = candidates[index]
+            left, right = matrix(row, True), matrix(candidate, runtime=is_runtime)
             distance = delta(left, right)
             if distance > 1e-5:
                 mismatches.append({"asset_id": link, "reason": "final world visual transform differs", "max_matrix_delta": distance})

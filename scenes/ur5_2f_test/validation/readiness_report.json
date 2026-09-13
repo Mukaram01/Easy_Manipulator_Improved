@@ -1,0 +1,55 @@
+{
+  "acceptance_status": "PASS",
+  "checks": [
+    {
+      "check": "saved authored layout present",
+      "ok": true,
+      "source": "canonical"
+    },
+    {
+      "check": "package.xml exists",
+      "ok": true
+    },
+    {
+      "check": "CMakeLists.txt exists",
+      "ok": true
+    },
+    {
+      "check": "environment.yaml exists",
+      "ok": true
+    },
+    {
+      "check": "workcell_builder_metadata.yaml present",
+      "ok": false,
+      "optional": true
+    },
+    {
+      "check": "generated/cell_definition.yaml present",
+      "ok": false,
+      "optional": true
+    },
+    {
+      "check": "generated/environment_layout.yaml legacy export present",
+      "ok": true,
+      "optional": true
+    },
+    {
+      "check": "generated/workcell_builder_task_intent.yaml present",
+      "ok": true,
+      "optional": true
+    }
+  ],
+  "errors": [],
+  "ok": true,
+  "readiness": "task_intent_ready_offline",
+  "runtime_readiness": "runtime_blocked_or_preview_only",
+  "scene_path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+  "schema": "workcell_builder_generated_scene_validation/v1",
+  "status": "PASS",
+  "warnings": [
+    "workcell_builder_metadata.yaml missing (optional)",
+    "generated/cell_definition.yaml missing; run ./generated/export_workcell_studio_sources.sh",
+    "pick coordinates could not be resolved from scene/layout metadata",
+    "place coordinates could not be resolved from scene/layout metadata"
+  ]
+}

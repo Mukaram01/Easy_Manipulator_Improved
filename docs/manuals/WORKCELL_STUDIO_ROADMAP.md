@@ -232,3 +232,26 @@ The golden demo also emits an RViz/MoveIt preview-readiness section in `golden_b
 - If a safe command can be generated, it is included as a manual command (for example with `use_fake_hardware:=true`).
 - If preview metadata is incomplete, the summary is explicitly classified `rviz_preview_partial` and lists concrete blockers/warnings.
 - This remains fake-hardware/no-real-motion by default and does **not** enable real robot execution.
+
+### 2026-09-13 live mouse follow-up evidence
+
+R1.4 clean plan-only acceptance was reproduced after fixing normal ROS context
+shutdown in the canonical mesh-preview node (nine stages, no execution, clean
+shutdown; `/tmp/ur5_2f_live_mouse_acceptance/r14/acceptance.json`). Tracking capture
+now preserves IDs/acquisition time and transforms at that time; missing confidence
+requires an explicit task policy. Real-camera mouse execution remains **BLOCKED**:
+the captured live EPD object was class `fire hydrant`, and the mouse-specific
+capture timed out. No live RViz motion, attachment, placement, or home completion
+is claimed. See [tracking commissioning status](REAL_D435I_EPD_PIPELINE.md).
+
+### Reachable-object commissioning follow-up
+
+An explicit `reachable_object` policy now removes semantic/source-zone selection
+requirements only for commissioning; normal tasks remain strict. The owned
+`run_live_object_acceptance.py` entry point launches real perception plus fake
+hardware/RViz, checks mock hardware and execution gates, and reuses the canonical
+full-cycle executor with planning-scene evidence. R1.4 remains clean PASS.
+The live 180-second run is **BLOCKED** before planning because EPD supplied no
+valid 3D tracked object (`geometry_valid_total=0` in sampled diagnostics).
+Class names, authored tabletop height, and source-zone containment are not the
+blocker for this mode. No live execution success is claimed.

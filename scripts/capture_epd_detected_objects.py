@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Capture live EPD localization output into detected_objects/v1 YAML/JSON."""
+"""Capture live EPD localization/tracking output into detected_objects/v1 YAML/JSON."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import math
+import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -167,6 +169,10 @@ def convert_epd_message_to_detected_objects(
 
     objects = []
     stable_ids = list(_get(msg, "object_ids", []) or [])
+    if _get(msg, "object_ids") is not None and (
+            len(stable_ids) != len(_message_objects(msg)) or
+            len(set(stable_ids)) != len(stable_ids) or any(not str(i).strip() for i in stable_ids)):
+        raise ValueError("Tracking objects require one unique nonempty ID per object")
     for idx, raw in enumerate(_message_objects(msg), start=1):
         obj, obj_warnings = _object_to_detected(raw, idx, message_frame)
         warnings.extend(obj_warnings)
@@ -187,10 +193,16 @@ def convert_epd_message_to_detected_objects(
     if sec is not None and nanosec is not None:
         source_stamp_ns = int(sec) * 1_000_000_000 + int(nanosec)
 
+    for obj in objects:
+        if source_stamp_ns is not None:
+            obj["timestamp"] = source_stamp_ns / 1_000_000_000
+        obj["source_frame"] = message_frame
+
     payload = {
         "schema_version": "detected_objects/v1",
         "source": {
-            "type": "epd_localization",
+            "type": "epd_tracking" if _get(msg, "object_ids") is not None else "epd_localization",
+            "mode": "live_epd",
             "topic": topic,
             "scene_package": scene_package,
             "frame_id": message_frame,
@@ -231,10 +243,29 @@ def create_qos_profile(reliability: str, depth: int):
     ), chosen
 
 
+def topic_endpoints(node, topic):
+    def endpoint(e):
+        q = e.qos_profile
+        return dict(node=e.node_name, type=e.topic_type, reliability=q.reliability.name,
+            durability=q.durability.name, depth=q.depth)
+    pubs = node.get_publishers_info_by_topic(topic)
+    subs = node.get_subscriptions_info_by_topic(topic)
+    return dict(actual_topic_type=dict(node.get_topic_names_and_types()).get(topic, []),
+        publisher_count=len(pubs), subscriber_count=len(subs),
+        publisher_qos=[endpoint(e) for e in pubs], subscriber_qos=[endpoint(e) for e in subs])
+
+
+def normalize_target_class(value):
+    return None if value is None or value.strip().lower() in ("", "none") else value.strip()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--topic", default="/easy_perception_deployment/epd_localize_output")
+    parser.add_argument("--topic", help="Defaults to the canonical topic for --message-type")
+    parser.add_argument("--target-class", help="Wait for this class; retain other objects as obstacles")
+    parser.add_argument("--message-type", choices=("localization", "tracking"), default="localization")
     parser.add_argument("--output", type=Path, default=Path("/tmp/mvp1/live_detected_objects.yaml"))
+    parser.add_argument("--diagnostics-output", type=Path)
     parser.add_argument("--scene-package", required=True)
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--min-objects", type=int, default=1)
@@ -249,29 +280,54 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-transform", action="store_true", default=True)
     parser.add_argument("--allow-untransformed", action="store_true")
     args = parser.parse_args(argv)
+    if args.topic is None:
+        args.topic = '/easy_perception_deployment/epd_' + ('tracking' if args.message_type == 'tracking' else 'localize') + '_output'
+    args.target_class = normalize_target_class(args.target_class)
+    audit = dict(selected_mode=args.message_type, selected_topic=args.topic,
+        expected_message_type="epd_msgs/msg/EPDObject" + ("Tracking" if args.message_type == "tracking" else "Localization"),
+        ROS_DOMAIN_ID=os.environ.get("ROS_DOMAIN_ID", "0"),
+        RMW_IMPLEMENTATION=os.environ.get("RMW_IMPLEMENTATION", "default"),
+        first_rejections={}, **{key: 0 for key in (
+            "messages_received_total", "messages_lost_total", "messages_with_objects", "raw_objects_total",
+            "objects_after_target_filter", "objects_tf_success", "objects_tf_failed",
+            "objects_validation_success", "objects_validation_failed")})
+    def reject(boundary, reason):
+        audit["first_rejections"].setdefault(boundary, str(reason))
 
     try:
         import rclpy  # type: ignore
         from rclpy.node import Node  # type: ignore
-        from epd_msgs.msg import EPDObjectLocalization  # type: ignore
+        from epd_msgs.msg import EPDObjectLocalization, EPDObjectTracking  # type: ignore
 
-        msg_type = EPDObjectLocalization
+        msg_type = EPDObjectTracking if args.message_type == "tracking" else EPDObjectLocalization
     except Exception as exc:
         print(json.dumps({"status": "FAIL", "error": f"ROS/EPD imports failed: {exc}"}, indent=2))
         return 2
 
     rclpy.init(args=None)
     latest_message: Any | None = None
+    source_frame_present = False
 
     class CaptureNode(Node):
         def __init__(self) -> None:
             super().__init__("capture_epd_detected_objects")
             qos_profile, qos_selected = create_qos_profile(args.qos_reliability, args.qos_depth)
             self.qos_selected = qos_selected
-            self.create_subscription(msg_type, args.topic, self._cb, qos_profile)
+            from rclpy.qos_event import SubscriptionEventCallbacks
+            def lost(event):
+                audit["messages_lost_total"] += event.total_count_change
+                reject("dds_delivery", "DDS reported lost samples")
+            self.create_subscription(msg_type, args.topic, self._cb, qos_profile,
+                event_callbacks=SubscriptionEventCallbacks(message_lost=lost))
 
         def _cb(self, msg: Any) -> None:
             nonlocal latest_message
+            audit["messages_received_total"] += 1
+            count = len(_message_objects(msg))
+            audit["raw_objects_total"] += count
+            audit["messages_with_objects"] += int(count > 0)
+            if not count:
+                reject("extraction", "Message contains no objects")
             latest_message = msg
 
     tf_ready = False
@@ -289,15 +345,21 @@ def main(argv: list[str] | None = None) -> int:
     def _transform_pose(src_frame: str, target_frame: str, xyz: list[float], rpy: list[float], timeout_sec: float):
         if tf_buffer is None:
             raise RuntimeError("TF2 listener is unavailable")
+        import tf2_geometry_msgs  # Register PoseStamped with TF2.
         from geometry_msgs.msg import PoseStamped  # type: ignore
-        from rclpy.duration import Duration  # type: ignore
         pose = PoseStamped()
         pose.header.frame_id = src_frame
-        pose.header.stamp = node.get_clock().now().to_msg()
+        pose.header.stamp.sec, pose.header.stamp.nanosec = divmod(payload["source"]["source_stamp_ns"], 1_000_000_000)
         pose.pose.position.x, pose.pose.position.y, pose.pose.position.z = float(xyz[0]), float(xyz[1]), float(xyz[2])
         qx, qy, qz, qw = _quaternion_from_rpy(float(rpy[0]), float(rpy[1]), float(rpy[2]))
         pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w = qx, qy, qz, qw
-        transformed = tf_buffer.transform(pose, target_frame, timeout=Duration(seconds=float(timeout_sec)))
+        from rclpy.time import Time
+        deadline = time.monotonic() + timeout_sec
+        while not tf_buffer.can_transform(target_frame, src_frame, Time.from_msg(pose.header.stamp)):
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"No TF at observation time: {src_frame} -> {target_frame}")
+            rclpy.spin_once(node, timeout_sec=0.05)
+        transformed = tf_buffer.transform(pose, target_frame)
         out_xyz = [float(transformed.pose.position.x), float(transformed.pose.position.y), float(transformed.pose.position.z)]
         out_rpy = list(_rpy_from_quaternion(
             float(transformed.pose.orientation.x),
@@ -307,23 +369,42 @@ def main(argv: list[str] | None = None) -> int:
         ))
         return out_xyz, out_rpy, f"Pose transformed {src_frame} -> {target_frame}"
     try:
-        end_ns = node.get_clock().now().nanoseconds + int(args.timeout * 1e9)
+        deadline = time.monotonic() + args.timeout
         payload = None
         warnings: list[str] = []
-        while rclpy.ok() and node.get_clock().now().nanoseconds <= end_ns:
+        while rclpy.ok() and time.monotonic() <= deadline:
             rclpy.spin_once(node, timeout_sec=0.1)
             if latest_message is None:
                 continue
-            payload, warnings = convert_epd_message_to_detected_objects(
-                latest_message, args.topic, args.scene_package, args.frame_fallback
-            )
-            if len(payload.get("objects", [])) >= max(1, args.min_objects):
+            source_frame_present = bool(latest_message.header.frame_id)
+            try:
+                payload, warnings = convert_epd_message_to_detected_objects(
+                    latest_message, args.topic, args.scene_package, args.frame_fallback)
+                if len(payload["objects"]) < len(_message_objects(latest_message)):
+                    reject("conversion", warnings or "Object extraction rejected an input object")
+            except (ValueError, TypeError) as exc:
+                reject("conversion", exc)
+                latest_message = None
+                continue
+            latest_message = None
+            matched = [o for o in payload["objects"] if not args.target_class or o["class_id"] == args.target_class]
+            audit["objects_after_target_filter"] += len(matched)
+            if not matched:
+                reject("target_filter", warnings or f"No object matches {args.target_class}")
+            if len(payload.get("objects", [])) >= max(1, args.min_objects) and (
+                not args.target_class or any(o["class_id"] == args.target_class for o in payload["objects"])):
                 if args.once:
                     break
                 break
 
-        if payload is None or len(payload.get("objects", [])) < max(1, args.min_objects):
-            print(json.dumps({"status": "FAIL", "error": f"No detections meeting min-objects={args.min_objects} on {args.topic}", "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
+        if (payload is None or len(payload.get("objects", [])) < max(1, args.min_objects) or
+                (args.target_class and not any(o["class_id"] == args.target_class for o in payload["objects"]))):
+            print(json.dumps({"status": "FAIL", "error": f"No detections meeting min-objects={args.min_objects}, target-class={args.target_class} on {args.topic}", "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
+            return 1
+
+        if not source_frame_present and not args.allow_untransformed:
+            reject("tf", "EPD source frame is missing; refusing fallback TF")
+            print(json.dumps({"status": "FAIL", "error": "EPD source frame is missing; refusing fallback TF"}))
             return 1
 
         transform_status = "PASS"
@@ -338,6 +419,9 @@ def main(argv: list[str] | None = None) -> int:
                 except Exception as exc:
                     status, message = "FAIL", f"TF transform failed: {exc}"
                 statuses.append(status)
+                audit["objects_tf_success" if status == "PASS" else "objects_tf_failed"] += 1
+                if status != "PASS":
+                    reject("tf", message)
                 messages.append(message)
             transform_status = "PASS" if all(s == "PASS" for s in statuses) else "FAIL"
             transform_message = "; ".join(messages)
@@ -358,6 +442,15 @@ def main(argv: list[str] | None = None) -> int:
 
         validation = validate_detected_objects(payload, strict=False, allow_generate_ids=True)
         warnings.extend(validation.warnings)
+        for obj in payload["objects"]:
+            individual = validate_detected_objects(dict(payload, objects=[obj]), strict=False, allow_generate_ids=True)
+            audit["objects_validation_failed" if individual.errors else "objects_validation_success"] += 1
+        if validation.errors:
+            reject("validation", validation.errors)
+            print(json.dumps({"status": "FAIL", "errors": validation.errors}))
+            return 1
+
+        audit["capture_status"] = "PASS"
 
         if args.dry_run:
             print(json.dumps({"status": "FAIL" if transform_status == "FAIL" else ("WARN" if (warnings or transform_status == "WARN") else "PASS"), "dry_run": True, "output": str(args.output), "payload": payload, "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
@@ -367,8 +460,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "FAIL" if transform_status == "FAIL" else ("WARN" if (warnings or transform_status == "WARN") else "PASS"), "output": str(args.output), "objects": len(payload.get("objects", [])), "warnings": warnings, "qos_reliability": node.qos_selected, "qos_depth": max(1, int(args.qos_depth))}, indent=2))
         return 0
     finally:
+        audit.update(topic_endpoints(node, args.topic))
+        audit.setdefault("capture_status", "FAIL")
+        if not audit["messages_received_total"]:
+            reject("subscription", "No callback before capture deadline")
+        if args.diagnostics_output:
+            _write_output(audit, args.diagnostics_output, True)
+        print(json.dumps({"capture_diagnostics": audit}, indent=2))
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

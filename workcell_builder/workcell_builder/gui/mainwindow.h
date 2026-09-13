@@ -738,6 +738,8 @@ private:
   bool layout_saved_{ false };
   bool validation_stale_{ true };
   bool launch_artifacts_ready_{ false };
+  QMetaObject::Connection generated_refresh_connection_;
+  quint64 generated_refresh_serial_{ 0 };
   CanvasGeneratedParityState canvas_generated_parity_state_{ CanvasGeneratedParityState::NotChecked };
   QString canvas_generated_parity_report_path_;
   int canvas_generated_parity_mismatches_{ 0 };

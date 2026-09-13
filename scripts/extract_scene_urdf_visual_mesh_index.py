@@ -864,7 +864,8 @@ def _extract_scene_launch_xacro_request(scene_dir, cli_xacro_args):
         if canonical_layout.exists():
             try:
                 environment_data = yaml.safe_load(canonical_layout.read_text()) or {}
-                physical = environment_data.get("environment", {})
+                from workcell_scene_sections import physical_sections
+                physical = physical_sections(environment_data)
                 layout_data = {"items": [dict(item, pose=item.get("pose") or {"xyz": item.get("pose_xyz"), "rpy": item.get("pose_rpy")})
                                          for section in ("assets", "sensors", "support_surfaces")
                                          for item in physical.get(section, [])]}

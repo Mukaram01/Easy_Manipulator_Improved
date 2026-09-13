@@ -30,7 +30,12 @@ def task_request(raw, cell):
     result = copy.deepcopy(raw)
     if result.get('action') != 'pick_and_place':
         raise ValueError('action must be pick_and_place')
-    for key in ('target_class', 'source_zone', 'destination_zone'):
+    result.setdefault('selection_policy', 'task_semantics')
+    if result['selection_policy'] not in ('task_semantics', 'reachable_object'):
+        raise ValueError('unknown selection_policy')
+    required = ('destination_zone',) if result['selection_policy'] == 'reachable_object' else (
+        'target_class', 'source_zone', 'destination_zone')
+    for key in required:
         if not isinstance(result.get(key), str) or not result[key].strip():
             raise ValueError(f'missing task {key}')
     for key, default in (('max_age_seconds', 2.0), ('min_confidence', 0.0)):
@@ -38,8 +43,12 @@ def task_request(raw, cell):
         vector([result[key]], 1, key)
     if result['max_age_seconds'] <= 0 or not 0 <= result['min_confidence'] <= 1:
         raise ValueError('invalid freshness/confidence policy')
-    zone(cell, result['source_zone'])
+    if result['selection_policy'] == 'task_semantics':
+        zone(cell, result['source_zone'])
     zone(cell, result['destination_zone'])
+    result.setdefault('allow_missing_confidence', False)
+    if not isinstance(result['allow_missing_confidence'], bool):
+        raise ValueError('allow_missing_confidence must be boolean')
     return result
 
 
@@ -69,13 +78,15 @@ def normalize(snapshot, now, geometry):
         dims = vector(dims, 3, 'dimensions')
         if any(v <= 0 for v in dims):
             raise ValueError(f'{oid}: dimensions must be positive')
-        confidence = vector([raw['confidence']], 1, 'confidence')[0]
+        confidence = raw.get('confidence')
+        if confidence is not None:
+            confidence = vector([confidence], 1, 'confidence')[0]
         stamp = vector([raw['timestamp']], 1, 'timestamp')[0]
-        if not 0 <= confidence <= 1 or stamp > now + 0.05:
+        if (confidence is not None and not 0 <= confidence <= 1) or stamp > now + 0.05:
             raise ValueError(f'{oid}: invalid confidence or future timestamp')
         objects.append(dict(id='runtime::' + quote(oid, safe=''), object_id=oid,
                             class_id=label, confidence=confidence, timestamp=stamp,
-                            frame_id='world', source_frame=pose['frame_id'], shape='BOX',
+                            frame_id='world', source_frame=raw.get('source_frame', pose['frame_id']), shape='BOX',
                             pose=xyz + geometry.quaternion_from_rpy(rpy), dimensions=dims,
                             grasp=copy.deepcopy(raw.get('grasp'))))
     return objects
@@ -91,17 +102,19 @@ def contained(obj, region, geometry):
 
 def filter_targets(objects, task, cell, now, geometry):
     eligible, rejected = [], {}
-    region = zone(cell, task['source_zone'])
+    commissioning = task.get('selection_policy', 'task_semantics') == 'reachable_object'
+    region = None if commissioning else zone(cell, task['source_zone'])
     for obj in objects:
-        reason = ('class_mismatch' if obj['class_id'] != task['target_class'] else
+        reason = ('class_mismatch' if not commissioning and obj['class_id'] != task['target_class'] else
                   'stale' if now - obj['timestamp'] > task['max_age_seconds'] else
-                  'low_confidence' if obj['confidence'] < task['min_confidence'] else
-                  'outside_source_zone' if not contained(obj, region, geometry) else None)
+                  'missing_confidence' if obj['confidence'] is None and not task.get('allow_missing_confidence', False) else
+                  'low_confidence' if obj['confidence'] is not None and obj['confidence'] < task['min_confidence'] else
+                  'outside_source_zone' if not commissioning and not contained(obj, region, geometry) else None)
         if reason:
             rejected[obj['id']] = reason
         else:
             eligible.append(obj)
-    return sorted(eligible, key=lambda o: (-o['confidence'], o['id'])), rejected
+    return sorted(eligible, key=lambda o: (o['confidence'] is None, -(o['confidence'] or 0.0), o['id'])), rejected
 
 
 def replay_snapshot(template, now):

@@ -1,0 +1,6 @@
+action: pick_and_place
+selection_policy: reachable_object
+destination_zone: default_drop_zone
+max_age_seconds: 60.0
+min_confidence: 0.0
+allow_missing_confidence: true

@@ -340,6 +340,7 @@ public:
   quint64 preview_payload_generation() const;
   quint64 embedded_web_preparation_request_count() const;
   int request_post_save_product_view_refresh();
+  quint64 post_save_refresh_generation() const { return post_save_refresh_generation_; }
   bool preview_payload_matches(const QVector<PreviewItem> & items) const;
 
 signals:

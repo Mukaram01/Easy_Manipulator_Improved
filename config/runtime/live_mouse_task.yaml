@@ -1,0 +1,8 @@
+action: pick_and_place
+target_class: mouse
+source_zone: pick_zone_main
+destination_zone: default_drop_zone
+max_age_seconds: 30.0
+min_confidence: 0.0
+# EPD LocalizedObject has no confidence field. Preserve its absence explicitly.
+allow_missing_confidence: true

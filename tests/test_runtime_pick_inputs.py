@@ -125,3 +125,32 @@ def test_replay_and_timestamped_live_input_share_downstream_contract():
     live_target = inputs.filter_targets(live_objects, task, cell, 100, geometry)[0][0]
     assert geometry.generate_box_grasp_candidates(geometry.build_grasp_target(replay_target), 0.12) == \
         geometry.generate_box_grasp_candidates(geometry.build_grasp_target(live_target), 0.12)
+
+
+def test_missing_confidence_requires_explicit_policy_without_fabrication():
+    cell, task, snapshot = fixtures()
+    del snapshot['objects'][0]['confidence']
+    snapshot['objects'][0]['source_frame'] = 'camera_color_optical_frame'
+    objects = inputs.normalize(snapshot, 100, geometry)
+    assert objects[0]['confidence'] is None
+    assert objects[0]['source_frame'] == 'camera_color_optical_frame'
+    selected, rejected = inputs.filter_targets(objects, task, cell, 100, geometry)
+    assert not selected
+    assert rejected[objects[0]['id']] == 'missing_confidence'
+    task['allow_missing_confidence'] = True
+    assert inputs.filter_targets(objects, task, cell, 100, geometry)[0] == [objects[0]]
+
+
+def test_reachable_object_policy_is_explicit_and_keeps_freshness():
+    cell, strict, snapshot = fixtures()
+    obj = snapshot['objects'][0]
+    obj['class_id'] = 'arbitrary label'
+    obj['pose']['xyz'] = [0.4, -0.5, 0.4]
+    objects = inputs.normalize(snapshot, 100, geometry)
+    assert not inputs.filter_targets(objects, strict, cell, 100, geometry)[0]
+    task = inputs.task_request(dict(action='pick_and_place', selection_policy='reachable_object',
+        destination_zone='default_drop_zone', max_age_seconds=2), cell)
+    assert len(inputs.filter_targets(objects, task, cell, 100, geometry)[0]) == 2
+    assert not inputs.filter_targets(objects, task, cell, 110, geometry)[0]
+    with pytest.raises(ValueError, match='selection_policy'):
+        inputs.task_request(dict(task, selection_policy='typo'), cell)

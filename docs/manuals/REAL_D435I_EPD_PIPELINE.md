@@ -238,3 +238,115 @@ Live validation later will require explicit runtime bring-up and guarded commiss
 7. Later use metadata for EPD/RealSense integration.
 
 This is visual/configuration only: it does not start RealSense hardware, does not start EPD, and does not enable robot motion.
+
+## Tracking capture and mouse commissioning status (2026-09-13)
+
+The canonical capture adapter supports both message contracts. For tracking:
+
+```bash
+python3 scripts/capture_epd_detected_objects.py \
+  --message-type tracking --target-class mouse \
+  --topic /easy_perception_deployment/epd_tracking_output \
+  --scene-package ur5_2f_test --once --timeout 45 \
+  --target-frame world --require-transform --json \
+  --output /tmp/ur5_2f_live_mouse_acceptance/live_mouse.json
+```
+
+This waits for the requested class without deleting other observed obstacles.
+There is no replay fallback. Tracking IDs must be unique and complete. Object
+acquisition timestamps and source frames are preserved; TF2 uses the observation
+stamp and spins the listener while waiting for the transform. Missing source
+frames are rejected for required transformation. Invalid schema output fails.
+
+`config/runtime/live_mouse_task.yaml` uses the existing task contract, selects
+`mouse` in `pick_zone_main`, and routes to `default_drop_zone`. It explicitly
+allows unavailable confidence because EPD's object message has no confidence
+field. Confidence remains absent/null, never fabricated; tasks default to
+rejecting unavailable confidence. The 30-second acquisition age remains enforced.
+This profile is not a completed live execution entry point.
+
+Workstation evidence at `/tmp/ur5_2f_live_mouse_acceptance` is **BLOCKED** for the
+full live cycle: real D435i frames and EPD TRACKING_MODE were observed; a live
+tracking message transformed successfully to world, but its class was
+`fire hydrant` (track `2`), not `mouse`. A separate 45-second mouse-only capture
+failed closed. The camera image visibly contains a mouse on a dark textured
+surface. No target coordinates, labels, zones, or camera calibration were changed
+to make this observation pass. Physical camera calibration remains unverified.
+
+Live 2F candidate consumption by the full-cycle executor, XYZ-only cloud support,
+complete fake execution/RViz observation, and planning-scene attachment/placement
+acceptance remain unproven in this follow-up. The executor still generates box
+grasps internally; do not represent those as consumed EMD ranked cloud grasps.
+No physical commissioning is claimed.
+
+## Explicit reachable-object commissioning
+
+`selection_policy: reachable_object` is an explicit fake-hardware commissioning
+selection policy. It accepts any semantic class and does not require a source
+zone or tabletop-height match. Normal recipes default to `task_semantics` and
+retain their class/zone filters. Both policies retain timestamp, geometry,
+confidence policy, and full-cycle feasibility checks. All captured objects remain
+collision obstacles; only configured target/fingertip contacts are allowed.
+
+From `~/workcell_ws/src/easy_manipulation_deployment`, with Humble, the consistent
+MoveIt underlay, EPD install, and Workcell install sourced:
+
+```bash
+python3 scripts/run_live_object_acceptance.py \
+  --output-dir /tmp/ur5_2f_live_object_acceptance/new-run \
+  --domain-id 180 --capture-timeout 180
+```
+
+Choose an unused domain and a new evidence directory. This owns and stops the
+scene, RViz, real D435i, EPD, capture, and canonical executor. It fixes fake
+hardware on, checks controller-manager classes and URDF hardware plugins are
+exclusively `mock_components/GenericSystem`, verifies the execution parameter,
+and captures live tracking at its timestamp through TF2. Add `--plan-only` to
+keep execution disabled. It never uses replay fallback. On CycloneDDS it expands
+the owned session's participant-index search range so the complete graph fits.
+RViz visual evidence requires X11 `xwininfo`, `xwd`, and Python Pillow.
+
+The runtime tries the existing eight geometry-derived Robotiq top-grasp candidates
+in the canonical preferred order until an entire cycle prevalidates. These are
+explicitly reported as `canonical_box_geometry_robotiq_2f`; they are not a claim
+of consuming EMD's segmented-cloud candidate stream. The executor saves full
+planning-scene snapshots before manipulation, while attached, after placement,
+and at home. Acceptance requires those state checks and all motion stages, not
+only successful action codes.
+
+2026-09-13 evidence: `/tmp/ur5_2f_live_object_acceptance/live` started the full
+fake/RViz/camera/EPD stack and stopped it cleanly, but a 180-second class-agnostic
+capture found no usable object. Diagnostic sampling received empty tracking and
+pose messages, with `geometry_valid_total=0` and `geometry_invalid_total=2`.
+The individual geometry-rejection flags were not exposed by the tracking
+telemetry inspected here. No label, pose, dimensions, or geometry-quality gate
+was altered to manufacture an object. Live motion/attachment/placement/home
+remain **BLOCKED**, while the commissioning entry point is implemented. R1.4
+remains a clean 9/9 plan-only PASS. Physical commissioning is not claimed.
+
+### Live capture boundary correction
+
+Later live evidence supersedes the geometry blocker above: both EPD modes emit
+valid geometry. The capture failure was reproduced with a matching topic/type,
+one best-effort publisher and compatible subscriber, but zero capture callbacks.
+ROS CLI received a sample while UDP receive-buffer drops were present. Reliable
+publisher/subscriber delivery restored direct tracking capture even at the same
+large camera profile; direct localization also passed through world TF and
+`detected_objects/v1`. This is transport acceptance, not geometry relaxation.
+
+The EPD object publishers retain their SensorDataQoS defaults and now permit ROS
+QoS overrides. The commissioning runner explicitly requests reliable delivery
+for tracking/localization, passes the selected mode (4/3), and uses the proven
+CPU backend and 640x480x15 aligned/synchronized camera profile. It checks topic
+type, publisher reliability and valid completed inference before starting capture.
+No fixed startup sleep or replay fallback is used.
+
+Direct capture can write `--diagnostics-output /tmp/capture-audit.json`; this
+records mode/topic/type, endpoint counts/QoS, domain/RMW, received/lost messages,
+raw objects, target filtering, TF, validation and first rejection reasons.
+`--target-class` omitted, empty, or `None` means no semantic filter. A tracking
+capture retains EPD IDs; both modes retain observation timestamp, source frame,
+raw pose, world pose and measured dimensions without inventing confidence.
+
+Evidence: `/tmp/ur5_2f_live_object_acceptance/capture_boundary/`, including the
+failed best-effort baseline and successful reliable direct captures in both modes.

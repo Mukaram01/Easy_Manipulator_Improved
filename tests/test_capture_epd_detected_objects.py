@@ -8,11 +8,17 @@ from scripts.capture_epd_detected_objects import (
     _normalize_pose_with_tf,
     convert_epd_message_to_detected_objects,
     create_qos_profile,
+    normalize_target_class,
 )
 from scripts.validate_detected_objects import validate_detected_objects
 
 
 class CaptureEPDDetectedObjectsTests(unittest.TestCase):
+    def test_absent_target_class_never_filters_semantics(self):
+        for value in (None, "None", "none", "", "  "):
+            self.assertIsNone(normalize_target_class(value))
+        self.assertEqual(normalize_target_class(" fire hydrant "), "fire hydrant")
+
     def _msg(self, *, frame_id: str = "camera_depth_optical_frame"):
         return {
             "header": {"frame_id": frame_id},
@@ -131,3 +137,28 @@ class CaptureEPDDetectedObjectsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_tracking_acquisition_time_and_provenance():
+    message = {'header': {'frame_id': 'camera_color_optical_frame',
+                         'stamp': {'sec': 123, 'nanosec': 500000000}},
+               'object_ids': ['12'], 'objects': [{'name': 'mouse',
+                   'centroid': {'x': .1, 'y': .2, 'z': .3}}]}
+    payload, _ = convert_epd_message_to_detected_objects(message, '/tracking', 'ur5_2f_test', '')
+    obj = payload['objects'][0]
+    assert obj['timestamp'] == 123.5
+    assert obj['source_frame'] == 'camera_color_optical_frame'
+    assert obj['tracking_id'] == '12'
+    assert 'confidence' not in obj
+    assert payload['source']['type'] == 'epd_tracking'
+    assert payload['source']['mode'] == 'live_epd'
+
+
+def test_tracking_rejects_missing_or_duplicate_ids():
+    import pytest
+    raw = {'name': 'mouse', 'centroid': {'x': .1, 'y': .2, 'z': .3}}
+    for ids in ([], [''], ['12', '12']):
+        message = {'header': {'frame_id': 'camera_color_optical_frame'},
+                   'object_ids': ids, 'objects': [raw, raw] if len(ids) == 2 else [raw]}
+        with pytest.raises(ValueError, match='unique nonempty ID'):
+            convert_epd_message_to_detected_objects(message, '/tracking', 'ur5_2f_test', '')

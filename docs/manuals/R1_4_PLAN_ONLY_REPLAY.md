@@ -74,3 +74,12 @@ The first `/opt/ros/humble`-only runtime planned all stages but segfaulted in
 shutdown. The runner rejects crashed child processes even when none remain.
 Using the consistent clean MoveIt underlay passed planning and graceful shutdown;
 no MoveIt sources or binaries were changed by this PR.
+
+## 2026-09-13 shutdown regression follow-up
+
+The canonical mesh preview now handles `rclpy.executors.ExternalShutdownException`
+as normal context shutdown, alongside `KeyboardInterrupt`; unrelated exceptions
+still propagate. `/tmp/ur5_2f_live_mouse_acceptance/r14/acceptance.json` records
+nine successful planning stages, no execution goals, and clean shutdown on this
+workstation. The acceptance runner was not relaxed. The installed Python entry
+point uses the source checkout through symlink installation.
