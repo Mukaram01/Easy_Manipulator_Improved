@@ -295,6 +295,7 @@ def run_ros_node(
     owning_package: str | None = None,
 ) -> None:
     import rclpy
+    from rclpy.executors import ExternalShutdownException
     from rclpy.node import Node
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from visualization_msgs.msg import MarkerArray
@@ -312,8 +313,8 @@ def run_ros_node(
     publisher.publish(build_marker_array(specs, frame_id))
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
-        # Normal ros2 launch shutdown must not surface as a node failure.
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # Normal ROS 2 launch/context shutdown must not surface as a node failure.
         pass
     finally:
         try:
