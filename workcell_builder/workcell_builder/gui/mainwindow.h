@@ -110,6 +110,7 @@ private slots:
   void on_change_workcell_clicked();
   void run_preview_build();
   void run_fake_hardware_preview();
+  void run_full_cycle();
   void stop_preview_process();
   void handle_preview_stdout();
   void handle_preview_stderr();
@@ -332,6 +333,8 @@ private:
   QString detect_workspace_root() const;
   void apply_startup_selection();
   void set_preview_state(const QString & state);
+  void consume_cycle_output(const QString & output);
+  void show_cycle_result(const QJsonObject & result);
   void rebuild_digital_twin_canvas();
   void rebuild_canvas_inspector();
   enum class CanvasInteractionMode { Select, Place, Move, Inspect };
@@ -811,6 +814,12 @@ private:
   QTextEdit * preview_commands_{ nullptr };
   QPlainTextEdit * preview_log_{ nullptr };
   QPushButton * run_preview_button_{ nullptr };
+  QLabel * cycle_status_label_{ nullptr };
+  QCheckBox * cycle_rviz_box_{ nullptr };
+  bool full_cycle_mode_{ false };
+  QString cycle_output_dir_;
+  QString cycle_stdout_buffer_;
+  QJsonObject cycle_result_;
   QPushButton * run_build_button_{ nullptr };
   QPushButton * stop_preview_button_{ nullptr };
   QPushButton * copy_build_button_{ nullptr };

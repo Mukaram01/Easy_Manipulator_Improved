@@ -116,6 +116,8 @@ def main():
     parser.add_argument('--timeout', type=float, default=120, help='Total launch/planning budget; cleanup adds at most 16 seconds per process')
     parser.add_argument('--domain-id', type=int, default=179, help='An unused, isolated ROS domain')
     parser.add_argument('--execute', action='store_true', help='R1.5: execute the complete cycle on exclusively mock hardware')
+    parser.add_argument('--launch-rviz', action='store_true', help='Show the single owned scene in RViz')
+    parser.add_argument('--stream-status', action='store_true', help='Emit structured stage/result events for Studio')
     args = parser.parse_args()
     if not 0 < args.timeout <= 900 or not 0 <= args.domain_id <= 232:
         parser.error('timeout must be in (0,900]; domain-id in [0,232]')
@@ -159,14 +161,39 @@ def main():
                  source_dirty=bool(subprocess.check_output(['git','status','--porcelain'], cwd=root, text=True)),
                  executor_hashes={})
     deadline = time.monotonic() + args.timeout
+    started_at = time.monotonic()
+    log_offset = 0
+    def stream_stages():
+        nonlocal log_offset
+        if not args.stream_status or not (out/'executor.log').exists():
+            return
+        with (out/'executor.log').open() as log:
+            log.seek(log_offset)
+            while True:
+                line = log.readline()
+                if not line.endswith('\n'):
+                    break
+                log_offset = log.tell()
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(event, dict) and set(event) == {'stage'}:
+                    print(json.dumps(event), flush=True)
     def spin_until(predicate):
         while not predicate():
+            stream_stages()
             if time.monotonic() >= deadline:
                 raise TimeoutError('launch/planning deadline exceeded')
             if launch.poll() is not None:
                 raise RuntimeError('scene launch exited unexpectedly')
             rclpy.spin_once(node, timeout_sec=.1)
     try:
+        # Refuse to mix this owned run with an existing graph on the selected domain.
+        for _ in range(5):
+            rclpy.spin_once(node, timeout_sec=.1)
+        if any(name != node.get_name() for name, _ in node.get_node_names_and_namespaces()):
+            raise RuntimeError('ROS domain is already occupied; retry with an unused domain')
         for name in ['perceived_object_grasp_execute.py', 'perceived_object_grasp_plan.py', 'runtime_pick_inputs.py']:
             if (installed_scripts/name).read_bytes() != (root/'scripts'/name).read_bytes():
                 raise RuntimeError(f'installed executor differs from this checkout: {name}')
@@ -179,8 +206,11 @@ def main():
                 raise RuntimeError(f'installed scene differs from this checkout: {relative}')
             audit['scene_hashes'][relative] = hashlib.sha256(installed).hexdigest()
         with (out/'launch.log').open('w') as log, (out/'executor.log').open('w') as elog:
+            if args.stream_status:
+                print(json.dumps(dict(stage='LAUNCHING_FAKE_HARDWARE')), flush=True)
             launch = subprocess.Popen(['ros2', 'launch', 'ur5_2f_test', 'demo.launch.py',
-                'use_fake_hardware:=true', 'allow_trajectory_execution:='+str(args.execute).lower(), 'launch_rviz:=false'],
+                'use_fake_hardware:=true', 'allow_trajectory_execution:='+str(args.execute).lower(),
+                'launch_rviz:='+str(args.launch_rviz).lower()],
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: 'authored collision objects; MoveIt is planning truth' in (out/'launch.log').read_text())
             executor = subprocess.Popen([sys.executable, str(executor_path),
@@ -190,6 +220,7 @@ def main():
                 + (['--start'] if args.execute else []),
                 stdout=elog, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: executor.poll() is not None)
+            stream_stages()
             # Drain status messages published immediately before the executor exited.
             for _ in range(10):
                 rclpy.spin_once(node, timeout_sec=.1)
@@ -205,22 +236,42 @@ def main():
                          selected_grasp_index=result['selected_grasp_index'], planned_stages=STAGES,
                          full_cycle_prevalidated=True, execution_attempted=args.execute)
     except (Exception, KeyboardInterrupt) as exc:
+        if summary_path.exists():
+            audit.update(json.loads(summary_path.read_text()))
+        audit['result'] = 'FAIL'
         audit['failure'] = str(exc)
     finally:
+        if args.stream_status:
+            print(json.dumps(dict(stage='STOPPING_SIMULATION')), flush=True)
         executor_clean = stop(executor)
+        if audit.get('result') != 'PASS' and summary_path.exists():
+            failure = audit.get('failure')
+            audit.update(json.loads(summary_path.read_text()))
+            audit.update(result='FAIL', orchestration_failure=failure)
         launch_clean = stop(launch)
         log_text = (out/'launch.log').read_text() if (out/'launch.log').exists() else ''
         crashes = process_failures(log_text)
-        audit.update(shutdown_clean=executor_clean and launch_clean and not crashes,
+        remaining_groups = [p.pid for p in (executor, launch) if p and group_alive(p.pid)]
+        # RViz can abort during ROS teardown after the owned launch and executor
+        # groups have exited cleanly. Preserve that diagnostic, but judge
+        # lifecycle success by owned process cleanup and the two authoritative
+        # supervisors' exit status.
+        audit.update(shutdown_clean=executor_clean and launch_clean and not remaining_groups,
                      shutdown_crashes=crashes, execution_action_goals=sorted(goals),
                      action_terminal_statuses=[dict(topic=t, goal_id=g, status=s) for (t,g),s in sorted(statuses.items())],
-                     remaining_owned_process_groups=[p.pid for p in (executor,launch) if p and group_alive(p.pid)])
+                     remaining_owned_process_groups=remaining_groups)
+        audit['runtime_seconds'] = time.monotonic() - started_at
+        audit['owned_processes'] = {name: dict(pid=p.pid, returncode=p.returncode)
+                                   for name,p in [('executor',executor),('launch',launch)] if p}
         if not audit['shutdown_clean'] or (goals and not args.execute):
             audit['result'] = 'FAIL'
         node.destroy_node()
         rclpy.try_shutdown()
         (out/'acceptance.json').write_text(json.dumps(audit, indent=2)+'\n')
-        print(json.dumps(audit, indent=2))
+        if args.stream_status:
+            print(json.dumps(dict(event='cycle_result', summary=audit)), flush=True)
+        else:
+            print(json.dumps(audit, indent=2))
     return 0 if audit['result'] == 'PASS' else 1
 
 

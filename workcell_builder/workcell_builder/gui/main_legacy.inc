@@ -1220,6 +1220,24 @@ int main(int argc, char * argv[])
 
   a.setStyleSheet(workcell_builder::workcellStudioStyleSheet());
 
+  if (has_cli_flag(args, "--persistence-only")) {
+    const QString output = cli_value(args, "--smoke-output");
+    if (output.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    w.show();
+    TestMain::start_persistence_only(&w, &a, output);
+    return a.exec();
+  }
+
+  if (has_cli_flag(args, "--full-cycle-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    if (output.isEmpty() || QFileInfo::exists(output + "/acceptance.json")) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    w.show();
+    TestMain::start_full_cycle_acceptance(&w, &a, output);
+    return a.exec();
+  }
+
   Scene3DSmokeOptions smoke_opts;
   smoke_opts.enabled = has_cli_flag(args, "--scene3d-smoke");
   smoke_opts.scene_name = cli_value(args, "--scene");

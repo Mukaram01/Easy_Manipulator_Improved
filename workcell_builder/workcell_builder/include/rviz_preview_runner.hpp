@@ -29,6 +29,9 @@ QString package_prefix_check_command(
 QString build_launch_shell_command(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root);
+QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir,
+  int domain_id, bool launch_rviz);
 bool launch_command_is_safe(const QString & command, QString * reason = nullptr);
 QString build_shell_command(const QString & scene_pkg, const boost::filesystem::path & workspace_root);
 QString build_shell_command(const WorkcellStudioSceneInfo & scene_info, const boost::filesystem::path & workspace_root);

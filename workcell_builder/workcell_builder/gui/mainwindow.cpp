@@ -99,6 +99,8 @@
 #include <QProgressDialog>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QRandomGenerator>
+#include <QUuid>
 #include "preview_process_state.hpp"
 #include <QCloseEvent>
 #include <QSettings>
@@ -3613,11 +3615,19 @@ void MainWindow::setup_studio_shell()
   preview_scene_label_ = new QLabel("<b>Selected Scene</b><br/>scene name: none"); preview_scene_label_->setObjectName("studioCard"); preview_scene_label_->setWordWrap(true); pl->addWidget(preview_scene_label_);
   preview_status_label_ = new QLabel("<b>Readiness Gate</b><br/>BLOCKED_MISSING_SCENE"); preview_status_label_->setObjectName("studioCard"); preview_status_label_->setWordWrap(true); pl->addWidget(preview_status_label_);
   preview_safety_label_ = new QLabel("<b>Status</b><br/>Mode: Plan / Simulate | Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked | Real hardware execution requires explicit guarded setup and is not launched from this mode."); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
-  preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); preview_commands_->setObjectName("studioCard"); pl->addWidget(preview_commands_);
-  preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setPlaceholderText("Live Log: command started / command output / command finished or failed / transcript path"); preview_log_->setObjectName("studioCard"); pl->addWidget(preview_log_);
+  cycle_status_label_ = new QLabel("Input: Replay / Commissioning Fixture<br/>Ready to run the complete pick/place cycle.", preview);
+  cycle_status_label_->setObjectName("cycleStatus"); cycle_status_label_->setWordWrap(true); pl->addWidget(cycle_status_label_);
+  cycle_rviz_box_ = new QCheckBox("Show RViz during the cycle", preview); cycle_rviz_box_->setChecked(true); pl->addWidget(cycle_rviz_box_);
+  auto * cycle_diagnostics = new QGroupBox("Diagnostics", preview); cycle_diagnostics->setCheckable(true); cycle_diagnostics->setChecked(false);
+  auto * diagnostics_layout = new QVBoxLayout(cycle_diagnostics);
+  preview_commands_ = new QTextEdit(preview); preview_commands_->setReadOnly(true); preview_commands_->setObjectName("studioCard"); diagnostics_layout->addWidget(preview_commands_);
+  preview_log_ = new QPlainTextEdit(preview); preview_log_->setReadOnly(true); preview_log_->setMaximumBlockCount(2000); preview_log_->setObjectName("studioCard"); diagnostics_layout->addWidget(preview_log_);
+  preview_commands_->hide(); preview_log_->hide();
+  connect(cycle_diagnostics, &QGroupBox::toggled, preview_commands_, &QWidget::setVisible);
+  connect(cycle_diagnostics, &QGroupBox::toggled, preview_log_, &QWidget::setVisible); pl->addWidget(cycle_diagnostics);
   pl->addWidget(new QLabel("<b>Preview Process</b><br/>Open RViz Truth Preview | Run Fake-Hardware Simulation | Stop Simulation | Copy commands"));
   run_build_button_ = new QPushButton("Build & Run RViz", preview); run_build_button_->setProperty("role","primary"); pl->addWidget(run_build_button_);
-  run_preview_button_ = new QPushButton("Run Fake-Hardware Simulation", preview); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
+  run_preview_button_ = new QPushButton("Run Full Cycle", preview); run_preview_button_->setObjectName("runFullCycle"); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   stop_preview_button_ = new QPushButton("Stop Simulation", preview); stop_preview_button_->hide(); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
   preview_more_actions_button_ = new QToolButton(preview);
@@ -3786,7 +3796,7 @@ void MainWindow::setup_studio_shell()
   connect_button(go_scene_builder, [this](){ show_studio_page(StudioPage::SceneBuilderPage); append_studio_log("Go to Scene Builder: switched to Scene Builder page"); });
   connect_button(go_preview_commands, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
   connect_button(run_build_button_, &MainWindow::run_preview_build);
-  connect_button(run_preview_button_, &MainWindow::run_fake_hardware_preview);
+  connect_button(run_preview_button_, &MainWindow::run_full_cycle);
   connect_button(stop_preview_button_, &MainWindow::stop_preview_process);
   connect_button(copy_build_button_, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect_button(copy_source_button_, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
@@ -4852,6 +4862,18 @@ MainWindow::EditableLayoutSelectionTarget MainWindow::resolve_selected_editable_
     return target;
   }
 
+  // The canonical destination zone is authored in the editable layout. Its
+  // rendered mesh is intentionally classified as derived, but Inspector
+  // edits must still target the layout record directly.
+  if (target.state.editable &&
+      (target.state.type.compare(QStringLiteral("place_zone"), Qt::CaseInsensitive) == 0 ||
+       target.state.role.compare(QStringLiteral("place_zone"), Qt::CaseInsensitive) == 0) &&
+      target.state.source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) == 0) {
+    target.source_path = target.state.source_path.trimmed();
+    target.ok = true;
+    return target;
+  }
+
   target.fallback_item = find_canvas_item_by_stable_id(stable_id);
 
   const auto supplement_from_preview = [&]() {
@@ -4888,8 +4910,15 @@ MainWindow::EditableLayoutSelectionTarget MainWindow::resolve_selected_editable_
 
   const QString source_layer = target.state.source_layer.trimmed();
   const QString active_visual_source = target.state.active_visual_source.trimmed();
+  // Editable task-zone records remain authoritative even when their preview
+  // visual was classified as derived. Generated robot/tool/camera visuals are
+  // still locked by the remaining provenance checks below.
+  const bool editable_layout_record = source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) == 0 &&
+    (stable_id == QStringLiteral("place_zone_default") ||
+     target.state.type.compare(QStringLiteral("place_zone"), Qt::CaseInsensitive) == 0 ||
+     target.state.role.compare(QStringLiteral("place_zone"), Qt::CaseInsensitive) == 0);
   const bool generated_or_preview_only = target.state.locked || !target.state.editable ||
-    target.state.generated_visual ||
+    (target.state.generated_visual && !editable_layout_record) ||
     source_layer.compare(QStringLiteral("locked_generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
     source_layer.compare(QStringLiteral("generated_urdf_visual"), Qt::CaseInsensitive) == 0 ||
     source_layer.compare(QStringLiteral("primitive_fallback"), Qt::CaseInsensitive) == 0 ||
@@ -6143,13 +6172,14 @@ void MainWindow::refresh_preview_launch_ui()
     if (!selected_scene_preview_ready(&blockers)) readiness = "BLOCKED";
     else readiness = "READY_FOR_FAKE_HARDWARE_PREVIEW";
     const auto metadata = selected_scene_metadata_summary(s);
-    if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Selected Scene</b><br/>scene name: %1<br/>scene path: %2<br/>robot: %3<br/>robot source: %4<br/>end effector: %5<br/>end effector source: %6<br/>task file status: %7<br/>launch/demo.launch.py status: %8<br/>package.xml/CMakeLists status: %9<br/>preview snapshot path: %10")
-      .arg(metadata.scene_name, metadata.scene_path, metadata.robot, metadata.robot_source, metadata.end_effector, metadata.end_effector_source,
-      s.has_task_recipe ? "present" : "missing", s.has_launch_demo ? "present" : "missing", (s.has_package_xml && (s.has_launch_demo || !s.launch_file.empty())) ? "present" : "missing")
-      .arg(QString::fromStdString((s.scene_dir / "preview" / "workcell_studio_canvas_snapshot.png").string())));
+    if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Cell: %1</b><br/>%2 · %3")
+      .arg(metadata.scene_name.toHtmlEscaped(), metadata.robot.toHtmlEscaped(), metadata.end_effector.toHtmlEscaped()));
     if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2").arg(QString::fromStdString(s.scene_name), readiness));
   }
-  if (preview_status_label_) preview_status_label_->setText(QString("<b>Readiness Gate</b><br/>%1<br/>state: %2").arg(readiness, preview_state_));
+  const auto current = selected_scene_readiness();
+  if (preview_status_label_) preview_status_label_->setText(QString("<b>Readiness</b><br/>Saved: %1 · Generated: %2 · Validated: %3<br/>%4")
+    .arg(has_scene && !layout_dirty_ ? "yes" : "no", current.generation_current ? "current" : "stale",
+      current.validation_current ? "current" : "required", blockers.join("; ").toHtmlEscaped()));
   if (preview_commands_) preview_commands_->setPlainText(selected_scene_preview_command_block());
   if (preview_commands_) preview_commands_->append(QString("\n# Safe Commands (Fake Hardware / Offline / No Robot Motion)\n# build selected scene package\n%1\n# source workspace\n%2\n# fake-hardware launch command\n%3\n# optional offline validation command\npython3 scripts/validate_builder_generated_scene.py '%4' --json")
     .arg(selected_scene_build_command(), selected_scene_source_command(), selected_scene_launch_command(), has_scene ? QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir.string()) : QString("")));
@@ -6159,8 +6189,16 @@ void MainWindow::refresh_preview_launch_ui()
     run_build_button_->setText(active ? "Stop RViz" : "Build & Run RViz");
     run_build_button_->setEnabled(active || (has_scene && has_ws && selected_scene_readiness().ready && preview_state_!="BUILD_RUNNING" && preview_state_!="PACKAGE_CHECK_RUNNING" && preview_state_!="PREVIEW_LAUNCHING"));
   }
-  if (run_preview_button_) run_preview_button_->hide();
-  if (stop_preview_button_) stop_preview_button_->setEnabled(preview_state_=="PREVIEW_RUNNING"||preview_state_=="PREVIEW_STOPPING");
+  const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
+  if (run_preview_button_) {
+    run_preview_button_->show();
+    const bool canonical = has_scene && scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name == "ur5_2f_test";
+    run_preview_button_->setEnabled(canonical && current.ready && !busy);
+    run_preview_button_->setToolTip(!canonical ? "Full-cycle replay is commissioned for ur5_2f_test." : blockers.join("\n"));
+  }
+  if (full_cycle_mode_ && busy && run_build_button_) run_build_button_->setEnabled(false);
+  if (cycle_rviz_box_) cycle_rviz_box_->setEnabled(!busy);
+  if (stop_preview_button_) { stop_preview_button_->setVisible(busy); stop_preview_button_->setEnabled(busy && !preview_stop_requested_); }
 }
 
 void MainWindow::run_offline_validation() { validation_stale_ = false; append_studio_log("Full offline validation completed"); open_selected_scene_artifact("run_acceptance"); refresh_new_cell_checklist(); }
@@ -6335,16 +6373,84 @@ void MainWindow::run_preview_build(){
   append_studio_log("Checking scene...");
   QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Build & Run RViz",blockers.join("\n")); return; }
   if (preview_process_ && preview_process_->state() != QProcess::NotRunning) { append_studio_log("WARN Build & Run RViz ignored: a Workcell Studio-owned process is already active."); return; }
+  full_cycle_mode_ = false;
   active_preview_scene_=scene_browser_result_.scenes[(size_t)selected_scene_index_]; active_preview_workspace_root_=detect_workspace_root();
   active_preview_command_=workcell_builder::build_selected_package_command(active_preview_scene_,active_preview_workspace_root_.toStdString()); preview_running_scene_key_=QString::fromStdString(active_preview_scene_.scene_name); preview_stop_requested_=false; preview_output_tail_.clear();
   append_studio_log("Building " + preview_running_scene_key_ + "..."); if(preview_log_) preview_log_->appendPlainText("$ "+active_preview_command_);
   set_preview_state("BUILD_RUNNING"); write_preview_launch_transcript(true, active_preview_command_, "build_started");
-  preview_process_->start("/bin/bash", {"-lc", active_preview_command_});
+  QString supervisor;
+  if (!helper_script_exists("workcell_preview_process_group.py", &supervisor)) {
+    set_preview_state("BUILD_FAILED"); append_studio_log("Build blocked: owned process supervisor is missing."); return;
+  }
+  preview_process_->start("python3", {supervisor, "--", "/bin/bash", "-lc", active_preview_command_});
 }
 void MainWindow::run_fake_hardware_preview()
 {
   // Compatibility entry point: all previews use the guarded build/discover/launch pipeline.
   run_preview_build();
+}
+
+void MainWindow::run_full_cycle()
+{
+  if (!selected_scene_readiness().ready || !has_selected_scene() ||
+      scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name != "ur5_2f_test" ||
+      preview_process_->state() != QProcess::NotRunning) return;
+  run_preview_build();  // Reuse the selected-package build/discovery pipeline.
+  if (preview_state_ != "BUILD_RUNNING") return;
+  full_cycle_mode_ = true;
+  cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
+  cycle_output_dir_ = detect_workspace_root() + "/log/studio_cycles/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  cycle_status_label_->setText("Building saved scene for full-cycle replay…<br/>Fake hardware only · Real robot motion: locked");
+  refresh_preview_launch_ui();
+}
+
+void MainWindow::consume_cycle_output(const QString & output)
+{
+  cycle_stdout_buffer_ += output;
+  int end;
+  while ((end = cycle_stdout_buffer_.indexOf('\n')) >= 0) {
+    const auto line = cycle_stdout_buffer_.left(end).toUtf8();
+    cycle_stdout_buffer_.remove(0, end + 1);
+    const auto event = QJsonDocument::fromJson(line).object();
+    if (event.contains("stage")) {
+      const QString stage = event.value("stage").toString();
+      QString friendly = stage.toLower(); friendly.replace('_', ' ');
+      cycle_status_label_->setText("<b>" + friendly.toHtmlEscaped() + "</b><br/>Replay · Fake hardware only · Real robot motion: locked");
+      cycle_status_label_->setProperty("backendStage", stage);
+    }
+    if (event.value("event").toString() == "cycle_result") cycle_result_ = event.value("summary").toObject();
+  }
+}
+
+void MainWindow::show_cycle_result(const QJsonObject & result)
+{
+  const bool pass = result.value("result").toString() == "PASS";
+  const auto robot = result.value("final_robot_state").toObject();
+  const auto intended = robot.value("intended_home").toObject(), actual = robot.value("actual_joints").toObject();
+  double home_error = 0;
+  for (auto it = intended.begin(); it != intended.end(); ++it) home_error = std::max(home_error, std::abs(it.value().toDouble() - actual.value(it.key()).toDouble()));
+  const auto guard = result.value("fake_hardware_guard").toObject();
+  QString text = QString("<b>%1</b><br/>Target: %2 · Grasp: %3<br/>Home: %4 · Detached: %5 · Final scene valid: %6<br/>Fake hardware: %7 · Shutdown: %8")
+    .arg(pass ? "PASS" : "FAIL", result.value("selected_object_id").toString("unknown").toHtmlEscaped())
+    .arg(result.value("selected_grasp_index").toInt(-1))
+    .arg(result.value("home_verified").toBool() ? "verified" : "unverified",
+      result.value("detach_verified").toBool() ? "verified" : "unverified",
+      result.value("final_collision_valid").toBool() ? "yes" : "unverified",
+      guard.value("move_group_use_fake_hardware").toBool() && guard.value("real_hardware").isBool() && !guard.value("real_hardware").toBool() ? "verified" : "unverified",
+      result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
+  if (result.contains("placement_error_m")) text += QString("<br/>Placement error: %1 mm").arg(result.value("placement_error_m").toDouble()*1000, 0, 'f', 3);
+  if (!intended.isEmpty()) text += QString(" · Home error: %1 rad").arg(home_error, 0, 'f', 6);
+  if (!pass) {
+    const auto recovery = result.value("recovery_scene").toObject();
+    text += QString("<br/>Failed stage: %1<br/>%2<br/>Recovery required: %3 · Attached objects: %4<br/>Cancellation: %5")
+      .arg(result.value("failed_stage").toString("launch / build").toHtmlEscaped(),
+        result.value("failure").toString(result.value("orchestration_failure").toString("See diagnostics")).toHtmlEscaped(),
+        result.value("recovery_required").toBool() ? "yes" : "not reported",
+        recovery.contains("attached_ids") ? QString::number(recovery.value("attached_ids").toArray().size()) : "unknown",
+        result.value("cancellation_confirmed").toBool() ? "confirmed" : "unconfirmed");
+  }
+  text += QString("<br/>Runtime: %1 s<br/>Evidence: %2").arg(result.value("runtime_seconds").toDouble(),0,'f',1).arg(cycle_output_dir_.toHtmlEscaped());
+  cycle_status_label_->setText(text);
 }
 void MainWindow::stop_preview_process()
 {
@@ -6354,6 +6460,12 @@ void MainWindow::stop_preview_process()
   append_studio_log("Stopping RViz...");
   const qint64 stopping_pid = preview_process_->processId();
   preview_process_->terminate();
+  if (full_cycle_mode_) {
+    // The cycle supervisor stops executor first (cancellation/recovery), then
+    // its owned scene. Never kill the supervisor before its bounded cleanup.
+    cycle_status_label_->setText("Stopping simulation… Cancellation is unconfirmed until reported by the backend.");
+    return;
+  }
   // Supervisor: 5s launch-led SIGINT + .7s TERM + .4s KILL verification.
   // Bind the watchdog to this invocation so it cannot kill a second launch.
   QTimer::singleShot(8000, this, [this, stopping_pid]() {
@@ -6364,18 +6476,43 @@ void MainWindow::stop_preview_process()
     }
   });
 }
-void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out=QString::fromUtf8(preview_process_->readAllStandardOutput()); preview_output_tail_=(preview_output_tail_+out).right(4000); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty()) append_studio_log("[process stdout] "+out.trimmed()); }
+void MainWindow::handle_preview_stdout(){ if(!preview_process_) return; const QString out=QString::fromUtf8(preview_process_->readAllStandardOutput()); preview_output_tail_=(preview_output_tail_+out).right(4000); if(full_cycle_mode_) consume_cycle_output(out); if(preview_log_) preview_log_->appendPlainText(out); if(!out.trimmed().isEmpty() && !full_cycle_mode_) append_studio_log("[process stdout] "+out.trimmed()); }
 void MainWindow::handle_preview_stderr(){ if(!preview_process_) return; const QString err=QString::fromUtf8(preview_process_->readAllStandardError()); preview_output_tail_=(preview_output_tail_+err).right(4000); if(preview_log_) preview_log_->appendPlainText(err); if(!err.trimmed().isEmpty()) append_studio_log("[process stderr] "+err.trimmed()); }
 void MainWindow::handle_preview_started(){ append_studio_log(preview_state_=="PREVIEW_LAUNCHING" ? "Launching RViz..." : QString("Process started: stage=%1 pid=%2").arg(preview_state_).arg(preview_process_->processId())); if(preview_state_=="PREVIEW_LAUNCHING"){ set_preview_state("PREVIEW_RUNNING"); append_studio_log("RViz running"); } }
 void MainWindow::handle_preview_error(QProcess::ProcessError error){
   if (workcell_builder::preview_process_error_is_expected(preview_stop_requested_, preview_state_=="PREVIEW_STOPPING")) {
     return;  // terminate()/kill() commonly emits QProcess::Crashed; finished() completes STOPPED.
   }
+  if (full_cycle_mode_) {
+    cycle_result_ = QJsonObject{{"result","FAIL"},{"failed_stage",preview_state_},
+      {"failure",preview_process_->errorString()},{"shutdown_clean",false}};
+    show_cycle_result(cycle_result_);
+  }
   const QString msg=preview_process_?preview_process_->errorString():"unknown error"; append_studio_log(QString("ERROR stage=%1 QProcess error=%2 message=%3 output_tail=%4").arg(preview_state_).arg(static_cast<int>(error)).arg(msg,preview_output_tail_)); if(preview_state_=="BUILD_RUNNING") set_preview_state("BUILD_FAILED"); else set_preview_state("PREVIEW_FAILED"); }
 void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){
   const QString completed_stage=preview_state_;
+  if (full_cycle_mode_ && (completed_stage == "PREVIEW_RUNNING" || completed_stage == "PREVIEW_LAUNCHING" || preview_stop_requested_)) {
+    handle_preview_stdout();
+    const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
+      cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_execution_success").toBool() &&
+      cycle_result_.value("shutdown_clean").toBool();
+    if (!pass) {
+      cycle_result_["result"] = "FAIL";
+      if (!cycle_result_.contains("failure")) cycle_result_["failure"] = "Full-cycle process exited without verified success. See diagnostics.";
+    }
+    show_cycle_result(cycle_result_);
+    set_preview_state(pass ? "CYCLE_PASS" : "CYCLE_FAILED");
+    preview_running_scene_key_.clear();
+    if(close_after_preview_stop_) QTimer::singleShot(0,this,&QWidget::close);
+    return;
+  }
   if(preview_stop_requested_ || completed_stage=="PREVIEW_STOPPING"){ set_preview_state("PREVIEW_STOPPED"); append_studio_log("RViz stopped"); preview_running_scene_key_.clear(); if(close_after_preview_stop_) QTimer::singleShot(0,this,&QWidget::close); return; }
   const bool ok=exit_status==QProcess::NormalExit && exit_code==0;
+  if (full_cycle_mode_ && !ok) {
+    cycle_result_ = QJsonObject{{"result","FAIL"},{"failed_stage",completed_stage},
+      {"failure","Build or package discovery failed. Open Diagnostics for the command output."},{"shutdown_clean",false}};
+    show_cycle_result(cycle_result_); set_preview_state("CYCLE_FAILED"); return;
+  }
   if(completed_stage=="BUILD_RUNNING"){
     if(!ok){ set_preview_state("BUILD_FAILED"); append_studio_log(QString("Build failed: exit_code=%1 exit_status=%2 output_tail=%3").arg(exit_code).arg(static_cast<int>(exit_status)).arg(preview_output_tail_)); return; }
     append_studio_log("Build succeeded"); const fs::path setup=fs::path(active_preview_workspace_root_.toStdString())/"install"/"setup.bash";
@@ -6385,6 +6522,17 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
   if(completed_stage=="PACKAGE_CHECK_RUNNING"){
     const QString package=QString::fromStdString(active_preview_scene_.launch_package.empty()?active_preview_scene_.scene_name:active_preview_scene_.launch_package);
     if(!ok){ set_preview_state("PREVIEW_FAILED"); append_studio_log(QString("Build succeeded but ROS package '%1' is not discoverable from install/setup.bash.").arg(package)); return; }
+    if (full_cycle_mode_) {
+      if (!selected_scene_readiness().ready || !has_selected_scene() ||
+          scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir != active_preview_scene_.scene_dir) {
+        set_preview_state("CYCLE_FAILED"); cycle_status_label_->setText("Scene changed during build. Save, Generate and Validate before running."); return;
+      }
+      active_preview_command_ = workcell_builder::build_full_cycle_command(active_preview_scene_,
+        active_preview_workspace_root_.toStdString(), cycle_output_dir_, QRandomGenerator::global()->bounded(30, 220), cycle_rviz_box_->isChecked());
+      if (active_preview_command_.isEmpty()) { set_preview_state("CYCLE_FAILED"); return; }
+      set_preview_state("PREVIEW_LAUNCHING");
+      preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); return;
+    }
     active_preview_command_=workcell_builder::build_launch_shell_command(active_preview_scene_,active_preview_workspace_root_.toStdString()); QString reason; if(!workcell_builder::launch_command_is_safe(active_preview_command_,&reason)){ set_preview_state("PREVIEW_FAILED"); append_studio_log("RViz launch failed: "+reason); return; }
     preview_output_tail_.clear(); set_preview_state("PREVIEW_LAUNCHING"); preview_process_->start("/bin/bash",{"-lc",active_preview_command_}); return;
   }
@@ -7718,7 +7866,11 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
 
 void MainWindow::mark_layout_dirty(const QString & reason)
 {
-  capture_active_editable_layout_session();
+  // Preserve the dirty authoring snapshot assembled by Inspector Apply. A
+  // Product View refresh can transiently report the pre-edit preview pose;
+  // recapturing here would overwrite the pending authored value immediately
+  // before serialization.
+  if (!layout_dirty_) capture_active_editable_layout_session();
   layout_dirty_ = true;
   layout_saved_ = false;
   validation_stale_ = true;
@@ -7763,6 +7915,31 @@ void MainWindow::capture_active_editable_layout_session()
       preview_item.source_path = canvas_item->data(RoleSource).toString();
     }
     editable_layout_session_items_.push_back(preview_item);
+  }
+  // Some authored physical items are represented by a derived preview record
+  // rather than a native canvas item. Preserve the selected editable record
+  // in the same session projection so Save Layout serializes its Inspector
+  // pose along with ordinary canvas-backed items.
+  const auto selected = current_selected_scene_item();
+  if (selected.valid && selected.editable && !selected.locked &&
+      selected.source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) == 0) {
+    bool present = false;
+    for (auto & item : editable_layout_session_items_) {
+      if (item.id != selected.id) continue;
+      present = true; item.x = selected.pose_x; item.y = selected.pose_y; item.z = selected.pose_z;
+      item.roll = selected.roll; item.pitch = selected.pitch; item.yaw = selected.yaw;
+      item.sx = selected.dim_x; item.sy = selected.dim_y; item.sz = selected.dim_z;
+    }
+    if (!present) {
+      ScenePreviewWidget::PreviewItem item;
+      item.id = selected.id; item.display_name = selected.display_name; item.category = selected.category;
+      item.role = selected.role; item.x = selected.pose_x; item.y = selected.pose_y; item.z = selected.pose_z;
+      item.roll = selected.roll; item.pitch = selected.pitch; item.yaw = selected.yaw;
+      item.sx = selected.dim_x; item.sy = selected.dim_y; item.sz = selected.dim_z;
+      item.source_layer = selected.source_layer; item.source_path = selected.source_path;
+      item.editable = true; item.locked = false;
+      editable_layout_session_items_.push_back(item);
+    }
   }
 }
 
@@ -8082,7 +8259,8 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
     update.canvas->setData(RolePitch, update.pitch);
     update.canvas->setData(RoleYaw, update.yaw);
   }
-  capture_active_editable_layout_session();
+  // Keep the pending Inspector snapshot intact while saving dirty edits.
+  if (!layout_dirty_) capture_active_editable_layout_session();
   append_studio_log(QStringLiteral(
     "Save Layout composition validated: %1 Web3D transform edit(s) merged with native authored metadata/structure by stable canonical ID.")
     .arg(validated.size()));
@@ -8248,6 +8426,24 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     }
   }
   std::vector<QGraphicsItem *> editable_canvas_items;
+  // Reconcile the pending native authoring-session snapshot back onto the
+  // serializer's canvas projection before collecting inputs. Product View may
+  // have refreshed a derived visual to its pre-edit pose after Inspector Apply;
+  // the dirty session remains the authoritative pending edit.
+  if (layout_dirty_) {
+    for (const auto & session_item : editable_layout_session_items_) {
+      if (auto * canvas = find_canvas_item_by_stable_id(session_item.id)) {
+        append_studio_log(QString("Save reconciliation: id=%1 session_xyz=[%2,%3,%4] canvas_before=[%5,%6,%7]")
+          .arg(session_item.id).arg(session_item.x,0,'g',17).arg(session_item.y,0,'g',17).arg(session_item.z,0,'g',17)
+          .arg(canvas->pos().x()/100.0,0,'g',17).arg(canvas->pos().y()/100.0,0,'g',17).arg(canvas->data(RolePoseZ).toDouble(),0,'g',17));
+        workcell_builder::set_authored_canvas_position(canvas, QPointF(session_item.x * 100.0, session_item.y * 100.0));
+        canvas->setData(RolePoseZ, session_item.z);
+        canvas->setData(RoleRoll, session_item.roll);
+        canvas->setData(RolePitch, session_item.pitch);
+        canvas->setData(RoleYaw, session_item.yaw);
+      }
+    }
+  }
   for (auto * gi : digital_twin_scene_->items()) {
     const QString item_id = gi->data(RoleId).toString().trimmed();
     if (item_id.isEmpty()) continue;
@@ -8494,6 +8690,25 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
           if (persisted_name != canvas->data(RoleDisplayName).toString().trimmed() ||
               persisted_role != canvas->data(RoleRole).toString().trimmed()) {
             throw std::runtime_error(QStringLiteral("metadata mismatch after write: %1").arg(id).toStdString());
+          }
+        }
+      }
+      // Verify every dirty session transform against disk truth, including
+      // semantic records whose preview may have been refreshed independently.
+      if (layout_dirty_) {
+        for (const auto & expected : editable_layout_session_items_) {
+          if (deleted_layout_item_ids_.contains(expected.id)) continue;
+          if (!persisted_by_id.contains(expected.id))
+            throw std::runtime_error(QString("Persistence verification failed for %1: authored ID missing").arg(expected.id).toStdString());
+          const YAML::Node pose = persisted_by_id.value(expected.id)["pose"];
+          double x=0,y=0,z=0,roll=0,pitch=0,yaw=0;
+          if (!pose_value(pose,"xyz","x",0,&x) || !pose_value(pose,"xyz","y",1,&y) || !pose_value(pose,"xyz","z",2,&z) ||
+              !pose_value(pose,"rpy","roll",0,&roll) || !pose_value(pose,"rpy","pitch",1,&pitch) || !pose_value(pose,"rpy","yaw",2,&yaw) ||
+              !close_enough(x,expected.x) || !close_enough(y,expected.y) || !close_enough(z,expected.z) ||
+              !close_enough(roll,expected.roll) || !close_enough(pitch,expected.pitch) || !close_enough(yaw,expected.yaw)) {
+            throw std::runtime_error((QString("Persistence verification failed for %1: expected xyz=[%2,%3,%4] actual xyz=[%5,%6,%7]")
+              .arg(expected.id).arg(expected.x,0,'g',17).arg(expected.y,0,'g',17).arg(expected.z,0,'g',17)
+              .arg(x,0,'g',17).arg(y,0,'g',17).arg(z,0,'g',17)).toStdString());
           }
         }
       }
@@ -9069,6 +9284,37 @@ void MainWindow::apply_inspector_pose_to_item()
   redo_stack_.clear();
   scene_preview_widget_->set_native_authoring_history_available(true, false);
   mark_layout_dirty(metadata_changed ? "Inspector Metadata/Transform Edit" : "Inspector Pose/Dimensions Edit");
+  // Refresh the native authoring snapshot after applying the new values so
+  // Save Layout serializes the Inspector result rather than the pre-edit
+  // session snapshot.
+  capture_active_editable_layout_session();
+  for (auto & session_item : editable_layout_session_items_) {
+    if (session_item.id.trimmed() != item_id) continue;
+    session_item.x = refreshed_state.pose_x;
+    session_item.y = refreshed_state.pose_y;
+    session_item.z = refreshed_state.pose_z;
+    session_item.roll = refreshed_state.roll;
+    session_item.pitch = refreshed_state.pitch;
+    session_item.yaw = refreshed_state.yaw;
+    session_item.sx = refreshed_state.dim_x;
+    session_item.sy = refreshed_state.dim_y;
+    session_item.sz = refreshed_state.dim_z;
+  }
+  if (item_id == QStringLiteral("place_zone_default")) {
+    bool found = false;
+    for (const auto & session_item : editable_layout_session_items_)
+      found = found || session_item.id.trimmed() == item_id;
+    if (!found) {
+      ScenePreviewWidget::PreviewItem session_item;
+      session_item.id = item_id; session_item.category = "zone"; session_item.role = "place_zone";
+      session_item.display_name = "Place Free Region"; session_item.source_path = "environment.yaml";
+      session_item.x = refreshed_state.pose_x; session_item.y = refreshed_state.pose_y; session_item.z = refreshed_state.pose_z;
+      session_item.roll = refreshed_state.roll; session_item.pitch = refreshed_state.pitch; session_item.yaw = refreshed_state.yaw;
+      session_item.sx = refreshed_state.dim_x; session_item.sy = refreshed_state.dim_y; session_item.sz = refreshed_state.dim_z;
+      session_item.source_layer = "editable_layout"; session_item.editable = true; session_item.locked = false;
+      editable_layout_session_items_.push_back(session_item);
+    }
+  }
   if (metadata_changed) {
     refresh_scene_hierarchy_tree_from_current_items();
     if (scene_preview_widget_) {
