@@ -6,6 +6,7 @@ import copy
 import importlib.util
 import json
 import math
+import signal
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -455,7 +456,13 @@ def main():
     spec = importlib.util.spec_from_file_location('runtime_pick_inputs', Path(__file__).with_name('runtime_pick_inputs.py'))
     inputs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(inputs)
-    rclpy.init()
+    from rclpy.signals import SignalHandlerOptions
+    # Keep the context alive until bounded cancellation/recovery has finished.
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt(f'interrupted by signal {signum}')
+    signal.signal(signal.SIGINT, interrupted)
+    signal.signal(signal.SIGTERM, interrupted)
     node = rclpy.create_node('perceived_object_grasp_execute')
     summary = dict(result='FAIL', execution_attempted=False, full_cycle_prevalidated=False,
                    full_cycle_execution_success=False, stages=[], candidate_attempts=[])
@@ -509,9 +516,22 @@ def main():
             if not future.done() or future.result() is None:
                 raise RuntimeError('action result timed out')
         except BaseException:
-            cancel = handle.cancel_goal_async()
-            rclpy.spin_until_future_complete(node, cancel, timeout_sec=5)
-            summary['cancellation_confirmed'] = bool(cancel.done() and cancel.result() and cancel.result().goals_canceling)
+            summary['cancellation_confirmed'] = False
+            if rclpy.ok():
+                try:
+                    cancel = handle.cancel_goal_async()
+                    rclpy.spin_until_future_complete(node, cancel, timeout_sec=5)
+                    summary['cancellation_accepted'] = bool(
+                        cancel.done() and cancel.result() and cancel.result().goals_canceling)
+                    rclpy.spin_until_future_complete(node, future, timeout_sec=5)
+                    summary['cancellation_confirmed'] = bool(
+                        future.done() and future.result() and future.result().status == 5)
+                    if future.done() and future.result():
+                        summary['interrupted_action_terminal_status'] = future.result().status
+                except Exception as cancel_error:
+                    summary['cancellation_failure'] = str(cancel_error)
+            else:
+                summary['cancellation_failure'] = 'ROS context already invalid'
             raise
         response = future.result()
         if response.status != 4 or response.result.error_code.val != 1:
@@ -785,7 +805,7 @@ def main():
                 require_prevalidated_execution(args.start, cycle)
                 summary['execution_attempted'] = True
                 result = action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),60)
-                summary.setdefault('execution_results',[]).append(dict(stage=label,code=result.error_code.val))
+                summary.setdefault('execution_results',[]).append(dict(stage=label,code=result.error_code.val,action_status=4))
             elif step['kind']=='attach':
                 apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
                 measured = call(validity_client,GetStateValidity.Request(robot_state=scene_now().robot_state,group_name=''))
@@ -805,18 +825,38 @@ def main():
             assert_scene_match(measured_scene,expected,selected_id)
             if step['kind'] == 'attach':
                 evidence_scene('planning_scene_attached', measured_scene)
-                summary['attach_verified'] = attachment_status(measured_scene, selected_id, contract['grasp_frame'])['valid']
+                summary['attachment_state'] = attachment_status(measured_scene, selected_id, contract['grasp_frame'])
+                summary['attach_verified'] = summary['attachment_state']['valid']
             elif step['kind'] == 'detach':
                 evidence_scene('planning_scene_after', measured_scene)
                 summary['detach_verified'] = not measured_scene.robot_state.attached_collision_objects and any(
                     o.id == selected_id for o in measured_scene.world.collision_objects)
             summary['stages'].append(label)
         final = scene_now()
+        assert_scene_match(final, expected, selected_id)
+        intended_home = dict(home, gripper_finger1_joint=0.0)
+        assert_joint_match(final.robot_state, updated_state(final.robot_state, intended_home, mimics), 0.001)
+        summary['final_robot_state'] = dict(
+            actual_joints=dict(zip(final.robot_state.joint_state.name, final.robot_state.joint_state.position)),
+            intended_home=intended_home, tolerance_rad=0.001)
+        summary['final_collision_valid'] = call(validity_client,
+            GetStateValidity.Request(robot_state=final.robot_state, group_name='')).valid
+        if not summary['final_collision_valid']:
+            raise RuntimeError('final home state is in collision')
+        summary['baseline_acm_restored'] = collision_matrix_signature(final.allowed_collision_matrix) == collision_matrix_signature(baseline)
+        placed = [o for o in final.world.collision_objects if o.id == selected_id]
+        if len(placed) != 1 or final.robot_state.attached_collision_objects:
+            raise RuntimeError('final selected object is not uniquely detached in world')
+        summary['final_object_state'] = collision_object_dict(placed[0])
+        summary['destination'] = destination
+        summary['placement_error_m'] = math.dist(summary['final_object_state']['pose'][:3], destination['pose_xyz'])
         summary['final_planning_scene'] = dict(world_ids=[o.id for o in final.world.collision_objects],
             attached_ids=[o.object.id for o in final.robot_state.attached_collision_objects],distractors_unchanged=True)
         evidence_scene('planning_scene_final', final)
         summary['home_verified'] = True  # Final assert_scene_match includes planned home joints.
         summary['destination_verified'] = math.dist(summary['achieved_place_pose'][:3], destination['pose_xyz']) <= 0.003
+        if not summary['destination_verified'] or summary['placement_error_m'] > 0.003 or not summary['baseline_acm_restored']:
+            raise RuntimeError('final destination or baseline ACM verification failed')
         stage('COMPLETE')
         summary.update(result='PASS',full_cycle_execution_success=True)
     except (Exception,KeyboardInterrupt) as exc:
@@ -825,7 +865,9 @@ def main():
         summary['recovery_required'] = summary['execution_attempted']
         # Do not erase held/placed objects or command a recovery trajectory.
     finally:
-        if summary['execution_attempted'] and summary['result'] != 'PASS':
+        if summary['execution_attempted'] and summary['result'] != 'PASS' and not rclpy.ok():
+            summary['recovery_inspection_skipped'] = 'ROS context already invalid'
+        if summary['execution_attempted'] and summary['result'] != 'PASS' and rclpy.ok():
             try:
                 apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
                 recovery = scene_now()
@@ -835,10 +877,11 @@ def main():
                     contact_acm_restored=collision_matrix_signature(recovery.allowed_collision_matrix)==collision_matrix_signature(baseline))
             except Exception as recovery_error:
                 summary['recovery_inspection_failure'] = str(recovery_error)
+        node.destroy_node()
+        rclpy.try_shutdown()
+        summary['shutdown_clean'] = not rclpy.ok()
         Path(args.summary_output).write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
         print(json.dumps(summary,indent=2,sort_keys=True))
-        node.destroy_node()
-        rclpy.shutdown()
     return 0 if summary['result']=='PASS' else 1
 
 

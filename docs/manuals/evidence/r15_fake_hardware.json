@@ -1,0 +1,1100 @@
+{
+  "baseline_main_commit": "341a92dc88e3cfb2c26cf2a48901d52b5a200569",
+  "moveit_commit": "53979331bcaa472ddd3a3fc895907172df01374d",
+  "baseline": {
+    "result": "PASS",
+    "selected_object_id": "runtime::sample-cup",
+    "selected_grasp_index": 3,
+    "full_cycle_prevalidated": true,
+    "execution_attempted": true,
+    "full_cycle_execution_success": true,
+    "execution_results": [
+      {
+        "code": 1,
+        "stage": "EXECUTE_APPROACH"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_GRASP"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_CLOSE_GRIPPER"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_LIFT"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_TRANSFER"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_PLACE"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_OPEN_GRIPPER"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_RETREAT"
+      },
+      {
+        "code": 1,
+        "stage": "EXECUTE_HOME"
+      }
+    ],
+    "attach_verified": true,
+    "detach_verified": true,
+    "achieved_place_pose": [
+      0.45001664427990407,
+      0.2200657392293282,
+      0.13006047377033228,
+      -6.982958858270253e-05,
+      7.861553447713722e-05,
+      -7.643095492544765e-05,
+      -0.9999999915508677
+    ],
+    "final_planning_scene": {
+      "attached_ids": [],
+      "distractors_unchanged": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "runtime::sample-cup",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    "home_verified": true,
+    "destination_verified": true,
+    "fake_hardware_guard": {
+      "hardware_classes": [
+        "mock_components/GenericSystem",
+        "mock_components/GenericSystem"
+      ],
+      "move_group_use_fake_hardware": true,
+      "real_hardware": false
+    }
+  },
+  "baseline_cleanup": {
+    "executor": {
+      "clean": true,
+      "pid": 36417,
+      "remaining": false
+    },
+    "launch": {
+      "clean": true,
+      "pid": 36279,
+      "remaining": false
+    }
+  },
+  "final": {
+    "result": "PASS",
+    "execution_action_goals": [
+      [
+        "/execute_trajectory",
+        "001e446e0724494ea1c9abd31ead9ce9"
+      ],
+      [
+        "/execute_trajectory",
+        "27be83c33d1745c59c0680e515ebe7e8"
+      ],
+      [
+        "/execute_trajectory",
+        "502a93f6a777423c86901139d75028b7"
+      ],
+      [
+        "/execute_trajectory",
+        "541dfca8b535464f856da9381723ed12"
+      ],
+      [
+        "/execute_trajectory",
+        "546c0879e5f149e49c5455a2f34f8fd8"
+      ],
+      [
+        "/execute_trajectory",
+        "6b6cfaa8122049d2b09b62f4a722f56d"
+      ],
+      [
+        "/execute_trajectory",
+        "9c6a6bfdedb34a6fa14bd8a5be725469"
+      ],
+      [
+        "/execute_trajectory",
+        "9e82e429c3fd4b10b1d3c0ed89354d3c"
+      ],
+      [
+        "/execute_trajectory",
+        "afa1bc1fdb5a4a128b883dca8421e5aa"
+      ],
+      [
+        "/ur5_arm_controller/follow_joint_trajectory",
+        "439cf2c93c5f8d297131ea4d67428549"
+      ],
+      [
+        "/ur5_arm_controller/follow_joint_trajectory",
+        "5ac94e20a2a316f6e8ceff3a74720ebc"
+      ],
+      [
+        "/ur5_arm_controller/follow_joint_trajectory",
+        "7bac0e1098df2c9bf78f3ecb679cda69"
+      ],
+      [
+        "/ur5_arm_controller/follow_joint_trajectory",
+        "8d727460fdfd34f8633a93ca54812d5d"
+      ],
+      [
+        "/ur5_arm_controller/follow_joint_trajectory",
+        "ad03853d06cd330560e3da029bf652fc"
+      ],
+      [
+        "/ur5_arm_controller/follow_joint_trajectory",
+        "b32d9ee443c5cb44031ac813422449a4"
+      ],
+      [
+        "/ur5_arm_controller/follow_joint_trajectory",
+        "ce2cfead7e42f552c9e920af4faf17c4"
+      ],
+      [
+        "/ur5_gripper_controller/follow_joint_trajectory",
+        "0cfd18b86d8a9ca1462ed420eefe2dea"
+      ],
+      [
+        "/ur5_gripper_controller/follow_joint_trajectory",
+        "ff9f03eb66e3c9333bc4776cea486ac9"
+      ]
+    ],
+    "shutdown_clean": true,
+    "scene_share": "/home/ubuntu/workcell_ws/install/ur5_2f_test/share/ur5_2f_test",
+    "executor": "/home/ubuntu/workcell_ws/install/workcell_builder/lib/workcell_builder/perceived_object_grasp_execute.py",
+    "mode": "R1.5 execution",
+    "domain_id": 197,
+    "source_commit": "341a92dc88e3cfb2c26cf2a48901d52b5a200569",
+    "source_dirty": true,
+    "executor_hashes": {
+      "perceived_object_grasp_execute.py": "2bb13b2d7ad0e383e0d34b58f5913e4a7a736b324e737af7972a9367089905d6",
+      "perceived_object_grasp_plan.py": "fa3407fbc9ca7bf8c7419e8a154ce0edab28d86f21f7a53f3991d5ce3a130b46",
+      "runtime_pick_inputs.py": "02a5b473e1307caa9ae13bc3e5ca92974cf22406f932a6ed4fe84e1485dd7f1c"
+    },
+    "scene_hashes": {
+      "environment.yaml": "bd5bb9248d5fc75b8fc36f8235cef82e4c262b6d89e2bcf9f1b0732f4b70d462",
+      "cell_definition.yaml": "c8aba88946065645b8152bb5596c3b9ee1625515a7f2d662e68e0383ddd68221",
+      "config/moveit_collision_objects.yaml": "c54b505d34c351cab158d1d8651be1bb7fb83b62b20bbca4ba8a932ac2ec274e"
+    },
+    "achieved_place_pose": [
+      0.4499876416293823,
+      0.21993925623024596,
+      0.12999956711880467,
+      -4.306190508736614e-05,
+      2.2394606823134177e-05,
+      -8.435848311996638e-05,
+      0.9999999952639
+    ],
+    "attach_verified": true,
+    "attachment_state": {
+      "attached_link": "ee_palm",
+      "attached_object_present": true,
+      "valid": true,
+      "world_object_present": false
+    },
+    "baseline_acm_restored": true,
+    "candidate_attempts": [
+      {
+        "full_cycle_prevalidated": true,
+        "grasp_index": 3,
+        "object_id": "runtime::sample-cup",
+        "stages": [
+          {
+            "attached_ids": [],
+            "moveit_code": 1,
+            "planning_time": 0.019041235,
+            "points": 44,
+            "stage": "PREPLAN_APPROACH",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "runtime::sample-cup",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default"
+            ]
+          },
+          {
+            "attached_ids": [],
+            "cartesian_waypoints": 25,
+            "moveit_code": 1,
+            "planning_time": 0.529562899,
+            "points": 76,
+            "stage": "PREPLAN_GRASP",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "runtime::sample-cup",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default"
+            ]
+          },
+          {
+            "attached_ids": [],
+            "moveit_code": 1,
+            "planning_time": 0.0038663540000000002,
+            "points": 12,
+            "stage": "PREPLAN_CLOSE_GRIPPER",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "runtime::sample-cup",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default"
+            ]
+          },
+          {
+            "attached_ids": [
+              "runtime::sample-cup"
+            ],
+            "moveit_code": 1,
+            "planning_time": 0.018625217,
+            "points": 15,
+            "stage": "PREPLAN_LIFT",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default"
+            ]
+          },
+          {
+            "attached_ids": [
+              "runtime::sample-cup"
+            ],
+            "moveit_code": 1,
+            "planning_time": 0.033605166,
+            "points": 23,
+            "stage": "PREPLAN_TRANSFER",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default"
+            ]
+          },
+          {
+            "attached_ids": [
+              "runtime::sample-cup"
+            ],
+            "moveit_code": 1,
+            "planning_time": 0.01709388,
+            "points": 14,
+            "stage": "PREPLAN_PLACE",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default"
+            ]
+          },
+          {
+            "attached_ids": [
+              "runtime::sample-cup"
+            ],
+            "moveit_code": 1,
+            "planning_time": 0.017155007,
+            "points": 12,
+            "stage": "PREPLAN_OPEN_GRIPPER",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default"
+            ]
+          },
+          {
+            "attached_ids": [],
+            "cartesian_waypoints": 31,
+            "moveit_code": 1,
+            "planning_time": 0.601141581,
+            "points": 94,
+            "stage": "PREPLAN_RETREAT",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default",
+              "runtime::sample-cup"
+            ]
+          },
+          {
+            "attached_ids": [],
+            "moveit_code": 1,
+            "planning_time": 0.018539012,
+            "points": 29,
+            "stage": "PREPLAN_HOME",
+            "success": true,
+            "world_ids": [
+              "runtime::sample-bottle",
+              "workcell::support_surface_table",
+              "workcell::target_bin_default",
+              "runtime::sample-cup"
+            ]
+          }
+        ]
+      }
+    ],
+    "current_stage": "COMPLETE",
+    "destination": {
+      "dimensions": [
+        0.25,
+        0.14,
+        0.23
+      ],
+      "frame_id": "world",
+      "id": "default_drop_zone",
+      "pose_rpy": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "pose_xyz": [
+        0.45,
+        0.22,
+        0.13
+      ],
+      "target_id": "target_bin_default"
+    },
+    "destination_verified": true,
+    "detach_verified": true,
+    "execution_attempted": true,
+    "execution_results": [
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_APPROACH"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_GRASP"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_CLOSE_GRIPPER"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_LIFT"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_TRANSFER"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_PLACE"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_OPEN_GRIPPER"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_RETREAT"
+      },
+      {
+        "action_status": 4,
+        "code": 1,
+        "stage": "EXECUTE_HOME"
+      }
+    ],
+    "fake_hardware_guard": {
+      "hardware_classes": [
+        "mock_components/GenericSystem",
+        "mock_components/GenericSystem"
+      ],
+      "move_group_use_fake_hardware": true,
+      "real_hardware": false
+    },
+    "final_collision_valid": true,
+    "final_object_state": {
+      "dimensions": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "frame_id": "world",
+      "id": "runtime::sample-cup",
+      "pose": [
+        0.4499876416293823,
+        0.21993925623024596,
+        0.12999956711880467,
+        -4.3061905087366145e-05,
+        2.2394606823134184e-05,
+        -8.43584831199664e-05,
+        0.9999999952639
+      ],
+      "shape": "BOX"
+    },
+    "final_planning_scene": {
+      "attached_ids": [],
+      "distractors_unchanged": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "runtime::sample-cup",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    "final_robot_state": {
+      "actual_joints": {
+        "elbow_joint": 1.8299087380462793,
+        "gripper_finger1_finger_tip_joint": -9.652264073956759e-05,
+        "gripper_finger1_inner_knuckle_joint": 9.652264073956759e-05,
+        "gripper_finger1_joint": 9.652264073956759e-05,
+        "gripper_finger2_finger_tip_joint": -9.652264073956759e-05,
+        "gripper_finger2_inner_knuckle_joint": 9.652264073956759e-05,
+        "gripper_finger2_joint": 9.652264073956759e-05,
+        "shoulder_lift_joint": -2.3499435192199423,
+        "shoulder_pan_joint": 1.5699078745895065,
+        "wrist_1_joint": -1.0299756369579118,
+        "wrist_2_joint": -1.5700067135764753,
+        "wrist_3_joint": 9.76618681103148e-05
+      },
+      "intended_home": {
+        "elbow_joint": 1.83,
+        "gripper_finger1_joint": 0.0,
+        "shoulder_lift_joint": -2.35,
+        "shoulder_pan_joint": 1.57,
+        "wrist_1_joint": -1.03,
+        "wrist_2_joint": -1.57,
+        "wrist_3_joint": 0.0
+      },
+      "tolerance_rad": 0.001
+    },
+    "full_cycle_execution_success": true,
+    "full_cycle_plan_success": true,
+    "full_cycle_prevalidated": true,
+    "grasp_candidate_count": 8,
+    "grasp_candidate_source": "canonical_box_geometry_robotiq_2f",
+    "grasp_candidates": {
+      "runtime::sample-cup": [
+        [
+          0.26,
+          -0.08,
+          0.101,
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.26,
+          -0.08,
+          0.101,
+          -0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.26,
+          -0.08,
+          0.101,
+          0.7071067811865476,
+          0.7071067811865475,
+          0.0,
+          0.0
+        ],
+        [
+          0.26,
+          -0.08,
+          0.101,
+          -0.7071067811865475,
+          0.7071067811865476,
+          0.0,
+          0.0
+        ],
+        [
+          0.26,
+          -0.08,
+          0.101,
+          6.123233995736766e-17,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.26,
+          -0.08,
+          0.101,
+          -1.0,
+          6.123233995736766e-17,
+          0.0,
+          0.0
+        ],
+        [
+          0.26,
+          -0.08,
+          0.101,
+          -0.7071067811865475,
+          0.7071067811865476,
+          0.0,
+          0.0
+        ],
+        [
+          0.26,
+          -0.08,
+          0.101,
+          -0.7071067811865476,
+          -0.7071067811865475,
+          0.0,
+          0.0
+        ]
+      ]
+    },
+    "home_verified": true,
+    "inserted_object_ids": [
+      "runtime::sample-cup",
+      "runtime::sample-bottle"
+    ],
+    "normalized_objects": [
+      {
+        "class_id": "cup",
+        "confidence": 0.99,
+        "dimensions": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "frame_id": "world",
+        "grasp": null,
+        "id": "runtime::sample-cup",
+        "object_id": "sample-cup",
+        "pose": [
+          0.26,
+          -0.08,
+          0.051,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "shape": "BOX",
+        "source_frame": "world",
+        "timestamp": 1789383747.3960717
+      },
+      {
+        "class_id": "bottle",
+        "confidence": 0.99,
+        "dimensions": [
+          0.06,
+          0.06,
+          0.18
+        ],
+        "frame_id": "world",
+        "grasp": null,
+        "id": "runtime::sample-bottle",
+        "object_id": "sample-bottle",
+        "pose": [
+          0.4,
+          -0.08,
+          0.091,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "shape": "BOX",
+        "source_frame": "world",
+        "timestamp": 1789383747.3960717
+      }
+    ],
+    "placement_error_m": 6.198969490476136e-05,
+    "plan_metadata": [
+      {
+        "attached_ids": [],
+        "moveit_code": 1,
+        "planning_time": 0.019041235,
+        "points": 44,
+        "stage": "PREPLAN_APPROACH",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "runtime::sample-cup",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default"
+        ]
+      },
+      {
+        "attached_ids": [],
+        "cartesian_waypoints": 25,
+        "moveit_code": 1,
+        "planning_time": 0.529562899,
+        "points": 76,
+        "stage": "PREPLAN_GRASP",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "runtime::sample-cup",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default"
+        ]
+      },
+      {
+        "attached_ids": [],
+        "moveit_code": 1,
+        "planning_time": 0.0038663540000000002,
+        "points": 12,
+        "stage": "PREPLAN_CLOSE_GRIPPER",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "runtime::sample-cup",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default"
+        ]
+      },
+      {
+        "attached_ids": [
+          "runtime::sample-cup"
+        ],
+        "moveit_code": 1,
+        "planning_time": 0.018625217,
+        "points": 15,
+        "stage": "PREPLAN_LIFT",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default"
+        ]
+      },
+      {
+        "attached_ids": [
+          "runtime::sample-cup"
+        ],
+        "moveit_code": 1,
+        "planning_time": 0.033605166,
+        "points": 23,
+        "stage": "PREPLAN_TRANSFER",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default"
+        ]
+      },
+      {
+        "attached_ids": [
+          "runtime::sample-cup"
+        ],
+        "moveit_code": 1,
+        "planning_time": 0.01709388,
+        "points": 14,
+        "stage": "PREPLAN_PLACE",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default"
+        ]
+      },
+      {
+        "attached_ids": [
+          "runtime::sample-cup"
+        ],
+        "moveit_code": 1,
+        "planning_time": 0.017155007,
+        "points": 12,
+        "stage": "PREPLAN_OPEN_GRIPPER",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default"
+        ]
+      },
+      {
+        "attached_ids": [],
+        "cartesian_waypoints": 31,
+        "moveit_code": 1,
+        "planning_time": 0.601141581,
+        "points": 94,
+        "stage": "PREPLAN_RETREAT",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default",
+          "runtime::sample-cup"
+        ]
+      },
+      {
+        "attached_ids": [],
+        "moveit_code": 1,
+        "planning_time": 0.018539012,
+        "points": 29,
+        "stage": "PREPLAN_HOME",
+        "success": true,
+        "world_ids": [
+          "runtime::sample-bottle",
+          "workcell::support_surface_table",
+          "workcell::target_bin_default",
+          "runtime::sample-cup"
+        ]
+      }
+    ],
+    "prevalidation_left_live_scene_unchanged": true,
+    "rejected_objects": {
+      "runtime::sample-bottle": "class_mismatch"
+    },
+    "selected_grasp_index": 3,
+    "selected_object_id": "runtime::sample-cup",
+    "stage_events": [
+      {
+        "stage": "IDLE",
+        "timestamp": 1789383747.2313004
+      },
+      {
+        "stage": "PREFLIGHT",
+        "timestamp": 1789383747.354142
+      },
+      {
+        "stage": "ACQUIRE_OBJECTS",
+        "timestamp": 1789383747.3941846
+      },
+      {
+        "stage": "FILTER_TARGETS",
+        "timestamp": 1789383747.3961537
+      },
+      {
+        "stage": "UPDATE_PLANNING_SCENE",
+        "timestamp": 1789383747.3996298
+      },
+      {
+        "stage": "ENUMERATE_TARGETS",
+        "timestamp": 1789383748.57488
+      },
+      {
+        "stage": "GENERATE_GRASPS",
+        "timestamp": 1789383748.5787756
+      },
+      {
+        "stage": "PREPLAN_APPROACH",
+        "timestamp": 1789383748.5789201
+      },
+      {
+        "stage": "PREPLAN_GRASP",
+        "timestamp": 1789383748.6370094
+      },
+      {
+        "stage": "PREPLAN_CLOSE_GRIPPER",
+        "timestamp": 1789383750.3860989
+      },
+      {
+        "stage": "PREPLAN_LIFT",
+        "timestamp": 1789383750.462609
+      },
+      {
+        "stage": "PREPLAN_TRANSFER",
+        "timestamp": 1789383750.5139754
+      },
+      {
+        "stage": "PREPLAN_PLACE",
+        "timestamp": 1789383750.5801008
+      },
+      {
+        "stage": "PREPLAN_OPEN_GRIPPER",
+        "timestamp": 1789383750.6336632
+      },
+      {
+        "stage": "PREPLAN_RETREAT",
+        "timestamp": 1789383750.6956208
+      },
+      {
+        "stage": "PREPLAN_HOME",
+        "timestamp": 1789383752.3993466
+      },
+      {
+        "stage": "CANDIDATE_READY",
+        "timestamp": 1789383752.4449944
+      },
+      {
+        "stage": "VERIFY_PREPLAN_UNCHANGED",
+        "timestamp": 1789383752.4450748
+      },
+      {
+        "stage": "EXECUTE_APPROACH",
+        "timestamp": 1789383752.4544384
+      },
+      {
+        "stage": "EXECUTE_GRASP",
+        "timestamp": 1789383756.8228629
+      },
+      {
+        "stage": "EXECUTE_CLOSE_GRIPPER",
+        "timestamp": 1789383762.8469095
+      },
+      {
+        "stage": "ATTACH",
+        "timestamp": 1789383764.012517
+      },
+      {
+        "stage": "EXECUTE_LIFT",
+        "timestamp": 1789383764.0638008
+      },
+      {
+        "stage": "EXECUTE_TRANSFER",
+        "timestamp": 1789383765.4867256
+      },
+      {
+        "stage": "EXECUTE_PLACE",
+        "timestamp": 1789383767.7041998
+      },
+      {
+        "stage": "EXECUTE_OPEN_GRIPPER",
+        "timestamp": 1789383769.0745966
+      },
+      {
+        "stage": "DETACH",
+        "timestamp": 1789383770.2449965
+      },
+      {
+        "stage": "EXECUTE_RETREAT",
+        "timestamp": 1789383770.2854326
+      },
+      {
+        "stage": "EXECUTE_HOME",
+        "timestamp": 1789383777.3543363
+      },
+      {
+        "stage": "COMPLETE",
+        "timestamp": 1789383780.2475345
+      }
+    ],
+    "stages": [
+      "EXECUTE_APPROACH",
+      "EXECUTE_GRASP",
+      "EXECUTE_CLOSE_GRIPPER",
+      "ATTACH",
+      "EXECUTE_LIFT",
+      "EXECUTE_TRANSFER",
+      "EXECUTE_PLACE",
+      "EXECUTE_OPEN_GRIPPER",
+      "DETACH",
+      "EXECUTE_RETREAT",
+      "EXECUTE_HOME"
+    ],
+    "task_request": {
+      "action": "pick_and_place",
+      "allow_missing_confidence": false,
+      "destination_zone": "default_drop_zone",
+      "max_age_seconds": 180.0,
+      "min_confidence": 0.8,
+      "selection_policy": "task_semantics",
+      "source_zone": "pick_zone_main",
+      "target_class": "cup"
+    },
+    "trajectory_execution_enabled": true,
+    "planned_stages": [
+      "PREPLAN_APPROACH",
+      "PREPLAN_GRASP",
+      "PREPLAN_CLOSE_GRIPPER",
+      "PREPLAN_LIFT",
+      "PREPLAN_TRANSFER",
+      "PREPLAN_PLACE",
+      "PREPLAN_OPEN_GRIPPER",
+      "PREPLAN_RETREAT",
+      "PREPLAN_HOME"
+    ],
+    "shutdown_crashes": [],
+    "action_terminal_statuses": [
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "001e446e0724494ea1c9abd31ead9ce9",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "27be83c33d1745c59c0680e515ebe7e8",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "502a93f6a777423c86901139d75028b7",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "541dfca8b535464f856da9381723ed12",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "546c0879e5f149e49c5455a2f34f8fd8",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "6b6cfaa8122049d2b09b62f4a722f56d",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "9c6a6bfdedb34a6fa14bd8a5be725469",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "9e82e429c3fd4b10b1d3c0ed89354d3c",
+        "status": 4
+      },
+      {
+        "topic": "/execute_trajectory",
+        "goal_id": "afa1bc1fdb5a4a128b883dca8421e5aa",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_arm_controller/follow_joint_trajectory",
+        "goal_id": "439cf2c93c5f8d297131ea4d67428549",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_arm_controller/follow_joint_trajectory",
+        "goal_id": "5ac94e20a2a316f6e8ceff3a74720ebc",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_arm_controller/follow_joint_trajectory",
+        "goal_id": "7bac0e1098df2c9bf78f3ecb679cda69",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_arm_controller/follow_joint_trajectory",
+        "goal_id": "8d727460fdfd34f8633a93ca54812d5d",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_arm_controller/follow_joint_trajectory",
+        "goal_id": "ad03853d06cd330560e3da029bf652fc",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_arm_controller/follow_joint_trajectory",
+        "goal_id": "b32d9ee443c5cb44031ac813422449a4",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_arm_controller/follow_joint_trajectory",
+        "goal_id": "ce2cfead7e42f552c9e920af4faf17c4",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_gripper_controller/follow_joint_trajectory",
+        "goal_id": "0cfd18b86d8a9ca1462ed420eefe2dea",
+        "status": 4
+      },
+      {
+        "topic": "/ur5_gripper_controller/follow_joint_trajectory",
+        "goal_id": "ff9f03eb66e3c9333bc4776cea486ac9",
+        "status": 4
+      }
+    ],
+    "remaining_owned_process_groups": []
+  },
+  "plan_only": {
+    "result": "PASS",
+    "full_cycle_prevalidated": true,
+    "execution_attempted": false,
+    "execution_action_goals": [],
+    "shutdown_clean": true,
+    "shutdown_crashes": [],
+    "remaining_owned_process_groups": []
+  },
+  "interruption": {
+    "result": "FAIL",
+    "failed_stage": "EXECUTE_RETREAT",
+    "failure": "interrupted by signal 2",
+    "execution_attempted": true,
+    "cancellation_accepted": false,
+    "cancellation_confirmed": false,
+    "interrupted_action_terminal_status": 4,
+    "recovery_required": true,
+    "recovery_scene": {
+      "attached_ids": [],
+      "contact_acm_restored": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "runtime::sample-cup",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    "shutdown_clean": true
+  },
+  "interruption_cleanup": {
+    "executor": {
+      "clean": true,
+      "pid": 38848,
+      "remaining": false
+    },
+    "launch": {
+      "clean": true,
+      "pid": 38712,
+      "remaining": false
+    },
+    "crashes": []
+  },
+  "interruption_cleanup_contract_passed": true,
+  "interruption_driver_assertion": "Expected cancellation confirmation; assertion failed because the action completed successfully instead. Executor cleanup passed; cancellation remains unconfirmed.",
+  "build": "PASS: workcell_builder and ur5_2f_test",
+  "focused_tests": "93 passed",
+  "full_evidence_directory": "/home/ubuntu/workcell_ws/r15-evidence",
+  "evidence_sha256": {
+    "baseline/cleanup.json": "deb3ae43a6d408e84f1f3db6dc0c70d9600d6df4651b6889294386bd73b16b52",
+    "baseline/executor.json": "ff79632e46b570ed1e9c2cd68d9736807918bf93082817acf86de901cca45408",
+    "baseline/executor.log": "0b5827907bc2099d9a1d598e8ec5017fedec7f8ab82d0fc257d929eff0596df5",
+    "baseline/launch.log": "74f9e698feaf490a7cc9caf2c86cbd10f8b7033631477e37e5448be6becb6c3e",
+    "baseline/planning_scene_after.json": "84fa58e54a85a581d56b01e4d8cb978d50be8bb64ba97e9ab039661797ef0bec",
+    "baseline/planning_scene_attached.json": "2bd3d18c1c0228f70dfc6284e549d1d0e5e38f78e0840a63d8699c2e74571c87",
+    "baseline/planning_scene_before.json": "93f9cd6171f70b028ac3f8aa65c0eb6871b968deba27cf5dbb43ec7c764c226d",
+    "baseline/planning_scene_final.json": "24ecd1a65407696543c114da47aef9c3ce7b3f9102af931d58672efd50bd0144",
+    "final/acceptance.json": "07080fe6eaca23e90bee686b10b6985d313b4fce2a4461c3fb53ba61178b1321",
+    "final/executor.json": "694d657a050dda83263d8d16ffaca23459db8f73481d29509cbb87f2e9ef05fe",
+    "final/executor.log": "489efcf3299ba4db0ae09547340601df0a4cede898bffb3088e2b764b7701448",
+    "final/launch.log": "dbdd0a8c7df1ea14cd378c4c2af1a2a5d0448b3d8984ab8fb071a240a674b5a8",
+    "final/planning_scene_after.json": "b824f13dd9d46839022fa7d7acf9079b22ceaa755962be2bc67955692c78d5ee",
+    "final/planning_scene_attached.json": "b0a3bf01d10ec8a1cfe7a6d6c667644a3daf16c5f54e5f29d1c1a84b15ff620c",
+    "final/planning_scene_before.json": "93f9cd6171f70b028ac3f8aa65c0eb6871b968deba27cf5dbb43ec7c764c226d",
+    "final/planning_scene_final.json": "f01319206d032996e6b9fe39c5a020a273ec132c4ebeda98237efbeacdd31015",
+    "full-cycle/acceptance.json": "f4402975c2eda531ab455ae212b8abf0c674fac26b5745fc10a6599ef1cc30a6",
+    "full-cycle/executor.json": "66ae675bd87f0feae6040d10d388a24c52bb6773b0188a418c53f86c39839097",
+    "full-cycle/executor.log": "dadef07df87a7a41b359a8f7829bd29db0326175670ca10856725be0ad87804b",
+    "full-cycle/launch.log": "c32122d72684de689718e634b641d2c7208038e764cc255186fac17345a6dd70",
+    "full-cycle/planning_scene_after.json": "404eeee2293b26716f98d5ab639d6036018e07bbed62c2edd2be5f1b4f19ce1e",
+    "full-cycle/planning_scene_attached.json": "c42389d52e6339da63346bd9d2182ccdf38a6ab30bc9130da396fabe19072b6b",
+    "full-cycle/planning_scene_before.json": "93f9cd6171f70b028ac3f8aa65c0eb6871b968deba27cf5dbb43ec7c764c226d",
+    "full-cycle/planning_scene_final.json": "9bfdbde1172cfdc23f7cc1a90892ffbe5596f669e4d9a37bb2aa93fa0e675b56",
+    "interruption/cleanup.json": "ee1a983c16ab3fca8926865ca3979ca07cd6257defcac8c83453a5bd15a799d2",
+    "interruption/executor.json": "fe0a59c128e28e435016b6aca7619df45a1a25a11736468e1dc11114b923ef3a",
+    "interruption/executor.log": "5bb5013c3dfceaa0243c5b1c6215e87c0d3e07a3e1ebced3a90634c90e03682b",
+    "interruption/launch.log": "653fe87bc996d8ffcfff9b9eb431912d54e429b513ea67e3281db949a0a6eee2",
+    "interruption/planning_scene_after.json": "740ea7fcbe70e0b489af559eb33ee2bb0f2b008234b4a8c7eb0b493055e7f982",
+    "interruption/planning_scene_attached.json": "233c2acb6de30e169d2458145600b8ecec6d6ef0b2b6d27426e80e7668ad760b",
+    "interruption/planning_scene_before.json": "93f9cd6171f70b028ac3f8aa65c0eb6871b968deba27cf5dbb43ec7c764c226d",
+    "plan-only/acceptance.json": "33024d3cc67e1cfbbda1bfd56b44ca1233bdf3dce5826f18dca44d2f2c822198",
+    "plan-only/executor.json": "437b84553f3ebf5ca5b95a1ab600cdf30876f9aeb7d432bf96ca2fd0e3cdd987",
+    "plan-only/executor.log": "fa266ba2b94a6934cb6e080ffb179787108d3a31fea9a8ca479b60c91e2c0e06",
+    "plan-only/launch.log": "073e2f9ee14cf50f37177a633af03d666ff291b66a2eb027e8e538ac5ee972ce",
+    "plan-only/planning_scene_before.json": "93f9cd6171f70b028ac3f8aa65c0eb6871b968deba27cf5dbb43ec7c764c226d",
+    "r15-build.log": "c8ab64094f54dbbdf0661ecf87f221e0fd89aba04be2f2d416c0afd1541c411d",
+    "r15-interrupt-driver.py": "7814572c2eee66dfc548f44e76bc31564e078121336d23c67de2750baf3196e2",
+    "r15-interruption-console.log": "013b7dcf647a18c740c4d4c687d6bc27927d50627d6b3ef82361d2130b204089",
+    "r15-tests.log": "40d5e4346f24b57f79bc72e59406eaffa6e5905651c2d4e849f8869a6dd0f3f6"
+  }
+}
