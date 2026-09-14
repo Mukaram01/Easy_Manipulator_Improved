@@ -1,9 +1,50 @@
 import json, subprocess, sys
 from pathlib import Path
 import yaml
+import copy
+import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
 CLI=ROOT/'scripts'/'workcell_studio_layout_merge.py'
+
+
+@pytest.mark.parametrize('include_layout_id_record', [False, True])
+def test_save_updates_runtime_zone_by_layout_reference(tmp_path, include_layout_id_record):
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    from workcell_studio_layout_merge import merge
+    scene = tmp_path / 'scene'
+    (scene / 'layout').mkdir(parents=True)
+    zone = {'id': 'runtime_destination', 'layout_item_ref': 'inspector_zone',
+            'pose_xyz': [.45, .22, .13], 'pose_rpy': [0, 0, 0],
+            'target_ref': 'bin', 'bottom_clearance_m': .005}
+    zones = [zone]
+    if include_layout_id_record:
+        zones.append({**copy.deepcopy(zone), 'id': 'inspector_zone'})
+    unrelated = {'id': 'other_zone', 'pose_xyz': [1, 2, 3]}
+    zones.append(unrelated)
+    env = {'environment': {'task_zones': zones}, 'task_zones': copy.deepcopy(zones)}
+    environment = scene / 'environment.yaml'
+    environment.write_text(yaml.safe_dump(env))
+    item = {'id': 'inspector_zone', 'category': 'zone', 'editable': True,
+            'pose': {'xyz': [.46, .22, .13], 'rpy': [0, 0, .1]}}
+    (scene / 'layout/workcell_studio_layout.yaml').write_text(yaml.safe_dump({'items': [item]}))
+    merge(scene, save_authored=True)
+    saved = environment.read_bytes()
+    result = yaml.safe_load(saved)
+    for records in (result['environment']['task_zones'], result['task_zones']):
+        assert [record['id'] for record in records] == [record['id'] for record in zones]
+        assert records[-1] == unrelated
+        for record in records[:-1]:
+            assert record['pose_xyz'] == [.46, .22, .13]
+            assert record['pose_rpy'] == [0, 0, .1]
+            assert record['target_ref'] == 'bin'
+            assert record['bottom_clearance_m'] == .005
+    merge(scene, save_authored=True)
+    assert environment.read_bytes() == saved
+    merge(scene)
+    projected = yaml.safe_load((scene / 'generated/workcell_studio_merged_environment.yaml').read_text())
+    runtime_zone = next(record for record in projected['objects'] if record['id'] == 'runtime_destination')
+    assert runtime_zone['pose']['xyz'] == [.46, .22, .13]
 
 def test_layout_merge_helper_exists_and_outputs_report(tmp_path: Path):
     scene=tmp_path/'scene'; (scene/'layout').mkdir(parents=True); (scene/'config').mkdir()

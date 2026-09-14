@@ -9,6 +9,24 @@ Sorting is only one scenario template in Workcell Studio, alongside other templa
 
 ## Current milestone — R1 canonical UR5 + Robotiq 2F industrial cell
 
+### 2026-09-14 — R1.6 same-session two-cycle gate closed
+
+**CONFIRMED:** the existing `--full-cycle-acceptance` passed both complete
+fake-hardware pick/place cycles in one Workcell Builder PID (11171). The real
+Inspector/Apply/Save path changed `place_zone_default.x` from 0.45 to 0.46;
+authoritative authored state and regenerated runtime destination were verified,
+and cycle 2 consumed 0.46. Both cycles verified attachment/release, retreat/home,
+final collision validity, baseline ACM restoration and clean owned-process
+shutdown. The same session restored 0.45 through Save/Generate/Validate and
+exited cleanly. Camera/EPD was not used; deterministic R1.5 replay and fake
+hardware only. R1.4 plan-only and standalone R1.5 execution also passed.
+
+The first run exposed an ID-only authored merge that missed a semantic zone's
+`layout_item_ref`; the focused fix preserves semantic IDs while updating their
+authored projections. See [R1.6 closure evidence and limitations](R1_6_SAME_SESSION_TWO_CYCLE.md).
+This runtime milestone naming follows the R1.5/R1.6 acceptance work and does not
+claim completion of the future Operator HMI described below.
+
 **Canonical scene:** `ur5_2f_test`
 
 The immediate objective is not more breadth. It is to make one industrial scene complete, understandable, reproducible, and trustworthy from first open through fake-hardware planning/simulation and back into Workcell Studio.
