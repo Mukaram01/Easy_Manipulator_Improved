@@ -76,35 +76,40 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
                 raise ValueError('Physical authored item requires a stable ID')
             collection = ('task_zones' if item.get('category') == 'zone' else
                           'support_surfaces' if item.get('role') == 'support_surface' else 'assets')
-            target = None
+            targets = []
             for key in ('support_surfaces', 'assets', 'sensors', 'task_zones'):
                 for record in physical.get(key, []):
-                    if record.get('id') == iid:
-                        target = record
-            if target is None:
+                    # Semantic IDs need not equal their Inspector layout ID.
+                    # Update every existing projection of that authored item,
+                    # retaining the IDs used by task/runtime bindings.
+                    if record.get('id') == iid or record.get('layout_item_ref') == iid:
+                        targets.append(record)
+            if not targets:
                 target = {'id': iid}
                 physical.setdefault(collection, []).append(target)
-            for key in ('type', 'role', 'display_name', 'category', 'frame', 'geometry_type',
-                        'mesh', 'collision', 'dimensions', 'asset_class', 'description',
-                        'catalog_asset_id', 'support_surface_ref', 'task_zone_ref'):
-                if key in item:
-                    target[key] = copy.deepcopy(item[key])
-            if item.get('mesh') and 'collision' not in target:
-                target['collision'] = {'enabled': True, 'mode': 'mesh'}
-            target['layout_item_ref'] = iid
-            pose = item.get('pose', {})
-            for key in ('xyz', 'rpy'):
-                if key in pose:
-                    target['pose_' + key] = copy.deepcopy(pose[key])
-            # Existing top-level compatibility mirrors must not retain stale
-            # physical values. Never create additional mirror records.
-            for key in ('support_surfaces', 'assets', 'sensors', 'placed_objects', 'objects', 'task_zones'):
-                records = env.get(key, [])
-                if isinstance(records, dict):
-                    records = records.values()
-                for mirror in records:
-                    if isinstance(mirror, dict) and mirror.get('id') == iid and mirror is not target:
-                        mirror.update(copy.deepcopy(target))
+                targets.append(target)
+            for target in targets:
+                for key in ('type', 'role', 'display_name', 'category', 'frame', 'geometry_type',
+                            'mesh', 'collision', 'dimensions', 'asset_class', 'description',
+                            'catalog_asset_id', 'support_surface_ref', 'task_zone_ref'):
+                    if key in item:
+                        target[key] = copy.deepcopy(item[key])
+                if item.get('mesh') and 'collision' not in target:
+                    target['collision'] = {'enabled': True, 'mode': 'mesh'}
+                target['layout_item_ref'] = iid
+                pose = item.get('pose', {})
+                for key in ('xyz', 'rpy'):
+                    if key in pose:
+                        target['pose_' + key] = copy.deepcopy(pose[key])
+                # Existing top-level compatibility mirrors must not retain stale
+                # physical values. Never create additional mirror records.
+                for key in ('support_surfaces', 'assets', 'sensors', 'placed_objects', 'objects', 'task_zones'):
+                    records = env.get(key, [])
+                    if isinstance(records, dict):
+                        records = records.values()
+                    for mirror in records:
+                        if isinstance(mirror, dict) and mirror.get('id') == target['id'] and mirror is not target:
+                            mirror.update(copy.deepcopy(target))
         write_preserving(scene_dir/'environment.yaml', env)
     # Generated physical state is a projection of environment.yaml only.
     physical = env.get('environment', {})
