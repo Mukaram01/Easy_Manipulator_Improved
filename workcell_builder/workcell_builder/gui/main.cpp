@@ -56,6 +56,8 @@ public:
 // main_legacy.inc includes the same headers again, but they are protected by
 // pragma-once/include guards. Only MainWindow references in the implementation
 // below are redirected to the construction wrapper above.
+#include "../test/studio_full_cycle_acceptance.hpp"
+
 #define MainWindow WorkcellStudioHomeMainWindow
 #include "main_legacy.inc"
 #undef MainWindow

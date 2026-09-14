@@ -148,3 +148,18 @@ TEST(RvizPreviewMetadataCommandTest, RejectsRealHardwareLaunchTokens)
     "ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true ur_robot_driver:=true",
     &reason));
 }
+
+TEST(RvizPreviewMetadataCommandTest, FullCycleUsesOneExistingSupervisorAndExplicitReplayExecution)
+{
+  auto scene = runnable_scene();
+  const auto command = workcell_builder::build_full_cycle_command(scene, "/home/user/workcell_ws", "/tmp/cycle evidence", 201, true);
+  EXPECT_TRUE(command.contains("run_r14_plan_only_acceptance.py"));
+  EXPECT_TRUE(command.contains("--execute --stream-status"));
+  EXPECT_TRUE(command.contains("--launch-rviz"));
+  EXPECT_TRUE(command.contains("--output-dir '/tmp/cycle evidence'"));
+  EXPECT_FALSE(command.contains("ros2 launch"));  // Supervisor owns the sole scene stack.
+  EXPECT_FALSE(command.contains("use_fake_hardware:=false"));
+  EXPECT_FALSE(workcell_builder::build_full_cycle_command(scene, "/tmp/ws", "/tmp/out", 201, false).contains("--launch-rviz"));
+  scene.scene_name = "uncommissioned";
+  EXPECT_TRUE(workcell_builder::build_full_cycle_command(scene, "/tmp/ws", "/tmp/out", 201, true).isEmpty());
+}
