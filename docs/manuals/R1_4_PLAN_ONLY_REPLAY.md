@@ -38,9 +38,11 @@ timeout --signal=TERM --kill-after=5s 160s \
   --output-dir /tmp/r14-plan-only --timeout 120 --domain-id 179
 ```
 
-Use an unused ROS domain. The runner fixes launch arguments to
+Use an unused ROS domain. By default the runner fixes launch arguments to
 `use_fake_hardware:=true allow_trajectory_execution:=false launch_rviz:=false`
-and never passes the executor's `--start` flag. It checks the installed scene
+and does not pass the executor's `--start` flag. The explicit `--execute` mode is
+the [R1.5 full-cycle fake-hardware acceptance](R1_5_FAKE_HARDWARE_EXECUTION.md).
+It checks the installed scene
 against this checkout and records its hashes. It waits for the existing scene
 loader, runs the executor with a finite budget, and stops its owned process
 groups. A forced shutdown or remaining process fails acceptance.
