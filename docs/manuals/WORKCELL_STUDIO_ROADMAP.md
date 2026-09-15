@@ -9,6 +9,20 @@ Sorting is only one scenario template in Workcell Studio, alongside other templa
 
 ## Current milestone — R1 canonical UR5 + Robotiq 2F industrial cell
 
+### 2026-09-15 — R1.9 physical destination truth closed
+
+**CONFIRMED:** `ur5_2f_test` now stores placement geometry in the physical
+target's local frame and resolves one checked world destination for Save,
+generation, Product View, validation and runtime. The original bin/zone mismatch
+(0.70 m) and unreachable original bin pose are recorded as rejected/blocked
+evidence. The authored bin was moved through the Builder Save path to a reachable
+location; two complete same-session fake-hardware cycles passed, including a 1 cm
+in-bin edit and canonical restore. All cycles verified detach, retreat, home,
+final collision validity, baseline ACM restoration and zero owned processes.
+Camera/EPD and real hardware were not used. See
+[R1.9 evidence](evidence/r19/contract_acceptance.json) and the recorded Studio
+acceptance under `/home/ubuntu/workcell_ws/r19-evidence`.
+
 ### 2026-09-14 — R1.6 same-session two-cycle gate closed
 
 **CONFIRMED:** the existing `--full-cycle-acceptance` passed both complete

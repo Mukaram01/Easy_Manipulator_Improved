@@ -1,0 +1,86 @@
+{
+  "status": "CONFIRMED_MISMATCH",
+  "base": "f890c17d",
+  "bin": {
+    "id": "target_bin_default",
+    "type": "target_bin",
+    "role": "target_bin",
+    "display_name": "Destination Bin",
+    "category": "environment",
+    "frame": "world",
+    "pose_xyz": [
+      0.9399999999999444,
+      -0.28,
+      0.1
+    ],
+    "pose_rpy": [
+      0,
+      0,
+      0
+    ],
+    "layout_item_ref": "target_bin_default",
+    "geometry_type": "mesh",
+    "mesh": {
+      "path": "package://sorting_bin_description/meshes/sorting_bin.stl",
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "rpy": [
+        1.5707963267948966,
+        0,
+        1.5707963267948966
+      ],
+      "origin_offset": [
+        -0.173899436593,
+        0,
+        -0.1
+      ]
+    },
+    "asset_class": "registered",
+    "collision": {
+      "enabled": true,
+      "mode": "mesh"
+    },
+    "catalog_asset_id": "bin_standard",
+    "support_surface_ref": "support_surface_table",
+    "task_zone_ref": "default_drop_zone"
+  },
+  "runtime_destination": {
+    "id": "default_drop_zone",
+    "target_id": "target_bin_default",
+    "frame_id": "world",
+    "pose_xyz": [
+      0.45,
+      0.22,
+      0.13
+    ],
+    "dimensions": [
+      0.25,
+      0.14,
+      0.23
+    ],
+    "pose_rpy": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "distance_m": 0.7007139216541551,
+  "mesh_world_bounds": {
+    "min": [
+      0.7638994365930559,
+      -0.3866935501098633,
+      0.0
+    ],
+    "max": [
+      1.1161005634069445,
+      -0.17330644989013674,
+      0.2
+    ]
+  },
+  "destination_center_inside_bin_bounds": false,
+  "camera_epd_used": false,
+  "execution_attempted": false
+}

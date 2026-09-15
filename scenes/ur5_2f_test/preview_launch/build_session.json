@@ -1,14 +1,14 @@
 {
-    "command": "env -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH -u COLCON_PREFIX_PATH bash --noprofile --norc -c \"source /opt/ros/humble/setup.bash && source '/home/user/workcell_ws/install/setup.bash' && cd '/home/user/workcell_ws' && colcon build --symlink-install --packages-select 'ur5_2f_test' --allow-overriding 'ur5_2f_test'\"",
+    "command": "env -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH -u COLCON_PREFIX_PATH bash --noprofile --norc -c \"source /opt/ros/humble/setup.bash && source '/home/ubuntu/workcell_ws/install/setup.bash' && cd '/home/ubuntu/workcell_ws' && colcon build --symlink-install --packages-select 'ur5_2f_test' --allow-overriding 'ur5_2f_test'\"",
     "event": "build_started",
     "exit_code": -1,
-    "finished_at": "2026-09-13T11:07:30Z",
+    "finished_at": "2026-09-15T11:47:12Z",
     "no_robot_motion_commanded": true,
     "safety_flags": {
         "fake_hardware_only": true,
         "runtime_execution_enabled": false
     },
     "scene_name": "ur5_2f_test",
-    "started_at": "2026-09-13T11:07:30Z",
+    "started_at": "2026-09-15T11:47:12Z",
     "status": "BUILD_RUNNING"
 }

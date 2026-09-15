@@ -1,0 +1,1000 @@
+{
+  "result": "FAIL",
+  "execution_action_goals": [],
+  "shutdown_clean": true,
+  "scene_share": "/home/ubuntu/workcell_ws/install/ur5_2f_test/share/ur5_2f_test",
+  "executor": "/home/ubuntu/workcell_ws/install/workcell_builder/lib/workcell_builder/perceived_object_grasp_execute.py",
+  "mode": "R1.4 plan-only",
+  "domain_id": 191,
+  "source_commit": "f890c17d626f94d95f8bb27e6f460e386bfde349",
+  "source_dirty": true,
+  "executor_hashes": {
+    "perceived_object_grasp_execute.py": "52e5dba84be8f910f0278eb83c8303bf22017bc26dc55b38daa5dbed661e6cf2",
+    "perceived_object_grasp_plan.py": "fa3407fbc9ca7bf8c7419e8a154ce0edab28d86f21f7a53f3991d5ce3a130b46",
+    "runtime_pick_inputs.py": "02a5b473e1307caa9ae13bc3e5ca92974cf22406f932a6ed4fe84e1485dd7f1c"
+  },
+  "scene_hashes": {
+    "environment.yaml": "011e11c9910b166ac6626135ec9d3744ae53e885e643b6ff29f4781e3609a62d",
+    "cell_definition.yaml": "957e77dfd228049abab5b8255c8882e909c7c4098f0a2f85cefe1590d4247c8a",
+    "config/moveit_collision_objects.yaml": "d6ff82e866f3de5c0ba9854b0f60a194ec6f0128745b5b9f2f26ebec45f4369c"
+  },
+  "candidate_attempts": [
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 3,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.031742908,
+          "points": 44,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 25,
+          "moveit_code": 1,
+          "planning_time": 0.5303502899999999,
+          "points": 76,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.01267306,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.018249686,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    },
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 0,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.031193058000000003,
+          "points": 44,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 24,
+          "moveit_code": 1,
+          "planning_time": 0.5236882330000001,
+          "points": 73,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.015768185,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.034183497,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    },
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 1,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.031750661,
+          "points": 44,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 24,
+          "moveit_code": 1,
+          "planning_time": 0.45596393399999996,
+          "points": 73,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.01308713,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.026483231000000003,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    },
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 2,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.020597519,
+          "points": 69,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 25,
+          "moveit_code": 1,
+          "planning_time": 0.5286109739999999,
+          "points": 76,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.015292704,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.022365199,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    },
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 4,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.034662249,
+          "points": 44,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 25,
+          "moveit_code": 1,
+          "planning_time": 0.469807306,
+          "points": 76,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.012461894,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.008584337,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    },
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 5,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.016581201,
+          "points": 44,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 24,
+          "moveit_code": 1,
+          "planning_time": 0.5469967439999999,
+          "points": 73,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.016037228,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.023433708,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    },
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 6,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.035960866,
+          "points": 44,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 25,
+          "moveit_code": 1,
+          "planning_time": 0.5759116910000002,
+          "points": 76,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.016683972999999998,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.030771961,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    },
+    {
+      "failed_stage": "PREPLAN_TRANSFER",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 7,
+      "object_id": "runtime::sample-cup",
+      "reason": "IK failed: -31",
+      "stages": [
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.016717771,
+          "points": 69,
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "cartesian_waypoints": 25,
+          "moveit_code": 1,
+          "planning_time": 0.6425966149999999,
+          "points": 76,
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [],
+          "moveit_code": 1,
+          "planning_time": 0.015142709,
+          "points": 12,
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "runtime::sample-cup",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "attached_ids": [
+            "runtime::sample-cup"
+          ],
+          "moveit_code": 1,
+          "planning_time": 0.018050416,
+          "points": 15,
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "world_ids": [
+            "runtime::sample-bottle",
+            "workcell::support_surface_table",
+            "workcell::target_bin_default"
+          ]
+        },
+        {
+          "reason": "IK failed: -31",
+          "stage": "PREPLAN_TRANSFER",
+          "success": false
+        }
+      ]
+    }
+  ],
+  "current_stage": "FAILED",
+  "execution_attempted": false,
+  "failed_stage": "PREPLAN_TRANSFER",
+  "failure": "no target/grasp has a feasible complete cycle; last failure: IK failed: -31",
+  "fake_hardware_guard": {
+    "hardware_classes": [
+      "mock_components/GenericSystem",
+      "mock_components/GenericSystem"
+    ],
+    "move_group_use_fake_hardware": true,
+    "real_hardware": false
+  },
+  "full_cycle_execution_success": false,
+  "full_cycle_prevalidated": false,
+  "grasp_candidate_count": 8,
+  "grasp_candidate_source": "canonical_box_geometry_robotiq_2f",
+  "grasp_candidates": {
+    "runtime::sample-cup": [
+      [
+        0.26,
+        -0.08,
+        0.101,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.26,
+        -0.08,
+        0.101,
+        -0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.26,
+        -0.08,
+        0.101,
+        0.7071067811865476,
+        0.7071067811865475,
+        0.0,
+        0.0
+      ],
+      [
+        0.26,
+        -0.08,
+        0.101,
+        -0.7071067811865475,
+        0.7071067811865476,
+        0.0,
+        0.0
+      ],
+      [
+        0.26,
+        -0.08,
+        0.101,
+        6.123233995736766e-17,
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.26,
+        -0.08,
+        0.101,
+        -1.0,
+        6.123233995736766e-17,
+        0.0,
+        0.0
+      ],
+      [
+        0.26,
+        -0.08,
+        0.101,
+        -0.7071067811865475,
+        0.7071067811865476,
+        0.0,
+        0.0
+      ],
+      [
+        0.26,
+        -0.08,
+        0.101,
+        -0.7071067811865476,
+        -0.7071067811865475,
+        0.0,
+        0.0
+      ]
+    ]
+  },
+  "inserted_object_ids": [
+    "runtime::sample-cup",
+    "runtime::sample-bottle"
+  ],
+  "normalized_objects": [
+    {
+      "class_id": "cup",
+      "confidence": 0.99,
+      "dimensions": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "frame_id": "world",
+      "grasp": null,
+      "id": "runtime::sample-cup",
+      "object_id": "sample-cup",
+      "pose": [
+        0.26,
+        -0.08,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "shape": "BOX",
+      "source_frame": "world",
+      "timestamp": 1789465181.1707764
+    },
+    {
+      "class_id": "bottle",
+      "confidence": 0.99,
+      "dimensions": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "frame_id": "world",
+      "grasp": null,
+      "id": "runtime::sample-bottle",
+      "object_id": "sample-bottle",
+      "pose": [
+        0.4,
+        -0.08,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "shape": "BOX",
+      "source_frame": "world",
+      "timestamp": 1789465181.1707764
+    }
+  ],
+  "recovery_required": false,
+  "rejected_objects": {
+    "runtime::sample-bottle": "class_mismatch"
+  },
+  "stage_events": [
+    {
+      "stage": "IDLE",
+      "timestamp": 1789465180.9979415
+    },
+    {
+      "stage": "PREFLIGHT",
+      "timestamp": 1789465181.11857
+    },
+    {
+      "stage": "ACQUIRE_OBJECTS",
+      "timestamp": 1789465181.1686666
+    },
+    {
+      "stage": "FILTER_TARGETS",
+      "timestamp": 1789465181.17086
+    },
+    {
+      "stage": "UPDATE_PLANNING_SCENE",
+      "timestamp": 1789465181.173957
+    },
+    {
+      "stage": "ENUMERATE_TARGETS",
+      "timestamp": 1789465182.1604173
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465182.1651192
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465182.1653326
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465182.2402644
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465183.7074013
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465183.9224188
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465183.9725714
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465184.983785
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465184.9839516
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465185.0485234
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465186.4256897
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465186.528775
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465186.599928
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465187.611552
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465187.6117306
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465187.6795216
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465188.9917653
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465189.0836802
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465189.142794
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465190.154315
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465190.1544878
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465190.2202878
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465191.715483
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465191.8173916
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465191.8789535
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465192.8949473
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465192.8953273
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465192.9854438
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465194.3742106
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465194.4632685
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465194.5059354
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465195.51745
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465195.5176601
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465195.5759184
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465197.0724828
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465197.1695507
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465197.231105
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465198.2430441
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465198.2432113
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465198.3154871
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465199.889639
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465199.9911833
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465200.0585997
+    },
+    {
+      "stage": "GENERATE_GRASPS",
+      "timestamp": 1789465201.0707614
+    },
+    {
+      "stage": "PREPLAN_APPROACH",
+      "timestamp": 1789465201.0709321
+    },
+    {
+      "stage": "PREPLAN_GRASP",
+      "timestamp": 1789465201.130579
+    },
+    {
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "timestamp": 1789465202.7938488
+    },
+    {
+      "stage": "PREPLAN_LIFT",
+      "timestamp": 1789465202.8996708
+    },
+    {
+      "stage": "PREPLAN_TRANSFER",
+      "timestamp": 1789465202.9569097
+    },
+    {
+      "stage": "FAILED",
+      "timestamp": 1789465203.9640937
+    }
+  ],
+  "stages": [],
+  "task_request": {
+    "action": "pick_and_place",
+    "allow_missing_confidence": false,
+    "destination_zone": "default_drop_zone",
+    "max_age_seconds": 180.0,
+    "min_confidence": 0.8,
+    "selection_policy": "task_semantics",
+    "source_zone": "pick_zone_main",
+    "target_class": "cup"
+  },
+  "trajectory_execution_enabled": false,
+  "orchestration_failure": "executor did not prove an unchanged, complete plan-only cycle",
+  "shutdown_crashes": [],
+  "action_terminal_statuses": [],
+  "remaining_owned_process_groups": [],
+  "runtime_seconds": 27.81016286299996,
+  "owned_processes": {
+    "executor": {
+      "pid": 9234,
+      "returncode": 1
+    },
+    "launch": {
+      "pid": 9099,
+      "returncode": 0
+    }
+  }
+}

@@ -28,7 +28,7 @@ def test_incomplete_destination_scenes_are_strictly_rejected_but_have_read_only_
     )
     assert result.returncode == 3
     assert not strict_output.exists()
-    assert "relationship" in result.stderr
+    assert "physical destination" in result.stderr
 
     payload = exporter.build_web_scene(scene, allow_incomplete_preview=True)
     assert payload["scene_id"] == scene_id
@@ -55,49 +55,16 @@ def test_valid_scene_remains_strict_and_editable_without_diagnostic_metadata():
     assert any(item.get("editable") for item in payload["assets"])
 
 
-def test_suction_scene_uses_canonical_editable_environment_and_one_tool_identity():
+def test_unmigrated_suction_destination_is_blocked_without_changing_scene():
     scene = ROOT / "scenes" / "suction_test"
-    assert (scene / "layout" / "workcell_studio_layout.yaml").is_file()
-    assert (scene / "config" / "workcell_builder_task_intent.yaml").is_file()
-    assert not (scene / "environment_layout.yaml").exists()
-    assert not (scene / "workcell_builder_task_intent.yaml").exists()
+    before = (scene / "environment.yaml").read_bytes()
+    with pytest.raises(exporter.BlockingExportError, match="physical destination"):
+        exporter.build_web_scene(scene)
+    payload = exporter.build_web_scene(scene, allow_incomplete_preview=True)
+    assert payload['authoring_status'] == 'blocked'
+    assert payload['robots'] and payload['tools']
+    assert (scene / 'environment.yaml').read_bytes() == before
 
-    payload = exporter.build_web_scene(scene)
-    assert "authoring_status" not in payload
-    assert payload.get("authoring_blockers") in (None, [])
-    assert payload["robots"] and all(item.get("locked") is True for item in payload["robots"])
-    metadata_tools = [item for item in payload["tools"] if item.get("role") == "metadata"]
-    generated_tools = [item for item in payload["tools"] if item.get("source_kind") == "generated_preview"]
-    assert {item["id"] for item in metadata_tools} == {"single_suction"}
-    assert generated_tools and all(item.get("locked") is True for item in generated_tools)
-    assert "wrist_fixture" in {item.get("link") for item in generated_tools}
-
-    primary = [
-        item
-        for section in exporter.RENDERABLE_OUTPUT_SECTIONS
-        for item in payload.get(section, [])
-        if item.get("render_policy") == "primary"
-    ]
-    primary_ids = [item["id"] for item in primary]
-    assert {"table_main", "suction_target_default"} <= set(primary_ids)
-    assert len(primary_ids) == len(set(primary_ids))
-    assert any(item.get("editable") is True for item in primary if item["id"] == "table_main")
-    target = next(item for item in primary if item["id"] == "suction_target_default")
-    assert target["semantic_role"] == "target_bin"
-    assert target["readiness_category"] == ""
-    assert not any(
-        item.get("readiness_category") == "attached_tool_gripper"
-        for item in payload["assets"]
-        if item.get("type") == "target_bin" or item.get("role") == "target_bin"
-    )
-    camera_visuals = [item for item in primary if item.get("id") == "realsense_suction_overhead"]
-    assert len(camera_visuals) == 1
-    generated_camera = [item for item in payload["sensors"] if item.get("link") == "camera_link"]
-    assert len(generated_camera) == 1
-    assert generated_camera[0].get("render_policy") == "diagnostic_only"
-    assert generated_camera[0].get("canonical_scene_item_id") == "realsense_suction_overhead"
-    assert camera_visuals[0].get("locked") is False
-    assert camera_visuals[0].get("editable") is True
 
 def test_robot_preview_extraction_keeps_robot_subtree_and_excludes_scene_siblings(tmp_path):
     source = tmp_path / "expanded_scene_preview.urdf"
@@ -306,69 +273,24 @@ def test_export_web_scene_warns_for_missing_optional_inputs(tmp_path):
     }
 
 
-def test_active_place_zone_is_normalized_from_referenced_physical_asset(tmp_path):
+def test_active_place_zone_renders_exact_resolved_volume(tmp_path):
     scene = tmp_path / "scene"
-    scene.mkdir()
-    (scene / "environment.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "task": {"place": {}, "rules": [{"when": {"always": True}, "destination": "place_area"}]},
-                "task_zones": [
-                    {
-                        "id": "place_area",
-                        "target_ref": "finished_part_tote",
-                        "pose_xyz": [0, 0, 0],
-                        "pose_rpy": [0, 0, 0],
-                        "dimensions": [0.1, 0.1, 0.004],
-                        "transform_group": "destination",
-                        "layout_item_ref": "place_overlay",
-                    }
-                ],
-                "environment": {
-                    "assets": [
-                        {
-                            "id": "finished_part_tote",
-                            "pose_xyz": [1.2, -0.4, 0.3],
-                            "pose_rpy": [0.1, 0.2, 0.3],
-                            "dimensions": [0.6, 0.4, 0.25],
-                        }
-                    ]
-                },
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-
-    payload = exporter.build_web_scene(scene)
-    zone = next(item for item in payload["zones"] if item["id"] == "place_area")
-
-    assert zone["pose_xyz"] == [1.2, -0.4, 0.3]
-    assert zone["pose_rpy"] == [0.1, 0.2, 0.3]
-    assert zone["dimensions"] == [0.6, 0.4, 0.004]
-    assert zone["target_ref"] == "finished_part_tote"
-    assert zone["transform_group"] == "destination"
-    assert zone["layout_item_ref"] == "place_overlay"
-    assert zone["normalization_provenance"]["physical_asset"] == "environment.assets"
+    _write_destination_scene(scene)
+    zone = next(item for item in exporter.build_web_scene(scene)["zones"] if item["id"] == "zone_a")
+    assert zone["pose_xyz"] == [1.01, 0, .03]
+    assert zone["dimensions"] == [.1, .1, .08]
+    assert zone["target_ref"] == "bin_a"
 
 
-def test_active_place_zone_prefers_saved_layout_destination_transform(tmp_path):
+def test_active_place_zone_rejects_stale_layout_target_transform(tmp_path):
     scene = tmp_path / "scene"
-    (scene / "layout").mkdir(parents=True)
-    (scene / "environment.yaml").write_text(yaml.safe_dump({
-        "task": {"place": {"target_ref": "place_area"}},
-        "task_zones": [{"id": "place_area", "target_ref": "bin", "dimensions": [0.1, 0.1, 0.01]}],
-        "environment": {"assets": [{"id": "bin", "pose_xyz": [0, 0, 0], "pose_rpy": [0, 0, 0], "dimensions": [0.2, 0.3, 0.4]}]},
-    }, sort_keys=False), encoding="utf-8")
-    (scene / "layout" / "workcell_studio_layout.yaml").write_text(yaml.safe_dump({
-        "items": [{"id": "bin", "pose": {"xyz": [1, 2, 3], "rpy": [0, 0, 0.5]}, "dimensions": [0.6, 0.7, 0.8]}],
-    }, sort_keys=False), encoding="utf-8")
-
-    zone = next(item for item in exporter.build_web_scene(scene)["zones"] if item["id"] == "place_area")
-    assert zone["pose_xyz"] == [1, 2, 3]
-    assert zone["pose_rpy"] == [0, 0, 0.5]
-    assert zone["dimensions"] == [0.6, 0.7, 0.01]
-    assert zone["normalization_provenance"]["physical_asset"] == "layout/workcell_studio_layout.yaml"
+    _write_destination_scene(scene)
+    path = scene / "layout/workcell_studio_layout.yaml"
+    layout = yaml.safe_load(path.read_text())
+    layout['items'].append({'id': 'bin_a', 'pose': {'xyz': [8, 0, 0], 'rpy': [0, 0, 0]}})
+    path.write_text(yaml.safe_dump(layout))
+    with pytest.raises(exporter.BlockingExportError, match='stale layout pose'):
+        exporter.build_web_scene(scene)
 
 
 def test_active_place_zone_rejects_ambiguous_applicable_rule_destinations(tmp_path):
@@ -397,53 +319,53 @@ def test_active_place_zone_rejects_ambiguous_applicable_rule_destinations(tmp_pa
 
 def _write_destination_scene(scene, *, destination="zone_a", zone_target="bin_a", dimensions=(0.4, 0.3, 0.2)):
     (scene / "layout").mkdir(parents=True, exist_ok=True)
-    (scene / "environment.yaml").write_text(yaml.safe_dump({
-        "task": {"place": {"target_ref": destination}},
-        "task_zones": [
-            {"id": "zone_a", "target_ref": "bin_a", "layout_item_ref": "place_overlay", "dimensions": [0.1, 0.1, 0.01]},
-            {"id": "zone_b", "target_ref": zone_target, "layout_item_ref": "place_overlay", "dimensions": [0.1, 0.1, 0.01]},
-        ],
-        "environment": {"assets": [
-            {"id": "bin_a", "pose_xyz": [1, 0, 0], "pose_rpy": [0, 0, 0], "dimensions": [0.2, 0.2, 0.2]},
-            {"id": "bin_b", "pose_xyz": [2, 3, 0.4], "pose_rpy": [0, 0, 0.5], "dimensions": list(dimensions)},
-        ]},
-    }, sort_keys=False), encoding="utf-8")
-    (scene / "layout/workcell_studio_layout.yaml").write_text(yaml.safe_dump({"items": [{
-        "id": "place_overlay", "role": "place_zone", "target_ref": "bin_a",
-        "pose": {"xyz": [1, 0, 0], "rpy": [0, 0, 0]}, "dimensions": [0.2, 0.2, 0.01],
-    }]}), encoding="utf-8")
+    assets = [{'id': name, 'frame': 'world', 'pose_xyz': xyz, 'pose_rpy': [0, 0, 0],
+               'collision': {'enabled': True},
+               'usable_placement': {'pose_xyz': [0, 0, .03], 'pose_rpy': [0, 0, 0],
+                                    'dimensions': list(dimensions)}}
+              for name, xyz in [('bin_a', [1, 0, 0]), ('bin_b', [2, 3, .4])]]
+    zones = [{'id': name, 'target_ref': target, 'layout_item_ref': 'place_overlay', 'frame': 'world',
+              'pose_xyz': xyz, 'pose_rpy': [0, 0, 0], 'dimensions': [.1, .1, .08],
+              'placement_local': {'pose_xyz': [.01, 0, .03], 'pose_rpy': [0, 0, 0],
+                                  'dimensions': [.1, .1, .08]}}
+             for name, target, xyz in [('zone_a', 'bin_a', [1.01, 0, .03]),
+                                      ('zone_b', zone_target, [2.01, 3, .43])]]
+    doc = {'task': {'place': {'target_ref': destination}}, 'task_zones': zones,
+           'environment': {'assets': assets, 'task_zones': zones}}
+    (scene / 'environment.yaml').write_text(yaml.safe_dump(doc))
+    active = zones[1] if destination == 'zone_b' else zones[0]
+    (scene / 'layout/workcell_studio_layout.yaml').write_text(yaml.safe_dump({'items': [{
+        'id': 'place_overlay', 'role': 'place_zone', 'target_ref': active['target_ref'],
+        'pose': {'xyz': active['pose_xyz'], 'rpy': active['pose_rpy']}, 'dimensions': active['dimensions']}]}))
 
 
-def test_active_destination_is_reresolved_and_rebinds_stale_overlay_on_each_export(tmp_path):
-    scene = tmp_path / "scene"
+def test_active_destination_reresolves_valid_authored_rebind_on_each_export(tmp_path):
+    scene = tmp_path / 'scene'
     _write_destination_scene(scene)
     first = exporter.build_web_scene(scene)
-    assert next(zone for zone in first["zones"] if zone["id"] == "zone_a")["pose_xyz"] == [1, 0, 0]
-
-    _write_destination_scene(scene, destination="zone_b", zone_target="bin_b")
+    assert next(z for z in first['zones'] if z['id'] == 'zone_a')['pose_xyz'] == [1.01, 0, .03]
+    _write_destination_scene(scene, destination='zone_b', zone_target='bin_b')
     second = exporter.build_web_scene(scene)
-    active = next(zone for zone in second["zones"] if zone["id"] == "zone_b")
-    overlay = next(zone for zone in second["zones"] if zone["id"] == "place_overlay")
-    assert active["pose_xyz"] == [2, 3, 0.4]
-    assert overlay["target_ref"] == "bin_b"
-    assert overlay["pose"]["xyz"] == [2, 3, 0.4]
+    overlay = next(z for z in second['zones'] if z['id'] == 'place_overlay')
+    assert overlay['target_ref'] == 'bin_b'
+    assert overlay['pose']['xyz'] == pytest.approx([2.01, 3, .43])
 
 
-@pytest.mark.parametrize(("mutate", "message"), [
-    (lambda doc: doc["task"]["place"].clear(), "environment.yaml.*<active destination>.*task.place.target_ref"),
-    (lambda doc: doc["task"]["place"].update(target_ref="missing_zone"), "missing_zone.*active destination -> task_zones.id"),
-    (lambda doc: doc["task_zones"][0].pop("target_ref"), "<target_ref>.*task zone.target_ref"),
-    (lambda doc: doc["task_zones"][0].update(target_ref="missing_asset"), "missing_asset.*physical asset"),
-    (lambda doc: doc["environment"]["assets"][0].update(pose_xyz=[None, 0, 0]), "bin_a.*valid world pose"),
-    (lambda doc: doc["environment"]["assets"][0].update(dimensions=[0, 0.2, 0.2]), "bin_a.*positive X/Y dimensions"),
+@pytest.mark.parametrize(('mutate', 'message'), [
+    (lambda d: d['task']['place'].clear(), 'active destination'),
+    (lambda d: d['task']['place'].update(target_ref='missing_zone'), 'missing_zone.*missing'),
+    (lambda d: d['task_zones'][0].pop('target_ref'), 'physical target'),
+    (lambda d: d['task_zones'][0].update(target_ref='missing_asset'), 'missing_asset.*missing'),
+    (lambda d: d['environment']['assets'][0].update(pose_xyz=[None, 0, 0]), 'finite'),
+    (lambda d: d['environment']['assets'][0]['usable_placement'].update(dimensions=[0, .2, .2]), 'positive'),
 ])
 def test_destination_chain_failures_are_blocking_and_identify_relationship_and_source(tmp_path, mutate, message):
-    scene = tmp_path / "scene"
+    scene = tmp_path / 'scene'
     _write_destination_scene(scene)
-    path = scene / "environment.yaml"
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    path = scene / 'environment.yaml'
+    document = yaml.safe_load(path.read_text())
     mutate(document)
-    path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    path.write_text(yaml.safe_dump(document))
     with pytest.raises(exporter.BlockingExportError, match=message):
         exporter.build_web_scene(scene)
 

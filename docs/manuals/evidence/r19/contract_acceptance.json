@@ -1,0 +1,386 @@
+{
+  "scope": "canonical static contract acceptance; motion evidence recorded separately",
+  "fake_hardware_only": true,
+  "camera_epd_used": false,
+  "canonical_resolved_destination": {
+    "id": "default_drop_zone",
+    "target_id": "target_bin_default",
+    "frame_id": "world",
+    "pose_xyz": [
+      0.45,
+      0.22,
+      0.11
+    ],
+    "pose_rpy": [
+      0.0,
+      -0.0,
+      0.0
+    ],
+    "dimensions": [
+      0.2,
+      0.1,
+      0.12
+    ],
+    "placement_local": {
+      "pose_xyz": [
+        0.0,
+        0.0,
+        0.009999999999999995
+      ],
+      "pose_rpy": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "dimensions": [
+        0.2,
+        0.1,
+        0.12
+      ]
+    },
+    "usable_placement": {
+      "pose_xyz": [
+        0.0,
+        0.0,
+        0.01
+      ],
+      "pose_rpy": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "dimensions": [
+        0.24,
+        0.12,
+        0.14
+      ],
+      "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+    },
+    "target_pose_xyz": [
+      0.45,
+      0.22,
+      0.1
+    ],
+    "target_pose_rpy": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "physical_destination_contract": "target_local/v1"
+  },
+  "negative_cases": {
+    "old_disjoint_bin": {
+      "validation": "REJECTED",
+      "validation_reasons": [
+        "physical destination: destination default_drop_zone: stale world-space destination; regenerate from target-local placement",
+        "physical destination: destination place_zone_default: stale world-space destination; regenerate from target-local placement"
+      ],
+      "runtime": {
+        "status": "REJECTED",
+        "reason": "destination default_drop_zone: stale world-space destination; regenerate from target-local placement"
+      },
+      "product_view": {
+        "status": "REJECTED",
+        "reason": "environment.yaml: physical destination: destination default_drop_zone: stale world-space destination; regenerate from target-local placement"
+      },
+      "save": {
+        "status": "REJECTED",
+        "reason": "destination default_drop_zone: stale world-space destination; regenerate from target-local placement"
+      }
+    },
+    "moved_target_stale_world": {
+      "validation": "REJECTED",
+      "validation_reasons": [
+        "physical destination: destination default_drop_zone: stale world-space destination; regenerate from target-local placement",
+        "physical destination: destination place_zone_default: stale world-space destination; regenerate from target-local placement"
+      ],
+      "runtime": {
+        "status": "REJECTED",
+        "reason": "destination default_drop_zone: stale world-space destination; regenerate from target-local placement"
+      },
+      "product_view": {
+        "status": "REJECTED",
+        "reason": "environment.yaml: physical destination: destination default_drop_zone: stale world-space destination; regenerate from target-local placement"
+      },
+      "save": {
+        "status": "REJECTED",
+        "reason": "destination default_drop_zone: stale world-space destination; regenerate from target-local placement"
+      }
+    },
+    "missing_placement_metadata": {
+      "validation": "REJECTED",
+      "validation_reasons": [
+        "physical destination: destination default_drop_zone: missing placement_local metadata"
+      ],
+      "runtime": {
+        "status": "REJECTED",
+        "reason": "destination default_drop_zone: missing placement_local metadata"
+      },
+      "product_view": {
+        "status": "REJECTED",
+        "reason": "environment.yaml: physical destination: destination default_drop_zone: missing placement_local metadata"
+      },
+      "save": {
+        "status": "REJECTED",
+        "reason": "destination default_drop_zone: missing placement_local metadata"
+      }
+    },
+    "invalid_usable_metadata": {
+      "validation": "REJECTED",
+      "validation_reasons": [
+        "physical destination: dimensions must be positive",
+        "physical destination: dimensions must be positive"
+      ],
+      "runtime": {
+        "status": "REJECTED",
+        "reason": "dimensions must be positive"
+      },
+      "product_view": {
+        "status": "REJECTED",
+        "reason": "environment.yaml: physical destination: dimensions must be positive"
+      },
+      "save": {
+        "status": "REJECTED",
+        "reason": "dimensions must be positive"
+      }
+    },
+    "missing_active_zone": {
+      "validation": "REJECTED",
+      "validation_reasons": [
+        "physical destination: destination zone 'default_drop_zone' missing or ambiguous"
+      ],
+      "runtime": {
+        "status": "REJECTED",
+        "reason": "destination zone 'default_drop_zone' missing or ambiguous"
+      },
+      "product_view": {
+        "status": "REJECTED",
+        "reason": "environment.yaml: physical destination: destination zone 'default_drop_zone' missing or ambiguous"
+      },
+      "save": {
+        "status": "REJECTED",
+        "reason": "destination zone 'default_drop_zone' missing or ambiguous"
+      }
+    },
+    "region_outside_usable": {
+      "validation": "REJECTED",
+      "validation_reasons": [
+        "physical destination: placement/object outside target usable placement geometry"
+      ],
+      "runtime": {
+        "status": "REJECTED",
+        "reason": "placement/object outside target usable placement geometry"
+      },
+      "product_view": {
+        "status": "REJECTED",
+        "reason": "environment.yaml: physical destination: placement/object outside target usable placement geometry"
+      },
+      "save": {
+        "status": "REJECTED",
+        "reason": "placement/object outside target usable placement geometry"
+      }
+    }
+  },
+  "serialized_transform_proof": {
+    "before": {
+      "id": "default_drop_zone",
+      "target_id": "target_bin_default",
+      "frame_id": "world",
+      "pose_xyz": [
+        0.45,
+        0.22,
+        0.11
+      ],
+      "pose_rpy": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "dimensions": [
+        0.2,
+        0.1,
+        0.12
+      ],
+      "placement_local": {
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.009999999999999995
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ]
+      },
+      "usable_placement": {
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "pose_rpy": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "dimensions": [
+          0.24,
+          0.12,
+          0.14
+        ],
+        "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+      },
+      "target_pose_xyz": [
+        0.45,
+        0.22,
+        0.1
+      ],
+      "target_pose_rpy": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "physical_destination_contract": "target_local/v1"
+    },
+    "translated_and_rotated_target": {
+      "id": "default_drop_zone",
+      "target_id": "target_bin_default",
+      "frame_id": "world",
+      "pose_xyz": [
+        0.47943488879168533,
+        0.2187100162771806,
+        0.10990033288920621
+      ],
+      "pose_rpy": [
+        0.1,
+        -0.1,
+        0.36999999999999994
+      ],
+      "dimensions": [
+        0.2,
+        0.1,
+        0.12
+      ],
+      "placement_local": {
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.009999999999999995
+        ]
+      },
+      "usable_placement": {
+        "dimensions": [
+          0.24,
+          0.12,
+          0.14
+        ],
+        "pose_rpy": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+      },
+      "target_pose_xyz": [
+        0.48,
+        0.22,
+        0.1
+      ],
+      "target_pose_rpy": [
+        0.1,
+        -0.1,
+        0.36999999999999994
+      ],
+      "physical_destination_contract": "target_local/v1"
+    },
+    "one_cm_local_x_edit": {
+      "id": "default_drop_zone",
+      "target_id": "target_bin_default",
+      "frame_id": "world",
+      "pose_xyz": [
+        0.48871158471449144,
+        0.2223081048875201,
+        0.1108986670556745
+      ],
+      "pose_rpy": [
+        0.1,
+        -0.1,
+        0.3699999999999999
+      ],
+      "dimensions": [
+        0.2,
+        0.1,
+        0.12
+      ],
+      "placement_local": {
+        "pose_xyz": [
+          0.009999999999999995,
+          1.3227266504323154e-17,
+          0.010000000000000005
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          -4.8572257327350586e-17
+        ],
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ]
+      },
+      "usable_placement": {
+        "dimensions": [
+          0.24,
+          0.12,
+          0.14
+        ],
+        "pose_rpy": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+      },
+      "target_pose_xyz": [
+        0.48,
+        0.22,
+        0.1
+      ],
+      "target_pose_rpy": [
+        0.1,
+        -0.1,
+        0.36999999999999994
+      ],
+      "physical_destination_contract": "target_local/v1"
+    },
+    "status": "PASS"
+  },
+  "status": "PASS"
+}

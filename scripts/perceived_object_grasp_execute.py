@@ -75,48 +75,23 @@ def load_canonical_place_target(package_share, destination_zone=None):
     import yaml
     package = Path(package_share)
     cell_path = package / "cell_definition.yaml"
+    from physical_destination import resolve_destination
     if not cell_path.exists():
-        # Compatibility for older offline fixtures. The generated cell
-        # handoff remains authoritative whenever it exists.
-        layout_path = package / "layout" / "workcell_studio_layout.yaml"
-        if not layout_path.exists():
-            raise RuntimeError(f"generated cell handoff is missing: {cell_path}")
-        layout = yaml.safe_load(layout_path.read_text(encoding="utf-8")) or {}
-        matches = [item for item in layout.get("items", [])
-                   if item.get("id") == "target_bin_default"]
-        if len(matches) != 1:
-            raise RuntimeError("canonical target_bin_default is not unique")
-        xyz = (matches[0].get("pose") or {}).get("xyz")
-        if (not isinstance(xyz, list) or len(xyz) != 3
-                or not all(isinstance(value, (int, float)) and math.isfinite(value)
-                           for value in xyz)):
-            raise RuntimeError("canonical target_bin_default pose is invalid")
-        return {"id": "default_drop_zone", "target_id": "target_bin_default",
-                "frame_id": "world", "pose_xyz": [float(value) for value in xyz]}
+        raise RuntimeError(f"generated cell handoff is missing: {cell_path}")
     cell = yaml.safe_load(cell_path.read_text(encoding="utf-8")) or {}
     task = cell.get("task") or {}
-    target_id = destination_zone or str((task.get("place") or {}).get("target_ref") or "")
-    zones = ((cell.get("environment") or {}).get("task_zones")
-             if isinstance(cell.get("environment"), dict) else []) or []
-    zone = next((item for item in zones if str(item.get("id")) == target_id), None)
-    if not isinstance(zone, dict):
-        raise RuntimeError(f"authored destination zone is missing: {target_id}")
-    xyz = zone.get("pose_xyz") or (zone.get("pose") or {}).get("xyz")
-    dimensions = zone.get("dimensions")
-    if (not isinstance(xyz, list) or len(xyz) != 3 or
-            not all(isinstance(v, (int, float)) and math.isfinite(v) for v in xyz)):
-        raise RuntimeError("authored destination zone pose is invalid")
-    if (not isinstance(dimensions, list) or len(dimensions) != 3 or
-            not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0 for v in dimensions)):
-        raise RuntimeError("authored destination zone dimensions are invalid")
-    destination = next((item for item in task.get("destinations", [])
-                        if str(item.get("id")) == target_id), {})
-    return {"id": target_id,
-            "target_id": str(destination.get("target_ref") or zone.get("target_ref") or ""),
-            "frame_id": str(zone.get("frame") or "world"),
-            "pose_xyz": [float(v) for v in xyz],
-            "dimensions": [float(v) for v in dimensions],
-            "pose_rpy": [float(v) for v in (zone.get("pose_rpy") or [0.0, 0.0, 0.0])]}
+    zone_id = destination_zone or str((task.get("place") or {}).get("target_ref") or "")
+    result = resolve_destination(cell.get("environment") or {}, zone_id)
+    authored_path = package / "environment.yaml"
+    if authored_path.exists():
+        authored = yaml.safe_load(authored_path.read_text(encoding="utf-8")) or {}
+        expected = resolve_destination(authored.get("environment") or {}, zone_id)
+        if result != expected:
+            raise RuntimeError("stale generated physical destination differs from authored environment")
+    destination = next((d for d in task.get("destinations", []) if d.get("id") == zone_id), {})
+    if destination.get("target_ref", result['target_id']) != result['target_id']:
+        raise RuntimeError("task destination target_ref differs from physical zone owner")
+    return result
 
 
 def fake_hardware_evidence(parameter_values, hardware_components):
@@ -758,6 +733,8 @@ def main():
                 achieved = object_pose_after_motion(original,tool_at_grasp.pose,reached.pose)
                 if math.dist(achieved[:3],destination['pose_xyz']) > 0.003:
                     raise RuntimeError('planned placement differs from destination by more than 3 mm')
+                from physical_destination import check_object_containment
+                check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=0.001)
                 motion('PREPLAN_OPEN_GRIPPER',{'gripper_finger1_joint':0.0},group='gripper')
                 before = copy.deepcopy(view)
                 placed = place_detachment_diff(original,contract['grasp_frame'],achieved[:3],achieved[3:]).world.collision_objects[0]
@@ -848,6 +825,10 @@ def main():
         if len(placed) != 1 or final.robot_state.attached_collision_objects:
             raise RuntimeError('final selected object is not uniquely detached in world')
         summary['final_object_state'] = collision_object_dict(placed[0])
+        from physical_destination import check_object_containment
+        check_object_containment(destination, summary['final_object_state']['pose'],
+                                 summary['final_object_state']['dimensions'], clearance=0.001)
+        summary['physical_destination_verified'] = True
         summary['destination'] = destination
         summary['placement_error_m'] = math.dist(summary['final_object_state']['pose'][:3], destination['pose_xyz'])
         summary['final_planning_scene'] = dict(world_ids=[o.id for o in final.world.collision_objects],

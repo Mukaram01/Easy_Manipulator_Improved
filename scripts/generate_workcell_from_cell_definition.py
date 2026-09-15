@@ -1679,6 +1679,9 @@ def generate_package(
     # The handoff carries authored physical state; layout remains editor metadata.
     authored_physical = (source_snapshot.get("environment") or {}).get("environment")
     if isinstance(authored_physical, dict):
+        from physical_destination import resolve_destination, destination_ids
+        for zone_id in destination_ids(authored_physical, (source_snapshot.get('environment') or {}).get('task') or {}):
+            resolve_destination(authored_physical, zone_id)
         loaded["environment"] = copy.deepcopy(authored_physical)
         surfaces = loaded["environment"].get("support_surfaces", [])
         if any(not surface.get("dimensions") and surface.get("mesh") for surface in surfaces):

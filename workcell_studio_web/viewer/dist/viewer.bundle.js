@@ -40301,14 +40301,6 @@ function bindExpandedUrdfPickRecordToSubtree(linkRoot, record, urdfLinkRoots) {
   }
   return boundNodeCount;
 }
-function derivedTransformTargetId(item) {
-  const targetId = String(item?.target_ref || "").trim();
-  const identity2 = [item?.role, item?.semantic_role, item?.type, item?.category, item?.id].map((value) => String(value || "").toLowerCase().replaceAll("_", " ")).join(" ");
-  return targetId && /\bplace zone\b/.test(identity2) ? targetId : "";
-}
-function isDerivedTransformDependent(item) {
-  return Boolean(derivedTransformTargetId(item));
-}
 function inspectionSelectionRendered(rendered) {
   return rendered?.item?.id ? rendered : null;
 }
@@ -40316,8 +40308,7 @@ function canonicalEditOwnerRendered(rendered) {
   const selectionOwner = selectionOwnerRenderedById(explicitUiSelectionItemId(rendered));
   if (selectionOwner && selectionOwner !== rendered && canEditItem(selectionOwner.item))
     return selectionOwner;
-  const derivedTarget = renderedById(derivedTransformTargetId(rendered?.item));
-  return derivedTarget && canEditItem(derivedTarget.item) ? derivedTarget : inspectionSelectionRendered(rendered);
+  return inspectionSelectionRendered(rendered);
 }
 function exportedPhysicalEditOwnerId(rendered) {
   const item = rendered?.item;
@@ -40435,9 +40426,9 @@ function applyTransformToObject(object, transform) {
 }
 function editableTransformGroupMembers(rendered) {
   const group = String(rendered?.item?.transform_group || "").trim();
-  if (!group || !canEditItem(rendered.item))
+  if (!rendered || !canEditItem(rendered.item))
     return rendered ? [rendered] : [];
-  return state.objects.filter((candidate) => canEditItem(candidate.item) && String(candidate.item.transform_group || "").trim() === group);
+  return state.objects.filter((candidate) => candidate === rendered || candidate.item?.placement_local && candidate.item?.target_ref === rendered.item.id || group && canEditItem(candidate.item) && String(candidate.item.transform_group || "").trim() === group);
 }
 function captureTransformGroup(rendered) {
   return new Map(editableTransformGroupMembers(rendered).map((member) => [member.item.id, cloneTransform(state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d))]));
@@ -40450,6 +40441,18 @@ function linkedTransformChanges(rendered, before, after, memberStarts = null) {
     const memberBefore = member === rendered ? cloneTransform(before) : cloneTransform(memberStarts?.get(member.item.id) || state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d));
     if (member === rendered)
       return { rendered: member, before: memberBefore, after: cloneTransform(after) };
+    if (member.item?.placement_local && member.item?.target_ref === rendered.item.id) {
+      const matrix = (transform) => {
+        const object2 = new THREE.Object3D();
+        applyTransformToObject(object2, transform);
+        object2.updateMatrix();
+        return object2.matrix.clone();
+      };
+      const moved = matrix(after).multiply(matrix(before).invert()).multiply(matrix(memberBefore));
+      const object = new THREE.Object3D();
+      moved.decompose(object.position, object.quaternion, object.scale);
+      return { rendered: member, before: memberBefore, after: transformFromObject(object) };
+    }
     const relativeX = memberBefore.pose.xyz.x - before.pose.xyz.x;
     const relativeY = memberBefore.pose.xyz.y - before.pose.xyz.y;
     const relativeZ = memberBefore.pose.xyz.z - before.pose.xyz.z;
@@ -40466,7 +40469,7 @@ function applyTransformChanges(changes, { updateDirty = false } = {}) {
     return false;
   for (const change of changes) {
     applyTransformToObject(change.rendered.object3d, change.after);
-    if (!updateDirty || isDerivedTransformDependent(change.rendered.item))
+    if (!updateDirty)
       continue;
     if (sameTransform(change.rendered.originalTransform, change.after))
       state.dirtyTransforms.delete(change.rendered.item.id);

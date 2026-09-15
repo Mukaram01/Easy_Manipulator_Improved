@@ -68,6 +68,10 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
     layout_items = layout.get('items') if isinstance(layout.get('items'), list) else []
     if save_authored:
         physical = env.setdefault('environment', {})
+        previous_physical = copy.deepcopy(physical)
+        from physical_destination import resolve_destination, is_destination_zone, destination_ids
+        for zone_id in destination_ids(previous_physical, env.get('task') or {}):
+            resolve_destination(previous_physical, zone_id)
         for item in layout_items:
             if not isinstance(item, dict) or item.get('locked') is True or item.get('editable') is False:
                 continue
@@ -91,7 +95,8 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
             for target in targets:
                 for key in ('type', 'role', 'display_name', 'category', 'frame', 'geometry_type',
                             'mesh', 'collision', 'dimensions', 'asset_class', 'description',
-                            'catalog_asset_id', 'support_surface_ref', 'task_zone_ref'):
+                            'catalog_asset_id', 'support_surface_ref', 'task_zone_ref',
+                            'target_ref', 'usable_placement', 'placement_local'):
                     if key in item:
                         target[key] = copy.deepcopy(item[key])
                 if item.get('mesh') and 'collision' not in target:
@@ -110,7 +115,30 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
                     for mirror in records:
                         if isinstance(mirror, dict) and mirror.get('id') == target['id'] and mirror is not target:
                             mirror.update(copy.deepcopy(target))
+        from physical_destination import relative_placement, resolve_destination
+        old_zones = _index(previous_physical.get('task_zones', []))
+        targets_by_id = _index(physical.get('assets', []))
+        for zone in physical.get('task_zones', []):
+            if not is_destination_zone(zone):
+                continue
+            previous = old_zones.get(zone['id'], {})
+            edited = any(zone.get(key) != previous.get(key)
+                         for key in ('pose_xyz', 'pose_rpy', 'dimensions'))
+            if edited:
+                zone['placement_local'] = relative_placement(targets_by_id[zone['target_ref']], zone)
+            resolved = resolve_destination(physical, zone['id'], check_projection=False)
+            for key in ('pose_xyz', 'pose_rpy', 'dimensions'):
+                zone[key] = copy.deepcopy(resolved[key])
+            for item in layout_items:
+                if item.get('id') == zone.get('layout_item_ref', zone['id']):
+                    item['pose'] = {'xyz': zone['pose_xyz'], 'rpy': zone['pose_rpy']}
+                    item['dimensions'] = zone['dimensions']
+                    item['placement_local'] = copy.deepcopy(zone['placement_local'])
+            for mirror in env.get('task_zones', []):
+                if mirror.get('id') == zone['id']:
+                    mirror.update(copy.deepcopy(zone))
         write_preserving(scene_dir/'environment.yaml', env)
+        write_preserving(scene_dir/'layout'/'workcell_studio_layout.yaml', layout)
     # Generated physical state is a projection of environment.yaml only.
     physical = env.get('environment', {})
     merged = _index(env.get('objects', []) if isinstance(env.get('objects'), list) else [])

@@ -4382,8 +4382,14 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
     if (helper_script_exists("validate_cell_definition.py", &validate_cell_script)) {
       QProcess validate_process;
       validate_process.start("python3", QStringList() << validate_cell_script << QString::fromStdString(cell.string()));
-      if (validate_process.waitForFinished(120000) && validate_process.exitCode() == 0) {
-        valid_existing_cell = true;
+      if (validate_process.waitForFinished(120000)) {
+        valid_existing_cell = validate_process.exitCode() == 0;
+        const QString details = QString::fromUtf8(validate_process.readAllStandardOutput()) +
+          QString::fromUtf8(validate_process.readAllStandardError());
+        if (!valid_existing_cell && details.contains(QStringLiteral("physical destination"))) {
+          append_studio_log(QStringLiteral("Generate YAML blocked: physical destination is invalid. Correct the authored target/placement; existing handoff preserved. ") + details);
+          return;
+        }
       }
     }
     if (valid_existing_cell) {

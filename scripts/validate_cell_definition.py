@@ -401,6 +401,12 @@ def validate_cell_definition(
     robot = defn.get("robot") if isinstance(defn.get("robot"), dict) else {}
     end_effector = defn.get("end_effector") if isinstance(defn.get("end_effector"), dict) else {}
     environment = defn.get("environment") if isinstance(defn.get("environment"), dict) else {}
+    from physical_destination import resolve_destination, destination_ids
+    for zone_id in destination_ids(environment, defn.get('task') or {}):
+        try:
+            resolve_destination(environment, zone_id)
+        except (ValueError, TypeError, KeyError) as exc:
+            result.errors.append(f"physical destination: {exc}")
     objects = defn.get("objects") if isinstance(defn.get("objects"), list) else []
     self_test = defn.get("self_test") if isinstance(defn.get("self_test"), dict) else {}
     task = defn.get("task") if isinstance(defn.get("task"), dict) else {}
