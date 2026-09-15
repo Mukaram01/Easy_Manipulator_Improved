@@ -248,8 +248,9 @@ def _valid_pose(value: Any) -> bool:
 def parse_validate_normalize(payload: dict[str, Any]) -> dict[str, Any]:
     """Single safe API: validate authored semantics, then normalize only if valid."""
     if payload.get("schema") == "workcell_builder_task_intent/v2":
-        diagnostics = validate_intent(payload)
-        return {"diagnostics": diagnostics, "normalized": normalize_v2(payload) if not diagnostics else None}
+        candidate = normalize_v2(payload)
+        diagnostics = validate_intent(candidate)
+        return {"diagnostics": diagnostics, "normalized": candidate if not diagnostics else None}
     raise ValueError("Use migrate_v1(payload, environment) for v1 input")
 
 

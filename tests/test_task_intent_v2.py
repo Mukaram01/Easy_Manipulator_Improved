@@ -13,6 +13,7 @@ from scripts.task_intent_v2 import (
     validate_intent,
     write_without_rewrite,
     parse_validate_normalize,
+    normalized_intent_hash,
 )
 
 
@@ -188,3 +189,15 @@ def test_shared_canonical_golden_fixtures_match_python():
         canonical = __import__("scripts.task_intent_v2", fromlist=["_canonical_json"])._canonical_json(model)
         assert canonical == item["canonical"]
         assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == item["sha256"]
+
+
+def test_authoritative_hash_normalizes_policy_case():
+    upper = valid_v2("EXACT")
+    lower = valid_v2("EXACT")
+    upper["pick"]["grasp"]["policy"] = "AUTO"
+    upper["pick"]["grasp"]["strategy_ref"] = None
+    lower["pick"]["grasp"]["policy"] = "auto"
+    lower["pick"]["grasp"]["strategy_ref"] = None
+    lower["place"]["placement"]["policy"] = "exact"
+    upper["place"]["placement"]["policy"] = "EXACT"
+    assert normalized_intent_hash(lower) == normalized_intent_hash(upper)

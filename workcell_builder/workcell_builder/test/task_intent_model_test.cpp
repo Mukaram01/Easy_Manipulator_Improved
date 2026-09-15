@@ -53,11 +53,19 @@ TEST(TaskIntentModel, NullableAndVariableLengthValuesRemainSemantic)
 
 TEST(TaskIntentModel, AuthoritativeHashRequiresValidatedModel)
 {
-  const std::string yaml = "schema: workcell_builder_task_intent/v2\ntask: {id: t}\npick: {selection: {}, grasp: {orientation: {}}}\nplace: {target: {}, placement: {}}\nsafety: {execution_mode: simulation_preview}\n";
+  const std::string yaml = "schema: workcell_builder_task_intent/v2\ntask: {id: t, type: pick_place}\npick: {selection: {object_filter: {class_id: bottle}}, grasp: {policy: auto, required_capability: two_finger_parallel}}\nplace: {target: {asset_ref: bin, region_ref: drop}, placement: {policy: exact, requested_local_pose: {xyz_m: [0,0,0], rpy_rad: [0,0,0]}}, release: {strategy: tool_release}}\nsafety: {execution_mode: simulation_preview}\n";
   EXPECT_FALSE(workcell_builder::TaskIntentModel::from_validated_yaml("schema: bad\n"));
   auto validated = workcell_builder::TaskIntentModel::from_validated_yaml(yaml);
-  ASSERT_TRUE(validated.has_value()); EXPECT_NO_THROW(workcell_builder::authoritative_task_intent_sha256(*validated));
+  ASSERT_TRUE(validated.has_value()); EXPECT_EQ(validated->grasp.policy, "AUTO"); EXPECT_EQ(validated->place.policy, "EXACT"); EXPECT_NO_THROW(workcell_builder::authoritative_task_intent_sha256(*validated));
   EXPECT_THROW(workcell_builder::authoritative_task_intent_sha256(workcell_builder::TaskIntentModel::from_yaml(yaml)), std::invalid_argument);
+}
+
+TEST(TaskIntentModel, InvalidV2NeverGetsAuthoritativeHash)
+{
+  const std::string base = "schema: workcell_builder_task_intent/v2\ntask: {id: t}\npick: {selection: {object_filter: {class_id: c}}, grasp: {policy: AUTO, required_capability: two_finger_parallel}}\nplace: {target: {asset_ref: a, region_ref: r}, placement: {policy: AUTO}, release: {strategy: tool_release}}\nsafety: {}\n";
+  for (const auto & bad : {base + "tool: installed\n", base + "task: {id: t, target_policy: {class_id: c}}\n", base + "safety: {motion_started: true}\n", base + "place: {target: {asset_ref: a, region_ref: r}, placement: {policy: EXACT}, release: {strategy: tool_release}}\n", base + "place: {target: {asset_ref: a, region_ref: r}, placement: {policy: AUTO}, release: {strategy: bad}}\n", base + "pick: {selection: {object_filter: {class_id: c}}, grasp: {required_capability: two_finger_parallel}}\n"})
+    EXPECT_FALSE(workcell_builder::TaskIntentModel::from_validated_yaml(bad));
+  EXPECT_FALSE(workcell_builder::TaskIntentModel::from_validated_yaml("schema: workcell_builder_task_intent/v2\ntask: {}\n"));
 }
 
 TEST(TaskIntentModel, SharedGoldenFixturesMatchCanonicalBytesAndHashes)

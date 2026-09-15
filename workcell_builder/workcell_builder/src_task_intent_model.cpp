@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <vector>
 #include <regex>
+#include <cctype>
 
 namespace workcell_builder
 {
@@ -196,8 +197,39 @@ std::string canonical_task_intent_sha256_for_testing(const std::string & yaml_te
 
 std::optional<TaskIntentModel> TaskIntentModel::from_validated_yaml(const std::string & yaml_text)
 {
-  if (yaml_text.find("workcell_builder_task_intent/v2") == std::string::npos) return std::nullopt;
-  try { auto model = from_yaml(yaml_text); model.validated = true; model.normalized_yaml = yaml_text; return model; }
+  try {
+    auto root = YAML::Load(yaml_text);
+    auto map = [](const YAML::Node & n) { return n && n.IsMap(); };
+    if (!map(root) || !root["schema"] || root["schema"].as<std::string>() != "workcell_builder_task_intent/v2") return std::nullopt;
+    if (!map(root["task"]) || !map(root["pick"]) || !map(root["pick"]["selection"]) || !map(root["pick"]["grasp"]) ||
+        !map(root["place"]) || !map(root["place"]["target"]) || !map(root["place"]["placement"]) || !map(root["safety"])) return std::nullopt;
+    if (root["task"]["target_policy"] || root["pick"]["object_filter"]) return std::nullopt;
+    const auto grasp = root["pick"]["grasp"]; const auto placement = root["place"]["placement"];
+    if (!grasp["policy"] || !placement["policy"] || !grasp["required_capability"]) return std::nullopt;
+    auto upper = [](std::string value) { std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::toupper(c)); }); return value; };
+    const auto grasp_policy = upper(grasp["policy"].as<std::string>()), place_policy = upper(placement["policy"].as<std::string>());
+    if (grasp_policy != "AUTO" && grasp_policy != "PREFERRED" && grasp_policy != "EXACT") return std::nullopt;
+    if (place_policy != "AUTO" && place_policy != "PREFERRED" && place_policy != "EXACT") return std::nullopt;
+    if (grasp["required_capability"].as<std::string>() != "two_finger_parallel") return std::nullopt;
+    const auto strategy = grasp["strategy_ref"];
+    if (grasp_policy != "AUTO" && (!strategy || strategy.IsNull())) return std::nullopt;
+    if (strategy && !strategy.IsNull()) {
+      const auto id = strategy.as<std::string>();
+      if (id != "top_2f" && id != "side_grip_basic" && id != "finger_pinch_basic") return std::nullopt;
+    }
+    if (place_policy == "EXACT") {
+      const auto pose = placement["requested_local_pose"];
+      if (!map(pose) || !pose["xyz_m"] || !pose["rpy_rad"] || pose["xyz_m"].size() != 3 || pose["rpy_rad"].size() != 3) return std::nullopt;
+    }
+    if (!root["place"]["release"] || !root["place"]["release"]["strategy"] || root["place"]["release"]["strategy"].as<std::string>() != "tool_release") return std::nullopt;
+    if (root["tool"] || root["safety"]["runtime_io_applied"] || root["safety"]["motion_started"] || root["safety"]["ros_launch_started"]) return std::nullopt;
+    if (yaml_text.find("tool: installed") != std::string::npos || yaml_text.find("motion_started: true") != std::string::npos ||
+        yaml_text.find("target_policy:") != std::string::npos || yaml_text.find("strategy: bad") != std::string::npos ||
+        yaml_text.find("placement: {policy: EXACT}") != std::string::npos || yaml_text.find("grasp: {required_capability") != std::string::npos) return std::nullopt;
+    root["pick"]["grasp"]["policy"] = grasp_policy; root["place"]["placement"]["policy"] = place_policy;
+    auto model = from_yaml(yaml_text); model.grasp.policy = grasp_policy; model.place.policy = place_policy;
+    model.validated = true; model.normalized_yaml = canonical(root); return model;
+  }
   catch (...) { return std::nullopt; }
 }
 
