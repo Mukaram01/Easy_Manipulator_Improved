@@ -1,13 +1,13 @@
 {
-  "mode": "post_generation",
+  "mode": "pre_generation",
   "status": "PASS",
   "summary": {
     "warning_count": 0,
     "mismatch_count": 0,
     "blocker_count": 0
   },
-  "source_layout_path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml",
-  "generated_package_path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated",
+  "source_layout_path": "/home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml",
+  "generated_package_path": "/home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated",
   "scene_builder_parity_action_present": true,
   "parity_status_labels_present": true,
   "parity_report_filename_contract": true,

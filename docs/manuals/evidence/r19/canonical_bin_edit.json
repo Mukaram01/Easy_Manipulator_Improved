@@ -1,0 +1,15 @@
+{
+  "via": "authored Builder layout -> workcell_studio_layout_merge --save-authored",
+  "before": [
+    0.9399999999999444,
+    -0.28,
+    0.1
+  ],
+  "after": [
+    0.45,
+    0.22,
+    0.1
+  ],
+  "reason": "all eight complete-cycle candidates failed at transfer with IK -31 at original physical bin",
+  "fake_hardware_only": true
+}

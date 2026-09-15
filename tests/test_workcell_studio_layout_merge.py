@@ -16,13 +16,18 @@ def test_save_updates_runtime_zone_by_layout_reference(tmp_path, include_layout_
     (scene / 'layout').mkdir(parents=True)
     zone = {'id': 'runtime_destination', 'layout_item_ref': 'inspector_zone',
             'pose_xyz': [.45, .22, .13], 'pose_rpy': [0, 0, 0],
-            'target_ref': 'bin', 'bottom_clearance_m': .005}
+            'target_ref': 'bin', 'bottom_clearance_m': .005, 'frame': 'world',
+            'dimensions': [.1, .1, .1], 'placement_local': {'pose_xyz': [0, 0, .03],
+            'pose_rpy': [0, 0, 0], 'dimensions': [.1, .1, .1]}}
     zones = [zone]
     if include_layout_id_record:
         zones.append({**copy.deepcopy(zone), 'id': 'inspector_zone'})
     unrelated = {'id': 'other_zone', 'pose_xyz': [1, 2, 3]}
     zones.append(unrelated)
-    env = {'environment': {'task_zones': zones}, 'task_zones': copy.deepcopy(zones)}
+    env = {'environment': {'task_zones': zones, 'assets': [{'id': 'bin', 'frame': 'world',
+           'pose_xyz': [.45, .22, .1], 'pose_rpy': [0, 0, 0], 'collision': {'enabled': True},
+           'usable_placement': {'pose_xyz': [0, 0, .03], 'pose_rpy': [0, 0, 0],
+                                'dimensions': [.3, .3, .3]}}]}, 'task_zones': copy.deepcopy(zones)}
     environment = scene / 'environment.yaml'
     environment.write_text(yaml.safe_dump(env))
     item = {'id': 'inspector_zone', 'category': 'zone', 'editable': True,
@@ -36,7 +41,7 @@ def test_save_updates_runtime_zone_by_layout_reference(tmp_path, include_layout_
         assert records[-1] == unrelated
         for record in records[:-1]:
             assert record['pose_xyz'] == [.46, .22, .13]
-            assert record['pose_rpy'] == [0, 0, .1]
+            assert record['pose_rpy'] == pytest.approx([0, 0, .1])
             assert record['target_ref'] == 'bin'
             assert record['bottom_clearance_m'] == .005
     merge(scene, save_authored=True)

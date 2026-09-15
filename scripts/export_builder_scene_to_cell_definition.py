@@ -292,6 +292,7 @@ def _extract_task_zones(environment: dict[str, Any]) -> tuple[list[dict[str, Any
             "role": role,
             "layout_item_ref": z.get("layout_item_ref"),
             "target_ref": z.get("target_ref"),
+            "placement_local": z.get("placement_local"),
         })
     counts["total"]=len(normalized)
     return normalized, counts, ids
@@ -305,7 +306,11 @@ def _task_type_from_meta(meta: dict[str, Any]) -> str:
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
-    task_zones, task_zone_counts, _ = _extract_task_zones(env)
+    from physical_destination import resolve_destination, destination_ids
+    physical = env.get("environment") or {}
+    for zone_id in destination_ids(physical, env.get('task') or {}):
+        resolve_destination(physical, zone_id)
+    task_zones, task_zone_counts, _ = _extract_task_zones(physical or env)
     warnings: list[str] = []
     task_intent_path = _find_task_intent(scene_path)
     builder_task_intent: dict[str, Any] = {}
@@ -505,6 +510,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "layout": "layout/workcell_studio_layout.yaml",
             "task_zones": task_zones,
             "task_zones_summary": task_zone_counts,
+            "assets": physical.get("assets", []),
             "support_surfaces": [{"id": a["id"], "type": "table", "frame": "world", "pose_xyz": a["pose"]["xyz"], "pose_rpy": a["pose"]["rpy"], "dimensions": a["dimensions"]} for a in assets],
         },
         "objects": [{"id": o["id"], "class": "part", "shape": "mesh", "color": "unknown", "material": "unknown", "frame": "world", "dimensions": o["dimensions"], "pose_xyz": [0.0,0.0,0.0], "pose_rpy": [0.0,0.0,0.0]} for o in object_entries],

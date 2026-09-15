@@ -40,15 +40,14 @@ def test_supported_object_proxy_penetration_is_corrected_minimally():
     assert correction == pytest.approx(0.0215)
 
 
-def test_canonical_place_target_is_loaded_from_existing_layout(tmp_path):
+def test_canonical_place_target_rejects_layout_without_physical_handoff(tmp_path):
     layout = tmp_path / "layout"
     layout.mkdir()
     (layout / "workcell_studio_layout.yaml").write_text(
         "items:\n- id: target_bin_default\n  pose:\n    xyz: [0.25, 0.45, 0.20]\n",
         encoding="utf-8")
-    target = MODULE.load_canonical_place_target(tmp_path)
-    assert target == {"id": "default_drop_zone", "target_id": "target_bin_default",
-                      "frame_id": "world", "pose_xyz": [0.25, 0.45, 0.20]}
+    with pytest.raises(RuntimeError, match="generated cell handoff is missing"):
+        MODULE.load_canonical_place_target(tmp_path)
 
 
 def test_translated_pose_preserves_orientation_and_input():

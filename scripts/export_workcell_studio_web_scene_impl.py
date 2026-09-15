@@ -229,131 +229,34 @@ def _normalise_active_place_zone(data: Dict[str, Any]) -> None:
         )
     destination = destination.strip()
 
-    zones = [zone for zone in _as_list(environment.get("task_zones")) if isinstance(zone, Mapping)]
-    matching_zones = [zone for zone in zones if str(zone.get("id", "")) == destination]
-    if len(matching_zones) != 1:
-        raise BlockingExportError(
-            f"environment.yaml: unresolved ID {destination!r}; relationship active destination -> task_zones.id "
-            "must resolve to exactly one task zone"
-        )
-    zone = matching_zones[0]
-    target_ref = zone.get("target_ref")
-    if not isinstance(target_ref, str) or not target_ref.strip():
-        raise BlockingExportError(
-            f"environment.yaml: unresolved ID '<target_ref>' for task zone {destination!r}; relationship "
-            "task_zones.id -> task zone.target_ref failed because target_ref is missing"
-        )
-    target_ref = target_ref.strip()
-
-    asset_candidates: List[Tuple[Mapping[str, Any], str]] = []
-    nested = _as_map(environment.get("environment"))
-    for source_root, source_name in ((nested, "environment.assets"), (environment, "assets")):
-        values = source_root.get("assets")
-        entries = values.items() if isinstance(values, Mapping) else ((None, raw) for raw in _as_list(values))
-        for entry_id, raw in entries:
-            if isinstance(raw, Mapping) and str(raw.get("id", raw.get("name", entry_id or ""))) == target_ref:
-                asset_candidates.append((raw, source_name))
-    for section in ("objects", "placed_objects"):
-        values = environment.get(section)
-        entries = values.items() if isinstance(values, Mapping) else ((None, raw) for raw in _as_list(values))
-        for entry_id, raw in entries:
-            if isinstance(raw, Mapping) and str(raw.get("id", raw.get("name", entry_id or ""))) == target_ref:
-                asset_candidates.append((raw, section))
-    if not asset_candidates:
-        raise BlockingExportError(
-            f"environment.yaml: unresolved ID {target_ref!r}; relationship task zone {destination!r}.target_ref "
-            "-> physical asset failed"
-        )
-
-    # Mirrored nested/top-level assets are supported, but conflicting records
-    # with one ID are not safe to choose between silently.
-    def physical_signature(candidate: Mapping[str, Any]) -> Tuple[Any, Any, Any]:
-        return (candidate.get("pose_xyz"), candidate.get("pose_rpy"), candidate.get("dimensions"))
-
-    signatures = {json.dumps(physical_signature(asset), sort_keys=True) for asset, _ in asset_candidates}
-    if len(signatures) != 1:
-        raise BlockingExportError(
-            f"environment.yaml: unresolved ID {target_ref!r}; relationship task zone.target_ref -> physical "
-            "asset is ambiguous across supported asset forms"
-        )
-    asset, asset_source = asset_candidates[0]
-    xyz, rpy, dimensions = asset.get("pose_xyz"), asset.get("pose_rpy"), asset.get("dimensions")
-    # Layout YAML is the transform authoring source used by the web editor.
-    # Prefer its matching destination record so a saved destination edit also
-    # drives the derived overlay on the very next export/reload.
-    layout = _as_map(data.get("layout"))
-    layout_matches = [
-        item for item in _as_list(layout.get("items"))
-        if isinstance(item, Mapping) and str(item.get("id", "")) == target_ref
-    ]
-    if len(layout_matches) > 1:
-        raise BlockingExportError(
-            f"layout/workcell_studio_layout.yaml: unresolved ID {target_ref!r}; relationship physical asset "
-            "-> layout destination is ambiguous"
-        )
-    if layout_matches:
-        layout_target = layout_matches[0]
-        layout_pose = _as_map(layout_target.get("pose"))
-        xyz = layout_pose.get("xyz", xyz)
-        rpy = layout_pose.get("rpy", rpy)
-        # Imported/registered meshes deliberately omit editable dimensions in
-        # the layout. Preserve the physical asset dimensions for web-preview
-        # normalization instead of turning a missing editor field into None.
-        layout_dimensions = layout_target.get("dimensions")
-        if isinstance(layout_dimensions, (list, tuple)) and len(layout_dimensions) >= 2:
-            dimensions = layout_dimensions
-        asset_source = "layout/workcell_studio_layout.yaml"
-    source_file = asset_source if asset_source.endswith(".yaml") else "environment.yaml"
-    valid_vector = lambda value, size: (isinstance(value, (list, tuple)) and len(value) >= size and all(
-        isinstance(component, (int, float)) and not isinstance(component, bool) and math.isfinite(component)
-        for component in value[:size]
-    ))
-    if not (valid_vector(xyz, 3) and valid_vector(rpy, 3)):
-        raise BlockingExportError(
-            f"{source_file}: unresolved ID {target_ref!r}; relationship physical target asset -> valid "
-            "world pose failed (requires finite numeric pose_xyz and pose_rpy)"
-        )
-    if not valid_vector(dimensions, 2):
-        # Mesh assets need not declare editable box dimensions. The authored
-        # semantic free region is the reviewed footprint for the Web3D
-        # overlay; MoveIt still uses the exact mesh collision manifest.
-        dimensions = zone.get("dimensions")
-    if not valid_vector(dimensions, 2) or any(component <= 0 for component in dimensions[:2]):
-        raise BlockingExportError(
-            f"{source_file}: unresolved ID {target_ref!r}; relationship physical target asset -> positive "
-            "X/Y dimensions failed"
-        )
-
-    authored_dimensions = zone.get("dimensions")
-    authored_height = authored_dimensions[2] if isinstance(authored_dimensions, (list, tuple)) and len(authored_dimensions) >= 3 else None
-    height = min(float(authored_height), 0.01) if isinstance(authored_height, (int, float)) and authored_height > 0 else 0.01
-    zone["pose_xyz"] = list(xyz[:3])
-    zone["pose_rpy"] = list(rpy[:3])
-    zone["dimensions"] = [dimensions[0], dimensions[1], height]
-    zone["normalization_provenance"] = {
-        "destination": "task.place.target_ref" if place.get("target_ref") else "task.rules.destination",
-        "task_zone": "task_zones",
-        "physical_asset": asset_source,
-    }
-    # A layout-authored visual may mirror the semantic environment zone under
-    # a different ID. Keep that dependent record derived in the export payload
-    # without writing its pose back to layout YAML.
-    overlay_id = str(zone.get("layout_item_ref", "")).strip()
-    for layout_item in _as_list(layout.get("items")):
-        if not isinstance(layout_item, dict):
-            continue
-        layout_identity = " ".join(str(layout_item.get(key, "")).lower().replace("_", " ") for key in ("role", "type", "category", "id"))
-        if "place zone" not in layout_identity:
-            continue
-        # Rebind the overlay selected by the active task zone. Do not use its
-        # possibly stale target_ref as the selector after a destination change.
-        if overlay_id and str(layout_item.get("id", "")).strip() != overlay_id:
-            continue
-        if not overlay_id and str(layout_item.get("target_ref", "")).strip() != target_ref:
-            continue
-        layout_item["target_ref"] = target_ref
-        layout_item["pose"] = {"xyz": list(xyz[:3]), "rpy": list(rpy[:3])}
-        layout_item["dimensions"] = [dimensions[0], dimensions[1], height]
+    from physical_destination import resolve_destination, pose
+    physical = _as_map(environment.get("environment")) or environment
+    try:
+        resolved = resolve_destination(physical, destination)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise BlockingExportError(f"environment.yaml: physical destination: {exc}") from exc
+    zone = next(z for z in physical['task_zones'] if z['id'] == destination)
+    # Display the exact checked runtime volume, including its full height.
+    # Inconsistent authored data blocks export; no preview-only snapping.
+    layout = _as_map(data.get('layout'))
+    for item in _as_list(layout.get('items')):
+        if item.get('id') in (resolved['target_id'], zone.get('layout_item_ref', destination)) and item.get('pose'):
+            expected = ({'pose_xyz': resolved['target_pose_xyz'], 'pose_rpy': resolved['target_pose_rpy']}
+                        if item['id'] == resolved['target_id'] else resolved)
+            try:
+                actual_p, actual_r = pose(item)
+                expected_p, expected_r = pose(expected)
+                if (math.dist(actual_p, expected_p) > 1e-7 or
+                        any(abs(a-b) > 1e-7 for row, other in zip(actual_r, expected_r)
+                            for a, b in zip(row, other))):
+                    raise ValueError(f"stale layout pose for {item['id']}")
+            except ValueError as exc:
+                raise BlockingExportError(f"physical destination: {exc}") from exc
+        if item.get('id') == zone.get('layout_item_ref', destination):
+            item['pose'] = {'xyz': resolved['pose_xyz'], 'rpy': resolved['pose_rpy']}
+            item['dimensions'] = resolved['dimensions']
+            item['placement_local'] = resolved['placement_local']
+            item['target_ref'] = resolved['target_id']
 
 
 def _provenance(fields: Iterable[str], source: str) -> Dict[str, str]:
@@ -2097,7 +2000,7 @@ def _authored_item(raw: Mapping[str, Any], source: str, index: int, scene_dir: P
     fields = (
         "id", "type", "role", "category", "display_name", "source_section", "link", "object_name", "frame", "pose", "pose_xyz", "pose_rpy", "dimensions",
         "geometry_type", "primitive_geometry_type", "mesh_uri", "package_uri", "source_path", "mesh_path", "filepath", "mesh_scale", "mesh_local_transform", "visual_origin", "material",
-        "layout_item_ref", "support_surface_ref", "task_zone_ref", "target_ref", "transform_group", "normalization_provenance", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
+        "layout_item_ref", "support_surface_ref", "task_zone_ref", "target_ref", "placement_local", "usable_placement", "transform_group", "normalization_provenance", "scale", "perception_mode", "runtime_enforced", "runtime_commanded",
         "support_surface_kind", "support_kind", "semantic_type", "top_surface_z_m", "topSurfaceZM", "support_surface_height_m", "supportSurfaceHeightM",
         "expected_support_footprint_m", "support_footprint_m", "footprint_m", "footprint", "table_height", "table_top_z", "surface_height_m",
     )

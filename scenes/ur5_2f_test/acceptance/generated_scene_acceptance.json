@@ -1,6 +1,6 @@
 {
   "scene_name": "ur5_2f_test",
-  "scene_path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+  "scene_path": "/home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
   "status": "PASS",
   "checks": [
     {
@@ -117,9 +117,9 @@
   ],
   "layout_applied": false,
   "generated_from_saved_layout": false,
-  "merge_report_path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/workcell_studio_layout_merge_report.json",
+  "merge_report_path": "/home/ubuntu/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/workcell_studio_layout_merge_report.json",
   "layout_stale": false,
   "merge_warnings": [],
   "merge_blockers": [],
-  "authored_input_fingerprint": "9cc3d12a3fc13565"
+  "authored_input_fingerprint": "bbd023c2ff761653"
 }

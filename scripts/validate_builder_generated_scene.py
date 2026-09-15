@@ -153,6 +153,20 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
     if (scene_path / "environment.yaml").is_file():
         env = _load_yaml_like(scene_path / "environment.yaml")
 
+    from physical_destination import resolve_destination, destination_ids
+    physical = env.get("environment") or {}
+    current_cell_path = scene_path / "cell_definition.yaml"
+    current_cell = _load_yaml_like(current_cell_path) if current_cell_path.is_file() else {}
+    for zone_id in destination_ids(physical, env.get("task") or {}):
+        try:
+            authored_destination = resolve_destination(physical, zone_id)
+            if current_cell:
+                generated_destination = resolve_destination(current_cell.get('environment') or {}, zone_id)
+                if authored_destination != generated_destination:
+                    raise ValueError('stale generated physical destination differs from authored environment')
+        except (ValueError, TypeError, KeyError) as exc:
+            errors.append(f"physical destination: {exc}")
+
     metadata_path = scene_path / "workcell_builder_metadata.yaml"
     metadata = _load_yaml_like(metadata_path) if metadata_path.is_file() else {}
     checks.append({"check": "workcell_builder_metadata.yaml present", "ok": metadata_path.is_file(), "optional": True})
