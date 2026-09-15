@@ -1,0 +1,87 @@
+# R2.0 Full Engineering Task Authoring Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Deliver a capability-based Workcell Builder Task Authoring workspace that persists explicit user intent, resolves 2F grasp/place candidates through one authoritative readiness path, and keeps preview, generated recipe, and fake-hardware runtime contracts in sync.
+
+**Architecture:** One C++ `TaskIntentModel` owns v2 authored state and dirty/save lifecycle. Python/C++ adapters normalize v1, validate intent, call a deterministic resolver, and emit a resolution artifact. Existing `task_recipe/v1` remains a derived compatibility output. Product View and Plan/Simulate consume the resolution artifact; R1.9 target-local destination resolution remains the only physical destination path.
+
+**Tech Stack:** ROS 2 Humble, Qt/C++, YAML, existing Python validators/adapters, MoveIt/PlanningScene fake hardware, Product View web export.
+
+**Spec:** [R2.0 Full Engineering Task Authoring Design](../specs/2026-09-15-r2-full-engineering-task-authoring-design.md)
+
+## Global constraints
+
+- Work only in `~/workcell_ws/src/easy_manipulation_deployment`.
+- Preserve `ur5_2f_test`, R1.6/R1.9 behavior, Humble, fake-hardware-first defaults, and real-hardware locks.
+- Do not implement suction, EPD/RealSense, Gazebo, Isaac, or an operator HMI in R2.0.
+- Do not add raw YAML as the primary UX.
+- Do not weaken collision, destination, or safety checks.
+- Each milestone must leave a reviewable test/evidence artifact; do not claim runtime support without workstation evidence.
+
+## Milestone R2.0a — Contract, normalization, and capability registry
+
+- [ ] Add v2 schema types and canonical serialization/hash in `task_intent_model`.
+- [ ] Normalize v1 task intent, including legacy strategy aliases and R1.9 target references.
+- [ ] Define the 2F capability profile and strategy catalog requirements; keep suction metadata unsupported.
+- [ ] Extend `validate_builder_task_intent.py` with stable codes for policy completeness, capability mismatch, exact constraints, safety, routing, and destination-chain errors.
+- [ ] Add fixtures for AUTO, PREFERRED, EXACT, invalid exact, and legacy v1 migration.
+- [ ] Verify schema round-trip preserves numeric units, null confidence, target-local references, and safety flags.
+
+**Exit evidence:** validator JSON shows deterministic v2 normalization and diagnostics for all policy modes; existing v1 fixtures still pass their prior contract.
+
+## Milestone R2.0b — Shared readiness and resolver
+
+- [ ] Implement the resolver interface: normalized intent + capability profile + scene + observation → candidates, checks, selected result, status.
+- [ ] Integrate `physical_destination.py` for target-local world pose and usable-region checks; remove any resolver-local pose fallback.
+- [ ] Enforce AUTO/PREFERRED/EXACT semantics, including explicit fallback records and exact hard gates.
+- [ ] Add grasp checks for reachability, orientation, aperture, contact, and collision; add placement checks for target reachability, usable region, orientation collision, and retreat feasibility.
+- [ ] Emit `generated/task_intent_resolution.yaml` and JSON with intent hash and provenance.
+- [ ] Make `task_recipe/v1` conversion consume the selected resolution while retaining legacy mirrors.
+
+**Exit evidence:** headless resolver fixtures demonstrate valid AUTO, reported PREFERRED fallback, valid EXACT, and blocked EXACT; output destination matches the R1.9 resolver.
+
+## Milestone R2.0c — Task Authoring workspace and persistence
+
+- [ ] Build the dedicated Task Authoring panel in `mainwindow.cpp`/UI with What, How to grasp, Where, How to place, and Validation sections.
+- [ ] Bind every widget to `TaskIntentModel`; remove duplicate direct writes from `SceneSelect` and legacy environment editor paths.
+- [ ] Add policy help, capability-filtered strategy choices, advanced expandable constraints, canvas selection, and resolved-destination readout.
+- [ ] Implement atomic Save, close/reopen normalization, dirty-state labels, and action gating for Save/Validate/Generate/Plan.
+- [ ] Keep Product View edits routed through existing authored layout paths; task edits remain in the task-intent source.
+- [ ] Add Qt/model tests for widget-to-model mapping, policy changes, exact-field requirements, and persistence.
+
+**Exit evidence:** a same-session GUI smoke record edits `ur5_2f_test`, saves, closes/reopens, and shows byte-equivalent normalized intent and identical bindings.
+
+## Milestone R2.0d — Preview, generation, and runtime parity
+
+- [ ] Update Product View export to load the resolution artifact and show selected/rejected candidates and blockers.
+- [ ] Block or diagnostic-render stale/missing resolution; never synthesize a preview pose.
+- [ ] Update Plan/Simulate and Checks to consume the shared readiness result and expose one actionable blocker.
+- [ ] Pass resolution hash and policy to grasp planning/execution; enforce the same exact/fallback rules immediately before planning.
+- [ ] Preserve fake hardware and `no_robot_motion` defaults; record runtime gating decisions.
+- [ ] Add parity tests comparing authored intent hash, resolution, task recipe, Product View payload, and runtime request.
+
+**Exit evidence:** one generated canonical scene shows the same selected grasp and target-local destination in Builder, Product View, recipe, and dry-run runtime payload.
+
+## Milestone R2.0e — Acceptance and migration closure
+
+- [ ] Run acceptance scenarios A–G from the spec on `ur5_2f_test`.
+- [ ] Run the R1.9 1 cm target-local edit and canonical restore path to prove no destination regression.
+- [ ] Exercise v1 open → explicit Save → v2 reopen and legacy recipe consumption.
+- [ ] Capture readiness, resolver, preview, and fake-hardware evidence under `docs/manuals/evidence/r20/`.
+- [ ] Update the roadmap only after evidence passes; label any skipped live camera/real hardware work explicitly.
+- [ ] Perform a code review focused on source-of-truth ownership, policy enforcement, and preview/runtime parity.
+
+**Exit evidence:** acceptance matrix is filled with command/UI evidence, limitations, and clean shutdown; no production claim is made for suction or real hardware.
+
+## Exact first implementation slice after approval
+
+Implement **R2.0a contract normalization only**: add the v2 typed model/normalizer, v1 migration, capability/strategy registry entries for the existing Robotiq 2F path, and validator fixtures. Do not change Qt widgets, generation, Product View, or runtime in that slice. This creates a testable contract before touching UI or motion behavior.
+
+## Review checkpoints
+
+1. Approve this design and schema.
+2. Review R2.0a contract fixtures before UI work.
+3. Review resolver output and destination parity before enabling Generate.
+4. Review GUI persistence smoke before Product View/runtime wiring.
+5. Review the complete acceptance pack before any roadmap “R2.0 complete” statement.
