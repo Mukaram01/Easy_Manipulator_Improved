@@ -9,7 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
-from task_intent_v2 import normalize_v2, validate_intent
+from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, TOOL_CAPABILITY_MAP
 try:
     import yaml
 except Exception:
@@ -89,12 +89,13 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
             required = normalized.get('pick', {}).get('grasp', {}).get('required_capability')
             installed = ((env.get('end_effector') or {}).get('id') or (env.get('tool') or {}).get('id') or
                          (scene.get('end_effector') or {}).get('id') or (scene.get('tool') or {}).get('id'))
-            if required == 'two_finger_parallel' and installed not in {'robotiq_2f_85', 'robotiq_85_gripper', 'finger_gripper', 'finger'}:
+            available = TOOL_CAPABILITY_MAP.get(str(installed), set())
+            if required and required not in available:
                 diagnostics.append({'code': 'INSTALLED_TOOL_CAPABILITY_MISMATCH', 'message': f'installed scene tool {installed!r} cannot provide two_finger_parallel'})
         errors = [d['code'] + ': ' + d['message'] for d in diagnostics]
         return {
             'status': 'FAIL' if errors else 'PASS', 'errors': errors, 'warnings': [],
-            'task_intent': normalized, 'normalized_intent_sha256': __import__('task_intent_v2').canonical_hash(normalized),
+            'task_intent': normalized, **({'normalized_intent_sha256': normalized_intent_hash(payload)} if not errors else {}),
             'missing_required_fields': [], 'suggested_next_actions': [] if errors else ['Generate task recipe from task intent.'],
             'readiness_classification': 'task_intent_blocked' if errors else 'task_intent_ready_offline',
             'safety': normalized.get('safety', {}),

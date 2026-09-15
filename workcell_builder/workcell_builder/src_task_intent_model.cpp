@@ -18,6 +18,17 @@ std::string text_or(const YAML::Node & node, const char * key, const std::string
 {
   return node && node.IsMap() && node[key] && node[key].IsScalar() ? node[key].as<std::string>() : fallback;
 }
+template<std::size_t N>
+void numbers_or(const YAML::Node & node, const char * key, std::array<double, N> & out)
+{
+  const auto value = node && node.IsMap() ? node[key] : YAML::Node();
+  if (!value || !value.IsSequence()) return;
+  for (std::size_t i = 0; i < std::min(N, value.size()); ++i) out[i] = value[i].as<double>();
+}
+double number_or(const YAML::Node & node, const char * key, double fallback = 0.0)
+{
+  return node && node.IsMap() && node[key] ? node[key].as<double>() : fallback;
+}
 std::string json_quote(const std::string & value)
 {
   std::ostringstream out;
@@ -29,6 +40,8 @@ std::string json_quote(const std::string & value)
       case '\n': out << "\\n"; break;
       case '\r': out << "\\r"; break;
       case '\t': out << "\\t"; break;
+      case '\b': out << "\\b"; break;
+      case '\f': out << "\\f"; break;
       default:
         if (c < 0x20) { out << "\\u00" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c) << std::dec; }
         else { out << c; }
@@ -82,6 +95,8 @@ TaskIntentModel TaskIntentModel::from_yaml(const std::string & yaml_text)
 {
   const auto root = YAML::Load(yaml_text);
   TaskIntentModel model;
+  model.scene_package = root["scene_package"] && root["scene_package"].IsScalar() ? root["scene_package"].as<std::string>() : "";
+  model.routing_yaml = root["routing"] ? YAML::Dump(root["routing"]) : "";
   const auto task = root["task"];
   model.task_id = text_or(task, "id");
   model.task_type = text_or(task, "type");
@@ -94,21 +109,58 @@ TaskIntentModel TaskIntentModel::from_yaml(const std::string & yaml_text)
   const auto filter = selection["object_filter"];
   model.pick_selection.class_id = text_or(filter, "class_id");
   model.pick_selection.color = text_or(filter, "color");
+  model.pick_selection.min_confidence = number_or(filter, "min_confidence", -1.0);
+  model.pick_selection.max_age_seconds = number_or(filter, "max_age_seconds");
   const auto grasp = pick["grasp"];
   model.grasp.policy = text_or(grasp, "policy", "AUTO");
   model.grasp.required_capability = text_or(grasp, "required_capability");
   model.grasp.strategy_ref = text_or(grasp, "strategy_ref");
+  const auto approach = grasp["approach"];
+  model.grasp.approach_axis = text_or(approach, "axis");
+  model.grasp.approach_distance_m = number_or(approach, "distance_m");
+  const auto orientation = grasp["orientation"];
+  model.grasp.orientation_mode = text_or(orientation, "mode");
+  numbers_or(orientation, "allowed_roll_deg", model.grasp.allowed_roll_deg);
+  numbers_or(orientation, "allowed_yaw_deg", model.grasp.allowed_yaw_deg);
+  numbers_or(orientation, "tolerance_rad", model.grasp.tolerance_rad);
+  numbers_or(grasp, "tcp_offset_xyz_m", model.grasp.tcp_offset_xyz_m);
+  numbers_or(grasp, "tcp_offset_rpy_rad", model.grasp.tcp_offset_rpy_rad);
+  const auto contact = grasp["contact"];
+  model.grasp.contact_required = contact && contact["required"] ? contact["required"].as<bool>() : false;
+  model.grasp.contact_min_quality = number_or(contact, "min_quality");
+  const auto aperture = grasp["aperture"];
+  model.grasp.aperture_min_m = number_or(aperture, "min_m");
+  model.grasp.aperture_max_m = number_or(aperture, "max_m");
+  const auto lift = grasp["lift"];
+  model.grasp.lift_axis = text_or(lift, "axis");
+  model.grasp.lift_distance_m = number_or(lift, "distance_m");
   const auto place = root["place"];
   const auto target = place["target"];
   model.place.asset_ref = text_or(target, "asset_ref");
   model.place.region_ref = text_or(target, "region_ref");
-  model.place.policy = text_or(place["placement"], "policy", "AUTO");
+  const auto placement = place["placement"];
+  model.place.policy = text_or(placement, "policy", "AUTO");
+  const auto requested = placement["requested_local_pose"];
+  if (requested && requested.IsMap()) { model.place.has_requested_local_pose = true; numbers_or(requested, "xyz_m", model.place.requested_local_pose.xyz_m); numbers_or(requested, "rpy_rad", model.place.requested_local_pose.rpy_rad); }
+  const auto place_orientation = placement["orientation"];
+  model.place.orientation_mode = text_or(place_orientation, "mode");
+  numbers_or(place_orientation, "rpy_rad", model.place.orientation_rpy_rad);
+  numbers_or(place_orientation, "tolerance_rad", model.place.orientation_tolerance_rad);
+  const auto place_approach = placement["approach"];
+  model.place.approach_axis = text_or(place_approach, "axis");
+  model.place.approach_distance_m = number_or(place_approach, "distance_m");
+  model.place.clearance_m = number_or(placement, "clearance_m");
+  const auto retreat = placement["retreat"];
+  model.place.retreat_axis = text_or(retreat, "axis");
+  model.place.retreat_distance_m = number_or(retreat, "distance_m");
   model.release_strategy = text_or(place["release"], "strategy", "tool_release");
   const auto safety = root["safety"];
   model.safety.execution_mode = text_or(safety, "execution_mode", "simulation_preview");
   model.safety.require_fake_hardware = safety && safety["require_fake_hardware"] ? safety["require_fake_hardware"].as<bool>() : true;
   model.safety.real_hardware_enabled = safety && safety["real_hardware_enabled"] ? safety["real_hardware_enabled"].as<bool>() : false;
   model.safety.preview_policy = text_or(safety, "preview_policy", "diagnostic_if_unresolved");
+  const auto provenance = root["provenance"];
+  model.migration_provenance = provenance && provenance["migration"] ? YAML::Dump(provenance["migration"]) : "";
   return model;
 }
 

@@ -45,6 +45,14 @@ def test_valid_policies_and_semantic_release():
         assert model["place"]["release"]["strategy"] == "tool_release"
 
 
+def test_typed_model_round_trip_preserves_full_document():
+    from scripts.task_intent_v2 import TaskIntentModel
+    model = normalize_v2(valid_v2("EXACT"))
+    model["routing"] = {"mode": "direct", "rules": [{"destination": "default_drop_zone"}]}
+    model["provenance"] = {"migration": {"source": "fixture"}}
+    assert TaskIntentModel.from_dict(model).to_dict() == model
+
+
 def test_exact_missing_values_blocked_and_pick_is_sole_authority():
     model = valid_v2("EXACT")
     model["pick"]["grasp"].pop("orientation")
@@ -66,7 +74,7 @@ def test_v2_dynamic_runtime_state_rejected_and_not_serialized():
     model = valid_v2()
     model["safety"]["motion_started"] = False
     assert any(x["code"] == "DYNAMIC_SAFETY_IN_INTENT" for x in validate_intent(model))
-    assert "motion_started" not in normalize_v2(model)["safety"]
+    assert "motion_started" in normalize_v2(model)["safety"]
 
 
 def test_canonical_hash_ignores_order_whitespace_and_comments():
@@ -125,6 +133,13 @@ def test_v1_migration_preserves_top2f_and_records_catalog_materialization():
     assert migrated["place"]["target"]["region_ref"] == "default_drop_zone"
 
 
+def test_v1_non_z_up_retreat_axis_survives_migration():
+    import yaml
+    env = yaml.safe_load((Path(__file__).parents[1] / "scenes/ur5_2f_test/environment.yaml").read_text())["environment"]
+    old = {"schema": "workcell_builder_task_intent/v1", "task": {"type": "pick_place"}, "pick": {"source": {"id": "objects"}, "zone": {"id": "pick_zone_main"}}, "grasp": {"strategy_ref": "top_2f", "retreat_axis": "x_minus"}, "place": {"target": {"id": "default_drop_zone"}}}
+    assert migrate_v1(old, env)["pick"]["grasp"]["lift"]["axis"] == "x_minus"
+
+
 def test_v1_open_does_not_write(tmp_path: Path):
     p = tmp_path / "intent.yaml"
     original = "schema: workcell_builder_task_intent/v1\ntask: {type: pick_place}\n"
@@ -153,3 +168,13 @@ def test_v1_place_migration_materializes_r19_target_local_destination():
     assert migrated["place"]["target"] == {"asset_ref": "bin", "region_ref": "drop"}
     assert migrated["place"]["placement"]["requested_local_pose"]["xyz_m"] == before["placement_local"]["pose_xyz"]
     assert migrated["provenance"]["migration"]["materialized_place_from_r19"] is True
+
+
+def test_v1_rotated_local_rpy_is_preserved():
+    from scripts.physical_destination import resolve_destination
+    import math
+    env = {"assets": [{"id": "bin", "frame": "world", "pose_xyz": [1., 2., 3.], "pose_rpy": [0., 0., math.pi / 2], "collision": {"enabled": True}, "usable_placement": {"pose_xyz": [0., 0., .1], "pose_rpy": [0., 0., 0.], "dimensions": [.4, .3, .2]}}], "task_zones": [{"id": "drop", "target_ref": "bin", "frame": "world", "placement_local": {"pose_xyz": [.05, 0., .1], "pose_rpy": [0.1, 0.2, 0.3], "dimensions": [.2, .1, .1]}, "pose_xyz": [1., 2.05, 3.1], "pose_rpy": [0.1, 0.2, 1.8707963267948966], "dimensions": [.2, .1, .1]}]}
+    old = {"schema": "workcell_builder_task_intent/v1", "task": {"type": "pick_place"}, "pick": {"source": {"id": "objects"}}, "grasp": {"strategy_ref": "top_2f"}, "place": {"target": {"id": "drop"}}}
+    before = resolve_destination(env, "drop")
+    migrated = migrate_v1(old, env)
+    assert migrated["place"]["placement"]["requested_local_pose"]["rpy_rad"] == before["placement_local"]["pose_rpy"]

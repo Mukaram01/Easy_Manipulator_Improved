@@ -2,7 +2,7 @@
 
 The canonical hash is SHA-256 over UTF-8 canonical JSON. Objects are sorted by
 UTF-8 key, arrays retain authored order, booleans/null keep JSON spelling, and
-numbers are normalized to a decimal string with up to 12 fractional digits
+numbers are normalized to an unquoted decimal token with up to 12 fractional digits
 (trailing zeroes removed; ``-0`` becomes ``0``). This representation is shared
 by the future C++ model and Python validator.
 """
@@ -41,16 +41,23 @@ class TaskIntentModel:
     grasp: dict[str, Any]
     place: dict[str, Any]
     safety: dict[str, Any]
+    scene_package: str = ""
+    routing: dict[str, Any] | None = None
     migration_provenance: dict[str, Any] | None = None
+    extra: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, model: dict[str, Any]) -> "TaskIntentModel":
-        return cls(model.get("task", {}), model.get("pick", {}).get("selection", {}), model.get("pick", {}).get("grasp", {}), model.get("place", {}), model.get("safety", {}), model.get("provenance", {}).get("migration"))
+        known = {"schema", "scene_package", "task", "pick", "place", "safety", "routing", "provenance"}
+        return cls(model.get("task", {}), model.get("pick", {}).get("selection", {}), model.get("pick", {}).get("grasp", {}), model.get("place", {}), model.get("safety", {}), str(model.get("scene_package", "")), model.get("routing"), copy.deepcopy(model.get("provenance")) if model.get("provenance") is not None else None, {k: copy.deepcopy(v) for k, v in model.items() if k not in known})
 
     def to_dict(self) -> dict[str, Any]:
-        out = {"schema": "workcell_builder_task_intent/v2", "task": self.task, "pick": {"selection": self.pick_selection, "grasp": self.grasp}, "place": self.place, "safety": self.safety}
+        out = {"schema": "workcell_builder_task_intent/v2", "scene_package": self.scene_package, "task": self.task, "pick": {"selection": self.pick_selection, "grasp": self.grasp}, "place": self.place, "safety": self.safety}
+        if self.routing is not None:
+            out["routing"] = self.routing
         if self.migration_provenance is not None:
-            out["provenance"] = {"migration": self.migration_provenance}
+            out["provenance"] = copy.deepcopy(self.migration_provenance)
+        out.update(self.extra or {})
         return out
 
 
@@ -99,26 +106,16 @@ def normalize_v2(payload: dict[str, Any]) -> dict[str, Any]:
     """Normalize v2 without injecting physical geometry or runtime state."""
     model = copy.deepcopy(payload)
     model["schema"] = "workcell_builder_task_intent/v2"
-    task = model.setdefault("task", {})
-    task.pop("target_policy", None)
-    pick = model.setdefault("pick", {})
-    selection = pick.setdefault("selection", {})
-    # Prevent old duplicate locations from becoming authority.
-    pick.pop("object_filter", None)
-    for key in ("class_id", "color", "min_confidence", "max_age_seconds", "source_ref", "source_type"):
-        if key in selection:
-            selection[key] = selection[key]
-    grasp = pick.setdefault("grasp", {})
-    grasp["policy"] = str(grasp.get("policy", "AUTO")).upper()
-    place = model.setdefault("place", {})
-    target = place.setdefault("target", {})
-    placement = place.setdefault("placement", {})
-    placement["policy"] = str(placement.get("policy", "AUTO")).upper()
-    release = place.setdefault("release", {})
-    release["strategy"] = "tool_release"
-    safety = model.setdefault("safety", {})
-    for dynamic in ("runtime_io_applied", "motion_started", "ros_launch_started"):
-        safety.pop(dynamic, None)
+    # Validation owns rejection; normalization only copies authored semantics
+    # and canonicalizes policy spelling when the field exists. It never deletes
+    # duplicate authorities, fills missing policy, rewrites release, or removes
+    # dynamic state from invalid authored input.
+    grasp = model.get("pick", {}).get("grasp", {})
+    if "policy" in grasp:
+        grasp["policy"] = str(grasp["policy"]).upper()
+    placement = model.get("place", {}).get("placement", {})
+    if "policy" in placement:
+        placement["policy"] = str(placement["policy"]).upper()
     return model
 
 
@@ -155,7 +152,7 @@ def migrate_v1(payload: dict[str, Any], environment: dict[str, Any] | None = Non
                 elif new == "allowed_roll_deg": grasp.setdefault("orientation", {})[new] = value
                 elif new == "allowed_yaw_deg": grasp.setdefault("orientation", {})[new] = value
                 elif new.startswith("tcp_"): grasp[new] = value
-                elif new == "lift_distance_m": grasp["lift"] = {"axis": "z_up", "distance_m": value}
+                elif new == "lift_distance_m": grasp["lift"] = {"axis": old_grasp.get("retreat_axis") or strategy.get("retreat_axis") or "z_up", "distance_m": value}
     old_offset = old_place.get("place_offset_xyz") or old_place.get("offset_xyz")
     # R1.9 physical destination truth is consulted before choosing a migrated
     # placement policy. This materializes the existing target-local point when
@@ -169,7 +166,9 @@ def migrate_v1(payload: dict[str, Any], environment: dict[str, Any] | None = Non
     if old_offset is None:
         local = destination["placement_local"]
         old_offset = local.get("pose_xyz") or local.get("pose", {}).get("xyz")
-    local_pose = {"xyz_m": old_offset, "rpy_rad": old_place.get("place_offset_rpy", [0.0, 0.0, 0.0])} if old_offset is not None else None
+    effective_local = destination["placement_local"]
+    default_rpy = effective_local.get("pose_rpy") or effective_local.get("pose", {}).get("rpy") or [0.0, 0.0, 0.0]
+    local_pose = {"xyz_m": old_offset, "rpy_rad": old_place.get("place_offset_rpy", default_rpy)} if old_offset is not None else None
     model = {"schema": "workcell_builder_task_intent/v2", "scene_package": payload.get("scene_package", ""),
              "task": {"id": task.get("id", "migrated_task"), "type": task.get("type", "pick_place"), "template": task.get("template", task.get("type", "pick_place"))},
              "pick": {"selection": selection, "grasp": grasp},
@@ -252,3 +251,10 @@ def parse_validate_normalize(payload: dict[str, Any]) -> dict[str, Any]:
         diagnostics = validate_intent(payload)
         return {"diagnostics": diagnostics, "normalized": normalize_v2(payload) if not diagnostics else None}
     raise ValueError("Use migrate_v1(payload, environment) for v1 input")
+
+
+def normalized_intent_hash(payload: dict[str, Any]) -> str:
+    result = parse_validate_normalize(payload)
+    if result["diagnostics"]:
+        raise ValueError("INTENT_INVALID: authoritative hash is unavailable")
+    return canonical_hash(result["normalized"])
