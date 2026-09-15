@@ -1,50 +1,43 @@
 # R2.0 Full Engineering Task Authoring Design
 
-**Status:** Design for review; no production implementation in this pass  
-**Date:** 2026-09-15  
-**Scope:** Workcell Builder engineering authoring for the canonical `ur5_2f_test` scene, with a capability-based contract that can later describe suction tools.
+**Status:** Revised design for approval; production implementation is explicitly out of scope
+**Date:** 2026-09-15
+**Canonical scene:** `scenes/ur5_2f_test`
 
-## 1. Purpose and non-goals
+## 1. Approved architecture and boundaries
 
-R2.0 lets an engineering user author four separate decisions in Workcell Builder:
+One `TaskIntentModel` is the only authored task source. It is saved as
+`config/workcell_builder_task_intent.yaml`; generated `task_recipe.yaml`, the
+resolution artifact, Product View payloads, and runtime requests are derived
+from it. R1.9 `physical_destination.py` remains the only physical destination
+resolver. Product View, Generate, Validate, planner, and runtime consume the
+same resolution result and hash.
 
-1. **What** is the task and which perceived object(s) are eligible.
-2. **How** the object is grasped.
-3. **Where** it is picked from and placed.
-4. **How to place** it, including release, orientation, clearance, and retreat.
+The model describes engineering intent, not live state. Dynamic execution
+facts (`runtime_io_applied`, `motion_started`, `ros_launch_started`) belong in
+resolution/runtime/evidence artifacts. The installed tool comes from the
+physical scene/environment; task intent can require a capability but cannot
+declare the installed tool.
 
-The authoring surface expresses user intent. A separate resolver/planner evaluates whether that intent is physically valid for the selected robot, tool, object observation, and destination. The UI must never silently alter an authored exact request to make it pass.
+R2.0 supports the existing Robotiq 2F path. Suction, EPD/RealSense, real
+hardware, Gazebo, Isaac, and an operator HMI remain out of scope. Defaults stay
+fake-hardware/offline-preview safe.
 
-R2.0 does not implement suction planning, live camera/EPD, real hardware, Gazebo, Isaac, or a new operator HMI. It does not replace Product View, RViz, MoveIt, `task_intent.yaml`, `task_recipe.yaml`, or the R1.9 target-local physical destination resolver. All defaults remain fake-hardware/offline-preview safe.
+## 2. Authority model
 
-## 2. Design principles and ownership
+- **Environment:** physical target asset, its frame, `usable_placement` volume,
+  and named place-region geometry; installed robot/tool identity.
+- **Task intent:** task/template, one pick eligibility section, grasp and place
+  requests, required capabilities, and safety policy.
+- **Resolver:** candidate selection, fallback reporting, physical checks, and
+  resolved target-local/world poses.
+- **Runtime/evidence:** dynamic state, launch/execution facts, and evidence.
 
-- `environment.yaml` and the authored layout remain the physical scene source of truth.
-- `config/workcell_builder_task_intent.yaml` is the single authored engineering task-intent source of truth after R2.0 migration.
-- `task_recipe.yaml` is derived and runtime-facing; it must contain the resolved policy and provenance of the intent that produced it.
-- Product View reads the same authoritative intent/resolution artifact used by generation. It may display a diagnostic state, but it cannot invent a pose or destination.
-- RViz/MoveIt and the grasp planner are the physical validity authorities. A preview is not proof of runtime reachability.
-- Capability catalogs describe tool capabilities and strategy requirements. They are data, not UI-specific conditionals.
-- EPD provides normalized observations only; Workcell Studio owns filtering, task resolution, planning, and execution gates.
-- R1.9 target-local physical destination semantics remain authoritative: `place.target.id` resolves through the physical target's local frame and `usable_placement` metadata to one checked world destination.
+Object class/source/confidence/age rules appear exactly once in
+`pick.selection`. Physical target geometry and usable-region geometry never
+appear in task intent.
 
-## 3. Terminology
-
-| Term | Meaning |
-|---|---|
-| Intent | What the engineer requested, including policy (`AUTO`, `PREFERRED`, `EXACT`) and constraints. |
-| Capability | A tool/strategy property such as two-finger parallel grasp, aperture range, approach directions, or release mechanism. |
-| Candidate | A concrete grasp or placement pose generated from an observation and scene. |
-| Resolution | The deterministic result of matching intent to capabilities, candidates, and physical checks. |
-| Fallback | A resolver choice different from the requested preferred strategy. Allowed only in `PREFERRED`, and always reported. |
-| Exact | A hard requirement. If no candidate satisfies it, resolution is `BLOCKED` before execution. |
-| READY/WARNING/BLOCKED | User-facing readiness classes. `READY` means the authored request has a valid checked resolution; `WARNING` means it is usable with an explicit caveat; `BLOCKED` means generation/plan/execute is gated. |
-
-## 4. Authoritative R2.0 schema
-
-The schema version advances to `workcell_builder_task_intent/v2`. Readers must accept v1 and normalize it into this model before validation. Writers emit v2 only after migration is complete.
-
-### 4.1 Schema shape
+## 3. Corrected v2 schema
 
 ```yaml
 schema: workcell_builder_task_intent/v2
@@ -53,22 +46,20 @@ task:
   id: bottle_to_default_bin
   type: pick_place
   template: pick_place
-  target_policy:
-    class_id: bottle
-    source_ref: detected_objects/v1
-    max_age_seconds: 2.0
-    min_confidence: null
 pick:
-  source:
-    type: pick_zone
-    id: pick_zone_main
-  object_filter:
-    class_id: bottle
-    color: null
+  selection:
+    source_ref: detected_objects/v1
+    source_type: perception
+    zone_ref: pick_zone_main
+    object_filter:
+      class_id: bottle
+      color: null
+      min_confidence: null
+      max_age_seconds: 2.0
   grasp:
     policy: AUTO                 # AUTO | PREFERRED | EXACT
-    capability: two_finger_parallel
-    strategy_ref: top_2f
+    required_capability: two_finger_parallel
+    strategy_ref: null           # required for PREFERRED/EXACT
     approach:
       axis: z_down
       distance_m: 0.12
@@ -76,232 +67,179 @@ pick:
       mode: vertical
       allowed_roll_deg: [0.0]
       allowed_yaw_deg: [0.0, 90.0, 180.0, 270.0]
-    tool_offset_xyz_m: [0.0, 0.0, 0.0]
-    tool_offset_rpy_rad: [0.0, 0.0, 0.0]
+      tolerance_rad: [0.0, 0.0, 0.0]
+    tcp_offset_xyz_m: [0.0, 0.0, 0.0]
+    tcp_offset_rpy_rad: [0.0, 0.0, 0.0]
+    contact: {required: true, min_quality: 0.0}
+    aperture: {min_m: 0.0, max_m: 0.085}
+    lift: {axis: z_up, distance_m: 0.15}
 place:
   target:
-    type: destination
-    id: default_drop_zone
+    asset_ref: target_bin_default
     region_ref: default_drop_zone
   placement:
     policy: AUTO                 # AUTO | PREFERRED | EXACT
+    requested_local_pose: null   # {xyz_m: [...], rpy_rad: [...]} or absent
     orientation:
       mode: target_default
       rpy_rad: [0.0, 0.0, 0.0]
       tolerance_rad: [0.0, 0.0, 0.0]
+    approach: {axis: z_down, distance_m: 0.10}
     clearance_m: 0.05
-    usable_region_required: true
-    retreat:
-      axis: z_up
-      distance_m: 0.10
-  release:
-    strategy: open_gripper
+    retreat: {axis: z_up, distance_m: 0.10}
+  release: {strategy: tool_release}
 routing:
   mode: direct
-  rules:
-    - id: default_place
-      when: {always: true}
-      destination: default_drop_zone
-tool:
-  capability_profile_ref: robotiq_2f
+  rules: [{id: default_place, when: {always: true}, destination: default_drop_zone}]
 safety:
-  preview_only: true
-  use_fake_hardware: true
-  runtime_io_applied: false
-  motion_started: false
-  ros_launch_started: false
+  execution_mode: simulation_preview
+  require_fake_hardware: true
+  real_hardware_enabled: false
+  preview_policy: diagnostic_if_unresolved
 provenance:
   authored_by: workcell_builder
   source_schema: workcell_builder_task_intent/v2
 ```
 
-`strategy_ref` is optional for `AUTO`, required for `PREFERRED` and `EXACT`. `capability` is required for all policies; it is the stable cross-tool vocabulary. A future suction profile can use `vacuum_pick` without changing the task shape.
+### Units, frames, and policy
 
-### 4.2 Policy examples
+All distances are metres; `_rad` angles are radians and `_deg` angles are
+degrees. Grasp poses and TCP offsets use the frames documented by the strategy
+catalog. `requested_local_pose` is always in the physical target asset's local
+frame. The resolver transforms it through the R1.9 target-local chain to world.
+Task intent contains no target or region dimensions.
 
-**AUTO** — choose any catalog strategy satisfying the capability and physical checks:
+- **AUTO:** strategy and local pose may be absent; choose any valid candidate.
+- **PREFERRED:** try the requested strategy/local pose first; any fallback is
+  persisted with a reason and produces `WARNING`.
+- **EXACT:** requested strategy/constraints/local pose are consumed unchanged;
+  any invalidity is `BLOCKED`, with no fallback.
 
-```yaml
-grasp: {policy: AUTO, capability: two_finger_parallel, approach: {axis: z_down, distance_m: 0.12}}
-place: {placement: {policy: AUTO, orientation: {mode: target_default}, clearance_m: 0.05}}
-```
+`release.strategy: tool_release` is semantic. The installed profile maps it to
+`fingers_open` for 2F; a future suction profile may map it to vacuum/seal
+release. Suction is not implemented here.
 
-**PREFERRED** — try `top_2f`; a fallback is permitted and must be surfaced and persisted in the resolution report:
+### Catalog vocabulary
 
-```yaml
-grasp:
-  policy: PREFERRED
-  capability: two_finger_parallel
-  strategy_ref: top_2f
-```
+| Existing catalog ID | Stable capability | Status |
+|---|---|---|
+| `top_2f` | `two_finger_parallel` | supported |
+| `side_grip_basic` | `two_finger_parallel` | supported |
+| `finger_pinch_basic` | `two_finger_parallel` | supported |
+| `robotiq_2f_85` | installed-tool catalog identity | scene/profile mapping |
+| `finger_gripper` | installed-tool catalog identity | scene/profile mapping |
 
-**EXACT** — use only this strategy and constraints; any mismatch blocks:
+No `finger_side` or `finger_top` alias may be emitted without a canonical,
+tested alias table.
 
-```yaml
-grasp:
-  policy: EXACT
-  capability: two_finger_parallel
-  strategy_ref: top_2f
-  orientation: {mode: vertical, allowed_roll_deg: [0.0], allowed_yaw_deg: [90.0]}
-```
+## 4. Split resolution artifact
 
-### 4.3 Resolution artifact
-
-Generation writes `generated/task_intent_resolution.yaml` (and JSON for UI/test consumers). It records the normalized intent hash, capability profile, selected candidate, rejected candidates, fallback reason, physical checks, and status. This is derived data and may never overwrite the authored request.
+Generation writes `generated/task_intent_resolution.yaml` and a JSON mirror;
+it never overwrites authored intent.
 
 ```yaml
 schema: workcell_task_intent_resolution/v1
-intent_sha256: <hash>
-status: READY
-policy: PREFERRED
-requested_strategy_ref: top_2f
-selected_strategy_ref: finger_side
-fallback:
-  used: true
-  reason: top_2f candidate collided with target rim
-pick_candidate: {id: grasp_07, pose_frame: object, score: 0.82}
+readiness_status: READY       # READY | WARNING | BLOCKED
+normalized_intent_sha256: <hash>
+physical_scene_provenance: {scene_package: scenes/ur5_2f_test, environment_sha256: <hash>, generation_id: <id>}
+capability_profile:
+  installed_tool_id: robotiq_2f_85
+  capabilities: [two_finger_parallel]
+  release_mapping: {tool_release: fingers_open}
+grasp_resolution:
+  requested_policy: PREFERRED
+  required_capability: two_finger_parallel
+  requested_strategy_ref: top_2f
+  selected_strategy_ref: side_grip_basic
+  fallback: {used: true, reason: top_2f candidate collided with the target object}
+  selected_candidate: {id: grasp_07, pose_frame: object, score: 0.82}
+  checks: [{code: reachable, status: PASS}, {code: orientation, status: PASS}, {code: aperture, status: PASS}, {code: contact, status: PASS}, {code: collision_free, status: PASS}]
 place_resolution:
-  target_id: default_drop_zone
-  target_frame: bin_target_local
-  world_pose_xyz: [0.45, 0.22, 0.13]
-checks:
-  - {code: grasp_collision_free, status: PASS}
-  - {code: target_reachable, status: PASS}
-  - {code: usable_region, status: PASS}
+  requested_policy: EXACT
+  target_asset_ref: target_bin_default
+  region_ref: default_drop_zone
+  requested_local_pose: {xyz_m: [0.0, 0.0, 0.05], rpy_rad: [0.0, 0.0, 0.0]}
+  selected_local_pose: {xyz_m: [0.0, 0.0, 0.05], rpy_rad: [0.0, 0.0, 0.0]}
+  world_pose: {frame: world, xyz_m: [0.45, 0.22, 0.13], rpy_rad: [0.0, 0.0, 0.0]}
+  fallback: {used: false, reason: null}
+  checks: [{code: target_reachable, status: PASS}, {code: inside_usable_region, status: PASS}, {code: orientation_collision_free, status: PASS}, {code: retreat_feasible, status: PASS}]
+runtime_policy: {execution_mode: simulation_preview, require_fake_hardware: true, real_hardware_enabled: false}
 ```
 
-## 5. UI design: Builder Task Authoring workspace
+The artifact records requested/selected local poses, resolved world pose,
+actual installed profile, provenance, hash, readiness, checks, and fallbacks.
 
-Add a dedicated **Task Authoring** workspace/panel in Workcell Builder. It is a single engineering surface; do not expose raw YAML in the primary flow.
+## 5. Task Authoring UI and data flow
 
-### 5.1 Layout
+One **Task Authoring** workspace presents: **What** (template and the sole Pick
+eligibility section), **How to grasp** (policy, required capability, real
+strategy ID, approach/orientation, TCP, contact/aperture, lift), **Where**
+(physical target asset and named region), **How to place** (policy, local XYZ/RPY,
+orientation, approach, semantic release, clearance, retreat), and **Validation**
+(READY/WARNING/BLOCKED and actionable diagnostics). Advanced constraints are
+expandable; raw YAML is not the primary UX. Save is atomic and re-reads the
+normalized model. Generate, Plan/Simulate, and execution use the shared result.
 
 ```text
-┌ Task Authoring ────────────────────────────────┐
-│ Status: READY | Save   Validate   Generate     │
-├ What ──────────────────────────────────────────┤
-│ Template [Pick and place]  Target class [bottle]│
-│ Pick source [pick_zone_main]  Object rule ...   │
-├ How to grasp ──────────────────────────────────┤
-│ Policy [AUTO ▾]  Capability [Two-finger ... ▾]  │
-│ Strategy [Auto ▾]  Approach [Z down ▾] [0.12 m] │
-│ Orientation [Vertical ▾]                       │
-│ [Advanced grasp constraints ▸]                  │
-├ Where ─────────────────────────────────────────┤
-│ Place target [default_drop_zone] [Select in view]│
-│ Destination: target-local region (read-only)   │
-│ [Show resolved destination]                     │
-├ How to place ──────────────────────────────────┤
-│ Policy [AUTO ▾]  Orientation [Target default ▾] │
-│ Clearance [0.05 m]  Release [Open gripper ▾]    │
-│ Retreat [Z up ▾] [0.10 m]                       │
-├ Validation ────────────────────────────────────┤
-│ READY  0 blockers  0 warnings                  │
-│ [details: checks and candidate reasoning ▸]     │
-└────────────────────────────────────────────────┘
+Task Authoring [READY] [Save] [Validate] [Generate]
+What / Pick eligibility → How to grasp → Where → How to place → Validation
 ```
-
-The 3D view supplies `Select in view` and highlights pick zones, targets, the resolved placement region, and any rejected candidate reason. Product View remains read-only with respect to task intent; edits commit through Builder's authoring model.
-
-### 5.2 Interaction rules
-
-- Policy labels include one-line help: AUTO chooses, PREFERRED prefers with reported fallback, EXACT never falls back.
-- Changing a capability filters strategy choices; an incompatible manually selected strategy is an inline `BLOCKED` error, never auto-replaced.
-- `EXACT` exposes required orientation, approach, aperture, contact, and retreat constraints. Missing exact values are blocked.
-- Advanced controls are expandable and include aperture/contact tolerances, candidate score weights, tool offsets, and routing conditions.
-- Save marks the authored intent clean only after atomic write and re-read normalization. Generate and Plan/Simulate are disabled while blockers or unsaved task edits remain.
-- Validation details show user language first, then diagnostic code, evidence source, and “fix in Task Authoring” action.
-- Fallback banners are persistent until the policy or inputs change; they are included in the resolution artifact and task recipe provenance.
-
-## 6. Runtime and preview data flow
 
 ```text
-Builder controls
-  → TaskIntentModel (v2, dirty/clean)
-  → atomic save config/workcell_builder_task_intent.yaml
-  → normalize + static validation
-  → capability registry + tool profile
-  → grasp/placement resolver
-      inputs: canonical scene, R1.9 destination resolver, normalized EPD/replay observation
-      outputs: candidates, selected resolution, checks, READY/WARNING/BLOCKED
-  → generated/task_intent_resolution.yaml
-  → task_recipe/v1 adapter (compatibility mirror + provenance)
-  → Product View preview and Plan/Simulate
-  → runtime executor gate (fake hardware only by default)
+TaskIntentModel v2 → save → normalize/validate → installed-tool lookup + observation
+ → grasp resolver + physical_destination.py + place resolver
+ → split resolution artifact → recipe/Product View/Plan/runtime
 ```
 
-The preview consumes the same resolution artifact. If resolution is absent or stale, Product View renders a diagnostic overlay and the unresolved task, never a fabricated pose. Runtime execution must re-check the intent hash and physical checks immediately before planning.
+Checks cover schema/IDs, policy completeness, capability compatibility,
+approach/lift/retreat feasibility, reachability, exact orientation, aperture,
+contact, collision, target reachability, usable-region containment, placement
+orientation collision, and safety policy. Destination failure is always
+`BLOCKED`; unresolved preview is diagnostic only.
 
-## 7. Validation and readiness rules
+## 6. Acceptance matrix
 
-Validation has two layers:
-
-1. **Intent validation** (deterministic, no robot motion): schema, IDs, policy completeness, capability/strategy compatibility, numeric ranges, routing, safety flags, and R1.9 destination-chain consistency.
-2. **Physical resolution** (offline planner/MoveIt scene): candidate reachability, collision, orientation, aperture/contact fit, target reachability, usable-region containment, placement orientation collision, and retreat feasibility.
-
-Map outcomes as follows:
-
-| Condition | AUTO | PREFERRED | EXACT |
-|---|---|---|---|
-| Requested strategy unavailable | choose compatible catalog strategy + WARNING | choose fallback + WARNING | BLOCKED |
-| Candidate unreachable/colliding | choose another valid candidate | choose another valid candidate; record fallback | BLOCKED |
-| Exact orientation unavailable | choose valid orientation | choose valid orientation + WARNING | BLOCKED |
-| Aperture/contact invalid | choose another candidate | fallback if capability still satisfied | BLOCKED |
-| Destination unresolved or outside usable region | BLOCKED | BLOCKED | BLOCKED |
-| Place orientation collides | choose valid orientation | fallback + WARNING | BLOCKED |
-| Retreat infeasible | choose valid retreat | fallback + WARNING | BLOCKED |
-
-No policy may bypass target-local destination resolution, collision checking, or safety locks. Any `BLOCKED` result gates Generate, Plan/Simulate, and execution.
-
-## 8. Acceptance matrix
-
-| ID | Scenario | Expected evidence |
+| ID | Acceptance | Required evidence |
 |---|---|---|
-| A | AUTO with reachable bottle and default bin | Save/reopen identical v2 intent; resolver selects a valid 2F candidate; status READY; preview and recipe use same resolution hash. |
-| B | PREFERRED `top_2f` made invalid by candidate collision | Status WARNING; selected fallback and reason visible; resolution and recipe persist fallback; no silent substitution. |
-| C | EXACT valid orientation/aperture/contact/retreat | Status READY; selected strategy and exact constraints appear in report; generated recipe preserves them. |
-| D | EXACT impossible orientation or unreachable target | Status BLOCKED before Generate/Plan/Execute; exact diagnostic and corrective control shown; no runtime call. |
-| E | Edit, Save, close, reopen, Generate, Validate, then change runtime input | Authored values survive round trip; generated recipe and resolution change only after explicit save/generate; Product View and runtime consume the edited values and matching hash. |
-| F | R1.9 1 cm target-local bin edit | Destination world pose changes through physical resolver; preview, recipe, validation, and runtime report the same resolved pose. |
-| G | Legacy v1 scene | Open migrates in memory with a warning, preserves behavior, writes v2 only on explicit Save, and keeps v1 recipe consumers working. |
+| A | AUTO selects valid 2F candidate | candidate, local/world pose, READY, matching hash |
+| B | PREFERRED uses preference or reports fallback | preference retained; fallback reason persisted; WARNING when used |
+| C | EXACT valid grasp + exact target-local placement | all exact inputs consumed unchanged |
+| D | EXACT invalid grasp/place | BLOCKED before generation/planning/execution; zero execution calls |
+| E | Change grasp approach/lift and place approach/retreat | runtime receives every changed value after save/generate |
+| F | Target + region + requested local point | one consistent R1.9 world resolution; no duplicated geometry |
+| G | Save/reopen | normalized intent and bindings identical |
+| H | Product View/recipe/runtime parity | same normalized intent/resolution hash |
+| I | v1 migration | old behavior preserved before explicit Save; no rewrite on open |
+| J | R1.9 regression | 1 cm target-local edit and canonical restore remain consistent |
 
-## 9. Files and components expected to change during implementation
+## 7. Migration and back-compatibility
 
-These are planned touch points, not changes made by this design pass:
+Readers accept v1 and normalize only in memory; opening v1 never writes it.
 
-- `workcell_builder/workcell_builder/gui/mainwindow.cpp`, `mainwindow.ui`, `environment_task_editor.hpp`: Task Authoring workspace, status/actions, dirty/save lifecycle.
-- `workcell_builder/workcell_builder/gui/scene_select.cpp` and its UI: remove duplicate task/grasp authority; route existing controls and canvas assignment into the shared model.
-- `workcell_builder/workcell_builder/include/task_intent_model.hpp`, new model/normalizer source: v2 types, migration, stable serialization/hash.
-- `workcell_builder/workcell_builder/include/task_intent_readiness.hpp` and source: one readiness result shared by rail, Task Authoring, Checks, and Plan/Simulate.
-- `workcell_builder/workcell_builder/include/grasp_strategy_model.hpp` and `src_grasp_strategy_model.cpp`: capability catalog, policy filtering, compatibility diagnostics.
-- `scripts/validate_builder_task_intent.py`: v2 structural and policy validation plus stable diagnostic codes.
-- `scripts/convert_builder_task_intent_to_task_recipe.py`: v2-to-v1 recipe adapter and provenance.
-- New `scripts/resolve_task_intent.py` (or equivalent library): deterministic grasp/place resolution and resolution artifact.
-- `scripts/physical_destination.py` and its callers: consume the existing R1.9 target-local contract without duplicating pose logic.
-- `scripts/perceived_object_grasp_plan.py`, `scripts/perceived_object_grasp_execute.py`: accept resolved policy/candidate contract; enforce EXACT and fallback reporting.
-- `scripts/export_workcell_studio_web_scene_impl.py` and Product View viewer modules: read resolution artifact, render diagnostics, never synthesize task poses.
-- `workcell_builder/workcell_builder/templates/workcell_builder_task_intent_template.yaml`: v2 template with explicit policy fields.
-- Tests under `tests/` and `workcell_builder/workcell_builder/test/`: schema, migration, UI-model, resolver, preview parity, and acceptance fixtures.
+- A v1 explicit `grasp.strategy_ref: top_2f` becomes an explicit strategy
+  constraint, migrated as `EXACT`, never as a preference that can silently
+  fall back. Missing approach/orientation/aperture/contact/lift values are
+  materialized from the referenced catalog entry and recorded as
+  `migration.materialized_from_catalog`; unavailable catalog data is BLOCKED.
+- Existing place target/region/offset behavior maps to `asset_ref`, `region_ref`,
+  and `requested_local_pose` through R1.9. World-pose disagreement is reported,
+  never silently preferred over authored physical geometry.
+- Duplicate v1 object filters consolidate under `pick.selection` with a warning.
+- `open_gripper`/similar v1 release values normalize to semantic `tool_release`;
+  actual actuation is resolved from the installed profile.
+- Legacy dynamic safety fields are read for compatibility and moved to runtime
+  evidence; v2 writes only execution/preview policy.
+- Explicit Save writes v2 atomically. `task_recipe/v1` and its `rules` mirror
+  remain available with additive intent/resolution provenance.
 
-## 10. Migration and backward compatibility
+## 8. Planned touch points and self-review
 
-1. Detect `workcell_builder_task_intent/v1` and normalize to an in-memory v2 model.
-2. Map `grasp.strategy_ref` to `PREFERRED` when present, otherwise `AUTO`; map existing approach/orientation/retreat fields directly.
-3. Map `place.target`, `region_ref`, and offsets to the R1.9 target-local target reference. Ignore historical world-pose fallbacks when an authored physical target exists; emit a migration warning if they disagree.
-4. Preserve `task_recipe/v1` output shape and legacy `rules` mirror. Add `builder_task_intent.schema_version`, `intent_sha256`, and resolution provenance as additive fields.
-5. Do not rewrite a v1 file merely by opening it. Explicit Save writes v2 atomically and records a migration notice in the readiness report.
-6. Existing catalogs with `finger_top`, `finger_side`, and `top_2f` remain aliases to the capability registry. Suction names may be recognized as catalog metadata but remain unsupported for R2.0 execution.
-7. Older consumers that ignore unknown fields continue to read `task_recipe/v1`; consumers requiring v2 must fail clearly with an upgrade diagnostic.
+Implementation will touch the existing MainWindow/SceneSelect editors, new
+`TaskIntentModel` files, readiness/grasp strategy models, validator/recipe
+adapters, a resolver, Product View export/viewer, planner/executor adapters,
+templates, and tests. This revision changes documentation only.
 
-## 11. Risks and mitigations
-
-- **Split-brain state:** eliminate direct widget-to-YAML writes; one model owns dirty state and serialization.
-- **Preview/runtime drift:** require resolution hash parity and reuse the physical destination resolver.
-- **Over-permissive fallback:** enforce policy in resolver and executor; EXACT has no fallback branch.
-- **Legacy scene breakage:** normalize v1 in memory and retain additive recipe fields.
-- **Capability vocabulary explosion:** version a small registry; add suction only as a future profile, not UI scaffolding in the R2.0 slice.
-- **False readiness:** keep READY tied to actual resolver checks, never to file existence alone.
-
-## 12. Definition of done for the design
-
-Human approval is required before production implementation. Approval should explicitly authorize the v2 schema, policy semantics, single-model ownership, and the first implementation slice in the plan below.
+Self-review: duplicate object authority is removed; target/region/geometry are
+separate; units and frames are explicit; AUTO/PREFERRED/EXACT semantics are
+hard-gated; dynamic runtime state is out of authored intent; and v1 migration
+preserves behavior. Human approval is required before R2.0a.
