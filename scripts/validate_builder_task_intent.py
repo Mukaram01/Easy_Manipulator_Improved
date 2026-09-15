@@ -9,6 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
+from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, TOOL_CAPABILITY_MAP
 try:
     import yaml
 except Exception:
@@ -56,6 +57,49 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
     payload=_load(path)
     if not payload:
         return {"status":"FAIL","errors":["Task intent YAML could not be loaded"],"warnings":[],"task_intent":{}}
+    if payload.get('schema') == 'workcell_builder_task_intent/v2':
+        normalized = normalize_v2(payload)
+        diagnostics = validate_intent(payload)
+        if scene_package is not None:
+            scene = _load(scene_package / 'environment.yaml')
+            env = scene.get('environment', scene) if isinstance(scene, dict) else {}
+            zones = {str(z.get('id')): z for z in (env.get('task_zones') or []) if isinstance(z, dict)}
+            assets = {str(a.get('id')): a for a in (env.get('assets') or []) if isinstance(a, dict)}
+            selection = normalized.get('pick', {}).get('selection', {})
+            if selection.get('zone_ref') not in zones:
+                diagnostics.append({'code': 'PICK_ZONE_NOT_FOUND', 'message': 'pick.selection.zone_ref is not defined in environment.yaml'})
+            target = normalized.get('place', {}).get('target', {})
+            asset = assets.get(str(target.get('asset_ref')))
+            zone = zones.get(str(target.get('region_ref')))
+            if asset is None:
+                diagnostics.append({'code': 'TARGET_ASSET_NOT_FOUND', 'message': 'place.target.asset_ref is not defined in environment.yaml'})
+            if zone is None:
+                diagnostics.append({'code': 'PLACE_REGION_NOT_FOUND', 'message': 'place.target.region_ref is not defined in environment.yaml'})
+            elif str(zone.get('target_ref')) != str(target.get('asset_ref')):
+                diagnostics.append({'code': 'PLACE_REGION_TARGET_MISMATCH', 'message': 'place region is bound to a different physical target asset'})
+            try:
+                from physical_destination import resolve_destination
+                resolve_destination(env, str(target.get('region_ref')))
+            except Exception as exc:
+                diagnostics.append({'code': 'R19_DESTINATION_INVALID', 'message': str(exc)})
+            strategy_ref = normalized.get('pick', {}).get('grasp', {}).get('strategy_ref')
+            catalog_dir = grasp_dir or (SCRIPT_DIR.parent / 'catalog' / 'grasp_strategies')
+            if strategy_ref and not (catalog_dir / f'{strategy_ref}.yaml').is_file():
+                diagnostics.append({'code': 'STRATEGY_NOT_FOUND', 'message': f'strategy {strategy_ref} is not in the real catalog'})
+            required = normalized.get('pick', {}).get('grasp', {}).get('required_capability')
+            installed = ((env.get('end_effector') or {}).get('id') or (env.get('tool') or {}).get('id') or
+                         (scene.get('end_effector') or {}).get('id') or (scene.get('tool') or {}).get('id'))
+            available = TOOL_CAPABILITY_MAP.get(str(installed), set())
+            if required and required not in available:
+                diagnostics.append({'code': 'INSTALLED_TOOL_CAPABILITY_MISMATCH', 'message': f'installed scene tool {installed!r} cannot provide two_finger_parallel'})
+        errors = [d['code'] + ': ' + d['message'] for d in diagnostics]
+        return {
+            'status': 'FAIL' if errors else 'PASS', 'errors': errors, 'warnings': [],
+            'task_intent': normalized, **({'normalized_intent_sha256': normalized_intent_hash(payload)} if not errors else {}),
+            'missing_required_fields': [], 'suggested_next_actions': [] if errors else ['Generate task recipe from task intent.'],
+            'readiness_classification': 'task_intent_blocked' if errors else 'task_intent_ready_offline',
+            'safety': normalized.get('safety', {}),
+        }
     if payload.get('schema')!='workcell_builder_task_intent/v1': errors.append('schema must be workcell_builder_task_intent/v1')
     task=payload.get('task') if isinstance(payload.get('task'),dict) else {}
     pick_block = payload.get('pick') if isinstance(payload.get('pick'), dict) else {}
