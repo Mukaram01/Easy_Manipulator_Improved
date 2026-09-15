@@ -86,3 +86,18 @@ TEST(TaskIntentModel, SharedGoldenFixturesMatchCanonicalBytesAndHashes)
     EXPECT_EQ(workcell_builder::canonical_task_intent_sha256_for_testing(yaml), fixture["sha256"].as<std::string>());
   }
 }
+
+TEST(TaskIntentModel, PresenceAndPoseScalarParity)
+{
+  const std::string valid = "schema: workcell_builder_task_intent/v2\ntask: {id: t}\npick: {selection: {object_filter: {class_id: c}}, grasp: {policy: AUTO, required_capability: two_finger_parallel}}\nplace: {target: {asset_ref: a, region_ref: r}, placement: {policy: PREFERRED, requested_local_pose: {xyz_m: [0,0,0], rpy_rad: [0,0,0]}}, release: {strategy: tool_release}}\nsafety: {}\n";
+  EXPECT_TRUE(workcell_builder::TaskIntentModel::from_validated_yaml(valid).has_value());
+  for (const auto & bad : {"object_filter: null", "tool: null", "motion_started: null", "runtime_io_applied: null", "ros_launch_started: null"}) {
+    auto text = valid;
+    if (std::string(bad).find("object_filter") == 0) text.replace(text.find("object_filter: {class_id: c}"), 29, bad);
+    else if (std::string(bad).find("tool") == 0) text += std::string("tool: null\n");
+    else text.replace(text.find("safety: {}"), 11, std::string("safety: {") + bad + "}");
+    EXPECT_FALSE(workcell_builder::TaskIntentModel::from_validated_yaml(text));
+  }
+  auto quoted = valid; quoted.replace(quoted.find("[0,0,0]"), 7, "[\"0\",0,0]");
+  EXPECT_FALSE(workcell_builder::TaskIntentModel::from_validated_yaml(quoted));
+}

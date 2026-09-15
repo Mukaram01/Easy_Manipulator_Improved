@@ -200,12 +200,14 @@ std::optional<TaskIntentModel> TaskIntentModel::from_validated_yaml(const std::s
 {
   try {
     auto root = YAML::Load(yaml_text);
-    auto defined = [](const YAML::Node & n) { return n.IsDefined() && !n.IsNull(); };
+    auto present = [](const YAML::Node & n) { return n.IsDefined(); };
+    auto defined = [&](const YAML::Node & n) { return present(n) && !n.IsNull(); };
     auto map = [&](const YAML::Node & n) { return defined(n) && n.IsMap(); };
     if (!map(root) || !root["schema"] || root["schema"].as<std::string>() != "workcell_builder_task_intent/v2") return std::nullopt;
     if (!map(root["task"]) || !map(root["pick"]) || !map(root["pick"]["selection"]) || !map(root["pick"]["grasp"]) ||
         !map(root["place"]) || !map(root["place"]["target"]) || !map(root["place"]["placement"]) || !map(root["safety"])) return std::nullopt;
-    if (defined(root["task"]["target_policy"]) || defined(root["pick"]["object_filter"])) return std::nullopt;
+    if (!map(root["pick"]["selection"]["object_filter"])) return std::nullopt;
+    if (present(root["task"]["target_policy"]) || present(root["pick"]["object_filter"])) return std::nullopt;
     const auto grasp = root["pick"]["grasp"]; const auto placement = root["place"]["placement"];
     if (!defined(grasp["policy"]) || !defined(placement["policy"]) || !defined(grasp["required_capability"])) return std::nullopt;
     auto upper = [](std::string value) { std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c){ return static_cast<char>(std::toupper(c)); }); return value; };
@@ -221,7 +223,12 @@ std::optional<TaskIntentModel> TaskIntentModel::from_validated_yaml(const std::s
     }
     auto finite_triplet = [](const YAML::Node & n) {
       if (!n || !n.IsSequence() || n.size() != 3) return false;
-      for (const auto & v : n) { if (!v.IsScalar()) return false; try { if (!std::isfinite(v.as<double>())) return false; } catch (...) { return false; } }
+      for (const auto & v : n) {
+        if (!v.IsScalar() || v.IsNull() || v.Tag() == "!") return false;
+        const auto raw = v.as<std::string>();
+        if (raw == "true" || raw == "false" || !std::regex_match(raw, std::regex(R"(^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$)"))) return false;
+        try { if (!std::isfinite(v.as<double>())) return false; } catch (...) { return false; }
+      }
       return true;
     };
     auto valid_pose = [&](const YAML::Node & pose) { return map(pose) && finite_triplet(pose["xyz_m"]) && finite_triplet(pose["rpy_rad"]); };
@@ -232,7 +239,7 @@ std::optional<TaskIntentModel> TaskIntentModel::from_validated_yaml(const std::s
     }
     if (place_policy == "PREFERRED" && !valid_pose(placement["requested_local_pose"])) return std::nullopt;
     if (!defined(root["place"]["release"]) || !defined(root["place"]["release"]["strategy"]) || root["place"]["release"]["strategy"].as<std::string>() != "tool_release") return std::nullopt;
-    if (defined(root["tool"]) || defined(root["safety"]["runtime_io_applied"]) || defined(root["safety"]["motion_started"]) || defined(root["safety"]["ros_launch_started"])) return std::nullopt;
+    if (present(root["tool"]) || present(root["safety"]["runtime_io_applied"]) || present(root["safety"]["motion_started"]) || present(root["safety"]["ros_launch_started"])) return std::nullopt;
     root["pick"]["grasp"]["policy"] = grasp_policy; root["place"]["placement"]["policy"] = place_policy;
     auto model = from_yaml(yaml_text); model.grasp.policy = grasp_policy; model.place.policy = place_policy;
     model.validated = true; model.normalized_yaml = canonical(root); return model;

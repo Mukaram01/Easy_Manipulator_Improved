@@ -184,7 +184,7 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     if model.get("schema") != "workcell_builder_task_intent/v2":
         errors.append({"code": "SCHEMA_UNSUPPORTED", "message": "expected workcell_builder_task_intent/v2"})
-    if isinstance(model.get("task", {}).get("target_policy"), dict) or isinstance(model.get("pick", {}).get("object_filter"), dict):
+    if "target_policy" in model.get("task", {}) or "object_filter" in model.get("pick", {}):
         errors.append({"code": "DUPLICATE_PICK_SELECTION_AUTHORITY", "message": "object eligibility belongs only to pick.selection"})
     selection = model.get("pick", {}).get("selection", {})
     if not isinstance(selection, dict) or not isinstance(selection.get("object_filter"), dict):
