@@ -9,6 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
+from task_intent_v2 import normalize_v2, validate_intent
 try:
     import yaml
 except Exception:
@@ -56,6 +57,17 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
     payload=_load(path)
     if not payload:
         return {"status":"FAIL","errors":["Task intent YAML could not be loaded"],"warnings":[],"task_intent":{}}
+    if payload.get('schema') == 'workcell_builder_task_intent/v2':
+        normalized = normalize_v2(payload)
+        diagnostics = validate_intent(payload)
+        errors = [d['code'] + ': ' + d['message'] for d in diagnostics]
+        return {
+            'status': 'FAIL' if errors else 'PASS', 'errors': errors, 'warnings': [],
+            'task_intent': normalized, 'normalized_intent_sha256': __import__('task_intent_v2').canonical_hash(normalized),
+            'missing_required_fields': [], 'suggested_next_actions': [] if errors else ['Generate task recipe from task intent.'],
+            'readiness_classification': 'task_intent_blocked' if errors else 'task_intent_ready_offline',
+            'safety': normalized.get('safety', {}),
+        }
     if payload.get('schema')!='workcell_builder_task_intent/v1': errors.append('schema must be workcell_builder_task_intent/v1')
     task=payload.get('task') if isinstance(payload.get('task'),dict) else {}
     pick_block = payload.get('pick') if isinstance(payload.get('pick'), dict) else {}

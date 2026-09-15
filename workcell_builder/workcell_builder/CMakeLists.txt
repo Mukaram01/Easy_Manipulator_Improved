@@ -40,6 +40,7 @@ find_package(moveit_visual_tools REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
@@ -158,6 +159,7 @@ add_executable(workcell_builder
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
     src_task_intent_readiness.cpp
+    src_task_intent_model.cpp
     src_class_routing_model.cpp
     src_planning_readiness.cpp
     src_grasp_strategy_model.cpp
@@ -232,6 +234,7 @@ target_link_libraries(workcell_builder
   Qt5::Network
   OpenGL::GL
   yaml-cpp
+  OpenSSL::Crypto
   ${Boost_LIBRARIES}
 )
 
@@ -352,6 +355,12 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
+  ament_add_gtest(workcell_task_intent_model_test
+    test/task_intent_model_test.cpp
+    src_task_intent_model.cpp)
+  if(TARGET workcell_task_intent_model_test)
+    target_link_libraries(workcell_task_intent_model_test yaml-cpp OpenSSL::Crypto)
+  endif()
   ament_add_gtest(workcell_planning_readiness_test
     test/planning_readiness_test.cpp
     src_planning_readiness.cpp)
@@ -771,6 +780,7 @@ if(BUILD_TESTING)
     conveyor_pick_preview_test.cpp
     scene3d_mesh_preview_regression_test.cpp
     task_intent_readiness_test.cpp
+    task_intent_model_test.cpp
     planning_readiness_test.cpp
     workcell_perception_snapshot_test.cpp
     robot_tool_compatibility_inference_test.cpp
