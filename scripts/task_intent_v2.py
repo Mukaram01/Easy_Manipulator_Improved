@@ -198,7 +198,7 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
             continue
         if policy not in POLICIES:
             errors.append({"code": "POLICY_INVALID", "message": f"{label}.policy is invalid"})
-        if policy == "PREFERRED" and label == "place" and not block.get("requested_local_pose"):
+        if policy == "PREFERRED" and label == "place" and not _valid_pose(block.get("requested_local_pose")):
             errors.append({"code": "PREFERRED_LOCAL_POSE_REQUIRED", "message": "place.placement.requested_local_pose is required for PREFERRED"})
         if policy == "EXACT":
             required = ["orientation", "approach", "retreat"] if label == "place" else ["orientation", "approach", "lift"]
