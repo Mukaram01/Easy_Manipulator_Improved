@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +27,31 @@ STRATEGIES = {"top_2f", "side_grip_basic", "finger_pinch_basic"}
 SUPPORTED_CAPABILITIES = {"two_finger_parallel"}
 TOOL_CAPABILITY_MAP = {
     "robotiq_2f_85": {"two_finger_parallel"},
+    "robotiq_85_gripper": {"two_finger_parallel"},
     "finger_gripper": {"two_finger_parallel"},
 }
 POLICIES = {"AUTO", "PREFERRED", "EXACT"}
+
+
+@dataclass
+class TaskIntentModel:
+    """Typed semantic envelope matching the C++ R2.0a model fields."""
+    task: dict[str, Any]
+    pick_selection: dict[str, Any]
+    grasp: dict[str, Any]
+    place: dict[str, Any]
+    safety: dict[str, Any]
+    migration_provenance: dict[str, Any] | None = None
+
+    @classmethod
+    def from_dict(cls, model: dict[str, Any]) -> "TaskIntentModel":
+        return cls(model.get("task", {}), model.get("pick", {}).get("selection", {}), model.get("pick", {}).get("grasp", {}), model.get("place", {}), model.get("safety", {}), model.get("provenance", {}).get("migration"))
+
+    def to_dict(self) -> dict[str, Any]:
+        out = {"schema": "workcell_builder_task_intent/v2", "task": self.task, "pick": {"selection": self.pick_selection, "grasp": self.grasp}, "place": self.place, "safety": self.safety}
+        if self.migration_provenance is not None:
+            out["provenance"] = {"migration": self.migration_provenance}
+        return out
 
 
 def _strategy_payload(strategy_id: str) -> dict[str, Any] | None:
@@ -52,19 +75,20 @@ def _decimal_number(value: Any) -> str:
     return text
 
 
-def _canonical_value(value: Any) -> Any:
+def _canonical_json(value: Any) -> str:
     if isinstance(value, dict):
-        return {str(k): _canonical_value(value[k]) for k in sorted(value, key=lambda x: str(x).encode("utf-8"))}
+        keys = sorted((str(k) for k in value), key=lambda x: x.encode("utf-8"))
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + _canonical_json(value[k]) for k in keys) + "}"
     if isinstance(value, list):
-        return [_canonical_value(v) for v in value]
+        return "[" + ",".join(_canonical_json(v) for v in value) + "]"
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return _decimal_number(value)
-    return value
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def canonical_bytes(model: dict[str, Any]) -> bytes:
     """Return the exact cross-language canonical semantic representation."""
-    return json.dumps(_canonical_value(model), ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return _canonical_json(model).encode("utf-8")
 
 
 def canonical_hash(model: dict[str, Any]) -> str:
@@ -102,6 +126,8 @@ def migrate_v1(payload: dict[str, Any], environment: dict[str, Any] | None = Non
     """Migrate v1 in memory, preserving explicit strategy/place behavior."""
     if payload.get("schema") == "workcell_builder_task_intent/v2":
         return normalize_v2(payload)
+    if environment is None:
+        raise ValueError("MIGRATION_PHYSICAL_CONTEXT_REQUIRED: v1 place migration requires environment.yaml and R1.9 destination context")
     task = payload.get("task") if isinstance(payload.get("task"), dict) else {}
     old_pick = payload.get("pick") if isinstance(payload.get("pick"), dict) else {}
     old_source = old_pick.get("source") if isinstance(old_pick.get("source"), dict) else {}
@@ -134,17 +160,15 @@ def migrate_v1(payload: dict[str, Any], environment: dict[str, Any] | None = Non
     # R1.9 physical destination truth is consulted before choosing a migrated
     # placement policy. This materializes the existing target-local point when
     # the v1 file relied on the authored environment projection.
-    destination = None
-    if environment is not None:
-        try:
-            from scripts.physical_destination import resolve_destination
-        except ImportError:
-            from physical_destination import resolve_destination
-        zone_id = old_target.get("region_ref", old_target.get("id", ""))
-        destination = resolve_destination(environment, zone_id)
-        if old_offset is None:
-            local = destination["placement_local"]
-            old_offset = local.get("pose_xyz") or local.get("pose", {}).get("xyz")
+    try:
+        from scripts.physical_destination import resolve_destination
+    except ImportError:
+        from physical_destination import resolve_destination
+    zone_id = old_target.get("region_ref", old_target.get("id", ""))
+    destination = resolve_destination(environment, zone_id)
+    if old_offset is None:
+        local = destination["placement_local"]
+        old_offset = local.get("pose_xyz") or local.get("pose", {}).get("xyz")
     local_pose = {"xyz_m": old_offset, "rpy_rad": old_place.get("place_offset_rpy", [0.0, 0.0, 0.0])} if old_offset is not None else None
     model = {"schema": "workcell_builder_task_intent/v2", "scene_package": payload.get("scene_package", ""),
              "task": {"id": task.get("id", "migrated_task"), "type": task.get("type", "pick_place"), "template": task.get("template", task.get("type", "pick_place"))},
@@ -170,13 +194,20 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
     placement = model.get("place", {}).get("placement", {})
     for block, label in ((grasp, "grasp"), (placement, "place")):
         policy = block.get("policy")
+        if policy is None:
+            errors.append({"code": "POLICY_REQUIRED", "message": f"{label}.policy is required"})
+            continue
         if policy not in POLICIES:
             errors.append({"code": "POLICY_INVALID", "message": f"{label}.policy is invalid"})
+        if policy == "PREFERRED" and label == "place" and not block.get("requested_local_pose"):
+            errors.append({"code": "PREFERRED_LOCAL_POSE_REQUIRED", "message": "place.placement.requested_local_pose is required for PREFERRED"})
         if policy == "EXACT":
             required = ["orientation", "approach", "retreat"] if label == "place" else ["orientation", "approach", "lift"]
             for field in required:
                 if field not in block:
                     errors.append({"code": "EXACT_REQUIRED_FIELD_MISSING", "message": f"{label}.{field} is required for EXACT"})
+            if label == "place" and not _valid_pose(block.get("requested_local_pose")):
+                errors.append({"code": "EXACT_LOCAL_POSE_REQUIRED", "message": "EXACT placement requires finite xyz_m/rpy_rad in target-asset-local frame"})
         if policy in {"PREFERRED", "EXACT"} and not block.get("strategy_ref") and label == "grasp":
             errors.append({"code": "STRATEGY_REQUIRED", "message": "grasp.strategy_ref is required for this policy"})
     cap = grasp.get("required_capability")
@@ -196,4 +227,28 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
 
 def write_without_rewrite(path: Path) -> dict[str, Any]:
     payload, _ = load_structured_data(path)
-    return migrate_v1(payload) if payload.get("schema") != "workcell_builder_task_intent/v2" else normalize_v2(payload)
+    if payload.get("schema") == "workcell_builder_task_intent/v2":
+        return normalize_v2(payload)
+    env_path = path.parent.parent / "environment.yaml"
+    if not env_path.is_file():
+        raise ValueError("MIGRATION_PHYSICAL_CONTEXT_REQUIRED: environment.yaml not found beside v1 scene")
+    environment, _ = load_structured_data(env_path)
+    return migrate_v1(payload, environment.get("environment", environment))
+
+
+def _valid_pose(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for key in ("xyz_m", "rpy_rad"):
+        values = value.get(key)
+        if not isinstance(values, list) or len(values) != 3 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
+            return False
+    return True
+
+
+def parse_validate_normalize(payload: dict[str, Any]) -> dict[str, Any]:
+    """Single safe API: validate authored semantics, then normalize only if valid."""
+    if payload.get("schema") == "workcell_builder_task_intent/v2":
+        diagnostics = validate_intent(payload)
+        return {"diagnostics": diagnostics, "normalized": normalize_v2(payload) if not diagnostics else None}
+    raise ValueError("Use migrate_v1(payload, environment) for v1 input")

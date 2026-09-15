@@ -1,6 +1,6 @@
 {
   "name": "minimal_numeric_semantics",
   "yaml_variants": ["b: 2\na: [0.0, 1]\n", "# comment\na: [0, 1.000000]\nb: 2.0\n"],
-  "canonical_json": "{\"a\":[\"0\",\"1\"],\"b\":\"2\"}",
-  "sha256": "517ae15b859520c5bba87fca695ad2166ff17d3bc3a527c3c85dfb5fa68d5c4b"
+  "canonical_json": "{\"a\":[0,1],\"b\":2}",
+  "sha256": "6b5a43d11c069f69bf75b5de430b4caf6a36fb7a8e7e5840c15130ea44f92fd3"
 }

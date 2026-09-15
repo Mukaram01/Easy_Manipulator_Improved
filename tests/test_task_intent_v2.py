@@ -12,6 +12,7 @@ from scripts.task_intent_v2 import (
     normalize_v2,
     validate_intent,
     write_without_rewrite,
+    parse_validate_normalize,
 )
 
 
@@ -78,6 +79,34 @@ def test_canonical_hash_ignores_order_whitespace_and_comments():
     assert canonical_bytes({"a": [0, 1.0], "b": 2.0}).decode() == golden["canonical_json"]
 
 
+@pytest.mark.parametrize("left,right", [({"x": 1}, {"x": 1.0}), ({"x": -0.0}, {"x": 0}), ({"x": 1e3}, {"x": 1000})])
+def test_equivalent_numbers_share_hash(left, right):
+    assert canonical_hash(left) == canonical_hash(right)
+
+
+@pytest.mark.parametrize("left,right", [({"x": 1}, {"x": "1"}), ({"x": True}, {"x": "true"}), ({"x": None}, {"x": "null"})])
+def test_scalar_types_do_not_collide(left, right):
+    assert canonical_hash(left) != canonical_hash(right)
+
+
+def test_invalid_v2_is_not_repaired_by_normalization():
+    model = valid_v2()
+    model["pick"]["grasp"].pop("policy")
+    model["place"]["release"]["strategy"] = "open_gripper"
+    result = parse_validate_normalize(model)
+    assert {x["code"] for x in result["diagnostics"]} >= {"POLICY_REQUIRED", "RELEASE_NOT_SEMANTIC"}
+
+
+def test_exact_place_requires_local_pose_and_preferred_has_preference():
+    model = valid_v2("EXACT")
+    model["place"]["placement"]["requested_local_pose"] = None
+    codes = {x["code"] for x in validate_intent(model)}
+    assert "EXACT_LOCAL_POSE_REQUIRED" in codes
+    model = valid_v2("PREFERRED")
+    model["place"]["placement"]["requested_local_pose"] = None
+    assert "PREFERRED_LOCAL_POSE_REQUIRED" in {x["code"] for x in validate_intent(model)}
+
+
 def canonical_bytes(value):
     from scripts.task_intent_v2 import canonical_bytes as cb
     return cb(value)
@@ -87,7 +116,9 @@ def test_v1_migration_preserves_top2f_and_records_catalog_materialization():
     old = {"schema": "workcell_builder_task_intent/v1", "task": {"type": "pick_place"},
            "pick": {"source": {"type": "perception", "id": "detected_objects/v1"}, "zone": {"id": "pick_zone_main"}, "object_filter": {"class_id": "bottle"}},
            "grasp": {"strategy_ref": "top_2f"}, "place": {"target": {"id": "default_drop_zone", "asset_ref": "target_bin_default"}, "place_offset_xyz": [0, 0, .05], "release_strategy": "tool_release"}}
-    migrated = migrate_v1(old)
+    import yaml
+    env = yaml.safe_load((Path(__file__).parents[1] / "scenes/ur5_2f_test/environment.yaml").read_text())["environment"]
+    migrated = migrate_v1(old, env)
     assert migrated["pick"]["grasp"]["policy"] == "EXACT"
     assert migrated["pick"]["grasp"]["strategy_ref"] == "top_2f"
     assert migrated["provenance"]["migration"]["materialized_from_catalog"]
@@ -98,8 +129,15 @@ def test_v1_open_does_not_write(tmp_path: Path):
     p = tmp_path / "intent.yaml"
     original = "schema: workcell_builder_task_intent/v1\ntask: {type: pick_place}\n"
     p.write_text(original)
-    write_without_rewrite(p)
+    with pytest.raises(ValueError, match="MIGRATION_PHYSICAL_CONTEXT_REQUIRED"):
+        write_without_rewrite(p)
     assert p.read_text() == original
+
+
+def test_v1_migration_without_environment_is_blocked():
+    old = {"schema": "workcell_builder_task_intent/v1", "task": {"type": "pick_place"}, "pick": {"source": {"id": "objects"}}, "grasp": {"strategy_ref": "top_2f"}, "place": {"target": {"id": "default_drop_zone"}}}
+    with pytest.raises(ValueError, match="MIGRATION_PHYSICAL_CONTEXT_REQUIRED"):
+        migrate_v1(old)
 
 
 def test_v1_place_migration_materializes_r19_target_local_destination():

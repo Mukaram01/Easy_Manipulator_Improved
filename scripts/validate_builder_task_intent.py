@@ -60,6 +60,37 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
     if payload.get('schema') == 'workcell_builder_task_intent/v2':
         normalized = normalize_v2(payload)
         diagnostics = validate_intent(payload)
+        if scene_package is not None:
+            scene = _load(scene_package / 'environment.yaml')
+            env = scene.get('environment', scene) if isinstance(scene, dict) else {}
+            zones = {str(z.get('id')): z for z in (env.get('task_zones') or []) if isinstance(z, dict)}
+            assets = {str(a.get('id')): a for a in (env.get('assets') or []) if isinstance(a, dict)}
+            selection = normalized.get('pick', {}).get('selection', {})
+            if selection.get('zone_ref') not in zones:
+                diagnostics.append({'code': 'PICK_ZONE_NOT_FOUND', 'message': 'pick.selection.zone_ref is not defined in environment.yaml'})
+            target = normalized.get('place', {}).get('target', {})
+            asset = assets.get(str(target.get('asset_ref')))
+            zone = zones.get(str(target.get('region_ref')))
+            if asset is None:
+                diagnostics.append({'code': 'TARGET_ASSET_NOT_FOUND', 'message': 'place.target.asset_ref is not defined in environment.yaml'})
+            if zone is None:
+                diagnostics.append({'code': 'PLACE_REGION_NOT_FOUND', 'message': 'place.target.region_ref is not defined in environment.yaml'})
+            elif str(zone.get('target_ref')) != str(target.get('asset_ref')):
+                diagnostics.append({'code': 'PLACE_REGION_TARGET_MISMATCH', 'message': 'place region is bound to a different physical target asset'})
+            try:
+                from physical_destination import resolve_destination
+                resolve_destination(env, str(target.get('region_ref')))
+            except Exception as exc:
+                diagnostics.append({'code': 'R19_DESTINATION_INVALID', 'message': str(exc)})
+            strategy_ref = normalized.get('pick', {}).get('grasp', {}).get('strategy_ref')
+            catalog_dir = grasp_dir or (SCRIPT_DIR.parent / 'catalog' / 'grasp_strategies')
+            if strategy_ref and not (catalog_dir / f'{strategy_ref}.yaml').is_file():
+                diagnostics.append({'code': 'STRATEGY_NOT_FOUND', 'message': f'strategy {strategy_ref} is not in the real catalog'})
+            required = normalized.get('pick', {}).get('grasp', {}).get('required_capability')
+            installed = ((env.get('end_effector') or {}).get('id') or (env.get('tool') or {}).get('id') or
+                         (scene.get('end_effector') or {}).get('id') or (scene.get('tool') or {}).get('id'))
+            if required == 'two_finger_parallel' and installed not in {'robotiq_2f_85', 'robotiq_85_gripper', 'finger_gripper', 'finger'}:
+                diagnostics.append({'code': 'INSTALLED_TOOL_CAPABILITY_MISMATCH', 'message': f'installed scene tool {installed!r} cannot provide two_finger_parallel'})
         errors = [d['code'] + ': ' + d['message'] for d in diagnostics]
         return {
             'status': 'FAIL' if errors else 'PASS', 'errors': errors, 'warnings': [],
