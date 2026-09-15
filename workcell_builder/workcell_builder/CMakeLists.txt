@@ -360,6 +360,7 @@ if(BUILD_TESTING)
     src_task_intent_model.cpp)
   if(TARGET workcell_task_intent_model_test)
     target_link_libraries(workcell_task_intent_model_test yaml-cpp OpenSSL::Crypto)
+    target_compile_definitions(workcell_task_intent_model_test PRIVATE TASK_INTENT_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/task_intent_v2_canonical_golden.json")
   endif()
   ament_add_gtest(workcell_planning_readiness_test
     test/planning_readiness_test.cpp

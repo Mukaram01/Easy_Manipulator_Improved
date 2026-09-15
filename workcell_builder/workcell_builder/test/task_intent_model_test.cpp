@@ -1,23 +1,24 @@
 #include "task_intent_model.hpp"
 
 #include <gtest/gtest.h>
+#include <yaml-cpp/yaml.h>
 
 TEST(TaskIntentModel, CanonicalHashGoldenIsStableAcrossYamlFormatting)
 {
   const std::string a = "b: 2\na: [0.0, 1]\n";
   const std::string b = "# comment\na: [0, 1.000000]\nb: 2.0\n";
-  EXPECT_EQ(workcell_builder::canonical_task_intent_sha256(a), workcell_builder::canonical_task_intent_sha256(b));
-  EXPECT_EQ(workcell_builder::canonical_task_intent_sha256(a), "6b5a43d11c069f69bf75b5de430b4caf6a36fb7a8e7e5840c15130ea44f92fd3");
+  EXPECT_EQ(workcell_builder::canonical_task_intent_sha256_for_testing(a), workcell_builder::canonical_task_intent_sha256_for_testing(b));
+  EXPECT_EQ(workcell_builder::canonical_task_intent_sha256_for_testing(a), "6b5a43d11c069f69bf75b5de430b4caf6a36fb7a8e7e5840c15130ea44f92fd3");
 }
 
 TEST(TaskIntentModel, CanonicalRepresentationPreservesScalarTypesAndArrayOrder)
 {
-  const auto numeric = workcell_builder::canonical_task_intent_json("x: 1\ny: true\nz: null\na: [1, 2]\n");
-  const auto strings = workcell_builder::canonical_task_intent_json("x: '1'\ny: 'true'\nz: 'null'\na: [2, 1]\n");
+  const auto numeric = workcell_builder::canonical_task_intent_json_for_testing("x: 1\ny: true\nz: null\na: [1, 2]\n");
+  const auto strings = workcell_builder::canonical_task_intent_json_for_testing("x: '1'\ny: 'true'\nz: 'null'\na: [2, 1]\n");
   EXPECT_NE(numeric, strings);
-  EXPECT_NE(workcell_builder::canonical_task_intent_sha256("x: 1\n"), workcell_builder::canonical_task_intent_sha256("x: '1'\n"));
-  EXPECT_NE(workcell_builder::canonical_task_intent_sha256("x: true\n"), workcell_builder::canonical_task_intent_sha256("x: 'true'\n"));
-  EXPECT_NE(workcell_builder::canonical_task_intent_sha256("x: null\n"), workcell_builder::canonical_task_intent_sha256("x: 'null'\n"));
+  EXPECT_NE(workcell_builder::canonical_task_intent_sha256_for_testing("x: 1\n"), workcell_builder::canonical_task_intent_sha256_for_testing("x: '1'\n"));
+  EXPECT_NE(workcell_builder::canonical_task_intent_sha256_for_testing("x: true\n"), workcell_builder::canonical_task_intent_sha256_for_testing("x: 'true'\n"));
+  EXPECT_NE(workcell_builder::canonical_task_intent_sha256_for_testing("x: null\n"), workcell_builder::canonical_task_intent_sha256_for_testing("x: 'null'\n"));
 }
 
 TEST(TaskIntentModel, ParsesTheTypedV2AuthoredShape)
@@ -34,8 +35,38 @@ TEST(TaskIntentModel, ParsesTheTypedV2AuthoredShape)
   EXPECT_EQ(model.place.asset_ref, "target_bin_default");
   EXPECT_EQ(model.release_strategy, "tool_release");
   EXPECT_EQ(model.scene_package, "scenes/ur5_2f_test"); EXPECT_FALSE(model.routing_yaml.empty());
-  EXPECT_EQ(model.pick_selection.color, "red"); EXPECT_DOUBLE_EQ(model.pick_selection.min_confidence, 0.8); EXPECT_DOUBLE_EQ(model.pick_selection.max_age_seconds, 2.0);
+  ASSERT_TRUE(model.pick_selection.color.has_value()); EXPECT_EQ(*model.pick_selection.color, "red"); ASSERT_TRUE(model.pick_selection.min_confidence.has_value()); EXPECT_DOUBLE_EQ(*model.pick_selection.min_confidence, 0.8); ASSERT_TRUE(model.pick_selection.max_age_seconds.has_value()); EXPECT_DOUBLE_EQ(*model.pick_selection.max_age_seconds, 2.0);
   EXPECT_EQ(model.grasp.approach_axis, "z_down"); EXPECT_DOUBLE_EQ(model.grasp.approach_distance_m, 0.12); EXPECT_EQ(model.grasp.orientation_mode, "vertical");
   EXPECT_DOUBLE_EQ(model.grasp.tcp_offset_xyz_m[2], 3.0); EXPECT_DOUBLE_EQ(model.grasp.contact_min_quality, 0.4); EXPECT_DOUBLE_EQ(model.grasp.aperture_max_m, 0.08); EXPECT_EQ(model.grasp.lift_axis, "x_minus");
-  EXPECT_TRUE(model.place.has_requested_local_pose); EXPECT_DOUBLE_EQ(model.place.requested_local_pose.rpy_rad[2], 0.3); EXPECT_EQ(model.place.orientation_mode, "fixed"); EXPECT_EQ(model.place.approach_axis, "z_down"); EXPECT_EQ(model.place.retreat_axis, "y_plus"); EXPECT_DOUBLE_EQ(model.place.clearance_m, 0.05);
+  ASSERT_TRUE(model.place.requested_local_pose.has_value()); EXPECT_DOUBLE_EQ(model.place.requested_local_pose->rpy_rad[2], 0.3); EXPECT_EQ(model.place.orientation_mode, "fixed"); EXPECT_EQ(model.place.approach_axis, "z_down"); EXPECT_EQ(model.place.retreat_axis, "y_plus"); EXPECT_DOUBLE_EQ(model.place.clearance_m, 0.05);
+}
+
+TEST(TaskIntentModel, NullableAndVariableLengthValuesRemainSemantic)
+{
+  const auto model = workcell_builder::TaskIntentModel::from_yaml(
+    "schema: workcell_builder_task_intent/v2\ntask: {id: t, type: pick_place, template: pick_place}\n"
+    "pick: {selection: {source_ref: s, source_type: perception, zone_ref: z, object_filter: {class_id: c, color: null, min_confidence: null}}, grasp: {policy: AUTO, strategy_ref: null, orientation: {allowed_roll_deg: [0,90,180,270,360], allowed_yaw_deg: [0]}}}\n"
+    "place: {target: {asset_ref: a, region_ref: r}, placement: {policy: AUTO, requested_local_pose: null}}\nsafety: {}\n");
+  EXPECT_FALSE(model.pick_selection.color.has_value()); EXPECT_FALSE(model.pick_selection.min_confidence.has_value()); EXPECT_FALSE(model.grasp.strategy_ref.has_value());
+  EXPECT_EQ(model.grasp.allowed_roll_deg.size(), 5u); EXPECT_EQ(model.grasp.allowed_yaw_deg.size(), 1u); EXPECT_FALSE(model.place.requested_local_pose.has_value());
+}
+
+TEST(TaskIntentModel, AuthoritativeHashRequiresValidatedModel)
+{
+  const std::string yaml = "schema: workcell_builder_task_intent/v2\ntask: {id: t}\npick: {selection: {}, grasp: {orientation: {}}}\nplace: {target: {}, placement: {}}\nsafety: {execution_mode: simulation_preview}\n";
+  EXPECT_FALSE(workcell_builder::TaskIntentModel::from_validated_yaml("schema: bad\n"));
+  auto validated = workcell_builder::TaskIntentModel::from_validated_yaml(yaml);
+  ASSERT_TRUE(validated.has_value()); EXPECT_NO_THROW(workcell_builder::authoritative_task_intent_sha256(*validated));
+  EXPECT_THROW(workcell_builder::authoritative_task_intent_sha256(workcell_builder::TaskIntentModel::from_yaml(yaml)), std::invalid_argument);
+}
+
+TEST(TaskIntentModel, SharedGoldenFixturesMatchCanonicalBytesAndHashes)
+{
+  const auto fixtures = YAML::LoadFile(TASK_INTENT_GOLDEN_PATH)["fixtures"];
+  ASSERT_TRUE(fixtures && fixtures.IsSequence());
+  for (const auto & fixture : fixtures) {
+    const auto yaml = fixture["yaml"].as<std::string>();
+    EXPECT_EQ(workcell_builder::canonical_task_intent_json_for_testing(yaml), fixture["canonical"].as<std::string>());
+    EXPECT_EQ(workcell_builder::canonical_task_intent_sha256_for_testing(yaml), fixture["sha256"].as<std::string>());
+  }
 }

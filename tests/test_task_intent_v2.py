@@ -178,3 +178,13 @@ def test_v1_rotated_local_rpy_is_preserved():
     before = resolve_destination(env, "drop")
     migrated = migrate_v1(old, env)
     assert migrated["place"]["placement"]["requested_local_pose"]["rpy_rad"] == before["placement_local"]["pose_rpy"]
+
+
+def test_shared_canonical_golden_fixtures_match_python():
+    fixture = json.loads((Path(__file__).parent / "fixtures/task_intent_v2_canonical_golden.json").read_text())
+    import yaml
+    for item in fixture["fixtures"]:
+        model = yaml.safe_load(item["yaml"])
+        canonical = __import__("scripts.task_intent_v2", fromlist=["_canonical_json"])._canonical_json(model)
+        assert canonical == item["canonical"]
+        assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == item["sha256"]

@@ -25,6 +25,18 @@ void numbers_or(const YAML::Node & node, const char * key, std::array<double, N>
   if (!value || !value.IsSequence()) return;
   for (std::size_t i = 0; i < std::min(N, value.size()); ++i) out[i] = value[i].as<double>();
 }
+void numbers_or(const YAML::Node & node, const char * key, std::vector<double> & out)
+{
+  const auto value = node && node.IsMap() ? node[key] : YAML::Node();
+  if (!value || !value.IsSequence()) return;
+  out.clear(); for (const auto & item : value) out.push_back(item.as<double>());
+}
+template<typename T>
+std::optional<T> optional_scalar(const YAML::Node & node, const char * key)
+{
+  if (!node || !node.IsMap() || !node[key] || node[key].IsNull()) return std::nullopt;
+  return node[key].as<T>();
+}
 double number_or(const YAML::Node & node, const char * key, double fallback = 0.0)
 {
   return node && node.IsMap() && node[key] ? node[key].as<double>() : fallback;
@@ -57,7 +69,7 @@ std::string scalar(const YAML::Node & node)
   const auto raw = node.as<std::string>();
   if (tag == "tag:yaml.org,2002:null" || (tag != "!" && (raw == "~" || raw == "null" || raw == "Null" || raw == "NULL"))) return "null";
   if (tag == "tag:yaml.org,2002:bool" || (tag != "!" && (raw == "true" || raw == "True" || raw == "TRUE" || raw == "false" || raw == "False" || raw == "FALSE"))) return (raw == "true" || raw == "True" || raw == "TRUE") ? "true" : "false";
-  if (tag == "tag:yaml.org,2002:int" || tag == "tag:yaml.org,2002:float" || (tag != "!" && std::regex_match(raw, std::regex(R"(^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$)")))) {
+  if (tag != "!" && (tag == "tag:yaml.org,2002:int" || tag == "tag:yaml.org,2002:float" || std::regex_match(raw, std::regex(R"(^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$)")))) {
     double value = std::stod(raw);
     if (value == 0.0) value = 0.0;
     std::ostringstream number;
@@ -82,7 +94,10 @@ std::string canonical(const YAML::Node & node)
   if (node.IsMap()) {
     std::vector<std::string> keys;
     for (const auto & item : node) keys.push_back(item.first.as<std::string>());
-    std::sort(keys.begin(), keys.end());
+    std::sort(keys.begin(), keys.end(), [](const std::string & a, const std::string & b) {
+      return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end(),
+        [](char x, char y) { return static_cast<unsigned char>(x) < static_cast<unsigned char>(y); });
+    });
     std::ostringstream out; out << '{';
     for (std::size_t i = 0; i < keys.size(); ++i) { if (i) out << ','; out << json_quote(keys[i]) << ':' << canonical(node[keys[i]]); }
     out << '}'; return out.str();
@@ -108,13 +123,13 @@ TaskIntentModel TaskIntentModel::from_yaml(const std::string & yaml_text)
   model.pick_selection.zone_ref = text_or(selection, "zone_ref");
   const auto filter = selection["object_filter"];
   model.pick_selection.class_id = text_or(filter, "class_id");
-  model.pick_selection.color = text_or(filter, "color");
-  model.pick_selection.min_confidence = number_or(filter, "min_confidence", -1.0);
-  model.pick_selection.max_age_seconds = number_or(filter, "max_age_seconds");
+  model.pick_selection.color = optional_scalar<std::string>(filter, "color");
+  model.pick_selection.min_confidence = optional_scalar<double>(filter, "min_confidence");
+  model.pick_selection.max_age_seconds = optional_scalar<double>(filter, "max_age_seconds");
   const auto grasp = pick["grasp"];
-  model.grasp.policy = text_or(grasp, "policy", "AUTO");
+  model.grasp.policy = text_or(grasp, "policy");
   model.grasp.required_capability = text_or(grasp, "required_capability");
-  model.grasp.strategy_ref = text_or(grasp, "strategy_ref");
+  model.grasp.strategy_ref = optional_scalar<std::string>(grasp, "strategy_ref");
   const auto approach = grasp["approach"];
   model.grasp.approach_axis = text_or(approach, "axis");
   model.grasp.approach_distance_m = number_or(approach, "distance_m");
@@ -139,9 +154,9 @@ TaskIntentModel TaskIntentModel::from_yaml(const std::string & yaml_text)
   model.place.asset_ref = text_or(target, "asset_ref");
   model.place.region_ref = text_or(target, "region_ref");
   const auto placement = place["placement"];
-  model.place.policy = text_or(placement, "policy", "AUTO");
+  model.place.policy = text_or(placement, "policy");
   const auto requested = placement["requested_local_pose"];
-  if (requested && requested.IsMap()) { model.place.has_requested_local_pose = true; numbers_or(requested, "xyz_m", model.place.requested_local_pose.xyz_m); numbers_or(requested, "rpy_rad", model.place.requested_local_pose.rpy_rad); }
+  if (requested && requested.IsMap()) { TaskIntentPose pose; numbers_or(requested, "xyz_m", pose.xyz_m); numbers_or(requested, "rpy_rad", pose.rpy_rad); model.place.requested_local_pose = pose; }
   const auto place_orientation = placement["orientation"];
   model.place.orientation_mode = text_or(place_orientation, "mode");
   numbers_or(place_orientation, "rpy_rad", model.place.orientation_rpy_rad);
@@ -164,18 +179,31 @@ TaskIntentModel TaskIntentModel::from_yaml(const std::string & yaml_text)
   return model;
 }
 
-std::string canonical_task_intent_json(const std::string & yaml_text)
+std::string canonical_task_intent_json_for_testing(const std::string & yaml_text)
 {
   return canonical(YAML::Load(yaml_text));
 }
 
-std::string canonical_task_intent_sha256(const std::string & yaml_text)
+std::string canonical_task_intent_sha256_for_testing(const std::string & yaml_text)
 {
-  const auto bytes = canonical_task_intent_json(yaml_text);
+  const auto bytes = canonical_task_intent_json_for_testing(yaml_text);
   unsigned char digest[SHA256_DIGEST_LENGTH];
   SHA256(reinterpret_cast<const unsigned char *>(bytes.data()), bytes.size(), digest);
   std::ostringstream out;
   for (unsigned char c : digest) out << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
   return out.str();
+}
+
+std::optional<TaskIntentModel> TaskIntentModel::from_validated_yaml(const std::string & yaml_text)
+{
+  if (yaml_text.find("workcell_builder_task_intent/v2") == std::string::npos) return std::nullopt;
+  try { auto model = from_yaml(yaml_text); model.validated = true; model.normalized_yaml = yaml_text; return model; }
+  catch (...) { return std::nullopt; }
+}
+
+std::string authoritative_task_intent_sha256(const TaskIntentModel & model)
+{
+  if (!model.validated || model.normalized_yaml.empty()) throw std::invalid_argument("authoritative hash requires validated normalized TaskIntentModel");
+  return canonical_task_intent_sha256_for_testing(model.normalized_yaml);
 }
 }  // namespace workcell_builder

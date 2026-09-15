@@ -1,0 +1,39 @@
+{
+  "fixtures": [
+    {
+      "yaml": "# c\nβ: \"é\\n\\t\\b\\f\\\\\\\"\"\na: [1, 1.0, !!float 1e0, -0, 0]\ncontrol: \"\\x01\"\n",
+      "canonical": "{\"a\":[1,1,1,0,0],\"control\":\"\\u0001\",\"β\":\"é\\n\\t\\b\\f\\\\\\\"\"}",
+      "sha256": "527b4f5bb0b647fc08c40b0e74f1cef92f880cbb57f6e55836c177cb72a2a2be"
+    },
+    {
+      "yaml": "x: 1\n",
+      "canonical": "{\"x\":1}",
+      "sha256": "5041bf1f713df204784353e82f6a4a535931cb64f1f4b4a5aeaffcb720918b22"
+    },
+    {
+      "yaml": "x: \"1\"\n",
+      "canonical": "{\"x\":\"1\"}",
+      "sha256": "013bdcb2b4d38b7d26f13f2a48631e9a5ae45530c3ef0e5946668d4f1892baa1"
+    },
+    {
+      "yaml": "x: true\n",
+      "canonical": "{\"x\":true}",
+      "sha256": "9e4f189bf4079d1b6eb6446879866cd5f39c26880d4fb518f4e01cd1bbfe513e"
+    },
+    {
+      "yaml": "x: \"true\"\n",
+      "canonical": "{\"x\":\"true\"}",
+      "sha256": "d6c911f1983004df92a7042cea4d47602bafe70cae248fdf5589da31be9a458c"
+    },
+    {
+      "yaml": "x: null\n",
+      "canonical": "{\"x\":null}",
+      "sha256": "c6b8df5aba33a39cbdee46ffaf77fae93ea2aa7d99d66408162b05a42105bd71"
+    },
+    {
+      "yaml": "x: \"null\"\n",
+      "canonical": "{\"x\":\"null\"}",
+      "sha256": "cc3192555b20bf23c1c2b39889bcc38fe1d1cb24b28b222a30ebf4221896ed99"
+    }
+  ]
+}
