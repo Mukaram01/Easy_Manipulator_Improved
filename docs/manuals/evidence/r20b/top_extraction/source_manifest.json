@@ -1,0 +1,13 @@
+{
+  "source_commit": "baed0e48",
+  "installed_scripts": "/home/user/workcell_ws/src/easy_manipulation_deployment/.worktrees/r20b-sdd/.superpowers/sdd/2026-09-15-r20b-shared-readiness-planner-extraction/install/workcell_builder/lib/workcell_builder",
+  "scene_share": "/home/user/workcell_ws/src/easy_manipulation_deployment/.worktrees/r20b-sdd/.superpowers/sdd/2026-09-15-r20b-shared-readiness-planner-extraction/install/ur5_2f_test/share/ur5_2f_test",
+  "hashes": {
+    "full_cycle_preplanner.py": "8de8d8c1bee1953bf19c1d21f8492eccb8d77c99fb804bcc8c856317a7755d2c",
+    "grasp_strategy_candidates.py": "9b3b0b1a3c17774ea2425187de8c6ec615fe7820f303cbd72fe6144df19d69be",
+    "perceived_object_grasp_execute.py": "c73bc322e8e058af1c4f3e2408f6135b405f5016f71131fee5bfc1ae5a8a0ce0",
+    "perceived_object_grasp_plan.py": "fa3407fbc9ca7bf8c7419e8a154ce0edab28d86f21f7a53f3991d5ce3a130b46",
+    "physical_destination.py": "3ced0575b7cc03c69b8c0497a20e31e45462c91a670fc9434d576c3f38dca1ab",
+    "runtime_pick_inputs.py": "02a5b473e1307caa9ae13bc3e5ca92974cf22406f932a6ed4fe84e1485dd7f1c"
+  }
+}
