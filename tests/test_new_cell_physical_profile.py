@@ -76,6 +76,14 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     materialize(scene, 'ur5_2f_workbench', destination)
     for required in ('scene_manifest.yaml', 'launch/demo.launch.py', 'package.xml', 'config/task_recipe.yaml'):
         assert (scene / required).is_file(), required
+    from extract_scene_urdf_visual_mesh_index import _extract_scene_launch_xacro_request
+    request = _extract_scene_launch_xacro_request(scene, {})
+    assert request is not None, "Generated launch must publish the authored model"
+    assert request["mappings"]["use_fake_hardware"] == "true"
+    config = yaml.safe_load((scene / "generated/physical_review.rviz").read_text())
+    marker = next(d for d in config["Visualization Manager"]["Displays"] if d["Class"] == "rviz_default_plugins/MarkerArray")
+    assert marker["Topic"]["Value"] == f"/{scene.name}/canonical_mesh_markers"
+    assert marker["Topic"]["Durability Policy"] == "Transient Local"
     scene.rename(destination)
     summary = json.loads((destination / 'generated/generated_workcell_summary.json').read_text())
     for key in ('task_recipe_path', 'detected_objects_example_path', 'environment_objects_path', 'destinations_path', 'source_cell_definition'):
@@ -134,3 +142,42 @@ def test_legacy_converter_cannot_substitute_v2_exact(tmp_path):
                                 'pick': {'grasp': {'policy': 'EXACT'}}}))
     with pytest.raises(ValueError, match='shared resolver/preplanner'):
         convert(path)
+
+
+def test_only_exact_generated_profile_launch_is_upgraded(tmp_path):
+    import generate_workcell_from_cell_definition as generator
+    scene = tmp_path / 'new_profile'
+    (scene / 'launch').mkdir(parents=True)
+    (scene / 'urdf').mkdir()
+    (scene / 'urdf/scene.urdf.xacro').write_text('<robot/>')
+    (scene / 'environment.yaml').write_text('workcell_studio: {recommended_profile: reviewed}\n')
+    launch = scene / 'launch/demo.launch.py'
+    legacy = generator._render_demo_launch(scene.name, Path('/old/staging/cell_definition.yaml'))
+    launch.write_text(legacy)
+    assert generator._profile_review_launch_owned(scene, scene.name, 'world')
+    launch.write_text(legacy + '# user change\n')
+    assert not generator._profile_review_launch_owned(scene, scene.name, 'world')
+    launch.write_text(generator._render_physical_review_launch(scene.name, 'world'))
+    assert generator._profile_review_launch_owned(scene, scene.name, 'world')
+    for data in ('{}', 'workcell_studio: null', '- no profile', '[invalid'):
+        (scene / 'environment.yaml').write_text(data)
+        assert not generator._profile_review_launch_owned(scene, scene.name, 'world')
+    (scene / 'environment.yaml').unlink()
+    assert not generator._profile_review_launch_owned(scene, scene.name, 'world')
+
+
+def test_review_launch_rejects_real_hardware_before_model_or_nodes(tmp_path, monkeypatch):
+    launch = pytest.importorskip('launch')
+    import runpy
+    import subprocess
+    import generate_workcell_from_cell_definition as generator
+    path = tmp_path / 'demo.launch.py'
+    path.write_text(generator._render_physical_review_launch('independent_cell', 'world'))
+    module = runpy.run_path(str(path))
+    context = launch.LaunchContext()
+    context.launch_configurations['use_fake_hardware'] = 'false'
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Model expansion must not start when real hardware was requested')
+    monkeypatch.setattr(subprocess, 'run', forbidden)
+    with pytest.raises(RuntimeError, match='real hardware is locked'):
+        module['_review'](context)

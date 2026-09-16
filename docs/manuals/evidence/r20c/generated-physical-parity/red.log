@@ -1,0 +1,42 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_real_humble_creation_and_regeneration_preserve_physical_truth ______
+
+tmp_path = PosixPath('/tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0')
+
+    def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path):
+        if not Path('/opt/ros/humble/bin/xacro').exists():
+            pytest.skip('Real Humble xacro required for production profile acceptance')
+        scene, destination = tmp_path / 'staging' / 'independent_cell', tmp_path / 'independent_cell'
+        wizard_input(scene)
+        materialize(scene, 'ur5_2f_workbench', destination)
+        for required in ('scene_manifest.yaml', 'launch/demo.launch.py', 'package.xml', 'config/task_recipe.yaml'):
+            assert (scene / required).is_file(), required
+        from extract_scene_urdf_visual_mesh_index import _extract_scene_launch_xacro_request
+        request = _extract_scene_launch_xacro_request(scene, {})
+>       assert request is not None, "Generated launch must publish the authored model"
+E       AssertionError: Generated launch must publish the authored model
+E       assert None is not None
+
+tests/test_new_cell_physical_profile.py:81: AssertionError
+----------------------------- Captured stdout call -----------------------------
+WARN: generated package at /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell
+PASS: package.xml -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/package.xml
+PASS: CMakeLists.txt -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/CMakeLists.txt
+PASS: environment.yaml -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/environment.yaml
+PASS: cell_definition.yaml -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/cell_definition.yaml
+PASS: scene_manifest.yaml -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/scene_manifest.yaml
+PASS: layout/workcell_studio_layout.yaml -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/layout/workcell_studio_layout.yaml
+PASS: launch/demo.launch.py -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/launch/demo.launch.py
+PASS: urdf/scene.urdf.xacro -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/urdf/scene.urdf.xacro
+PASS: generated/scene_visual_mesh_index.json -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/generated/scene_visual_mesh_index.json
+PASS: generated/validation_report.md -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/generated/validation_report.md
+PASS: generated/scene_package_readiness.json -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/generated/scene_package_readiness.json
+PASS: README.md -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/README.md
+PASS: commissioning_summary -> /tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell/generated/commissioning_summary.md
+WARN: task_recipe has no explicit default/fallback decision rule.
+WARN: task_recipe has no reject/fallback destination id; add one for robust routing.
+WARN: Execution plan generation status: WARN (dry-run=WARN, matched_rule=(n/a), destination=(n/a), manifest=/tmp/pytest-of-user/pytest-44/test_real_humble_creation_and_0/staging/.initial-package-fyb9px83/independent_cell.tmp-generation/generated/scene_manifest.dry_run.yaml, notes=task_recipe missing or disabled; dry-run skipped for this scene.; No execution plan generated because dry-run status is WARN.)
+=========================== short test summary info ============================
+FAILED tests/test_new_cell_physical_profile.py::test_real_humble_creation_and_regeneration_preserve_physical_truth
+1 failed in 11.51s

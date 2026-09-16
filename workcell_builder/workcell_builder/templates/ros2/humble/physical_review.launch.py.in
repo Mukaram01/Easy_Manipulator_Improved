@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""Generated physical review launch; no controllers or hardware drivers."""
+import os
+import subprocess
+import xml.etree.ElementTree as ET
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
+scene_pkg = @PACKAGE@
+
+
+def load_xacro(package_name, rel_path, mappings=None):
+    path = os.path.join(get_package_share_directory(package_name), rel_path)
+    result = subprocess.run(['xacro', path] + [f'{key}:={value}' for key, value in (mappings or {}).items()],
+                            check=True, capture_output=True, text=True, timeout=60)
+    return result.stdout
+
+
+def _review(context):
+    if LaunchConfiguration('use_fake_hardware').perform(context).lower() != 'true':
+        raise RuntimeError('Generated physical review requires use_fake_hardware:=true; real hardware is locked')
+    description = load_xacro(scene_pkg, 'urdf/scene.urdf.xacro', mappings={'use_fake_hardware': 'true'})
+    # The same expanded model carries the authored home state used by Product View.
+    model = ET.fromstring(description)
+    zeros = {joint.attrib['name']: float(value.text)
+             for joint in model.findall('./ros2_control/joint')
+             for value in joint.findall("./state_interface[@name='position']/param[@name='initial_value']")}
+    robot_description = {'robot_description': ParameterValue(description, value_type=str)}
+    share = get_package_share_directory(scene_pkg)
+    return [
+        Node(package='robot_state_publisher', executable='robot_state_publisher',
+             parameters=[robot_description], output='screen'),
+        Node(package='joint_state_publisher', executable='joint_state_publisher',
+             parameters=[robot_description, {'zeros': zeros}], output='screen'),
+        Node(package='workcell_builder', executable='workcell_studio_layout_mesh_preview_node.py',
+             arguments=[os.path.join(share, 'layout/workcell_studio_layout.yaml'),
+                        '--owning-package', scene_pkg, '--frame-id', @WORLD@,
+                        '--topic', f'/{scene_pkg}/canonical_mesh_markers'], output='screen'),
+        Node(package='rviz2', executable='rviz2',
+             arguments=['-d', os.path.join(share, 'generated/physical_review.rviz')],
+             condition=IfCondition(LaunchConfiguration('launch_rviz')), output='screen'),
+    ]
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument('use_fake_hardware', default_value='true'),
+        DeclareLaunchArgument('launch_rviz', default_value='true'),
+        OpaqueFunction(function=_review),
+    ])

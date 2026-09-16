@@ -1,0 +1,33 @@
+{
+  "received": [
+    "description",
+    "joints",
+    "markers"
+  ],
+  "joints": {
+    "shoulder_pan_joint": 1.57,
+    "shoulder_lift_joint": -2.35,
+    "elbow_joint": 1.83,
+    "wrist_1_joint": -1.03,
+    "wrist_2_joint": -1.57,
+    "wrist_3_joint": 0.0,
+    "gripper_finger1_joint": 0.0,
+    "gripper_finger2_joint": 0.0,
+    "gripper_finger1_inner_knuckle_joint": 0.0,
+    "gripper_finger2_inner_knuckle_joint": 0.0,
+    "gripper_finger1_finger_tip_joint": 0.0,
+    "gripper_finger2_finger_tip_joint": 0.0
+  },
+  "markers": [
+    {
+      "namespace": "workcell_studio_canonical_mesh",
+      "mesh": "package://workbench_description/meshes/visual/table.stl"
+    },
+    {
+      "namespace": "workcell_studio_canonical_mesh",
+      "mesh": "package://sorting_bin_description/meshes/sorting_bin.stl"
+    }
+  ],
+  "description_present": true,
+  "home_matches": true
+}

@@ -1,0 +1,75 @@
+[INFO] [launch]: All log files can be found below /home/user/.ros/log/2026-09-16-22-08-59-568639-ubuntu-46619
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [robot_state_publisher-1]: process started with pid [46621]
+[INFO] [joint_state_publisher-2]: process started with pid [46623]
+[INFO] [workcell_studio_layout_mesh_preview_node.py-3]: process started with pid [46635]
+[INFO] [rviz2-4]: process started with pid [46637]
+[robot_state_publisher-1] [INFO] [1789592940.195378474] [robot_state_publisher]: got segment base
+[robot_state_publisher-1] [INFO] [1789592940.195533905] [robot_state_publisher]: got segment base_link
+[robot_state_publisher-1] [INFO] [1789592940.195562036] [robot_state_publisher]: got segment base_link_inertia
+[robot_state_publisher-1] [INFO] [1789592940.195569072] [robot_state_publisher]: got segment camera_accel_frame
+[robot_state_publisher-1] [INFO] [1789592940.195574157] [robot_state_publisher]: got segment camera_accel_optical_frame
+[robot_state_publisher-1] [INFO] [1789592940.195579431] [robot_state_publisher]: got segment camera_bottom_screw_frame
+[robot_state_publisher-1] [INFO] [1789592940.195585098] [robot_state_publisher]: got segment camera_color_frame
+[robot_state_publisher-1] [INFO] [1789592940.195589933] [robot_state_publisher]: got segment camera_color_optical_frame
+[robot_state_publisher-1] [INFO] [1789592940.195594750] [robot_state_publisher]: got segment camera_depth_frame
+[robot_state_publisher-1] [INFO] [1789592940.195599837] [robot_state_publisher]: got segment camera_depth_optical_frame
+[robot_state_publisher-1] [INFO] [1789592940.195604736] [robot_state_publisher]: got segment camera_frame
+[robot_state_publisher-1] [INFO] [1789592940.195609574] [robot_state_publisher]: got segment camera_gyro_frame
+[robot_state_publisher-1] [INFO] [1789592940.195614417] [robot_state_publisher]: got segment camera_gyro_optical_frame
+[robot_state_publisher-1] [INFO] [1789592940.195619185] [robot_state_publisher]: got segment camera_infra1_frame
+[robot_state_publisher-1] [INFO] [1789592940.195623801] [robot_state_publisher]: got segment camera_infra1_optical_frame
+[robot_state_publisher-1] [INFO] [1789592940.195647718] [robot_state_publisher]: got segment camera_infra2_frame
+[robot_state_publisher-1] [INFO] [1789592940.195653193] [robot_state_publisher]: got segment camera_infra2_optical_frame
+[robot_state_publisher-1] [INFO] [1789592940.195658744] [robot_state_publisher]: got segment camera_link
+[robot_state_publisher-1] [INFO] [1789592940.195664194] [robot_state_publisher]: got segment ee_palm
+[robot_state_publisher-1] [INFO] [1789592940.195669783] [robot_state_publisher]: got segment flange
+[robot_state_publisher-1] [INFO] [1789592940.195675539] [robot_state_publisher]: got segment forearm_link
+[robot_state_publisher-1] [INFO] [1789592940.195681039] [robot_state_publisher]: got segment ft_frame
+[robot_state_publisher-1] [INFO] [1789592940.195686445] [robot_state_publisher]: got segment gripper_base_link
+[robot_state_publisher-1] [INFO] [1789592940.195692123] [robot_state_publisher]: got segment gripper_finger1_finger_link
+[robot_state_publisher-1] [INFO] [1789592940.195697629] [robot_state_publisher]: got segment gripper_finger1_finger_tip_link
+[robot_state_publisher-1] [INFO] [1789592940.195703237] [robot_state_publisher]: got segment gripper_finger1_inner_knuckle_link
+[robot_state_publisher-1] [INFO] [1789592940.195708788] [robot_state_publisher]: got segment gripper_finger1_knuckle_link
+[robot_state_publisher-1] [INFO] [1789592940.195714614] [robot_state_publisher]: got segment gripper_finger2_finger_link
+[robot_state_publisher-1] [INFO] [1789592940.195720049] [robot_state_publisher]: got segment gripper_finger2_finger_tip_link
+[robot_state_publisher-1] [INFO] [1789592940.195725523] [robot_state_publisher]: got segment gripper_finger2_inner_knuckle_link
+[robot_state_publisher-1] [INFO] [1789592940.195730968] [robot_state_publisher]: got segment gripper_finger2_knuckle_link
+[robot_state_publisher-1] [INFO] [1789592940.195736415] [robot_state_publisher]: got segment shoulder_link
+[robot_state_publisher-1] [INFO] [1789592940.195742012] [robot_state_publisher]: got segment tool0
+[robot_state_publisher-1] [INFO] [1789592940.195747567] [robot_state_publisher]: got segment upper_arm_link
+[robot_state_publisher-1] [INFO] [1789592940.195753020] [robot_state_publisher]: got segment world
+[robot_state_publisher-1] [INFO] [1789592940.195758519] [robot_state_publisher]: got segment wrist_1_link
+[robot_state_publisher-1] [INFO] [1789592940.195763926] [robot_state_publisher]: got segment wrist_2_link
+[robot_state_publisher-1] [INFO] [1789592940.195769538] [robot_state_publisher]: got segment wrist_3_link
+[rviz2-4] Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
+[joint_state_publisher-2] [INFO] [1789592941.173923306] [joint_state_publisher]: Waiting for robot_description to be published on the robot_description topic...
+[rviz2-4] [INFO] [1789592942.086162858] [rviz2]: Stereo is NOT SUPPORTED
+[rviz2-4] [INFO] [1789592942.086293303] [rviz2]: OpenGl version: 4.3 (GLSL 4.3)
+[rviz2-4] [INFO] [1789592942.236807411] [rviz2]: Stereo is NOT SUPPORTED
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT) again, ignoring...
+[INFO] [rviz2-4]: sending signal 'SIGINT' to process[rviz2-4]
+[INFO] [workcell_studio_layout_mesh_preview_node.py-3]: sending signal 'SIGINT' to process[workcell_studio_layout_mesh_preview_node.py-3]
+[INFO] [joint_state_publisher-2]: sending signal 'SIGINT' to process[joint_state_publisher-2]
+[INFO] [robot_state_publisher-1]: sending signal 'SIGINT' to process[robot_state_publisher-1]
+[rviz2-4] [INFO] [1789592979.119226253] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[robot_state_publisher-1] [INFO] [1789592979.120042022] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[rviz2-4] [INFO] [1789592979.124126161] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[joint_state_publisher-2] Traceback (most recent call last):
+[joint_state_publisher-2]   File "/opt/ros/humble/lib/joint_state_publisher/joint_state_publisher", line 33, in <module>
+[joint_state_publisher-2]     sys.exit(load_entry_point('joint-state-publisher==2.4.0', 'console_scripts', 'joint_state_publisher')())
+[joint_state_publisher-2]   File "/opt/ros/humble/lib/python3.10/site-packages/joint_state_publisher/joint_state_publisher.py", line 470, in main
+[joint_state_publisher-2]     jsp.destroy_node()
+[joint_state_publisher-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 1691, in destroy_node
+[joint_state_publisher-2]     self.destroy_service(self._services[0])
+[joint_state_publisher-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/node.py", line 1615, in destroy_service
+[robot_state_publisher-1] [INFO] [1789592979.126240835] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[joint_state_publisher-2]     service.destroy()
+[joint_state_publisher-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/service.py", line 93, in destroy
+[joint_state_publisher-2]     self.__service.destroy_when_not_in_use()
+[joint_state_publisher-2] KeyboardInterrupt
+[ERROR] [joint_state_publisher-2]: process has died [pid 46623, exit code -2, cmd '/opt/ros/humble/lib/joint_state_publisher/joint_state_publisher --ros-args --params-file /tmp/launch_params_i2jpi4zd --params-file /tmp/launch_params_77snl0cl'].
+[INFO] [robot_state_publisher-1]: process has finished cleanly [pid 46621]
+[INFO] [workcell_studio_layout_mesh_preview_node.py-3]: process has finished cleanly [pid 46635]
+[INFO] [rviz2-4]: process has finished cleanly [pid 46637]

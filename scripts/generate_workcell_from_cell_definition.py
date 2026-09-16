@@ -9,6 +9,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -580,6 +581,59 @@ def _render_demo_launch(package_name: str, source_path: Path, world_frame: str =
         "        canonical_mesh_preview,\n"
         "    ])\n"
     )
+
+
+def _profile_review_launch_owned(scene: Path | None, package_name: str, world_frame: str) -> bool:
+    """Only upgrade an exact generator template, never a curated/edited launch."""
+    if scene is None or not (scene / "urdf/scene.urdf.xacro").is_file():
+        return False
+    try:
+        environment = yaml.safe_load((scene / "environment.yaml").read_text())
+    except (OSError, yaml.YAMLError):
+        return False
+    studio = environment.get("workcell_studio") if isinstance(environment, dict) else None
+    if not isinstance(studio, dict) or not studio.get("recommended_profile"):
+        return False
+    launch = scene / "launch/demo.launch.py"
+    if not launch.exists():
+        return True
+    text = launch.read_text()
+    if text == _render_physical_review_launch(package_name, world_frame):
+        return True
+    match = re.search(r'\[generated scene\] package=\S+ source=([^"\n]+)', text)
+    return bool(match and text == _render_demo_launch(package_name, Path(match[1]), world_frame))
+
+
+def _render_physical_review_launch(package_name: str, world_frame: str) -> str:
+    return (TEMPLATE_DIR / "physical_review.launch.py.in").read_text().replace(
+        "@PACKAGE@", repr(package_name)).replace("@WORLD@", repr(world_frame))
+
+
+def _write_physical_review_contract(package_dir: Path, package_name: str, world_frame: str,
+                                    source_dir: Path) -> None:
+    (package_dir / "launch/demo.launch.py").write_text(_render_physical_review_launch(package_name, world_frame))
+    # Keep the existing RViz review configuration, selecting this scene's topic.
+    rviz = yaml.safe_load((REPO_ROOT / "rviz/generated_workcell_preview.rviz").read_text())
+    manager = rviz["Visualization Manager"]
+    manager["Global Options"]["Fixed Frame"] = world_frame
+    for display in manager["Displays"]:
+        if display["Class"] == "rviz_default_plugins/MarkerArray":
+            display.pop("Marker Topic", None)
+            display["Topic"] = {"Value": f"/{package_name}/canonical_mesh_markers", "Depth": 1,
+                                "Durability Policy": "Transient Local", "History Policy": "Keep Last",
+                                "Reliability Policy": "Reliable"}
+    manager["Displays"].append({"Class": "rviz_default_plugins/RobotModel", "Name": "Robot",
+                               "Enabled": True, "Description Source": "Topic",
+                               "Description Topic": {"Value": "/robot_description", "Durability Policy": "Transient Local"}})
+    (package_dir / "generated/physical_review.rviz").write_text(yaml.safe_dump(rviz, sort_keys=False))
+    # Preserve existing package metadata verbatim except for required dependencies.
+    source_package = source_dir / "package.xml"
+    package_file = package_dir / "package.xml"
+    text = source_package.read_text() if source_package.exists() else package_file.read_text()
+    for dependency in ("robot_state_publisher", "joint_state_publisher"):
+        if f">{dependency}</" not in text:
+            text = text.replace("</package>", f"  <exec_depend>{dependency}</exec_depend>\n</package>")
+    package_file.write_text(text)
 
 def _build_readme(
     cell_def: dict[str, Any], package_name: str, source_path: Path, package_dir: Path, warnings: list[str], scene_generator: Any, capability_summary: dict[str, Any] | None = None
@@ -1535,6 +1589,8 @@ def write_scene_package_contract(
             source = runtime_source_dir / directory
             if source.is_dir():
                 shutil.copytree(source, package_dir / directory, dirs_exist_ok=True)
+    if _profile_review_launch_owned(runtime_source_dir, package_name, world_frame):
+        _write_physical_review_contract(package_dir, package_name, world_frame, runtime_source_dir)
     _write_scene_visual_mesh_index(package_name, package_dir, warnings, workspace_root=workspace_root)
     if dry_result is not None and scene_contract is not None:
         _write_validation_report(
@@ -1553,12 +1609,16 @@ def write_scene_package_contract(
 
     (package_dir / "launch" / "README.md").write_text(
         _header_markdown(cell_definition_path)
-        + "# Launch placeholders\n\nGenerated package includes offline-safe demo.launch.py for review. Reuse validated scene launch assets after review.\n",
+        + ("# Physical review launch\n\nUses authored model/home state and canonical layout markers. Fake hardware only; no controllers or execution.\n"
+           if _profile_review_launch_owned(runtime_source_dir, package_name, world_frame) else
+           "# Launch placeholders\n\nGenerated package includes offline-safe demo.launch.py for review. Reuse validated scene launch assets after review.\n"),
         encoding="utf-8",
     )
     (package_dir / "urdf" / "README.md").write_text(
         _header_markdown(cell_definition_path)
-        + "# URDF placeholders\n\nReview and connect approved robot/environment geometry assets manually.\n",
+        + ("# Authored model\n\nThe physical profile supplies this scene model; generated previews derive from it.\n"
+           if _profile_review_launch_owned(runtime_source_dir, package_name, world_frame) else
+           "# URDF placeholders\n\nReview and connect approved robot/environment geometry assets manually.\n"),
         encoding="utf-8",
     )
     (package_dir / "urdf" / "generated_asset_metadata.yaml").write_text(
@@ -1900,9 +1960,11 @@ def generate_package(
                 return 2
         # In-place refresh is deliberately allowlisted: curated authored and ROS
         # runtime files in the selected package never inherit generic staged files.
+        profile_launch_owned = _profile_review_launch_owned(existing_package_dir, package_name, str(loaded.get("cell", {}).get("planning_frame") or "world"))
         for staged_path in sorted(package_dir.rglob("*")):
             relative = staged_path.relative_to(package_dir)
-            if staged_path.is_dir() or not _is_existing_package_generator_owned_output(relative):
+            if staged_path.is_dir() or not (_is_existing_package_generator_owned_output(relative) or
+                    (profile_launch_owned and relative.as_posix() in {"launch/demo.launch.py", "package.xml"})):
                 continue
             destination = final_package_dir / relative
             destination.parent.mkdir(parents=True, exist_ok=True)

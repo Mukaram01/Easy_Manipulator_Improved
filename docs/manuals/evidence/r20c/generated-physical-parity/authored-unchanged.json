@@ -1,0 +1,6 @@
+{
+  "environment.yaml": true,
+  "layout/workcell_studio_layout.yaml": true,
+  "config/workcell_builder_task_intent.yaml": true,
+  "urdf/scene.urdf.xacro": true
+}
