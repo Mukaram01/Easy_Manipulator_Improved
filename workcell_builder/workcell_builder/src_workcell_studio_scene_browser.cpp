@@ -118,18 +118,25 @@ bool is_valid_scene_package(const WorkcellStudioSceneInfo & s)
          (s.has_package_xml && s.has_launch_demo) || s.has_scene_urdf_xacro;
 }
 
-std::vector<fs::path> candidate_scene_roots(const fs::path & workspace_root)
+std::vector<fs::path> candidate_scene_roots(const fs::path & workspace_root, const fs::path & output_root)
 {
   std::vector<fs::path> roots;
+  if (!output_root.empty()) roots.push_back(output_root);
   roots.push_back(workspace_root / "src" / "easy_manipulation_deployment" / "scenes");
   roots.push_back(workspace_root / "src" / "scenes");
   boost::system::error_code ec;
   const fs::path emd = workspace_root / "src" / "easy_manipulation_deployment" / "scenes";
   const fs::path emd_canonical = fs::weakly_canonical(emd, ec);
   if (!ec) roots.push_back(emd_canonical);
-  roots.push_back(fs::current_path() / "scenes");
   roots.push_back(workspace_root / "scenes");
-  roots.push_back(fs::path(getenv("HOME") ? getenv("HOME") : "") / "scenes");
+  // Keep legacy fallbacks only when the selected workspace has no source root.
+  // Otherwise an unrelated working directory must not contribute cells.
+  if (std::none_of(roots.begin(), roots.end(), [](const fs::path & root) {
+      boost::system::error_code error; return fs::is_directory(root, error) && !error;
+    })) {
+    roots.push_back(fs::current_path() / "scenes");
+    roots.push_back(fs::path(getenv("HOME") ? getenv("HOME") : "") / "scenes");
+  }
   std::set<std::string> seen;
   std::vector<fs::path> uniq;
   for (const auto & r : roots) {
@@ -263,8 +270,11 @@ int find_scene_by_identity(
   const fs::path & scene_dir,
   const std::string & stable_scene_name)
 {
-  for (std::size_t i = 0; i < scenes.scenes.size(); ++i) {
-    if (same_scene_identity(scenes.scenes[i], scene_dir)) return static_cast<int>(i);
+  if (!scene_dir.empty()) {
+    for (std::size_t i = 0; i < scenes.scenes.size(); ++i) {
+      if (same_scene_identity(scenes.scenes[i], scene_dir)) return static_cast<int>(i);
+    }
+    return -1; // An explicit path must never open a different same-name cell.
   }
   if (!stable_scene_name.empty()) {
     int unique_match = -1;
@@ -297,11 +307,11 @@ SceneContentReadiness scene_content_readiness(const WorkcellStudioSceneInfo & sc
   return result;
 }
 
-WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path & workspace_root)
+WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path & workspace_root, const fs::path & output_root)
 {
   WorkcellStudioSceneBrowserResult out;
   out.scene_root = workspace_root;
-  const auto roots = candidate_scene_roots(workspace_root);
+  const auto roots = candidate_scene_roots(workspace_root, output_root);
   out.searched_roots = roots;
 
   boost::system::error_code ec;
@@ -313,7 +323,7 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
       continue;
     }
 
-    out.scene_root = canonical_scene_identity(scene_root);
+    if (!out.root_exists) out.scene_root = canonical_scene_identity(scene_root);
     out.root_exists = true;
     for (fs::directory_iterator it(scene_root, ec), end; it != end && !ec; it.increment(ec)) {
       if (!fs::is_directory(it->path(), ec) || ec) continue;
@@ -356,7 +366,6 @@ WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const fs::path 
       populate_readiness(&s);
       out.scenes.push_back(s);
     }
-    break;
   }
   return out;
 }

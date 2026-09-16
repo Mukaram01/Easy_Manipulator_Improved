@@ -27,6 +27,13 @@
 #include <array>
 #include <algorithm>
 #include <fstream>
+#include <sstream>
+#include <QSaveFile>
+#include <QTemporaryDir>
+#include <QProcess>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include "scene_select_paths.h"
 #include <regex>
 
 namespace fs = boost::filesystem;
@@ -187,6 +194,7 @@ void NewCellWizard::build_ui(){
  auto*nav=new QHBoxLayout(); back_=new QPushButton("Back"); next_=new QPushButton("Next"); create_=new QPushButton("Create Cell"); create_open_=new QPushButton("Create and Open"); auto*cancel=new QPushButton("Cancel"); nav->addWidget(back_); nav->addWidget(next_); nav->addStretch(1); nav->addWidget(create_); nav->addWidget(create_open_); nav->addWidget(cancel); root->addLayout(nav);
  connect(steps_,&QListWidget::currentRowChanged,stack_,&QStackedWidget::setCurrentIndex); connect(steps_,&QListWidget::currentRowChanged,this,&NewCellWizard::refresh_validation); steps_->setCurrentRow(0);
  connect(scene_name_, &QLineEdit::textChanged, this, [this](const QString &) { refresh_validation(); });
+ connect(output_path_, &QLineEdit::textChanged, this, [this](const QString &) { refresh_validation(); });
  connect(back_,&QPushButton::clicked,this,[this]{steps_->setCurrentRow(std::max(0,steps_->currentRow()-1));}); connect(next_,&QPushButton::clicked,this,[this]{steps_->setCurrentRow(std::min(5,steps_->currentRow()+1));}); connect(cancel,&QPushButton::clicked,this,&QDialog::reject);
  connect(create_,&QPushButton::clicked,this,[this]{if(create_scene_scaffold(false))accept();}); connect(create_open_,&QPushButton::clicked,this,[this]{if(create_scene_scaffold(true))accept();});
  connect(rec,&QPushButton::clicked,this,&NewCellWizard::apply_recommended_environment_layout);
@@ -367,8 +375,13 @@ QStringList NewCellWizard::readiness_blockers() const{
 }
 void NewCellWizard::refresh_environment_parent_options(){ pick_camera_->clear(); pick_source_->clear(); place_target_->clear(); place_frame_link_->clear(); env_parent_combo_->clear(); for(int r=0;r<env_objects_table_->rowCount();++r){auto*cb=qobject_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0)); if(!cb||!cb->isChecked()) continue; auto role=env_objects_table_->item(r,7)->text().toLower(); auto id=env_objects_table_->item(r,1)->text(); env_parent_combo_->addItem(id); if(role.contains("camera")) pick_camera_->addItem(id); if(role.contains("pick_source")||role.contains("conveyor")) pick_source_->addItem(id); if(role.contains("place_target")||role.contains("reject_target")||role.contains("output_bin")||role.contains("fixture")||role.contains("support")) place_target_->addItem(id);} pick_source_->addItem("manual"); place_frame_link_->addItems({"target_link","top_surface","world"}); if(pick_camera_->findText("camera_01")>=0){ pick_zone_source_->setCurrentText("Camera view zone"); pick_camera_->setCurrentText("camera_01"); } if(pick_source_->findText("source_bin_01")>=0) pick_source_->setCurrentText("source_bin_01"); apply_scenario_defaults(); refresh_environment_review_table(); }
 
-fs::path NewCellWizard::scenes_root_path() const { return fs::path(workspace_root_.toStdString()) / "src" / "scenes"; }
-QString NewCellWizard::scene_name_error() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return "Scene/package name is required."; if(!is_valid_package_name(n)) return "Use lowercase letters, numbers, underscores only; must start with a letter."; return ""; }
+void NewCellWizard::set_output_root(const QString & path) { if (!path.isEmpty()) output_path_->setText(path); }
+fs::path NewCellWizard::scenes_root_path() const {
+ if (output_path_) return fs::absolute(fs::path(output_path_->text().trimmed().toStdString()));
+ const auto resolved = workcell_builder::resolve_scene_select_paths(Workcell{}, fs::path(workspace_root_.toStdString()));
+ return resolved.success ? resolved.paths.scenes_path : fs::path(workspace_root_.toStdString()) / "src" / "scenes";
+}
+QString NewCellWizard::scene_name_error() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return "Scene/package name is required."; if(output_path_ && output_path_->text().trimmed().isEmpty()) return "Output scenes path is required."; if(!is_valid_package_name(n)) return "Use lowercase letters, numbers, underscores only; must start with a letter."; return ""; }
 QString NewCellWizard::scene_name_warning() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return ""; const fs::path p=scenes_root_path()/n.toStdString(); if(fs::exists(p)) return "Warning: output folder already exists. Creation is blocked to avoid overwrite."; return ""; }
 
 void NewCellWizard::refresh_validation(){
@@ -389,10 +402,23 @@ void NewCellWizard::refresh_summary(){
 
 bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  if(!scene_name_error().isEmpty()||!scene_name_warning().isEmpty()) return false;
- const fs::path scene_dir=scenes_root_path()/scene_name_->text().trimmed().toStdString();
+ fs::path destination=fs::absolute(scenes_root_path())/scene_name_->text().trimmed().toStdString();
+ auto fail = [&](const QString & detail) {
+   steps_->setCurrentRow(0);
+   // Changing pages refreshes validation; retain the actionable save error.
+   scene_error_->setText("Save failed at " + QString::fromStdString(destination.string()) + ": " + detail +
+     ". Check the output folder and retry; no cell was created.");
+   return false;
+ };
  boost::system::error_code ec;
+ fs::create_directories(destination.parent_path(),ec);
+ if(ec) return fail(QString::fromStdString(ec.message()));
+ destination=fs::canonical(destination.parent_path())/destination.filename();
+ QTemporaryDir staging(QString::fromStdString((destination.parent_path()/".new-cell-XXXXXX").string()));
+ if(!staging.isValid()) return fail("Cannot create temporary authoring folder");
+ const fs::path scene_dir=fs::path(staging.path().toStdString())/destination.filename();
  fs::create_directories(scene_dir/"config",ec);
- if(ec) return false;
+ if(ec) return fail(QString::fromStdString(ec.message()));
 
  auto yaml_scalar=[](const QString &value){
    std::string s=value.toStdString();
@@ -410,7 +436,7 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  if(place_target_missing) readiness="BLOCKED";
  else if(unknown_links) readiness="WARNINGS";
 
- std::ofstream out((scene_dir/"environment.yaml").string());
+ std::ostringstream out;
  out<<"scene_name: "<<scene_name_->text().trimmed().toStdString()<<"\n";
  out<<"robot: "<<robot_->currentText().toStdString()<<"\n";
  out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n";
@@ -552,6 +578,31 @@ out<<"workcell_studio:\n";
  else out<<"    - "<<yaml_scalar(warning_text)<<"\n";
 
  out<<"fake_hardware_first: true\nreal_robot_locked: true\nruntime_execution_enabled: false\nscaffold_only: true\n";
- out.close();
- result_.created=true; result_.open_in_scene_builder=open_in_builder; result_.scene_name=scene_name_->text().trimmed(); result_.scene_dir=scene_dir; return true;
+ auto save = [](const fs::path & path, const QByteArray & bytes, QString * error) {
+   QSaveFile file(QString::fromStdString(path.string()));
+   if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size() || !file.commit()) {
+     *error=file.errorString(); return false;
+   }
+   return true;
+ };
+ QString error;
+ if(!save(scene_dir/"environment.yaml", QByteArray::fromStdString(out.str()), &error)) return fail(error);
+ if(pick_place_scenario) {
+   const auto resolved=workcell_builder::resolve_scene_select_paths(Workcell{}, fs::path(workspace_root_.toStdString()));
+   QString helper=QString::fromStdString((resolved.paths.workcell_path/"scripts/task_intent_authoring.py").string());
+   if(!QFileInfo::exists(helper)) helper=QDir::current().absoluteFilePath("scripts/task_intent_authoring.py");
+   QProcess authoring;
+   authoring.start("python3", {helper, QString::fromStdString(scene_dir.string())});
+   if(!authoring.waitForFinished(30000)) { authoring.kill(); authoring.waitForFinished(); return fail("Task authoring helper did not finish"); }
+   const auto report=QJsonDocument::fromJson(authoring.readAllStandardOutput()).object();
+   auto intent=report.value("task_intent").toObject();
+   if(authoring.exitStatus()!=QProcess::NormalExit || authoring.exitCode()!=0 || intent.isEmpty())
+     return fail("Task intent could not be saved: " + QString::fromUtf8(QJsonDocument(report).toJson(QJsonDocument::Compact)) + QString::fromUtf8(authoring.readAllStandardError()));
+   intent.insert("scene_package", QString::fromStdString(destination.string()));
+   if(!save(scene_dir/"config/workcell_builder_task_intent.yaml", QJsonDocument(intent).toJson(), &error)) return fail(error);
+ }
+ if(fs::exists(destination)) return fail("Output folder already exists; choose a different name");
+ fs::rename(scene_dir, destination, ec);
+ if(ec) return fail(QString::fromStdString(ec.message()));
+ result_.created=true; result_.open_in_scene_builder=open_in_builder; result_.scene_name=scene_name_->text().trimmed(); result_.scene_dir=destination; return true;
 }

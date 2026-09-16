@@ -87,6 +87,8 @@ TEST(TaskIntentEditor, MalformedInputAndExternalChangesCannotSilentlySave) {
 
 TEST(TaskIntentEditor, ExistingNewCellWizardCreatesEditableV2DraftWithoutFileRepair) {
   application(); QTemporaryDir workspace;
+  QDir().mkpath(workspace.path() + "/src/easy_manipulation_deployment/scenes");
+  QDir().mkpath(workspace.path() + "/src/easy_manipulation_deployment/assets");
   NewCellWizard wizard(workspace.path());
   ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
   ASSERT_TRUE(wizard.select_object_source_by_id("manual_simulated"));
@@ -148,4 +150,105 @@ TEST(TaskIntentEditor, PolicyChangesAndAdvancedFieldsKeepAuthoredConstraints) {
   TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
   EXPECT_DOUBLE_EQ(reopened.model().grasp.tcp_offset_xyz_m[1], -0.02);
   EXPECT_DOUBLE_EQ(reopened.model().place.retreat_distance_m, 0.23);
+}
+
+#include "workcell_studio_scene_browser.hpp"
+namespace {
+void creation_chain(const QString & layout) {
+  application(); QTemporaryDir workspace;
+  const auto repo = workspace.path() + "/src/easy_manipulation_deployment";
+  QDir().mkpath(repo + "/scenes/existing"); QDir().mkpath(repo + "/assets");
+  write(repo + "/scenes/existing/environment.yaml", "robot: {model: ur5}\n");
+  const auto output = layout == "custom" ? workspace.path() + "/custom output" : workspace.path() + "/src/scenes";
+  if (layout == "alias") boost::filesystem::create_directory_symlink(
+    (repo + "/scenes").toStdString(), output.toStdString());
+  else QDir().mkpath(output);
+  NewCellWizard wizard(workspace.path());
+  ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
+  ASSERT_TRUE(wizard.select_object_source_by_id("manual_simulated"));
+  for (auto * form : wizard.findChildren<QFormLayout *>())
+    for (auto * field : wizard.findChildren<QLineEdit *>()) {
+      auto * label = qobject_cast<QLabel *>(form->labelForField(field));
+      if (!label) continue;
+      if (label->text() == "Scene/package name") field->setText("created");
+      if (label->text() == "Output scenes path") {
+        EXPECT_EQ(field->text(), repo + "/scenes");
+        field->setText(output);
+      }
+    }
+  for (auto * button : wizard.findChildren<QPushButton *>())
+    if (button->text() == "Create and Open") button->click();
+  ASSERT_TRUE(wizard.result().created);
+  const auto scene = wizard.result().scene_dir;
+  EXPECT_EQ(scene, workcell_builder::canonical_scene_identity((output + "/created").toStdString()));
+  EXPECT_TRUE(QFile::exists(QString::fromStdString(scene.string()) + "/config/workcell_builder_task_intent.yaml"));
+  const auto saved = read(QString::fromStdString(scene.string()) + "/config/workcell_builder_task_intent.yaml");
+  EXPECT_EQ(QJsonDocument::fromJson(saved).object().value("scene_package").toString().toStdString(), scene.string());
+  // Retrying the same wizard must not replace the saved cell.
+  for (auto * button : wizard.findChildren<QPushButton *>())
+    if (button->text() == "Create and Open") button->click();
+  EXPECT_EQ(saved, read(QString::fromStdString(scene.string()) + "/config/workcell_builder_task_intent.yaml"));
+  if (layout != "alias") {
+    QDir().mkpath(repo + "/scenes/created");
+    write(repo + "/scenes/created/environment.yaml", "robot: {model: other_robot}\n");
+  }
+  const auto home = workcell_builder::discover_workcell_studio_scenes(workspace.path().toStdString(),
+    layout == "custom" ? output.toStdString() : std::string());
+  EXPECT_EQ(home.scenes.size(), layout == "alias" ? 2U : 3U);
+  EXPECT_EQ(workcell_builder::find_scene_by_identity(home, {}, "created"),
+    layout == "alias" ? workcell_builder::find_scene_by_identity(home, scene) : -1);
+  EXPECT_EQ(workcell_builder::find_scene_by_identity(home, "/missing/created", "created"), -1);
+  const int index = workcell_builder::find_scene_by_identity(home, scene);
+  ASSERT_GE(index, 0);
+  EXPECT_FALSE(home.scenes[index].has_package_xml);
+  TaskIntentEditor editor;
+  ASSERT_TRUE(editor.load_scene(QString::fromStdString(home.scenes[index].scene_dir.string()), helper()));
+  EXPECT_EQ(editor.model().grasp.policy, "AUTO");
+  EXPECT_EQ(editor.model().place.asset_ref, "place_fixture_01");
+}
+
+}
+TEST(TaskIntentEditor, CreateDiscoverOpenAcrossSeparateSceneRoots) { creation_chain("separate"); }
+TEST(TaskIntentEditor, CreateDiscoverOpenThroughNormalAlias) { creation_chain("alias"); }
+TEST(TaskIntentEditor, CreateDiscoverOpenThroughCustomOutput) { creation_chain("custom"); }
+TEST(TaskIntentEditor, SaveFailureDoesNotPublishCellOrClaimCreation) {
+  application(); QTemporaryDir workspace;
+  write(workspace.path() + "/not_a_directory", "preserve me");
+  NewCellWizard wizard(workspace.path());
+  for (auto * form : wizard.findChildren<QFormLayout *>())
+    for (auto * field : wizard.findChildren<QLineEdit *>()) {
+      auto * label = qobject_cast<QLabel *>(form->labelForField(field));
+      if (label && label->text() == "Scene/package name") field->setText("created");
+    }
+  wizard.set_output_root(workspace.path() + "/not_a_directory");
+  for (auto * button : wizard.findChildren<QPushButton *>())
+    if (button->text() == "Create and Open") button->click();
+  EXPECT_FALSE(wizard.result().created);
+  EXPECT_EQ(read(workspace.path() + "/not_a_directory"), "preserve me");
+  bool save_error = false;
+  for (auto * label : wizard.findChildren<QLabel *>())
+    if (label->text().contains("Save failed at") && label->text().contains("not_a_directory")) save_error = true;
+  EXPECT_TRUE(save_error);
+}
+TEST(TaskIntentEditor, TaskPersistenceFailureLeavesNoPartialScene) {
+  application(); QTemporaryDir workspace;
+  const auto repo = workspace.path() + "/src/easy_manipulation_deployment";
+  QDir().mkpath(repo + "/scenes"); QDir().mkpath(repo + "/assets"); QDir().mkpath(repo + "/scripts");
+  write(repo + "/scripts/task_intent_authoring.py", "print('{\"errors\": [\"Authoring unavailable\"]}')\n");
+  NewCellWizard wizard(workspace.path());
+  ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
+  for (auto * form : wizard.findChildren<QFormLayout *>())
+    for (auto * field : wizard.findChildren<QLineEdit *>()) {
+      auto * label = qobject_cast<QLabel *>(form->labelForField(field));
+      if (label && label->text() == "Scene/package name") field->setText("created");
+    }
+  for (auto * button : wizard.findChildren<QPushButton *>())
+    if (button->text() == "Create and Open") button->click();
+  EXPECT_FALSE(wizard.result().created);
+  EXPECT_FALSE(QFile::exists(repo + "/scenes/created"));
+  EXPECT_TRUE(QDir(repo + "/scenes").entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot).isEmpty());
+  bool task_error = false;
+  for (auto * label : wizard.findChildren<QLabel *>())
+    if (label->text().contains("Task intent could not be saved") && label->text().contains("Authoring unavailable")) task_error = true;
+  EXPECT_TRUE(task_error);
 }

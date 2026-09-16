@@ -36,6 +36,7 @@ class NewCellWizard : public QDialog {
   Q_OBJECT
 public:
   explicit NewCellWizard(const QString &workspace_root, QWidget *parent = nullptr);
+  void set_output_root(const QString & path);
   NewCellWizardResult result() const { return result_; }
 
   static bool is_valid_package_name(const QString &name);

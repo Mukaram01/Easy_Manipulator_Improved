@@ -2073,19 +2073,8 @@ bool MainWindow::open_home_scene_in_builder(
 
   const QString stable_scene_id = scene_id.trimmed();
   if (stable_scene_id.isEmpty()) return false;
-  int scene_index = -1;
-  if (!canonical_scene_path.trimmed().isEmpty()) {
-    scene_index = workcell_builder::find_scene_by_identity(
-      scene_browser_result_, fs::path(canonical_scene_path.toStdString()), stable_scene_id.toStdString());
-  }
-  if (scene_index < 0) {
-    for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
-      if (scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name == stable_scene_id.toStdString()) {
-        scene_index = i;
-        break;
-      }
-    }
-  }
+  const int scene_index = workcell_builder::find_scene_by_identity(scene_browser_result_,
+    fs::path(canonical_scene_path.trimmed().toStdString()), stable_scene_id.toStdString());
   if (scene_index < 0) return false;
 
   append_studio_log(QString("Home: opening Scene Builder for %1").arg(stable_scene_id));
@@ -2224,6 +2213,7 @@ void MainWindow::open_new_scene_creation_flow()
     return;
   }
   NewCellWizard wizard(workspace_root, this);
+  wizard.set_output_root(QSettings().value("startup/last_scene_output_root").toString());
   if (wizard.exec() != QDialog::Accepted) {
     append_studio_log("New Cell Wizard cancelled.");
     return;
@@ -2234,16 +2224,17 @@ void MainWindow::open_new_scene_creation_flow()
   }
   append_studio_log(QString("New Cell Wizard: created '%1' (fake hardware default / real robot locked).")
     .arg(created.scene_name));
+  QSettings().setValue("startup/last_scene_output_root", QString::fromStdString(created.scene_dir.parent_path().string()));
   refresh_scene_browser_ui();
-  for (int i = 0; i < static_cast<int>(scene_browser_result_.scenes.size()); ++i) {
-    if (scene_browser_result_.scenes[static_cast<size_t>(i)].scene_name == created.scene_name.toStdString()) {
-      select_scene_by_row(i);
-      break;
-    }
+  const int index = workcell_builder::find_scene_by_identity(scene_browser_result_, created.scene_dir);
+  if (index < 0 || (created.open_in_scene_builder && !open_scene_builder_for_scene_index(index, "New Cell Wizard"))) {
+    QMessageBox::warning(this, "Cell saved; open failed",
+      "The cell was saved at " + QString::fromStdString(created.scene_dir.string()) +
+      ". Refresh Home and open that path. Do not create it again.");
+    return;
   }
-  if (created.open_in_scene_builder) {
-    open_scene_builder_for_selected_scene("New Cell Wizard");
-  }
+  selected_scene_index_ = index;
+  refresh_studio_home_scene_table();
 }
 
 void MainWindow::setup_studio_shell()
@@ -5231,8 +5222,9 @@ void MainWindow::refresh_scene_browser_ui()
     selected_identity = selected.canonical_scene_dir.empty() ? selected.scene_dir : selected.canonical_scene_dir;
     selected_name = selected.scene_name;
   }
-  const fs::path workspace_root = workcell_path.empty() ? fs::path(QDir::homePath().toStdString()) / "workcell_ws" : workcell_path;
-  scene_browser_result_ = workcell_builder::discover_workcell_studio_scenes(workspace_root);
+  const fs::path workspace_root(detect_workspace_root().toStdString());
+  scene_browser_result_ = workcell_builder::discover_workcell_studio_scenes(workspace_root,
+    fs::path(QSettings().value("startup/last_scene_output_root").toString().toStdString()));
   if (!selected_identity.empty()) {
     selected_scene_index_ = workcell_builder::find_scene_by_identity(
       scene_browser_result_, selected_identity, selected_name);

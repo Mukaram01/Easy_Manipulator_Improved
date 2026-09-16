@@ -358,11 +358,15 @@ if(BUILD_TESTING)
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
   ament_add_gtest(workcell_task_intent_editor_test
-    test/task_intent_editor_test.cpp gui/task_intent_editor.cpp gui/new_cell_wizard.cpp src_task_intent_model.cpp)
+    test/task_intent_editor_test.cpp gui/task_intent_editor.cpp gui/new_cell_wizard.cpp src_task_intent_model.cpp
+    src_workcell_studio_scene_browser.cpp src_workcell_studio_canvas_model.cpp
+    src_workcell_warning_once.cpp src_workcell_yaml_utils.cpp src_visual_mesh_source_resolver.cpp)
   if(TARGET workcell_task_intent_editor_test)
     target_link_libraries(workcell_task_intent_editor_test Qt5::Widgets yaml-cpp OpenSSL::Crypto ${Boost_LIBRARIES})
     target_compile_definitions(workcell_task_intent_editor_test PRIVATE WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
   endif()
+  target_sources(workcell_task_intent_editor_test PRIVATE src_scene_select_paths.cpp)
+  ament_target_dependencies(workcell_task_intent_editor_test ament_index_cpp rclcpp)
   ament_add_gtest(workcell_task_intent_model_test
     test/task_intent_model_test.cpp
     src_task_intent_model.cpp)
@@ -390,7 +394,8 @@ if(BUILD_TESTING)
 
   ament_add_gtest(workcell_new_cell_wizard_test
     test/new_cell_wizard_test.cpp
-    gui/new_cell_wizard.cpp)
+    gui/new_cell_wizard.cpp src_scene_select_paths.cpp)
+  ament_target_dependencies(workcell_new_cell_wizard_test ament_index_cpp rclcpp)
 
   ament_add_gtest(workcell_workspace_validation_test
     test/workspace_validation_test.cpp
