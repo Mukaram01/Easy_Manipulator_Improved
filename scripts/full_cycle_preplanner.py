@@ -99,6 +99,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             raise RuntimeError('observation expired before candidate planning')
         if candidate.object_id != observation['id']:
             raise RuntimeError('candidate object differs from observation')
+        if set(candidate.effective) - {'approach_distance_m'}:
+            raise RuntimeError('unsupported candidate constraints in legacy full-cycle extraction')
         if candidate.strategy_ref != 'top_2f':
             raise RuntimeError('unsupported grasp strategy in legacy full-cycle extraction')
         if not math.isfinite(contract['retreat_distance_m']) or contract['retreat_distance_m'] <= 0:

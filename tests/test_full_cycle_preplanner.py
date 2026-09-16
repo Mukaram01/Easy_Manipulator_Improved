@@ -53,9 +53,9 @@ def fixture(fail_at=None, contacts=True):
     trace, goals, validity = [], [], []
     def stage(name):
         trace.append(name)
+    def segment(view, name, goal, group=None, straight=False):
         if name == fail_at:
             raise RuntimeError('injected obstacle')
-    def segment(view, name, goal, group=None, straight=False):
         goals.append((name, copy.deepcopy(goal), group, straight))
         after = copy.deepcopy(view)
         values = goal if isinstance(goal, dict) else dict(zip(names[:7], runtime.pose_values(goal.pose)))
@@ -66,12 +66,18 @@ def fixture(fail_at=None, contacts=True):
         validity.append(state.joint_state.position[-1])
         pairs = [NS(contact_body_1='observed-box', contact_body_2='tip')] if contacts and state.joint_state.position[-1] >= .02 else []
         return NS(valid=not pairs, contacts=pairs)
+    def transition(name, function):
+        def apply(*args):
+            if name == fail_at:
+                raise RuntimeError('injected obstacle')
+            return function(*args)
+        return apply
     operations = PreplanOperations(plan_segment=segment, fk=lambda state, link: pose(state.joint_state.position[:7]),
         state_validity=state_validity, updated_state=runtime.updated_state,
         pose_message=pose, translated_pose=runtime.translated_pose,
         target_contact_matrix=runtime.target_contact_matrix, verify_selected_contacts=runtime.verify_selected_contacts,
-        private_attachment=runtime.private_attachment, object_pose_after_motion=runtime.object_pose_after_motion,
-        place_detachment_diff=runtime.place_detachment_diff, stage=stage)
+        private_attachment=transition('ATTACH', runtime.private_attachment), object_pose_after_motion=runtime.object_pose_after_motion,
+        place_detachment_diff=transition('DETACH', runtime.place_detachment_diff), stage=stage)
     candidate = generate_strategy_candidates('top_2f', observation, {'approach_distance_m': .12})[3]
     kwargs = dict(initial_scene=scene, observation=observation, candidate=candidate,
         destination=dict(pose_xyz=[.6, .2, .3], pose_rpy=[0., 0., 0.], dimensions=[.3, .3, .3]),
@@ -195,3 +201,14 @@ def test_failed_motion_evidence_cannot_become_prevalidated():
     result = preplan_full_cycle(**kwargs)
     assert not result.success
     assert result.reason_code == 'PREPLAN_APPROACH_FAILED'
+
+
+def test_preplanner_does_not_claim_unconsumed_candidate_constraints():
+    from dataclasses import replace
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, _ = fixture()
+    kwargs['candidate'] = replace(kwargs['candidate'], effective={'approach_distance_m': .12, 'force_limit_n': 4.})
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert 'unsupported' in result.reason
+    assert goals == []
