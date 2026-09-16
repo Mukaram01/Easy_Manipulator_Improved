@@ -58,7 +58,11 @@ public:
   bool select_object_source_by_id(const QString &source_id);
   bool manual_object_geometry_valid() const;
 
+protected:
+  void showEvent(QShowEvent *event) override;
+
 private:
+  void fit_available_screen();
   struct ToolSelectionReadiness { QString status; QString reason; };
   struct ToolModelProfile {
     QString family;

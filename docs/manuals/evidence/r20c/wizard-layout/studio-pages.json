@@ -1,0 +1,403 @@
+{
+  "pid": 30345,
+  "pages": [
+    {
+      "page": "1 Basics",
+      "window": [
+        475,
+        212,
+        1040,
+        720
+      ],
+      "actions": [
+        {
+          "name": "Back",
+          "showing": true,
+          "enabled": false,
+          "rect": [
+            486,
+            885,
+            48,
+            36
+          ]
+        },
+        {
+          "name": "Next",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            540,
+            885,
+            49,
+            36
+          ]
+        },
+        {
+          "name": "Create Cell",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1227,
+            885,
+            85,
+            36
+          ]
+        },
+        {
+          "name": "Create and Open",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1318,
+            885,
+            120,
+            36
+          ]
+        },
+        {
+          "name": "Cancel",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1444,
+            885,
+            60,
+            36
+          ]
+        }
+      ]
+    },
+    {
+      "page": "2 Robot",
+      "window": [
+        475,
+        212,
+        1040,
+        720
+      ],
+      "actions": [
+        {
+          "name": "Back",
+          "showing": true,
+          "enabled": false,
+          "rect": [
+            486,
+            885,
+            48,
+            36
+          ]
+        },
+        {
+          "name": "Next",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            540,
+            885,
+            49,
+            36
+          ]
+        },
+        {
+          "name": "Create Cell",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1227,
+            885,
+            85,
+            36
+          ]
+        },
+        {
+          "name": "Create and Open",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1318,
+            885,
+            120,
+            36
+          ]
+        },
+        {
+          "name": "Cancel",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1444,
+            885,
+            60,
+            36
+          ]
+        }
+      ]
+    },
+    {
+      "page": "3 End Effector",
+      "window": [
+        475,
+        212,
+        1040,
+        720
+      ],
+      "actions": [
+        {
+          "name": "Back",
+          "showing": true,
+          "enabled": false,
+          "rect": [
+            486,
+            885,
+            48,
+            36
+          ]
+        },
+        {
+          "name": "Next",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            540,
+            885,
+            49,
+            36
+          ]
+        },
+        {
+          "name": "Create Cell",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1227,
+            885,
+            85,
+            36
+          ]
+        },
+        {
+          "name": "Create and Open",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1318,
+            885,
+            120,
+            36
+          ]
+        },
+        {
+          "name": "Cancel",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1444,
+            885,
+            60,
+            36
+          ]
+        }
+      ]
+    },
+    {
+      "page": "4 Environment",
+      "window": [
+        475,
+        212,
+        1040,
+        720
+      ],
+      "actions": [
+        {
+          "name": "Back",
+          "showing": true,
+          "enabled": false,
+          "rect": [
+            486,
+            885,
+            48,
+            36
+          ]
+        },
+        {
+          "name": "Next",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            540,
+            885,
+            49,
+            36
+          ]
+        },
+        {
+          "name": "Create Cell",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1227,
+            885,
+            85,
+            36
+          ]
+        },
+        {
+          "name": "Create and Open",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1318,
+            885,
+            120,
+            36
+          ]
+        },
+        {
+          "name": "Cancel",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1444,
+            885,
+            60,
+            36
+          ]
+        }
+      ]
+    },
+    {
+      "page": "5 Task Intent",
+      "window": [
+        475,
+        212,
+        1040,
+        720
+      ],
+      "actions": [
+        {
+          "name": "Back",
+          "showing": true,
+          "enabled": false,
+          "rect": [
+            486,
+            885,
+            48,
+            36
+          ]
+        },
+        {
+          "name": "Next",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            540,
+            885,
+            49,
+            36
+          ]
+        },
+        {
+          "name": "Create Cell",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1227,
+            885,
+            85,
+            36
+          ]
+        },
+        {
+          "name": "Create and Open",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1318,
+            885,
+            120,
+            36
+          ]
+        },
+        {
+          "name": "Cancel",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1444,
+            885,
+            60,
+            36
+          ]
+        }
+      ]
+    },
+    {
+      "page": "6 Review",
+      "window": [
+        475,
+        212,
+        1040,
+        720
+      ],
+      "actions": [
+        {
+          "name": "Back",
+          "showing": true,
+          "enabled": false,
+          "rect": [
+            486,
+            885,
+            48,
+            36
+          ]
+        },
+        {
+          "name": "Next",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            540,
+            885,
+            49,
+            36
+          ]
+        },
+        {
+          "name": "Create Cell",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1227,
+            885,
+            85,
+            36
+          ]
+        },
+        {
+          "name": "Create and Open",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1318,
+            885,
+            120,
+            36
+          ]
+        },
+        {
+          "name": "Cancel",
+          "showing": true,
+          "enabled": true,
+          "rect": [
+            1444,
+            885,
+            60,
+            36
+          ]
+        }
+      ]
+    }
+  ],
+  "result": "PASS",
+  "created_cell": false
+}

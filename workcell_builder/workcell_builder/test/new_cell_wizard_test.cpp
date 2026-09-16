@@ -15,7 +15,7 @@ namespace {
 QApplication * ensure_application()
 {
   if (auto * app = qobject_cast<QApplication *>(QCoreApplication::instance())) return app;
-  qputenv("QT_QPA_PLATFORM", "offscreen");
+  if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   static int argc = 1;
   static char app_name[] = "workcell_new_cell_wizard_test";
   static char * argv[] = {app_name, nullptr};
@@ -227,4 +227,46 @@ TEST(NewCellWizard, ManualObjectSourceRequiresFallbackGeometry)
   dimension_x->setValue(0.05);
   object_id->clear();
   EXPECT_FALSE(wizard.manual_object_geometry_valid());
+}
+
+#include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QStackedWidget>
+#include <QScreen>
+#include <QDir>
+TEST(NewCellWizard, PagesScrollWithoutDisplacingNavigation) {
+  auto * app = ensure_application();
+  NewCellWizard wizard(repository_root());
+  ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
+  ASSERT_TRUE(wizard.select_object_source_by_id("manual_simulated"));
+  wizard.resize(1000, 600); wizard.show(); app->processEvents();
+  EXPECT_LE(wizard.height(), 600);
+  EXPECT_LE(wizard.frameGeometry().height(), wizard.screen()->availableGeometry().height());
+  auto * steps = wizard.findChild<QListWidget *>("newCellWizardSteps"); ASSERT_NE(steps, nullptr);
+  auto * pages = wizard.findChild<QStackedWidget *>(); ASSERT_NE(pages, nullptr);
+  for (int page = 0; page < 6; ++page) {
+    steps->setCurrentRow(page); app->processEvents();
+    SCOPED_TRACE(page);
+    EXPECT_LE(wizard.height(), 600);
+    auto * scroll = qobject_cast<QScrollArea *>(pages->currentWidget()); ASSERT_NE(scroll, nullptr);
+    const auto verify_actions = [&] {
+      int actions = 0;
+      for (auto * button : wizard.findChildren<QPushButton *>()) {
+        if (!QStringList{"Back", "Next", "Create Cell", "Create and Open", "Cancel"}.contains(button->text())) continue;
+        ++actions; EXPECT_TRUE(button->isVisible());
+        const QRect bounds(button->mapTo(&wizard, QPoint()), button->size());
+        EXPECT_TRUE(wizard.rect().contains(bounds));
+        EXPECT_GT(bounds.top(), scroll->mapTo(&wizard, QPoint(0, scroll->height())).y());
+      }
+      EXPECT_EQ(actions, 5);
+    };
+    verify_actions();
+    if (page == 4) { EXPECT_GT(scroll->verticalScrollBar()->maximum(), 0); EXPECT_EQ(scroll->horizontalScrollBar()->maximum(), 0); }
+    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+    app->processEvents(); verify_actions();
+    EXPECT_EQ(wizard.selected_object_source_id(), "manual_simulated");
+    const auto output = qEnvironmentVariable("WORKCELL_WIZARD_LAYOUT_EVIDENCE");
+    if (!output.isEmpty()) { QDir().mkpath(output); EXPECT_TRUE(wizard.grab().save(output + QString("/page-%1.png").arg(page + 1))); }
+  }
 }

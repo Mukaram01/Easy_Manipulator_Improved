@@ -21,6 +21,10 @@
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QScrollArea>
+#include <QScreen>
+#include <QShowEvent>
+#include <QStyle>
+#include <QWindow>
 #include <QSet>
 #include <QVBoxLayout>
 
@@ -39,6 +43,34 @@
 namespace fs = boost::filesystem;
 
 NewCellWizard::NewCellWizard(const QString &workspace_root, QWidget *parent): QDialog(parent), workspace_root_(workspace_root){ build_ui(); refresh_validation(); }
+
+void NewCellWizard::fit_available_screen()
+{
+  auto *display = screen();
+  if (!display) return;
+  connect(display, &QScreen::availableGeometryChanged, this,
+    &NewCellWizard::fit_available_screen, Qt::UniqueConnection);
+  const auto available = display->availableGeometry();
+  const auto frame = windowHandle() ? windowHandle()->frameMargins() : QMargins();
+  // Qt screen geometry is in logical pixels, including when desktop scaling is enabled.
+  const int title_height = std::max(frame.top(), style()->pixelMetric(QStyle::PM_TitleBarHeight));
+  const QSize limit(std::max(1, available.width() - frame.left() - frame.right()),
+    std::max(1, available.height() - title_height - frame.bottom()));
+  setMinimumWidth(std::min(800, limit.width()));
+  setMaximumSize(limit);
+  resize(size().boundedTo(limit));
+  const auto bounds = frameGeometry();
+  move(pos() + QPoint(std::max(available.left(), std::min(bounds.left(), available.right() - bounds.width() + 1)) - bounds.left(),
+    std::max(available.top(), std::min(bounds.top(), available.bottom() - bounds.height() + 1)) - bounds.top()));
+}
+
+void NewCellWizard::showEvent(QShowEvent *event)
+{
+  QDialog::showEvent(event);
+  if (windowHandle()) connect(windowHandle(), &QWindow::screenChanged, this,
+    &NewCellWizard::fit_available_screen, Qt::UniqueConnection);
+  fit_available_screen();
+}
 
 bool NewCellWizard::is_valid_package_name(const QString &name){ static const std::regex re("^[a-z][a-z0-9_]*$"); return std::regex_match(name.toStdString(), re);} 
 QString NewCellWizard::default_gripper_rpy_text(){ return "-1.5708, -1.5708, 0"; }
@@ -121,7 +153,18 @@ void NewCellWizard::build_ui(){
  auto *body=new QHBoxLayout(); root->addLayout(body,1);
  steps_=new QListWidget(this); steps_->setObjectName("newCellWizardSteps"); steps_->addItems({"1 Basics","2 Robot","3 End Effector","4 Environment","5 Task Intent","6 Review"}); steps_->setFixedWidth(220); body->addWidget(steps_);
  stack_=new QStackedWidget(this); body->addWidget(stack_,1);
- auto mk_page=[&](QWidget*w){auto*c=new QWidget(this); auto*l=new QVBoxLayout(c); l->addWidget(w); l->addStretch(1); stack_->addWidget(c);};
+ auto mk_page=[&](QWidget*w){
+   for (auto *label : w->findChildren<QLabel *>()) label->setWordWrap(true);
+   for (auto *form : w->findChildren<QFormLayout *>()) form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+   auto *content = new QWidget;
+   auto *layout = new QVBoxLayout(content);
+   layout->addWidget(w); layout->addStretch(1);
+   auto *scroll = new QScrollArea(stack_);
+   scroll->setWidgetResizable(true);
+   scroll->setFrameShape(QFrame::NoFrame);
+   scroll->setWidget(content);
+   stack_->addWidget(scroll);
+ };
  auto mk_pose_spin=[](int decimals, const QString &suffix, const QString &tooltip){auto*s=new QDoubleSpinBox(); s->setDecimals(decimals); s->setRange(-1000,1000); s->setSuffix(suffix); s->setToolTip(tooltip); return s;};
  auto mk_pose_editor=[&](QDoubleSpinBox*&x,QDoubleSpinBox*&y,QDoubleSpinBox*&z,QDoubleSpinBox*&r,QDoubleSpinBox*&p,QDoubleSpinBox*&yaw){
    auto *wrap = new QWidget(this); auto *v = new QVBoxLayout(wrap);
