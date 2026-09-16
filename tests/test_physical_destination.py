@@ -165,3 +165,80 @@ def test_deleted_active_zone_rejected_by_validate_save_and_generation(tmp_path):
     assert any('drop' in error and 'missing' in error for error in validate_scene(tmp_path)['errors'])
     with pytest.raises(ValueError, match='drop.*missing'):
         merge(tmp_path, save_authored=True)
+
+
+def test_resolve_local_destination_uses_target_frame_and_region_bounds():
+    from physical_destination import resolve_local_destination
+    env = scene()
+    original = copy.deepcopy(env)
+    requested = {'xyz_m': [.08, 0., .1], 'rpy_rad': [0., 0., .2]}
+    result = resolve_local_destination(env, 'bin', 'drop', requested)
+    assert result['target_id'] == 'bin'
+    assert result['id'] == 'drop'
+    assert result['placement_local']['pose_xyz'] == pytest.approx([.08, 0., .1])
+    assert result['pose_xyz'] == pytest.approx([1., 2.08, 3.1])
+    assert result['pose_rpy'] == pytest.approx([0., 0., math.pi / 2 + .2])
+    assert result['physical_destination_contract'] == 'target_local/v1'
+    assert env == original
+    assert requested == {'xyz_m': [.08, 0., .1], 'rpy_rad': [0., 0., .2]}
+    result['region_local']['pose_xyz'][0] = 99
+    result['usable_placement']['dimensions'][0] = 99
+    assert env == original
+
+
+def test_resolve_local_destination_rejects_pose_outside_named_region():
+    from physical_destination import resolve_local_destination, RequestedLocalPoseError
+    with pytest.raises(RequestedLocalPoseError, match='outside'):
+        resolve_local_destination(scene(), 'bin', 'drop',
+                                  {'xyz_m': [.16, 0., .1], 'rpy_rad': [0., 0., 0.]})
+
+
+def test_local_destination_full_object_uses_fixed_rotated_region():
+    from physical_destination import resolve_local_destination, check_object_containment
+    env = scene()
+    # Target yaw pi/2 plus region yaw pi/2 gives world yaw pi.
+    env['task_zones'][0]['placement_local']['pose_rpy'][2] = math.pi / 2
+    env['task_zones'][0]['pose_rpy'][2] = math.pi
+    result = resolve_local_destination(env, 'bin', 'drop',
+                                      {'xyz_m': [.05, .08, .1], 'rpy_rad': [0., 0., 0.]})
+    assert result['pose_xyz'] == pytest.approx([.92, 2.05, 3.1])
+    # The center fits, but a 6 cm object extends beyond the fixed region.
+    with pytest.raises(ValueError, match='outside'):
+        check_object_containment(result, [.92, 2.05, 3.1, 0, 0, 0, 1], [.06, .02, .02])
+    check_object_containment(result, [.92, 2.05, 3.1, 0, 0, 0, 1], [.02, .02, .02])
+    # An object at the authored center still fits despite the selected offset.
+    check_object_containment(result, [1., 2.05, 3.1, 0, 0, 0, 1], [.18, .08, .08])
+
+
+@pytest.mark.parametrize('requested', [None, {}, {'xyz_m': [0, 0], 'rpy_rad': [0, 0, 0]},
+    {'xyz_m': [True, 0, .1], 'rpy_rad': [0, 0, 0]},
+    {'xyz_m': [.05, 0, .1], 'rpy_rad': [0, float('nan'), 0]},
+    {'xyz_m': [.05, 0, .1], 'rpy_rad': [0, 0, float('inf')]}])
+def test_local_destination_invalid_pose_is_distinguishable(requested):
+    from physical_destination import resolve_local_destination, RequestedLocalPoseError
+    with pytest.raises(RequestedLocalPoseError):
+        resolve_local_destination(scene(), 'bin', 'drop', requested)
+
+
+@pytest.mark.parametrize('mutation', [
+    lambda e: e['assets'].clear(),
+    lambda e: e['task_zones'].clear(),
+    lambda e: e['assets'][0].update(pose_xyz=[4, 2, 3]),
+    lambda e: e['assets'][0].update(usable_placement=None),
+    lambda e: e['assets'][0].update(pose=None),
+    lambda e: e.update(assets=None),
+    lambda e: e['assets'][0]['usable_placement'].update(dimensions=[-1, .3, .2]),
+])
+def test_local_destination_structural_errors_precede_invalid_pose(mutation):
+    from physical_destination import resolve_local_destination, PhysicalDestinationContextError
+    env = scene()
+    mutation(env)
+    with pytest.raises(PhysicalDestinationContextError):
+        resolve_local_destination(env, 'bin', 'drop', None)
+
+
+def test_local_destination_target_mismatch_is_structural():
+    from physical_destination import resolve_local_destination, PhysicalDestinationContextError
+    with pytest.raises(PhysicalDestinationContextError, match='mismatch'):
+        resolve_local_destination(scene(), 'other', 'drop',
+                                  {'xyz_m': [.05, 0, .1], 'rpy_rad': [0, 0, 0]})

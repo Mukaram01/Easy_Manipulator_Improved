@@ -5,6 +5,7 @@ origin/scale calibration), never mesh bounding boxes. World zone poses are
 checked projections, not an alternative destination. Motion feasibility is
 established separately by the complete collision-aware cycle planner.
 """
+import copy
 import itertools
 import math
 
@@ -114,6 +115,48 @@ def resolve_destination(environment, zone_id, *, check_projection=True):
             'physical_destination_contract': 'target_local/v1'}
 
 
+class PhysicalDestinationContextError(ValueError):
+    """Missing, corrupt or stale physical context; fallback is not permitted."""
+
+
+class RequestedLocalPoseError(ValueError):
+    """Invalid requested placement in an otherwise valid physical context."""
+
+
+def resolve_local_destination(environment, asset_ref, region_ref, local_pose):
+    """Resolve a selected pose without moving the authored containment region.
+
+    Structural checks run first so a bad request cannot mask stale geometry.
+    Object extents are checked separately by check_object_containment once known.
+    """
+    try:
+        baseline = resolve_destination(environment, region_ref)
+    except (ValueError, TypeError, AttributeError, KeyError) as exc:
+        raise PhysicalDestinationContextError(
+            f'destination {region_ref}: invalid physical context: {exc}') from exc
+    if baseline['target_id'] != asset_ref:
+        raise PhysicalDestinationContextError(
+            f"destination {region_ref}: target mismatch {baseline['target_id']!r} != {asset_ref!r}")
+    try:
+        if not isinstance(local_pose, dict):
+            raise ValueError('requested local pose requires a mapping')
+        xyz = vector(local_pose.get('xyz_m'), 'requested local xyz')
+        rpy = vector(local_pose.get('rpy_rad'), 'requested local rpy')
+        orient = rotation(rpy)
+        contains(baseline['placement_local'], xyz, orient, [0., 0., 0.])
+        contains(baseline['usable_placement'], xyz, orient, [0., 0., 0.])
+    except ValueError as exc:
+        raise RequestedLocalPoseError(f'destination {region_ref}: {exc}') from exc
+    result = copy.deepcopy(baseline)
+    result['region_local'] = result['placement_local']
+    result['placement_local'] = {'pose_xyz': xyz, 'pose_rpy': rpy,
+                                 'dimensions': list(baseline['dimensions'])}
+    tr = rotation(baseline['target_pose_rpy'])
+    result['pose_xyz'] = [a+b for a, b in zip(baseline['target_pose_xyz'], apply(tr, xyz))]
+    result['pose_rpy'] = angles(multiply(tr, orient))
+    return result
+
+
 def check_object_containment(destination, object_pose, object_dimensions, clearance=0.):
     values = vector(object_pose, 'object pose', 7)
     x, y, z, w = values[3:]
@@ -124,7 +167,15 @@ def check_object_containment(destination, object_pose, object_dimensions, cleara
     rot = [[1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)],
            [2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w)],
            [2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)]]
-    contains(destination, values[:3], rot, vector(object_dimensions, 'object dimensions'), clearance)
+    dims = vector(object_dimensions, 'object dimensions')
+    if 'region_local' in destination:
+        inv = transpose(rotation(destination['target_pose_rpy']))
+        center = apply(inv, [a-b for a, b in zip(values[:3], destination['target_pose_xyz'])])
+        orient = multiply(inv, rot)
+        contains(destination['region_local'], center, orient, dims, clearance)
+        contains(destination['usable_placement'], center, orient, dims, clearance)
+    else:
+        contains(destination, values[:3], rot, dims, clearance)
 
 
 def is_destination_zone(zone):
