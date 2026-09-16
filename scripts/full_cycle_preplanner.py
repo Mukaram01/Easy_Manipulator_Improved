@@ -19,6 +19,7 @@ from typing import Callable
 from perceived_object_grasp_plan import (
     build_grasp_target,
     oriented_box_extents,
+    oriented_box_surface_distance,
     rotate_vector,
     tool_pose_for_grasp,
 )
@@ -105,7 +106,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             raise RuntimeError('observation expired before candidate planning')
         if candidate.object_id != observation['id']:
             raise RuntimeError('candidate object differs from observation')
-        extents = oriented_box_extents(build_grasp_target(observation))
+        geometry = build_grasp_target(observation)
+        extents = oriented_box_extents(geometry)
         if candidate.strategy_ref == 'top_2f':
             if set(candidate.effective) - {'approach_distance_m'}:
                 raise RuntimeError('unsupported candidate constraints in legacy full-cycle extraction')
@@ -123,7 +125,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             displacement = [a-b for a, b in zip(candidate.approach_pose[:3], candidate.grasp_pose[:3])]
             tool_z = rotate_vector(candidate.grasp_pose[3:], [0.0, 0.0, 1.0])
             expected_contact = list(observation['pose'][:3])
-            expected_contact[0] += extents[0] / 2.0
+            expected_contact[0] += oriented_box_surface_distance(geometry, [1.0, 0.0, 0.0])
             if (not isinstance(distance, (int, float)) or not math.isfinite(distance) or distance < 0 or
                     math.dist(displacement, [distance, 0.0, 0.0]) > 1e-9 or
                     math.dist(candidate.grasp_pose[:3], expected_contact) > 1e-9 or

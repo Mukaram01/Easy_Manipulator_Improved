@@ -72,6 +72,22 @@ def test_side_grip_basic_changes_with_live_geometry_and_is_deterministic():
     assert first[0].approach_pose[:3] == pytest.approx([-.01, .25, .4])
 
 
+def test_side_grip_contact_intersects_the_actual_rotated_box_surface():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    observation = dict(id='yawed-box', frame_id='world', dimensions=[.04, .08, .10],
+                       pose=[.4, -.2, .3, 0., 0., .3826834323650898, .9238795325112867])
+
+    candidate = generate_strategy_candidates(
+        'side_grip_basic', observation, {'approach_distance_m': .08})[0]
+
+    # A world +X ray through the centre reaches the local 20 mm X half-face
+    # after 20 mm / cos(45 degrees), not at the enclosing AABB's +X extent.
+    assert candidate.grasp_pose[:3] == pytest.approx(
+        [.4282842712474619, -.2, .3])
+    assert candidate.approach_pose[:3] == pytest.approx(
+        [.5082842712474619, -.2, .3])
+
+
 @pytest.mark.parametrize('constraint,value', [
     ('approach_axis', 'z_down'),
     ('orientation_mode', 'vertical'),

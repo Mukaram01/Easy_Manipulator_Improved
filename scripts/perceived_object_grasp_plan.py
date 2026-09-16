@@ -138,6 +138,21 @@ def oriented_box_extents(target):
                  for index in range(3)) for axis in range(3)]
 
 
+def oriented_box_surface_distance(target, direction):
+    """Distance from box centre to its surface along a world-frame ray."""
+    length = math.sqrt(sum(value * value for value in direction))
+    if length < 1e-12:
+        raise ValueError("surface direction must be nonzero")
+    world_direction = [value / length for value in direction]
+    qx, qy, qz, qw = target["target_pose"][3:]
+    local_direction = rotate_vector([-qx, -qy, -qz, qw], world_direction)
+    distances = [half_extent / abs(component)
+                 for half_extent, component in zip(
+                     [value / 2.0 for value in target["target_dimensions"]], local_direction)
+                 if abs(component) > 1e-12]
+    return min(distances)
+
+
 def generate_box_grasp_candidates(target, clearance=0.12):
     """Generate deterministic top approaches; positions always derive from the box."""
     x, y, z, qx, qy, qz, qw = target["target_pose"]

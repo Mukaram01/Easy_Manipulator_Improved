@@ -12,7 +12,7 @@ from pathlib import Path
 from perceived_object_grasp_plan import (
     build_grasp_target,
     generate_box_grasp_candidates,
-    oriented_box_extents,
+    oriented_box_surface_distance,
     quaternion_from_rpy,
 )
 
@@ -67,7 +67,7 @@ def generate_strategy_candidates(
             if field in grasp_intent and grasp_intent[field] != catalog[field]:
                 raise ValueError(f'incompatible authored {field} for {strategy_ref}')
         x, y, z = geometry['target_pose'][:3]
-        contact_x = x + oriented_box_extents(geometry)[0] / 2.0
+        contact_x = x + oriented_box_surface_distance(geometry, [1.0, 0.0, 0.0])
         orientation = quaternion_from_rpy([0.0, -math.pi / 2.0, 0.0])
         contact = tuple([contact_x, y, z] + orientation)
         pregrasp = tuple([contact_x + approach_distance, y, z] + orientation)
