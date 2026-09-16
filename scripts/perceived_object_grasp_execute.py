@@ -305,6 +305,38 @@ def choose_cycle(targets, indices, preplan, attempts):
         'no target/grasp has a feasible complete cycle; last failure: ' + last.get('reason','no eligible targets'))
 
 
+def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operations, deadline, summary):
+    """Adapt legacy confidence/index selection to the shared full-cycle authority.
+
+    contract includes the task's max_age_seconds and effective retreat distance.
+    Runtime owns live-scene verification and all execution gates after this call.
+    """
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from full_cycle_preplanner import preplan_full_cycle
+    operations.stage('ENUMERATE_TARGETS')
+    candidates = {target['id']: generate_strategy_candidates('top_2f', target,
+                  {'approach_distance_m': contract['approach_distance_m']}) for target in targets}
+    summary['grasp_candidates'] = {object_id: [list(c.grasp_pose) for c in choices]
+                                   for object_id, choices in candidates.items()}
+    summary['grasp_candidate_source'] = 'canonical_box_geometry_robotiq_2f'
+    summary['grasp_candidate_count'] = sum(len(v) for v in candidates.values())
+
+    def preplan(target, index, record):
+        result = preplan_full_cycle(initial_scene=initial_scene, observation=target,
+            candidate=candidates[target['id']][index], destination=destination,
+            contract=contract, operations=operations, deadline=deadline)
+        record['stages'].extend(result.stages)
+        record['checks'] = result.checks
+        record['candidate_id'] = result.candidate_id
+        if not result.success:
+            record['reason_code'] = result.reason_code
+            raise CandidateFailure(result.stages[-1]['stage'], result.reason)
+        result.cycle['grasp_index'] = index
+        return result.cycle
+
+    return choose_cycle(targets, candidate_indices(8), preplan, summary['candidate_attempts'])
+
+
 def require_prevalidated_execution(start, cycle):
     if not start or not cycle.get('full_cycle_prevalidated'):
         raise RuntimeError('execution requires --start and a fully prevalidated cycle')
@@ -677,86 +709,18 @@ def main():
         if not math.isfinite(retreat) or retreat <= 0:
             raise RuntimeError('retreat distance must be finite and positive')
         deadline = time.monotonic()+args.timeout
-        def preplan(target, index, record):
-            steps = []
-            view = copy.deepcopy(initial)
-            def motion(name, goal, group=None, straight=False):
-                nonlocal view
-                step = plan_segment(view,name,goal,group,straight)
-                steps.append(step)
-                record['stages'].append(step['metadata'])
-                view = copy.deepcopy(step['after'])
-                return view
-            try:
-                if time.monotonic() > deadline:
-                    raise RuntimeError('candidate search budget exhausted')
-                stage('GENERATE_GRASPS')
-                if time.time()-target['timestamp'] > task['max_age_seconds']:
-                    raise RuntimeError('observation expired before candidate planning')
-                geometry = build_grasp_target(target)
-                extents = oriented_box_extents(geometry)
-                if min(extents[:2]) > 0.085:
-                    raise RuntimeError('target exceeds Robotiq aperture')
-                if any(a>b for a,b in zip(extents,destination['dimensions'])):
-                    raise RuntimeError('target exceeds destination bounds')
-                original = next(o for o in initial.world.collision_objects if o.id==target['id'])
-                approach = pose_message(_PLANNER.tool_pose_for_grasp(generate_box_grasp_candidates(geometry,contract['approach_distance_m'])[index],contract))
-                contact = pose_message(_PLANNER.tool_pose_for_grasp(generate_box_grasp_candidates(geometry,0.0)[index],contract))
-                motion('PREPLAN_APPROACH',approach)
-                view.allowed_collision_matrix = target_contact_matrix(baseline,target['id'],contract['allowed_touch_links'])
-                motion('PREPLAN_GRASP',contact,straight=True)
-                stage('PREPLAN_CLOSE_GRIPPER')
-                close = None
-                # Live scene remains unchanged, so this validity query evaluates
-                # the predicted un-attached grasp against the original obstacles.
-                for i in range(1,81):
-                    trial = updated_state(view.robot_state,{'gripper_finger1_joint':0.804*i/80},mimics)
-                    response = call(validity_client,GetStateValidity.Request(robot_state=trial,group_name=''))
-                    if response.contacts:
-                        verify_selected_contacts(response.contacts,target['id'],contract['allowed_touch_links'])
-                        close = 0.804*i/80
-                        break
-                if close is None:
-                    raise RuntimeError('no allowed fingertip contact in closing range')
-                motion('PREPLAN_CLOSE_GRIPPER',{'gripper_finger1_joint':close},group='gripper')
-                tool_at_grasp = fk(view.robot_state,contract['tool_link'])
-                frame_at_grasp = fk(view.robot_state,contract['grasp_frame'])
-                before = copy.deepcopy(view)
-                view = private_attachment(view,original,contract['grasp_frame'],frame_at_grasp.pose,contract['allowed_touch_links'])
-                view.allowed_collision_matrix = copy.deepcopy(baseline)
-                steps.append(dict(kind='attach',stage='ATTACH',before=before,after=copy.deepcopy(view),original=original))
-                motion('PREPLAN_LIFT',translated_pose(tool_at_grasp,dz=retreat))
-                delta = [a-b for a,b in zip(destination['pose_xyz'],target['pose'][:3])]
-                motion('PREPLAN_TRANSFER',translated_pose(tool_at_grasp,*[delta[0],delta[1],delta[2]+retreat]))
-                motion('PREPLAN_PLACE',translated_pose(tool_at_grasp,*delta))
-                reached = fk(view.robot_state,contract['tool_link'])
-                achieved = object_pose_after_motion(original,tool_at_grasp.pose,reached.pose)
-                if math.dist(achieved[:3],destination['pose_xyz']) > 0.003:
-                    raise RuntimeError('planned placement differs from destination by more than 3 mm')
-                from physical_destination import check_object_containment
-                check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=0.001)
-                motion('PREPLAN_OPEN_GRIPPER',{'gripper_finger1_joint':0.0},group='gripper')
-                before = copy.deepcopy(view)
-                placed = place_detachment_diff(original,contract['grasp_frame'],achieved[:3],achieved[3:]).world.collision_objects[0]
-                view = copy.deepcopy(view)
-                view.robot_state.attached_collision_objects = []
-                view.world.collision_objects.append(placed)
-                steps.append(dict(kind='detach',stage='DETACH',before=before,after=copy.deepcopy(view),original=original,tool_at_grasp=tool_at_grasp))
-                view.allowed_collision_matrix = target_contact_matrix(baseline,target['id'],contract['allowed_touch_links'])
-                motion('PREPLAN_RETREAT',translated_pose(reached,dz=retreat),straight=True)
-                view.allowed_collision_matrix = copy.deepcopy(baseline)
-                motion('PREPLAN_HOME',home)
-                stage('CANDIDATE_READY')
-                return dict(object_id=target['id'],grasp_index=index,steps=steps,full_cycle_prevalidated=True)
-            except Exception as exc:
-                record['stages'].append(dict(stage=summary['current_stage'],success=False,reason=str(exc)))
-                raise CandidateFailure(summary['current_stage'],str(exc)) from exc
-        stage('ENUMERATE_TARGETS')
-        summary['grasp_candidates'] = {target['id']: generate_box_grasp_candidates(
-            build_grasp_target(target), 0.0) for target in eligible}
-        summary['grasp_candidate_source'] = 'canonical_box_geometry_robotiq_2f'
-        summary['grasp_candidate_count'] = sum(len(v) for v in summary['grasp_candidates'].values())
-        cycle = choose_cycle(eligible,candidate_indices(8),preplan,summary['candidate_attempts'])
+        from full_cycle_preplanner import PreplanOperations
+        operations = PreplanOperations(plan_segment=plan_segment, fk=fk,
+            state_validity=lambda state: call(validity_client,
+                GetStateValidity.Request(robot_state=state, group_name='')),
+            updated_state=lambda state, positions: updated_state(state, positions, mimics),
+            pose_message=pose_message, translated_pose=translated_pose,
+            target_contact_matrix=target_contact_matrix, verify_selected_contacts=verify_selected_contacts,
+            private_attachment=private_attachment, object_pose_after_motion=object_pose_after_motion,
+            place_detachment_diff=place_detachment_diff, stage=stage)
+        cycle = plan_legacy_cycle(initial_scene=initial, targets=eligible, destination=destination,
+            contract=dict(contract, max_age_seconds=task['max_age_seconds'], retreat_distance_m=retreat),
+            operations=operations, deadline=deadline, summary=summary)
         selected_id = cycle['object_id']
         summary.update(selected_object_id=selected_id,selected_grasp_index=cycle['grasp_index'],full_cycle_prevalidated=True,
                        full_cycle_plan_success=True,plan_metadata=[s['metadata'] for s in cycle['steps'] if s['kind']=='motion'])

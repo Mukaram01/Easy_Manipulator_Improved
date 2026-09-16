@@ -189,3 +189,54 @@ def test_candidate_search_preserves_missing_confidence():
     targets[1]['confidence'] = None
     executor.choose_cycle(targets, [0], plan, [])
     assert calls[-1] == min(t['id'] for t in targets)
+
+
+def test_legacy_adapter_uses_shared_cycle_and_preserves_selected_order():
+    from test_full_cycle_preplanner import fixture, EXPECTED
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, _, _ = fixture()
+    direct = preplan_full_cycle(**kwargs)
+    kwargs, trace, goals, _ = fixture()
+    target = dict(kwargs.pop('observation'), confidence=.95)
+    kwargs.pop('candidate')
+    summary = {'candidate_attempts': []}
+    cycle = executor.plan_legacy_cycle(targets=[target], summary=summary, **kwargs)
+    assert cycle['grasp_index'] == 3
+    assert cycle['candidate'] == direct.cycle['candidate']
+    assert [s['stage'] for s in cycle['steps']] == EXPECTED
+    assert cycle['steps'] == direct.cycle['steps']
+    assert summary['grasp_candidate_count'] == 8
+    assert summary['candidate_attempts'][0]['grasp_index'] == 3
+    assert len(summary['candidate_attempts'][0]['stages']) == 9
+    assert summary['grasp_candidates'][target['id']][3] == pytest.approx([.4, -.2, .35, -.7071067811865475, .7071067811865476, 0., 0.])
+
+
+def test_legacy_adapter_retries_in_original_order_and_cannot_execute_failed_cycle():
+    from test_full_cycle_preplanner import fixture
+    kwargs, trace, _, _ = fixture(fail_at='PREPLAN_TRANSFER')
+    target = dict(kwargs.pop('observation'), confidence=.95)
+    kwargs.pop('candidate')
+    summary = {'candidate_attempts': []}
+    executions = []
+    with pytest.raises(executor.CandidateFailure) as failed:
+        cycle = executor.plan_legacy_cycle(targets=[target], summary=summary, **kwargs)
+        executor.require_prevalidated_execution(True, cycle)
+        executions.append(cycle)
+    assert failed.value.stage == 'PREPLAN_TRANSFER'
+    assert executions == []
+    attempts = summary['candidate_attempts']
+    assert [a['grasp_index'] for a in attempts] == [3, 0, 1, 2, 4, 5, 6, 7]
+    assert all(a['reason_code'] == 'PREPLAN_TRANSFER_FAILED' for a in attempts)
+    assert all(not a['full_cycle_prevalidated'] for a in attempts)
+    assert 'CANDIDATE_READY' not in trace
+
+
+def test_legacy_adapter_materializes_contract_approach_distance():
+    from test_full_cycle_preplanner import fixture
+    kwargs, _, goals, _ = fixture()
+    kwargs['contract']['approach_distance_m'] = .19
+    target = dict(kwargs.pop('observation'), confidence=.95)
+    kwargs.pop('candidate')
+    cycle = executor.plan_legacy_cycle(targets=[target], summary={'candidate_attempts': []}, **kwargs)
+    assert goals[0][1].pose.position.z == pytest.approx(.54)
+    assert cycle['candidate'].effective == {'approach_distance_m': .19}

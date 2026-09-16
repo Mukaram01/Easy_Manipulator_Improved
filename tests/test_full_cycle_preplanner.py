@@ -64,7 +64,7 @@ def fixture(fail_at=None, contacts=True):
                     trajectory=NS(stage=name), metadata=dict(stage=name, success=True, moveit_code=1, points=2))
     def state_validity(state):
         validity.append(state.joint_state.position[-1])
-        pairs = [NS(contact_body_1='observed-box', contact_body_2='tip')] if contacts and len(validity)==2 else []
+        pairs = [NS(contact_body_1='observed-box', contact_body_2='tip')] if contacts and state.joint_state.position[-1] >= .02 else []
         return NS(valid=not pairs, contacts=pairs)
     operations = PreplanOperations(plan_segment=segment, fk=lambda state, link: pose(state.joint_state.position[:7]),
         state_validity=state_validity, updated_state=runtime.updated_state,

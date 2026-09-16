@@ -868,6 +868,8 @@ install(PROGRAMS
   ../../scripts/perceived_object_grasp_plan.py
   ../../scripts/physical_destination.py
   ../../scripts/runtime_pick_inputs.py
+  ../../scripts/full_cycle_preplanner.py
+  ../../scripts/grasp_strategy_candidates.py
   ../../scripts/perceived_object_grasp_execute.py
   ../../scripts/run_p8b_replay_planning_scene_smoke.sh
   DESTINATION lib/${PROJECT_NAME})
