@@ -133,7 +133,7 @@ def test_side_grip_finds_catalog_from_installed_runtime_layout(tmp_path, monkeyp
     assert candidate.effective['approach_axis'] == 'x_plus'
 
 
-@pytest.mark.parametrize('strategy', ['unknown', 'finger_pinch_basic'])
+@pytest.mark.parametrize('strategy', ['unknown'])
 def test_unimplemented_strategy_fails_closed(strategy):
     from grasp_strategy_candidates import generate_strategy_candidates
     with pytest.raises(ValueError, match='unsupported'):
@@ -163,3 +163,32 @@ def test_top_2f_catalog_is_vocabulary_validation_not_a_distance_override(tmp_pat
         generate_strategy_candidates('top_2f', observation, {'approach_distance_m': .17}, tmp_path)
     catalog.write_text('grasp_strategy:\n  id: top_2f\n  approach_distance_m: 99\n')
     assert generate_strategy_candidates('top_2f', observation, {'approach_distance_m': .17}, tmp_path)[0].approach_pose[2] == pytest.approx(.22)
+
+
+def test_finger_pinch_basic_tracks_tilted_object_and_catalog_yaws():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    observation = dict(id='tilted-part', frame_id='world', dimensions=[.04, .06, .10],
+                       pose=[.4, -.2, .3, 0., .7071067811865475, 0., .7071067811865476])
+    intent = {'approach_distance_m': .07, 'approach_axis': 'tool_z',
+              'orientation_mode': 'tool_aligned'}
+    saved = copy.deepcopy((observation, intent))
+    candidates = generate_strategy_candidates('finger_pinch_basic', observation, intent)
+    assert candidates == generate_strategy_candidates('finger_pinch_basic', observation, intent)
+    assert [c.candidate_id for c in candidates] == [f'finger_pinch_basic::{i:03}' for i in range(4)]
+    assert all(c.object_id == 'tilted-part' and c.effective == intent for c in candidates)
+    # Local +Z is world +X. All approaches follow the tilted face, not world Z.
+    assert all(c.grasp_pose[:3] == pytest.approx([.45, -.2, .3]) for c in candidates)
+    assert all(c.approach_pose[:3] == pytest.approx([.52, -.2, .3]) for c in candidates)
+    assert candidates[0].grasp_pose[3:] == pytest.approx([.7071067811865476, 0., -.7071067811865475, 0.])
+    assert candidates[1].grasp_pose[3:] == pytest.approx([.5, .5, -.5, -.5])
+    assert (observation, intent) == saved
+
+
+@pytest.mark.parametrize('field,value', [('approach_axis', 'x_plus'),
+                                         ('orientation_mode', 'horizontal'),
+                                         ('force_limit_n', 4.)])
+def test_finger_pinch_basic_rejects_unconsumed_authored_constraints(field, value):
+    from grasp_strategy_candidates import generate_strategy_candidates
+    with pytest.raises(ValueError, match='unsupported|incompatible'):
+        generate_strategy_candidates('finger_pinch_basic', {},
+                                     {'approach_distance_m': .07, field: value})

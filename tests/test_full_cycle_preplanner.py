@@ -248,3 +248,46 @@ def test_side_grip_preplanner_accepts_normalized_tuple_pose():
         'side_grip_basic', kwargs['observation'], {'approach_distance_m': .08})[0]
 
     assert preplan_full_cycle(**kwargs).success
+
+
+def test_finger_pinch_consumes_tilted_geometry_tcp_and_private_cycle():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, _ = fixture()
+    kwargs['observation']['pose'][3:] = [0., .7071067811865475, 0., .7071067811865476]
+    original = kwargs['initial_scene'].world.collision_objects[0]
+    original.pose.orientation.y = .7071067811865475
+    original.pose.orientation.w = .7071067811865476
+    kwargs['contract']['tcp_pose'] = [0., 0., .02, 0., 0., 0., 1.]
+    kwargs['candidate'] = generate_strategy_candidates(
+        'finger_pinch_basic', kwargs['observation'], {'approach_distance_m': .07})[0]
+    initial = copy.deepcopy(kwargs['initial_scene'])
+    result = preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    assert result.candidate_id == 'finger_pinch_basic::000'
+    # World grasp contact .45 becomes tool .47: installed 2 cm TCP applied once.
+    assert runtime.pose_values(goals[0][1].pose)[:3] == pytest.approx([.54, -.2, .3])
+    assert runtime.pose_values(goals[1][1].pose)[:3] == pytest.approx([.47, -.2, .3])
+    assert goals[1][3] is True
+    assert [step['stage'] for step in result.cycle['steps']] == EXPECTED
+    assert result.cycle['steps'][3]['after'].robot_state.attached_collision_objects
+    assert not result.cycle['steps'][-1]['after'].robot_state.attached_collision_objects
+    placed = result.cycle['steps'][-1]['after'].world.collision_objects[-1]
+    assert runtime.pose_values(placed.pose)[:3] == pytest.approx([.6, .2, .3])
+    assert kwargs['initial_scene'] == initial
+
+
+@pytest.mark.parametrize('yaw_index,success', [(0, False), (1, True)])
+def test_finger_pinch_aperture_follows_finger_closing_axis(yaw_index, success):
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, _ = fixture()
+    kwargs['observation']['dimensions'] = [.04, .10, .06]
+    kwargs['initial_scene'].world.collision_objects[0].primitives[0].dimensions = [.04, .10, .06]
+    kwargs['candidate'] = generate_strategy_candidates(
+        'finger_pinch_basic', kwargs['observation'], {'approach_distance_m': .07})[yaw_index]
+    result = preplan_full_cycle(**kwargs)
+    assert result.success is success, result.reason
+    if not success:
+        assert 'aperture' in result.reason
+        assert goals == []

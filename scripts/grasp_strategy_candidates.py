@@ -2,7 +2,8 @@
 """Deterministic 2F grasp geometry shared by readiness and runtime planning.
 
 Top candidates preserve the legacy eight-pose order. Side candidates implement
-the catalog's world-X-positive approach and horizontal grasp orientation. Poses
+the catalog's world-X-positive approach and horizontal grasp orientation. Pinch
+candidates follow the object-local top face and four tool-aligned yaws. Poses
 refer to the grasp frame; the preplanner applies the installed TCP exactly once.
 """
 import math
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from perceived_object_grasp_plan import (
     build_grasp_target,
+    compose_pose,
     generate_box_grasp_candidates,
     oriented_box_surface_distance,
     quaternion_from_rpy,
@@ -40,14 +42,14 @@ def generate_strategy_candidates(
     strategy_ref: str, observation: dict, grasp_intent: dict,
     catalog_dir: Path | None = None,
 ) -> list[GraspCandidate]:
-    if strategy_ref not in {'top_2f', 'side_grip_basic'}:
+    if strategy_ref not in {'top_2f', 'side_grip_basic', 'finger_pinch_basic'}:
         raise ValueError(f'unsupported grasp strategy: {strategy_ref}')
     allowed = ({'approach_distance_m'} if strategy_ref == 'top_2f' else
                {'approach_distance_m', 'approach_axis', 'orientation_mode'})
     if set(grasp_intent) - allowed:
         raise ValueError(f'unsupported grasp constraints for {strategy_ref}')
     catalog = None
-    if catalog_dir is not None or strategy_ref == 'side_grip_basic':
+    if catalog_dir is not None or strategy_ref != 'top_2f':
         import yaml
         root = Path(catalog_dir) if catalog_dir is not None else _default_catalog_dir()
         entry = yaml.safe_load((root / f'{strategy_ref}.yaml').read_text()) or {}
@@ -58,6 +60,29 @@ def generate_strategy_candidates(
     if (not isinstance(approach_distance, (int, float)) or isinstance(approach_distance, bool) or
             not math.isfinite(approach_distance) or approach_distance < 0):
         raise ValueError('approach distance must be finite and nonnegative')
+    if strategy_ref == 'finger_pinch_basic':
+        if (catalog.get('approach_axis') != 'tool_z' or
+                catalog.get('orientation_mode') != 'tool_aligned' or
+                catalog.get('allowed_yaw_angles_deg') != [0, 90, 180, 270]):
+            raise ValueError('pinch catalog geometry must be tool_z/tool_aligned with four quarter-turn yaws')
+        for field in ('approach_axis', 'orientation_mode'):
+            if field in grasp_intent and grasp_intent[field] != catalog[field]:
+                raise ValueError(f'incompatible authored {field} for {strategy_ref}')
+        # Tool Z points into local +Z face; tool Y is the finger-closing axis.
+        # Compose in object space so roll/pitch as well as yaw follow live truth.
+        height = observation['dimensions'][2] / 2.0
+        effective = dict(approach_distance_m=approach_distance,
+                         approach_axis='tool_z', orientation_mode='tool_aligned')
+        candidates = []
+        for index, yaw in enumerate(catalog['allowed_yaw_angles_deg']):
+            orientation = quaternion_from_rpy([math.pi, 0.0, math.radians(yaw)])
+            contact = compose_pose(observation['pose'], [0.0, 0.0, height] + orientation)
+            approach = compose_pose(observation['pose'],
+                                    [0.0, 0.0, height + approach_distance] + orientation)
+            candidates.append(GraspCandidate(
+                strategy_ref, f'{strategy_ref}::{index:03}', observation['id'],
+                tuple(contact), tuple(approach), dict(effective)))
+        return candidates
     geometry = build_grasp_target(observation)
     if strategy_ref == 'side_grip_basic':
         if (catalog.get('approach_axis') != 'x_plus' or

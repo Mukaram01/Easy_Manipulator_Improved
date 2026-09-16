@@ -7,7 +7,8 @@ the live scene. A successful result proves the predicted cycle only; the caller
 must still compare its live scene to initial_scene before reporting readiness.
 
 The legacy top 2F path is preserved. Side-grip candidates use the same physical
-cycle with their catalog-defined lateral contact corridor. Arbitrary v2
+cycle with their catalog-defined lateral contact corridor. Pinch candidates
+use object-aligned geometry and finger-closing aperture. Arbitrary v2
 grasp/place constraints remain unsupported.
 """
 import copy
@@ -24,6 +25,7 @@ from perceived_object_grasp_plan import (
     tool_pose_for_grasp,
 )
 from physical_destination import check_object_containment
+from grasp_strategy_candidates import generate_strategy_candidates
 
 
 @dataclass(frozen=True)
@@ -132,6 +134,20 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     math.dist(tool_z, [-1.0, 0.0, 0.0]) > 1e-9):
                 raise RuntimeError('side-grip candidate geometry is not x_plus/horizontal')
             aperture_extent = extents[1]
+        elif candidate.strategy_ref == 'finger_pinch_basic':
+            # Reuse the canonical geometry authority to reject relabelled or
+            # unconsumed candidate constraints before any physical operation.
+            expected = generate_strategy_candidates(
+                candidate.strategy_ref, observation, candidate.effective)
+            if not any(math.dist(candidate.grasp_pose, item.grasp_pose) < 1e-9 and
+                       math.dist(candidate.approach_pose, item.approach_pose) < 1e-9
+                       for item in expected):
+                raise RuntimeError('pinch candidate geometry is not tool_z/tool_aligned')
+            closing_world = rotate_vector(candidate.grasp_pose[3:], [0.0, 1.0, 0.0])
+            qx, qy, qz, qw = observation['pose'][3:]
+            closing_local = rotate_vector([-qx, -qy, -qz, qw], closing_world)
+            aperture_extent = sum(abs(axis) * extent for axis, extent in
+                                  zip(closing_local, observation['dimensions']))
         else:
             raise RuntimeError('unsupported grasp strategy in full-cycle preplanner')
         if not math.isfinite(contract['retreat_distance_m']) or contract['retreat_distance_m'] <= 0:
