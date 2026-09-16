@@ -10,6 +10,17 @@
 
 **Spec:** [R2.0 Full Engineering Task Authoring Design](../specs/2026-09-15-r2-full-engineering-task-authoring-design.md)
 
+## 2026-09-17 scoped R2.0d/e closure
+
+The authoritative task/destination parity gate is closed for the canonical cell
+and an existing-New-Cell-created UR5/2F cell. The retained
+[evidence](../../manuals/evidence/r20de/README.md) records Save/reopen hashes,
+real MoveIt resolution and consumption, eight-stage parity, destination edit and
+restore, explicit PREFERRED fallback and blocked EXACT. R2.0c is accepted as
+closed and its manual work is not reopened. Broader unchecked feature items
+below remain a design backlog; unsupported constraints block explicitly rather
+than being advertised as implemented. No physics/EPD/hardware gate is started.
+
 ## Global constraints
 
 - Work only in `~/workcell_ws/src/easy_manipulation_deployment`.

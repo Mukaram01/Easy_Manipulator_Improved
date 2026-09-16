@@ -13,3 +13,17 @@ model_origins:
   ur_robot: "['robot']['pose_{axis}']"
   robotiq_85_gripper: "['tool']['mount_pose_{axis}']"
   sensor_d435i: "['camera']['pose']{slice}"
+# Installed equipment runtime bindings; no task or destination data.
+runtime:
+  robot_moveit_package: ur5_moveit_config
+  robot_srdf: config/ur5.srdf.xacro
+  robot_srdf_macro: ur5
+  tool_moveit_package: robotiq_85_moveit_config
+  tool_srdf: config/robotiq_85_gripper.srdf.xacro
+  tool_srdf_macro: robotiq_85_gripper
+  arm_controller: ur5_arm_controller
+  tool_controller: ur5_gripper_controller
+  tool_command_joints: [gripper_finger1_joint]
+  mount_collision_exemptions:
+    - [gripper_base_link, tool0]
+    - [gripper_base_link, wrist_3_link]

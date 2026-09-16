@@ -170,7 +170,7 @@ QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root, const QString & output_dir,
   int domain_id, bool launch_rviz)
 {
-  if (scene_info.scene_name != "ur5_2f_test" || domain_id < 0 || domain_id > 232) return {};
+  if (scene_info.scene_name.empty() || domain_id < 0 || domain_id > 232) return {};
   const auto quote = [](QString value) { return "'" + value.replace("'", "'\\''") + "'"; };
   const auto supervisor = boost::filesystem::path(
     preview_group_supervisor_path(scene_info, workspace_root).toStdString()).parent_path() /
@@ -178,10 +178,10 @@ QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
   // This supervisor owns the ONE scene launch and invokes the installed R1.5
   // executor. Never launch the separate RViz preview alongside this mode.
   return QString("source %1 && export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 && "
-    "exec python3 %2 --execute --stream-status --timeout 900 --domain-id %3 --output-dir %4%5")
+    "exec python3 %2 --resolve-if-needed --stream-status --timeout 900 --domain-id %3 --output-dir %4%5 --scene-dir %6")
     .arg(quote(QString::fromStdString((workspace_root / "install/local_setup.bash").string())),
       quote(QString::fromStdString(supervisor.string())))
-    .arg(domain_id).arg(quote(output_dir), launch_rviz ? " --launch-rviz" : "");
+    .arg(domain_id).arg(quote(output_dir), launch_rviz ? " --launch-rviz" : "", quote(QString::fromStdString(scene_info.scene_dir.string())));
 }
 
 QString build_shell_command(const WorkcellStudioSceneInfo & scene_info, const boost::filesystem::path & workspace_root)

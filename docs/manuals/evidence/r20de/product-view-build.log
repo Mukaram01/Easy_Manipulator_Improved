@@ -1,0 +1,14 @@
+
+> workcell-studio-web-viewer@0.1.0 build:web3d
+> esbuild src/viewer_entry.js --bundle --format=esm --target=es2020 --sourcemap --outfile=dist/viewer.bundle.js
+
+
+  dist/viewer.bundle.js      2.0mb ⚠️
+  dist/viewer.bundle.js.map  3.3mb
+
+⚡ Done in 194ms
+
+> workcell-studio-web-viewer@0.1.0 check:stale-bundle
+> node scripts/check_stale_bundle.mjs
+
+viewer.bundle.js is current (e1eeafca75925807bd0ae3e4b30d2db6dc765836f97d02004d02accd7bf82477).

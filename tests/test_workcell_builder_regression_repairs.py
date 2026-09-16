@@ -12,11 +12,21 @@ def test_discovered_asset_role_hint_model_is_defined_and_populated():
     assert 'inferred.role_hint = infer_role_hint(inferred.category, inferred.source_kind);' in DISC_CPP
 
 
-def test_generate_yaml_repairs_invalid_existing_cell_definition():
-    assert 'existing valid cell_definition.yaml preserved' in CPP
-    assert 'invalid cell_definition.yaml backed up and regenerated' in CPP
-    assert 'new cell_definition.yaml generated' in CPP
-    assert 'validate_cell_definition.py' in CPP
+def test_generate_yaml_rejects_invalid_authored_task_without_reconstructing_defaults(tmp_path):
+    import subprocess
+    import sys
+    import shutil
+    (tmp_path / 'config').mkdir()
+    shutil.copyfile('scenes/ur5_2f_test/environment.yaml', tmp_path / 'environment.yaml')
+    (tmp_path / 'config/workcell_builder_task_intent.yaml').write_text('schema: workcell_builder_task_intent/v2\n')
+    cell = tmp_path / 'cell_definition.yaml'
+    cell.write_text('existing handoff must survive failed authored validation\n')
+    before = cell.read_bytes()
+    result = subprocess.run([sys.executable, 'scripts/export_builder_scene_to_cell_definition.py',
+        str(tmp_path), '--output-dir', str(tmp_path), '--validate'], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert cell.read_bytes() == before
+    assert not (tmp_path / 'task_recipe_from_builder_intent.yaml').exists()
 
 
 def test_pick_place_yes_path_uses_single_multi_key_write_helper():

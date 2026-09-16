@@ -876,6 +876,7 @@ install(PROGRAMS
   scripts/epd_to_workcell_snapshot_node.py
   ../../scripts/task_intent_authoring.py
   ../../scripts/task_intent_v2.py
+  ../../scripts/task_intent_resolver.py
   ../../scripts/validate_builder_task_intent.py
   ../../scripts/capability_registry.py
   ../../scripts/workcell_studio_layout_source.py

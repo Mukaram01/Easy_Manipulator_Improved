@@ -212,7 +212,7 @@ def main()->int:
     req=paths['plan']/'offline_plan_preview_request.yaml'
     session=paths['plan']/'rviz_moveit_plan_preview_session.json'
     if recipe.exists():
-        rc,rq=step('offline_req',[sys.executable,str(SCRIPT_DIR/'generate_offline_plan_preview_request.py'),'--task-recipe',str(recipe),'--output',str(req),'--validate','--json'])
+        rc,rq=step('offline_req',[sys.executable,str(SCRIPT_DIR/'generate_offline_plan_preview_request.py'),'--task-recipe',str(recipe),'--cell-definition',str(paths['exported']/'cell_definition.yaml'),'--output',str(req),'--validate','--json'])
         art['offline_plan_preview_request']=str(req); results['offline_plan_preview_status']='PASS' if rc==0 else 'WARN'
     else: results['offline_plan_preview_status']='WARN'
     if a.prepare_rviz_preview and req.exists():

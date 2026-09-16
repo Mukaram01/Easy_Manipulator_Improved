@@ -318,6 +318,13 @@ def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
     task = cell_def.get("task", {})
     intent = cell_def.get("builder_task_intent", {})
     if intent.get("schema") == "workcell_builder_task_intent/v2":
+        from task_intent_resolver import resolved_recipe, resolution_hash, normalized_intent_hash
+        resolution = cell_def.get('task_intent_resolution', {})
+        if resolution.get('readiness_status') in ('READY', 'WARNING'):
+            if (resolution.get('resolution_sha256') != resolution_hash(resolution) or
+                    resolution.get('normalized_intent_sha256') != normalized_intent_hash(intent)):
+                raise ValueError('TASK_RESOLUTION_CORRUPT: recipe generation requires matching resolution')
+            return resolved_recipe(intent, resolution)
         # The legacy renderer cannot resolve v2 policies. Keep physical package
         # generation usable without advertising an executable substituted task.
         return {

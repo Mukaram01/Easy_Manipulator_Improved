@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import argparse
 import copy
 import importlib.util
@@ -600,6 +601,10 @@ def _profile_review_launch_owned(scene: Path | None, package_name: str, world_fr
     text = launch.read_text()
     if text == _render_physical_review_launch(package_name, world_frame):
         return True
+    # Exact predecessor template only: preserve any user-edited launch.
+    predecessor = text.replace(repr(package_name), '@PACKAGE@').replace("'--frame-id', " + repr(world_frame), "'--frame-id', @WORLD@")
+    if hashlib.sha256(predecessor.encode()).hexdigest() == 'afe99cb2a124087e7a022169c847d643a87248207e02cf0d007460208d5d9094':
+        return True
     match = re.search(r'\[generated scene\] package=\S+ source=([^"\n]+)', text)
     return bool(match and text == _render_demo_launch(package_name, Path(match[1]), world_frame))
 
@@ -612,6 +617,32 @@ def _render_physical_review_launch(package_name: str, world_frame: str) -> str:
 def _write_physical_review_contract(package_dir: Path, package_name: str, world_frame: str,
                                     source_dir: Path) -> None:
     (package_dir / "launch/demo.launch.py").write_text(_render_physical_review_launch(package_name, world_frame))
+    cell = yaml.safe_load((package_dir / 'cell_definition.yaml').read_text())
+    runtime = cell.get('runtime', {})
+    if runtime:
+        import xml.etree.ElementTree as ET
+        xacro_ns = 'http://www.ros.org/wiki/xacro'
+        ET.register_namespace('xacro', xacro_ns)
+        srdf = ET.Element('robot', {'name': package_name})
+        for equipment in ('robot', 'tool'):
+            ET.SubElement(srdf, '{' + xacro_ns + '}include', {
+                'filename': '$(find ' + runtime[equipment + '_moveit_package'] + ')/' + runtime[equipment + '_srdf']})
+            ET.SubElement(srdf, '{' + xacro_ns + '}' + runtime[equipment + '_srdf_macro'])
+        for first, second in runtime['mount_collision_exemptions']:
+            ET.SubElement(srdf, 'disable_collisions', {'link1': first, 'link2': second, 'reason': 'Adjacent'})
+        (package_dir / 'urdf/arm_hand.srdf.xacro').write_bytes(ET.tostring(srdf, encoding='utf-8', xml_declaration=True))
+        controllers = {'controller_manager': {'ros__parameters': {
+            'update_rate': 100, 'joint_state_broadcaster': {'type': 'joint_state_broadcaster/JointStateBroadcaster'}}}}
+        for name, joints in ((runtime['arm_controller'], cell['robot']['joint_names']),
+                             (runtime['tool_controller'], runtime['tool_command_joints'])):
+            controllers['controller_manager']['ros__parameters'][name] = {'type': 'joint_trajectory_controller/JointTrajectoryController'}
+            controllers[name] = {'ros__parameters': {'joints': joints,
+                'command_interfaces': ['position'], 'state_interfaces': ['position', 'velocity'],
+                'allow_partial_joints_goal': False, 'allow_nonzero_velocity_at_trajectory_end': False}}
+        (package_dir / 'config/ros2_controllers.yaml').write_text(yaml.safe_dump(controllers))
+        collision = _load_module('profile_collision_manifest', SCRIPTS_DIR / 'generate_moveit_collision_manifest.py')
+        manifest = collision.load_and_build(source_dir / 'layout/workcell_studio_layout.yaml', scene_name=package_name)
+        (package_dir / 'config/moveit_collision_objects.yaml').write_text(yaml.safe_dump(manifest))
     # Keep the existing RViz review configuration, selecting this scene's topic.
     rviz = yaml.safe_load((REPO_ROOT / "rviz/generated_workcell_preview.rviz").read_text())
     manager = rviz["Visualization Manager"]
@@ -630,7 +661,12 @@ def _write_physical_review_contract(package_dir: Path, package_name: str, world_
     source_package = source_dir / "package.xml"
     package_file = package_dir / "package.xml"
     text = source_package.read_text() if source_package.exists() else package_file.read_text()
-    for dependency in ("robot_state_publisher", "joint_state_publisher"):
+    dependencies = ["robot_state_publisher", "joint_state_publisher", "controller_manager", "moveit_ros_move_group"]
+    if runtime:
+        dependencies.extend([runtime['robot_moveit_package'], runtime['tool_moveit_package'],
+                             'moveit_planners_ompl', 'moveit_simple_controller_manager',
+                             'joint_state_broadcaster', 'joint_trajectory_controller'])
+    for dependency in dependencies:
         if f">{dependency}</" not in text:
             text = text.replace("</package>", f"  <exec_depend>{dependency}</exec_depend>\n</package>")
     package_file.write_text(text)
@@ -1589,6 +1625,8 @@ def write_scene_package_contract(
             source = runtime_source_dir / directory
             if source.is_dir():
                 shutil.copytree(source, package_dir / directory, dirs_exist_ok=True)
+    if loaded.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2':
+        task_recipe_path.write_text(_yaml_text_from(scene_generator, task_recipe), encoding='utf-8')
     if _profile_review_launch_owned(runtime_source_dir, package_name, world_frame):
         _write_physical_review_contract(package_dir, package_name, world_frame, runtime_source_dir)
     _write_scene_visual_mesh_index(package_name, package_dir, warnings, workspace_root=workspace_root)
@@ -1744,6 +1782,23 @@ def generate_package(
             return 2
         final_package_dir = existing_package_dir
     source_snapshot = _snapshot_scene_package_inputs(cell_definition_path, final_package_dir, loaded, warnings)
+    if loaded.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2':
+        from task_intent_resolver import read_scene_task, scene_resolution, resolved_recipe
+        source_scene = Path(source_snapshot['source_scene_dir'])
+        intent, physical_input, document = read_scene_task(source_scene)
+        resolution = scene_resolution(source_scene, intent, physical_input, document)
+        if (loaded.get('normalized_intent_sha256') != resolution['normalized_intent_sha256'] or
+                loaded.get('resolution_sha256') != resolution['resolution_sha256']):
+            raise ValueError('TASK_HANDOFF_STALE: Export the saved task/current resolution before generation')
+        if resolution['readiness_status'] in ('READY', 'WARNING'):
+            task_recipe = resolved_recipe(intent, resolution)
+        else:
+            task_recipe.update(normalized_intent_sha256=resolution['normalized_intent_sha256'],
+                               resolution_sha256=resolution['resolution_sha256'],
+                               task_intent_resolution=resolution)
+        scene_manifest['task_recipe'] = task_recipe
+        scene_manifest['task_intent_resolution'] = resolution
+
     # The handoff carries authored physical state; layout remains editor metadata.
     authored_physical = (source_snapshot.get("environment") or {}).get("environment")
     if isinstance(authored_physical, dict):
@@ -1964,7 +2019,8 @@ def generate_package(
         for staged_path in sorted(package_dir.rglob("*")):
             relative = staged_path.relative_to(package_dir)
             if staged_path.is_dir() or not (_is_existing_package_generator_owned_output(relative) or
-                    (profile_launch_owned and relative.as_posix() in {"launch/demo.launch.py", "package.xml"})):
+                    (loaded.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2' and relative.as_posix() == 'config/task_recipe.yaml') or
+                    (profile_launch_owned and relative.as_posix() in {"launch/demo.launch.py", "package.xml", "config/ros2_controllers.yaml", "urdf/arm_hand.srdf.xacro"})):
                 continue
             destination = final_package_dir / relative
             destination.parent.mkdir(parents=True, exist_ok=True)

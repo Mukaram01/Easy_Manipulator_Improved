@@ -39780,6 +39780,18 @@ function renderSceneSummary() {
   if (!el.summary)
     return;
   el.summary.classList.toggle("empty", !state.sceneJson);
+  let taskSummary = el.summary.querySelector("[data-task-resolution]");
+  if (!taskSummary) {
+    taskSummary = document.createElement("p");
+    taskSummary.dataset.taskResolution = "";
+    el.summary.appendChild(taskSummary);
+  }
+  const resolution = state.sceneJson?.task_intent_resolution;
+  const destination = resolution?.place_resolution?.destination;
+  taskSummary.textContent = resolution ? `Task ${resolution.readiness_status}: ${resolution.pick_selection?.source_ref || "unresolved source"} / ${resolution.pick_selection?.zone_ref || ""} \u2192 ${destination?.target_id || "unresolved destination"} / ${destination?.id || ""} at ${JSON.stringify(destination?.pose_xyz || [])} m. ${resolution.grasp_resolution?.selected_strategy_ref || resolution.readiness?.reason || ""}${resolution.grasp_resolution?.fallback?.used || resolution.place_resolution?.fallback?.used ? " \u2014 preference fallback used" : ""}` : "Task resolution unavailable";
+  taskSummary.title = resolution ? `Intent: ${resolution.normalized_intent_sha256}
+Resolution: ${resolution.resolution_sha256}
+Destination: ${JSON.stringify(destination?.pose_xyz)}` : "";
   const fields = {
     "scene-name": summary.sceneName,
     "renderable-count": summary.renderableCount,

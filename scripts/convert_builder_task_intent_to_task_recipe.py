@@ -36,7 +36,13 @@ def _dump(path: Path, payload: dict[str, Any]) -> None:
 def convert(task_intent_path: Path, scene_package: Path | None = None) -> tuple[dict[str, Any], list[str]]:
     payload = _load(task_intent_path)
     if payload.get('schema') == 'workcell_builder_task_intent/v2':
-        raise ValueError('TaskIntent v2 requires the shared resolver/preplanner; legacy recipe conversion is unavailable.')
+        from task_intent_resolver import read_scene_task, scene_resolution, resolved_recipe
+        if scene_package is None:
+            raise ValueError('TaskIntent v2 shared resolver/preplanner requires the saved scene context')
+        intent, physical, document = read_scene_task(scene_package)
+        result = scene_resolution(scene_package, intent, physical, document, require_ready=True)
+        return resolved_recipe(intent, result), ([result['readiness']['reason']]
+                if result['readiness_status'] == 'WARNING' else [])
     warnings: list[str] = []
     task = payload.get('task') if isinstance(payload.get('task'), dict) else {}
     pick = (payload.get('pick') or {}).get('source') if isinstance((payload.get('pick') or {}).get('source'), dict) else {}

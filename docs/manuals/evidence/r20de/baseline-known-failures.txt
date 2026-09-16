@@ -1,0 +1,14 @@
+Reproduced with git archive of 4d90665be5424d08c1cd03879a871f5ba439eeb0 scripts tests catalog in a disposable /tmp directory. No baseline source edits.
+
+=========================== short test summary info ============================
+FAILED tests/test_existing_new_cell_contract_writer.py::test_minimal_new_cell_export_writes_core_contract_files
+FAILED tests/test_existing_new_cell_contract_writer.py::test_generated_contract_is_fake_hardware_first_and_zone_bound
+2 failed in 0.32s
+
+=========================== short test summary info ============================
+FAILED tests/test_workcell_studio_web_scene_edit_persistence.py::test_edited_layout_pose_persists_after_apply_and_reexport
+FAILED tests/test_workcell_studio_web_scene_edit_persistence.py::test_scale_persists_when_supported_by_source_mapping
+FAILED tests/test_workcell_studio_web_scene_edit_persistence.py::test_unrelated_editable_and_locked_generated_items_remain_unchanged
+FAILED tests/test_workcell_studio_web_scene_edit_persistence.py::test_generated_physical_visual_may_refresh_with_edited_owner
+FAILED tests/test_workcell_studio_web_scene_edit_persistence.py::test_verifier_rejects_after_scene_where_unrelated_item_changed
+5 failed, 4 passed in 5.30s

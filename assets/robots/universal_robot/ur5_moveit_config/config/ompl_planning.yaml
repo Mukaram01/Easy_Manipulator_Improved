@@ -1,3 +1,6 @@
+# Preserve the collision-checked geometric path during time parameterization.
+# A nonzero TOTG tolerance can cut through attached-object obstacles.
+path_tolerance: 0.0
 planner_configs:
   SBLkConfigDefault:
     type: geometric::SBL
@@ -67,7 +70,8 @@ manipulator:
     - PRMstarkConfigDefault
   ##Note: commenting the following line lets moveit chose RRTConnect as default planner rather than LBKPIECE
   #projection_evaluator: joints(shoulder_pan_joint,shoulder_lift_joint)
-  longest_valid_segment_fraction: 0.01
+  # Check attached-object transfers densely enough for workcell obstacles.
+  longest_valid_segment_fraction: 0.001
 endeffector:
   planner_configs:
     - SBLkConfigDefault

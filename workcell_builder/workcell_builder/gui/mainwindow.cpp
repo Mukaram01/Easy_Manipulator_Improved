@@ -4289,104 +4289,38 @@ void MainWindow::generate_or_update_task_intent_for_selected_scene()
   refresh_task_intent_panel();
 }
 
-void MainWindow::generate_yaml_draft_for_selected_scene()
+bool MainWindow::generate_yaml_draft_for_selected_scene()
 {
-  if (selected_scene_index_ < 0) return;
-  const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  QString script;
-  if (!helper_script_exists("create_or_update_builder_task_intent.py", &script)) {
-    append_studio_log("Generate YAML: helper script search failed (task intent helper missing).");
+  if (selected_scene_index_ < 0) return false;
+  if (environment_task_editor_) {
+    environment_task_editor_->validate_now();
+    if (!environment_task_editor_->blocker().isEmpty()) {
+      append_studio_log("Generate blocked: " + environment_task_editor_->blocker()); return false;
+    }
   }
+  const auto selected = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path scene_dir = workcell_builder::canonical_scene_identity(
-    sc.canonical_scene_dir.empty() ? sc.scene_dir : sc.canonical_scene_dir);
-  const fs::path env = scene_dir / "environment.yaml";
-  const fs::path cell = scene_dir / "cell_definition.yaml";
-  const fs::path manifest = scene_dir / "scene_manifest.yaml";
-
-  if (!fs::exists(env)) {
-    std::ofstream out(env.string());
-    out << "scene_name: " << sc.scene_name << "\n";
-    out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n  motion_command_sent: false\n";
-    out << "defaults:\n  robot: ur5\n  end_effector: robotiq_2f\n  object: placeholder_object\n  gripper_mount_rpy: [-1.5708, -1.5708, 0.0]\n";
+    selected.canonical_scene_dir.empty() ? selected.scene_dir : selected.canonical_scene_dir);
+  QString script;
+  if (!helper_script_exists("export_builder_scene_to_cell_definition.py", &script)) {
+    append_studio_log("Generate blocked: saved-task exporter is unavailable."); return false;
   }
-
-  const auto write_cell_draft = [&]() {
-    const std::string scene_name = sc.scene_name;
-    const std::string cell_id = scene_name + "_cell";
-    const std::string task_id = scene_name + "_pick_place";
-    std::ofstream out(cell.string());
-    out << "schema_version: cell_definition/v1\n";
-    out << "cell:\n  id: " << cell_id << "\n  name: " << scene_name << "\n  description: Auto-generated preview-safe draft for selected scene metadata\n";
-    out << "robot:\n  id: ur5_preview\n  model: ur5\n  planning_group: manipulator\n  base_frame: world\n  tool_link: tool0\n  home_named_target: home\n  safe_joint_state: []\n";
-    out << "end_effector:\n  id: robotiq_2f_preview\n  type: finger\n  brand: robotiq\n  grasp_frame: tool0\n  allowed_touch_links: [robotiq_2f_85_left_finger_tip_link, robotiq_2f_85_right_finger_tip_link]\n";
-    out << "camera:\n  id: camera_main\n  type: depth_camera\n  frame: camera_depth_optical_frame\n";
-    out << "environment:\n  frame: world\n  layout: layout/workcell_studio_layout.yaml\n  support_surfaces:\n    - {id: table_main, type: table, frame: world, pose_xyz: [0.0, 0.0, 0.0], pose_rpy: [0.0, 0.0, 0.0], dimensions: [1.2, 0.8, 0.05]}\n";
-    out << "objects:\n  - {id: preview_object, class: unknown, shape: box, color: unknown, material: unknown, frame: world, dimensions: [0.05, 0.05, 0.05], pose_xyz: [0.55, 0.0, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n";
-    out << "task:\n  id: " << task_id << "\n  type: pick_place\n  source_object: preview_object\n  destinations:\n    - {id: place_bin, frame: world, pose_xyz: [0.35, -0.25, 0.1], pose_rpy: [0.0, 0.0, 0.0]}\n  rules:\n    - {id: default_place, when: {always: true}, destination: place_bin}\n";
-    out << "commissioning:\n  self_test_enabled: true\n  export_bundle: true\n  require_operator_review: true\n  fake_hardware_default: true\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n";
-  };
-
-  if (!fs::exists(cell)) {
-    write_cell_draft();
-    append_studio_log("Generate YAML: new cell_definition.yaml generated.");
-  } else {
-    QString validate_cell_script;
-    bool valid_existing_cell = false;
-    if (helper_script_exists("validate_cell_definition.py", &validate_cell_script)) {
-      QProcess validate_process;
-      validate_process.start("python3", QStringList() << validate_cell_script << QString::fromStdString(cell.string()));
-      if (validate_process.waitForFinished(120000)) {
-        valid_existing_cell = validate_process.exitCode() == 0;
-        const QString details = QString::fromUtf8(validate_process.readAllStandardOutput()) +
-          QString::fromUtf8(validate_process.readAllStandardError());
-        if (!valid_existing_cell && details.contains(QStringLiteral("physical destination"))) {
-          append_studio_log(QStringLiteral("Generate YAML blocked: physical destination is invalid. Correct the authored target/placement; existing handoff preserved. ") + details);
-          return;
-        }
-      }
-    }
-    if (valid_existing_cell) {
-      append_studio_log("Generate YAML: existing valid cell_definition.yaml preserved.");
-    } else {
-      const fs::path backup = cell.string() + ".invalid." + std::to_string(std::time(nullptr)) + ".bak";
-      boost::system::error_code ec;
-      fs::copy_file(cell, backup, fs::copy_option::overwrite_if_exists, ec);
-      if (ec) {
-        append_studio_log(QString("Generate YAML: invalid cell_definition.yaml detected but backup failed (%1); not rewriting.")
-          .arg(QString::fromStdString(ec.message())));
-      } else {
-        write_cell_draft();
-        append_studio_log(QString("Generate YAML: invalid cell_definition.yaml backed up and regenerated (%1).")
-          .arg(QString::fromStdString(backup.string())));
-      }
-    }
+  // The existing exporter reads saved TaskIntent and physical authoring state.
+  // Never synthesize a replacement cell/task because an old handoff is absent
+  // or invalid, and never pass that old handoff to package generation.
+  QProcess process;
+  const QString path = QString::fromStdString(scene_dir.string());
+  process.start("python3", {script, path, "--output-dir", path, "--validate"});
+  if (!process.waitForFinished(120000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    append_studio_log("Generate blocked: " + QString::fromUtf8(process.readAllStandardError()).trimmed());
+    return false;
   }
-
-  if (!fs::exists(manifest)) {
-    std::ofstream out(manifest.string());
-    out << "schema_version: workcell_scene_manifest/v1\nscene_name: " << sc.scene_name << "\n";
-    out << "safety:\n  fake_hardware_first: true\n  runtime_execution_enabled: false\n";
-  }
-  const auto layout_result = workcell_builder::ensure_canonical_workcell_studio_layout(scene_dir, sc.scene_name);
-  if (!layout_result.ok) {
-    append_studio_log(QString("Generate YAML: failed to ensure layout/workcell_studio_layout.yaml (%1).")
-      .arg(QString::fromStdString(layout_result.error)));
-  } else if (layout_result.created) {
-    append_studio_log("Generate YAML: created empty canonical layout/workcell_studio_layout.yaml.");
-  } else {
-    append_studio_log("Generate YAML: existing canonical layout/workcell_studio_layout.yaml preserved.");
-  }
-  if (layout_result.ok) {
-    append_studio_log(QString("Generate YAML: ensured environment.yaml, cell_definition.yaml, scene_manifest.yaml, and canonical layout for '%1'.")
-      .arg(QString::fromStdString(sc.scene_name)));
-  } else {
-    append_studio_log(QString("Generate YAML: environment.yaml, cell_definition.yaml, and scene_manifest.yaml were processed for '%1', but canonical layout creation failed.")
-      .arg(QString::fromStdString(sc.scene_name)));
-  }
-  workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(sc.scene_dir, "generation");
+  append_studio_log("Generated YAML from the saved task and current physical resolution.");
+  workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(scene_dir, "generation");
   refresh_scene_browser_ui();
   refresh_scene_builder_selected_scene_ui();
   refresh_new_cell_checklist();
+  return true;
 }
 
 void MainWindow::generate_scene_package_for_selected_scene() {
@@ -4415,7 +4349,7 @@ void MainWindow::generate_scene_package_for_selected_scene() {
       append_studio_log("Generate ROS Scene Package pre-generation parity: " + parity_warning);
     }
   }
-  generate_yaml_draft_for_selected_scene();
+  if (!generate_yaml_draft_for_selected_scene()) return;
   const int selected_after_refresh = workcell_builder::find_scene_by_identity(
     scene_browser_result_, selected_scene_dir, selected_scene_name);
   if (selected_after_refresh < 0 || !fs::exists(selected_scene_dir) || !fs::is_directory(selected_scene_dir)) {
@@ -6180,9 +6114,9 @@ void MainWindow::refresh_preview_launch_ui()
   const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
   if (run_preview_button_) {
     run_preview_button_->show();
-    const bool canonical = has_scene && scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name == "ur5_2f_test";
-    run_preview_button_->setEnabled(canonical && current.ready && !busy);
-    run_preview_button_->setToolTip(!canonical ? "Full-cycle replay is commissioned for ur5_2f_test." : blockers.join("\n"));
+    run_preview_button_->setText("Plan Saved Task (Fake Hardware)");
+    run_preview_button_->setEnabled(has_scene && current.ready && !busy);
+    run_preview_button_->setToolTip(blockers.join("\n"));
   }
   if (full_cycle_mode_ && busy && run_build_button_) run_build_button_->setEnabled(false);
   if (cycle_rviz_box_) cycle_rviz_box_->setEnabled(!busy);
@@ -6387,7 +6321,6 @@ void MainWindow::run_fake_hardware_preview()
 void MainWindow::run_full_cycle()
 {
   if (!selected_scene_readiness().ready || !has_selected_scene() ||
-      scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name != "ur5_2f_test" ||
       preview_process_->state() != QProcess::NotRunning) return;
   run_preview_build();  // Reuse the selected-package build/discovery pipeline.
   if (preview_state_ != "BUILD_RUNNING") return;
@@ -6432,6 +6365,14 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
       result.value("final_collision_valid").toBool() ? "yes" : "unverified",
       guard.value("move_group_use_fake_hardware").toBool() && guard.value("real_hardware").isBool() && !guard.value("real_hardware").toBool() ? "verified" : "unverified",
       result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
+  if (result.value("execution_attempted").isBool() && !result.value("execution_attempted").toBool()) {
+    const auto resolution = result.value("task_intent_resolution").toObject();
+    const auto place = resolution.value("place_resolution").toObject().value("destination").toObject();
+    text = QString("<b>%1</b><br/>Task: %2 · Source object: %3<br/>Destination: %4<br/>Resolution: %5<br/>Plan only · No execution goals · Real robot locked")
+      .arg(pass ? "Plan ready" : "Plan blocked", resolution.value("readiness_status").toString().toHtmlEscaped(),
+           result.value("selected_object_id").toString().toHtmlEscaped(), place.value("id").toString().toHtmlEscaped(),
+           result.value("resolution_sha256").toString().toHtmlEscaped());
+  }
   if (result.contains("placement_error_m")) text += QString("<br/>Placement error: %1 mm").arg(result.value("placement_error_m").toDouble()*1000, 0, 'f', 3);
   if (!intended.isEmpty()) text += QString(" · Home error: %1 rad").arg(home_error, 0, 'f', 6);
   if (!pass) {
@@ -6488,7 +6429,7 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
   if (full_cycle_mode_ && (completed_stage == "PREVIEW_RUNNING" || completed_stage == "PREVIEW_LAUNCHING" || preview_stop_requested_)) {
     handle_preview_stdout();
     const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
-      cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_execution_success").toBool() &&
+      cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_plan_success").toBool() &&
       cycle_result_.value("shutdown_clean").toBool();
     if (!pass) {
       cycle_result_["result"] = "FAIL";
@@ -6497,6 +6438,15 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
     show_cycle_result(cycle_result_);
     set_preview_state(pass ? "CYCLE_PASS" : "CYCLE_FAILED");
     preview_running_scene_key_.clear();
+    if (pass && !close_after_preview_stop_ && has_selected_scene()) {
+      const auto & selected = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+      if (workcell_builder::canonical_scene_identity(selected.scene_dir) ==
+          workcell_builder::canonical_scene_identity(active_preview_scene_.scene_dir)) {
+        append_studio_log("Resolved saved task: refreshing Generate, Validate and Product View from the same result.");
+        generate_scene_package_for_selected_scene();
+        validate_generated_scene_for_selected_scene();
+      }
+    }
     if(close_after_preview_stop_) QTimer::singleShot(0,this,&QWidget::close);
     return;
   }

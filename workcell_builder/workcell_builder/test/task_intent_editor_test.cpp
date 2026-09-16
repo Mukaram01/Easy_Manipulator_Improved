@@ -5,6 +5,8 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QLineEdit>
 #include <QLabel>
 #include <QTemporaryDir>
@@ -362,5 +364,60 @@ TEST(TaskIntentEditor, SaveAndDiscardSceneSwitchDecisionsAreHonored) {
     ASSERT_TRUE(editor.load_scene(first.path(), helper()));
     EXPECT_EQ(editor.model().pick_selection.class_id, answer == QMessageBox::Save ? "saved_part" : "bottle");
     if (answer == QMessageBox::Discard) EXPECT_EQ(read(path), original);
+  }
+}
+
+TEST(TaskIntentEditor, RuntimeParityCreatesFreshCellAndSavesReplayTask) {
+  application();
+  const auto workspace = qEnvironmentVariable("R20DE_ACCEPTANCE_WORKSPACE");
+  if (workspace.isEmpty()) GTEST_SKIP() << "Set R20DE_ACCEPTANCE_WORKSPACE for retained runtime acceptance cells";
+  QDir().mkpath(workspace + "/src/easy_manipulation_deployment/scenes");
+  QDir().mkpath(workspace + "/src/easy_manipulation_deployment/assets");
+  NewCellWizard wizard(workspace);
+  ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
+  ASSERT_TRUE(wizard.select_object_source_by_id("manual_simulated"));
+  for (auto * form : wizard.findChildren<QFormLayout *>())
+    for (auto * field : wizard.findChildren<QLineEdit *>()) {
+      auto * label = qobject_cast<QLabel *>(form->labelForField(field));
+      if (label && label->text() == "Scene/package name") field->setText("r20de_fresh_cell");
+    }
+  for (auto * button : wizard.findChildren<QPushButton *>())
+    if (button->text() == "Create and Open") button->click();
+  ASSERT_TRUE(wizard.result().created);
+  const auto fresh = QString::fromStdString(wizard.result().scene_dir.string());
+  const auto canonical = workspace + "/src/easy_manipulation_deployment/scenes/ur5_2f_test";
+  for (const auto & scene : {canonical, fresh}) {
+    const auto environment = read(scene + "/environment.yaml");
+    std::string before_hash;
+    {
+      TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(scene, helper()));
+      edit(editor, "taskTargetClass", "cup");
+      editor.findChild<QComboBox *>("taskGraspPolicy")->setCurrentText("AUTO");
+      editor.findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("AUTO");
+      editor.findChild<QDoubleSpinBox *>("taskMaximumAge")->setValue(300.0);
+      editor.findChild<QDoubleSpinBox *>("taskPlaceClearance")->setValue(0.001);
+      ASSERT_TRUE(editor.save());
+      auto model = workcell_builder::TaskIntentModel::from_validated_yaml(editor.model().to_yaml());
+      ASSERT_TRUE(model);
+      before_hash = workcell_builder::authoritative_task_intent_sha256(*model);
+    }
+    TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(scene, helper()));
+    auto model = workcell_builder::TaskIntentModel::from_validated_yaml(reopened.model().to_yaml());
+    ASSERT_TRUE(model);
+    const auto reopened_hash = workcell_builder::authoritative_task_intent_sha256(*model);
+    EXPECT_EQ(before_hash, reopened_hash);
+    QProcess python;
+    python.start("python3", {helper(), scene});
+    ASSERT_TRUE(python.waitForFinished(10000));
+    const auto report = QJsonDocument::fromJson(python.readAllStandardOutput()).object();
+    EXPECT_EQ(report.value("normalized_intent_sha256").toString().toStdString(), reopened_hash);
+    QJsonObject evidence{{"scene", QFileInfo(scene).fileName()},
+      {"cpp_saved_sha256", QString::fromStdString(before_hash)},
+      {"cpp_reopened_sha256", QString::fromStdString(reopened_hash)},
+      {"python_normalized_sha256", report.value("normalized_intent_sha256")},
+      {"environment_unchanged", environment == read(scene + "/environment.yaml")}};
+    write(workspace + "/" + QFileInfo(scene).fileName() + "-authoring.json", QJsonDocument(evidence).toJson());
+    EXPECT_EQ(environment, read(scene + "/environment.yaml"));
+    EXPECT_TRUE(reopened.blocker().isEmpty());
   }
 }

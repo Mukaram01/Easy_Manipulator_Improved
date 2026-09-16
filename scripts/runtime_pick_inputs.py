@@ -85,7 +85,7 @@ def normalize(snapshot, now, geometry):
         if (confidence is not None and not 0 <= confidence <= 1) or stamp > now + 0.05:
             raise ValueError(f'{oid}: invalid confidence or future timestamp')
         objects.append(dict(id='runtime::' + quote(oid, safe=''), object_id=oid,
-                            class_id=label, confidence=confidence, timestamp=stamp,
+                            class_id=label, color=raw.get('color'), confidence=confidence, timestamp=stamp,
                             frame_id='world', source_frame=raw.get('source_frame', pose['frame_id']), shape='BOX',
                             pose=xyz + geometry.quaternion_from_rpy(rpy), dimensions=dims,
                             grasp=copy.deepcopy(raw.get('grasp'))))
@@ -105,7 +105,7 @@ def filter_targets(objects, task, cell, now, geometry):
     commissioning = task.get('selection_policy', 'task_semantics') == 'reachable_object'
     region = None if commissioning else zone(cell, task['source_zone'])
     for obj in objects:
-        reason = ('class_mismatch' if not commissioning and obj['class_id'] != task['target_class'] else
+        reason = ('class_mismatch' if not commissioning and task.get('target_class') not in (None, '') and obj['class_id'] != task['target_class'] else
                   'stale' if now - obj['timestamp'] > task['max_age_seconds'] else
                   'missing_confidence' if obj['confidence'] is None and not task.get('allow_missing_confidence', False) else
                   'low_confidence' if obj['confidence'] is not None and obj['confidence'] < task['min_confidence'] else

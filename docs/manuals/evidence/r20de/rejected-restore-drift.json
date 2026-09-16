@@ -1,0 +1,26 @@
+{
+  "note": "Pre-fix restore equality rejected this run; not closure evidence. Invalid MoveIt paths exhausted identical-goal retries, then initial AUTO resolution selected candidate001. Final run uses path-preserving TOTG and finer collision interpolation.",
+  "baseline": {
+    "intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+    "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+    "candidate_id": "top_2f::000",
+    "planning_retries": []
+  },
+  "restored": {
+    "intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+    "resolution_sha256": "a5ad7207062f7facb8545693a0b0b7f75d067be1af2d8f390c9f583cac6b9d99",
+    "candidate_id": "top_2f::001",
+    "planning_retries": [
+      {
+        "attempt": 1,
+        "moveit_code": -2,
+        "stage": "PREPLAN_TRANSFER"
+      },
+      {
+        "attempt": 2,
+        "moveit_code": -2,
+        "stage": "PREPLAN_TRANSFER"
+      }
+    ]
+  }
+}

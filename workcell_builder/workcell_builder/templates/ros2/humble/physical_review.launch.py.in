@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generated physical review launch; no controllers or hardware drivers."""
+"""Generated physical review and task planning launch; mock hardware only."""
 import os
 import subprocess
 import xml.etree.ElementTree as ET
@@ -52,5 +52,69 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_fake_hardware', default_value='true'),
         DeclareLaunchArgument('launch_rviz', default_value='true'),
-        OpaqueFunction(function=_review),
+        DeclareLaunchArgument('allow_trajectory_execution', default_value='false'),
+        OpaqueFunction(function=_task_runtime),
     ])
+
+
+def _task_runtime(context):
+    """Use the installed MoveIt stack and generated mock controllers for this cell."""
+    import yaml
+    from launch.actions import TimerAction
+    if LaunchConfiguration('use_fake_hardware').perform(context).lower() != 'true':
+        raise RuntimeError('Task planning requires fake hardware; real hardware is locked')
+    share = get_package_share_directory(scene_pkg)
+    with open(os.path.join(share, 'cell_definition.yaml')) as stream:
+        cell = yaml.safe_load(stream)
+    runtime = cell.get('runtime')
+    if not runtime:
+        return _review(context)
+    description = load_xacro(scene_pkg, 'urdf/scene.urdf.xacro', {'use_fake_hardware': 'true'})
+    model = ET.fromstring(description)
+    plugins = [element.text for element in model.findall('./ros2_control/hardware/plugin')]
+    if not plugins or set(plugins) != {'mock_components/GenericSystem'}:
+        raise RuntimeError('Generated task runtime requires exclusively mock hardware')
+    robot = {'robot_description': ParameterValue(description, value_type=str)}
+    semantic = {'robot_description_semantic': load_xacro(scene_pkg, 'urdf/arm_hand.srdf.xacro')}
+    def config(relative):
+        with open(os.path.join(get_package_share_directory(runtime['robot_moveit_package']), relative)) as stream:
+            return yaml.safe_load(stream)
+    ompl = config('config/ompl_planning.yaml')
+    ompl.update(planning_plugin='ompl_interface/OMPLPlanner',
+                request_adapters='default_planner_request_adapters/AddTimeOptimalParameterization default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision default_planner_request_adapters/FixStartStatePathConstraints',
+                start_state_max_bounds_error=0.1)
+    controller_path = os.path.join(share, 'config/ros2_controllers.yaml')
+    manager = {'controller_names': [runtime['arm_controller'], runtime['tool_controller']]}
+    for name, joints in ((runtime['arm_controller'], cell['robot']['joint_names']),
+                         (runtime['tool_controller'], runtime['tool_command_joints'])):
+        manager[name] = {'action_ns': 'follow_joint_trajectory', 'type': 'FollowJointTrajectory',
+                         'default': name == runtime['arm_controller'], 'joints': joints}
+    execution = LaunchConfiguration('allow_trajectory_execution').perform(context).lower() == 'true'
+    parameters = [robot, semantic, {'robot_description_kinematics': config('config/kinematics.yaml')},
+        {'planning_pipelines': ['ompl'], 'default_planning_pipeline': 'ompl', 'ompl': ompl,
+         'moveit_controller_manager': 'moveit_simple_controller_manager/MoveItSimpleControllerManager',
+         'moveit_simple_controller_manager': manager, 'allow_trajectory_execution': execution,
+         'moveit_manage_controllers': False, 'use_fake_hardware': True,
+         'publish_planning_scene': True, 'publish_geometry_updates': True,
+         'publish_state_updates': True, 'publish_transforms_updates': True,
+         'octomap_resolution': 0.1, 'octomap_frame': 'world',
+         'sensors': ['explicit_objects'], 'explicit_objects': {'sensor_plugin': '~explicit_objects'}}]
+    actions = [
+        Node(package='robot_state_publisher', executable='robot_state_publisher', parameters=[robot], output='screen'),
+        Node(package='controller_manager', executable='ros2_control_node', parameters=[controller_path],
+             remappings=[('~/robot_description', '/robot_description')], output='screen'),
+        Node(package='moveit_ros_move_group', executable='move_group', parameters=parameters, output='screen'),
+        Node(package='workcell_builder', executable='workcell_studio_planning_scene_node.py',
+             arguments=[os.path.join(share, 'config/moveit_collision_objects.yaml'), '--service', '/apply_planning_scene',
+                        '--verify-service', '/get_planning_scene', '--timeout-seconds', '45'], output='screen'),
+        Node(package='workcell_builder', executable='workcell_studio_layout_mesh_preview_node.py',
+             arguments=[os.path.join(share, 'layout/workcell_studio_layout.yaml'), '--owning-package', scene_pkg,
+                        '--frame-id', 'world', '--topic', f'/{scene_pkg}/canonical_mesh_markers'], output='screen'),
+        Node(package='rviz2', executable='rviz2', parameters=parameters,
+             arguments=['-d', os.path.join(share, 'generated/physical_review.rviz')],
+             condition=IfCondition(LaunchConfiguration('launch_rviz')), output='screen')]
+    for index, name in enumerate(['joint_state_broadcaster', runtime['arm_controller'], runtime['tool_controller']]):
+        actions.append(TimerAction(period=2.0 + index, actions=[
+            Node(package='controller_manager', executable='spawner',
+                 arguments=[name, '--controller-manager', '/controller_manager', '--param-file', controller_path], output='screen')]))
+    return actions

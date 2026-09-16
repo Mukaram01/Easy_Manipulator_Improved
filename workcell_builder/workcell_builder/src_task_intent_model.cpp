@@ -271,6 +271,9 @@ std::optional<TaskIntentModel> TaskIntentModel::from_validated_yaml(const std::s
 std::string authoritative_task_intent_sha256(const TaskIntentModel & model)
 {
   if (!model.validated || model.normalized_yaml.empty()) throw std::invalid_argument("authoritative hash requires validated normalized TaskIntentModel");
-  return canonical_task_intent_sha256_for_testing(model.normalized_yaml);
+  auto semantic = YAML::Load(model.normalized_yaml);
+  semantic.remove("scene_package");
+  semantic.remove("provenance");
+  return canonical_task_intent_sha256_for_testing(YAML::Dump(semantic));
 }
 }  // namespace workcell_builder
