@@ -63,6 +63,17 @@ def test_translated_pose_preserves_orientation_and_input():
     assert original.pose.position.x == 1.0
 
 
+def test_cartesian_corridor_accepts_horizontal_x_path_and_rejects_departure():
+    start = [0.50, -0.20, 0.30, 0.0, -0.7071067811865475, 0.0, 0.7071067811865476]
+    goal = [0.42, -0.20, 0.30, 0.0, -0.7071067811865475, 0.0, 0.7071067811865476]
+    assert MODULE.pose_within_cartesian_corridor(
+        [0.46, -0.199, 0.30] + goal[3:], start, goal)
+    assert not MODULE.pose_within_cartesian_corridor(
+        [0.46, -0.19, 0.30] + goal[3:], start, goal)
+    assert not MODULE.pose_within_cartesian_corridor(
+        [0.41, -0.20, 0.30] + goal[3:], start, goal)
+
+
 def test_candidate_three_is_prioritized_without_dropping_existing_candidates():
     indices = MODULE.candidate_indices(16)
     assert indices[0] == 3

@@ -212,3 +212,39 @@ def test_preplanner_does_not_claim_unconsumed_candidate_constraints():
     assert not result.success
     assert 'unsupported' in result.reason
     assert goals == []
+
+
+def test_side_grip_candidate_is_consumed_as_a_lateral_physical_cycle():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, trace, goals, _ = fixture()
+    kwargs['candidate'] = generate_strategy_candidates(
+        'side_grip_basic', kwargs['observation'], {'approach_distance_m': .08})[0]
+
+    result = preplan_full_cycle(**kwargs)
+
+    assert result.success
+    assert result.candidate_id == 'side_grip_basic::000'
+    assert trace == ['GENERATE_GRASPS'] + EXPECTED + ['CANDIDATE_READY']
+    approach, contact = goals[:2]
+    assert approach[0] == 'PREPLAN_APPROACH' and approach[1].pose.position.x == pytest.approx(.50)
+    assert contact[0] == 'PREPLAN_GRASP' and contact[1].pose.position.x == pytest.approx(.42)
+    assert contact[1].pose.position.y == pytest.approx(-.2)
+    assert contact[1].pose.position.z == pytest.approx(.3)
+    assert contact[3] is True
+    assert result.cycle['candidate'].effective == {
+        'approach_axis': 'x_plus',
+        'orientation_mode': 'horizontal',
+        'approach_distance_m': .08,
+    }
+
+
+def test_side_grip_preplanner_accepts_normalized_tuple_pose():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, _, _ = fixture()
+    kwargs['observation']['pose'] = tuple(kwargs['observation']['pose'])
+    kwargs['candidate'] = generate_strategy_candidates(
+        'side_grip_basic', kwargs['observation'], {'approach_distance_m': .08})[0]
+
+    assert preplan_full_cycle(**kwargs).success

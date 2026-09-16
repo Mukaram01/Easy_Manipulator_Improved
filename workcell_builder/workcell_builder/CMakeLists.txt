@@ -853,6 +853,9 @@ install(DIRECTORY gui/resources
 install(DIRECTORY assets
   DESTINATION share/${PROJECT_NAME})
 
+install(DIRECTORY ../../catalog/grasp_strategies
+  DESTINATION share/${PROJECT_NAME}/catalog)
+
 install(PROGRAMS
   scripts/conveyor_sorting_live_preview_node.py
   scripts/publish_sample_epd_snapshot.py

@@ -249,6 +249,29 @@ def pose_values(pose):
             pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
 
 
+def pose_within_cartesian_corridor(actual, start, goal,
+                                   position_tolerance=0.0025,
+                                   orientation_tolerance=0.005):
+    """Return whether a pose stays in the requested straight Cartesian tube."""
+    direction = [b-a for a, b in zip(start[:3], goal[:3])]
+    length_squared = sum(value * value for value in direction)
+    if length_squared < 1e-18:
+        position_ok = math.dist(actual[:3], goal[:3]) <= position_tolerance
+    else:
+        relative = [value-origin for value, origin in zip(actual[:3], start[:3])]
+        fraction = sum(value * axis for value, axis in zip(relative, direction)) / length_squared
+        length = math.sqrt(length_squared)
+        if not -position_tolerance / length <= fraction <= 1.0 + position_tolerance / length:
+            return False
+        projection = [origin + fraction * axis for origin, axis in zip(start[:3], direction)]
+        position_ok = math.dist(actual[:3], projection) <= position_tolerance
+    orientation_error = min(
+        math.dist(actual[3:], goal[3:]),
+        math.dist(actual[3:], [-value for value in goal[3:]]),
+    )
+    return position_ok and orientation_error <= orientation_tolerance
+
+
 def object_pose_after_motion(original, start_tool, end_tool):
     """Propagate the actual rigid attachment transform, including rotation."""
     base = pose_values(original.pose)
@@ -579,8 +602,6 @@ def main():
             # endpoint feasibility as proof of a straight collision-safe path.
             start_pose = fk(view.robot_state, contract['tool_link'])
             a, b = pose_values(start_pose.pose), pose_values(goal.pose)
-            if math.dist(a[:2], b[:2]) > 0.002:
-                raise RuntimeError('contact/retreat requires a vertical path')
             count = max(1, math.ceil(math.dist(a[:3], b[:3]) / 0.005))
             combined = None
             elapsed_ns = 0
@@ -592,9 +613,7 @@ def main():
                 for point in trajectory.joint_trajectory.points:
                     sample = updated_state(view.robot_state, dict(zip(trajectory.joint_trajectory.joint_names, point.positions)), mimics)
                     actual_pose = pose_values(fk(sample, contract['tool_link']).pose)
-                    if (math.dist(actual_pose[:2], b[:2]) > 0.0025 or
-                            not min(a[2],b[2])-0.001 <= actual_pose[2] <= max(a[2],b[2])+0.001 or
-                            min(math.dist(actual_pose[3:],b[3:]),math.dist(actual_pose[3:],[-q for q in b[3:]])) > 0.005):
+                    if not pose_within_cartesian_corridor(actual_pose, a, b):
                         raise RuntimeError('planned contact/retreat path leaves the Cartesian corridor')
                 if combined is None:
                     combined = copy.deepcopy(trajectory)

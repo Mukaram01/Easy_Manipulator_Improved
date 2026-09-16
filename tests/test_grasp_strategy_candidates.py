@@ -30,7 +30,94 @@ def test_top_2f_matches_legacy_top_down_candidate_order():
     assert (observation, intent) == saved
 
 
-@pytest.mark.parametrize('strategy', ['unknown', 'side_grip_basic', 'finger_pinch_basic'])
+def test_side_grip_basic_uses_horizontal_x_plus_approach():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    observation = dict(id='moving-box', frame_id='world', dimensions=[.04, .08, .10],
+                       pose=[.4, -.2, .3, 0., 0., .7071067811865475, .7071067811865476])
+    intent = {'approach_distance_m': .08}
+    saved = copy.deepcopy((observation, intent))
+
+    candidates = generate_strategy_candidates('side_grip_basic', observation, intent)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.candidate_id == 'side_grip_basic::000'
+    assert candidate.object_id == 'moving-box'
+    # The 90-degree object yaw projects the local 8 cm Y dimension onto world X.
+    # Contact is on the +X face; pregrasp is a further authored 8 cm along +X.
+    assert candidate.grasp_pose == pytest.approx(
+        [.44, -.2, .3, 0., -.7071067811865475, 0., .7071067811865476])
+    assert candidate.approach_pose == pytest.approx(
+        [.52, -.2, .3, 0., -.7071067811865475, 0., .7071067811865476])
+    assert candidate.effective == {
+        'approach_axis': 'x_plus',
+        'orientation_mode': 'horizontal',
+        'approach_distance_m': .08,
+    }
+    assert (observation, intent) == saved
+
+
+def test_side_grip_basic_changes_with_live_geometry_and_is_deterministic():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    observation = dict(id='another-box', frame_id='world', dimensions=[.12, .03, .05],
+                       pose=[-.1, .25, .4, 0., 0., 0., 1.])
+    intent = {'approach_distance_m': .03,
+              'approach_axis': 'x_plus', 'orientation_mode': 'horizontal'}
+
+    first = generate_strategy_candidates('side_grip_basic', observation, intent)
+    second = generate_strategy_candidates('side_grip_basic', copy.deepcopy(observation), copy.deepcopy(intent))
+
+    assert first == second
+    assert first[0].grasp_pose[:3] == pytest.approx([-.04, .25, .4])
+    assert first[0].approach_pose[:3] == pytest.approx([-.01, .25, .4])
+
+
+@pytest.mark.parametrize('constraint,value', [
+    ('approach_axis', 'z_down'),
+    ('orientation_mode', 'vertical'),
+    ('retreat_axis', 'x_plus'),
+])
+def test_side_grip_basic_rejects_incompatible_or_unconsumed_constraints(constraint, value):
+    from grasp_strategy_candidates import generate_strategy_candidates
+    observation = dict(id='box', frame_id='world', dimensions=[.04, .04, .1],
+                       pose=[0., 0., 0., 0., 0., 0., 1.])
+    intent = {'approach_distance_m': .08, constraint: value}
+    with pytest.raises(ValueError, match='unsupported|incompatible'):
+        generate_strategy_candidates('side_grip_basic', observation, intent)
+
+
+def test_side_grip_catalog_geometry_cannot_be_relabelled(tmp_path):
+    from grasp_strategy_candidates import generate_strategy_candidates
+    observation = dict(id='box', frame_id='world', dimensions=[.04, .04, .1],
+                       pose=[0., 0., 0., 0., 0., 0., 1.])
+    (tmp_path / 'side_grip_basic.yaml').write_text(
+        'grasp_strategy:\n  id: side_grip_basic\n  approach_axis: z_down\n'
+        '  orientation_mode: horizontal\n')
+    with pytest.raises(ValueError, match='catalog'):
+        generate_strategy_candidates('side_grip_basic', observation,
+                                     {'approach_distance_m': .08}, tmp_path)
+
+
+def test_side_grip_finds_catalog_from_installed_runtime_layout(tmp_path, monkeypatch):
+    import grasp_strategy_candidates as module
+    prefix = tmp_path / 'install' / 'workcell_builder'
+    installed_script = prefix / 'lib' / 'workcell_builder' / 'grasp_strategy_candidates.py'
+    installed_catalog = prefix / 'share' / 'workcell_builder' / 'catalog' / 'grasp_strategies'
+    installed_catalog.mkdir(parents=True)
+    (installed_catalog / 'side_grip_basic.yaml').write_text(
+        'grasp_strategy:\n  id: side_grip_basic\n  approach_axis: x_plus\n'
+        '  orientation_mode: horizontal\n')
+    monkeypatch.setattr(module, '__file__', str(installed_script))
+    observation = dict(id='box', frame_id='world', dimensions=[.04, .04, .1],
+                       pose=[0., 0., 0., 0., 0., 0., 1.])
+
+    candidate = module.generate_strategy_candidates(
+        'side_grip_basic', observation, {'approach_distance_m': .08})[0]
+
+    assert candidate.effective['approach_axis'] == 'x_plus'
+
+
+@pytest.mark.parametrize('strategy', ['unknown', 'finger_pinch_basic'])
 def test_unimplemented_strategy_fails_closed(strategy):
     from grasp_strategy_candidates import generate_strategy_candidates
     with pytest.raises(ValueError, match='unsupported'):
@@ -43,7 +130,7 @@ def test_top_2f_does_not_claim_unimplemented_v2_constraints():
         generate_strategy_candidates('top_2f', {}, {'orientation': {'mode': 'EXACT'}})
 
 
-@pytest.mark.parametrize('distance', [float('nan'), float('inf'), -.1, [.1, .2]])
+@pytest.mark.parametrize('distance', [float('nan'), float('inf'), -.1, True, [.1, .2]])
 def test_top_2f_rejects_invalid_approach_distance(distance):
     from grasp_strategy_candidates import generate_strategy_candidates
     observation = dict(id='box', frame_id='world', dimensions=[.04, .04, .1], pose=[0., 0., 0., 0., 0., 0., 1.])

@@ -6,8 +6,9 @@ plan against the supplied private scene and must never execute or apply it to
 the live scene. A successful result proves the predicted cycle only; the caller
 must still compare its live scene to initial_scene before reporting readiness.
 
-The initial extraction preserves the legacy top 2F contact scan and vertical
-corridor. It does not implement arbitrary v2 grasp/place constraints.
+The legacy top 2F path is preserved. Side-grip candidates use the same physical
+cycle with their catalog-defined lateral contact corridor. Arbitrary v2
+grasp/place constraints remain unsupported.
 """
 import copy
 import math
@@ -15,7 +16,12 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from perceived_object_grasp_plan import build_grasp_target, oriented_box_extents, tool_pose_for_grasp
+from perceived_object_grasp_plan import (
+    build_grasp_target,
+    oriented_box_extents,
+    rotate_vector,
+    tool_pose_for_grasp,
+)
 from physical_destination import check_object_containment
 
 
@@ -99,14 +105,36 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             raise RuntimeError('observation expired before candidate planning')
         if candidate.object_id != observation['id']:
             raise RuntimeError('candidate object differs from observation')
-        if set(candidate.effective) - {'approach_distance_m'}:
-            raise RuntimeError('unsupported candidate constraints in legacy full-cycle extraction')
-        if candidate.strategy_ref != 'top_2f':
-            raise RuntimeError('unsupported grasp strategy in legacy full-cycle extraction')
+        extents = oriented_box_extents(build_grasp_target(observation))
+        if candidate.strategy_ref == 'top_2f':
+            if set(candidate.effective) - {'approach_distance_m'}:
+                raise RuntimeError('unsupported candidate constraints in legacy full-cycle extraction')
+            aperture_extent = min(extents[:2])
+        elif candidate.strategy_ref == 'side_grip_basic':
+            required_effective = {
+                'approach_axis': 'x_plus',
+                'orientation_mode': 'horizontal',
+            }
+            if (set(candidate.effective) != set(required_effective) | {'approach_distance_m'} or
+                    any(candidate.effective.get(key) != value
+                        for key, value in required_effective.items())):
+                raise RuntimeError('unsupported or incompatible side-grip candidate constraints')
+            distance = candidate.effective['approach_distance_m']
+            displacement = [a-b for a, b in zip(candidate.approach_pose[:3], candidate.grasp_pose[:3])]
+            tool_z = rotate_vector(candidate.grasp_pose[3:], [0.0, 0.0, 1.0])
+            expected_contact = list(observation['pose'][:3])
+            expected_contact[0] += extents[0] / 2.0
+            if (not isinstance(distance, (int, float)) or not math.isfinite(distance) or distance < 0 or
+                    math.dist(displacement, [distance, 0.0, 0.0]) > 1e-9 or
+                    math.dist(candidate.grasp_pose[:3], expected_contact) > 1e-9 or
+                    math.dist(tool_z, [-1.0, 0.0, 0.0]) > 1e-9):
+                raise RuntimeError('side-grip candidate geometry is not x_plus/horizontal')
+            aperture_extent = extents[1]
+        else:
+            raise RuntimeError('unsupported grasp strategy in full-cycle preplanner')
         if not math.isfinite(contract['retreat_distance_m']) or contract['retreat_distance_m'] <= 0:
             raise RuntimeError('retreat distance must be finite and positive')
-        extents = oriented_box_extents(build_grasp_target(observation))
-        if min(extents[:2]) > 0.085:
+        if aperture_extent > 0.085:
             raise RuntimeError('target exceeds Robotiq aperture')
         if any(a > b for a, b in zip(extents, destination['dimensions'])):
             raise RuntimeError('target exceeds destination bounds')
