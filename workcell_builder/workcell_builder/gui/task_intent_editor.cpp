@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
 #include <QSaveFile>
@@ -177,9 +178,27 @@ QJsonObject TaskIntentEditor::request(bool draft)
   if (report.isEmpty()) throw std::runtime_error(("Task validation failed: " + process.readAllStandardError()).toStdString());
   return report;
 }
+bool TaskIntentEditor::confirm_scene_change(const QString & scene)
+{
+  if (scene == scene_ || !dirty_) return true;
+  const auto answer = QMessageBox::question(this, "Unsaved task",
+    "Save task edits before switching cells?",
+    QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+  if (answer == QMessageBox::Save) return save();
+  if (answer != QMessageBox::Discard) return false;
+  dirty_ = false;  // Explicit discard reloads the source even if navigation is later canceled.
+  model_ = {};
+  return load_scene(scene_, helper_);
+}
 bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
 {
-  if (scene == scene_ && !model_.authored_yaml.empty()) return true;
+  if (!confirm_scene_change(scene)) return false;
+  if (scene == scene_ && !model_.authored_yaml.empty()) {
+    if (dirty_) return true;
+    QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
+    const auto current = file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+    if (current == loaded_bytes_) { setEnabled(true); return true; }
+  }
   scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_errors_.clear();
   validation_timer_->stop(); model_ = {};
   try {
@@ -217,7 +236,13 @@ void TaskIntentEditor::validate_now()
 {
   validation_timer_->stop();
   if (model_.authored_yaml.empty() || !input_errors_.isEmpty()) return;
-  try { apply_report(request(true)); }
+  try {
+    QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
+    const auto current = file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+    if (current != loaded_bytes_) throw std::runtime_error(
+      "Task changed on disk. Reopen before validating; unsaved edits are preserved.");
+    apply_report(request(true));
+  }
   catch (const std::exception & exc) { error_ = QString::fromUtf8(exc.what()); status_->setText("BLOCKED — " + error_); }
 }
 QString TaskIntentEditor::blocker() const

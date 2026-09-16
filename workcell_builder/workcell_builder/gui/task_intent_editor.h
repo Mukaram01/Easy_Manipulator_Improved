@@ -14,6 +14,7 @@ class TaskIntentEditor : public QGroupBox
   Q_OBJECT
 public:
   explicit TaskIntentEditor(QWidget * parent = nullptr);
+  bool confirm_scene_change(const QString & scene);
   bool load_scene(const QString & scene, const QString & helper);
   bool save(QString * error = nullptr);
   void validate_now();

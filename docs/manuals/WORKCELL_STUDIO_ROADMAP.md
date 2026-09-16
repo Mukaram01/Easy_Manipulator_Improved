@@ -7,7 +7,22 @@ Workcell Studio is the internal configurable robotic-cell platform for defining,
 
 Sorting is only one scenario template in Workcell Studio, alongside other templates such as inspection routing, reject handling, and palletizing.
 
-## Current milestone — R1 canonical UR5 + Robotiq 2F industrial cell
+## Current milestone — R2.0c task authoring and persistence (partial)
+
+As of 2026-09-16, main includes the R2.0a contract and R2.0b shared
+resolver/preplanner implementation (PRs #3168/#3169). Follow the
+[R2 implementation plan](../superpowers/plans/2026-09-15-r2-full-engineering-task-authoring.md)
+and current code rather than the historical R1 priority text below.
+
+This R2.0c branch binds the existing Builder task controls to TaskIntentModel v2,
+adds atomic persistence, and preserves drafts across scene navigation and
+external edits. [HOME PC evidence](evidence/r20c/home-authoring/README.md) proves
+component persistence and focused tests, but full Builder GUI acceptance remains
+unfinished: the full Studio viewport smoke failed. R2.0c is **PARTIALLY CONFIRMED**.
+R2.0d/e authoritative GUI/generation/runtime parity and acceptance remain open;
+bounded physics feasibility and Stage-A piled-object simulation stay gated.
+
+## Historical R1 canonical UR5 + Robotiq 2F industrial cell
 
 ### 2026-09-15 — R1.9 physical destination truth closed
 

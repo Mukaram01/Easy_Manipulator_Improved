@@ -12,7 +12,7 @@
 namespace {
 void application() {
   if (QCoreApplication::instance()) return;
-  qputenv("QT_QPA_PLATFORM", "offscreen");
+  if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) qputenv("QT_QPA_PLATFORM", "offscreen");
   static int argc = 1; static char name[] = "task_editor_test"; static char * argv[] = {name, nullptr};
   static QApplication app(argc, argv);
 }
@@ -251,4 +251,112 @@ TEST(TaskIntentEditor, TaskPersistenceFailureLeavesNoPartialScene) {
   for (auto * label : wizard.findChildren<QLabel *>())
     if (label->text().contains("Task intent could not be saved") && label->text().contains("Authoring unavailable")) task_error = true;
   EXPECT_TRUE(task_error);
+}
+
+#include <QMessageBox>
+#include <QTimer>
+TEST(TaskIntentEditor, CancelSceneSwitchPreservesUnsavedDraft) {
+  application(); QTemporaryDir first; QTemporaryDir second; seed(first.path()); seed(second.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(first.path(), helper()));
+  edit(editor, "taskTargetClass", "unsaved_part");
+  QTimer cancel; cancel.setSingleShot(true);
+  QObject::connect(&cancel, &QTimer::timeout, [] {
+    for (auto * widget : QApplication::topLevelWidgets())
+      if (auto * dialog = qobject_cast<QMessageBox *>(widget)) dialog->button(QMessageBox::Cancel)->click();
+  });
+  cancel.start(0);
+  EXPECT_FALSE(editor.load_scene(second.path(), helper()));
+  EXPECT_EQ(editor.scene(), first.path());
+  EXPECT_TRUE(editor.dirty());
+  EXPECT_EQ(editor.model().pick_selection.class_id, "unsaved_part");
+}
+TEST(TaskIntentEditor, ExternalChangeBlocksValidationAndCleanReopenReloads) {
+  application(); QTemporaryDir dir; seed(dir.path()); TaskIntentEditor editor;
+  ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  const auto path = dir.path() + "/config/workcell_builder_task_intent.yaml";
+  auto bytes = read(path); bytes.replace("class_id: bottle", "class_id: changed_on_disk"); write(path, bytes);
+  editor.validate_now();
+  EXPECT_FALSE(editor.blocker().isEmpty());
+  ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  EXPECT_EQ(editor.model().pick_selection.class_id, "changed_on_disk");
+  EXPECT_FALSE(editor.dirty());
+  EXPECT_TRUE(editor.blocker().isEmpty());
+}
+TEST(TaskIntentEditor, RefreshPreservesDirtyDraftWhenDiskChanges) {
+  application(); QTemporaryDir dir; seed(dir.path()); TaskIntentEditor editor;
+  ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  edit(editor, "taskTargetClass", "unsaved_part");
+  const auto path = dir.path() + "/config/workcell_builder_task_intent.yaml";
+  auto bytes = read(path); bytes.replace("class_id: bottle", "class_id: external_part"); write(path, bytes);
+  ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  EXPECT_EQ(editor.model().pick_selection.class_id, "unsaved_part");
+  EXPECT_TRUE(editor.dirty());
+  EXPECT_FALSE(editor.save());
+  EXPECT_EQ(read(path), bytes);
+}
+
+TEST(TaskIntentEditor, CanonicalSceneSaveCloseReopenPreservesPhysicalTruth) {
+  application(); QTemporaryDir dir; QDir().mkpath(dir.path() + "/config");
+  const auto source = QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/scenes/ur5_2f_test";
+  const auto environment = read(source + "/environment.yaml");
+  const auto intent = read(source + "/config/workcell_builder_task_intent.yaml");
+  ASSERT_FALSE(environment.isEmpty()); ASSERT_FALSE(intent.isEmpty());
+  write(dir.path() + "/environment.yaml", environment);
+  write(dir.path() + "/config/workcell_builder_task_intent.yaml", intent);
+  std::string normalized, hash;
+  {
+    TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+    editor.show(); QApplication::processEvents();
+    edit(editor, "taskTargetClass", "acceptance_part");
+    editor.findChild<QDoubleSpinBox *>("taskApproachDistance")->setValue(0.13);
+    editor.findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("EXACT");
+    edit(editor, "taskLocalXYZ", "0.01, 0, 0.01");
+    edit(editor, "taskLocalRPY", "0, 0, 0");
+    editor.findChild<QPushButton *>("taskSave")->click();
+    ASSERT_FALSE(editor.dirty()); ASSERT_TRUE(editor.blocker().isEmpty());
+    const auto model = workcell_builder::TaskIntentModel::from_validated_yaml(editor.model().to_yaml());
+    ASSERT_TRUE(model); normalized = model->normalized_yaml;
+    hash = workcell_builder::authoritative_task_intent_sha256(*model);
+    EXPECT_EQ(model->place.asset_ref, "target_bin_default");
+    EXPECT_EQ(model->place.region_ref, "default_drop_zone");
+    EXPECT_DOUBLE_EQ(model->place.requested_local_pose->xyz_m[0], 0.01);
+    const auto output = qEnvironmentVariable("WORKCELL_TASK_EVIDENCE_DIR");
+    if (!output.isEmpty()) {
+      QDir().mkpath(output); QApplication::processEvents();
+      EXPECT_TRUE(editor.grab().save(output + "/canonical-editor.png"));
+      write(output + "/normalized-intent.json", QByteArray::fromStdString(normalized));
+      write(output + "/intent.sha256", QByteArray::fromStdString(hash));
+    }
+  }
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  const auto model = workcell_builder::TaskIntentModel::from_validated_yaml(reopened.model().to_yaml());
+  ASSERT_TRUE(model); EXPECT_EQ(model->normalized_yaml, normalized);
+  EXPECT_EQ(workcell_builder::authoritative_task_intent_sha256(*model), hash);
+  EXPECT_EQ(model->pick_selection.class_id, "acceptance_part");
+  EXPECT_DOUBLE_EQ(model->grasp.approach_distance_m, 0.13);
+  EXPECT_EQ(read(dir.path() + "/environment.yaml"), environment);
+  EXPECT_EQ(read(source + "/environment.yaml"), environment);
+  EXPECT_EQ(read(source + "/config/workcell_builder_task_intent.yaml"), intent);
+}
+
+TEST(TaskIntentEditor, SaveAndDiscardSceneSwitchDecisionsAreHonored) {
+  application();
+  for (const auto answer : {QMessageBox::Save, QMessageBox::Discard}) {
+    QTemporaryDir first; QTemporaryDir second; seed(first.path()); seed(second.path());
+    TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(first.path(), helper()));
+    const auto path = first.path() + "/config/workcell_builder_task_intent.yaml";
+    const auto original = read(path);
+    edit(editor, "taskTargetClass", "saved_part");
+    QTimer reply; reply.setSingleShot(true);
+    QObject::connect(&reply, &QTimer::timeout, [answer] {
+      for (auto * widget : QApplication::topLevelWidgets())
+        if (auto * dialog = qobject_cast<QMessageBox *>(widget)) dialog->button(answer)->click();
+    });
+    reply.start(0);
+    ASSERT_TRUE(editor.load_scene(second.path(), helper()));
+    EXPECT_EQ(editor.scene(), second.path()); EXPECT_FALSE(editor.dirty());
+    ASSERT_TRUE(editor.load_scene(first.path(), helper()));
+    EXPECT_EQ(editor.model().pick_selection.class_id, answer == QMessageBox::Save ? "saved_part" : "bottle");
+    if (answer == QMessageBox::Discard) EXPECT_EQ(read(path), original);
+  }
 }

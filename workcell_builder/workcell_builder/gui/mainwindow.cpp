@@ -2032,6 +2032,9 @@ bool MainWindow::open_scene_builder_for_scene_index(
     return false;
   }
 
+  if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(
+      QString::fromStdString(scene_browser_result_.scenes[scene_index].scene_dir.string()))) return false;
+
   // Navigation happens before editor ownership changes. Home callbacks are
   // therefore inactive before the canonical editor refresh begins.
   show_studio_page(StudioPage::SceneBuilderPage);
@@ -2212,6 +2215,7 @@ void MainWindow::open_new_scene_creation_flow()
     QMessageBox::warning(this, "Workcell Studio", "Select a valid workspace first.");
     return;
   }
+  if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(QString())) return;
   NewCellWizard wizard(workspace_root, this);
   wizard.set_output_root(QSettings().value("startup/last_scene_output_root").toString());
   if (wizard.exec() != QDialog::Accepted) {
@@ -2233,7 +2237,6 @@ void MainWindow::open_new_scene_creation_flow()
       ". Refresh Home and open that path. Do not create it again.");
     return;
   }
-  selected_scene_index_ = index;
   refresh_studio_home_scene_table();
 }
 
@@ -5436,11 +5439,8 @@ void MainWindow::select_scene_by_row(int row)
 {
   if (dashboard_scene_table_ && dashboard_scene_table_->item(row, 0) && dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).isValid()) row = dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).toInt();
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
-  if (row != selected_scene_index_ && environment_task_editor_ && environment_task_editor_->dirty()) {
-    const auto answer = QMessageBox::question(this, "Unsaved task", "Save task edits before switching cells?",
-      QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
-    if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !environment_task_editor_->save())) return;
-  }
+  if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(
+      QString::fromStdString(scene_browser_result_.scenes[row].scene_dir.string()))) return;
   const QString previous_scene_path = selected_scene_path();
   if (place_asset_armed_) set_canvas_interaction_mode(CanvasInteractionMode::Select);
   selected_scene_index_ = row;

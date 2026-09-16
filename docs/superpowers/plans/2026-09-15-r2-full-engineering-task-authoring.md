@@ -62,6 +62,13 @@
 - A new scaffold still needs authored R1.9 physical region geometry before planning; authoring persistence does not imply motion readiness. No R2.0d/e preview/runtime integration, EPD, camera, physics, merge, or real motion was performed.
 
 
+**2026-09-16 HOME PC follow-up — PARTIALLY CONFIRMED:** Reused the unmerged
+R2.0c implementation and fixed Home/scene-switch draft loss plus stale disk
+validation/reopen behavior. 76 Python and 39 Qt tests pass; a displayed canonical
+editor Save/destroy/reopen preserves normalized hash and the 1 cm R1.9 edit.
+Full Studio viewport smoke failed, so complete GUI acceptance remains open.
+See [commands, logs, screenshot and limitations](../../manuals/evidence/r20c/home-authoring/README.md).
+
 ## Milestone R2.0d — Preview, generation, and runtime parity
 
 - [ ] Update Product View export to load the resolution artifact and show selected/rejected candidates and blockers.
