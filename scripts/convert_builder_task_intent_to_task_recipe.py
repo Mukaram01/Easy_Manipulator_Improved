@@ -35,6 +35,8 @@ def _dump(path: Path, payload: dict[str, Any]) -> None:
 
 def convert(task_intent_path: Path, scene_package: Path | None = None) -> tuple[dict[str, Any], list[str]]:
     payload = _load(task_intent_path)
+    if payload.get('schema') == 'workcell_builder_task_intent/v2':
+        raise ValueError('TaskIntent v2 requires the shared resolver/preplanner; legacy recipe conversion is unavailable.')
     warnings: list[str] = []
     task = payload.get('task') if isinstance(payload.get('task'), dict) else {}
     pick = (payload.get('pick') or {}).get('source') if isinstance((payload.get('pick') or {}).get('source'), dict) else {}
@@ -132,7 +134,11 @@ def main() -> int:
                     print(f'FAIL: {e}')
             return 1
 
-    recipe, warns = convert(args.task_intent, args.scene_package)
+    try:
+        recipe, warns = convert(args.task_intent, args.scene_package)
+    except ValueError as error:
+        print(json.dumps({"status": "BLOCKED", "errors": [str(error)]}))
+        return 1
     _dump(args.output, recipe)
     summary = {
         'status': 'PASS',

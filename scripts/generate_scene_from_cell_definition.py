@@ -316,6 +316,18 @@ def _map_rule(rule: dict[str, Any]) -> dict[str, Any]:
 
 def build_task_recipe(cell_def: dict[str, Any]) -> dict[str, Any]:
     task = cell_def.get("task", {})
+    intent = cell_def.get("builder_task_intent", {})
+    if intent.get("schema") == "workcell_builder_task_intent/v2":
+        # The legacy renderer cannot resolve v2 policies. Keep physical package
+        # generation usable without advertising an executable substituted task.
+        return {
+            "enabled": False, "recipe_id": task.get("id"),
+            "task_type": task.get("type", "pick_place"),
+            "type": _task_recipe_type(str(task.get("type", "pick_place"))),
+            "blocker": "TaskIntent v2 requires the shared resolver/preplanner; legacy recipe conversion is unavailable.",
+            "pick": {"allowed_grasp_methods": []}, "decision_rules": [], "destinations": [],
+            "expected": {"allow_fallback_rule": False, "require_destination_pose": True},
+        }
     perception = cell_def.get("perception", {}) if isinstance(cell_def.get("perception"), dict) else {}
     commissioning = cell_def.get("commissioning", {}) if isinstance(cell_def.get("commissioning"), dict) else {}
     self_test = cell_def.get("self_test", {}) if isinstance(cell_def.get("self_test"), dict) else {}

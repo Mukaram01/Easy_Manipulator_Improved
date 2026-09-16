@@ -136,7 +136,7 @@ def _resolve_authored_task(
             f"identifier '{identifier}': {reason}"
         )
 
-    if task_intent.get("schema") != "workcell_builder_task_intent/v1":
+    if task_intent.get("schema") not in {"workcell_builder_task_intent/v1", "workcell_builder_task_intent/v2"}:
         fail(task_intent.get("schema", "<missing schema>"), "invalid task intent schema")
 
     items = layout.get("items")
@@ -144,7 +144,7 @@ def _resolve_authored_task(
         fail("items", "authored layout does not contain an items list")
     item_by_id = {str(item.get("id")): item for item in items
                   if isinstance(item, dict) and item.get("id")}
-    task_zones = environment.get("task_zones")
+    task_zones = environment.get("environment", environment).get("task_zones")
     zone_by_id = {str(zone.get("id")): zone for zone in task_zones
                   if isinstance(zone, dict) and zone.get("id")} if isinstance(task_zones, list) else {}
 
@@ -152,6 +152,9 @@ def _resolve_authored_task(
         section = task_intent.get(block)
         ref = section.get(child) if isinstance(section, dict) else None
         identifier = ref.get("id") if isinstance(ref, dict) else None
+        if task_intent.get("schema") == "workcell_builder_task_intent/v2":
+            identifier = (section.get("selection", {}).get("zone_ref") if block == "pick"
+                          else section.get("target", {}).get("region_ref"))
         if not identifier:
             fail(f"{block}.{child}.id", "required identifier is missing")
         zone = zone_by_id.get(str(identifier))
@@ -460,6 +463,9 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     authored_grasp.pop("strategy", None)
     authored_grasp.pop("strategy_ref", None)
 
+    selection = task_intent_payload.get("pick", {}).get("selection", {})
+    object_source = selection.get("source_type") or authored_task.get("object_source", "perception")
+    perception_source = authored_task.get("perception_source", "detected_objects/v1")
     cell_def = {
         "schema_version": "cell_definition/v1",
         "cell": {"id": scene_path.name, "name": scene_path.name, "planning_frame": "world"},
@@ -516,15 +522,16 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "objects": [{"id": o["id"], "class": "part", "shape": "mesh", "color": "unknown", "material": "unknown", "frame": "world", "dimensions": o["dimensions"], "pose_xyz": [0.0,0.0,0.0], "pose_rpy": [0.0,0.0,0.0]} for o in object_entries],
         "task": {
             **authored_task,
-            "id": authored_task.get("id", "default_task"),
+            "id": task_intent_payload.get("task", {}).get("id") or authored_task.get("id", "default_task"),
             "type": authored_task.get("type", task_type),
-            "object_source": "perception",
+            "object_source": object_source,
+            "perception_source": perception_source,
             # Compatibility scalar retained for older readiness consumers;
             # the structured pick.source_ref remains authoritative.
             "pick_zone": resolved_task["pick_id"],
             "pick": {**(authored_task.get("pick") if isinstance(authored_task.get("pick"), dict) else {}),
                      "source_ref": resolved_task["pick_id"],
-                     "object_source": "perception"},
+                     "object_source": object_source},
             "place": {**(authored_task.get("place") if isinstance(authored_task.get("place"), dict) else {}),
                       "target_ref": resolved_task["place_id"],
                       "region_ref": resolved_task["place_id"]},
@@ -540,11 +547,17 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         },
         "grasp": {"strategy_ref": authored_strategy_ref or normalized_grasp.get("strategy_id") or "top_2f",
                    **authored_grasp},
-        "perception": {**authored_perception, "enabled": True, "mode": authored_perception.get("mode", "live_epd"),
+        "perception": {**authored_perception, "enabled": object_source != "manual_simulated", "mode": authored_perception.get("mode", "disabled" if object_source == "manual_simulated" else "live_epd"),
                         "frame_id": authored_camera.get("frame_id", "camera_color_optical_frame"),
                         "normalized_output_contract": "detected_objects/v1"},
         "commissioning": {"self_test_enabled": False, "export_bundle": False, "generated_by": "workcell_builder", "review_required": True, "fake_hardware_first": True, "runtime_send_disabled_by_default": True},
     }
+
+    if task_intent_payload.get("schema") == "workcell_builder_task_intent/v2":
+        # A policy request is not a resolved grasp. Preserve it for the shared
+        # resolver instead of assigning the legacy exporter's default strategy.
+        cell_def.pop("grasp", None)
+        cell_def["task"].pop("grasp", None)
 
     warnings.extend(grasp_warnings)
 
@@ -562,17 +575,12 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
                 f"identifier '<invalid task intent>': {details or 'validation failed'}"
             )
         ti = task_intent_validation.get("task_intent", {})
-        builder_task_intent = {
-            "schema": ti.get("schema"),
-            "source_file": str(task_intent_path),
-            "pick": ti.get("pick"),
-            "grasp": ti.get("grasp"),
-            "place": ti.get("place"),
-            "routing": ti.get("routing"),
-            "safety": ti.get("safety"),
-        }
-        cell_def["builder_task_intent"] = builder_task_intent
-        task_recipe_generation = _generate_task_recipe(task_intent_path, output_dir / "task_recipe_from_builder_intent.yaml", scene_path)
+        builder_task_intent = {**ti, "source_file": str(task_intent_path)}
+        cell_def["builder_task_intent"] = {**builder_task_intent, "source_file": str(task_intent_path.relative_to(scene_path)) if task_intent_path.is_relative_to(scene_path) else str(task_intent_path)}
+        if ti.get("schema") == "workcell_builder_task_intent/v2":
+            task_recipe_generation = {"status": "BLOCKED", "reason": "TaskIntent v2 requires the shared resolver/preplanner; legacy recipe conversion is unavailable."}
+        else:
+            task_recipe_generation = _generate_task_recipe(task_intent_path, output_dir / "task_recipe_from_builder_intent.yaml", scene_path)
         if task_recipe_generation.get("status") != "PASS":
             warnings.append("Task recipe generation from builder intent is partial or failed.")
     else:
@@ -590,7 +598,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     compatibility_report = {"status": compatibility_result, "runtime_supported": not bool(robot_meta.get("preview_only")), "preview_only": bool(robot_meta.get("preview_only")), "fake_hardware_default": True, "real_hardware_default": False, "warnings": [w for w in warnings if "preview_only" in w or "unknown" in w.lower()]}
     compatibility_path.write_text(json.dumps(compatibility_report, indent=2)+"\n", encoding="utf-8")
     recipe_path = output_dir / "task_recipe_from_builder_intent.yaml"
-    if recipe_path.is_file():
+    if task_recipe_generation.get("status") == "PASS" and recipe_path.is_file():
         plan_preview_generation = _generate_plan_preview(recipe_path, output_dir / "offline_plan_preview_request.yaml", cell_path, layout_path)
 
     summary: dict[str, Any] = {

@@ -114,6 +114,9 @@ private:
 
   NewCellWizardResult result_;
   QString workspace_root_;
+  QString recommended_profile_;
+  QString recommended_profile_error_;
+  QString profile_helper_path() const;
 
   QListWidget *steps_{nullptr};
   QStackedWidget *stack_{nullptr};

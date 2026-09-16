@@ -1617,6 +1617,8 @@ def generate_package(
     dry_run: bool,
     workspace_root: Path | str | None = None,
     existing_package_dir: Path | None = None,
+    authored_model_dir: Path | None = None,
+    published_package_dir: Path | None = None,
 ) -> int:
     if not VALIDATOR_PATH.is_file():
         print(f"FAIL: Missing required validation tool: {VALIDATOR_PATH}")
@@ -1659,6 +1661,12 @@ def generate_package(
         "unsupported": asset_tracking["unsupported"],
     }
 
+    if authored_model_dir is not None:
+        authored_model_dir = authored_model_dir.resolve()
+        if existing_package_dir is not None or authored_model_dir != cell_definition_path.parent.resolve():
+            raise ValueError("Initial authored model must belong to the source cell definition; do not combine with in-place refresh")
+    if published_package_dir is not None and (authored_model_dir is None or published_package_dir.name != package_name):
+        raise ValueError("Published package path requires initial authored-model generation with matching identity")
     final_package_dir = output_dir / package_name
     if existing_package_dir is not None:
         existing_package_dir = existing_package_dir.resolve()
@@ -1780,7 +1788,7 @@ def generate_package(
         scene_contract=scene_contract,
         dry_result=dry_result,
         workspace_root=workspace_root,
-        runtime_source_dir=existing_package_dir,
+        runtime_source_dir=existing_package_dir or authored_model_dir,
         readiness_extra={
             "dry_run_status": getattr(dry_result, "status", "UNKNOWN"),
             "source_inputs": {
@@ -1824,8 +1832,9 @@ def generate_package(
     detected_example_path.write_text(_yaml_text_from(scene_generator, detected_example), encoding="utf-8")
     env_objects_path.write_text(_yaml_text_from(scene_generator, env_objects), encoding="utf-8")
     destinations_path.write_text(_yaml_text_from(scene_generator, destinations), encoding="utf-8")
-    final_task_recipe_path = final_package_dir / "config" / "task_recipe.yaml"
-    final_detected_example_path = final_package_dir / "generated" / "generated_detected_objects_example.yaml"
+    published_dir = published_package_dir or final_package_dir
+    final_task_recipe_path = published_dir / "config" / "task_recipe.yaml"
+    final_detected_example_path = published_dir / "generated" / "generated_detected_objects_example.yaml"
     preflight_cmd = (
         f"python3 scripts/run_cell_readiness_check.py --scene-package {package_name} "
         f"--task-recipe {final_task_recipe_path} --detected-objects {final_detected_example_path} --json"
@@ -1840,7 +1849,7 @@ def generate_package(
     summary_payload = {
         "schema_version": "generated_workcell_bundle/v1",
         "package_name": package_name,
-        "source_cell_definition": str(cell_definition_path),
+        "source_cell_definition": str(published_dir / "cell_definition.yaml") if published_package_dir else str(cell_definition_path),
         "scene_package": package_name,
         "runtime_scene_package": runtime_scene_package,
         "planning_frame": str((loaded.get("cell", {}) or {}).get("planning_frame", "world")),
@@ -1849,20 +1858,21 @@ def generate_package(
         "camera": loaded.get("camera", {}),
         "task_recipe_path": str(final_task_recipe_path),
         "detected_objects_example_path": str(final_detected_example_path),
-        "environment_objects_path": str(final_package_dir / "generated" / "generated_environment_objects.yaml"),
-        "destinations_path": str(final_package_dir / "generated" / "generated_destinations.yaml"),
+        "environment_objects_path": str(published_dir / "generated" / "generated_environment_objects.yaml"),
+        "destinations_path": str(published_dir / "generated" / "generated_destinations.yaml"),
         "warnings": warnings,
         "tracked_assets": asset_tracking["tracked"],
         "unsupported_assets": asset_tracking["unsupported"],
-        "blockers": [],
-        "recommended_commands": {"preflight": preflight_cmd, "gated_dry_run": gated_cmd},
+        "blockers": [task_recipe["blocker"]] if task_recipe.get("blocker") else [],
+        "recommended_commands": {} if task_recipe.get("blocker") else {"preflight": preflight_cmd, "gated_dry_run": gated_cmd},
         "approval": {"status": "unapproved", "approved_by": None, "approved_at": None, "notes": ""},
         "grasp_strategy": scene_generator.extract_grasp_strategy_metadata(loaded),
     }
     summary_path.write_text(json.dumps(summary_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     command_script_path.write_text(
         "#!/usr/bin/env bash\nset -euo pipefail\n\n"
-        f"cd {REPO_ROOT}\n{gated_cmd}\n",
+        + ("echo 'BLOCKED: TaskIntent v2 requires the shared resolver/preplanner.' >&2\nexit 2\n"
+         if task_recipe.get("blocker") else f"cd {REPO_ROOT}\n{gated_cmd}\n"),
         encoding="utf-8",
     )
     command_script_path.chmod(0o755)

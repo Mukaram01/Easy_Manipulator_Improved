@@ -53,7 +53,7 @@ def _wizard_intent(scene, env):
                       'contact': {'required': True, 'min_quality': 0.0},
                       'aperture': {'min_m': 0.0, 'max_m': 0.085},
                       'lift': {'axis': 'z_up', 'distance_m': task.get('retreat_distance_m', catalog['retreat_distance_m'])}}},
-        'place': {'target': {'asset_ref': target, 'region_ref': regions[0] if len(regions) == 1 else target},
+        'place': {'target': {'asset_ref': target, 'region_ref': studio.get('place_zone', {}).get('region') or (regions[0] if len(regions) == 1 else target)},
                   'placement': {'policy': 'AUTO', 'requested_local_pose': None,
                                 'orientation': {'mode': 'target_default', 'rpy_rad': [0.0, 0.0, 0.0], 'tolerance_rad': [0.0, 0.0, 0.0]},
                                 'approach': {'axis': 'z_down', 'distance_m': 0.1}, 'clearance_m': 0.01,
@@ -76,7 +76,7 @@ def load_authoring(scene, draft=None):
         if payload.get('schema') == 'workcell_builder_task_intent/v1':
             payload = migrate_v1(payload, env)
     else:
-        payload = _wizard_intent(scene, env)
+        payload = _wizard_intent(scene, {**env, 'workcell_studio': scene_doc.get('workcell_studio', {})})
     parsed = parse_validate_normalize(payload)
     report = validate_payload(payload, scene)
     # A physical blocker does not prevent saving the authored request unchanged.

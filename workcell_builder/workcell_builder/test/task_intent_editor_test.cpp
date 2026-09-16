@@ -1,3 +1,4 @@
+#include <QFileInfo>
 #include <gtest/gtest.h>
 #include <QApplication>
 #include <QComboBox>
@@ -108,8 +109,8 @@ TEST(TaskIntentEditor, ExistingNewCellWizardCreatesEditableV2DraftWithoutFileRep
   {
     TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(scene, helper()));
     EXPECT_EQ(editor.model().grasp.policy, "AUTO");
-    EXPECT_EQ(editor.model().pick_selection.source_ref, "source_bin_01");
-    EXPECT_EQ(editor.model().place.asset_ref, "place_fixture_01");
+    EXPECT_EQ(editor.model().pick_selection.source_ref, "pick_zone_main");
+    EXPECT_EQ(editor.model().place.asset_ref, "target_bin_default");
     edit(editor, "taskTargetClass", "widget");
     editor.findChild<QComboBox *>("taskGraspPolicy")->setCurrentText("PREFERRED");
     editor.findChild<QComboBox *>("taskGraspIntent")->setCurrentText("top_2f");
@@ -124,8 +125,8 @@ TEST(TaskIntentEditor, ExistingNewCellWizardCreatesEditableV2DraftWithoutFileRep
   EXPECT_EQ(before.normalized_yaml, after.normalized_yaml);
   EXPECT_EQ(workcell_builder::authoritative_task_intent_sha256(before), workcell_builder::authoritative_task_intent_sha256(after));
   EXPECT_EQ(read(scene + "/environment.yaml"), environment);
-  // A fresh scaffold has no authored R1.9 containment yet: never claim planning readiness.
-  EXPECT_FALSE(reopened.blocker().isEmpty());
+  // The reviewed profile supplies physical containment; this is not motion readiness.
+  EXPECT_TRUE(reopened.blocker().isEmpty());
 }
 
 #include <QDoubleSpinBox>
@@ -200,11 +201,11 @@ void creation_chain(const QString & layout) {
   EXPECT_EQ(workcell_builder::find_scene_by_identity(home, "/missing/created", "created"), -1);
   const int index = workcell_builder::find_scene_by_identity(home, scene);
   ASSERT_GE(index, 0);
-  EXPECT_FALSE(home.scenes[index].has_package_xml);
+  EXPECT_TRUE(home.scenes[index].has_package_xml);
   TaskIntentEditor editor;
   ASSERT_TRUE(editor.load_scene(QString::fromStdString(home.scenes[index].scene_dir.string()), helper()));
   EXPECT_EQ(editor.model().grasp.policy, "AUTO");
-  EXPECT_EQ(editor.model().place.asset_ref, "place_fixture_01");
+  EXPECT_EQ(editor.model().place.asset_ref, "target_bin_default");
 }
 
 }
@@ -234,7 +235,10 @@ TEST(TaskIntentEditor, TaskPersistenceFailureLeavesNoPartialScene) {
   application(); QTemporaryDir workspace;
   const auto repo = workspace.path() + "/src/easy_manipulation_deployment";
   QDir().mkpath(repo + "/scenes"); QDir().mkpath(repo + "/assets"); QDir().mkpath(repo + "/scripts");
-  write(repo + "/scripts/task_intent_authoring.py", "print('{\"errors\": [\"Authoring unavailable\"]}')\n");
+  const auto profile_helper = QFileInfo(helper()).dir().filePath("instantiate_workcell_studio_profile.py");
+  write(repo + "/scripts/instantiate_workcell_studio_profile.py",
+    ("import sys, subprocess\nif '--describe' in sys.argv:\n subprocess.run([sys.executable, '" + profile_helper +
+      "'] + sys.argv[1:], check=True)\nelse:\n print('Authoring unavailable', file=sys.stderr)\n sys.exit(1)\n").toUtf8());
   NewCellWizard wizard(workspace.path());
   ASSERT_TRUE(wizard.select_scenario_by_id("static_table_pick_place"));
   for (auto * form : wizard.findChildren<QFormLayout *>())
@@ -249,7 +253,7 @@ TEST(TaskIntentEditor, TaskPersistenceFailureLeavesNoPartialScene) {
   EXPECT_TRUE(QDir(repo + "/scenes").entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot).isEmpty());
   bool task_error = false;
   for (auto * label : wizard.findChildren<QLabel *>())
-    if (label->text().contains("Task intent could not be saved") && label->text().contains("Authoring unavailable")) task_error = true;
+    if (label->text().contains("Physical scene preparation failed") && label->text().contains("Authoring unavailable")) task_error = true;
   EXPECT_TRUE(task_error);
 }
 
