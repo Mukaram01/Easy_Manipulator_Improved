@@ -2717,6 +2717,9 @@ void SceneSelect::on_generate_files_clicked()
     cfg.place_clearance_m = task_editor_state_.place_clearance_m;
     cfg.release_strategy = task_editor_state_.release_strategy;
     write_task_recipe_yaml(scene_dir_for_current_selection(), cfg);
+    // Authored task intent is owned by TaskIntentModel. Legacy generation may
+    // seed a missing file, but must never overwrite a saved v1/v2 request.
+    if (!fs::exists(scene_dir_for_current_selection()/"config"/"workcell_builder_task_intent.yaml")) {
     std::ofstream intent((scene_dir_for_current_selection()/"config"/"workcell_builder_task_intent.yaml").string());
     intent << "schema_version: workcell_task_intent/v1\n";
     intent << "task:\n  type: " << task_editor_state_.task_type << "\n";
@@ -2727,6 +2730,7 @@ void SceneSelect::on_generate_files_clicked()
     intent << "safety:\n  preview_only: false\n  use_fake_hardware: true\n  allow_simulated_motion: true\n";
     intent << "  allow_moveit_execution: true\n  allow_rviz_motion: true\n";
     intent << "  allow_real_hardware_motion: false\n  real_robot_locked: true\n";
+    }
     task_editor_state_.unsaved_task_edits = false;
     rerun_task_validation();
     bool blocked = false;

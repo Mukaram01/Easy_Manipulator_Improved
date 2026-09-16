@@ -52,6 +52,16 @@
 
 **Exit evidence:** a same-session GUI smoke record edits `ur5_2f_test`, saves, closes/reopens, and shows byte-equivalent normalized intent and identical bindings.
 
+**2026-09-16 scoped implementation evidence — PARTIALLY CONFIRMED:** Existing Scene Builder task controls now use `TaskIntentEditor` and `TaskIntentModel` v2. Pick/source and physical target/region bindings, AUTO/PREFERRED/EXACT, motion fields and advanced constraints edit one draft. Save uses `QSaveFile`, detects external changes, reopens the result, and preserves unedited fields and environment/equipment bindings. Existing v1 migration and R1.9 requested-local-pose validation are reused. Invalid EXACT stays authored and blocks generation/planning; stopping an active preview remains available. Legacy SceneSelect generation preserves an existing task file. The existing New Cell wizard is reused; its scene-name edit now refreshes Next/Create availability.
+
+- **Headless, confirmed:** 76 tests passed with `python3 -m pytest -q tests/test_task_intent_authoring.py tests/test_task_intent_v2.py tests/test_builder_task_intent.py tests/test_physical_destination.py tests/test_task_intent_resolver.py`.
+- **Qt, headless, confirmed:** `workcell_task_intent_model_test` (9), `workcell_task_intent_editor_test` (5), and `workcell_new_cell_wizard_test` (15) passed. The editor test clicks the existing wizard's Create and Open action for a fresh UR5+2F cell, edits controls, saves, destroys/reopens the editor, and compares normalized intent/hash and unchanged environment bytes. It also checks invalid EXACT, policy changes, advanced units, malformed input, and external-edit protection. This is not workstation GUI acceptance.
+- **Targeted build:** `cmake --build /home/ubuntu/workcell_ws/build/workcell_builder --target workcell_builder workcell_task_intent_model_test workcell_task_intent_editor_test workcell_new_cell_wizard_test -j2` succeeded; the final application-only rebuild also succeeded.
+- **Existing test limitations:** an earlier affected-label run had 70 passes and four failures in `test_workcell_studio_task_intent_panel.py`, `test_workcell_studio_task_binding_persistence.py`, and `test_new_cell_wizard_links_zones.py`. Each failed token was independently confirmed absent in baseline HEAD `7b3207ba`; those unrelated assertions were not changed.
+- **Actual GUI session, blocked:** launched the built Studio on the available display, opened its existing New Cell wizard, and entered a fresh name. The session reported missing `/home/ubuntu/workcell_ws/scenes` and `/home/ubuntu/workcell_ws/src/scenes`; subsequent accessibility actions returned stale object errors and window/screen captures were black. The session was stopped without YAML or terminal repair. Fresh-cell GUI Save/close/reopen acceptance is **UNVERIFIED**, not replaced by the headless test. Repeat once on a working display/workspace after resolving that environment blocker.
+- A new scaffold still needs authored R1.9 physical region geometry before planning; authoring persistence does not imply motion readiness. No R2.0d/e preview/runtime integration, EPD, camera, physics, merge, or real motion was performed.
+
+
 ## Milestone R2.0d — Preview, generation, and runtime parity
 
 - [ ] Update Product View export to load the resolution artifact and show selected/rejected candidates and blockers.

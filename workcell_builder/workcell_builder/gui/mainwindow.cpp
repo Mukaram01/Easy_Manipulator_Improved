@@ -1,3 +1,4 @@
+#include "task_intent_editor.h"
 #include "authored_canvas_position.hpp"
 // Copyright 2026 Mukaram01
 // Compatibility tokens: Selection id missing after refresh, clearing atomically: Locked/generated item edit rejected
@@ -1550,6 +1551,23 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
   if (selected.empty()) return s;
   s.source_file = QString::fromStdString(selected.string()); s.source_basename = QString::fromStdString(selected.filename().string());
   s.status = "INCOMPLETE_TASK";
+  if (scalar_path(root, {"schema"}) == "workcell_builder_task_intent/v2") {
+    s.task_type = scalar_path(root, {"task", "type"});
+    s.pick_source = scalar_path(root, {"pick", "selection", "source_ref"});
+    s.pick_zone = scalar_path(root, {"pick", "selection", "zone_ref"});
+    s.pick_source_type = scalar_path(root, {"pick", "selection", "source_type"});
+    s.object_class = scalar_path(root, {"pick", "selection", "object_filter", "class_id"});
+    s.place_target = scalar_path(root, {"place", "target", "asset_ref"});
+    s.grasp_strategy = scalar_path(root, {"pick", "grasp", "strategy_ref"});
+    if (s.grasp_strategy == "unknown") s.grasp_strategy = scalar_path(root, {"pick", "grasp", "policy"});
+    s.approach_axis = scalar_path(root, {"pick", "grasp", "approach", "axis"});
+    s.approach_distance = scalar_path(root, {"pick", "grasp", "approach", "distance_m"});
+    s.retreat_axis = scalar_path(root, {"pick", "grasp", "lift", "axis"});
+    s.retreat_distance = scalar_path(root, {"pick", "grasp", "lift", "distance_m"});
+    s.orientation_mode = scalar_path(root, {"pick", "grasp", "orientation", "mode"});
+    s.status = "AUTHORED_V2";
+    return s;
+  }
   const YAML::Node task = workcell_builder::task_intent_view(root);
   s.task_type = scalar_path(task, {"type"});
   if (s.task_type == "unknown") s.task_type = scalar_path(task, {"family"});
@@ -3338,43 +3356,17 @@ void MainWindow::setup_studio_shell()
   task_intent_details_label_ = new QLabel("No scene selected"); task_intent_details_label_->setWordWrap(true); task_intent_layout->addWidget(task_intent_details_label_);
   readiness_tab_layout->insertWidget(0, workflow_card);
   workflow_tab_layout->addWidget(task_intent);
-  environment_task_editor_ = new QGroupBox("Edit task intent", right_panel);
-  environment_task_editor_->setObjectName("environmentTaskEditor");
-  auto * task_edit_form = new QFormLayout(environment_task_editor_);
-  auto task_text = [&](const char * name, const char * label) {
-    auto * field = new QLineEdit(environment_task_editor_); field->setObjectName(name);
-    task_edit_form->addRow(label, field);
-    connect(field, &QLineEdit::textEdited, this, [this](const QString &) {
-      if (!environment_task_editor_loading_) { environment_task_editor_dirty_ = true; mark_layout_dirty("Task intent edit"); }
-    });
-    return field;
-  };
-  auto task_number = [&](const char * name, const char * label, double maximum, const char * suffix) {
-    auto * field = new QDoubleSpinBox(environment_task_editor_); field->setObjectName(name);
-    field->setDecimals(6); field->setRange(0.0, maximum); field->setSingleStep(0.01); field->setSuffix(suffix);
-    task_edit_form->addRow(label, field);
-    connect(field, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
-      if (!environment_task_editor_loading_) { environment_task_editor_dirty_ = true; mark_layout_dirty("Task intent edit"); }
-    });
-    return field;
-  };
-  task_target_class_edit_ = task_text("taskTargetClass", "Target class (perception)");
-  task_min_confidence_edit_ = task_number("taskMinimumConfidence", "Minimum confidence", 1.0, "");
-  task_min_confidence_edit_->setSpecialValueText("Unset");
-  auto * confidence_policy = new QLabel("Unset — the current localization adapter does not provide confidence. A threshold requires a source with confidence; observation age and task safety checks still apply.", environment_task_editor_);
-  confidence_policy->setWordWrap(true);
-  task_edit_form->addRow(confidence_policy);
-  task_max_age_edit_ = task_number("taskMaximumAge", "Maximum observation age", 60.0, " s");
-  task_grasp_intent_edit_ = task_text("taskGraspIntent", "Grasp intent");
-  task_approach_edit_ = task_number("taskApproachDistance", "Approach distance", 2.0, " m");
-  task_retreat_edit_ = task_number("taskRetreatDistance", "Retreat distance", 2.0, " m");
-  task_place_roll_edit_ = task_number("taskPlaceRoll", "Placement roll", 6.283185, " rad");
-  task_place_pitch_edit_ = task_number("taskPlacePitch", "Placement pitch", 6.283185, " rad");
-  task_place_yaw_edit_ = task_number("taskPlaceYaw", "Placement yaw", 6.283185, " rad");
-  for (auto * field : {task_place_roll_edit_, task_place_pitch_edit_, task_place_yaw_edit_}) field->setMinimum(-6.283185);
-  task_home_pose_edit_ = task_text("taskHomePose", "Home / safe pose reference");
-  auto * authored_task_notice = new QLabel("Save commits task intent to environment.yaml. Generate refreshes runtime files. Live object poses and dimensions remain perception data.", environment_task_editor_);
-  authored_task_notice->setWordWrap(true); task_edit_form->addRow(authored_task_notice);
+  environment_task_editor_ = new TaskIntentEditor(right_panel);
+  connect(environment_task_editor_, &TaskIntentEditor::edited, this, [this] {
+    validation_stale_ = true; launch_artifacts_ready_ = false;
+    if (layout_state_label_) layout_state_label_->setText("Unsaved task edits — Save task before planning.");
+    refresh_preview_launch_ui();
+  });
+  connect(environment_task_editor_, &TaskIntentEditor::saved, this, [this] {
+    validation_stale_ = true;
+    if (layout_state_label_ && !layout_dirty_) layout_state_label_->setText("Task saved and reopened; Generate and Validate before planning.");
+    refresh_preview_launch_ui();
+  });
   workflow_tab_layout->addWidget(environment_task_editor_);
 
   auto * setup_checklist_group = new QGroupBox("Advanced diagnostics", readiness_tab);
@@ -4162,65 +4154,17 @@ void MainWindow::refresh_environment_task_editor()
 {
   if (!environment_task_editor_) return;
   if (!has_selected_scene()) { environment_task_editor_->setEnabled(false); return; }
-  const QString path = selected_scene_path() + "/environment.yaml";
-  if (environment_task_editor_dirty_ && environment_task_editor_path_ == path) return;
-  environment_task_editor_loading_ = true;
-  environment_task_editor_dirty_ = false;
-  environment_task_editor_path_ = path;
-  try {
-    const auto edits = workcell_builder::read_environment_task_edits(YAML::LoadFile(path.toStdString()));
-    task_target_class_edit_->setText(QString::fromStdString(edits.target_class));
-    task_grasp_intent_edit_->setText(QString::fromStdString(edits.grasp_intent));
-    task_home_pose_edit_->setText(QString::fromStdString(edits.home_pose));
-    task_min_confidence_edit_->setValue(edits.min_confidence);
-    task_max_age_edit_->setValue(edits.max_age_seconds);
-    task_approach_edit_->setValue(edits.approach_distance_m);
-    task_retreat_edit_->setValue(edits.retreat_distance_m);
-    task_place_roll_edit_->setValue(edits.placement_rpy[0]);
-    task_place_pitch_edit_->setValue(edits.placement_rpy[1]);
-    task_place_yaw_edit_->setValue(edits.placement_rpy[2]);
-    environment_task_editor_->setEnabled(true);
-    environment_task_editor_->setToolTip("Authoring source: " + path);
-  } catch (const std::exception & exc) {
-    environment_task_editor_->setEnabled(false);
-    environment_task_editor_->setToolTip("Task editing blocked: " + path + ": " + QString::fromStdString(exc.what()));
+  QString helper;
+  if (!helper_script_exists("task_intent_authoring.py", &helper)) {
+    environment_task_editor_->setToolTip("Task editing blocked: task_intent_authoring.py is missing.");
+    environment_task_editor_->setEnabled(false); return;
   }
-  environment_task_editor_loading_ = false;
+  environment_task_editor_->load_scene(selected_scene_path(), helper);
 }
 
 bool MainWindow::save_environment_task_editor(QString * error)
 {
-  if (!environment_task_editor_dirty_) return true;
-  const QString path = selected_scene_path() + "/environment.yaml";
-  try {
-    if (path != environment_task_editor_path_) throw std::runtime_error("Task editor belongs to another scene; reopen the selected task before saving");
-    workcell_builder::EnvironmentTaskEdits edits;
-    edits.target_class = task_target_class_edit_->text().trimmed().toStdString();
-    edits.grasp_intent = task_grasp_intent_edit_->text().trimmed().toStdString();
-    edits.home_pose = task_home_pose_edit_->text().trimmed().toStdString();
-    edits.min_confidence = task_min_confidence_edit_->value();
-    edits.max_age_seconds = task_max_age_edit_->value();
-    edits.approach_distance_m = task_approach_edit_->value();
-    edits.retreat_distance_m = task_retreat_edit_->value();
-    edits.placement_rpy = {{task_place_roll_edit_->value(), task_place_pitch_edit_->value(), task_place_yaw_edit_->value()}};
-    const YAML::Node authored = workcell_builder::apply_environment_task_edits(YAML::LoadFile(path.toStdString()), edits);
-    YAML::Emitter emitter; emitter << authored;
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(QByteArray(emitter.c_str(), emitter.size())) < 0 || !file.commit())
-      throw std::runtime_error(file.errorString().toStdString());
-    const auto reopened = workcell_builder::read_environment_task_edits(YAML::LoadFile(path.toStdString()));
-    if (reopened.target_class != edits.target_class || reopened.home_pose != edits.home_pose ||
-        std::abs(reopened.min_confidence - edits.min_confidence) > 1e-12 ||
-        reopened.approach_distance_m != edits.approach_distance_m || reopened.retreat_distance_m != edits.retreat_distance_m ||
-        reopened.placement_rpy != edits.placement_rpy)
-      throw std::runtime_error("Task persistence verification failed");
-    environment_task_editor_dirty_ = false;
-    append_studio_log("Task intent saved and reopened from " + path);
-    return true;
-  } catch (const std::exception & exc) {
-    const QString reason = "Save task intent failed: " + path + ": " + QString::fromStdString(exc.what());
-    append_studio_log(reason); if (error) *error = reason; return false;
-  }
+  return !environment_task_editor_ || !environment_task_editor_->dirty() || environment_task_editor_->save(error);
 }
 
 bool MainWindow::save_authored_environment_from_layout(QString * error)
@@ -4269,7 +4213,9 @@ void MainWindow::refresh_task_intent_panel()
   QString release = "Unconfigured";
   try {
     const auto intent = YAML::LoadFile((sc.scene_dir / "config/workcell_builder_task_intent.yaml").string());
-    release = QString::fromStdString(intent["place"]["release_strategy"].as<std::string>("Unconfigured"));
+    release = scalar_path(intent, {"schema"}) == "workcell_builder_task_intent/v2"
+      ? scalar_path(intent, {"place", "release", "strategy"})
+      : QString::fromStdString(intent["place"]["release_strategy"].as<std::string>("Unconfigured"));
     release.replace('_', ' ');
   } catch (const std::exception &) {}
   task_intent_details_label_->setText(QString("Target class: %1\nPick source: %2\nPick zone: %3\nGrasp: %4\nDestination: %5\nCamera: %6\nPerception source: %7%8")
@@ -4334,8 +4280,21 @@ void MainWindow::refresh_task_intent_panel()
   append_studio_log(QString("Task intent source: %1").arg(ti.source_file));
 }
 
-void MainWindow::validate_task_intent_for_selected_scene(){ refresh_task_intent_panel(); append_studio_log("Task intent validation completed (Fake Hardware | No Robot Motion | Preview Only)"); }
-void MainWindow::generate_or_update_task_intent_for_selected_scene(){ if (selected_scene_index_ < 0) return; const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_]; QString script; helper_script_exists("create_or_update_builder_task_intent.py", &script); workcell_builder::TaskIntentCommandInput input; input.scene_package = QString::fromStdString(sc.scene_dir.string()); input.task_id = QString::fromStdString(sc.scene_name) + "_pick_place"; input.task_type = "pick_place"; input.task_template = "pick_place"; input.grasp_strategy = "finger_top"; const auto resolved_input = workcell_builder::resolve_task_intent_command_input_defaults(input); const auto plan = workcell_builder::build_task_intent_command_plan(script, resolved_input); if (!plan.ready()) { append_studio_log("Generate/Update Task Intent: " + plan.missing_fields_message()); return; } QProcess process; process.start("python3", QStringList() << plan.script_path << plan.arguments); if (!process.waitForFinished(120000)) { append_studio_log("Generate/Update Task Intent: timed out while waiting for helper script."); return; } const int exit_code = process.exitCode(); const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput()).trimmed(); const QString stderr_text = QString::fromUtf8(process.readAllStandardError()).trimmed(); if (exit_code != 0) { append_studio_log(QString("Generate/Update Task Intent failed (exit=%1).").arg(exit_code)); if (!stderr_text.isEmpty()) append_studio_log("stderr: " + stderr_text.left(400)); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); return; } append_studio_log("Generate/Update Task Intent: " + plan.display_command() + " (Preview Only)"); if (!stdout_text.isEmpty()) append_studio_log("stdout: " + stdout_text.left(400)); const fs::path task_dir = sc.scene_dir / "task"; boost::system::error_code ec; fs::create_directories(task_dir, ec); fs::create_directories(sc.scene_dir / "plan_preview", ec); const fs::path config_path = sc.scene_dir / "config" / "workcell_builder_task_intent.yaml"; const fs::path generated_path = sc.scene_dir / "generated" / "workcell_builder_task_intent.yaml"; const fs::path source_path = fs::exists(config_path) ? config_path : generated_path; if (fs::exists(source_path)) { fs::copy_file(source_path, task_dir / "workcell_builder_task_intent.yaml", fs::copy_option::overwrite_if_exists, ec); if (ec) append_studio_log(QString("WARN Generate/Update Task Intent: failed writing task/workcell_builder_task_intent.yaml (%1)").arg(QString::fromStdString(ec.message()))); ec.clear(); fs::copy_file(source_path, task_dir / "task_recipe_from_builder_intent.yaml", fs::copy_option::overwrite_if_exists, ec); if (ec) append_studio_log(QString("WARN Generate/Update Task Intent: failed writing task/task_recipe_from_builder_intent.yaml (%1)").arg(QString::fromStdString(ec.message()))); std::ofstream preview((sc.scene_dir / "plan_preview" / "offline_plan_preview_request.yaml").string()); preview << "schema: offline_plan_preview_request/v1\nscene_name: " << sc.scene_name << "\nsource: existing_new_cell_flow\n"; preview.close(); } else { append_studio_log("WARN Generate/Update Task Intent: helper succeeded but no generated/config task intent file was found."); } refresh_task_intent_panel(); refresh_new_cell_checklist(); }
+void MainWindow::validate_task_intent_for_selected_scene()
+{
+  refresh_environment_task_editor();
+  if (environment_task_editor_) environment_task_editor_->validate_now();
+}
+void MainWindow::generate_or_update_task_intent_for_selected_scene()
+{
+  refresh_environment_task_editor();
+  QString error;
+  if (!environment_task_editor_ || !environment_task_editor_->save(&error)) {
+    append_studio_log("Save task blocked: " + error); return;
+  }
+  refresh_task_intent_panel();
+}
+
 void MainWindow::generate_yaml_draft_for_selected_scene()
 {
   if (selected_scene_index_ < 0) return;
@@ -4437,6 +4396,12 @@ void MainWindow::generate_yaml_draft_for_selected_scene()
 }
 
 void MainWindow::generate_scene_package_for_selected_scene() {
+  if (environment_task_editor_) {
+    environment_task_editor_->validate_now();
+    if (!environment_task_editor_->blocker().isEmpty()) {
+      append_studio_log("Generate blocked: " + environment_task_editor_->blocker()); return;
+    }
+  }
   if (selected_scene_index_ < 0) return;
   QObject::disconnect(generated_refresh_connection_);
   const quint64 serial = ++generated_refresh_serial_;
@@ -5080,6 +5045,17 @@ bool MainWindow::update_selected_scene_task_intent_bindings(
   const std::vector<std::vector<std::string>> & key_paths,
   const QString & selected_id)
 {
+  if (environment_task_editor_ && !key_paths.empty() && !key_paths.front().empty()) {
+    refresh_environment_task_editor();
+    const auto role = key_paths.front().front();
+    if ((role == "pick" || role == "place") && environment_task_editor_->model().authored_yaml.empty()) return false;
+    if (role == "pick") { environment_task_editor_->bind_pick(selected_id); return true; }
+    if (role == "place") { environment_task_editor_->bind_destination(selected_id); return true; }
+    if (environment_task_editor_->model().schema == "workcell_builder_task_intent/v2") {
+      append_studio_log("Use the equipment controls for camera bindings; task intent owns pick and place only.");
+      return false;
+    }
+  }
   if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return false;
   const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path task_intent_path = sc.scene_dir / "config" / "workcell_builder_task_intent.yaml";
@@ -5468,6 +5444,11 @@ void MainWindow::select_scene_by_row(int row)
 {
   if (dashboard_scene_table_ && dashboard_scene_table_->item(row, 0) && dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).isValid()) row = dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).toInt();
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
+  if (row != selected_scene_index_ && environment_task_editor_ && environment_task_editor_->dirty()) {
+    const auto answer = QMessageBox::question(this, "Unsaved task", "Save task edits before switching cells?",
+      QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+    if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !environment_task_editor_->save())) return;
+  }
   const QString previous_scene_path = selected_scene_path();
   if (place_asset_armed_) set_canvas_interaction_mode(CanvasInteractionMode::Select);
   selected_scene_index_ = row;
@@ -5778,6 +5759,13 @@ MainWindow::~MainWindow()
 
 void MainWindow::closeEvent(QCloseEvent * event)
 {
+  if (environment_task_editor_ && environment_task_editor_->dirty()) {
+    const auto answer = QMessageBox::question(this, "Unsaved task", "Save task edits before closing?",
+      QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+    if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !environment_task_editor_->save())) {
+      event->ignore(); return;
+    }
+  }
   if (preview_process_ && preview_process_->state() != QProcess::NotRunning) {
     close_after_preview_stop_ = true;
     stop_preview_process();
@@ -6117,6 +6105,8 @@ QString MainWindow::selected_scene_preview_command_block() const { return select
 MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness() const
 {
   SelectedSceneReadiness result;
+  if (environment_task_editor_ && environment_task_editor_->scene() == selected_scene_path() &&
+      !environment_task_editor_->blocker().isEmpty()) result.blockers << environment_task_editor_->blocker();
   if (!has_selected_scene() || selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) { result.blockers << "Select a scene."; return result; }
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const auto content = workcell_builder::scene_content_readiness(scene);
@@ -6376,6 +6366,12 @@ bool MainWindow::run_canvas_generated_parity_check(CanvasGeneratedParityMode mod
 
 void MainWindow::run_preview_build(){
   if (preview_state_=="PREVIEW_RUNNING" || preview_state_=="PREVIEW_STOPPING") { stop_preview_process(); return; }
+  if (environment_task_editor_) {
+    environment_task_editor_->validate_now();
+    if (!environment_task_editor_->blocker().isEmpty()) {
+      append_studio_log("Plan blocked: " + environment_task_editor_->blocker()); return;
+    }
+  }
   append_studio_log("Checking scene...");
   QStringList blockers; if(!selected_scene_preview_ready(&blockers)){ QMessageBox::warning(this,"Build & Run RViz",blockers.join("\n")); return; }
   if (preview_process_ && preview_process_->state() != QProcess::NotRunning) { append_studio_log("WARN Build & Run RViz ignored: a Workcell Studio-owned process is already active."); return; }
@@ -8961,7 +8957,6 @@ void MainWindow::create_starter_layout_from_preview()
 
 void MainWindow::revert_layout_changes()
 {
-  environment_task_editor_dirty_ = false;
   refresh_environment_task_editor();
   rebuild_digital_twin_canvas();
   layout_dirty_ = false;

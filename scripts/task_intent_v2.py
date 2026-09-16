@@ -26,6 +26,7 @@ STRATEGY_DIR = ROOT / "catalog" / "grasp_strategies"
 STRATEGIES = {"top_2f", "side_grip_basic", "finger_pinch_basic"}
 SUPPORTED_CAPABILITIES = {"two_finger_parallel"}
 TOOL_CAPABILITY_MAP = {
+    "robotiq_85": {"two_finger_parallel"},
     "robotiq_2f_85": {"two_finger_parallel"},
     "robotiq_85_gripper": {"two_finger_parallel"},
     "finger_gripper": {"two_finger_parallel"},

@@ -64,6 +64,8 @@ include_directories(gui)
 
 add_executable(workcell_builder
     gui/main.cpp
+    gui/task_intent_editor.cpp
+    gui/task_intent_editor.h
     gui/mainwindow.cpp
     gui/transform_clipboard_utils.cpp
     gui/mainwindow.h
@@ -355,6 +357,12 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
+  ament_add_gtest(workcell_task_intent_editor_test
+    test/task_intent_editor_test.cpp gui/task_intent_editor.cpp gui/new_cell_wizard.cpp src_task_intent_model.cpp)
+  if(TARGET workcell_task_intent_editor_test)
+    target_link_libraries(workcell_task_intent_editor_test Qt5::Widgets yaml-cpp OpenSSL::Crypto ${Boost_LIBRARIES})
+    target_compile_definitions(workcell_task_intent_editor_test PRIVATE WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  endif()
   ament_add_gtest(workcell_task_intent_model_test
     test/task_intent_model_test.cpp
     src_task_intent_model.cpp)
@@ -781,6 +789,7 @@ if(BUILD_TESTING)
     conveyor_pick_preview_test.cpp
     scene3d_mesh_preview_regression_test.cpp
     task_intent_readiness_test.cpp
+    task_intent_editor_test.cpp
     task_intent_model_test.cpp
     planning_readiness_test.cpp
     workcell_perception_snapshot_test.cpp
@@ -860,6 +869,11 @@ install(PROGRAMS
   scripts/conveyor_sorting_live_preview_node.py
   scripts/publish_sample_epd_snapshot.py
   scripts/epd_to_workcell_snapshot_node.py
+  ../../scripts/task_intent_authoring.py
+  ../../scripts/task_intent_v2.py
+  ../../scripts/validate_builder_task_intent.py
+  ../../scripts/capability_registry.py
+  ../../scripts/workcell_studio_layout_source.py
   ../../scripts/workcell_builder_task_zone_preview_node.py
   ../../scripts/workcell_studio_layout_mesh_preview_node.py
   ../../scripts/generate_moveit_collision_manifest.py
