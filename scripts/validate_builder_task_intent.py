@@ -53,13 +53,17 @@ def _load_scene_layout_ids(scene: Path) -> set[str]:
     return ids
 
 def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=None)->dict[str,Any]:
+    return validate_payload(_load(path), scene_package, grasp_dir)
+
+def validate_payload(payload, scene_package=None, grasp_dir=None):
+    """Validate an in-memory editor draft without rewriting authored files."""
     errors=[]; warnings=[]
-    payload=_load(path)
     if not payload:
         return {"status":"FAIL","errors":["Task intent YAML could not be loaded"],"warnings":[],"task_intent":{}}
     if payload.get('schema') == 'workcell_builder_task_intent/v2':
         normalized = normalize_v2(payload)
-        diagnostics = validate_intent(payload)
+        diagnostics = validate_intent(normalized)
+        destination = None
         if scene_package is not None:
             scene = _load(scene_package / 'environment.yaml')
             env = scene.get('environment', scene) if isinstance(scene, dict) else {}
@@ -78,27 +82,42 @@ def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=Non
             elif str(zone.get('target_ref')) != str(target.get('asset_ref')):
                 diagnostics.append({'code': 'PLACE_REGION_TARGET_MISMATCH', 'message': 'place region is bound to a different physical target asset'})
             try:
-                from physical_destination import resolve_destination
-                resolve_destination(env, str(target.get('region_ref')))
+                from physical_destination import resolve_destination, resolve_local_destination, RequestedLocalPoseError
+                destination = resolve_destination(env, str(target.get('region_ref')))
+                placement = normalized.get('place', {}).get('placement', {})
+                if placement.get('policy') in ('PREFERRED', 'EXACT'):
+                    try:
+                        destination = resolve_local_destination(env, target.get('asset_ref'),
+                            target.get('region_ref'), placement.get('requested_local_pose'))
+                    except RequestedLocalPoseError as exc:
+                        message = 'PLACE_LOCAL_POSE_OUTSIDE_REGION: ' + str(exc) + '. Edit the requested local pose or explicitly choose AUTO.'
+                        if placement['policy'] == 'EXACT':
+                            diagnostics.append({'code': 'PLACE_LOCAL_POSE_OUTSIDE_REGION', 'message': message})
+                        else:
+                            warnings.append(message + ' PREFERRED may use the region default.')
             except Exception as exc:
                 diagnostics.append({'code': 'R19_DESTINATION_INVALID', 'message': str(exc)})
+            safety = normalized.get('safety', {})
+            if safety.get('real_hardware_enabled') is True or safety.get('require_fake_hardware') is False:
+                diagnostics.append({'code': 'SAFETY_LOCK_REQUIRED', 'message': 'Task authoring requires fake hardware and the real robot lock.'})
             strategy_ref = normalized.get('pick', {}).get('grasp', {}).get('strategy_ref')
             catalog_dir = grasp_dir or (SCRIPT_DIR.parent / 'catalog' / 'grasp_strategies')
             if strategy_ref and not (catalog_dir / f'{strategy_ref}.yaml').is_file():
                 diagnostics.append({'code': 'STRATEGY_NOT_FOUND', 'message': f'strategy {strategy_ref} is not in the real catalog'})
             required = normalized.get('pick', {}).get('grasp', {}).get('required_capability')
-            installed = ((env.get('end_effector') or {}).get('id') or (env.get('tool') or {}).get('id') or
-                         (scene.get('end_effector') or {}).get('id') or (scene.get('tool') or {}).get('id'))
+            tool = env.get('end_effector') or env.get('tool') or scene.get('end_effector') or scene.get('tool') or {}
+            installed = (tool.get('id') or tool.get('name')) if isinstance(tool, dict) else tool
             available = TOOL_CAPABILITY_MAP.get(str(installed), set())
             if required and required not in available:
                 diagnostics.append({'code': 'INSTALLED_TOOL_CAPABILITY_MISMATCH', 'message': f'installed scene tool {installed!r} cannot provide two_finger_parallel'})
         errors = [d['code'] + ': ' + d['message'] for d in diagnostics]
         return {
-            'status': 'FAIL' if errors else 'PASS', 'errors': errors, 'warnings': [],
+            'status': 'FAIL' if errors else 'PASS', 'errors': errors, 'warnings': warnings,
             'task_intent': normalized, **({'normalized_intent_sha256': normalized_intent_hash(payload)} if not errors else {}),
             'missing_required_fields': [], 'suggested_next_actions': [] if errors else ['Generate task recipe from task intent.'],
             'readiness_classification': 'task_intent_blocked' if errors else 'task_intent_ready_offline',
             'safety': normalized.get('safety', {}),
+            'resolved_destination': destination if not errors else None,
         }
     if payload.get('schema')!='workcell_builder_task_intent/v1': errors.append('schema must be workcell_builder_task_intent/v1')
     task=payload.get('task') if isinstance(payload.get('task'),dict) else {}

@@ -1,0 +1,37 @@
+[  0%] Built target ensure_workcell_web3d_bundle_fresh
+[  0%] Generating secondary default-asset tree from canonical package assets
+[  0%] Built target generate_workcell_builder_secondary_assets
+[  4%] Automatic MOC and UIC for target workcell_builder
+[  4%] Built target workcell_builder_autogen
+Consolidate compiler generated dependencies of target workcell_builder
+[100%] Built target workcell_builder
+[  0%] Automatic MOC and UIC for target gtest
+[  0%] Automatic MOC and UIC for target gtest_main
+[  0%] Built target gtest_autogen
+[  0%] Built target gtest_main_autogen
+[ 33%] Built target gtest
+[ 66%] Built target gtest_main
+[ 66%] Automatic MOC and UIC for target workcell_task_intent_model_test
+[ 66%] Built target workcell_task_intent_model_test_autogen
+Consolidate compiler generated dependencies of target workcell_task_intent_model_test
+[100%] Built target workcell_task_intent_model_test
+[  0%] Automatic MOC and UIC for target gtest
+[  0%] Automatic MOC and UIC for target gtest_main
+[  0%] Built target gtest_main_autogen
+[  0%] Built target gtest_autogen
+[ 16%] Built target gtest
+[ 33%] Built target gtest_main
+[ 33%] Automatic MOC and UIC for target workcell_task_intent_editor_test
+[ 33%] Built target workcell_task_intent_editor_test_autogen
+Consolidate compiler generated dependencies of target workcell_task_intent_editor_test
+[100%] Built target workcell_task_intent_editor_test
+[  0%] Automatic MOC and UIC for target gtest
+[  0%] Automatic MOC and UIC for target gtest_main
+[  0%] Built target gtest_autogen
+[  0%] Built target gtest_main_autogen
+[ 25%] Built target gtest
+[ 50%] Built target gtest_main
+[ 50%] Automatic MOC and UIC for target workcell_new_cell_wizard_test
+[ 50%] Built target workcell_new_cell_wizard_test_autogen
+Consolidate compiler generated dependencies of target workcell_new_cell_wizard_test
+[100%] Built target workcell_new_cell_wizard_test

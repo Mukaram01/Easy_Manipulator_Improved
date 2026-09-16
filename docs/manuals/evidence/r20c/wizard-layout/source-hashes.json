@@ -1,0 +1,5 @@
+{
+  "workcell_builder/workcell_builder/gui/new_cell_wizard.cpp": "4f2a2c0621c024aeda6424ffc61b8c4d2c87045a867ac19a0c7a258f51aceb51",
+  "workcell_builder/workcell_builder/gui/new_cell_wizard.h": "48680b0578fb59e4a916193547ffbfa482baf5e42e41ce34dbc4e68e1c34cf46",
+  "workcell_builder/workcell_builder/test/new_cell_wizard_test.cpp": "9f1d9270af91bfbec21c621519894265ff151d3f6e2db3b5b409a01557cc5534"
+}

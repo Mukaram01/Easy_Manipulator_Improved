@@ -21,17 +21,58 @@
 #include <QTableWidget>
 #include <QTextEdit>
 #include <QScrollArea>
+#include <QScreen>
+#include <QShowEvent>
+#include <QStyle>
+#include <QWindow>
 #include <QSet>
 #include <QVBoxLayout>
 
 #include <array>
 #include <algorithm>
 #include <fstream>
+#include <sstream>
+#include <QSaveFile>
+#include <QTemporaryDir>
+#include <QProcess>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <iomanip>
+#include "scene_select_paths.h"
 #include <regex>
 
 namespace fs = boost::filesystem;
 
 NewCellWizard::NewCellWizard(const QString &workspace_root, QWidget *parent): QDialog(parent), workspace_root_(workspace_root){ build_ui(); refresh_validation(); }
+
+void NewCellWizard::fit_available_screen()
+{
+  auto *display = screen();
+  if (!display) return;
+  connect(display, &QScreen::availableGeometryChanged, this,
+    &NewCellWizard::fit_available_screen, Qt::UniqueConnection);
+  const auto available = display->availableGeometry();
+  const auto frame = windowHandle() ? windowHandle()->frameMargins() : QMargins();
+  // Qt screen geometry is in logical pixels, including when desktop scaling is enabled.
+  const int title_height = std::max(frame.top(), style()->pixelMetric(QStyle::PM_TitleBarHeight));
+  const QSize limit(std::max(1, available.width() - frame.left() - frame.right()),
+    std::max(1, available.height() - title_height - frame.bottom()));
+  setMinimumWidth(std::min(800, limit.width()));
+  setMaximumSize(limit);
+  resize(size().boundedTo(limit));
+  const auto bounds = frameGeometry();
+  move(pos() + QPoint(std::max(available.left(), std::min(bounds.left(), available.right() - bounds.width() + 1)) - bounds.left(),
+    std::max(available.top(), std::min(bounds.top(), available.bottom() - bounds.height() + 1)) - bounds.top()));
+}
+
+void NewCellWizard::showEvent(QShowEvent *event)
+{
+  QDialog::showEvent(event);
+  if (windowHandle()) connect(windowHandle(), &QWindow::screenChanged, this,
+    &NewCellWizard::fit_available_screen, Qt::UniqueConnection);
+  fit_available_screen();
+}
 
 bool NewCellWizard::is_valid_package_name(const QString &name){ static const std::regex re("^[a-z][a-z0-9_]*$"); return std::regex_match(name.toStdString(), re);} 
 QString NewCellWizard::default_gripper_rpy_text(){ return "-1.5708, -1.5708, 0"; }
@@ -114,7 +155,18 @@ void NewCellWizard::build_ui(){
  auto *body=new QHBoxLayout(); root->addLayout(body,1);
  steps_=new QListWidget(this); steps_->setObjectName("newCellWizardSteps"); steps_->addItems({"1 Basics","2 Robot","3 End Effector","4 Environment","5 Task Intent","6 Review"}); steps_->setFixedWidth(220); body->addWidget(steps_);
  stack_=new QStackedWidget(this); body->addWidget(stack_,1);
- auto mk_page=[&](QWidget*w){auto*c=new QWidget(this); auto*l=new QVBoxLayout(c); l->addWidget(w); l->addStretch(1); stack_->addWidget(c);};
+ auto mk_page=[&](QWidget*w){
+   for (auto *label : w->findChildren<QLabel *>()) label->setWordWrap(true);
+   for (auto *form : w->findChildren<QFormLayout *>()) form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+   auto *content = new QWidget;
+   auto *layout = new QVBoxLayout(content);
+   layout->addWidget(w); layout->addStretch(1);
+   auto *scroll = new QScrollArea(stack_);
+   scroll->setWidgetResizable(true);
+   scroll->setFrameShape(QFrame::NoFrame);
+   scroll->setWidget(content);
+   stack_->addWidget(scroll);
+ };
  auto mk_pose_spin=[](int decimals, const QString &suffix, const QString &tooltip){auto*s=new QDoubleSpinBox(); s->setDecimals(decimals); s->setRange(-1000,1000); s->setSuffix(suffix); s->setToolTip(tooltip); return s;};
  auto mk_pose_editor=[&](QDoubleSpinBox*&x,QDoubleSpinBox*&y,QDoubleSpinBox*&z,QDoubleSpinBox*&r,QDoubleSpinBox*&p,QDoubleSpinBox*&yaw){
    auto *wrap = new QWidget(this); auto *v = new QVBoxLayout(wrap);
@@ -186,10 +238,12 @@ void NewCellWizard::build_ui(){
 
  auto*nav=new QHBoxLayout(); back_=new QPushButton("Back"); next_=new QPushButton("Next"); create_=new QPushButton("Create Cell"); create_open_=new QPushButton("Create and Open"); auto*cancel=new QPushButton("Cancel"); nav->addWidget(back_); nav->addWidget(next_); nav->addStretch(1); nav->addWidget(create_); nav->addWidget(create_open_); nav->addWidget(cancel); root->addLayout(nav);
  connect(steps_,&QListWidget::currentRowChanged,stack_,&QStackedWidget::setCurrentIndex); connect(steps_,&QListWidget::currentRowChanged,this,&NewCellWizard::refresh_validation); steps_->setCurrentRow(0);
+ connect(scene_name_, &QLineEdit::textChanged, this, [this](const QString &) { refresh_validation(); });
+ connect(output_path_, &QLineEdit::textChanged, this, [this](const QString &) { refresh_validation(); });
  connect(back_,&QPushButton::clicked,this,[this]{steps_->setCurrentRow(std::max(0,steps_->currentRow()-1));}); connect(next_,&QPushButton::clicked,this,[this]{steps_->setCurrentRow(std::min(5,steps_->currentRow()+1));}); connect(cancel,&QPushButton::clicked,this,&QDialog::reject);
  connect(create_,&QPushButton::clicked,this,[this]{if(create_scene_scaffold(false))accept();}); connect(create_open_,&QPushButton::clicked,this,[this]{if(create_scene_scaffold(true))accept();});
  connect(rec,&QPushButton::clicked,this,&NewCellWizard::apply_recommended_environment_layout);
- connect(clear,&QPushButton::clicked,this,[this]{env_objects_table_->setRowCount(0); refresh_environment_parent_options(); refresh_summary();});
+ connect(clear,&QPushButton::clicked,this,[this]{recommended_profile_.clear(); env_objects_table_->setRowCount(0); refresh_environment_parent_options(); refresh_summary();});
  connect(env_edit_selected_button_,&QPushButton::clicked,this,&NewCellWizard::refresh_summary);
  connect(application_scenario_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){apply_scenario_defaults(); refresh_scenario_ui(); refresh_validation();});
  connect(object_source_mode_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){refresh_object_source_ui(); refresh_validation();});
@@ -202,7 +256,7 @@ void NewCellWizard::build_ui(){
  connect(robot_,&QComboBox::currentTextChanged,this,[this](const QString&){ refresh_robot_links_for_selection(); refresh_validation();});
  connect(ee_family_,&QComboBox::currentTextChanged,this,[this](const QString&f){ refresh_tool_model_options(f); apply_tool_profile_selection(); refresh_validation();});
  connect(ee_,&QComboBox::currentTextChanged,this,[this](const QString&){ apply_tool_profile_selection(); refresh_validation();});
- robot_family_->setCurrentText("Universal Robots / UR"); refresh_robot_model_options(robot_family_->currentText()); robot_->setCurrentText("UR5"); refresh_robot_links_for_selection(); ee_family_->setCurrentText("Robotiq"); refresh_tool_model_options(ee_family_->currentText()); ee_->setCurrentText("robotiq_85"); apply_tool_profile_selection(); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout(); select_scenario_by_id("static_table_pick_place"); refresh_scenario_ui(); refresh_object_source_ui();
+ robot_family_->setCurrentText("Universal Robots / UR"); refresh_robot_model_options(robot_family_->currentText()); robot_->setCurrentText("UR5"); refresh_robot_links_for_selection(); ee_family_->setCurrentText("Robotiq"); refresh_tool_model_options(ee_family_->currentText()); ee_->setCurrentText("robotiq_85"); apply_tool_profile_selection(); env_substeps_->setCurrentRow(0); apply_recommended_environment_layout(); select_object_source_by_id("manual_simulated"); select_scenario_by_id("static_table_pick_place"); refresh_scenario_ui(); refresh_object_source_ui();
 }
 QString NewCellWizard::normalize_tool_family(const QString &raw_family) const {
   const QString f = raw_family.toLower();
@@ -316,7 +370,58 @@ void NewCellWizard::refresh_robot_links_for_selection() {
 }
 
 void NewCellWizard::add_environment_asset_row(const QString &id,const QString &asset,const QString &parent,const QString &plink,const QString &clink,const QString &role){int r=env_objects_table_->rowCount(); env_objects_table_->insertRow(r); env_objects_table_->setCellWidget(r,0,new QCheckBox()); static_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0))->setChecked(true); env_objects_table_->setItem(r,1,new QTableWidgetItem(id)); env_objects_table_->setItem(r,2,new QTableWidgetItem(asset)); env_objects_table_->setItem(r,3,new QTableWidgetItem(parent)); env_objects_table_->setItem(r,4,new QTableWidgetItem(plink)); env_objects_table_->setItem(r,5,new QTableWidgetItem(clink)); env_objects_table_->setItem(r,6,new QTableWidgetItem("fixed")); env_objects_table_->setItem(r,7,new QTableWidgetItem(role)); env_objects_table_->setItem(r,8,new QTableWidgetItem("x=0.000, y=0.000, z=0.000, r=0.0000, p=0.0000, y=0.0000")); }
-void NewCellWizard::apply_recommended_environment_layout(){ env_objects_table_->setRowCount(0); add_environment_asset_row("workbench_01","workbench/table","world","world","table_link","support_surface"); add_environment_asset_row("source_bin_01","bin","workbench_01","table_link","bin_link","pick_source"); add_environment_asset_row("place_fixture_01","fixture/table","workbench_01","table_link","fixture_link","place_target"); add_environment_asset_row("reject_bin_01","bin","workbench_01","table_link","bin_link","reject_target"); add_environment_asset_row("conveyor_01","conveyor","world","world","conveyor_link","conveyor/source_line"); add_environment_asset_row("camera_01","RealSense D435i","workbench_01","table_link","camera_link","camera_view_zone"); add_environment_asset_row("camera_mount_01","camera_mount","workbench_01","table_link","mount_link","camera_support"); add_environment_asset_row("safety_zone_01","safety_zone","world","world","safety_zone_link","safety_guard"); refresh_environment_parent_options(); refresh_environment_review_table(); refresh_summary(); }
+QString NewCellWizard::profile_helper_path() const {
+ const auto resolved=workcell_builder::resolve_scene_select_paths(Workcell{}, fs::path(workspace_root_.toStdString()));
+ const auto candidate=QString::fromStdString((resolved.paths.workcell_path/"scripts/instantiate_workcell_studio_profile.py").string());
+ return QFileInfo::exists(candidate) ? candidate : QDir::current().absoluteFilePath("scripts/instantiate_workcell_studio_profile.py");
+}
+void NewCellWizard::apply_recommended_environment_layout(){
+ recommended_profile_.clear();
+ recommended_profile_error_.clear();
+ QProcess profile;
+ profile.start("python3", {profile_helper_path(), "--profile", "ur5_2f_workbench", "--describe"});
+ if (profile.waitForFinished(30000) && profile.exitCode()==0) {
+   const auto defaults=QJsonDocument::fromJson(profile.readAllStandardOutput()).object();
+   if(defaults.value("robot_model").toString()==robot_->currentText() && defaults.value("tool_model").toString()==ee_->currentText()) {
+     recommended_profile_=defaults.value("id").toString();
+     env_objects_table_->setRowCount(0);
+     for(const auto &value : defaults.value("rows").toArray()) {
+       const auto row=value.toObject(); const auto id=row.value("id").toString();
+       add_environment_asset_row(id,row.value("asset_type").toString(),"world","world",id,row.value("role").toString());
+       const auto pose=row.value("pose").toObject(); const auto xyz=pose.value("xyz").toArray(), rpy=pose.value("rpy").toArray();
+       QStringList values;
+       for(const auto &v : xyz) values << QString::number(v.toDouble(),'g',17);
+       for(const auto &v : rpy) values << QString::number(v.toDouble(),'g',17);
+       env_objects_table_->item(env_objects_table_->rowCount()-1,8)->setText(
+         QString("x=%1, y=%2, z=%3, r=%4, p=%5, y=%6").arg(values[0],values[1],values[2],values[3],values[4],values[5]));
+     }
+     const auto robot=defaults.value("robot").toObject(), tool=defaults.value("tool").toObject();
+     const auto set_pose=[](const QJsonArray &xyz,const QJsonArray &rpy,std::array<QDoubleSpinBox*,6> fields){
+       for(int i=0;i<6;++i){ fields[i]->setDecimals(12); fields[i]->setValue(i<3?xyz[i].toDouble():rpy[i-3].toDouble()); }
+     };
+     set_pose(robot.value("pose_xyz").toArray(),robot.value("pose_rpy").toArray(),{robot_x_,robot_y_,robot_z_,robot_roll_,robot_pitch_,robot_yaw_});
+     set_pose(tool.value("mount_pose_xyz").toArray(),tool.value("mount_pose_rpy").toArray(),{ee_x_,ee_y_,ee_z_,ee_roll_,ee_pitch_,ee_yaw_});
+     robot_tip_link_->setCurrentText(robot.value("tool_mount_link").toString());
+     refresh_environment_parent_options();
+     pick_source_->setCurrentText(defaults.value("pick_zone").toString());
+     place_target_->setCurrentText(defaults.value("place_asset").toString());
+     placement_mode_->setCurrentText("inside_bin");
+     refresh_summary(); return;
+   }
+ } else {
+   if(profile.state()!=QProcess::NotRunning) { profile.kill(); profile.waitForFinished(); }
+   if(robot_->currentText()=="UR5" && ee_->currentText()=="robotiq_85") {
+     recommended_profile_error_="Reviewed physical layout could not be loaded: " + QString::fromUtf8(profile.readAllStandardError());
+     env_objects_table_->setRowCount(0); refresh_validation(); return;
+   }
+ }
+ if(robot_->currentText()=="UR5" && ee_->currentText()=="robotiq_85") {
+   recommended_profile_error_="Reviewed physical layout metadata is invalid or incompatible.";
+   env_objects_table_->setRowCount(0); refresh_validation(); return;
+ }
+  env_objects_table_->setRowCount(0); add_environment_asset_row("workbench_01","workbench/table","world","world","table_link","support_surface"); add_environment_asset_row("source_bin_01","bin","workbench_01","table_link","bin_link","pick_source"); add_environment_asset_row("place_fixture_01","fixture/table","workbench_01","table_link","fixture_link","place_target"); add_environment_asset_row("reject_bin_01","bin","workbench_01","table_link","bin_link","reject_target"); add_environment_asset_row("conveyor_01","conveyor","world","world","conveyor_link","conveyor/source_line"); add_environment_asset_row("camera_01","RealSense D435i","workbench_01","table_link","camera_link","camera_view_zone"); add_environment_asset_row("camera_mount_01","camera_mount","workbench_01","table_link","mount_link","camera_support"); add_environment_asset_row("safety_zone_01","safety_zone","world","world","safety_zone_link","safety_guard"); refresh_environment_parent_options(); refresh_environment_review_table(); refresh_summary();
+}
+
 QStringList NewCellWizard::discover_environment_asset_catalog() const { QStringList found; const QStringList roots={"assets/environment","assets/environment_objects"}; for(const QString &rel:roots){ QDir dir(workspace_root_+"/"+rel); const auto entries=dir.entryList(QDir::Dirs|QDir::NoDotAndDotDot); for(const auto &e:entries) found<<e; } found.removeDuplicates(); return found; }
 void NewCellWizard::select_environment_substep(int index){ if(env_substep_stack_) env_substep_stack_->setCurrentIndex(std::max(0,index)); }
 void NewCellWizard::refresh_environment_review_table(){ env_review_table_->setRowCount(0); for(int r=0;r<env_objects_table_->rowCount();++r){ int rr=env_review_table_->rowCount(); env_review_table_->insertRow(rr); auto id=env_objects_table_->item(r,1)->text(); auto type=env_objects_table_->item(r,2)->text(); auto rel=env_objects_table_->item(r,3)->text()+"."+env_objects_table_->item(r,4)->text()+" -> "+env_objects_table_->item(r,5)->text(); auto role=env_objects_table_->item(r,7)->text(); auto pose=env_objects_table_->item(r,8)->text(); auto *cb=qobject_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0)); auto status=(cb&&cb->isChecked())?"enabled":"disabled"; env_review_table_->setItem(rr,0,new QTableWidgetItem(id)); env_review_table_->setItem(rr,1,new QTableWidgetItem(type)); env_review_table_->setItem(rr,2,new QTableWidgetItem(rel)); env_review_table_->setItem(rr,3,new QTableWidgetItem(role)); env_review_table_->setItem(rr,4,new QTableWidgetItem(pose)); env_review_table_->setItem(rr,5,new QTableWidgetItem(status)); }}
@@ -357,6 +462,7 @@ QStringList NewCellWizard::readiness_warnings() const{
 
 QStringList NewCellWizard::readiness_blockers() const{
  QStringList blockers;
+ if(!recommended_profile_error_.isEmpty()) blockers << recommended_profile_error_;
  if(selected_scenario_id()!="static_table_pick_place") return blockers;
  if(pick_source_->currentText().isEmpty()) blockers<<"Pick object source is required.";
  if(selected_object_source_id()=="manual_simulated" && !manual_object_geometry_valid()) blockers<<"Manual / simulated object requires an ID, frame, and positive primitive dimensions.";
@@ -366,8 +472,13 @@ QStringList NewCellWizard::readiness_blockers() const{
 }
 void NewCellWizard::refresh_environment_parent_options(){ pick_camera_->clear(); pick_source_->clear(); place_target_->clear(); place_frame_link_->clear(); env_parent_combo_->clear(); for(int r=0;r<env_objects_table_->rowCount();++r){auto*cb=qobject_cast<QCheckBox*>(env_objects_table_->cellWidget(r,0)); if(!cb||!cb->isChecked()) continue; auto role=env_objects_table_->item(r,7)->text().toLower(); auto id=env_objects_table_->item(r,1)->text(); env_parent_combo_->addItem(id); if(role.contains("camera")) pick_camera_->addItem(id); if(role.contains("pick_source")||role.contains("conveyor")) pick_source_->addItem(id); if(role.contains("place_target")||role.contains("reject_target")||role.contains("output_bin")||role.contains("fixture")||role.contains("support")) place_target_->addItem(id);} pick_source_->addItem("manual"); place_frame_link_->addItems({"target_link","top_surface","world"}); if(pick_camera_->findText("camera_01")>=0){ pick_zone_source_->setCurrentText("Camera view zone"); pick_camera_->setCurrentText("camera_01"); } if(pick_source_->findText("source_bin_01")>=0) pick_source_->setCurrentText("source_bin_01"); apply_scenario_defaults(); refresh_environment_review_table(); }
 
-fs::path NewCellWizard::scenes_root_path() const { return fs::path(workspace_root_.toStdString()) / "src" / "scenes"; }
-QString NewCellWizard::scene_name_error() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return "Scene/package name is required."; if(!is_valid_package_name(n)) return "Use lowercase letters, numbers, underscores only; must start with a letter."; return ""; }
+void NewCellWizard::set_output_root(const QString & path) { if (!path.isEmpty()) output_path_->setText(path); }
+fs::path NewCellWizard::scenes_root_path() const {
+ if (output_path_) return fs::absolute(fs::path(output_path_->text().trimmed().toStdString()));
+ const auto resolved = workcell_builder::resolve_scene_select_paths(Workcell{}, fs::path(workspace_root_.toStdString()));
+ return resolved.success ? resolved.paths.scenes_path : fs::path(workspace_root_.toStdString()) / "src" / "scenes";
+}
+QString NewCellWizard::scene_name_error() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return "Scene/package name is required."; if(output_path_ && output_path_->text().trimmed().isEmpty()) return "Output scenes path is required."; if(!is_valid_package_name(n)) return "Use lowercase letters, numbers, underscores only; must start with a letter."; return ""; }
 QString NewCellWizard::scene_name_warning() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return ""; const fs::path p=scenes_root_path()/n.toStdString(); if(fs::exists(p)) return "Warning: output folder already exists. Creation is blocked to avoid overwrite."; return ""; }
 
 void NewCellWizard::refresh_validation(){
@@ -377,7 +488,7 @@ void NewCellWizard::refresh_validation(){
  QString readiness=selected_scenario_id()=="static_table_pick_place"?"READY":"AUTHORING ONLY"; if(!blockers.isEmpty()) readiness="BLOCKED"; else if(!warnings.isEmpty() && selected_scenario_id()=="static_table_pick_place") readiness="WARNINGS";
  task_readiness_label_->setText(readiness);
  task_warning_->setText((blockers+warnings).join("\n"));
- create_->setEnabled(name_valid); create_open_->setEnabled(name_valid);
+ create_->setEnabled(name_valid && recommended_profile_error_.isEmpty()); create_open_->setEnabled(name_valid && recommended_profile_error_.isEmpty());
  refresh_summary();
 }
 
@@ -387,11 +498,24 @@ void NewCellWizard::refresh_summary(){
 }
 
 bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
- if(!scene_name_error().isEmpty()||!scene_name_warning().isEmpty()) return false;
- const fs::path scene_dir=scenes_root_path()/scene_name_->text().trimmed().toStdString();
+ if(!scene_name_error().isEmpty()||!scene_name_warning().isEmpty()||!recommended_profile_error_.isEmpty()) return false;
+ fs::path destination=fs::absolute(scenes_root_path())/scene_name_->text().trimmed().toStdString();
+ auto fail = [&](const QString & detail) {
+   steps_->setCurrentRow(0);
+   // Changing pages refreshes validation; retain the actionable save error.
+   scene_error_->setText("Save failed at " + QString::fromStdString(destination.string()) + ": " + detail +
+     ". Check the output folder and retry; no cell was created.");
+   return false;
+ };
  boost::system::error_code ec;
+ fs::create_directories(destination.parent_path(),ec);
+ if(ec) return fail(QString::fromStdString(ec.message()));
+ destination=fs::canonical(destination.parent_path())/destination.filename();
+ QTemporaryDir staging(QString::fromStdString((destination.parent_path()/".new-cell-XXXXXX").string()));
+ if(!staging.isValid()) return fail("Cannot create temporary authoring folder");
+ const fs::path scene_dir=fs::path(staging.path().toStdString())/destination.filename();
  fs::create_directories(scene_dir/"config",ec);
- if(ec) return false;
+ if(ec) return fail(QString::fromStdString(ec.message()));
 
  auto yaml_scalar=[](const QString &value){
    std::string s=value.toStdString();
@@ -409,7 +533,8 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  if(place_target_missing) readiness="BLOCKED";
  else if(unknown_links) readiness="WARNINGS";
 
- std::ofstream out((scene_dir/"environment.yaml").string());
+ std::ostringstream out;
+ out<<std::setprecision(17);
  out<<"scene_name: "<<scene_name_->text().trimmed().toStdString()<<"\n";
  out<<"robot: "<<robot_->currentText().toStdString()<<"\n";
  out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n";
@@ -551,6 +676,38 @@ out<<"workcell_studio:\n";
  else out<<"    - "<<yaml_scalar(warning_text)<<"\n";
 
  out<<"fake_hardware_first: true\nreal_robot_locked: true\nruntime_execution_enabled: false\nscaffold_only: true\n";
- out.close();
- result_.created=true; result_.open_in_scene_builder=open_in_builder; result_.scene_name=scene_name_->text().trimmed(); result_.scene_dir=scene_dir; return true;
+ auto save = [](const fs::path & path, const QByteArray & bytes, QString * error) {
+   QSaveFile file(QString::fromStdString(path.string()));
+   if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size() || !file.commit()) {
+     *error=file.errorString(); return false;
+   }
+   return true;
+ };
+ QString error;
+ if(!save(scene_dir/"environment.yaml", QByteArray::fromStdString(out.str()), &error)) return fail(error);
+ if(pick_place_scenario && !recommended_profile_.isEmpty()) {
+   QProcess materialize;
+   materialize.start("python3", {profile_helper_path(), "--profile", recommended_profile_,
+     "--scene", QString::fromStdString(scene_dir.string()), "--destination", QString::fromStdString(destination.string())});
+   if(!materialize.waitForFinished(180000)) { materialize.kill(); materialize.waitForFinished(); return fail("Physical scene preparation did not finish"); }
+   if(materialize.exitStatus()!=QProcess::NormalExit || materialize.exitCode()!=0)
+     return fail("Physical scene preparation failed: " + QString::fromUtf8(materialize.readAllStandardError()) + QString::fromUtf8(materialize.readAllStandardOutput()));
+ } else if(pick_place_scenario) {
+   const auto resolved=workcell_builder::resolve_scene_select_paths(Workcell{}, fs::path(workspace_root_.toStdString()));
+   QString helper=QString::fromStdString((resolved.paths.workcell_path/"scripts/task_intent_authoring.py").string());
+   if(!QFileInfo::exists(helper)) helper=QDir::current().absoluteFilePath("scripts/task_intent_authoring.py");
+   QProcess authoring;
+   authoring.start("python3", {helper, QString::fromStdString(scene_dir.string())});
+   if(!authoring.waitForFinished(30000)) { authoring.kill(); authoring.waitForFinished(); return fail("Task authoring helper did not finish"); }
+   const auto report=QJsonDocument::fromJson(authoring.readAllStandardOutput()).object();
+   auto intent=report.value("task_intent").toObject();
+   if(authoring.exitStatus()!=QProcess::NormalExit || authoring.exitCode()!=0 || intent.isEmpty())
+     return fail("Task intent could not be saved: " + QString::fromUtf8(QJsonDocument(report).toJson(QJsonDocument::Compact)) + QString::fromUtf8(authoring.readAllStandardError()));
+   intent.insert("scene_package", QString::fromStdString(destination.string()));
+   if(!save(scene_dir/"config/workcell_builder_task_intent.yaml", QJsonDocument(intent).toJson(), &error)) return fail(error);
+ }
+ if(fs::exists(destination)) return fail("Output folder already exists; choose a different name");
+ fs::rename(scene_dir, destination, ec);
+ if(ec) return fail(QString::fromStdString(ec.message()));
+ result_.created=true; result_.open_in_scene_builder=open_in_builder; result_.scene_name=scene_name_->text().trimmed(); result_.scene_dir=destination; return true;
 }

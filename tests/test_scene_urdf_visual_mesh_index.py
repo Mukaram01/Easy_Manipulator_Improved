@@ -531,7 +531,7 @@ def test_require_xacro_strict_rejects_best_effort_modes():
     assert all(scene.get('extraction_mode') in {'real_xacro_expanded', 'xacro_expanded'} for scene in data.get('scenes', []))
 
 
-def test_require_xacro_strict_nonzero_on_simulated_xacro_failure(monkeypatch):
+def test_require_xacro_strict_nonzero_on_simulated_xacro_failure(monkeypatch, capsys):
     import sys
     import scripts.extract_scene_urdf_visual_mesh_index as mesh_index
 
@@ -554,6 +554,10 @@ def test_require_xacro_strict_nonzero_on_simulated_xacro_failure(monkeypatch):
     finally:
         sys.argv = original_argv
     assert rc != 0
+    error = capsys.readouterr().err
+    assert 'Required xacro expansion failed for ' in error
+    assert 'scene.urdf.xacro' in error
+    assert 'simulated failure' in error
 
 
 def test_static_ur_robot_fallback_is_gated_by_expansion_mode_and_mesh_presence():

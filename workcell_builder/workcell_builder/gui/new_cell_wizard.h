@@ -36,6 +36,7 @@ class NewCellWizard : public QDialog {
   Q_OBJECT
 public:
   explicit NewCellWizard(const QString &workspace_root, QWidget *parent = nullptr);
+  void set_output_root(const QString & path);
   NewCellWizardResult result() const { return result_; }
 
   static bool is_valid_package_name(const QString &name);
@@ -57,7 +58,11 @@ public:
   bool select_object_source_by_id(const QString &source_id);
   bool manual_object_geometry_valid() const;
 
+protected:
+  void showEvent(QShowEvent *event) override;
+
 private:
+  void fit_available_screen();
   struct ToolSelectionReadiness { QString status; QString reason; };
   struct ToolModelProfile {
     QString family;
@@ -109,6 +114,9 @@ private:
 
   NewCellWizardResult result_;
   QString workspace_root_;
+  QString recommended_profile_;
+  QString recommended_profile_error_;
+  QString profile_helper_path() const;
 
   QListWidget *steps_{nullptr};
   QStackedWidget *stack_{nullptr};

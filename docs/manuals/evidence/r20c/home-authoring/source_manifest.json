@@ -1,0 +1,17 @@
+{
+  "base_main": "7b3207baa7a18f1d4b7e4e7df72173761908cc31",
+  "reused_branch_head": "6438bd21",
+  "scope": "Working-source hashes; final test includes Save/Discard coverage after the display run. Product sources unchanged between final display and headless checks.",
+  "sha256": {
+    "workcell_builder/workcell_builder/gui/mainwindow.cpp": "c863c1c1fe2c53525f3fe97f1e066efd2168b350d5ab9980cdcee32aae883220",
+    "workcell_builder/workcell_builder/gui/task_intent_editor.cpp": "2802442305a98ba5db8b46eaf3e35af1f711960a95975d65c2240e2f5cd5e79b",
+    "workcell_builder/workcell_builder/gui/task_intent_editor.h": "851329ec416f641dc52e4623517ac9ddf64ef14a2ec746f560e5c62d96632d78",
+    "workcell_builder/workcell_builder/src_task_intent_model.cpp": "f8bfaa324b3529027885158ad1ffb4845513b6f171e5d2727b87fb131accb0e0",
+    "workcell_builder/workcell_builder/test/task_intent_editor_test.cpp": "b5ca9a01d005390d603a2aaae021917d2b3a69593fc51be6d07a1d32c60807d2",
+    "scripts/task_intent_authoring.py": "02e0692e12110cc10c8eaf2538eaf9bdc1d1a71c99b0a45a55dee22b61b38677",
+    "scripts/task_intent_v2.py": "956adc46e0a45b049447d2fc8204eaf92f221221d03e3c3ddcf2530a3647d246",
+    "scripts/validate_builder_task_intent.py": "d586c58d538e50067ab3019e6a59658a0e7c51cd49f039473cca79da1e65d7c0",
+    "scenes/ur5_2f_test/environment.yaml": "e3ea1f594b4df72fa55e1bf62ca92df1fcb5d75c470a2cab18b9ea3e2534bc21",
+    "scenes/ur5_2f_test/config/workcell_builder_task_intent.yaml": "9eda4d7908fc5fd65dac370bcde404770e6e6586b3f67a98b389dee31f990d2b"
+  }
+}

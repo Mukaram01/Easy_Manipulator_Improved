@@ -1,0 +1,27 @@
+Running main() from /opt/ros/humble/src/gtest_vendor/src/gtest_main.cc
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from TaskIntentModel
+[ RUN      ] TaskIntentModel.CanonicalHashGoldenIsStableAcrossYamlFormatting
+[       OK ] TaskIntentModel.CanonicalHashGoldenIsStableAcrossYamlFormatting (12 ms)
+[ RUN      ] TaskIntentModel.CanonicalRepresentationPreservesScalarTypesAndArrayOrder
+[       OK ] TaskIntentModel.CanonicalRepresentationPreservesScalarTypesAndArrayOrder (9 ms)
+[ RUN      ] TaskIntentModel.ParsesTheTypedV2AuthoredShape
+[       OK ] TaskIntentModel.ParsesTheTypedV2AuthoredShape (1 ms)
+[ RUN      ] TaskIntentModel.NullableAndVariableLengthValuesRemainSemantic
+[       OK ] TaskIntentModel.NullableAndVariableLengthValuesRemainSemantic (0 ms)
+[ RUN      ] TaskIntentModel.AuthoritativeHashRequiresValidatedModel
+[       OK ] TaskIntentModel.AuthoritativeHashRequiresValidatedModel (37 ms)
+[ RUN      ] TaskIntentModel.InvalidV2NeverGetsAuthoritativeHash
+[       OK ] TaskIntentModel.InvalidV2NeverGetsAuthoritativeHash (1 ms)
+[ RUN      ] TaskIntentModel.SharedGoldenFixturesMatchCanonicalBytesAndHashes
+[       OK ] TaskIntentModel.SharedGoldenFixturesMatchCanonicalBytesAndHashes (12 ms)
+[ RUN      ] TaskIntentModel.PresenceAndPoseScalarParity
+[       OK ] TaskIntentModel.PresenceAndPoseScalarParity (51 ms)
+[ RUN      ] TaskIntentModel.FieldEditsPreserveUneditedValuesAndInvalidateHash
+[       OK ] TaskIntentModel.FieldEditsPreserveUneditedValuesAndInvalidateHash (37 ms)
+[----------] 9 tests from TaskIntentModel (161 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (161 ms total)
+[  PASSED  ] 9 tests.

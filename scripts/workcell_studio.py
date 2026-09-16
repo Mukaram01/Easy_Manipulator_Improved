@@ -476,9 +476,9 @@ def import_builder_scene(args: argparse.Namespace) -> int:
     cmd=[sys.executable, str(SCRIPT_DIR / 'generate_workcell_static_preview.py'), '--cell-definition', str(cell_def), '--output-dir', str(preview_dir), '--title', f"Builder Import: {_scene_name(scene_pkg)}", '--json']
     if env_layout: cmd += ['--environment-layout', str(env_layout)]
     if task_intent_path and task_intent_path.exists(): cmd += ['--task-intent', str(task_intent_path)]
-    if task_recipe_path.exists(): cmd += ['--task-recipe', str(task_recipe_path)]
+    if recipe_gen.get('status') == 'PASS' and task_recipe_path.exists(): cmd += ['--task-recipe', str(task_recipe_path)]
     _, preview_payload = _run_json(cmd, 'static preview')
-    if task_intent and recipe_gen.get("status") != "PASS":
+    if task_intent and recipe_gen.get("status") not in {"PASS", "BLOCKED"}:
         recipe_path = generated_dir / "task_recipe_from_builder_intent.yaml"
         rc, recipe_gen = _run_json([sys.executable, str(SCRIPT_DIR / "convert_builder_task_intent_to_task_recipe.py"), "--task-intent", str(Path(task_intent.get("source_file", generated_dir / "workcell_builder_task_intent.yaml"))), "--output", str(recipe_path), "--scene-package", str(scene_pkg), "--validate", "--json"], "task recipe conversion")
 

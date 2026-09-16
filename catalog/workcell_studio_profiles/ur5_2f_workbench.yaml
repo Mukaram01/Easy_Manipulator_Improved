@@ -1,0 +1,15 @@
+# Reviewed physical defaults, referenced rather than copied into a second catalog.
+# New cells receive independent authored values, never the reference scene's task.
+id: ur5_2f_workbench
+label: Reviewed UR5 + Robotiq 85 workbench / destination bin / camera
+robot_model: UR5
+tool_model: robotiq_85
+environment_source: scenes/ur5_2f_test/environment.yaml
+model_source: scenes/ur5_2f_test/urdf/scene.urdf.xacro
+pick_zone: pick_zone_main
+place_asset: target_bin_default
+place_region: default_drop_zone
+model_origins:
+  ur_robot: "['robot']['pose_{axis}']"
+  robotiq_85_gripper: "['tool']['mount_pose_{axis}']"
+  sensor_d435i: "['camera']['pose']{slice}"

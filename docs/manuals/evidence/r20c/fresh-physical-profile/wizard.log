@@ -1,0 +1,47 @@
+Running main() from /opt/ros/humble/src/gtest_vendor/src/gtest_main.cc
+[==========] Running 16 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 16 tests from NewCellWizard
+[ RUN      ] NewCellWizard.ScenePackageNameValidation
+[       OK ] NewCellWizard.ScenePackageNameValidation (1 ms)
+[ RUN      ] NewCellWizard.DefaultGripperRpy
+[       OK ] NewCellWizard.DefaultGripperRpy (0 ms)
+[ RUN      ] NewCellWizard.RecommendedLayoutDefaults
+[       OK ] NewCellWizard.RecommendedLayoutDefaults (0 ms)
+[ RUN      ] NewCellWizard.UrDefaults
+[       OK ] NewCellWizard.UrDefaults (0 ms)
+[ RUN      ] NewCellWizard.FrankaDefaults
+[       OK ] NewCellWizard.FrankaDefaults (0 ms)
+[ RUN      ] NewCellWizard.PlaceholderDefaults
+[       OK ] NewCellWizard.PlaceholderDefaults (0 ms)
+[ RUN      ] NewCellWizard.RobotFamilyModelMappingsAreDeterministic
+[       OK ] NewCellWizard.RobotFamilyModelMappingsAreDeterministic (0 ms)
+[ RUN      ] NewCellWizard.RobotiqDefaults
+[       OK ] NewCellWizard.RobotiqDefaults (0 ms)
+[ RUN      ] NewCellWizard.SuctionDefaults
+[       OK ] NewCellWizard.SuctionDefaults (0 ms)
+[ RUN      ] NewCellWizard.ScaffoldReadinessClassification
+[       OK ] NewCellWizard.ScaffoldReadinessClassification (0 ms)
+[ RUN      ] NewCellWizard.IndustrialScenarioCatalogDrivesCanonicalChoices
+[       OK ] NewCellWizard.IndustrialScenarioCatalogDrivesCanonicalChoices (1 ms)
+[ RUN      ] NewCellWizard.ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview
+Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
+[       OK ] NewCellWizard.ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview (229 ms)
+[ RUN      ] NewCellWizard.PickPlaceConfigurationRemainsAvailable
+[       OK ] NewCellWizard.PickPlaceConfigurationRemainsAvailable (186 ms)
+[ RUN      ] NewCellWizard.DynamicObjectSourcesDoNotRequireManualGeometry
+[       OK ] NewCellWizard.DynamicObjectSourcesDoNotRequireManualGeometry (153 ms)
+[ RUN      ] NewCellWizard.ManualObjectSourceRequiresFallbackGeometry
+[       OK ] NewCellWizard.ManualObjectSourceRequiresFallbackGeometry (154 ms)
+[ RUN      ] NewCellWizard.PagesScrollWithoutDisplacingNavigation
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[       OK ] NewCellWizard.PagesScrollWithoutDisplacingNavigation (178 ms)
+[----------] 16 tests from NewCellWizard (903 ms total)
+
+[----------] Global test environment tear-down
+[==========] 16 tests from 1 test suite ran. (903 ms total)
+[  PASSED  ] 16 tests.
+QThreadStorage: Thread 0x618dcce7caa0 exited after QThreadStorage 2 destroyed
+QThreadStorage: Thread 0x618dcce7caa0 exited after QThreadStorage 1 destroyed

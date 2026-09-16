@@ -1,0 +1,98 @@
+Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
+Workcell Studio scene metadata snapshot: scene_id=ur5_2f_sorting_test revision=501670335545525034 files_parsed=6 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=suction_test revision=17520042545062110127 files_parsed=6 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=ur5_3f_test revision=13592330833910139574 files_parsed=6 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=ur3_suction_test revision=13860308955439559315 files_parsed=6 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=ur10_2f_test revision=14483203540285933678 files_parsed=6 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=ur5_2f_test revision=5836469134231258839 files_parsed=6 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=ur5_2f_builder_pick_place_demo revision=12263282186013532098 files_parsed=7 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=ur5_airpick4_test revision=8849064185769843600 files_parsed=6 cache_hits=0 invalidation_reason=initial
+Asset thumbnail failed: asset=camera_stand.urdf reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/environment/camera_stand_description/urdf/camera_stand.urdf.xacro".
+Asset thumbnail failed: asset=onrobot_airpick4_description reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/urdf/onrobot_airpick4_gripper_standalone.urdf.xacro".
+Asset thumbnail failed: asset=robotiq_85_description reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/urdf/robotiq_85_gripper.urdf.xacro".
+Asset thumbnail failed: asset=robotiq_3f_gripper_description reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/urdf/robotiq-3f-gripper_articulated.urdf.xacro".
+Asset thumbnail failed: asset=single_suction_description reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/end_effectors/single_suction_gripper/single_suction_description/urdf/single_suction_gripper.urdf.xacro".
+Asset thumbnail failed: asset=single_suction_gripper.srdf reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/end_effectors/single_suction_gripper/single_suction_moveit_config/config/single_suction_gripper.srdf.xacro".
+Asset thumbnail failed: asset=bin_large.urdf reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/environment/bin_large_description/urdf/bin_large.urdf.xacro".
+Asset thumbnail failed: asset=bin_small.urdf reason=No suitable reader found for the file format of file "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/environment/bin_small_description/urdf/bin_small.urdf.xacro".
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Product View owned server bound: pid=24806 port=40967 session=5f11c72c-caaa-49d8-b6ce-5b3b523ef079 root=/home/user/workcell_ws/src/easy_manipulation_deployment
+Scene3D smoke render-ready: scene= "ur5_2f_test" received= 0 rendered= 0 selectable= 0 hierarchy= 0
+Scene3D smoke load: scene= "ur5_2f_test" static_candidates= 18 filtered= 0
+Product View owned server stopped: pid=24806 exited=1

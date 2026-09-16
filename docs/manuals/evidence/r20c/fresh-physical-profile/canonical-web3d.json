@@ -1,0 +1,22 @@
+{
+    "blockers": [
+    ],
+    "completed_cycles": 2,
+    "pass": true,
+    "requested_cycles": 2,
+    "results": [
+        {
+            "cycle": 1,
+            "scene": "ur5_2f_test",
+            "scene_identity_matches": true,
+            "status": "Web3D Product View — ready"
+        },
+        {
+            "cycle": 2,
+            "scene": "ur5_2f_test",
+            "scene_identity_matches": true,
+            "status": "Web3D Product View — ready"
+        }
+    ],
+    "schema": "workcell_studio_web3d_scene_switch_smoke/v1"
+}

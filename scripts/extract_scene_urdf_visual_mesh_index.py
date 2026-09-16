@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, ast, collections, copy, importlib, importlib.util, json, math, os, re, shutil, subprocess
+import argparse, ast, collections, copy, importlib, importlib.util, json, math, os, re, shutil, subprocess, sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -2208,7 +2208,11 @@ def main():
         report['emitted_visual_count']=report.get('emitted_visual_count',0)+len(items)
         report['unresolved_placeholder_count']=report.get('unresolved_placeholder_count',0)+len(unresolved)
         report['scenes'].append({'scene':scene_dir.name,'extraction_mode':mode,'urdf_expansion_mode':mode,'xacro_available':payload['xacro_available'],'xacro_real_command_succeeded':real_xacro_command_succeeded,'xacro_status':xacro_diagnostics.get('xacro_status', 'not_attempted' if not xacro_avail else ('real_xacro_succeeded' if real_xacro_command_succeeded else 'real_xacro_failed')),'xacro_diagnostics':_portable_source_metadata(xacro_diagnostics),'expanded_urdf_written':bool(expanded_path),'safe_for_preview':safe,'unresolved_placeholder_count':len(unresolved),'mesh_backed_count':sum(1 for i in items if i.get('geometry_type')=='mesh'),'skipped_count':sum(1 for i in items if i.get('render_skip_reason')),'fallback_reason':fallback_reason,'urdf_primitive_count':sum(1 for i in items if i.get('geometry_type') in ('box','cylinder','sphere','capsule')),'primitive_fallback_count':static_robot_fallback_count,'stale_index':False,'status':'PASS' if safe else 'WARN'})
-        if a.require_xacro and mode not in ('real_xacro_expanded','xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'): return 2
+        if a.require_xacro and mode not in ('real_xacro_expanded','xacro_expanded','xacro_lite_expanded','xacro_lite_fallback'):
+            # The caller captures stderr, not the failed mesh-index payload.
+            # Preserve the strict failure and propagate its original cause.
+            print(f"Required xacro expansion failed for {urdf_path}: {fallback_reason or missing_reason or mode}", file=sys.stderr)
+            return 2
     (ROOT/'build').mkdir(exist_ok=True)
     (ROOT/'build/workcell_studio_urdf_visual_mesh_index_report.json').write_text(json.dumps(report,indent=2)+'\n')
     if a.fail_on_unexpanded and report['best_effort_count']>0: return 3

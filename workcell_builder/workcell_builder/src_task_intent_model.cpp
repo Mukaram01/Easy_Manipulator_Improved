@@ -112,6 +112,7 @@ TaskIntentModel TaskIntentModel::from_yaml(const std::string & yaml_text)
 {
   const auto root = YAML::Load(yaml_text);
   TaskIntentModel model;
+  model.authored_yaml = yaml_text;
   model.scene_package = root["scene_package"] && root["scene_package"].IsScalar() ? root["scene_package"].as<std::string>() : "";
   model.routing_yaml = root["routing"] ? YAML::Dump(root["routing"]) : "";
   const auto task = root["task"];
@@ -181,6 +182,26 @@ TaskIntentModel TaskIntentModel::from_yaml(const std::string & yaml_text)
   return model;
 }
 
+std::string TaskIntentModel::to_yaml() const
+{
+  return authored_yaml;
+}
+
+void TaskIntentModel::set_field(const std::vector<std::string> & path, const std::string & value_yaml)
+{
+  if (path.empty()) throw std::invalid_argument("Task field path is empty");
+  auto root = YAML::Load(authored_yaml);
+  auto cursor = root;
+  for (std::size_t i = 0; i + 1 < path.size(); ++i) {
+    if (!cursor[path[i]] || cursor[path[i]].IsNull()) cursor[path[i]] = YAML::Node(YAML::NodeType::Map);
+    cursor.reset(cursor[path[i]]);
+  }
+  cursor[path.back()] = YAML::Load(value_yaml);
+  // Keep unknown fields and invalid EXACT requests verbatim in the draft.
+  // Validation never grants a stale hash after an edit.
+  *this = from_yaml(YAML::Dump(root));
+}
+
 std::string canonical_task_intent_json_for_testing(const std::string & yaml_text)
 {
   return canonical(YAML::Load(yaml_text));
@@ -242,7 +263,7 @@ std::optional<TaskIntentModel> TaskIntentModel::from_validated_yaml(const std::s
     if (present(root["tool"]) || present(root["safety"]["runtime_io_applied"]) || present(root["safety"]["motion_started"]) || present(root["safety"]["ros_launch_started"])) return std::nullopt;
     root["pick"]["grasp"]["policy"] = grasp_policy; root["place"]["placement"]["policy"] = place_policy;
     auto model = from_yaml(yaml_text); model.grasp.policy = grasp_policy; model.place.policy = place_policy;
-    model.validated = true; model.normalized_yaml = canonical(root); return model;
+    model.validated = true; model.normalized_yaml = canonical(root); model.authored_yaml = model.normalized_yaml; return model;
   }
   catch (...) { return std::nullopt; }
 }

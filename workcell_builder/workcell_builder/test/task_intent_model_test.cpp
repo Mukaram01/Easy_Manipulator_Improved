@@ -101,3 +101,20 @@ TEST(TaskIntentModel, PresenceAndPoseScalarParity)
   auto quoted = valid; quoted.replace(quoted.find("[0,0,0]"), 7, "[\"0\",0,0]");
   EXPECT_FALSE(workcell_builder::TaskIntentModel::from_validated_yaml(quoted));
 }
+
+TEST(TaskIntentModel, FieldEditsPreserveUneditedValuesAndInvalidateHash)
+{
+  const std::string text = "schema: workcell_builder_task_intent/v2\ntask: {id: t}\npick: {selection: {source_ref: source, object_filter: {class_id: bottle, min_confidence: null}}, grasp: {policy: AUTO, required_capability: two_finger_parallel}}\nplace: {target: {asset_ref: bin, region_ref: drop}, placement: {policy: AUTO}, release: {strategy: tool_release}}\nsafety: {real_hardware_enabled: false}\nprovenance: {custom: preserved}\n";
+  auto model = *workcell_builder::TaskIntentModel::from_validated_yaml(text);
+  model.set_field({"pick", "selection", "object_filter", "class_id"}, "\"part\"");
+  EXPECT_EQ(model.pick_selection.class_id, "part");
+  EXPECT_FALSE(model.validated);
+  auto saved = YAML::Load(model.to_yaml());
+  EXPECT_TRUE(saved["pick"]["selection"]["object_filter"]["min_confidence"].IsNull());
+  EXPECT_EQ(saved["provenance"]["custom"].as<std::string>(), "preserved");
+  auto reopened = workcell_builder::TaskIntentModel::from_validated_yaml(model.to_yaml());
+  ASSERT_TRUE(reopened);
+  EXPECT_EQ(reopened->pick_selection.source_ref, "source");
+  EXPECT_NE(workcell_builder::authoritative_task_intent_sha256(*reopened),
+            workcell_builder::authoritative_task_intent_sha256(*workcell_builder::TaskIntentModel::from_validated_yaml(text)));
+}

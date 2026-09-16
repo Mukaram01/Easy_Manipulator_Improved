@@ -1,0 +1,52 @@
+Running main() from /opt/ros/humble/src/gtest_vendor/src/gtest_main.cc
+[==========] Running 15 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 15 tests from TaskIntentEditor
+[ RUN      ] TaskIntentEditor.WidgetEditsAtomicSaveAndReopenPreserveHashAndBindings
+Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
+[       OK ] TaskIntentEditor.WidgetEditsAtomicSaveAndReopenPreserveHashAndBindings (441 ms)
+[ RUN      ] TaskIntentEditor.InvalidExactRemainsUnchangedAndBlocksAfterReopen
+[       OK ] TaskIntentEditor.InvalidExactRemainsUnchangedAndBlocksAfterReopen (380 ms)
+[ RUN      ] TaskIntentEditor.MalformedInputAndExternalChangesCannotSilentlySave
+[       OK ] TaskIntentEditor.MalformedInputAndExternalChangesCannotSilentlySave (230 ms)
+[ RUN      ] TaskIntentEditor.ExistingNewCellWizardCreatesEditableV2DraftWithoutFileRepair
+[       OK ] TaskIntentEditor.ExistingNewCellWizardCreatesEditableV2DraftWithoutFileRepair (787 ms)
+[ RUN      ] TaskIntentEditor.PolicyChangesAndAdvancedFieldsKeepAuthoredConstraints
+[       OK ] TaskIntentEditor.PolicyChangesAndAdvancedFieldsKeepAuthoredConstraints (373 ms)
+[ RUN      ] TaskIntentEditor.CreateDiscoverOpenAcrossSeparateSceneRoots
+Workcell Studio scene metadata snapshot: scene_id=created revision=15910111519026703301 files_parsed=1 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=existing revision=4336157754559420564 files_parsed=1 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=created revision=8608740087990354821 files_parsed=2 cache_hits=0 invalidation_reason=initial
+[       OK ] TaskIntentEditor.CreateDiscoverOpenAcrossSeparateSceneRoots (332 ms)
+[ RUN      ] TaskIntentEditor.CreateDiscoverOpenThroughNormalAlias
+Workcell Studio scene metadata snapshot: scene_id=created revision=14411418576791010608 files_parsed=2 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=existing revision=4336157754559420564 files_parsed=1 cache_hits=0 invalidation_reason=initial
+[       OK ] TaskIntentEditor.CreateDiscoverOpenThroughNormalAlias (352 ms)
+[ RUN      ] TaskIntentEditor.CreateDiscoverOpenThroughCustomOutput
+Workcell Studio scene metadata snapshot: scene_id=created revision=17683573366389541650 files_parsed=2 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=created revision=2999375794885311889 files_parsed=1 cache_hits=0 invalidation_reason=initial
+Workcell Studio scene metadata snapshot: scene_id=existing revision=5798981619744703574 files_parsed=1 cache_hits=0 invalidation_reason=initial
+[       OK ] TaskIntentEditor.CreateDiscoverOpenThroughCustomOutput (318 ms)
+[ RUN      ] TaskIntentEditor.SaveFailureDoesNotPublishCellOrClaimCreation
+[       OK ] TaskIntentEditor.SaveFailureDoesNotPublishCellOrClaimCreation (11 ms)
+[ RUN      ] TaskIntentEditor.TaskPersistenceFailureLeavesNoPartialScene
+[       OK ] TaskIntentEditor.TaskPersistenceFailureLeavesNoPartialScene (43 ms)
+[ RUN      ] TaskIntentEditor.CancelSceneSwitchPreservesUnsavedDraft
+This plugin does not support propagateSizeHints()
+[       OK ] TaskIntentEditor.CancelSceneSwitchPreservesUnsavedDraft (123 ms)
+[ RUN      ] TaskIntentEditor.ExternalChangeBlocksValidationAndCleanReopenReloads
+[       OK ] TaskIntentEditor.ExternalChangeBlocksValidationAndCleanReopenReloads (237 ms)
+[ RUN      ] TaskIntentEditor.RefreshPreservesDirtyDraftWhenDiskChanges
+[       OK ] TaskIntentEditor.RefreshPreservesDirtyDraftWhenDiskChanges (365 ms)
+[ RUN      ] TaskIntentEditor.CanonicalSceneSaveCloseReopenPreservesPhysicalTruth
+This plugin does not support propagateSizeHints()
+[       OK ] TaskIntentEditor.CanonicalSceneSaveCloseReopenPreservesPhysicalTruth (786 ms)
+[ RUN      ] TaskIntentEditor.SaveAndDiscardSceneSwitchDecisionsAreHonored
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[       OK ] TaskIntentEditor.SaveAndDiscardSceneSwitchDecisionsAreHonored (951 ms)
+[----------] 15 tests from TaskIntentEditor (5729 ms total)
+
+[----------] Global test environment tear-down
+[==========] 15 tests from 1 test suite ran. (5729 ms total)
+[  PASSED  ] 15 tests.

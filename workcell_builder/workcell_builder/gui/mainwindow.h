@@ -50,6 +50,7 @@ struct WorkcellStudioCanvasModel;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
+class TaskIntentEditor;
 QT_END_NAMESPACE
 class QProgressDialog;
 class QListWidget;
@@ -582,20 +583,7 @@ private:
   QLabel * scene_builder_build_command_label_{ nullptr };
   QLabel * scene_builder_launch_command_label_{ nullptr };
   QLabel * task_intent_details_label_{ nullptr };
-  QGroupBox * environment_task_editor_{ nullptr };
-  QLineEdit * task_target_class_edit_{ nullptr };
-  QLineEdit * task_grasp_intent_edit_{ nullptr };
-  QLineEdit * task_home_pose_edit_{ nullptr };
-  QDoubleSpinBox * task_min_confidence_edit_{ nullptr };
-  QDoubleSpinBox * task_max_age_edit_{ nullptr };
-  QDoubleSpinBox * task_approach_edit_{ nullptr };
-  QDoubleSpinBox * task_retreat_edit_{ nullptr };
-  QDoubleSpinBox * task_place_roll_edit_{ nullptr };
-  QDoubleSpinBox * task_place_pitch_edit_{ nullptr };
-  QDoubleSpinBox * task_place_yaw_edit_{ nullptr };
-  bool environment_task_editor_loading_{ false };
-  bool environment_task_editor_dirty_{ false };
-  QString environment_task_editor_path_;
+  TaskIntentEditor * environment_task_editor_{ nullptr };
   QLabel * pick_place_details_label_{ nullptr };
   QLabel * grasp_details_label_{ nullptr };
   QLabel * approach_retreat_details_label_{ nullptr };

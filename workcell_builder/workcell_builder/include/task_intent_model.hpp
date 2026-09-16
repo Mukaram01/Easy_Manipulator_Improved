@@ -21,6 +21,9 @@ struct TaskIntentModel {
   std::string migration_provenance;
   bool validated{false};
   std::string normalized_yaml;
+  std::string authored_yaml;
+  std::string to_yaml() const;
+  void set_field(const std::vector<std::string> & path, const std::string & value_yaml);
   static TaskIntentModel from_yaml(const std::string & yaml_text);
   static std::optional<TaskIntentModel> from_validated_yaml(const std::string & yaml_text);
 };

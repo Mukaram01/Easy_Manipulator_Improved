@@ -1,0 +1,46 @@
+Running main() from /opt/ros/humble/src/gtest_vendor/src/gtest_main.cc
+[==========] Running 15 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 15 tests from NewCellWizard
+[ RUN      ] NewCellWizard.ScenePackageNameValidation
+[       OK ] NewCellWizard.ScenePackageNameValidation (0 ms)
+[ RUN      ] NewCellWizard.DefaultGripperRpy
+[       OK ] NewCellWizard.DefaultGripperRpy (0 ms)
+[ RUN      ] NewCellWizard.RecommendedLayoutDefaults
+[       OK ] NewCellWizard.RecommendedLayoutDefaults (0 ms)
+[ RUN      ] NewCellWizard.UrDefaults
+[       OK ] NewCellWizard.UrDefaults (0 ms)
+[ RUN      ] NewCellWizard.FrankaDefaults
+[       OK ] NewCellWizard.FrankaDefaults (0 ms)
+[ RUN      ] NewCellWizard.PlaceholderDefaults
+[       OK ] NewCellWizard.PlaceholderDefaults (0 ms)
+[ RUN      ] NewCellWizard.RobotFamilyModelMappingsAreDeterministic
+[       OK ] NewCellWizard.RobotFamilyModelMappingsAreDeterministic (0 ms)
+[ RUN      ] NewCellWizard.RobotiqDefaults
+[       OK ] NewCellWizard.RobotiqDefaults (0 ms)
+[ RUN      ] NewCellWizard.SuctionDefaults
+[       OK ] NewCellWizard.SuctionDefaults (0 ms)
+[ RUN      ] NewCellWizard.ScaffoldReadinessClassification
+[       OK ] NewCellWizard.ScaffoldReadinessClassification (0 ms)
+[ RUN      ] NewCellWizard.IndustrialScenarioCatalogDrivesCanonicalChoices
+[       OK ] NewCellWizard.IndustrialScenarioCatalogDrivesCanonicalChoices (1 ms)
+[ RUN      ] NewCellWizard.ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview
+Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
+[ERROR] [1789575483.320902009] [workcell_builder]: package 'workcell_builder' not found, searching: [/opt/ros/humble]
+[       OK ] NewCellWizard.ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview (84 ms)
+[ RUN      ] NewCellWizard.PickPlaceConfigurationRemainsAvailable
+[ERROR] [1789575483.377245650] [workcell_builder]: package 'workcell_builder' not found, searching: [/opt/ros/humble]
+[       OK ] NewCellWizard.PickPlaceConfigurationRemainsAvailable (10 ms)
+[ RUN      ] NewCellWizard.DynamicObjectSourcesDoNotRequireManualGeometry
+[ERROR] [1789575483.387746320] [workcell_builder]: package 'workcell_builder' not found, searching: [/opt/ros/humble]
+[       OK ] NewCellWizard.DynamicObjectSourcesDoNotRequireManualGeometry (11 ms)
+[ RUN      ] NewCellWizard.ManualObjectSourceRequiresFallbackGeometry
+[ERROR] [1789575483.398906427] [workcell_builder]: package 'workcell_builder' not found, searching: [/opt/ros/humble]
+[       OK ] NewCellWizard.ManualObjectSourceRequiresFallbackGeometry (12 ms)
+[----------] 15 tests from NewCellWizard (118 ms total)
+
+[----------] Global test environment tear-down
+[==========] 15 tests from 1 test suite ran. (118 ms total)
+[  PASSED  ] 15 tests.
+QThreadStorage: Thread 0x6338777cb8b0 exited after QThreadStorage 2 destroyed
+QThreadStorage: Thread 0x6338777cb8b0 exited after QThreadStorage 1 destroyed

@@ -61,7 +61,8 @@ struct SceneContentReadiness
 };
 SceneContentReadiness scene_content_readiness(const WorkcellStudioSceneInfo & scene);
 
-WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const boost::filesystem::path & workspace_root);
+WorkcellStudioSceneBrowserResult discover_workcell_studio_scenes(const boost::filesystem::path & workspace_root,
+  const boost::filesystem::path & output_root = {});
 
 // Scene identity is the resolved physical source directory, not the spelling by
 // which a workspace happened to discover it (for example src/scenes symlinks).

@@ -1,0 +1,26 @@
+Required xacro expansion failed for /tmp/r20c-fresh-contract-28ws13ps/r20c_home_ui_acceptance_20260916/urdf/scene.urdf.xacro: real xacro failed; returncode=1; stderr: Traceback (most recent call last):
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/xacro/__init__.py", line 1026, in parse
+    inp = f = open(os.path.join(root_dir, filename))
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/r20c-fresh-contract-28ws13ps/r20c_home_ui_acceptance_20260916/urdf/scene.urdf.xacro'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/xacro/__init__.py", line 1138, in _process
+    doc = process_file(input_file_name, **opts)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/xacro/__init__.py", line 1110, in process_file
+    doc = parse(None, input_file_name)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/xacro/__init__.py", line 1030, in parse
+    raise XacroException(e.strerror + ": " + e.filename, exc=e)
+xacro.XacroException: No such file or directory: /tmp/r20c-fresh-contract-28ws13ps/r20c_home_ui_acceptance_20260916/urdf/scene.urdf.xacro [Errno 2] No such file or directory: '/tmp/r20c-fresh-contract-28ws13ps/r20c_home_ui_acceptance_20260916/urdf/scene.urdf.xacro'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/ros/humble/bin/xacro", line 33, in <module>
+    sys.exit(load_entry_point('xacro==2.1.1', 'console_scripts', 'xacro')())
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/xacro/__init__.py", line 1190, in main
+    _process(input_file_name, vars(opts))
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/xacro/__init__.py", line 1143, in _process
+    except xml.parsers.expat.ExpatError as e:
+AttributeError: module 'xml' has no attribute 'parsers'
