@@ -102,6 +102,38 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
 
     try:
         stage('GENERATE_GRASPS')
+        intent = contract.get('task_intent')
+        if intent is not None:
+            grasp = intent['pick']['grasp']
+            placement = intent['place']['placement']
+            expected = {'top_2f': ('z_down', 'vertical'),
+                        'side_grip_basic': ('x_plus', 'horizontal'),
+                        'finger_pinch_basic': ('tool_z', 'tool_aligned')}[candidate.strategy_ref]
+            # Do not silently discard constraints the current physical planner cannot honor.
+            if (grasp['approach']['axis'] != expected[0] or
+                    grasp['orientation']['mode'] != expected[1] or
+                    grasp['lift']['axis'] != 'z_up' or
+                    placement['approach']['axis'] != 'z_down' or
+                    placement['retreat']['axis'] != 'z_up' or
+                    placement['orientation']['mode'] != 'target_default'):
+                raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle')
+            if any(abs(v) > 1e-12 for key in ('tcp_offset_xyz_m', 'tcp_offset_rpy_rad')
+                   for v in grasp.get(key, [0., 0., 0.])):
+                raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: nonzero authored TCP adjustment')
+            if grasp.get('contact', {}).get('min_quality', 0.) != 0.:
+                raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: contact quality measurement unavailable')
+            if grasp.get('orientation', {}).get('allowed_roll_deg', [0]) != [0]:
+                raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored roll constraint')
+            if any(abs(v) > 1e-12 for block in (grasp['orientation'], placement['orientation'])
+                   for v in block.get('tolerance_rad', [0., 0., 0.])):
+                raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: custom orientation tolerances')
+            if candidate.strategy_ref in ('top_2f', 'finger_pinch_basic', 'side_grip_basic'):
+                index = int(candidate.candidate_id.rsplit('::', 1)[1])
+                yaw = ((index // 2) * 90 + (180 if index % 2 else 0)) % 360 if candidate.strategy_ref == 'top_2f' else index * 90
+                if yaw not in grasp['orientation'].get('allowed_yaw_deg', [0, 90, 180, 270]):
+                    raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: candidate yaw excluded by authored intent')
+            if any(abs(v) > 1e-12 for v in placement['orientation'].get('rpy_rad', [0., 0., 0.])):
+                raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored placement orientation offset')
         if time.monotonic() > deadline:
             raise RuntimeError('candidate search budget exhausted')
         if time.time() - observation['timestamp'] > contract['max_age_seconds']:
@@ -113,7 +145,6 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if candidate.strategy_ref == 'top_2f':
             if set(candidate.effective) - {'approach_distance_m'}:
                 raise RuntimeError('unsupported candidate constraints in legacy full-cycle extraction')
-            aperture_extent = min(extents[:2])
         elif candidate.strategy_ref == 'side_grip_basic':
             required_effective = {
                 'approach_axis': 'x_plus',
@@ -133,7 +164,6 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     math.dist(candidate.grasp_pose[:3], expected_contact) > 1e-9 or
                     math.dist(tool_z, [-1.0, 0.0, 0.0]) > 1e-9):
                 raise RuntimeError('side-grip candidate geometry is not x_plus/horizontal')
-            aperture_extent = extents[1]
         elif candidate.strategy_ref == 'finger_pinch_basic':
             # Reuse the canonical geometry authority to reject relabelled or
             # unconsumed candidate constraints before any physical operation.
@@ -143,21 +173,31 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                        math.dist(candidate.approach_pose, item.approach_pose) < 1e-9
                        for item in expected):
                 raise RuntimeError('pinch candidate geometry is not tool_z/tool_aligned')
-            closing_world = rotate_vector(candidate.grasp_pose[3:], [0.0, 1.0, 0.0])
-            qx, qy, qz, qw = observation['pose'][3:]
-            closing_local = rotate_vector([-qx, -qy, -qz, qw], closing_world)
-            aperture_extent = sum(abs(axis) * extent for axis, extent in
-                                  zip(closing_local, observation['dimensions']))
         else:
             raise RuntimeError('unsupported grasp strategy in full-cycle preplanner')
+        closing_world = rotate_vector(candidate.grasp_pose[3:], [0.0, 1.0, 0.0])
+        qx, qy, qz, qw = observation['pose'][3:]
+        closing_local = rotate_vector([-qx, -qy, -qz, qw], closing_world)
+        aperture_extent = sum(abs(axis) * extent for axis, extent in
+                              zip(closing_local, observation['dimensions']))
         if not math.isfinite(contract['retreat_distance_m']) or contract['retreat_distance_m'] <= 0:
             raise RuntimeError('retreat distance must be finite and positive')
+        if intent is not None:
+            aperture = intent['pick']['grasp'].get('aperture', {'min_m': 0., 'max_m': 0.085})
+            if not aperture['min_m'] <= aperture_extent <= aperture['max_m']:
+                raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: object outside authored aperture')
         if aperture_extent > 0.085:
             raise RuntimeError('target exceeds Robotiq aperture')
         if any(a > b for a, b in zip(extents, destination['dimensions'])):
             raise RuntimeError('target exceeds destination bounds')
         original = next(o for o in view.world.collision_objects if o.id == observation['id'])
         retreat = contract['retreat_distance_m']
+        place_approach = contract.get('place_approach_distance_m', retreat)
+        place_retreat = contract.get('place_retreat_distance_m', retreat)
+        clearance = contract.get('placement_clearance_m', 0.001)
+        if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
+               for v in (place_approach, place_retreat, clearance)):
+            raise RuntimeError('invalid authored placement distances')
         home = dict(zip(contract['home_joint_names'], contract['home_joint_positions']))
         approach = operations.pose_message(tool_pose_for_grasp(candidate.approach_pose, contract))
         contact = operations.pose_message(tool_pose_for_grasp(candidate.grasp_pose, contract))
@@ -188,14 +228,20 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         checks.append(dict(code='ATTACH', status='PASS'))
         motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, dz=retreat))
         delta = [a-b for a, b in zip(destination['pose_xyz'], observation['pose'][:3])]
-        motion('PREPLAN_TRANSFER', operations.translated_pose(tool_at_grasp, delta[0], delta[1], delta[2]+retreat))
+        motion('PREPLAN_TRANSFER', operations.translated_pose(tool_at_grasp, delta[0], delta[1], delta[2]+place_approach))
         motion('PREPLAN_PLACE', operations.translated_pose(tool_at_grasp, *delta))
         reached = operations.fk(view.robot_state, contract['tool_link'])
         achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
         if math.dist(achieved[:3], destination['pose_xyz']) > 0.003:
             raise RuntimeError('planned placement differs from destination by more than 3 mm')
         check_code = 'DESTINATION_CONTAINMENT'
-        check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=0.001)
+        if intent is not None:
+            from perceived_object_grasp_plan import quaternion_from_rpy
+            expected_orientation = quaternion_from_rpy(destination['pose_rpy'])
+            angle = 2 * math.acos(min(1., abs(sum(a*b for a, b in zip(achieved[3:], expected_orientation)))))
+            if angle > 0.01:
+                raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: planned placement orientation differs from physical destination')
+        check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=clearance)
         checks.append(dict(code=check_code, status='PASS'))
         motion('PREPLAN_OPEN_GRIPPER', {'gripper_finger1_joint': 0.0}, group='gripper')
         stage('DETACH')
@@ -208,7 +254,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                           original=original, tool_at_grasp=tool_at_grasp))
         checks.append(dict(code='DETACH', status='PASS'))
         view.allowed_collision_matrix = operations.target_contact_matrix(baseline, observation['id'], contract['allowed_touch_links'])
-        motion('PREPLAN_RETREAT', operations.translated_pose(reached, dz=retreat), straight=True)
+        motion('PREPLAN_RETREAT', operations.translated_pose(reached, dz=place_retreat), straight=True)
         view.allowed_collision_matrix = copy.deepcopy(baseline)
         motion('PREPLAN_HOME', home)
         stage('CANDIDATE_READY')

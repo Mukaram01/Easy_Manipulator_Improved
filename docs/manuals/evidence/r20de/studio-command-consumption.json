@@ -1,0 +1,36 @@
+{
+  "ur5_2f_test": {
+    "result": "PASS",
+    "task_resolution_mode": "consume",
+    "execution_attempted": false,
+    "execution_action_goals": [],
+    "shutdown_clean": true,
+    "fake_hardware_guard": {
+      "hardware_classes": [
+        "mock_components/GenericSystem",
+        "mock_components/GenericSystem"
+      ],
+      "move_group_use_fake_hardware": true,
+      "real_hardware": false
+    },
+    "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+    "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+  },
+  "r20de_fresh_cell": {
+    "result": "PASS",
+    "task_resolution_mode": "consume",
+    "execution_attempted": false,
+    "execution_action_goals": [],
+    "shutdown_clean": true,
+    "fake_hardware_guard": {
+      "hardware_classes": [
+        "mock_components/GenericSystem",
+        "mock_components/GenericSystem"
+      ],
+      "move_group_use_fake_hardware": true,
+      "real_hardware": false
+    },
+    "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+    "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+  }
+}

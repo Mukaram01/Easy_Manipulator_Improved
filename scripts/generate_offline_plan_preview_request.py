@@ -76,6 +76,41 @@ def generate(task_recipe: dict[str, Any], task_recipe_path: Path, task_flow_summ
         },
         'safety': {'metadata_only': True, 'motion_started': False, 'ros_launch_started': False, 'moveit_service_called': False, 'runtime_io_applied': False}
     }
+    intent = cell.get('builder_task_intent', {})
+    if intent.get('schema') == 'workcell_builder_task_intent/v2' or 'task_intent_resolution' in task_recipe:
+        if intent.get('schema') != 'workcell_builder_task_intent/v2':
+            raise ValueError('TASK_HANDOFF_REQUIRED: v2 offline preview requires --cell-definition with the current saved-task handoff')
+        from task_intent_resolver import resolution_hash
+        from task_intent_v2 import normalized_intent_hash
+        resolution = task_recipe.get('task_intent_resolution', {})
+        if (resolution.get('readiness_status') not in ('READY', 'WARNING') or
+                resolution.get('resolution_sha256') != resolution_hash(resolution) or
+                cell.get('resolution_sha256') != resolution.get('resolution_sha256') or
+                normalized_intent_hash(intent) != resolution.get('normalized_intent_sha256')):
+            raise ValueError('TASK_HANDOFF_STALE: offline preview requires the current resolved task')
+        import copy
+        req.update(task_intent_resolution=copy.deepcopy(resolution),
+                   normalized_intent_sha256=resolution['normalized_intent_sha256'],
+                   resolution_sha256=resolution['resolution_sha256'])
+        grasp_intent = intent['pick']['grasp']
+        placement = intent['place']['placement']
+        destination = resolution['place_resolution']['destination']
+        req['request']['pick'].update(
+            source_id=intent['pick']['selection']['source_ref'],
+            zone_id=intent['pick']['selection']['zone_ref'],
+            object_id=resolution['grasp_resolution']['selected_object_id'],
+            approach_axis=grasp_intent['approach']['axis'], approach_distance_m=grasp_intent['approach']['distance_m'],
+            retreat_axis=grasp_intent['lift']['axis'], retreat_distance_m=grasp_intent['lift']['distance_m'])
+        req['request']['place'].update(
+            target_id=destination['id'], pose_xyz=destination['pose_xyz'], pose_rpy=destination['pose_rpy'],
+            place_offset_xyz=[0, 0, 0], physical_destination=copy.deepcopy(destination),
+            approach_axis=placement['approach']['axis'], approach_distance_m=placement['approach']['distance_m'],
+            retreat_axis=placement['retreat']['axis'], retreat_distance_m=placement['retreat']['distance_m'])
+        motions = {'pre_pick': grasp_intent['approach'], 'post_pick': grasp_intent['lift'],
+                   'pre_place': placement['approach'], 'post_place': placement['retreat']}
+        for waypoint in req['request']['waypoints']:
+            if waypoint['id'] in motions:
+                waypoint['distance_m'] = motions[waypoint['id']]['distance_m']
     return req, warnings, missing
 
 

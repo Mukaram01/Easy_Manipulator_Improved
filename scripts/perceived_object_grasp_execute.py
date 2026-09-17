@@ -305,6 +305,12 @@ def candidate_indices(count, preferred=3):
     return [preferred] + [index for index in range(count) if index != preferred]
 
 
+class MoveItActionFailure(RuntimeError):
+    def __init__(self, status, code):
+        super().__init__(f'MoveIt action failed: status={status}, code={code}')
+        self.code = code
+
+
 class CandidateFailure(RuntimeError):
     def __init__(self, stage, reason):
         super().__init__(reason)
@@ -358,6 +364,47 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
         return result.cycle
 
     return choose_cycle(targets, candidate_indices(8), preplan, summary['candidate_attempts'])
+
+
+def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
+                        contract, operations, deadline, summary, resolved=None):
+    """The resolver selects; the existing preplanner alone proves feasibility."""
+    from task_intent_resolver import resolve_task_intent
+    from full_cycle_preplanner import preplan_full_cycle
+    cycles = {}
+
+    def evaluate(request):
+        effective = dict(contract)
+        grasp = request['intent']['pick']['grasp']
+        place = request['intent']['place']['placement']
+        effective.update(max_age_seconds=intent['pick']['selection']['object_filter']['max_age_seconds'],
+                         retreat_distance_m=grasp['lift']['distance_m'],
+                         place_approach_distance_m=place['approach']['distance_m'],
+                         place_retreat_distance_m=place['retreat']['distance_m'],
+                         placement_clearance_m=place['clearance_m'],
+                         task_intent=request['intent'])
+        result = preplan_full_cycle(initial_scene=initial_scene,
+            observation=request['observation'], candidate=request['candidate'],
+            destination=request['destination'], contract=effective,
+            operations=operations, deadline=deadline)
+        summary['candidate_attempts'].append({
+            'candidate_id': result.candidate_id, 'object_id': request['observation']['id'],
+            'stages': result.stages, 'checks': result.checks, 'reason_code': result.reason_code})
+        if result.success:
+            cycles[result.candidate_id, request['observation']['id']] = result.cycle
+        return {'success': result.success, 'checks': result.checks,
+                'reason_code': result.reason_code, 'reason': result.reason}
+
+    resolution = resolve_task_intent(intent, environment, cell, targets, evaluate, now=time.time(), resolved=resolved)
+    summary['task_intent_resolution'] = resolution
+    summary['normalized_intent_sha256'] = resolution['normalized_intent_sha256']
+    summary['resolution_sha256'] = resolution['resolution_sha256']
+    if resolution['readiness_status'] not in ('READY', 'WARNING'):
+        raise RuntimeError(resolution['readiness']['primary_code'] + ': ' + resolution['readiness']['reason'])
+    grasp = resolution['grasp_resolution']
+    cycle = cycles[grasp['selected_candidate_id'], grasp['selected_object_id']]
+    cycle['grasp_index'] = int(grasp['selected_candidate_id'].rsplit('::', 1)[1])
+    return cycle
 
 
 def require_prevalidated_execution(start, cycle):
@@ -464,7 +511,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--summary-output', required=True)
     parser.add_argument('--scene-package', default='ur5_2f_test')
-    parser.add_argument('--task-request', required=True)
+    parser.add_argument('--task-request')
+    parser.add_argument('--resolve-task', action='store_true', help='Resolve the saved authored task and write derived evidence after plan-only verification')
     parser.add_argument('--detections', required=True)
     parser.add_argument('--replay', action='store_true')
     parser.add_argument('--start', action='store_true')
@@ -565,7 +613,7 @@ def main():
             raise
         response = future.result()
         if response.status != 4 or response.result.error_code.val != 1:
-            raise RuntimeError(f'MoveIt action failed: status={response.status}, code={response.result.error_code.val}')
+            raise MoveItActionFailure(response.status, response.result.error_code.val)
         return response.result
     def fk(state, link):
         req = GetPositionFK.Request()
@@ -654,7 +702,18 @@ def main():
         goal_msg.planning_options.replan = False
         goal_msg.planning_options.look_around = False
         goal_msg.planning_options.planning_scene_diff = copy.deepcopy(view)
-        result = action(plan_client, goal_msg, 12)
+        # OMPL can return an invalid sampled path for a feasible fixed goal.
+        # Retry that identical plan-only request, never a different candidate,
+        # target, policy or execution action. All collision checks remain active.
+        for attempt in range(3):
+            try:
+                result = action(plan_client, goal_msg, 12)
+                break
+            except MoveItActionFailure as exc:
+                if exc.code != -2 or attempt == 2 or time.monotonic() >= deadline:
+                    raise
+                summary.setdefault('planning_retries', []).append(
+                    {'stage': name, 'moveit_code': exc.code, 'attempt': attempt + 1})
         trajectory = result.planned_trajectory
         if not trajectory.joint_trajectory.points:
             raise RuntimeError('MoveIt returned empty trajectory')
@@ -678,14 +737,47 @@ def main():
             package = Path(get_package_share_directory(args.scene_package))
         contract = _PLANNER.load_grasp_contract(package)
         cell = yaml.safe_load((package/'cell_definition.yaml').read_text())
-        task = inputs.task_request(yaml.safe_load(Path(args.task_request).read_text()), cell)
+        authored = args.resolve_task or cell.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2'
+        intent = None
+        if authored:
+            from task_intent_resolver import read_scene_task, normalized_intent_hash, context_hash
+            intent, physical, document = read_scene_task(package)
+            if args.retreat_distance is not None or args.task_request is not None:
+                raise ValueError('Authored TaskIntent cannot be overridden by a task request or retreat argument')
+            if (cell.get('normalized_intent_sha256') != normalized_intent_hash(intent) or
+                    cell.get('task_intent_resolution', {}).get('context_sha256') != context_hash(intent, physical, document)):
+                raise ValueError('TASK_HANDOFF_STALE: Generate the saved task before planning')
+            selection = intent['pick']['selection']
+            if selection['source_type'] == 'manual_simulated' and not args.replay:
+                raise ValueError('Manual simulated source requires explicit replay input')
+            filters = selection['object_filter']
+            task = dict(action='pick_and_place', selection_policy='task_semantics',
+                        target_class=filters.get('class_id'), source_zone=selection['zone_ref'],
+                        destination_zone=intent['place']['target']['region_ref'],
+                        max_age_seconds=filters['max_age_seconds'],
+                        min_confidence=filters.get('min_confidence') or 0.,
+                        allow_missing_confidence=filters.get('min_confidence') is None)
+        else:
+            if not args.task_request:
+                raise ValueError('Legacy task request missing; Save and Generate a TaskIntent v2 task')
+            task = inputs.task_request(yaml.safe_load(Path(args.task_request).read_text()), cell)
         stage('ACQUIRE_OBJECTS')
         snapshot = yaml.safe_load(Path(args.detections).read_text())
         if args.replay:
             snapshot = inputs.replay_snapshot(snapshot, time.time())
         objects = inputs.normalize(snapshot, time.time(), _PLANNER)
         stage('FILTER_TARGETS')
-        eligible, rejected = inputs.filter_targets(objects, task, cell, time.time(), _PLANNER)
+        if authored:
+            from task_intent_resolver import select_observations, scene_resolution
+            eligible = select_observations(intent, physical, objects, time.time())
+            rejected = {o['id']: 'outside_authored_selection' for o in objects if o not in eligible}
+            expected_resolution = None if args.resolve_task else scene_resolution(
+                package, intent, physical, document, require_ready=True)
+            if expected_resolution is not None:
+                from task_intent_resolver import consume_resolution
+                consume_resolution(expected_resolution, intent, physical, document, generated_cell=cell)
+        else:
+            eligible, rejected = inputs.filter_targets(objects, task, cell, time.time(), _PLANNER)
         summary.update(task_request=task, normalized_objects=objects, rejected_objects=rejected)
         params = call(params_client, GetParameters.Request(names=['use_fake_hardware','allow_trajectory_execution','robot_description'])).values
         summary['trajectory_execution_enabled'] = params[1].bool_value
@@ -737,19 +829,33 @@ def main():
             target_contact_matrix=target_contact_matrix, verify_selected_contacts=verify_selected_contacts,
             private_attachment=private_attachment, object_pose_after_motion=object_pose_after_motion,
             place_detachment_diff=place_detachment_diff, stage=stage)
-        cycle = plan_legacy_cycle(initial_scene=initial, targets=eligible, destination=destination,
-            contract=dict(contract, max_age_seconds=task['max_age_seconds'], retreat_distance_m=retreat),
-            operations=operations, deadline=deadline, summary=summary)
+        if authored:
+            cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
+                cell=document, targets=eligible, contract=contract, operations=operations,
+                deadline=deadline, summary=summary, resolved=expected_resolution)
+            destination = summary['task_intent_resolution']['place_resolution']['destination']
+            if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
+                raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')
+        else:
+            cycle = plan_legacy_cycle(initial_scene=initial, targets=eligible, destination=destination,
+                contract=dict(contract, max_age_seconds=task['max_age_seconds'], retreat_distance_m=retreat),
+                operations=operations, deadline=deadline, summary=summary)
         selected_id = cycle['object_id']
         summary.update(selected_object_id=selected_id,selected_grasp_index=cycle['grasp_index'],full_cycle_prevalidated=True,
                        full_cycle_plan_success=True,plan_metadata=[s['metadata'] for s in cycle['steps'] if s['kind']=='motion'])
         stage('VERIFY_PREPLAN_UNCHANGED')
         assert_scene_match(scene_now(),initial)
         summary['prevalidation_left_live_scene_unchanged'] = True
+        if authored:
+            from task_intent_resolver import consume_resolution, read_scene_task, write_resolution_artifacts
+            current_intent, current_physical, current_document = read_scene_task(package)
+            consume_resolution(summary['task_intent_resolution'], current_intent, current_physical, current_document)
+            if args.resolve_task:
+                write_resolution_artifacts(summary['task_intent_resolution'], package / 'generated')
         if not args.start:
             summary['result'] = 'PLAN_ONLY'
             return 0
-        fresh, _ = inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)
+        fresh = select_observations(intent, physical, objects, time.time()) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
         expected = initial
@@ -827,6 +933,15 @@ def main():
         summary.update(failed_stage=exc.stage if isinstance(exc,CandidateFailure) else summary['current_stage'],failure=str(exc))
         stage('FAILED')
         summary['recovery_required'] = summary['execution_attempted']
+        resolution = summary.get('task_intent_resolution')
+        if args.resolve_task and resolution is not None and resolution['readiness_status'] == 'BLOCKED':
+            try:
+                from task_intent_resolver import consume_resolution, read_scene_task, write_resolution_artifacts
+                current_intent, current_physical, current_document = read_scene_task(package)
+                consume_resolution(resolution, current_intent, current_physical, current_document, require_ready=False)
+                write_resolution_artifacts(resolution, package / 'generated')
+            except (ValueError, OSError) as evidence_error:
+                summary['resolution_write_blocker'] = str(evidence_error)
         # Do not erase held/placed objects or command a recovery trajectory.
     finally:
         if summary['execution_attempted'] and summary['result'] != 'PASS' and not rclpy.ok():

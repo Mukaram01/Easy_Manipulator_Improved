@@ -1,0 +1,19 @@
+Internal ctest changing into directory: /home/user/workcell_ws/build/workcell_builder
+Test project /home/user/workcell_ws/build/workcell_builder
+    Start 11: workcell_task_intent_readiness_test
+1/5 Test #11: workcell_task_intent_readiness_test .............   Passed    0.13 sec
+    Start 13: workcell_task_intent_model_test
+2/5 Test #13: workcell_task_intent_model_test .................   Passed    0.36 sec
+    Start 17: workcell_new_cell_wizard_test
+3/5 Test #17: workcell_new_cell_wizard_test ...................   Passed    1.24 sec
+    Start 24: workcell_rviz_preview_metadata_command_test
+4/5 Test #24: workcell_rviz_preview_metadata_command_test .....   Passed    0.16 sec
+    Start 36: workcell_mainwindow_rviz_preview_compile_test
+5/5 Test #36: workcell_mainwindow_rviz_preview_compile_test ...   Passed    0.14 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Label Time Summary:
+gtest    =   2.02 sec*proc (5 tests)
+
+Total Test time (real) =   2.03 sec

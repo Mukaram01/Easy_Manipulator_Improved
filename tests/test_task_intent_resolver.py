@@ -95,6 +95,8 @@ def environment():
             }
         ],
         "task_zones": [
+            {"id": "pick_zone_main", "frame": "world", "pose_xyz": [0., 0., 0.],
+             "pose_rpy": [0., 0., 0.], "dimensions": [2., 2., 2.]},
             {
                 "id": "drop",
                 "target_ref": "bin",

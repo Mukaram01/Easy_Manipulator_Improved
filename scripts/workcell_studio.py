@@ -545,7 +545,7 @@ def import_builder_scene(args: argparse.Namespace) -> int:
         sess_dir = output_dir / "plan_preview_session"
         preview_cmd = [sys.executable, str(SCRIPT_DIR / "generate_rviz_moveit_plan_preview_session.py"), "--scene-package", str(scene_pkg), "--plan-preview-request", str(generated_dir / "offline_plan_preview_request.yaml"), "--output-dir", str(sess_dir), "--allow-missing-launch", "--json"]
         if Path(summary.get("generated_task_recipe_path")).exists():
-            req_cmd=[sys.executable, str(SCRIPT_DIR/"generate_offline_plan_preview_request.py"), "--task-recipe", summary.get("generated_task_recipe_path"), "--output", str(generated_dir / "offline_plan_preview_request.yaml"), "--validate", "--json"]
+            req_cmd=[sys.executable, str(SCRIPT_DIR/"generate_offline_plan_preview_request.py"), "--task-recipe", summary.get("generated_task_recipe_path"), "--cell-definition", str(cell_def), "--output", str(generated_dir / "offline_plan_preview_request.yaml"), "--validate", "--json"]
             _run_json(req_cmd, "offline request")
         _run_json(preview_cmd, "rviz plan preview prepare")
         summary["rviz_plan_preview_session_path"] = str(sess_dir / "rviz_moveit_plan_preview_session.json")

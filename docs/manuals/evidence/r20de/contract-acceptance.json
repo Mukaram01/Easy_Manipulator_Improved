@@ -1,0 +1,1954 @@
+{
+  "baseline_commit": "4d90665be5424d08c1cd03879a871f5ba439eeb0",
+  "run_directory": "/tmp/r20de-chain-acceptance-6",
+  "cells": {
+    "ur5_2f_test": {
+      "baseline": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "generate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "validate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          }
+        }
+      },
+      "edited": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.010000000000000009,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.46,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          },
+          "generate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          },
+          "validate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d"
+          }
+        }
+      },
+      "restored": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "generate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "validate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          }
+        }
+      },
+      "preferred": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+          "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          },
+          "generate": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          },
+          "validate": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+            "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124"
+          }
+        }
+      },
+      "exact": {
+        "status": "BLOCKED",
+        "resolution": {
+          "capability_profile": {
+            "capabilities": [
+              "two_finger_parallel"
+            ],
+            "installed_tool_id": "robotiq_85_gripper",
+            "release_mapping": {
+              "tool_release": "fingers_open"
+            }
+          },
+          "context_sha256": "de591e54b721fdff4182d6399697cbba129c0bb6a133d500a4c5f40b947fa7f3",
+          "grasp_resolution": {
+            "attempts": [
+              {
+                "candidate_id": "side_grip_basic::000",
+                "checks": [
+                  {
+                    "code": "GENERATE_GRASPS",
+                    "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle",
+                    "reason_code": "GENERATE_GRASPS_FAILED",
+                    "status": "FAIL"
+                  }
+                ],
+                "object_id": "runtime::sample-cup",
+                "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle",
+                "reason_code": "GENERATE_GRASPS_FAILED",
+                "strategy_ref": "side_grip_basic",
+                "success": false
+              }
+            ],
+            "fallback": {
+              "used": false
+            },
+            "policy": "EXACT",
+            "requested_strategy_ref": "side_grip_basic",
+            "selected_candidate_id": null,
+            "selected_object_id": null,
+            "selected_strategy_ref": null
+          },
+          "normalized_intent_sha256": "6e7d58dc1a6b1cacb95c3ba345ee63ab5dbd37053a1b4a0d0d3c972d359aa45e",
+          "observations_sha256": "96d4ebab173f8319081f61f625622dac3ee0a70fe6c155c753d2dfb55cc94e5a",
+          "pick_selection": {
+            "object_filter": {
+              "class_id": "cup",
+              "max_age_seconds": 300,
+              "min_confidence": null
+            },
+            "source_ref": "detected_objects/v1",
+            "source_type": "perception",
+            "zone_ref": "pick_zone_main"
+          },
+          "place_resolution": {
+            "destination": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "frame_id": "world",
+              "id": "default_drop_zone",
+              "physical_destination_contract": "target_local/v1",
+              "placement_local": {
+                "dimensions": [
+                  0.2,
+                  0.1,
+                  0.12
+                ],
+                "pose_rpy": [
+                  0.0,
+                  -0.0,
+                  0.0
+                ],
+                "pose_xyz": [
+                  0.0,
+                  0.0,
+                  0.009999999999999995
+                ]
+              },
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.45,
+                0.22,
+                0.11
+              ],
+              "target_id": "target_bin_default",
+              "target_pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "target_pose_xyz": [
+                0.45,
+                0.22,
+                0.1
+              ],
+              "usable_placement": {
+                "dimensions": [
+                  0.24,
+                  0.12,
+                  0.14
+                ],
+                "pose_rpy": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "pose_xyz": [
+                  0.0,
+                  0.0,
+                  0.01
+                ],
+                "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+              }
+            },
+            "fallback": {
+              "used": false
+            },
+            "physical_destination_contract": "target_local/v1",
+            "policy": "AUTO",
+            "requested_local_pose": {
+              "rpy_rad": [
+                0,
+                0,
+                0
+              ],
+              "xyz_m": [
+                0,
+                0,
+                0.01
+              ]
+            },
+            "selected_local_pose": {
+              "rpy_rad": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "xyz_m": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "world_pose": {
+              "rpy_rad": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "xyz_m": [
+                0.45,
+                0.22,
+                0.11
+              ]
+            }
+          },
+          "readiness": {
+            "checks": [
+              {
+                "code": "GENERATE_GRASPS",
+                "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle",
+                "reason_code": "GENERATE_GRASPS_FAILED",
+                "status": "FAIL"
+              }
+            ],
+            "primary_code": "GENERATE_GRASPS_FAILED",
+            "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle"
+          },
+          "readiness_status": "BLOCKED",
+          "resolution_sha256": "dc41005b614b5614c9062f743f0414020bdc21b61e9ef672582945961e5f30fe",
+          "schema": "workcell_task_intent_resolution/v1"
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true
+      },
+      "final": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "generate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "validate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+            "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096"
+          }
+        }
+      },
+      "runtime_audits": [
+        {
+          "phase": "baseline/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "baseline/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "edited/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "edited/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "0f1e5f5a6e3f49d873f20de873bb09ed805d75383b8043564fc3438203cd011d",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "final/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "final/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "preferred/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+          "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "preferred/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "4e028bd80011b2531d311f9be5823ea6e0b1d79634cae188eb6c77c8958cbf50",
+          "resolution_sha256": "7d1d941aacec7995d69fa8b9e5189eb63d509ed2ed6f763d42afcc2d4e794124",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "restored/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "restored/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "04172e87623f21f90ed188ef1c0d7b4a84470c5ff6091a90c54d878f7dbc18b2",
+          "resolution_sha256": "3619bbe5249416dd9996534c704eae6f4e878dfd7ad8b43e8fb558ceed5bd096",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "exact",
+          "result": "FAIL",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "6e7d58dc1a6b1cacb95c3ba345ee63ab5dbd37053a1b4a0d0d3c972d359aa45e",
+          "resolution_sha256": "dc41005b614b5614c9062f743f0414020bdc21b61e9ef672582945961e5f30fe",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        }
+      ]
+    },
+    "r20de_fresh_cell": {
+      "baseline": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "generate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "validate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          }
+        }
+      },
+      "edited": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.010000000000000009,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.46,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          },
+          "generate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          },
+          "validate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48"
+          }
+        }
+      },
+      "restored": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "generate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "validate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          }
+        }
+      },
+      "preferred": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+          "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          },
+          "generate": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          },
+          "validate": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+            "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e"
+          }
+        }
+      },
+      "exact": {
+        "status": "BLOCKED",
+        "resolution": {
+          "capability_profile": {
+            "capabilities": [
+              "two_finger_parallel"
+            ],
+            "installed_tool_id": "robotiq_85_gripper",
+            "release_mapping": {
+              "tool_release": "fingers_open"
+            }
+          },
+          "context_sha256": "12616b501021dbf6667e6ef97d1cdb5805ac6a297ba1b7ee130ab1048e77d49e",
+          "grasp_resolution": {
+            "attempts": [
+              {
+                "candidate_id": "side_grip_basic::000",
+                "checks": [
+                  {
+                    "code": "GENERATE_GRASPS",
+                    "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle",
+                    "reason_code": "GENERATE_GRASPS_FAILED",
+                    "status": "FAIL"
+                  }
+                ],
+                "object_id": "runtime::sample-cup",
+                "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle",
+                "reason_code": "GENERATE_GRASPS_FAILED",
+                "strategy_ref": "side_grip_basic",
+                "success": false
+              }
+            ],
+            "fallback": {
+              "used": false
+            },
+            "policy": "EXACT",
+            "requested_strategy_ref": "side_grip_basic",
+            "selected_candidate_id": null,
+            "selected_object_id": null,
+            "selected_strategy_ref": null
+          },
+          "normalized_intent_sha256": "8087b62c17876e53a161bd4068f0391d04b334d52bd5ae6893988fc5181378d5",
+          "observations_sha256": "96d4ebab173f8319081f61f625622dac3ee0a70fe6c155c753d2dfb55cc94e5a",
+          "pick_selection": {
+            "object_filter": {
+              "class_id": "cup",
+              "color": null,
+              "max_age_seconds": 300,
+              "min_confidence": null
+            },
+            "source_ref": "pick_zone_main",
+            "source_type": "manual_simulated",
+            "zone_ref": "pick_zone_main"
+          },
+          "place_resolution": {
+            "destination": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "frame_id": "world",
+              "id": "default_drop_zone",
+              "physical_destination_contract": "target_local/v1",
+              "placement_local": {
+                "dimensions": [
+                  0.2,
+                  0.1,
+                  0.12
+                ],
+                "pose_rpy": [
+                  0.0,
+                  -0.0,
+                  0.0
+                ],
+                "pose_xyz": [
+                  0.0,
+                  0.0,
+                  0.009999999999999995
+                ]
+              },
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.45,
+                0.22,
+                0.11
+              ],
+              "target_id": "target_bin_default",
+              "target_pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "target_pose_xyz": [
+                0.45,
+                0.22,
+                0.1
+              ],
+              "usable_placement": {
+                "dimensions": [
+                  0.24,
+                  0.12,
+                  0.14
+                ],
+                "pose_rpy": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "pose_xyz": [
+                  0.0,
+                  0.0,
+                  0.01
+                ],
+                "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+              }
+            },
+            "fallback": {
+              "used": false
+            },
+            "physical_destination_contract": "target_local/v1",
+            "policy": "AUTO",
+            "requested_local_pose": null,
+            "selected_local_pose": {
+              "rpy_rad": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "xyz_m": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "world_pose": {
+              "rpy_rad": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "xyz_m": [
+                0.45,
+                0.22,
+                0.11
+              ]
+            }
+          },
+          "readiness": {
+            "checks": [
+              {
+                "code": "GENERATE_GRASPS",
+                "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle",
+                "reason_code": "GENERATE_GRASPS_FAILED",
+                "status": "FAIL"
+              }
+            ],
+            "primary_code": "GENERATE_GRASPS_FAILED",
+            "reason": "TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle"
+          },
+          "readiness_status": "BLOCKED",
+          "resolution_sha256": "dbaba03f2e16b2a9387ad476654bc272995ca1436a7411dfa9522b1fbbd66708",
+          "schema": "workcell_task_intent_resolution/v1"
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true
+      },
+      "final": {
+        "status": "PASS",
+        "fake_hardware": {
+          "hardware_classes": [
+            "mock_components/GenericSystem",
+            "mock_components/GenericSystem"
+          ],
+          "move_group_use_fake_hardware": true,
+          "real_hardware": false
+        },
+        "execution_action_goals": [],
+        "shutdown_clean": true,
+        "identity": {
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "destination": {
+            "dimensions": [
+              0.2,
+              0.1,
+              0.12
+            ],
+            "frame_id": "world",
+            "id": "default_drop_zone",
+            "physical_destination_contract": "target_local/v1",
+            "placement_local": {
+              "dimensions": [
+                0.2,
+                0.1,
+                0.12
+              ],
+              "pose_rpy": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.009999999999999995
+              ]
+            },
+            "pose_rpy": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "pose_xyz": [
+              0.45,
+              0.22,
+              0.11
+            ],
+            "target_id": "target_bin_default",
+            "target_pose_rpy": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "target_pose_xyz": [
+              0.45,
+              0.22,
+              0.1
+            ],
+            "usable_placement": {
+              "dimensions": [
+                0.24,
+                0.12,
+                0.14
+              ],
+              "pose_rpy": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "pose_xyz": [
+                0.0,
+                0.0,
+                0.01
+              ],
+              "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+            }
+          }
+        },
+        "stage_identities": {
+          "resolver": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "generate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "compatibility_recipe": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "offline_preview": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "validate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "product_view": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          },
+          "plan_simulate": {
+            "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+            "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be"
+          }
+        }
+      },
+      "runtime_audits": [
+        {
+          "phase": "baseline/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "baseline/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "edited/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "edited/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "4f5709922717cb307b5f56bf2c07395dc520c3074c1c72059314c9e1680d5a48",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "final/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "final/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "preferred/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+          "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "preferred/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "8a25017358c6f2aa865866d51f9035b3ddab96fcf4932aab19c6d83533f9de8f",
+          "resolution_sha256": "5ff7c383f23da4ff069c733724b9a853c942640c50707e97c43666fb32a4538e",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "restored/plan",
+          "result": "PASS",
+          "task_resolution_mode": "consume",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "restored/resolve",
+          "result": "PASS",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "bc0a32260129107c17203762139de5eacfdce8e97a9de175cc00417077af9ab0",
+          "resolution_sha256": "1f590e4574e9b3d90cd428944e7e9eb5af6c4fdc987fe5e0737575145c37c1be",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        },
+        {
+          "phase": "exact",
+          "result": "FAIL",
+          "task_resolution_mode": "resolve",
+          "normalized_intent_sha256": "8087b62c17876e53a161bd4068f0391d04b334d52bd5ae6893988fc5181378d5",
+          "resolution_sha256": "dbaba03f2e16b2a9387ad476654bc272995ca1436a7411dfa9522b1fbbd66708",
+          "execution_attempted": false,
+          "execution_action_goals": [],
+          "shutdown_clean": true,
+          "fake_hardware_guard": {
+            "hardware_classes": [
+              "mock_components/GenericSystem",
+              "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+          },
+          "planning_retries": null
+        }
+      ]
+    }
+  }
+}

@@ -236,7 +236,7 @@ private:
   void refresh_run_next_menu(const std::vector<RecommendedWorkflowAction> & actions);
   void validate_task_intent_for_selected_scene();
   void generate_or_update_task_intent_for_selected_scene();
-  void generate_yaml_draft_for_selected_scene();
+  bool generate_yaml_draft_for_selected_scene();
   void generate_scene_package_for_selected_scene();
   void validate_generated_scene_for_selected_scene();
   void copy_build_launch_commands_for_selected_scene();

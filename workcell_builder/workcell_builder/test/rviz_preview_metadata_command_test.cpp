@@ -149,17 +149,19 @@ TEST(RvizPreviewMetadataCommandTest, RejectsRealHardwareLaunchTokens)
     &reason));
 }
 
-TEST(RvizPreviewMetadataCommandTest, FullCycleUsesOneExistingSupervisorAndExplicitReplayExecution)
+TEST(RvizPreviewMetadataCommandTest, SavedTaskUsesOneExistingSupervisorAndPlanOnlyResolution)
 {
   auto scene = runnable_scene();
   const auto command = workcell_builder::build_full_cycle_command(scene, "/home/user/workcell_ws", "/tmp/cycle evidence", 201, true);
   EXPECT_TRUE(command.contains("run_r14_plan_only_acceptance.py"));
-  EXPECT_TRUE(command.contains("--execute --stream-status"));
+  EXPECT_TRUE(command.contains("--resolve-if-needed --stream-status"));
+  EXPECT_FALSE(command.contains("--execute"));
+  EXPECT_TRUE(command.contains("--scene-dir"));
   EXPECT_TRUE(command.contains("--launch-rviz"));
   EXPECT_TRUE(command.contains("--output-dir '/tmp/cycle evidence'"));
   EXPECT_FALSE(command.contains("ros2 launch"));  // Supervisor owns the sole scene stack.
   EXPECT_FALSE(command.contains("use_fake_hardware:=false"));
   EXPECT_FALSE(workcell_builder::build_full_cycle_command(scene, "/tmp/ws", "/tmp/out", 201, false).contains("--launch-rviz"));
   scene.scene_name = "uncommissioned";
-  EXPECT_TRUE(workcell_builder::build_full_cycle_command(scene, "/tmp/ws", "/tmp/out", 201, true).isEmpty());
+  EXPECT_FALSE(workcell_builder::build_full_cycle_command(scene, "/tmp/ws", "/tmp/out", 201, true).isEmpty());
 }

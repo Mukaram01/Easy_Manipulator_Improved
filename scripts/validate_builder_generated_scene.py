@@ -167,6 +167,21 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
         except (ValueError, TypeError, KeyError) as exc:
             errors.append(f"physical destination: {exc}")
 
+    resolution = None
+    if (scene_path / 'config/workcell_builder_task_intent.yaml').is_file():
+        from task_intent_resolver import read_scene_task, scene_resolution
+        try:
+            intent, physical, document = read_scene_task(scene_path)
+            resolution = scene_resolution(scene_path, intent, physical, document)
+            if current_cell.get('normalized_intent_sha256') != resolution['normalized_intent_sha256']:
+                raise ValueError('TASK_HANDOFF_STALE: Generate the saved task before Validate')
+            if current_cell.get('resolution_sha256') != resolution['resolution_sha256']:
+                raise ValueError('TASK_HANDOFF_STALE: Generate the current resolution before Validate')
+            if resolution['readiness_status'] == 'BLOCKED':
+                warnings.append(resolution['readiness']['reason'])
+        except ValueError as exc:
+            errors.append(str(exc))
+
     metadata_path = scene_path / "workcell_builder_metadata.yaml"
     metadata = _load_yaml_like(metadata_path) if metadata_path.is_file() else {}
     checks.append({"check": "workcell_builder_metadata.yaml present", "ok": metadata_path.is_file(), "optional": True})
@@ -236,20 +251,38 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
                 errors.extend(task_intent_report.get("errors", []))
         elif task_intent_report.get("status") == "WARN":
             warnings.extend(task_intent_report.get("warnings", []))
-        flow_layout = resolve_saved_layout_path(scene_path)
-        if flow_layout is None and exported_layout.is_file():
-            flow_layout = exported_layout
-        flow_cmd = ["python3", str(SCRIPT_DIR / "summarize_task_flow.py"), "--task-intent", str(task_intent_path)]
-        if flow_layout is not None:
-            flow_cmd.extend(["--environment-layout", str(flow_layout)])
-        flow_cmd.append("--json")
-        flow_run = subprocess.run(flow_cmd, capture_output=True, text=True, check=False)
-        task_flow_summary = json.loads(flow_run.stdout) if flow_run.stdout.strip() else {}
-        vr = task_flow_summary.get("visual_resolution", {}) if isinstance(task_flow_summary, dict) else {}
-        if not vr.get("pick_coordinates_resolved", False):
-            warnings.append("pick coordinates could not be resolved from scene/layout metadata")
-        if not vr.get("place_coordinates_resolved", False):
-            warnings.append("place coordinates could not be resolved from scene/layout metadata")
+        if resolution is not None:
+            selection = resolution.get('pick_selection', {})
+            destination = resolution.get('place_resolution', {}).get('destination', {})
+            task_flow_summary = {
+                'task_intent_resolution': resolution,
+                'normalized_intent_sha256': resolution['normalized_intent_sha256'],
+                'resolution_sha256': resolution['resolution_sha256'],
+                'readiness_classification': resolution['readiness_status'],
+                'pick_source_id': selection.get('source_ref'),
+                'pick_source_type': selection.get('source_type'),
+                'pick_zone_id': selection.get('zone_ref'),
+                'place_target_id': destination.get('target_id'),
+                'physical_destination': destination,
+                'grasp_strategy': resolution.get('grasp_resolution', {}).get('selected_strategy_ref'),
+                'visual_resolution': {'place_coordinates_resolved': bool(destination),
+                                      'approximate_coordinates_used': False},
+            }
+        else:
+            flow_layout = resolve_saved_layout_path(scene_path)
+            if flow_layout is None and exported_layout.is_file():
+                flow_layout = exported_layout
+            flow_cmd = ["python3", str(SCRIPT_DIR / "summarize_task_flow.py"), "--task-intent", str(task_intent_path)]
+            if flow_layout is not None:
+                flow_cmd.extend(["--environment-layout", str(flow_layout)])
+            flow_cmd.append("--json")
+            flow_run = subprocess.run(flow_cmd, capture_output=True, text=True, check=False)
+            task_flow_summary = json.loads(flow_run.stdout) if flow_run.stdout.strip() else {}
+            vr = task_flow_summary.get("visual_resolution", {}) if isinstance(task_flow_summary, dict) else {}
+            if not vr.get("pick_coordinates_resolved", False):
+                warnings.append("pick coordinates could not be resolved from scene/layout metadata")
+            if not vr.get("place_coordinates_resolved", False):
+                warnings.append("place coordinates could not be resolved from scene/layout metadata")
     else:
         warnings.append("Task intent missing: physical scene only.")
     checks.append(task_intent_check)
@@ -281,7 +314,15 @@ def validate_scene(scene_path: Path, *, require_generated: bool = False) -> dict
     else:
         readiness_runtime = "runtime_possible"
 
+    if resolution is not None and resolution['readiness_status'] == 'BLOCKED':
+        readiness = 'task_blocked'
+        readiness_runtime = 'task_blocked'
+        suggested_actions.append(resolution['readiness']['reason'])
+
     return {
+        "task_intent_resolution": resolution,
+        "normalized_intent_sha256": (resolution or {}).get('normalized_intent_sha256'),
+        "resolution_sha256": (resolution or {}).get('resolution_sha256'),
         "scene_path": str(scene_path),
         "ok": len(errors) == 0,
         "readiness": readiness,

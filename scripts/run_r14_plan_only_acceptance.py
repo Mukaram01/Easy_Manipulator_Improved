@@ -117,6 +117,10 @@ def main():
     parser.add_argument('--domain-id', type=int, default=179, help='An unused, isolated ROS domain')
     parser.add_argument('--execute', action='store_true', help='R1.5: execute the complete cycle on exclusively mock hardware')
     parser.add_argument('--launch-rviz', action='store_true', help='Show the single owned scene in RViz')
+    parser.add_argument('--scene-dir', type=Path, help='Saved authored scene; defaults to canonical regression')
+    parser.add_argument('--resolve-task', action='store_true', help='Use saved TaskIntent through the shared resolver')
+    parser.add_argument('--resolve-if-needed', action='store_true', help='Studio: consume current resolution, or resolve a blocked/unresolved saved task')
+    parser.add_argument('--detections', type=Path, help='Replay observation input, never a task override')
     parser.add_argument('--stream-status', action='store_true', help='Emit structured stage/result events for Studio')
     args = parser.parse_args()
     if not 0 < args.timeout <= 900 or not 0 <= args.domain_id <= 232:
@@ -127,6 +131,15 @@ def main():
     from ament_index_python.packages import get_package_share_directory, get_package_prefix
     from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
     root = Path(__file__).resolve().parents[1]
+    scene_dir = (args.scene_dir or root / 'scenes/ur5_2f_test').resolve()
+    scene_name = scene_dir.name
+    import yaml
+    if args.resolve_if_needed and not args.resolve_task:
+        from task_intent_resolver import read_scene_task, scene_resolution
+        intent, physical, document = read_scene_task(scene_dir)
+        current = scene_resolution(scene_dir, intent, physical, document)
+        args.resolve_task = current['readiness_status'] == 'BLOCKED'
+    uses_authored_task = args.resolve_if_needed or args.resolve_task or yaml.safe_load((scene_dir / 'cell_definition.yaml').read_text()).get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2'
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     if (out/'acceptance.json').exists():
@@ -155,11 +168,11 @@ def main():
     executor_path = installed_scripts/'perceived_object_grasp_execute.py'
     launch = executor = None
     audit = dict(result='FAIL', execution_action_goals=[], shutdown_clean=False,
-                 scene_share=get_package_share_directory('ur5_2f_test'), executor=str(executor_path),
+                 scene_share=get_package_share_directory(scene_name), executor=str(executor_path),
                  mode='R1.5 execution' if args.execute else 'R1.4 plan-only', domain_id=args.domain_id,
                  source_commit=subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip(),
                  source_dirty=bool(subprocess.check_output(['git','status','--porcelain'], cwd=root, text=True)),
-                 executor_hashes={})
+                 executor_hashes={}, task_resolution_mode='resolve' if args.resolve_task else 'consume' if uses_authored_task else 'legacy')
     deadline = time.monotonic() + args.timeout
     started_at = time.monotonic()
     log_offset = 0
@@ -194,7 +207,7 @@ def main():
             rclpy.spin_once(node, timeout_sec=.1)
         if any(name != node.get_name() for name, _ in node.get_node_names_and_namespaces()):
             raise RuntimeError('ROS domain is already occupied; retry with an unused domain')
-        for name in ['perceived_object_grasp_execute.py', 'perceived_object_grasp_plan.py', 'runtime_pick_inputs.py']:
+        for name in ['perceived_object_grasp_execute.py', 'perceived_object_grasp_plan.py', 'runtime_pick_inputs.py', 'task_intent_resolver.py', 'task_intent_v2.py', 'full_cycle_preplanner.py', 'physical_destination.py', 'grasp_strategy_candidates.py']:
             if (installed_scripts/name).read_bytes() != (root/'scripts'/name).read_bytes():
                 raise RuntimeError(f'installed executor differs from this checkout: {name}')
             audit['executor_hashes'][name] = hashlib.sha256((installed_scripts/name).read_bytes()).hexdigest()
@@ -202,21 +215,22 @@ def main():
         audit['scene_hashes'] = {}
         for relative in ['environment.yaml', 'cell_definition.yaml', 'config/moveit_collision_objects.yaml']:
             installed = (Path(audit['scene_share'])/relative).read_bytes()
-            if installed != (root/'scenes/ur5_2f_test'/relative).read_bytes():
+            if installed != (scene_dir/relative).read_bytes():
                 raise RuntimeError(f'installed scene differs from this checkout: {relative}')
             audit['scene_hashes'][relative] = hashlib.sha256(installed).hexdigest()
         with (out/'launch.log').open('w') as log, (out/'executor.log').open('w') as elog:
             if args.stream_status:
                 print(json.dumps(dict(stage='LAUNCHING_FAKE_HARDWARE')), flush=True)
-            launch = subprocess.Popen(['ros2', 'launch', 'ur5_2f_test', 'demo.launch.py',
+            launch = subprocess.Popen(['ros2', 'launch', scene_name, 'demo.launch.py',
                 'use_fake_hardware:=true', 'allow_trajectory_execution:='+str(args.execute).lower(),
                 'launch_rviz:='+str(args.launch_rviz).lower()],
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: 'authored collision objects; MoveIt is planning truth' in (out/'launch.log').read_text())
             executor = subprocess.Popen([sys.executable, str(executor_path),
-                '--scene-package', 'ur5_2f_test', '--task-request', str(root/'config/runtime/r1_4b_task.yaml'),
-                '--detections', str(root/'config/runtime/r1_4_replay.yaml'), '--replay',
+                '--scene-package', str(scene_dir),
+                '--detections', str(args.detections or root/'config/runtime/r1_4_replay.yaml'), '--replay',
                 '--timeout', str(min(300, max(1, deadline-time.monotonic()-5))), '--summary-output', str(summary_path)]
+                + (['--resolve-task'] if args.resolve_task else [] if uses_authored_task else ['--task-request', str(root/'config/runtime/r1_4b_task.yaml')])
                 + (['--start'] if args.execute else []),
                 stdout=elog, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: executor.poll() is not None)

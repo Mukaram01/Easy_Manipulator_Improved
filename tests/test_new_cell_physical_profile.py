@@ -89,11 +89,17 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     for key in ('task_recipe_path', 'detected_objects_example_path', 'environment_objects_path', 'destinations_path', 'source_cell_definition'):
         assert Path(summary[key]).is_file(), (key, summary[key])
     assert summary['blockers'] and not summary['recommended_commands']
+    package_xml = (destination / 'package.xml').read_text()
+    assert '<exec_depend>ur5_moveit_config</exec_depend>' in package_xml
+    assert '<exec_depend>robotiq_85_moveit_config</exec_depend>' in package_xml
     recipe = yaml.safe_load((destination / 'config/task_recipe.yaml').read_text())
     assert recipe['enabled'] is False
     assert recipe['expected']['allow_fallback_rule'] is False
     assert not recipe['decision_rules'] and not recipe['pick']['allowed_grasp_methods']
-    assert not (destination / 'task_recipe_from_builder_intent.yaml').exists()
+    blocked_recipe = yaml.safe_load((destination / 'task_recipe_from_builder_intent.yaml').read_text())
+    assert blocked_recipe['enabled'] is False
+    assert blocked_recipe['task_intent_resolution']['readiness_status'] == 'BLOCKED'
+    assert not (destination / 'offline_plan_preview_request.yaml').exists()
     import subprocess
     command = subprocess.run(['bash', str(destination / 'generated/generated_gated_dry_run_command.sh')], capture_output=True, text=True)
     assert command.returncode == 2 and 'BLOCKED' in command.stderr

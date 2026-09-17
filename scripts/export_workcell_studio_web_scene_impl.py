@@ -3410,7 +3410,18 @@ def build_web_scene(
     warnings: List[Json] = []
     data = _load_inputs(scene_dir, warnings)
     authoring_blockers: List[Json] = []
+    task_resolution = None
     try:
+        if (scene_dir / 'config/workcell_builder_task_intent.yaml').is_file():
+            from task_intent_resolver import read_scene_task, scene_resolution
+            try:
+                intent, physical, document = read_scene_task(scene_dir)
+                task_resolution = scene_resolution(scene_dir, intent, physical, document)
+            except ValueError as exc:
+                raise BlockingExportError("task/physical destination: " + str(exc)) from exc
+            # Derived view only: the active binding comes from the authored model.
+            data['environment']['task'] = {
+                'place': {'target_ref': intent['place']['target']['region_ref']}}
         _normalise_active_place_zone(data)
     except BlockingExportError as exc:
         if not allow_incomplete_preview:
@@ -3525,6 +3536,13 @@ def build_web_scene(
             },
         ],
     }
+    if task_resolution is not None:
+        output['task_intent_resolution'] = task_resolution
+        output['normalized_intent_sha256'] = task_resolution['normalized_intent_sha256']
+        output['resolution_sha256'] = task_resolution['resolution_sha256']
+        output['task_readiness'] = task_resolution['readiness_status']
+        if task_resolution['readiness_status'] == 'BLOCKED':
+            output['task_blocker'] = task_resolution['readiness']
     if authoring_blockers:
         output.update({
             "authoring_status": "blocked",

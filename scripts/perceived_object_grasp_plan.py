@@ -60,7 +60,12 @@ def load_grasp_contract(scene_package):
     for name, values in (("tcp_pose_xyz", tcp_xyz), ("tcp_pose_rpy", tcp_rpy)):
         if not isinstance(values, list) or len(values) != 3 or not _finite(values):
             raise ValueError(f"{source}: missing or invalid end_effector.{name}")
-    distances = [grasp.get("approach_distance_m"), grasp.get("retreat_distance_m")]
+    intent = cell.get('builder_task_intent', {})
+    if intent.get('schema') == 'workcell_builder_task_intent/v2':
+        grasp = intent['pick']['grasp']
+        distances = [grasp['approach']['distance_m'], grasp['lift']['distance_m']]
+    else:
+        distances = [grasp.get("approach_distance_m"), grasp.get("retreat_distance_m")]
     if not _finite(distances) or any(v <= 0 for v in distances):
         raise ValueError(f"{source}: approach/retreat distances must be positive")
     links = end_effector.get("allowed_touch_links")

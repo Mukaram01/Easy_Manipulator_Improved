@@ -386,14 +386,6 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     authored_layout, authored_layout_ref, layout_warnings = _load_environment_layout(scene_path)
     warnings.extend(layout_warnings)
     if not task_intent_path:
-        generated_intent, missing_msgs = _build_task_intent_from_scene(scene_path, authored_layout, meta)
-        if missing_msgs:
-            warnings.append("Builder-authored task intent is incomplete: " + ", ".join(missing_msgs))
-        else:
-            generated_task_intent_path = output_dir / "workcell_builder_task_intent.yaml"
-            _write_structured(generated_task_intent_path, generated_intent)
-            task_intent_path = generated_task_intent_path
-    if not task_intent_path:
         raise ValueError(
             f"Task intent '{scene_path / 'config/workcell_builder_task_intent.yaml'}' is missing; "
             f"layout '{authored_layout_ref or scene_path / 'layout/workcell_studio_layout.yaml'}' cannot resolve task identifiers"
@@ -401,7 +393,8 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     resolved_layout_path = (Path(authored_layout_ref) if authored_layout_ref else
                             scene_path / "layout" / "workcell_studio_layout.yaml")
     try:
-        task_intent_payload = _load_optional(task_intent_path)
+        from task_intent_resolver import read_scene_task, scene_resolution, resolved_recipe
+        task_intent_payload, task_physical, task_document = read_scene_task(scene_path)
     except Exception as exc:
         raise ValueError(
             f"Task intent '{task_intent_path}' and layout '{resolved_layout_path}' cannot resolve "
@@ -566,25 +559,54 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     if robot_meta.get("preview_only"):
         warnings.append("Selected robot is preview_only; runtime execution remains blocked.")
 
-    if task_intent_path:
-        task_intent_validation = _validate_task_intent(task_intent_path, scene_path)
-        if task_intent_validation.get("status") == "FAIL":
-            details = "; ".join(str(e) for e in task_intent_validation.get("errors", []))
-            raise ValueError(
-                f"Task intent '{task_intent_path}' and layout '{resolved_layout_path}' cannot resolve "
-                f"identifier '<invalid task intent>': {details or 'validation failed'}"
-            )
-        ti = task_intent_validation.get("task_intent", {})
-        builder_task_intent = {**ti, "source_file": str(task_intent_path)}
-        cell_def["builder_task_intent"] = {**builder_task_intent, "source_file": str(task_intent_path.relative_to(scene_path)) if task_intent_path.is_relative_to(scene_path) else str(task_intent_path)}
-        if ti.get("schema") == "workcell_builder_task_intent/v2":
-            task_recipe_generation = {"status": "BLOCKED", "reason": "TaskIntent v2 requires the shared resolver/preplanner; legacy recipe conversion is unavailable."}
-        else:
-            task_recipe_generation = _generate_task_recipe(task_intent_path, output_dir / "task_recipe_from_builder_intent.yaml", scene_path)
-        if task_recipe_generation.get("status") != "PASS":
-            warnings.append("Task recipe generation from builder intent is partial or failed.")
+    profile_id = env.get('workcell_studio', {}).get('recommended_profile')
+    if profile_id:
+        from instantiate_workcell_studio_profile import load_profile
+        profile, _ = load_profile(profile_id)
+        if profile.get('runtime'):
+            cell_def['runtime'] = dict(profile['runtime'])
+
+    resolution = scene_resolution(scene_path, task_intent_payload, task_physical, task_document)
+    cell_def['builder_task_intent'] = task_intent_payload
+    cell_def['task_intent_resolution'] = resolution
+    cell_def['normalized_intent_sha256'] = resolution['normalized_intent_sha256']
+    cell_def['resolution_sha256'] = resolution['resolution_sha256']
+    # Every compatibility field is derived from the normalized task, never environment.task.
+    selection = task_intent_payload['pick']['selection']
+    destination = resolution['place_resolution'].get('destination')
+    cell_def['task'] = {
+        **task_intent_payload['task'],
+        'object_source': selection['source_type'],
+        'perception_source': selection['source_ref'],
+        'pick_zone': selection['zone_ref'],
+        'pick': {'source_ref': selection['zone_ref'], 'object_source': selection['source_type']},
+        'place': {'target_ref': task_intent_payload['place']['target']['region_ref']},
+        'object_filter': selection['object_filter'],
+        'home_pose': robot_env.get('home_named_target', 'home'),
+        'destinations': [] if destination is None else [{
+            'id': destination['id'], 'target_ref': destination['target_id'], 'frame': 'world',
+            'pose_xyz': destination['pose_xyz'], 'pose_rpy': destination['pose_rpy']}],
+        'rules': task_intent_payload.get('routing', {}).get('rules', []),
+    }
+    builder_task_intent = task_intent_payload
+    task_intent_validation = {'status': 'PASS', 'normalized_intent_sha256': resolution['normalized_intent_sha256']}
+    if resolution['readiness_status'] in ('READY', 'WARNING'):
+        recipe = resolved_recipe(task_intent_payload, resolution)
+        _write_structured(output_dir / 'task_recipe_from_builder_intent.yaml', recipe)
+        cell_def['grasp'] = recipe['grasp']
+        task_recipe_generation = {'status': 'PASS', 'resolution_sha256': resolution['resolution_sha256']}
     else:
-        warnings.append("No builder task intent file found; exported scene has physical layout metadata but no pick/place/grasp task intent.")
+        task_recipe_generation = {'status': 'BLOCKED', **resolution['readiness']}
+        cell_def.pop('grasp', None)
+        # Invalidate all previous derived task handoffs, not just the cell file.
+        _write_structured(output_dir / 'task_recipe_from_builder_intent.yaml', {
+            'schema_version': 'task_recipe/v1', 'enabled': False,
+            'task_intent_resolution': resolution,
+            'normalized_intent_sha256': resolution['normalized_intent_sha256'],
+            'resolution_sha256': resolution['resolution_sha256'],
+            'readiness': resolution['readiness']})
+        (output_dir / 'offline_plan_preview_request.yaml').unlink(missing_ok=True)
+        warnings.append(resolution['readiness']['reason'])
 
     cell_path = output_dir / "cell_definition.yaml"
     layout_path = output_dir / "environment_layout.yaml"
@@ -592,7 +614,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     compatibility_path = output_dir / "compatibility_report.json"
     _write_structured(cell_path, cell_def)
     _write_structured(layout_path, environment_layout)
-    selected_assets = {"robot": robot_name, "end_effector": ee_name, "sensor": sensors_meta[0] if sensors_meta else None, "environment_assets": [a.get("id") for a in assets], "custom_stl_assets": [a.get("source",{}).get("path") for a in assets if isinstance(a.get("source"), dict) and a.get("source",{}).get("path")], "task_template": task_type, "grasp_strategy": normalized_grasp.get("strategy_id"), "fake_hardware_default": True, "project_name": scene_path.name}
+    selected_assets = {"robot": robot_name, "end_effector": ee_name, "sensor": sensors_meta[0] if sensors_meta else None, "environment_assets": [a.get("id") for a in assets], "custom_stl_assets": [a.get("source",{}).get("path") for a in assets if isinstance(a.get("source"), dict) and a.get("source",{}).get("path")], "task_template": task_type, "grasp_strategy": resolution["grasp_resolution"].get("selected_strategy_ref"), "fake_hardware_default": True, "project_name": scene_path.name}
     selected_assets_path.write_text(json.dumps(selected_assets, indent=2)+"\n", encoding="utf-8")
     compatibility_result = "WARN" if robot_meta.get("preview_only") else "OK"
     compatibility_report = {"status": compatibility_result, "runtime_supported": not bool(robot_meta.get("preview_only")), "preview_only": bool(robot_meta.get("preview_only")), "fake_hardware_default": True, "real_hardware_default": False, "warnings": [w for w in warnings if "preview_only" in w or "unknown" in w.lower()]}

@@ -7,20 +7,22 @@ Workcell Studio is the internal configurable robotic-cell platform for defining,
 
 Sorting is only one scenario template in Workcell Studio, alongside other templates such as inspection routing, reject handling, and palletizing.
 
-## Current milestone — R2.0c task authoring and persistence (partial)
+## Current milestone — R2.0d/e authoring/runtime parity closed
 
-As of 2026-09-16, main includes the R2.0a contract and R2.0b shared
-resolver/preplanner implementation (PRs #3168/#3169). Follow the
-[R2 implementation plan](../superpowers/plans/2026-09-15-r2-full-engineering-task-authoring.md)
-and current code rather than the historical R1 priority text below.
+As of 2026-09-17, the saved TaskIntent v2 → shared resolver → physical destination
+contract is verified through Generate, Validate, Product View and MoveIt
+plan-only consumption for `ur5_2f_test` and a cell created with the existing New
+Cell wizard. Save/reopen preserves normalized hashes; destination edit/restore
+changes/restores the same downstream result; PREFERRED fallback is observable;
+invalid EXACT blocks without fallback. All acceptance runs use fake hardware
+and send zero execution action goals.
 
-This R2.0c branch binds the existing Builder task controls to TaskIntentModel v2,
-adds atomic persistence, and preserves drafts across scene navigation and
-external edits. [HOME PC evidence](evidence/r20c/home-authoring/README.md) proves
-component persistence and focused tests, but full Builder GUI acceptance remains
-unfinished: the full Studio viewport smoke failed. R2.0c is **PARTIALLY CONFIRMED**.
-R2.0d/e authoritative GUI/generation/runtime parity and acceptance remain open;
-bounded physics feasibility and Stage-A piled-object simulation stay gated.
+See [R2.0d/e evidence and limits](evidence/r20de/README.md) and the
+[R2 implementation plan](../superpowers/plans/2026-09-15-r2-full-engineering-task-authoring.md).
+R2.0c is treated as closed for this milestone; its manual acceptance is not
+reopened. This closure covers the existing UR5/2F direct pick/place contract,
+not every future task-authoring feature. Physics feasibility, piled-object
+cycles, EPD and real hardware remain gated and were not started here.
 
 ## Historical R1 canonical UR5 + Robotiq 2F industrial cell
 

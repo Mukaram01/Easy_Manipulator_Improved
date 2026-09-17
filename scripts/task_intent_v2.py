@@ -23,6 +23,8 @@ except ImportError:  # CLI execution with scripts/ on sys.path
 
 ROOT = Path(__file__).resolve().parents[1]
 STRATEGY_DIR = ROOT / "catalog" / "grasp_strategies"
+if not STRATEGY_DIR.is_dir():
+    STRATEGY_DIR = Path(__file__).resolve().parents[2] / 'share/workcell_builder/catalog/grasp_strategies'
 STRATEGIES = {"top_2f", "side_grip_basic", "finger_pinch_basic"}
 SUPPORTED_CAPABILITIES = {"two_finger_parallel"}
 TOOL_CAPABILITY_MAP = {
@@ -259,4 +261,5 @@ def normalized_intent_hash(payload: dict[str, Any]) -> str:
     result = parse_validate_normalize(payload)
     if result["diagnostics"]:
         raise ValueError("INTENT_INVALID: authoritative hash is unavailable")
-    return canonical_hash(result["normalized"])
+    return canonical_hash({k: v for k, v in result["normalized"].items()
+                           if k not in ("scene_package", "provenance")})
