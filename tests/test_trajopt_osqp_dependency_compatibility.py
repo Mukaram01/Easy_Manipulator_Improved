@@ -64,3 +64,23 @@ def test_helper_scripts_skip_rosdep_osqp_and_run_preflight():
     for key in ["osqp", "osqp_vendor", "osqp-eigen", "osqp_eigen"]:
         assert key in fix
         assert key in deps
+
+
+def test_preflight_follows_workspace_trajopt_symlinks():
+    text = _text(PREFLIGHT)
+    assert 'find -L "$SRC_DIR"' in text
+    assert 'sco_dir=$(readlink -f' in text
+
+
+def test_humble_builder_prefers_pinned_osqp_and_repairs_stale_cache():
+    text = _text(REPO / "fix_and_build_humble.sh")
+    assert 'expected_osqp_dir="/usr/local/lib/cmake/osqp"' in text
+    assert 'trajopt_sco_cache="$WORKSPACE/build/trajopt_sco/CMakeCache.txt"' in text
+    assert 'export CMAKE_PREFIX_PATH="/usr/local${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"' in text
+    assert "removed stale trajopt_sco cache using incompatible OSQP provider" in text
+
+
+def test_humble_builder_sources_ros_safely_under_nounset():
+    text = _text(REPO / "fix_and_build_humble.sh")
+    assert text.count(': "${AMENT_TRACE_SETUP_FILES:=}"') >= 2
+    assert text.count("set +u") >= 2

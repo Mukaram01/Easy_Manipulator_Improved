@@ -136,7 +136,10 @@ PY
     missing_tools+=(python3-yaml)
   fi
 
+  set +u
+  : "${AMENT_TRACE_SETUP_FILES:=}"
   source /opt/ros/humble/setup.bash
+  set -u
   if ! ros2 pkg prefix moveit_ros_perception >/dev/null 2>&1; then
     missing_tools+=(ros-humble-moveit-ros-perception)
   fi
@@ -186,7 +189,10 @@ PY
 
   check_epd_underlay_layout
 
+  set +u
+  : "${AMENT_TRACE_SETUP_FILES:=}"
   source /opt/ros/humble/setup.bash
+  set -u
   if ! ros2 pkg prefix moveit_ros_perception >/dev/null 2>&1; then
     missing+=("Missing MoveIt perception package required for octomap pointcloud updates: ros-humble-moveit-ros-perception")
   fi
@@ -549,6 +555,24 @@ build_phase() {
 
   prepare_osqp_stack
   run_cmd "./src/easy_manipulation_deployment/scripts/preflight_trajopt_osqp_compatibility.sh \"$WORKSPACE\""
+
+  # Prefer the pinned OSQP v1 provider installed in /usr/local.  ROS Humble
+  # also exports an older OSQP package from /opt/ros/humble; without this
+  # ordering, trajopt_sco can cache the incompatible Humble provider.
+  local trajopt_sco_cache="$WORKSPACE/build/trajopt_sco/CMakeCache.txt"
+  local expected_osqp_dir="/usr/local/lib/cmake/osqp"
+  if [[ -f "$trajopt_sco_cache" ]]; then
+    local cached_osqp_dir
+    cached_osqp_dir="$(grep '^osqp_DIR:' "$trajopt_sco_cache" | tail -n1 | cut -d= -f2- || true)"
+    if [[ -n "$cached_osqp_dir" && "$cached_osqp_dir" != "$expected_osqp_dir" ]]; then
+      echo "Removing stale trajopt_sco CMake cache using OSQP provider: $cached_osqp_dir"
+      run_cmd "rm -rf '$WORKSPACE/build/trajopt_sco' '$WORKSPACE/install/trajopt_sco'"
+      log_change "removed stale trajopt_sco cache using incompatible OSQP provider"
+    fi
+  fi
+
+  export CMAKE_PREFIX_PATH="/usr/local${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+
   capture_epd_state
 
   run_cmd "./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh"
