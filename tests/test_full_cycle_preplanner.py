@@ -102,7 +102,7 @@ def test_complete_cycle_preserves_scene_states_metadata_and_top_geometry():
     assert len(result.stages) == 9
     assert trace == ['GENERATE_GRASPS'] + EXPECTED + ['CANDIDATE_READY']
     assert validity == pytest.approx([.01005, .0201])
-    assert [g[0] for g in goals if g[3]] == ['PREPLAN_GRASP', 'PREPLAN_RETREAT']
+    assert [g[0] for g in goals if g[3]] == ['PREPLAN_GRASP', 'PREPLAN_LIFT', 'PREPLAN_RETREAT']
     assert runtime.pose_values(goals[0][1].pose) == pytest.approx([.4, -.2, .47, -.7071067811865475, .7071067811865476, 0., 0.])
     assert [goals[i][1].pose.position.z for i in (3, 4, 5, 7)] == pytest.approx([.5, .5, .35, .5])
     assert steps[3]['original'] == initial.world.collision_objects[0]
@@ -291,3 +291,86 @@ def test_finger_pinch_aperture_follows_finger_closing_axis(yaw_index, success):
     if not success:
         assert 'aperture' in result.reason
         assert goals == []
+
+
+@pytest.mark.parametrize('failed_stage', ['PREPLAN_APPROACH', 'PREPLAN_GRASP',
+                                        'PREPLAN_CLOSE_GRIPPER', 'PREPLAN_LIFT'])
+def test_full_path_rejection_keeps_collision_evidence_and_original_ranking(failed_stage):
+    from dataclasses import replace
+    kwargs, _, goals, _ = fixture()
+    plan = kwargs['operations'].plan_segment
+    attempts = {'count': 0}
+    def collision_once(view, name, goal, group=None, straight=False):
+        if name == 'PREPLAN_APPROACH':
+            attempts['count'] += 1
+        if attempts['count'] == 1 and name == failed_stage:
+            error = RuntimeError('fixture collision along required motion')
+            error.details = dict(failure_kind='collision', colliding_links=['generic_tool_link'],
+                                 collision_objects=['generic_container'], moveit_code=-12)
+            raise error
+        return plan(view, name, goal, group, straight)
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=collision_once)
+    target = dict(kwargs.pop('observation'), confidence=.9)
+    kwargs.pop('candidate')
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_legacy_cycle(targets=[target], summary=summary, **kwargs)
+    rejected, selected = summary['candidate_attempts']
+    assert [rejected['grasp_index'], selected['grasp_index']] == [3, 0]
+    assert rejected['failed_stage'] == failed_stage
+    failure = rejected['checks'][-1]
+    assert failure['candidate_id'] == 'top_2f::003'
+    assert failure['failed_stage'] == failed_stage
+    assert failure['failure_kind'] == 'collision'
+    assert failure['colliding_links'] == ['generic_tool_link']
+    assert failure['collision_objects'] == ['generic_container']
+    assert failure['moveit_code'] == -12
+    assert cycle['grasp_index'] == 0 and cycle['full_cycle_prevalidated']
+    selected_goals = goals[-9:]
+    assert all(next(g[3] for g in selected_goals if g[0] == name)
+               for name in ['PREPLAN_GRASP', 'PREPLAN_LIFT'])
+
+
+@pytest.mark.parametrize('policy,ready', [('AUTO', True), ('PREFERRED', True), ('EXACT', False)])
+def test_authored_resolver_keeps_policy_and_descent_rejection_evidence(policy, ready):
+    from dataclasses import replace
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+    from full_cycle_preplanner import MotionFeasibilityFailure
+    from moveit_msgs.msg import ContactInformation
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    intent = valid_intent(policy)
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    plan = kwargs['operations'].plan_segment
+    count = {'approaches': 0}
+    def first_descent_blocked(view, name, goal, group=None, straight=False):
+        if name == 'PREPLAN_APPROACH':
+            count['approaches'] += 1
+        if name == 'PREPLAN_GRASP' and count['approaches'] == 1:
+            raise MotionFeasibilityFailure('tool contacts container during descent', moveit_code=-12,
+                contacts=[ContactInformation(contact_body_1='generic_container', body_type_1=1,
+                    contact_body_2='generic_tool_link', body_type_2=0, depth=.001)])
+        return plan(view, name, goal, group, straight)
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=first_descent_blocked)
+    summary = {'candidate_attempts': []}
+    if ready:
+        cycle = runtime.plan_authored_cycle(intent=intent, environment=env, cell=cell(),
+            targets=[observation], summary=summary, **kwargs)
+        assert cycle['candidate'].candidate_id == 'top_2f::001'
+        assert cycle['full_cycle_prevalidated']
+    else:
+        with pytest.raises(RuntimeError, match='PREPLAN_GRASP_FAILED'):
+            runtime.plan_authored_cycle(intent=intent, environment=env, cell=cell(),
+                targets=[observation], summary=summary, **kwargs)
+    resolution = summary['task_intent_resolution']
+    assert resolution['readiness_status'] == ('READY' if ready else 'BLOCKED')
+    grasp = resolution['grasp_resolution']
+    assert [a['candidate_id'] for a in grasp['attempts']] == (['top_2f::000', 'top_2f::001'] if ready else ['top_2f::000'])
+    assert not grasp['fallback']['used']
+    failure = grasp['attempts'][0]['checks'][-1]
+    assert failure['failed_stage'] == 'PREPLAN_GRASP'
+    assert failure['failure_kind'] == 'collision'
+    assert failure['colliding_links'] == ['generic_tool_link']
+    assert failure['collision_objects'] == ['generic_container']

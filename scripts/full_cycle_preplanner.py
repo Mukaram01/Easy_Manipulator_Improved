@@ -62,6 +62,23 @@ class PreplanResult:
     cycle: dict | None
 
 
+class MotionFeasibilityFailure(RuntimeError):
+    """Serializable rejection evidence from the existing collision/planning API."""
+
+    def __init__(self, reason, *, moveit_code=None, contacts=()):
+        super().__init__(reason)
+        pairs = [dict(body_1=c.contact_body_1, body_2=c.contact_body_2,
+                      body_type_1=c.body_type_1, body_type_2=c.body_type_2,
+                      depth_m=c.depth) for c in contacts]
+        self.details = dict(
+            failure_kind='collision' if pairs else 'planning', moveit_code=moveit_code,
+            contacts=pairs,
+            colliding_links=sorted({p[f'body_{i}'] for p in pairs for i in (1, 2)
+                                    if p[f'body_type_{i}'] == 0}),
+            collision_objects=sorted({p[f'body_{i}'] for p in pairs for i in (1, 2)
+                                      if p[f'body_type_{i}'] in (1, 2)}))
+
+
 def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                        destination: dict, contract: dict, operations: PreplanOperations,
                        deadline: float) -> PreplanResult:
@@ -211,7 +228,10 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             trial = operations.updated_state(view.robot_state, {'gripper_finger1_joint': 0.804*i/80})
             response = operations.state_validity(trial)
             if response.contacts:
-                operations.verify_selected_contacts(response.contacts, observation['id'], contract['allowed_touch_links'])
+                try:
+                    operations.verify_selected_contacts(response.contacts, observation['id'], contract['allowed_touch_links'])
+                except RuntimeError as exc:
+                    raise MotionFeasibilityFailure(str(exc), contacts=response.contacts) from exc
                 close = 0.804*i/80
                 break
         if close is None:
@@ -226,7 +246,9 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         view.allowed_collision_matrix = copy.deepcopy(baseline)
         steps.append(dict(kind='attach', stage='ATTACH', before=before, after=copy.deepcopy(view), original=original))
         checks.append(dict(code='ATTACH', status='PASS'))
-        motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, dz=retreat))
+        # A reachable lift endpoint does not prove the required retreat corridor.
+        # Use the same swept tool/robot check as descent before admitting a grasp.
+        motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, dz=retreat), straight=True)
         delta = [a-b for a, b in zip(destination['pose_xyz'], observation['pose'][:3])]
         motion('PREPLAN_TRANSFER', operations.translated_pose(tool_at_grasp, delta[0], delta[1], delta[2]+place_approach))
         motion('PREPLAN_PLACE', operations.translated_pose(tool_at_grasp, *delta))
@@ -263,6 +285,9 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         return PreplanResult(True, candidate.candidate_id, None, None, checks, stages, cycle)
     except Exception as exc:
         reason_code = check_code + '_FAILED'
-        stages.append(dict(stage=current_stage, success=False, reason=str(exc), reason_code=reason_code))
-        checks.append(dict(code=check_code, status='FAIL', reason_code=reason_code, reason=str(exc)))
+        failure = dict(failure_kind='planning' if check_code.startswith('PREPLAN_') else 'constraint')
+        failure.update(getattr(exc, 'details', {}))
+        failure.update(candidate_id=candidate.candidate_id, failed_stage=current_stage)
+        stages.append(dict(stage=current_stage, success=False, reason=str(exc), reason_code=reason_code, **failure))
+        checks.append(dict(code=check_code, status='FAIL', reason_code=reason_code, reason=str(exc), **failure))
         return PreplanResult(False, candidate.candidate_id, reason_code, str(exc), checks, stages, None)

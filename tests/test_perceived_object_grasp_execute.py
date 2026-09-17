@@ -255,3 +255,66 @@ def test_detachment_propagates_actual_tool_rotation_and_preserves_local_geometry
     assert achieved[:3] == pytest.approx([0.3, 0.1, 0.0])
     diff = MODULE.place_detachment_diff(original, "ee_palm", achieved[:3], achieved[3:])
     assert MODULE.pose_values(diff.world.collision_objects[0].pose) == pytest.approx(achieved)
+
+
+def test_motion_failure_diagnostics_exclude_private_touch_and_changed_world():
+    from copy import deepcopy
+    from moveit_msgs.msg import ContactInformation, CollisionObject, PlanningScene
+    live = PlanningScene()
+    live.world.collision_objects = [CollisionObject(id='target'), CollisionObject(id='container')]
+    planned = deepcopy(live)
+    planned.allowed_collision_matrix = MODULE.target_contact_matrix(matrix_fixture(), 'target', ['tip1', 'tip2'])
+    contacts = [ContactInformation(contact_body_1=world, body_type_1=1,
+                                  contact_body_2=link, body_type_2=0, depth=.002)
+                for world, link in [('target', 'tip1'), ('container', 'wrist')]]
+    kept = MODULE.contacts_in_planned_scene(contacts, planned, live)
+    assert [c.contact_body_2 for c in kept] == ['wrist']
+    planned.world.collision_objects[1].pose.position.x = .1
+    assert MODULE.contacts_in_planned_scene(contacts, planned, live) == []
+
+
+def test_collision_aware_ik_only_uses_matching_live_scene():
+    from copy import deepcopy
+    from moveit_msgs.msg import PlanningScene, CollisionObject, AttachedCollisionObject
+    live = PlanningScene()
+    live.world.collision_objects = [CollisionObject(id='target')]
+    planned = deepcopy(live)
+    assert MODULE.ik_scene_matches_live(planned, live)
+    planned.robot_state.joint_state.name = ['arbitrary_joint']
+    planned.robot_state.joint_state.position = [.2]
+    assert MODULE.ik_scene_matches_live(planned, live)  # IK carries its own seed.
+    planned.allowed_collision_matrix = MODULE.target_contact_matrix(matrix_fixture(), 'target', ['tip1'])
+    assert not MODULE.ik_scene_matches_live(planned, live)
+    planned = deepcopy(live)
+    planned.world.collision_objects = []
+    assert not MODULE.ik_scene_matches_live(planned, live)
+    planned = deepcopy(live)
+    planned.robot_state.attached_collision_objects = [AttachedCollisionObject(link_name='generic_tool')]
+    assert not MODULE.ik_scene_matches_live(planned, live)
+
+
+def test_collision_diagnostic_never_default_wins_over_always_default():
+    from moveit_msgs.msg import PlanningScene, CollisionObject, ContactInformation
+    scene = PlanningScene()
+    scene.world.collision_objects = [CollisionObject(id='container')]
+    scene.allowed_collision_matrix.default_entry_names = ['container', 'tool']
+    scene.allowed_collision_matrix.default_entry_values = [False, True]
+    contact = ContactInformation(contact_body_1='container', body_type_1=1,
+                                 contact_body_2='tool', body_type_2=0)
+    assert MODULE.contacts_in_planned_scene([contact], scene, scene) == [contact]
+
+
+def test_support_binding_uses_reviewed_asset_footprint_not_nearest_obstacle():
+    obj = dict(id='part', frame_id='world', pose=[.1, .2, .0155, 0., 0., 0., 1.], dimensions=[.025]*3)
+    environment = {'assets': [dict(id='fixture', frame='world', pose_xyz=[.1,.2,.1],
+        pose_rpy=[0.,0.,0.], collision={'enabled': True}, usable_placement=dict(
+        pose_xyz=[0.,0.,.01], pose_rpy=[0.,0.,0.], dimensions=[.24,.12,.14]))]}
+    manifest = {'objects': [dict(id='scene::fixture', source_item_id='fixture')]}
+    assert MODULE.legitimate_support_ids(obj, environment, manifest) == {'scene::fixture'}
+    obj['pose'][0] = .23  # Outside reviewed footprint: lip/nearby obstacle is not a floor binding.
+    assert MODULE.legitimate_support_ids(obj, environment, manifest) == set()
+    obj['pose'][:3] = [.1, .2, .2125]  # Above usable volume, e.g. resting on a lip.
+    assert MODULE.legitimate_support_ids(obj, environment, manifest) == set()
+    obj['pose'][:3] = [.1, .2, .0155]
+    environment['assets'][0].pop('usable_placement')
+    assert MODULE.legitimate_support_ids(obj, environment, manifest) == set()

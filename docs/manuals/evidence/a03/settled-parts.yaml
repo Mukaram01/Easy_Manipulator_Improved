@@ -1,0 +1,184 @@
+objects:
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.9
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_00
+  pose:
+    frame_id: world
+    rpy:
+    - 1.8602158363430123e-09
+    - -2.0074022422100768e-07
+    - 0.2317814091393146
+    xyz:
+    - 0.45116057425282624
+    - 0.24050423046567335
+    - 0.015499985370777328
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_01
+  pose:
+    frame_id: world
+    rpy:
+    - -0.48367749099488405
+    - 1.570795824999538
+    - -2.1824261784915704
+    xyz:
+    - 0.48445723302141114
+    - 0.2057643811996711
+    - 0.015499981965788692
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_02
+  pose:
+    frame_id: world
+    rpy:
+    - 3.141590614311088
+    - -6.678941666393712e-08
+    - 1.1758501591176271
+    xyz:
+    - 0.5152716482033426
+    - 0.14720703432259977
+    - 0.015499971994410904
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_03
+  pose:
+    frame_id: world
+    rpy:
+    - 0.015141443593368024
+    - 1.5707949787544497
+    - 1.3370573762861124
+    xyz:
+    - 0.574837267693223
+    - 0.21574167789438362
+    - 0.015499971891018217
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_04
+  pose:
+    frame_id: world
+    rpy:
+    - 2.658154377798662e-07
+    - -2.233487884639729e-06
+    - 1.2291242199469434
+    xyz:
+    - 0.5375823337476492
+    - 0.18521252278325973
+    - 0.0154999644877475
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_05
+  pose:
+    frame_id: world
+    rpy:
+    - 1.3166224552852378e-06
+    - -1.5811972420287645e-07
+    - -0.2153633805902815
+    xyz:
+    - 0.41719549163323844
+    - 0.21861669208264203
+    - 0.015499982699519896
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_06
+  pose:
+    frame_id: world
+    rpy:
+    - -3.1415917401052376
+    - 1.4655093787396822e-06
+    - -2.723570783513503
+    xyz:
+    - 0.3657453745965452
+    - 0.30135305958717445
+    - 0.01549997869657242
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_07
+  pose:
+    frame_id: world
+    rpy:
+    - -3.1415916130975714
+    - 1.9298207476481366e-10
+    - -1.0982106817841797
+    xyz:
+    - 0.5206435083112755
+    - 0.29593671854950077
+    - 0.015499987627537532
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 1.0
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_08
+  pose:
+    frame_id: world
+    rpy:
+    - 3.1415926533435345
+    - -1.1870292748739075e-08
+    - 2.899205222163109
+    xyz:
+    - 0.3457233529057961
+    - 0.2490835141525368
+    - 0.015499987284808496
+- age_seconds: 0
+  class_id: workpiece
+  confidence: 0.1
+  dimensions:
+  - 0.025
+  - 0.025
+  - 0.025
+  object_id: part_09
+  pose:
+    frame_id: world
+    rpy:
+    - 2.61071434179969
+    - -1.570795945138951
+    - -1.8412515622317864
+    xyz:
+    - 0.4241812759822257
+    - 0.18624155297486894
+    - 0.01549998945884457
+schema_version: detected_objects/v1
+source:
+  mode: replayed_snapshot
