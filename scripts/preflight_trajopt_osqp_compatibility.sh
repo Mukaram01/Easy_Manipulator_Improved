@@ -13,11 +13,11 @@ info() { echo "TrajOpt/OSQP preflight: $*"; }
 
 [[ -d "$SRC_DIR" ]] || fail "workspace source directory not found: $SRC_DIR"
 
-mapfile -t sco_pkgs < <(find "$SRC_DIR" -path '*/trajopt_sco/package.xml' -print | sort)
+mapfile -t sco_pkgs < <(find -L "$SRC_DIR" -path '*/trajopt_sco/package.xml' -print | sort)
 [[ ${#sco_pkgs[@]} -gt 0 ]] || fail "trajopt_sco package not found under $SRC_DIR. Corrective command: vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos"
 [[ ${#sco_pkgs[@]} -eq 1 ]] || fail "multiple trajopt_sco packages found: ${sco_pkgs[*]}. Remove stale/flattened duplicate checkouts, then rerun scripts/fix_workspace_layout.sh."
 
-sco_dir=$(dirname "${sco_pkgs[0]}")
+sco_dir=$(readlink -f "$(dirname "${sco_pkgs[0]}")")
 trajopt_root="$sco_dir"
 while [[ "$trajopt_root" != "$SRC_DIR" && ! -d "$trajopt_root/.git" ]]; do
   trajopt_root=$(dirname "$trajopt_root")
