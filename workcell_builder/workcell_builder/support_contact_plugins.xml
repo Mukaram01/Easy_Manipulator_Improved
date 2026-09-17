@@ -1,0 +1,5 @@
+<library path="workcell_support_contact">
+  <class name="workcell/InitialSupportContact" type="workcell::InitialSupportContact" base_class_type="planning_request_adapter::PlanningRequestAdapter">
+    <description>Scoped initial object/support numerical contact, strict carried motion after separation.</description>
+  </class>
+</library>

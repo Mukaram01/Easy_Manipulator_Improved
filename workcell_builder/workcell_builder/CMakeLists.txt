@@ -35,6 +35,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_visual_tools REQUIRED)
 find_package(pluginlib REQUIRED)
@@ -44,6 +45,12 @@ find_package(OpenSSL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
+
+add_library(workcell_support_contact SHARED src_support_contact_adapter.cpp)
+ament_target_dependencies(workcell_support_contact moveit_core moveit_ros_planning pluginlib)
+target_link_libraries(workcell_support_contact yaml-cpp)
+pluginlib_export_plugin_description_file(moveit_core support_contact_plugins.xml)
+install(TARGETS workcell_support_contact LIBRARY DESTINATION lib)
 
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)
 find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
@@ -309,6 +316,11 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(workcell_support_contact_test test/support_contact_policy_test.cpp)
+  target_include_directories(workcell_support_contact_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  ament_target_dependencies(workcell_support_contact_test moveit_core moveit_ros_planning pluginlib)
+  target_link_libraries(workcell_support_contact_test yaml-cpp)
+
   ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
   ament_add_gtest(workcell_directory_inspection_test test/workcell_directory_inspection_test.cpp)
   ament_add_gtest(workcell_scene_select_paths_test test/scene_select_paths_test.cpp src_scene_select_paths.cpp)
@@ -824,6 +836,7 @@ if(BUILD_TESTING)
     rviz_preview_metadata_command_test.cpp
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
+    support_contact_policy_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test
     test/studio_log_issue_tracker_test.cpp)

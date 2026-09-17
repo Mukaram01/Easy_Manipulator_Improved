@@ -1,0 +1,330 @@
+{
+  "baseline_commit": "a4c15688e221fca249fef7fb933a7ac5b7c61d79",
+  "boundary": "inclusive <=",
+  "branch": "codex/grasp-full-path-feasibility",
+  "candidate_attempts": [
+    {
+      "candidate_id": "top_2f::003",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 3,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::000",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 0,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::001",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 1,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::002",
+      "failed_stage": "PREPLAN_GRASP",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 2,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-27",
+      "rejection": {
+        "colliding_links": [
+          "gripper_finger2_finger_link",
+          "gripper_finger2_finger_tip_link"
+        ],
+        "collision_objects": [
+          "workcell::target_bin_default"
+        ],
+        "failure_kind": "collision",
+        "max_contact_depth_m": 0.00028336170686350803,
+        "moveit_code": -27
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::004",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 4,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::005",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 5,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::006",
+      "failed_stage": "PREPLAN_GRASP",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 6,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-27",
+      "rejection": {
+        "colliding_links": [
+          "gripper_finger1_finger_link",
+          "gripper_finger1_finger_tip_link"
+        ],
+        "collision_objects": [
+          "workcell::target_bin_default"
+        ],
+        "failure_kind": "collision",
+        "max_contact_depth_m": 0.00028418267148443144,
+        "moveit_code": -27
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::007",
+      "failed_stage": "PREPLAN_GRASP",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 7,
+      "object_id": "runtime::part_08",
+      "reason": "MoveIt action failed: status=6, code=-27",
+      "rejection": {
+        "colliding_links": [
+          "gripper_finger2_finger_link",
+          "gripper_finger2_finger_tip_link"
+        ],
+        "collision_objects": [
+          "workcell::target_bin_default"
+        ],
+        "failure_kind": "collision",
+        "max_contact_depth_m": 0.00027100164515976577,
+        "moveit_code": -27
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::003",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 3,
+      "object_id": "runtime::part_00",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::000",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 0,
+      "object_id": "runtime::part_00",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::001",
+      "failed_stage": "PREPLAN_GRASP",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 1,
+      "object_id": "runtime::part_00",
+      "reason": "MoveIt action failed: status=6, code=-27",
+      "rejection": {
+        "colliding_links": [
+          "gripper_finger2_finger_tip_link"
+        ],
+        "collision_objects": [
+          "runtime::part_05"
+        ],
+        "failure_kind": "collision",
+        "max_contact_depth_m": 0.001913593785202935,
+        "moveit_code": -27
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::002",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 2,
+      "object_id": "runtime::part_00",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::004",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 4,
+      "object_id": "runtime::part_00",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::005",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 5,
+      "object_id": "runtime::part_00",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::006",
+      "failed_stage": "PREPLAN_APPROACH",
+      "full_cycle_prevalidated": false,
+      "grasp_index": 6,
+      "object_id": "runtime::part_00",
+      "reason": "MoveIt action failed: status=6, code=-6",
+      "rejection": {
+        "colliding_links": [],
+        "collision_objects": [],
+        "failure_kind": "planning",
+        "moveit_code": -6
+      },
+      "search_continued": true
+    },
+    {
+      "candidate_id": "top_2f::007",
+      "failed_stage": null,
+      "full_cycle_prevalidated": true,
+      "grasp_index": 7,
+      "object_id": "runtime::part_00",
+      "reason": null,
+      "search_continued": false
+    }
+  ],
+  "canonical_regression": {
+    "execution_action_goals": [],
+    "result": "PASS",
+    "shutdown_clean": true
+  },
+  "execution_attempted": false,
+  "fake_hardware_guard": {
+    "hardware_classes": [
+      "mock_components/GenericSystem",
+      "mock_components/GenericSystem"
+    ],
+    "move_group_use_fake_hardware": true,
+    "real_hardware": false
+  },
+  "full_cycle_prevalidated": true,
+  "input_sha256": {
+    "settled-parts.yaml": "0b436eefa9fa81376b9ed0c5ead8549a85a4cbf00d7e73154885c69ae3665020",
+    "task.yaml": "bbaa09fc4b43d88f4b9096bd5869e7d377a984372be7fc18d893246c3af65f90"
+  },
+  "limits": [
+    "Sampled checks with <=25 micrometre carried-travel bound, not continuous collision detection.",
+    "BOX observations and horizontal unrotated supports; unsupported or ambiguous floor geometry fails closed.",
+    "Support-transition execution is explicitly blocked; no physical grasp/retention claim.",
+    "OMPL/IK planning may time out on a geometrically feasible proposal; ranking remains unchanged and search continues."
+  ],
+  "live_scene_unchanged": true,
+  "ranking": "Existing confidence/id and preferred candidate order; no override",
+  "scope": "A0.3 motion/collision feasibility only",
+  "selected_grasp_index": 7,
+  "selected_grasp_pose": [
+    0.45116057425282624,
+    0.24050423046567335,
+    0.027999987903282578,
+    -0.7071067811865476,
+    -0.7071067811865475,
+    0.0,
+    0.0
+  ],
+  "selected_object_id": "runtime::part_00",
+  "source_sha256": {
+    "scripts/full_cycle_preplanner.py": "a605b66b9142e7b948f19d9e76087c191a69ea6d4cad192a18454319ddea0034",
+    "scripts/perceived_object_grasp_execute.py": "59160fc22948c12f3aa04a02f8a31627ec3d2fc710d8512d8fccf54c165c323f",
+    "workcell_builder/workcell_builder/src_support_contact_adapter.cpp": "5224490ae0bf6eacbb0681aa3ba03a5aef14f2bee67705e45d8cf7a759689b2c",
+    "workcell_builder/workcell_builder/support_contact_policy.hpp": "4e962140ab9869953bf51d809944225977424d380f96d9472199c70d90519753"
+  },
+  "stages": [
+    {"attached_ids":[],"moveit_code":1,"planning_time":0.380361952,"points":181,"stage":"PREPLAN_APPROACH","success":true},
+    {"attached_ids":[],"cartesian_waypoints":40,"initial_support_contact":null,"moveit_code":1,"planning_time":6.154772679999999,"points":121,"stage":"PREPLAN_GRASP","success":true},
+    {"attached_ids":[],"moveit_code":1,"planning_time":0.067285772,"points":19,"stage":"PREPLAN_CLOSE_GRIPPER","success":true},
+    {"attached_ids":["runtime::part_00"],"cartesian_waypoints":40,"initial_support_contact":{"floor_z":0.003000000000000033,"object_id":"runtime::part_00","support_id":"workcell::target_bin_default","tool_link":"tool0"},"moveit_code":1,"planning_time":7.626497867000001,"points":121,"stage":"PREPLAN_LIFT","success":true},
+    {"attached_ids":["runtime::part_00"],"moveit_code":1,"planning_time":0.2248943,"points":11,"stage":"PREPLAN_TRANSFER","success":true},
+    {"attached_ids":["runtime::part_00"],"moveit_code":1,"planning_time":0.210726206,"points":16,"stage":"PREPLAN_PLACE","success":true},
+    {"attached_ids":["runtime::part_00"],"moveit_code":1,"planning_time":0.077630293,"points":19,"stage":"PREPLAN_OPEN_GRIPPER","success":true},
+    {"attached_ids":[],"cartesian_waypoints":40,"initial_support_contact":null,"moveit_code":1,"planning_time":5.139443397000001,"points":121,"stage":"PREPLAN_RETREAT","success":true},
+    {"attached_ids":[],"moveit_code":1,"planning_time":0.40901104499999996,"points":182,"stage":"PREPLAN_HOME","success":true}
+  ],
+  "status": "PASS",
+  "support_contact_tolerance_m": 0.0001,
+  "trajectory_execution_enabled": false,
+  "validation": {
+    "cpp_moveit_fcl_tests": 12,
+    "git_diff_check": "PASS",
+    "python_tests": 136,
+    "targeted_humble_build": "PASS",
+    "total": 148
+  }
+}

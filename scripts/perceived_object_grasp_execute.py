@@ -317,6 +317,75 @@ class CandidateFailure(RuntimeError):
         self.stage = stage
 
 
+def contacts_in_planned_scene(contacts, planned, live):
+    """Keep diagnostic contacts whose geometry/permissions match the private plan.
+
+    GetStateValidity reads the live world. Never mislabel a permitted pad contact
+    or a removed/moved private object as the reason a private MoveGroup plan failed.
+    This filters diagnostics only; MoveGroup's collision checks remain authoritative.
+    """
+    world = {o.id: o for o in planned.world.collision_objects}
+    original = {o.id: o for o in live.world.collision_objects}
+    matrix = planned.allowed_collision_matrix
+    indices = {name: i for i, name in enumerate(matrix.entry_names)}
+    defaults = dict(zip(matrix.default_entry_names, matrix.default_entry_values))
+    result = []
+    for contact in contacts:
+        a, b = contact.contact_body_1, contact.contact_body_2
+        if any(kind == 1 and (name not in world or world[name] != original.get(name))
+               for name, kind in ((a, contact.body_type_1), (b, contact.body_type_2))):
+            continue
+        pair_defaults = [defaults[name] for name in (a, b) if name in defaults]
+        allowed = (matrix.entry_values[indices[a]].enabled[indices[b]]
+                   if a in indices and b in indices else bool(pair_defaults) and all(pair_defaults))
+        if not allowed:
+            result.append(contact)
+    return result
+
+
+def legitimate_support_ids(observation, environment, manifest):
+    """Bind only declared supports or the floor beneath reviewed usable space.
+
+    This identifies eligible physical owners, not collision exemptions. Exact
+    floor contacts/depth are checked by MoveIt's per-contact policy. In
+    particular usable_placement's lower face is NOT the physical floor height.
+    """
+    result = set()
+    declared = {a['id']: a for a in environment.get('support_surfaces', [])}
+    assets = declared | {a['id']: a for a in environment.get('assets', [])}
+    for item in manifest.get('objects', []):
+        asset = assets.get(item.get('source_item_id'))
+        if not asset or asset.get('frame') != 'world' or (asset.get('collision') or {}).get('enabled') is not True:
+            continue
+        # The supported lift is world +Z. Tilted support semantics require a
+        # separately authored approach; do not guess them from a nearby contact.
+        if any(abs(v) > 1e-9 for v in asset.get('pose_rpy', [0., 0., 0.])):
+            continue
+        usable = asset.get('usable_placement')
+        if usable:
+            if any(abs(v) > 1e-9 for v in usable.get('pose_rpy', [0., 0., 0.])):
+                continue
+            center = [a+b for a,b in zip(asset['pose_xyz'], usable['pose_xyz'])]
+            extent = oriented_box_extents(build_grasp_target(observation))
+            if (any(abs(p-c)+e/2 > d/2 for p,c,e,d in
+                    zip(observation['pose'][:2], center[:2], extent[:2], usable['dimensions'][:2])) or
+                    observation['pose'][2] > center[2]+usable['dimensions'][2]/2):
+                continue
+        elif asset['id'] not in declared:
+            continue
+        result.add(item['id'])
+    return result
+
+
+def ik_scene_matches_live(planned, live):
+    """Whether the live IK service can check this private scene without drift."""
+    return (planned.world == live.world
+            and collision_matrix_signature(planned.allowed_collision_matrix)
+            == collision_matrix_signature(live.allowed_collision_matrix)
+            and planned.robot_state.attached_collision_objects
+            == live.robot_state.attached_collision_objects)
+
+
 def choose_cycle(targets, indices, preplan, attempts):
     """First fully feasible pair in confidence/id then preferred-grasp order."""
     for target in sorted(targets, key=lambda o: (o['confidence'] is None, -(o['confidence'] or 0.0), o['id'])):
@@ -633,7 +702,7 @@ def main():
     def joint_constraints(values):
         return Constraints(joint_constraints=[JointConstraint(joint_name=n, position=float(v),
             tolerance_above=0.0001, tolerance_below=0.0001, weight=1.0) for n,v in values.items()])
-    def plan_segment(view, name, goal, group=None, straight=False):
+    def plan_segment(view, name, goal, group=None, straight=False, initial_support=None):
         stage(name)
         if time.monotonic() > deadline:
             raise RuntimeError('candidate search budget exhausted')
@@ -644,6 +713,7 @@ def main():
         request.start_state.is_diff = False
         if isinstance(goal, dict):
             request.goal_constraints = [joint_constraints(goal)]
+            goal_state = updated_state(view.robot_state, goal, mimics)
         if straight:
             # Chain short collision-planned moves in the same private scene.
             # Validate FK along each returned trajectory, rather than treating
@@ -654,15 +724,36 @@ def main():
             combined = None
             elapsed_ns = 0
             total_planning_time = 0.0
+            support = None
+            if name == 'PREPLAN_LIFT' and len(view.robot_state.attached_collision_objects) == 1:
+                object_id = view.robot_state.attached_collision_objects[0].object.id
+                original = next(o for o in initial.world.collision_objects if o.id == object_id)
+                eligible_supports = legitimate_support_ids(collision_object_dict(original), cell['environment'], manifest)
+                measured = call(validity_client, GetStateValidity.Request(robot_state=view.robot_state, group_name=''))
+                contacts = contacts_in_planned_scene(measured.contacts, view, initial)
+                floor_contacts = []
+                for c in contacts:
+                    if c.contact_body_1 == object_id and c.body_type_1 == 2 and c.contact_body_2 in eligible_supports and c.normal.z < -.999999:
+                        floor_contacts.append((c.contact_body_2, c.position.z))
+                    elif c.contact_body_2 == object_id and c.body_type_2 == 2 and c.contact_body_1 in eligible_supports and c.normal.z > .999999:
+                        floor_contacts.append((c.contact_body_1, c.position.z))
+                if floor_contacts and len({p[0] for p in floor_contacts}) == 1:
+                    if 'workcell/InitialSupportContact' not in support_adapters.split():
+                        raise RuntimeError('SUPPORT_CONTACT_ADAPTER_MISSING: regenerate and launch the current MoveIt configuration')
+                    support = dict(object_id=object_id, support_id=floor_contacts[0][0],
+                                   floor_z=floor_contacts[0][1], tool_link=contract['tool_link'])
             for i in range(1, count+1):
                 waypoint = pose_message([x+(y-x)*i/count for x,y in zip(a[:3],b[:3])] + b[3:])
-                part = plan_segment(view, name, waypoint, group)
+                part = plan_segment(view, name, waypoint, group, initial_support=support if i == 1 else None)
                 trajectory = part['trajectory']
                 for point in trajectory.joint_trajectory.points:
                     sample = updated_state(view.robot_state, dict(zip(trajectory.joint_trajectory.joint_names, point.positions)), mimics)
                     actual_pose = pose_values(fk(sample, contract['tool_link']).pose)
                     if not pose_within_cartesian_corridor(actual_pose, a, b):
-                        raise RuntimeError('planned contact/retreat path leaves the Cartesian corridor')
+                        from full_cycle_preplanner import MotionFeasibilityFailure
+                        failure = MotionFeasibilityFailure('planned contact/retreat path leaves the Cartesian corridor')
+                        failure.details.update(path_pose=actual_pose, corridor_start=a, corridor_goal=b)
+                        raise failure
                 if combined is None:
                     combined = copy.deepcopy(trajectory)
                 else:
@@ -680,6 +771,7 @@ def main():
             return dict(kind='motion',stage=name,before=before,after=view,trajectory=combined,
                 metadata=dict(stage=name,success=True,moveit_code=1,planning_time=total_planning_time,
                     points=len(combined.joint_trajectory.points),cartesian_waypoints=count,
+                    initial_support_contact=support,
                     attached_ids=[o.object.id for o in before.robot_state.attached_collision_objects],
                     world_ids=[o.id for o in before.world.collision_objects]))
         if not isinstance(goal, dict):
@@ -688,15 +780,23 @@ def main():
             ik_request.ik_request.ik_link_name = contract['tool_link']
             ik_request.ik_request.pose_stamped = goal
             ik_request.ik_request.robot_state = view.robot_state
-            # Seed continuity only. Collision feasibility is established by
-            # MoveGroup's private-scene plan, never by this IK result alone.
-            ik_request.ik_request.avoid_collisions = False
+            # Avoid rejecting a pose solely because IK selected a colliding arm
+            # branch. The live service is usable only while its collision scene
+            # matches this private view; otherwise preserve seed continuity and
+            # let the private MoveGroup plan establish feasibility. Neither IK
+            # outcome replaces the complete candidate motion checks.
+            ik_request.ik_request.avoid_collisions = ik_scene_matches_live(view, initial)
             ik_request.ik_request.timeout.sec = 1
             ik = call(ik_client, ik_request)
             if ik.error_code.val != 1:
-                raise RuntimeError(f'IK failed: {ik.error_code.val}')
+                from full_cycle_preplanner import MotionFeasibilityFailure
+                raise MotionFeasibilityFailure(f'IK failed: {ik.error_code.val}', moveit_code=ik.error_code.val)
             values = dict(zip(ik.solution.joint_state.name,ik.solution.joint_state.position))
             request.goal_constraints = [joint_constraints({n:values[n] for n in contract['home_joint_names']})]
+            goal_state = updated_state(view.robot_state,
+                                       {n: values[n] for n in contract['home_joint_names']}, mimics)
+        if initial_support is not None:
+            request.path_constraints.name = 'workcell_initial_support_contact:' + json.dumps(initial_support, sort_keys=True)
         goal_msg = MoveGroup.Goal(request=request)
         goal_msg.planning_options.plan_only = True
         goal_msg.planning_options.replan = False
@@ -711,7 +811,15 @@ def main():
                 break
             except MoveItActionFailure as exc:
                 if exc.code != -2 or attempt == 2 or time.monotonic() >= deadline:
-                    raise
+                    from full_cycle_preplanner import MotionFeasibilityFailure
+                    # For a failed short Cartesian segment this is its first
+                    # rejected waypoint. No invalid state is applied or executed.
+                    try:
+                        validity = call(validity_client, GetStateValidity.Request(robot_state=goal_state, group_name=''))
+                        contacts = contacts_in_planned_scene(validity.contacts, view, initial)
+                    except Exception:
+                        contacts = []  # Unavailable collision evidence is not a collision claim.
+                    raise MotionFeasibilityFailure(str(exc), moveit_code=exc.code, contacts=contacts) from exc
                 summary.setdefault('planning_retries', []).append(
                     {'stage': name, 'moveit_code': exc.code, 'attempt': attempt + 1})
         trajectory = result.planned_trajectory
@@ -784,6 +892,7 @@ def main():
         summary['fake_hardware_guard'] = fake_hardware_evidence(params, call(hardware_client,ListHardwareComponents.Request()).component)
         if args.start and not params[1].bool_value:
             raise RuntimeError('fake execution disabled; launch allow_trajectory_execution:=true')
+        support_adapters = call(params_client, GetParameters.Request(names=['ompl.request_adapters'])).values[0].string_value
         mimics = [(j.attrib['name'], m.attrib['joint'], float(m.get('multiplier',1)), float(m.get('offset',0)))
             for j in ET.fromstring(params[2].string_value).findall('joint') for m in j.findall('mimic')]
         stage('UPDATE_PLANNING_SCENE')
@@ -855,6 +964,8 @@ def main():
         if not args.start:
             summary['result'] = 'PLAN_ONLY'
             return 0
+        if any(s.get('metadata', {}).get('initial_support_contact') for s in cycle['steps']):
+            raise RuntimeError('SUPPORT_CONTACT_PLAN_ONLY: execution of initial support separation is not commissioned')
         fresh = select_observations(intent, physical, objects, time.time()) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
