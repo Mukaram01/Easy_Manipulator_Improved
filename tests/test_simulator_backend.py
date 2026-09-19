@@ -1,0 +1,91 @@
+"""Fail-closed identity and correct derived coupling, independent of a running ROS graph."""
+import copy
+import sys
+from pathlib import Path
+from types import SimpleNamespace as NS
+import pytest
+sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
+from simulator_backend import validate_identity, simulator_description
+
+
+def evidence():
+    return dict(process_verified=True, world_verified=True, description_verified=True,
+                manager_count=1, component_names=['arm','hand'],
+                expected_components=['arm','hand'], component_classes=['',''],
+                component_states=[3,3], controllers={'arm_controller':'active','hand_controller':'active'},
+                expected_controllers=['arm_controller','hand_controller'],
+                claimed_commands=['a/position','g/position'], expected_commands=['a/position','g/position'],
+                conflicting_processes=[], use_sim_time=True, backend='simulator')
+
+
+def test_positive_simulator_identity_requires_all_independent_evidence():
+    assert validate_identity(evidence())['backend']=='simulator'
+
+@pytest.mark.parametrize('key,value', [
+ ('process_verified',False),('world_verified',False),('description_verified',False),
+ ('manager_count',0),('manager_count',2),('component_classes',['','RealSystem']),
+ ('component_classes',['','mock_components/GenericSystem']),('component_classes',['','unknown']),
+ ('component_names',['arm']),('component_states',[3,2]),('controllers',{'arm_controller':'inactive'}),
+ ('claimed_commands',['a/position','g/position','f/position']),('conflicting_processes',[99]),
+ ('use_sim_time',False),('backend','fake')])
+def test_missing_unknown_or_contradictory_identity_rejected(key,value):
+    e=evidence();e[key]=value
+    with pytest.raises(RuntimeError):validate_identity(e)
+
+
+def test_simulator_derives_followers_and_leaves_input_unchanged(tmp_path):
+    xml='''<robot name="r"><joint name="f"><mimic joint="g" multiplier="-1"/></joint>
+    <ros2_control name="hand" type="system"><hardware><plugin>mock_components/GenericSystem</plugin></hardware>
+    <joint name="g"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint></ros2_control></robot>'''
+    result=simulator_description(xml, str(tmp_path/'controllers.yaml'),'rsp')
+    import xml.etree.ElementTree as ET
+    root=ET.fromstring(result);j=root.find("ros2_control/joint[@name='f']")
+    assert not j.findall('command_interface')
+    assert j.find("param[@name='multiplier']").text=='-1'
+    assert len(root.findall("ros2_control/joint[@name='f']"))==1
+    assert 'mock_components/GenericSystem' in xml
+    assert 'ign_ros2_control/IgnitionSystem' in result
+
+@pytest.mark.parametrize('replacement',['RealSystem','unknown','ign_ros2_control/IgnitionSystem'])
+def test_derivation_requires_known_mock_source(replacement,tmp_path):
+    xml=f'<robot><ros2_control><hardware><plugin>{replacement}</plugin></hardware></ros2_control></robot>'
+    with pytest.raises(ValueError):simulator_description(xml,str(tmp_path/'c.yaml'),'rsp')
+
+
+def test_settling_rejects_motion_between_equal_endpoints():
+    from simulator_observations import settling_error
+    samples=[{'poses':{'part':[0.,0.,0.,0.,0.,0.,1.]}} for _ in range(3)]
+    assert settling_error(samples)==0
+    samples[1]={'poses':{'part':[0.,0.,.01,0.,0.,0.,1.]}}
+    assert settling_error(samples)==pytest.approx(.01)
+    samples[1]['poses']['part'][2]=float('nan')
+    assert settling_error(samples)==float('inf')
+
+
+def test_receipt_process_rejects_wrong_domain_before_acquisition(tmp_path,monkeypatch):
+    from simulator_backend import verify_receipt_process
+    import json
+    path=tmp_path/'receipt.json'
+    path.write_text(json.dumps({'domain':'199','partition':'owned'}))
+    monkeypatch.setenv('ROS_DOMAIN_ID','198');monkeypatch.setenv('IGN_PARTITION','owned')
+    with pytest.raises(RuntimeError,match='domain/partition'):
+        verify_receipt_process(path)
+
+
+def test_snapshot_cannot_cross_simulator_runs():
+    from simulator_observations import verify_snapshot_binding
+    with pytest.raises(RuntimeError,match='observation'):
+        verify_snapshot_binding({'simulator_receipt_sha256':'old'},'new')
+    verify_snapshot_binding({'simulator_receipt_sha256':'same'},'same')
+
+
+def test_telemetry_world_is_receipt_bound_and_does_not_change_geometry():
+    from simulator_backend import telemetry_world
+    import xml.etree.ElementTree as ET
+    original='<sdf version="1.8"><world name="cell"><model name="part"><link name="body"><collision name="shape"><geometry><box><size>1 2 3</size></box></geometry></collision></link></model></world></sdf>'
+    result=ET.fromstring(telemetry_world(original,'/verified/plugin.so','nonce'))
+    assert ET.tostring(result.find('.//model'))==ET.tostring(ET.fromstring(original).find('.//model'))
+    plugin=result.find('.//plugin')
+    assert plugin.get('filename')=='/verified/plugin.so'
+    assert plugin.findtext('run_id')=='nonce'
+    assert plugin.findtext('topic')=='/world/cell/workcell_measurements'
