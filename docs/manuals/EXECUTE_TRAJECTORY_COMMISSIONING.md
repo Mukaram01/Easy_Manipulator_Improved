@@ -123,3 +123,49 @@ This qualifies the bounded moving-cancellation primitive for the frozen
 simulator commissioning build. It does **not** qualify physical grasp retention,
 release, transfer, full pick/place, ordinary simulator execution or real
 hardware. Those remain separately gated.
+
+
+## Stage-A completion runner
+
+The remaining simulator gates are orchestrated by
+`scripts/run_stage_a1_finish.py`. It does not replay an old trajectory and it
+does not reuse a mutated simulator session. Every gate creates a fresh isolated
+ROS domain / Ignition partition, captures fresh settled physics observations,
+runs Resolve, regenerates the handoff, and revalidates all nine stages before
+that gate is allowed to move.
+
+The frozen inputs are pinned in the runner:
+
+- pristine Stage-A world SHA256:
+  `39c2aafb62a01af49663f21b734534843d0d4e4e034a164da2eadb03a761f60e`;
+- qualified commissioning capability SHA256:
+  `9f750e46a438d4b415afb07d3d3b77ee66f636fd3beedb3ec8b3e5d90d8d0489`.
+
+Default workstation paths correspond to the retained September 18 evidence
+workspace. A new evidence root is always required:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/workcell_ws/install/local_setup.bash
+cd ~/workcell_ws/src/easy_manipulation_deployment
+
+python3 scripts/run_stage_a1_finish.py \
+  --output ~/workcell_ws/stage-a1-finish-$(date +%Y%m%d-%H%M%S) \
+  --through full-cycle
+```
+
+Gate sequence:
+
+```text
+fresh Resolve / nine-stage revalidation
+→ approach-only motion telemetry (<250 ms unchanged guard)
+→ physical close + >=1 s opposing-contact retention
+→ physical lift + release + resettling
+→ full physical transfer/place/release/retreat/home
+```
+
+The runner stops on the first failed gate, preserves its logs and summaries,
+and terminates only the process group it owns. Full-cycle admission additionally
+requires the already qualified cancellation summary plus successful telemetry,
+retention and contact-release summaries from the immediately preceding fresh
+sessions. Real hardware remains locked throughout.
