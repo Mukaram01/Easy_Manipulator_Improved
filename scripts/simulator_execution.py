@@ -122,6 +122,62 @@ class StopWindow:
     def evidence(self):return copy.deepcopy(self._evidence)
 
 
+QUALIFIED_CAPABILITY_SHA256='9f750e46a438d4b415afb07d3d3b77ee66f636fd3beedb3ec8b3e5d90d8d0489'
+
+
+def _metric(values):
+    values=sorted(float(v) for v in values)
+    if not values:return dict(count=0,p50=None,p95=None,p99=None,max=None)
+    def percentile(q):
+        return values[min(len(values)-1,max(0,math.ceil(q*len(values))-1))]
+    return dict(count=len(values),p50=percentile(.50),p95=percentile(.95),
+                p99=percentile(.99),max=values[-1])
+
+
+def telemetry_metrics(timing,armed_wall_ns=None):
+    """Summarize the existing authoritative physics stream without changing it."""
+    receive=[e for e in timing if e.get('event')=='receive' and e.get('iteration') is not None
+             and not e.get('error') and (armed_wall_ns is None or e.get('receive_wall_ns',0)>=armed_wall_ns)]
+    fresh=[e for e in timing if e.get('event')=='fresh' and e.get('iteration') is not None
+           and not e.get('error') and (armed_wall_ns is None or e.get('read_wall_ns',0)>=armed_wall_ns)]
+    if len(receive)<2 or not fresh:raise RuntimeError('insufficient motion telemetry timing evidence')
+    receive.sort(key=lambda e:e['receive_wall_ns'])
+    if any(b['iteration']!=a['iteration']+1 for a,b in zip(receive,receive[1:])):
+        raise RuntimeError('telemetry timing contains an iteration gap')
+    source_intervals=[(b['source_wall_ns']-a['source_wall_ns'])/1e6 for a,b in zip(receive,receive[1:])]
+    receive_intervals=[(b['receive_wall_ns']-a['receive_wall_ns'])/1e6 for a,b in zip(receive,receive[1:])]
+    delivery=[(e['receive_wall_ns']-e['source_wall_ns'])/1e6 for e in receive]
+    publish=[(e['publish_wall_ns']-e['source_wall_ns'])/1e6 for e in receive
+             if e.get('publish_wall_ns') is not None]
+    callback=[e['callback_ns']/1e6 for e in receive if e.get('callback_ns') is not None]
+    serialization=[e['source_serialization_ns']/1e6 for e in receive
+                   if e.get('source_serialization_ns') is not None]
+    ages=[e['age_ns']/1e6 for e in fresh if e.get('age_ns') is not None]
+    lock_wait=[e['lock_wait_ns']/1e6 for e in fresh if e.get('lock_wait_ns') is not None]
+    if any(v<0 for v in delivery+publish+ages):
+        raise RuntimeError('telemetry wall-clock ordering is contradictory')
+    sim_span=receive[-1].get('sim_ns',0)-receive[0].get('sim_ns',0)
+    wall_span=receive[-1]['source_wall_ns']-receive[0]['source_wall_ns']
+    result=dict(samples=len(receive),
+        source_interval_ms=_metric(source_intervals),
+        receive_interval_ms=_metric(receive_intervals),
+        source_to_publish_ms=_metric(publish),
+        source_to_receive_ms=_metric(delivery),
+        callback_ms=_metric(callback),
+        source_serialization_ms=_metric(serialization),
+        fresh_age_ms=_metric(ages),
+        lock_wait_ms=_metric(lock_wait),
+        max_fresh_age_ms=max(ages),
+        max_delivery_ms=max(delivery),
+        real_time_factor=(sim_span/wall_span if wall_span>0 else None),
+        first_iteration=receive[0]['iteration'],last_iteration=receive[-1]['iteration'])
+    if result['max_fresh_age_ms']>=250.0:
+        raise RuntimeError(f"motion telemetry exceeded unchanged 250 ms freshness guard: {result['max_fresh_age_ms']:.3f} ms")
+    if result['max_delivery_ms']>=250.0:
+        raise RuntimeError(f"motion telemetry delivery exceeded unchanged 250 ms freshness guard: {result['max_delivery_ms']:.3f} ms")
+    return result
+
+
 def require_cancellation_acceptance(summary):
     validate_controller_cancellation(summary.get('controller_cancellation',{}))
     reconciliation=summary.get('measured_reconciliation',{})
@@ -151,7 +207,7 @@ class Measurements:
         self.node=Node('simulator_measurement_acquisition',context=node.context)
         self.executor=SingleThreadedExecutor(context=node.context);self.executor.add_node(self.node)
         self.lock=threading.RLock();self.latest=None;self.pending=[];self.error=None;self.previous=None
-        self.timing=[];self.log_path=Path(log)
+        self.timing=[];self.armed_wall_ns=None;self.log_path=Path(log)
         self.log=Path(log).open('w');self.armed=False
         self.log_queue=queue.Queue(maxsize=10000)
         self.sub=self.node.create_subscription(String,f"/world/{self.receipt['world']}/workcell_measurements",self.update,
@@ -174,15 +230,29 @@ class Measurements:
                     self.pending.append(s)
             except Exception as exc:
                 if self.error is None:self.error=exc
-            self.timing.append(dict(event='receive',iteration=s.get('iteration'),source_wall_ns=s.get('wall_ns'),
-                publish_wall_ns=s.get('publish_wall_ns'),source_serialization_ns=s.get('serialization_ns'),
-                receive_wall_ns=received,callback_ns=time.monotonic_ns()-started,queue_depth=len(self.pending),
+            self.timing.append(dict(event='receive',iteration=s.get('iteration'),sim_ns=s.get('sim_ns'),
+                source_wall_ns=s.get('wall_ns'),publish_wall_ns=s.get('publish_wall_ns'),
+                source_serialization_ns=s.get('serialization_ns'),receive_wall_ns=received,
+                callback_ns=time.monotonic_ns()-started,queue_depth=len(self.pending),
                 error=str(self.error) if self.error else None))
     def fresh(self):
+        waiting=time.monotonic_ns()
         with self.lock:
-            if self.error:raise self.error
-            if self.latest is None:raise RuntimeError('no simulator measurement')
-            validate_sample(self.latest,self.receipt,time.time())
+            entered=time.monotonic_ns();now_ns=time.time_ns()
+            if self.error:
+                self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,
+                    lock_wait_ns=entered-waiting,error=str(self.error)));raise self.error
+            if self.latest is None:
+                self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,
+                    lock_wait_ns=entered-waiting,error='no simulator measurement'))
+                raise RuntimeError('no simulator measurement')
+            age_ns=now_ns-self.latest['wall_ns']
+            try:validate_sample(self.latest,self.receipt,now_ns/1e9)
+            except Exception as exc:
+                self.timing.append(dict(event='fresh',iteration=self.latest.get('iteration'),read_wall_ns=now_ns,
+                    age_ns=age_ns,lock_wait_ns=entered-waiting,error=str(exc)));raise
+            self.timing.append(dict(event='fresh',iteration=self.latest['iteration'],read_wall_ns=now_ns,
+                age_ns=age_ns,lock_wait_ns=entered-waiting,error=None))
             return self.latest
     def drain(self):
         with self.lock:
@@ -195,7 +265,9 @@ class Measurements:
         publishers=self.node.get_publishers_info_by_topic(f"/world/{self.receipt['world']}/workcell_measurements")
         validate_publisher(publishers)
         with self.lock:
-            self.fresh();self.armed=True;self.pending=[]
+            self.fresh();self.armed_wall_ns=time.time_ns();self.armed=True;self.pending=[]
+    def metrics(self):
+        return telemetry_metrics(self.timing,self.armed_wall_ns)
     def frame(self,s,link):
         prefix=self.receipt['world']+'::'+self.receipt['model']+'::'
         transform=[0,0,0,0,0,0,1]
@@ -248,7 +320,7 @@ class ContactGuard:
         self.touch=set(touch_links);self.support=support;self.tool=tool;self.held=None;self.separation=None
         self.phase='approach';self.last=None;self.min_clearance=math.inf;self.validate_current=None
         self.allowed={(a,b) for i,a in enumerate(baseline.entry_names) for j,b in enumerate(baseline.entry_names) if baseline.entry_values[i].enabled[j]}
-        self.fingers=set();self.release_samples=[]
+        self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None
     def identity(self,collision):
         fields=collision.split('::')
         if len(fields)<4 or fields[0]!=self.m.receipt['world']:raise RuntimeError('unknown collision identity '+collision)
@@ -278,7 +350,7 @@ class ContactGuard:
             raise RuntimeError('unpermitted physical contact: '+a+' / '+b)
         self.fingers=fingers
         if self.held and self.phase not in ('opening','released'):
-            self.held.check(tool,obj,fingers)
+            self.held.check(tool,obj,fingers);self.held_samples+=1
             bottom=self.bottom(obj)
             if self.separation:self.separation.check(obj,bottom,support_contact)
             self.min_clearance=min(self.min_clearance,bottom-self.support['floor_z']) if self.support else math.inf
@@ -300,8 +372,24 @@ class ContactGuard:
         self.leader=leaders[0]
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool)
         self.held=HeldObject(tool,obj,self.fingers,self.touch,joints[self.leader][0],self.open_position)
+        self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
         if self.support:self.separation=Separation(obj,self.support['floor_z'])
         return self.held.relative
+    def retention_evidence(self,min_duration_ns=1000000000):
+        if not self.held or self.held_start_sim_ns is None:raise RuntimeError('physical retention was not established')
+        s=self.m.fresh();self.check(s)
+        duration=s['sim_ns']-self.held_start_sim_ns
+        if duration<min_duration_ns:raise RuntimeError('physical retention duration is too short')
+        obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool)
+        actual=compose_pose(inverse_pose(tool),obj)
+        translation=math.dist(actual[:3],self.held.relative[:3]);rotation=angle(actual,self.held.relative)
+        if translation>.002 or rotation>.01:raise RuntimeError('physical retention relative slip exceeds limit')
+        joints=self.m.joints(s)
+        return dict(duration_sim_ns=duration,samples=self.held_samples,
+            contact_links=sorted(self.fingers),required_contact_links=sorted(self.held.required),
+            relative_translation_m=translation,relative_rotation_rad=rotation,
+            closure_position_rad=joints[self.leader][0],open_position_rad=self.open_position,
+            final_iteration=s['iteration'],final_sim_ns=s['sim_ns'])
     def drain(self):
         self.m.fresh()
         pending=self.m.drain()
@@ -319,16 +407,31 @@ def measured_attachment(original,contract,measurements,sample):
 
 
 def require_trial_evidence(path,identity):
-    if path is None:raise RuntimeError('full cycle requires measured contact-release and cancellation acceptance')
+    if path is None:raise RuntimeError('full cycle requires cancellation, motion telemetry, retention and contact-release evidence')
     records=json.loads(Path(path).read_text())
-    if len(records)!=2 or {r.get('result') for r in records}!={'COMMISSION_TRIAL_PASS','CANCELLATION_TRIAL_PASS'}:
-        raise RuntimeError('commissioning trials have not passed')
+    expected={'CANCELLATION_TRIAL_PASS','MOTION_TELEMETRY_PASS','STATIONARY_RETENTION_PASS','CONTACT_RELEASE_PASS'}
+    if len(records)!=4 or {r.get('result') for r in records}!=expected:
+        raise RuntimeError('commissioning prerequisite trials have not all passed')
+    capability={r.get('commissioning_capability',{}).get('sha256') for r in records}
+    if capability!={QUALIFIED_CAPABILITY_SHA256}:raise RuntimeError('commissioning evidence is not from the qualified capability build')
     for r in records:
-        if not r.get('measured_reconciliation',{}).get('acm_restored') or r.get('backend_identity',{}).get('backend')!='simulator':
-            raise RuntimeError('commissioning restoration/identity unproven')
-    # Until the full measured final-state gate is installed, evidence never
-    # authorizes ordinary execution by omission.
-    raise RuntimeError('full-cycle final measured acceptance not yet commissioned')
+        backend=r.get('motion_backend_identity') or r.get('backend_identity',{})
+        if backend.get('backend')!='simulator':raise RuntimeError('commissioning evidence backend identity unproven')
+        reconciliation=r.get('measured_reconciliation',{})
+        if not reconciliation.get('acm_restored') or reconciliation.get('attached_ids'):
+            raise RuntimeError('commissioning evidence restoration unproven')
+    cancellation=next(r for r in records if r['result']=='CANCELLATION_TRIAL_PASS')
+    require_cancellation_acceptance(cancellation)
+    telemetry=next(r for r in records if r['result']=='MOTION_TELEMETRY_PASS').get('motion_telemetry',{})
+    if telemetry.get('max_fresh_age_ms',math.inf)>=250 or telemetry.get('max_delivery_ms',math.inf)>=250:
+        raise RuntimeError('motion telemetry prerequisite does not satisfy unchanged 250 ms guard')
+    retention=next(r for r in records if r['result']=='STATIONARY_RETENTION_PASS').get('stationary_retention',{})
+    if retention.get('duration_sim_ns',0)<1000000000 or retention.get('samples',0)<2:
+        raise RuntimeError('stationary physical retention prerequisite missing')
+    contact=next(r for r in records if r['result']=='CONTACT_RELEASE_PASS')
+    if contact.get('verified_lift_clearance_m',0)<.01 or not contact.get('release_evidence',{}).get('settled'):
+        raise RuntimeError('physical lift/release prerequisite missing')
+    return dict(capability_sha256=QUALIFIED_CAPABILITY_SHA256,results=sorted(expected))
 
 
 def verify_release(guard,held_sample):
@@ -344,6 +447,22 @@ def verify_release(guard,held_sample):
     if any(math.dist(guard.m.object_pose(x,guard.name)[:3],p[:3])>.001 for x in recent):
         raise RuntimeError('released object has not resettled')
     return dict(open_position_rad=joint[0],fall_m=old[2]-p[2],final_pose=p,settled=True,sim_ns=s['sim_ns'])
+
+
+def verify_settled_release(guard,held_sample):
+    """Prove opening + loss of finger contact + one-second physical settling."""
+    s=guard.m.fresh();guard.check(s)
+    p=guard.m.object_pose(s,guard.name);old=guard.m.object_pose(held_sample,guard.name)
+    joint=guard.m.joints(s)[guard.leader]
+    if guard.fingers or abs(joint[0]-guard.open_position)>.01:
+        raise RuntimeError('physical release not measured: gripper remains closed or in finger contact')
+    recent=[x for x in guard.release_samples if s['sim_ns']-x['sim_ns']<=1000000000]
+    if len(recent)<2 or recent[-1]['sim_ns']-recent[0]['sim_ns']<900000000:
+        raise RuntimeError('insufficient release settling measurements')
+    if any(math.dist(guard.m.object_pose(x,guard.name)[:3],p[:3])>.001 for x in recent):
+        raise RuntimeError('released object has not resettled')
+    return dict(open_position_rad=joint[0],vertical_change_m=old[2]-p[2],
+        final_pose=p,settled=True,sim_ns=s['sim_ns'],samples=len(recent))
 
 
 def validate_measured_contacts(response,support,expired,predicate=None):

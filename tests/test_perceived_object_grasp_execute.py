@@ -496,3 +496,14 @@ def test_bound_approach_rechecks_ik_without_replacing_fresh_planning_start(chang
     assert requests[0].ik_request.pose_stamped==target
     assert list(requests[0].ik_request.robot_state.joint_state.position)==[-2.436685763798283,.2,-.2]
     assert list(requests[0].ik_request.robot_state.joint_state.velocity)==[0.,.01,-.01]
+
+
+def test_simulator_commissioning_modes_include_telemetry_retention_and_full_cycle():
+    source=SCRIPT.read_text()
+    assert "choices=('cancel', 'telemetry', 'stationary', 'contact-release', 'full-cycle')" in source
+    assert "MOTION_TELEMETRY_PASS" in source
+    assert "STATIONARY_RETENTION_PASS" in source
+    assert "CONTACT_RELEASE_PASS" in source
+    assert "full_cycle_physical_acceptance" in source
+    # The physical path must keep the original freshness guard; no timeout inflation.
+    assert "max_fresh_age_ms']>=250.0" not in source  # policy lives in simulator_execution

@@ -1,5 +1,5 @@
 """Measured execution guards: synthetic unit fixtures are never physical evidence."""
-import sys, copy
+import sys, copy, json
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]/'scripts'))
 import pytest
@@ -215,3 +215,54 @@ def test_cancel_metrics_include_motion_during_controller_result_wait():
     assert result['cancel_to_measured_stop_ms']==90
     assert result['cancel_to_controller_result_ms']['arm']==240
     assert result['additional_joint_travel_rad']['arm']==pytest.approx(.02)
+
+
+def test_motion_telemetry_metrics_keep_250ms_guard_and_contiguous_iterations():
+    from simulator_execution import telemetry_metrics
+    timing=[]
+    for i in range(1,6):
+        source=1_000_000_000+i*10_000_000
+        timing.append(dict(event='receive',iteration=i,sim_ns=i*10_000_000,
+            source_wall_ns=source,publish_wall_ns=source+1_000_000,
+            source_serialization_ns=500_000,receive_wall_ns=source+2_000_000,
+            callback_ns=200_000,error=None))
+        timing.append(dict(event='fresh',iteration=i,read_wall_ns=source+3_000_000,
+            age_ns=3_000_000,lock_wait_ns=10_000,error=None))
+    result=telemetry_metrics(timing)
+    assert result['samples']==5
+    assert result['max_fresh_age_ms']==pytest.approx(3.)
+    assert result['max_delivery_ms']==pytest.approx(2.)
+    assert result['real_time_factor']==pytest.approx(1.)
+    stale=copy.deepcopy(timing)
+    stale[-1]['age_ns']=250_000_000
+    with pytest.raises(RuntimeError,match='250 ms'):telemetry_metrics(stale)
+    gap=copy.deepcopy(timing)
+    gap[4]['iteration']=4
+    with pytest.raises(RuntimeError,match='iteration gap'):telemetry_metrics(gap)
+
+
+def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
+    from simulator_execution import require_trial_evidence,QUALIFIED_CAPABILITY_SHA256
+    common=dict(commissioning_capability={'sha256':QUALIFIED_CAPABILITY_SHA256},
+        backend_identity={'backend':'simulator'},
+        motion_backend_identity={'backend':'simulator'},
+        measured_reconciliation={'acm_restored':True,'attached_ids':[],'measured_geometry_matches':True,'held':False},
+        recovery_scene={'contact_acm_restored':True,'attached_ids':[]})
+    cancellation=dict(common,result='CANCELLATION_TRIAL_PASS',
+        cancellation_confirmed=True,cancellation_accepted=True,cancellation_movement_verified=True,
+        interrupted_action_terminal_status=5,motion_stop_verified=True,
+        controller_cancellation={'arm':dict(uuid='abc',executing_before_cancel=True,status=5,error_code=0,result_wall_ns=12)},
+        owned_execution_goal=dict(uuid='01',accepted=True),
+        cancellation_motion=dict(movement={'iteration':12}),
+        stopped_window=dict(duration_sim_ns=300000000,samples=[{},{}]))
+    telemetry=dict(common,result='MOTION_TELEMETRY_PASS',
+        motion_telemetry={'max_fresh_age_ms':12.,'max_delivery_ms':8.})
+    retention=dict(common,result='STATIONARY_RETENTION_PASS',
+        stationary_retention={'duration_sim_ns':1_100_000_000,'samples':50})
+    contact=dict(common,result='CONTACT_RELEASE_PASS',verified_lift_clearance_m=.02,
+        release_evidence={'settled':True})
+    path=tmp_path/'evidence.json';path.write_text(json.dumps([cancellation,telemetry,retention,contact]))
+    accepted=require_trial_evidence(path,{'backend':'simulator'})
+    assert accepted['capability_sha256']==QUALIFIED_CAPABILITY_SHA256
+    path.write_text(json.dumps([cancellation,telemetry,retention]))
+    with pytest.raises(RuntimeError):require_trial_evidence(path,{'backend':'simulator'})

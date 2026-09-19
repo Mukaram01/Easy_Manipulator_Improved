@@ -648,7 +648,7 @@ def main():
     parser.add_argument('--replay', action='store_true')
     parser.add_argument('--start', action='store_true')
     parser.add_argument('--backend', choices=('fake', 'simulator'), default='fake')
-    parser.add_argument('--simulator-commission', choices=('cancel', 'stationary', 'contact-release', 'full-cycle'), help='Explicit bounded simulator trial; ordinary execution remains blocked')
+    parser.add_argument('--simulator-commission', choices=('cancel', 'telemetry', 'stationary', 'contact-release', 'full-cycle'), help='Explicit bounded simulator trial; ordinary execution remains blocked')
     parser.add_argument('--commission-evidence', type=Path, help='Passing measured trial and cancellation evidence required for full-cycle')
     parser.add_argument('--simulator-receipt', type=Path, help='Live local Fortress receipt; independently verified, never an identity bypass')
     parser.add_argument('--segment-planning-time', type=float, default=3.0, help='Per-request computation budget, 0 < seconds <= 10; collision tolerances unchanged')
@@ -1293,8 +1293,10 @@ def main():
             leaders=set(initial_joints)-contact_guard.arm_names-{j.get('name') for j in measurements.robot.findall('joint') if j.find('mimic') is not None}
             if len(leaders)!=1:raise RuntimeError('ambiguous measured gripper leader')
             contact_guard.open_position=initial_joints[next(iter(leaders))][0]
+            summary['measured_initial_object_poses']={}
             for obj in objects:
                 actual=measurements.object_pose(measurements.fresh(),obj['object_id'])
+                summary['measured_initial_object_poses'][obj['id']]=actual
                 if math.dist(actual[:3],obj['pose'][:3])>.001:
                     raise RuntimeError('measured object moved since authoritative resolution')
             contact_guard.check(measurements.fresh());measurements.arm()
@@ -1312,8 +1314,8 @@ def main():
             raise RuntimeError('selected observation expired before execution')
         expected = initial
         for step in cycle['steps']:
-            if args.simulator_commission=='cancel' and step['stage']!='PREPLAN_APPROACH':
-                raise RuntimeError('cancellation trial cannot advance beyond the approach')
+            if args.simulator_commission in ('cancel','telemetry') and step['stage']!='PREPLAN_APPROACH':
+                raise RuntimeError(f'{args.simulator_commission} trial cannot advance beyond the approach')
             label = step['stage'].replace('PREPLAN_','EXECUTE_')
             stage(label)
             if measurements:
@@ -1333,39 +1335,54 @@ def main():
                     controlled_cancel=False
                     contact_guard.drain()
                     summary.setdefault('execution_results',[]).append(dict(stage=label,code=result.error_code.val,action_status=4))
-                    if step['stage']=='PREPLAN_LIFT' and args.simulator_commission=='contact-release':
+                    if step['stage']=='PREPLAN_APPROACH' and args.simulator_commission=='telemetry':
+                        summary['motion_stop_verified']=wait_stopped(monitor_contacts=True)
+                        if not summary['motion_stop_verified']:raise RuntimeError('motion telemetry trial did not reach measured stationary state')
+                        summary['motion_telemetry']=measurements.metrics()
+                        measured_reconcile()
+                        summary.update(result='MOTION_TELEMETRY_PASS',commission_trial='telemetry',
+                                       full_cycle_execution_success=False)
+                        break
+                    if step['stage']=='PREPLAN_LIFT' and args.simulator_commission in ('contact-release','full-cycle'):
                         monitored_hold(1.)
                         summary['lift_hold_measurement']=measurements.fresh()
+                        if support is None:raise RuntimeError('physical lift has no certified initial support')
                         summary['verified_lift_clearance_m']=contact_guard.bottom(measurements.object_pose(measurements.fresh(),contact_guard.name))-support['floor_z']
                         if not contact_guard.separation or not contact_guard.separation.expired or summary['verified_lift_clearance_m']<.01:
                             raise RuntimeError('physical lift separation not verified')
-                        # Plan release in the actual lifted scene with the existing planner.
-                        deadline=time.monotonic()+30
-                        release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group='gripper')
-                        contact_guard.phase='opening'
-                        action(execute_client,ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)
-                        contact_guard.phase='released';contact_guard.held=None
-                        measured_reconcile()
-                        monitored_hold(2.)
-                        from simulator_execution import verify_release
-                        summary['release_evidence']=verify_release(contact_guard,summary['lift_hold_measurement'])
-                        measured_reconcile()
-                        summary.update(result='COMMISSION_TRIAL_PASS',full_cycle_execution_success=False)
-                        break
+                        if args.simulator_commission=='contact-release':
+                            # Plan release in the actual lifted scene with the existing planner.
+                            deadline=time.monotonic()+30
+                            release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group='gripper')
+                            contact_guard.phase='opening'
+                            action(execute_client,ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)
+                            contact_guard.phase='released';contact_guard.held=None
+                            measured_reconcile()
+                            monitored_hold(2.)
+                            from simulator_execution import verify_release
+                            summary['release_evidence']=verify_release(contact_guard,summary['lift_hold_measurement'])
+                            measured_reconcile()
+                            summary.update(result='CONTACT_RELEASE_PASS',full_cycle_execution_success=False)
+                            break
+                    if step['stage']=='PREPLAN_PLACE' and args.simulator_commission=='full-cycle':
+                        summary['pre_release_measurement']=measurements.fresh()
                 elif step['kind']=='attach':
                     if args.simulator_commission=='stationary':
-                        # Diagnostic boundary: retain the existing close command,
-                        # wait for measured convergence, and observe contact without
-                        # attaching or advancing to any arm motion.
-                        if not wait_stopped(monitor_contacts=True):
+                        # This gate proves physical retention only. No planning-scene
+                        # attachment or later arm motion is used as grasp evidence.
+                        summary['motion_stop_verified']=wait_stopped(monitor_contacts=True)
+                        if not summary['motion_stop_verified']:
                             raise RuntimeError('stationary closure did not converge')
+                        summary['measured_object_in_tool']=contact_guard.establish()
                         summary['stationary_hold_start']=measurements.fresh()
-                        monitored_hold(2.)
+                        monitored_hold(1.1)
                         summary['stationary_hold_end']=measurements.fresh()
-                        # Collection is not grasp qualification: no held state,
-                        # live attachment, or later motion is authorized here.
+                        summary['stationary_retention']=contact_guard.retention_evidence()
+                        # Drop only the executor's held-state bookkeeping after
+                        # evidence capture; the physics object was never parented.
+                        contact_guard.held=None;contact_guard.separation=None
                         measured_reconcile()
-                        summary.update(result='STATIONARY_DIAGNOSTIC_COMPLETE',commission_trial='stationary',
+                        summary.update(result='STATIONARY_RETENTION_PASS',commission_trial='stationary',
                                        full_cycle_execution_success=False)
                         break
                     summary['measured_object_in_tool']=contact_guard.establish()
@@ -1374,6 +1391,12 @@ def main():
                     apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
                 else:
                     contact_guard.phase='released';monitored_hold(2.)
+                    if args.simulator_commission=='full-cycle':
+                        from simulator_execution import verify_settled_release
+                        held_sample=summary.get('pre_release_measurement')
+                        if held_sample is None:raise RuntimeError('full-cycle release lacks a measured pre-release state')
+                        summary['release_evidence']=verify_settled_release(contact_guard,held_sample)
+                        contact_guard.held=None;contact_guard.separation=None
                     measured_reconcile()
                 summary['stages'].append(label)
                 continue
@@ -1415,8 +1438,39 @@ def main():
             summary['stages'].append(label)
         if measurements:
             measured_reconcile()
-            if summary['result'] in ('COMMISSION_TRIAL_PASS','STATIONARY_DIAGNOSTIC_COMPLETE'):return 0
-            raise RuntimeError('full-cycle final measured acceptance not yet commissioned')
+            if summary['result'] in ('MOTION_TELEMETRY_PASS','STATIONARY_RETENTION_PASS','CONTACT_RELEASE_PASS'):return 0
+            if args.simulator_commission!='full-cycle':
+                raise RuntimeError('bounded simulator trial ended without an accepted result')
+            # Final measured acceptance: physics state, planning state, robot home,
+            # destination containment and release separation must all agree.
+            final_sample=measurements.fresh();final_joints=measurements.joints(final_sample)
+            for name,value in home.items():
+                if name not in final_joints or abs(final_joints[name][0]-value)>.001:
+                    raise RuntimeError(f'full-cycle measured home mismatch: {name}')
+            if abs(final_joints[contact_guard.leader][0]-contact_guard.open_position)>.01:
+                raise RuntimeError('full-cycle measured gripper is not open')
+            final_pose=measurements.object_pose(final_sample,contact_guard.name)
+            from physical_destination import check_object_containment
+            check_object_containment(destination,final_pose,selected['dimensions'],clearance=contract.get('placement_clearance_m',.001))
+            pre=summary.get('pre_release_measurement')
+            before_relative=compose_pose(inverse_pose(measurements.frame(pre,contract['tool_link'])),
+                                         measurements.object_pose(pre,contact_guard.name))
+            after_relative=compose_pose(inverse_pose(measurements.frame(final_sample,contract['tool_link'])),final_pose)
+            relative_separation=math.dist(before_relative[:3],after_relative[:3])
+            if relative_separation<.01:raise RuntimeError('full-cycle release did not separate object from retreating tool')
+            final_scene=scene_now()
+            if final_scene.robot_state.attached_collision_objects:
+                raise RuntimeError('full-cycle final planning scene retains an attachment')
+            if collision_matrix_signature(final_scene.allowed_collision_matrix)!=collision_matrix_signature(baseline):
+                raise RuntimeError('full-cycle final ACM differs from baseline')
+            final_valid=call(validity_client,GetStateValidity.Request(robot_state=final_scene.robot_state,group_name=''))
+            if not final_valid.valid:raise RuntimeError('full-cycle final robot state is in collision')
+            summary.update(result='PASS',full_cycle_execution_success=True,
+                full_cycle_physical_acceptance=dict(final_pose=final_pose,
+                    release_relative_separation_m=relative_separation,
+                    final_sim_ns=final_sample['sim_ns'],final_collision_valid=True,
+                    baseline_acm_restored=True,attached_ids=[]))
+            return 0
         final = scene_now()
         assert_scene_match(final, expected, selected_id)
         intended_home = dict(home, gripper_finger1_joint=0.0)
@@ -1492,7 +1546,7 @@ def main():
         summary['shutdown_clean'] = not rclpy.ok()
         Path(args.summary_output).write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
         print(json.dumps(summary,indent=2,sort_keys=True))
-    return 0 if summary['result'] in ('PASS','COMMISSION_TRIAL_PASS','CANCELLATION_TRIAL_PASS','STATIONARY_DIAGNOSTIC_COMPLETE') else 1
+    return 0 if summary['result'] in ('PASS','CANCELLATION_TRIAL_PASS','MOTION_TELEMETRY_PASS','STATIONARY_RETENTION_PASS','CONTACT_RELEASE_PASS') else 1
 
 
 if __name__ == '__main__':
