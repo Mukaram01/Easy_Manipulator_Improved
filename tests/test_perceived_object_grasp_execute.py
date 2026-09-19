@@ -90,6 +90,69 @@ def test_plan_only_retry_policy_accepts_only_measured_stochastic_failures():
         assert not MODULE.retryable_plan_failure(code)
 
 
+def test_plan_segment_timeout_retry_reuses_identical_private_request():
+    """Exercise the real nested planner boundary, not the helper in isolation."""
+    import ast
+    import copy
+    import time
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import (
+        Constraints, JointConstraint, MotionPlanRequest, MoveItErrorCodes,
+        PlanningScene, RobotState, RobotTrajectory)
+    from sensor_msgs.msg import JointState
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+
+    tree = ast.parse(SCRIPT.read_text())
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    segment = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'plan_segment')
+
+    initial = PlanningScene(robot_state=RobotState(
+        joint_state=JointState(name=['arm'], position=[0.0])))
+    original = copy.deepcopy(initial)
+    trajectory = RobotTrajectory(joint_trajectory=JointTrajectory(
+        joint_names=['arm'], points=[
+            JointTrajectoryPoint(positions=[0.0]),
+            JointTrajectoryPoint(positions=[0.5]),
+        ]))
+    goals = []
+    def action(client, goal, timeout):
+        goals.append(copy.deepcopy(goal))
+        if len(goals) < 3:
+            raise MODULE.MoveItActionFailure(6, -6)
+        return MoveGroup.Result(
+            error_code=MoveItErrorCodes(val=1),
+            trajectory_start=copy.deepcopy(original.robot_state),
+            planned_trajectory=trajectory,
+            planning_time=.1)
+
+    summary = {}
+    context = dict(
+        vars(MODULE),
+        copy=copy, time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
+        stage=lambda name: None, deadline=time.monotonic()+10,
+        contract={'planning_group':'arm_group','home_joint_names':['arm'],'tool_link':'tcp'},
+        args=SimpleNamespace(segment_planning_time=3.), mimics=[], initial=initial,
+        plan_client=object(), action=action, trace=lambda *args: None, summary=summary,
+        joint_constraints=lambda values: Constraints(joint_constraints=[
+            JointConstraint(joint_name=n, position=v, tolerance_above=.0001,
+                            tolerance_below=.0001, weight=1.) for n, v in values.items()]))
+    exec(compile(ast.Module(body=[segment], type_ignores=[]),
+                 '<actual-plan-segment-timeout-retry>', 'exec'), context)
+
+    result = context['plan_segment'](
+        initial, 'PREPLAN_APPROACH', {'arm': 0.5}, group='arm_group')
+
+    assert len(goals) == 3
+    assert goals[0] == goals[1] == goals[2]
+    assert initial == original
+    assert summary['planning_retries'] == [
+        {'stage':'PREPLAN_APPROACH','moveit_code':-6,'attempt':1,'retry_kind':'timed_out'},
+        {'stage':'PREPLAN_APPROACH','moveit_code':-6,'attempt':2,'retry_kind':'timed_out'},
+    ]
+    assert result['metadata']['success'] is True
+    assert result['after'].robot_state.joint_state.position == pytest.approx([0.5])
+
+
 def test_fake_hardware_guard_requires_moveit_flag_and_mock_component():
     evidence = MODULE.fake_hardware_evidence(
         [parameter(True)], [component("mock_components/GenericSystem")])
