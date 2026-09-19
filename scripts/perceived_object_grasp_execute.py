@@ -386,6 +386,31 @@ def ik_scene_matches_live(planned, live):
             == live.robot_state.attached_collision_objects)
 
 
+def approach_ik_binding(goal, contract, positions):
+    """Bind the selected IK branch to model, group, TCP and Cartesian target.
+
+    This is a seed, never a trajectory or a replacement for current-state
+    collision planning. It participates in the existing resolution digest.
+    """
+    return dict(schema='workcell_approach_ik/v1',
+                robot_model_sha256=contract['robot_model_sha256'],
+                planning_group=contract['planning_group'], tool_link=contract['tool_link'],
+                frame_id=goal.header.frame_id, target_pose=pose_values(goal.pose),
+                joint_positions={n: float(positions[n]) for n in contract['home_joint_names']})
+
+
+def bound_approach_seed(binding, goal, contract, current, mimics):
+    try:
+        positions = binding['joint_positions']
+        expected = approach_ik_binding(goal, contract, positions)
+        if (binding != expected or set(positions) != set(contract['home_joint_names']) or
+                not all(math.isfinite(v) for v in positions.values())):
+            raise ValueError('binding differs')
+        return updated_state(current, positions, mimics)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError('APPROACH_IK_BINDING_CHANGED: resolve current model/target again') from exc
+
+
 def choose_cycle(targets, indices, preplan, attempts):
     """First fully feasible pair in confidence/id then preferred-grasp order."""
     for target in sorted(targets, key=lambda o: (o['confidence'] is None, -(o['confidence'] or 0.0), o['id'])):
@@ -444,6 +469,10 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
     def evaluate(request):
         effective = dict(contract)
+        if resolved is not None and request.get('approach_ik') is None:
+            return dict(success=False, checks=[], reason_code='TASK_APPROACH_IK_UNBOUND',
+                        reason='Resolve and Generate the current approach IK branch before consumption.')
+        effective['approach_ik'] = request.get('approach_ik')
         grasp = request['intent']['pick']['grasp']
         place = request['intent']['place']['placement']
         effective.update(max_age_seconds=intent['pick']['selection']['object_filter']['max_age_seconds'],
@@ -462,7 +491,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         if result.success:
             cycles[result.candidate_id, request['observation']['id']] = result.cycle
         return {'success': result.success, 'checks': result.checks,
-                'reason_code': result.reason_code, 'reason': result.reason}
+                'reason_code': result.reason_code, 'reason': result.reason,
+                'approach_ik': result.cycle['steps'][0]['metadata'].get('approach_ik') if result.success else None}
 
     resolution = resolve_task_intent(intent, environment, cell, targets, evaluate, now=time.time(), resolved=resolved)
     summary['task_intent_resolution'] = resolution
@@ -498,6 +528,30 @@ def assert_joint_match(actual, expected, tolerance=0.005):
         if name not in values or not math.isfinite(values[name]) or abs(values[name] - value) > tolerance:
             raise RuntimeError(f'joint state diverged: {name}, expected={value}, actual={values.get(name)}')
 
+
+def observation_geometry_matches(observed, actual):
+    """Compare rigid geometry, including q == -q after MoveIt canonicalization."""
+    if actual is None:
+        return False
+    a, b = observed['pose'], actual['pose']
+    values = a + b + observed['dimensions'] + actual['dimensions']
+    return (all(math.isfinite(v) for v in values)
+            and all(abs(x-y) <= 1e-7 for x, y in zip(a[:3], b[:3]))
+            and all(abs(x-y) <= 1e-7 for x, y in zip(observed['dimensions'], actual['dimensions']))
+            and min(math.dist(a[3:], b[3:]), math.dist(a[3:], [-v for v in b[3:]])) <= 1e-7)
+
+
+def observations_to_insert(objects,existing,backend):
+    ids={o['id'] for o in objects}
+    duplicates=ids.intersection(existing)
+    if backend!='simulator' and duplicates:
+        raise RuntimeError('runtime IDs already exist; reset the fake scene before replay')
+    if backend=='simulator':
+        if {k for k in existing if k.startswith('runtime::')}-ids:
+            raise RuntimeError('unknown prior simulator runtime objects require measured reconciliation')
+        if any(not observation_geometry_matches(o,existing[o['id']]) for o in objects if o['id'] in duplicates):
+            raise RuntimeError('simulator observation geometry changed; refresh and reconcile')
+    return [o for o in objects if o['id'] not in duplicates]
 
 
 def wait_for_robot_baseline(read_scene, home, mimics=(), timeout=10.0):
@@ -579,15 +633,25 @@ def assert_scene_match(actual, expected, selected_id=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--summary-output', required=True)
+    parser.add_argument('--planning-trace', type=Path, help='Opt-in complete IK/request/private-scene evidence directory')
     parser.add_argument('--scene-package', default='ur5_2f_test')
     parser.add_argument('--task-request')
     parser.add_argument('--resolve-task', action='store_true', help='Resolve the saved authored task and write derived evidence after plan-only verification')
     parser.add_argument('--detections', required=True)
     parser.add_argument('--replay', action='store_true')
     parser.add_argument('--start', action='store_true')
+    parser.add_argument('--backend', choices=('fake', 'simulator'), default='fake')
+    parser.add_argument('--simulator-commission', choices=('cancel', 'stationary', 'contact-release', 'full-cycle'), help='Explicit bounded simulator trial; ordinary execution remains blocked')
+    parser.add_argument('--commission-evidence', type=Path, help='Passing measured trial and cancellation evidence required for full-cycle')
+    parser.add_argument('--simulator-receipt', type=Path, help='Live local Fortress receipt; independently verified, never an identity bypass')
+    parser.add_argument('--segment-planning-time', type=float, default=3.0, help='Per-request computation budget, 0 < seconds <= 10; collision tolerances unchanged')
     parser.add_argument('--timeout', type=float, default=180.0, help='Total candidate search budget in seconds')
     parser.add_argument('--retreat-distance', type=float)
     args = parser.parse_args()
+    if not math.isfinite(args.segment_planning_time) or not 0 < args.segment_planning_time <= 10:
+        parser.error('segment planning time must be finite and in (0, 10]')
+    if args.simulator_commission and (not args.start or args.resolve_task):
+        parser.error('commissioning requires --start and a consumed generated resolution; resolve separately')
     import yaml
     import xml.etree.ElementTree as ET
     import rclpy
@@ -599,7 +663,7 @@ def main():
         JointConstraint, MotionPlanRequest)
     from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene, GetPositionFK, GetPositionIK, GetStateValidity
     from rcl_interfaces.srv import GetParameters
-    from controller_manager_msgs.srv import ListHardwareComponents
+    from controller_manager_msgs.srv import ListHardwareComponents, ListControllers, ListHardwareInterfaces
     spec = importlib.util.spec_from_file_location('runtime_pick_inputs', Path(__file__).with_name('runtime_pick_inputs.py'))
     inputs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(inputs)
@@ -630,6 +694,24 @@ def main():
     plan_client = ActionClient(node, MoveGroup, '/move_action')
     execute_client = ActionClient(node, ExecuteTrajectory, '/execute_trajectory')
     selected_id = None
+    measurements = None
+    contact_guard = None
+    execution_monitor = None
+    controlled_cancel = False
+    controller_audit = None
+    trace_sequence = 0
+    def trace(label, message):
+        nonlocal trace_sequence
+        if args.planning_trace is None:
+            return
+        from rosidl_runtime_py.convert import message_to_ordereddict
+        args.planning_trace.mkdir(parents=True, exist_ok=True)
+        record = dict(wall_ns=time.time_ns(), monotonic_ns=time.monotonic_ns(),
+                      stage=summary.get('current_stage'),
+                      candidate_attempt=len(summary['candidate_attempts']),
+                      message=message_to_ordereddict(message))
+        (args.planning_trace/f'{trace_sequence:05d}-{label}.json').write_text(json.dumps(record, indent=2)+'\n')
+        trace_sequence += 1
     def call(client, request):
         if not client.wait_for_service(timeout_sec=10):
             raise RuntimeError(f'service unavailable: {client.srv_name}')
@@ -648,6 +730,7 @@ def main():
     def action(client, goal, timeout):
         if not client.wait_for_server(timeout_sec=5):
             raise RuntimeError('MoveIt action unavailable')
+        if controlled_cancel and controller_audit:controller_audit.arm()
         sent = client.send_goal_async(goal)
         rclpy.spin_until_future_complete(node, sent, timeout_sec=5)
         if not sent.done():
@@ -658,11 +741,91 @@ def main():
         if not handle or not handle.accepted:
             raise RuntimeError('action goal rejected')
         future = handle.get_result_async()
+        owned_uuid=list(handle.goal_id.uuid)
+        motion_trial=None
+        if client is execute_client:
+            summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
+                stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
         try:
-            rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+            cancel_start=measurements.fresh()['sim_ns'] if measurements else 0
+            if controlled_cancel:
+                from simulator_execution import CancellationMotion
+                if not set(contract['home_joint_names']).issubset(goal.trajectory.joint_trajectory.joint_names):
+                    raise RuntimeError('cancellation approach does not command the complete arm')
+                accepted_sample=measurements.fresh()
+                motion_trial=CancellationMotion(bytes(owned_uuid).hex(),accepted_sample,
+                    measurements.joints(accepted_sample),contract['home_joint_names'],
+                    accepted_wall_ns=summary['owned_execution_goal']['wall_ns'])
+                summary['cancellation_motion']=motion_trial.evidence
+            if execution_monitor is None:
+                rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+            else:
+                until=time.monotonic()+timeout
+                while not future.done() and time.monotonic()<until:
+                    rclpy.spin_once(node,timeout_sec=.005)
+                    execution_monitor()
+                    if controlled_cancel:
+                        sample=measurements.fresh()
+                        moved=motion_trial.observe(sample,measurements.joints(sample))
+                        summary['cancellation_movement_verified']=moved
+                        if moved and sample['sim_ns']-cancel_start>200000000:
+                            raise RuntimeError('CONTROLLED_CANCELLATION')
             if not future.done() or future.result() is None:
                 raise RuntimeError('action result timed out')
+            if controlled_cancel:
+                # A short/successful approach must never turn this bounded trial
+                # into contact motion when cancellation was not demonstrated.
+                raise RuntimeError('CANCELLATION_TRIAL_ENDED_BEFORE_CANCEL')
         except BaseException:
+            if measurements:
+                from simulator_execution import cancel_owned,cancel_response_matches
+                def request_cancel():
+                    summary['cancellation_request']=dict(uuid=bytes(owned_uuid).hex(),
+                        wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
+                    try:
+                        summary['cancel_measurement']=measurements.fresh()
+                    except RuntimeError as exc:
+                        # Lost evidence must fail acceptance, never prevent the
+                        # owned stop request that makes the failure safe.
+                        summary['cancel_measurement_error']=str(exc)
+                    if controlled_cancel and controller_audit:
+                        try:controller_audit.before_cancel()
+                        except Exception as exc:summary['controller_audit_failure']=str(exc)
+                    summary['cancellation_request'].update(wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
+                    cancel=handle.cancel_goal_async()
+                    rclpy.spin_until_future_complete(node,cancel,timeout_sec=5)
+                    response=cancel.result() if cancel.done() else None
+                    accepted=cancel_response_matches(owned_uuid,response)
+                    summary['cancellation_accepted']=accepted
+                    summary['cancellation_response']=dict(return_code=response.return_code if response else None,
+                        goal_uuids=[bytes(g.goal_id.uuid).hex() for g in response.goals_canceling] if response else [],
+                        wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
+                    return accepted if controlled_cancel else accepted or future.done()
+                def terminal():
+                    rclpy.spin_until_future_complete(node,future,timeout_sec=5)
+                    ended=bool(future.done() and future.result() and future.result().status in (4,5,6))
+                    summary['interrupted_action_terminal_status']=future.result().status if ended else None
+                    summary['interrupted_action_terminal']=dict(uuid=bytes(owned_uuid).hex(),
+                        status=summary['interrupted_action_terminal_status'],
+                        moveit_code=future.result().result.error_code.val if ended else None,
+                        wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
+                    controller_ok=True
+                    if controlled_cancel and controller_audit:
+                        try:summary['controller_cancellation']=controller_audit.collect()
+                        except Exception as exc:
+                            controller_ok=False;summary['controller_audit_failure']=str(exc)
+                        summary['controller_status_events']=controller_audit.events
+                    return ended and controller_ok and (not controlled_cancel or future.result().status==5)
+                def stopped():
+                    summary['motion_stop_verified']=wait_stopped()
+                    return summary['motion_stop_verified']
+                summary['cancellation_confirmed']=False
+                try:
+                    cancel_owned(request_cancel,terminal,stopped,
+                        lambda:apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline)),measured_reconcile)
+                    summary['cancellation_confirmed']=True
+                except Exception as cancel_error:summary['cancellation_failure']=str(cancel_error)
+                raise
             summary['cancellation_confirmed'] = False
             if rclpy.ok():
                 try:
@@ -675,6 +838,9 @@ def main():
                         future.done() and future.result() and future.result().status == 5)
                     if future.done() and future.result():
                         summary['interrupted_action_terminal_status'] = future.result().status
+                    if measurements:
+                        summary['motion_stop_verified']=wait_stopped()
+                        summary['cancellation_confirmed'] = summary['cancellation_confirmed'] and summary['motion_stop_verified']
                 except Exception as cancel_error:
                     summary['cancellation_failure'] = str(cancel_error)
             else:
@@ -684,6 +850,91 @@ def main():
         if response.status != 4 or response.result.error_code.val != 1:
             raise MoveItActionFailure(response.status, response.result.error_code.val)
         return response.result
+    def wait_stopped(monitor_contacts=False):
+        from simulator_execution import StopWindow
+        names={j.get('name') for control in measurements.robot.findall('ros2_control') for j in control.findall('joint')}
+        window=StopWindow(names)
+        travel_samples=[]
+        measurements.fresh()
+        after_terminal_wall_ns=time.time_ns()
+        until=time.monotonic()+8
+        while time.monotonic()<until:
+            rclpy.spin_once(node,timeout_sec=.01)
+            measurements.fresh()
+            pending=measurements.drain()
+            stopped=False;stop_sample=None
+            for sample in pending:
+                if monitor_contacts:contact_guard.check(sample)
+                measurements.record('stopping',sample)
+                if sample['wall_ns']>=summary.get('cancel_measurement',sample)['wall_ns']:travel_samples.append(sample)
+                if sample['wall_ns']<after_terminal_wall_ns:continue
+                stopped=window.observe(sample,measurements.joints(sample))
+                stop_sample=sample
+            if stopped and 0<=time.time()-stop_sample['wall_ns']/1e9<=.25:
+                measurements.fresh()
+                summary['stopped_measurement']=stop_sample
+                summary['stopped_window']=window.evidence
+                if summary.get('cancellation_motion'):
+                    from simulator_execution import cancellation_metrics
+                    summary['cancellation_metrics']=cancellation_metrics(summary,measurements,travel_samples)
+                return True
+        return False
+    def measured_fcl():
+        from simulator_execution import validate_measured_contacts,measured_attachment
+        s=measurements.fresh()
+        state=copy.deepcopy(initial.robot_state)
+        measured=measurements.joints(s)
+        state=updated_state(state,{k:v[0] for k,v in measured.items()}, {})
+        if contact_guard.held and contact_guard.phase not in ('released',):
+            original=next(o for o in initial.world.collision_objects if o.id==selected_id)
+            state.attached_collision_objects=measured_attachment(original,contract,measurements,s).robot_state.attached_collision_objects
+        else:state.attached_collision_objects=[]
+        state.is_diff=False
+        future=validity_client.call_async(GetStateValidity.Request(robot_state=state,group_name=''))
+        rclpy.spin_until_future_complete(node,future,timeout_sec=.2)
+        if not future.done() or not future.result():raise RuntimeError('measured collision query timed out')
+        validate_measured_contacts(future.result(),contact_guard.support if contact_guard.held else None,
+            bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate)
+        measurements.fresh()
+        summary['last_measured_collision_check']=dict(sim_ns=s['sim_ns'],valid=future.result().valid,contacts=len(future.result().contacts))
+    def measured_reconcile():
+        # Revoke first. Never restore predicted pre-motion poses.
+        apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
+        s=measurements.fresh(); p=measurements.object_pose(s,contact_guard.name)
+        original=next(o for o in initial.world.collision_objects if o.id==selected_id)
+        held=False
+        if contact_guard.held and contact_guard.phase not in ('opening','released'):
+            try:
+                contact_guard.check(s);held=True
+            except RuntimeError:pass
+        if held:
+            from simulator_execution import measured_attachment
+            reconciliation=measured_attachment(original,contract,measurements,s)
+            apply(reconciliation)
+        else:
+            reconciliation=place_detachment_diff(original,contract['grasp_frame'],p[:3],p[3:])
+            apply(reconciliation)
+        current=scene_now()
+        measured_objects=([a.object for a in current.robot_state.attached_collision_objects]
+                          if held else current.world.collision_objects)
+        expected_object=(reconciliation.robot_state.attached_collision_objects[0].object if held
+                         else reconciliation.world.collision_objects[0])
+        actual_objects=[o for o in measured_objects if o.id==selected_id]
+        geometry_matches=(len(actual_objects)==1 and observation_geometry_matches(
+            collision_object_dict(expected_object),collision_object_dict(actual_objects[0])))
+        summary['measured_reconciliation']=dict(held=held,pose=p,sim_ns=s['sim_ns'],
+            acm_restored=collision_matrix_signature(current.allowed_collision_matrix)==collision_matrix_signature(baseline),
+            measured_geometry_matches=geometry_matches,
+            attached_ids=[o.object.id for o in current.robot_state.attached_collision_objects])
+        evidence_scene('planning_scene_reconciled',current)
+        if not geometry_matches or not summary['measured_reconciliation']['acm_restored']:
+            raise RuntimeError('measured scene reconciliation did not preserve geometry/ACM')
+    def monitored_hold(seconds):
+        start=measurements.fresh()['sim_ns'];until=time.monotonic()+max(10,seconds*20)
+        while measurements.fresh()['sim_ns']-start<seconds*1e9:
+            if time.monotonic()>until:raise RuntimeError('measurement hold timed out')
+            rclpy.spin_once(node,timeout_sec=.005);contact_guard.drain()
+
     def fk(state, link):
         req = GetPositionFK.Request()
         req.header.frame_id = 'world'
@@ -702,14 +953,14 @@ def main():
     def joint_constraints(values):
         return Constraints(joint_constraints=[JointConstraint(joint_name=n, position=float(v),
             tolerance_above=0.0001, tolerance_below=0.0001, weight=1.0) for n,v in values.items()])
-    def plan_segment(view, name, goal, group=None, straight=False, initial_support=None):
+    def plan_segment(view, name, goal, group=None, straight=False, initial_support=None, ik_binding=None):
         stage(name)
         if time.monotonic() > deadline:
             raise RuntimeError('candidate search budget exhausted')
         before = copy.deepcopy(view)
         request = MotionPlanRequest(group_name=group or contract['planning_group'],
             start_state=copy.deepcopy(view.robot_state), num_planning_attempts=1,
-            allowed_planning_time=3.0, max_velocity_scaling_factor=0.2, max_acceleration_scaling_factor=0.2)
+            allowed_planning_time=args.segment_planning_time, max_velocity_scaling_factor=0.2, max_acceleration_scaling_factor=0.2)
         request.start_state.is_diff = False
         if isinstance(goal, dict):
             request.goal_constraints = [joint_constraints(goal)]
@@ -779,7 +1030,8 @@ def main():
             ik_request.ik_request.group_name = contract['planning_group']
             ik_request.ik_request.ik_link_name = contract['tool_link']
             ik_request.ik_request.pose_stamped = goal
-            ik_request.ik_request.robot_state = view.robot_state
+            ik_request.ik_request.robot_state = (bound_approach_seed(ik_binding, goal, contract, view.robot_state, mimics)
+                                                if ik_binding is not None else copy.deepcopy(view.robot_state))
             # Avoid rejecting a pose solely because IK selected a colliding arm
             # branch. The live service is usable only while its collision scene
             # matches this private view; otherwise preserve seed continuity and
@@ -787,11 +1039,19 @@ def main():
             # outcome replaces the complete candidate motion checks.
             ik_request.ik_request.avoid_collisions = ik_scene_matches_live(view, initial)
             ik_request.ik_request.timeout.sec = 1
+            trace('ik-request', ik_request)
             ik = call(ik_client, ik_request)
+            trace('ik-response', ik)
             if ik.error_code.val != 1:
                 from full_cycle_preplanner import MotionFeasibilityFailure
                 raise MotionFeasibilityFailure(f'IK failed: {ik.error_code.val}', moveit_code=ik.error_code.val)
             values = dict(zip(ik.solution.joint_state.name,ik.solution.joint_state.position))
+            if ik_binding is not None:
+                # A changed collision scene may reject the saved branch. Never
+                # silently substitute a new random branch under a READY handoff.
+                if any(n not in values or not math.isfinite(values[n]) or abs(values[n]-v) > 0.0001
+                       for n,v in ik_binding['joint_positions'].items()):
+                    raise RuntimeError('APPROACH_IK_BRANCH_CHANGED: resolve current scene again')
             request.goal_constraints = [joint_constraints({n:values[n] for n in contract['home_joint_names']})]
             goal_state = updated_state(view.robot_state,
                                        {n: values[n] for n in contract['home_joint_names']}, mimics)
@@ -802,6 +1062,7 @@ def main():
         goal_msg.planning_options.replan = False
         goal_msg.planning_options.look_around = False
         goal_msg.planning_options.planning_scene_diff = copy.deepcopy(view)
+        trace('move-group-goal', goal_msg)
         # OMPL can return an invalid sampled path for a feasible fixed goal.
         # Retry that identical plan-only request, never a different candidate,
         # target, policy or execution action. All collision checks remain active.
@@ -836,6 +1097,8 @@ def main():
         return dict(kind='motion', stage=name, before=before, after=after, trajectory=trajectory,
                     metadata=dict(stage=name, success=True, moveit_code=result.error_code.val,
                         planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
+                        **({'approach_ik': copy.deepcopy(ik_binding) if ik_binding is not None else approach_ik_binding(goal, contract, values)}
+                           if name == 'PREPLAN_APPROACH' and not isinstance(goal, dict) else {}),
                         attached_ids=[o.object.id for o in view.robot_state.attached_collision_objects],
                         world_ids=[o.id for o in view.world.collision_objects]))
     try:
@@ -846,17 +1109,21 @@ def main():
         contract = _PLANNER.load_grasp_contract(package)
         cell = yaml.safe_load((package/'cell_definition.yaml').read_text())
         authored = args.resolve_task or cell.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2'
+        if args.backend == 'simulator' and (not authored or args.replay):
+            raise RuntimeError('simulator requires current authored TaskIntent and timestamped physical observations, not replay')
         intent = None
         if authored:
             from task_intent_resolver import read_scene_task, normalized_intent_hash, context_hash
             intent, physical, document = read_scene_task(package)
+            if intent.get('safety', {}).get('execution_backend', 'fake') != args.backend:
+                raise RuntimeError('authored execution backend differs from requested backend')
             if args.retreat_distance is not None or args.task_request is not None:
                 raise ValueError('Authored TaskIntent cannot be overridden by a task request or retreat argument')
             if (cell.get('normalized_intent_sha256') != normalized_intent_hash(intent) or
                     cell.get('task_intent_resolution', {}).get('context_sha256') != context_hash(intent, physical, document)):
                 raise ValueError('TASK_HANDOFF_STALE: Generate the saved task before planning')
             selection = intent['pick']['selection']
-            if selection['source_type'] == 'manual_simulated' and not args.replay:
+            if selection['source_type'] == 'manual_simulated' and not args.replay and args.backend != 'simulator':
                 raise ValueError('Manual simulated source requires explicit replay input')
             filters = selection['object_filter']
             task = dict(action='pick_and_place', selection_policy='task_semantics',
@@ -888,8 +1155,27 @@ def main():
             eligible, rejected = inputs.filter_targets(objects, task, cell, time.time(), _PLANNER)
         summary.update(task_request=task, normalized_objects=objects, rejected_objects=rejected)
         params = call(params_client, GetParameters.Request(names=['use_fake_hardware','allow_trajectory_execution','robot_description'])).values
+        from hashlib import sha256
+        contract['robot_model_sha256'] = sha256(params[2].string_value.encode()).hexdigest()
         summary['trajectory_execution_enabled'] = params[1].bool_value
-        summary['fake_hardware_guard'] = fake_hardware_evidence(params, call(hardware_client,ListHardwareComponents.Request()).component)
+        components = call(hardware_client,ListHardwareComponents.Request()).component
+        if args.backend == 'fake':
+            if args.simulator_receipt is not None:
+                raise RuntimeError('simulator receipt contradicts fake backend')
+            summary['fake_hardware_guard'] = fake_hardware_evidence(params, components)
+        else:
+            if args.simulator_receipt is None:
+                raise RuntimeError('simulator backend requires a live receipt')
+            from simulator_backend import live_identity
+            settings = call(params_client, GetParameters.Request(names=['execution_backend', 'use_sim_time'])).values
+            if settings[0].string_value != 'simulator' or params[0].bool_value:
+                raise RuntimeError('simulator backend contradicts MoveIt launch configuration')
+            controllers = call(node.create_client(ListControllers, '/controller_manager/list_controllers'), ListControllers.Request()).controller
+            interfaces = call(node.create_client(ListHardwareInterfaces, '/controller_manager/list_hardware_interfaces'), ListHardwareInterfaces.Request()).command_interfaces
+            summary['backend_identity'] = live_identity(args.simulator_receipt, params[2].string_value,
+                components, controllers, interfaces, node.get_node_names_and_namespaces(), settings[1].bool_value)
+            from simulator_observations import verify_snapshot_binding
+            verify_snapshot_binding(snapshot, summary['backend_identity']['receipt_sha256'])
         if args.start and not params[1].bool_value:
             raise RuntimeError('fake execution disabled; launch allow_trajectory_execution:=true')
         support_adapters = call(params_client, GetParameters.Request(names=['ompl.request_adapters'])).values[0].string_value
@@ -901,12 +1187,11 @@ def main():
         if initial.robot_state.attached_collision_objects:
             raise RuntimeError('existing attachment requires explicit recovery')
         existing_ids = {o.id for o in initial.world.collision_objects}
-        if existing_ids.intersection(o['id'] for o in objects):
-            raise RuntimeError('runtime IDs already exist; reset the fake scene before replay')
+        additions=observations_to_insert(objects,{o.id:collision_object_dict(o) for o in initial.world.collision_objects},args.backend)
         manifest = yaml.safe_load((package/'config/moveit_collision_objects.yaml').read_text())
         if not {o['id'] for o in manifest['objects']}.issubset(existing_ids):
             raise RuntimeError('generated environment collisions missing')
-        apply(inputs.scene_diff(objects))
+        if additions:apply(inputs.scene_diff(additions))
         initial = scene_now()
         initial.robot_state.is_diff = False
         initial.is_diff = True
@@ -918,8 +1203,7 @@ def main():
         summary['inserted_object_ids'] = [o['id'] for o in objects]
         actual = {o.id:collision_object_dict(o) for o in initial.world.collision_objects}
         for obj in objects:
-            if actual.get(obj['id']) is None or any(abs(a-b)>1e-7 for a,b in
-                    zip(obj['pose']+obj['dimensions'],actual[obj['id']]['pose']+actual[obj['id']]['dimensions'])):
+            if not observation_geometry_matches(obj, actual.get(obj['id'])):
                 raise RuntimeError('normalized scene insertion mismatch')
         # A non-home start is not silently corrected with motion before validation.
         assert_joint_match(initial.robot_state, updated_state(initial.robot_state, dict(home, gripper_finger1_joint=0.0), mimics),0.001)
@@ -964,15 +1248,126 @@ def main():
         if not args.start:
             summary['result'] = 'PLAN_ONLY'
             return 0
-        if any(s.get('metadata', {}).get('initial_support_contact') for s in cycle['steps']):
+        if args.simulator_commission and args.backend != 'simulator':
+            raise RuntimeError('commissioning is simulator-only')
+        if args.backend == 'simulator':
+            if not args.simulator_commission:
+                raise RuntimeError('SIMULATOR_EXECUTION_UNCOMMISSIONED: explicit commissioning trial required')
+            # Planning can take minutes. Recheck the complete positive identity
+            # at the motion boundary before starting the telemetry consumer.
+            current_params=call(params_client,GetParameters.Request(names=[
+                'execution_backend','use_fake_hardware','allow_trajectory_execution','use_sim_time','robot_description',
+                'simulator_commissioning','capabilities','disable_capabilities'])).values
+            if (current_params[0].string_value!='simulator' or current_params[1].bool_value or
+                    not current_params[2].bool_value or current_params[4].string_value!=params[2].string_value):
+                raise RuntimeError('simulator configuration changed before motion')
+            motion_controllers=call(node.create_client(ListControllers,'/controller_manager/list_controllers'),ListControllers.Request()).controller
+            summary['motion_backend_identity']=live_identity(args.simulator_receipt,current_params[4].string_value,
+                call(hardware_client,ListHardwareComponents.Request()).component,
+                motion_controllers,
+                call(node.create_client(ListHardwareInterfaces,'/controller_manager/list_hardware_interfaces'),ListHardwareInterfaces.Request()).command_interfaces,
+                node.get_node_names_and_namespaces(),current_params[3].bool_value)
+            from simulator_backend import commissioning_capability_identity
+            summary['commissioning_capability']=commissioning_capability_identity(node,args.simulator_receipt,
+                current_params[5].bool_value,current_params[6].string_value,current_params[7].string_value)
+            verify_snapshot_binding(snapshot,summary['motion_backend_identity']['receipt_sha256'])
+            from simulator_execution import Measurements, ContactGuard, measured_attachment, require_trial_evidence
+            if args.simulator_commission=='full-cycle':require_trial_evidence(args.commission_evidence,summary['backend_identity'])
+            measurements=Measurements(node,args.simulator_receipt,Path(args.summary_output).with_suffix('.measurements.jsonl'))
+            until=time.monotonic()+5
+            while measurements.latest is None and time.monotonic()<until:rclpy.spin_once(node,timeout_sec=.05)
+            support=next((s['metadata']['initial_support_contact'] for s in cycle['steps'] if s.get('metadata',{}).get('initial_support_contact')),None)
+            selected=next(o for o in objects if o['id']==selected_id)
+            contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,contract['tool_link'])
+            contact_guard.arm_names=set(contract['home_joint_names'])
+            initial_joints=measurements.joints(measurements.fresh())
+            leaders=set(initial_joints)-contact_guard.arm_names-{j.get('name') for j in measurements.robot.findall('joint') if j.find('mimic') is not None}
+            if len(leaders)!=1:raise RuntimeError('ambiguous measured gripper leader')
+            contact_guard.open_position=initial_joints[next(iter(leaders))][0]
+            for obj in objects:
+                actual=measurements.object_pose(measurements.fresh(),obj['object_id'])
+                if math.dist(actual[:3],obj['pose'][:3])>.001:
+                    raise RuntimeError('measured object moved since authoritative resolution')
+            contact_guard.check(measurements.fresh());measurements.arm()
+            contact_guard.validate_current=measured_fcl
+            execution_monitor=contact_guard.drain
+            if args.simulator_commission=='cancel':
+                from simulator_execution import ControllerCancellationAudit
+                controller_audit=ControllerCancellationAudit(node,motion_controllers,contract['home_joint_names'])
+                until=time.monotonic()+.2
+                while time.monotonic()<until:rclpy.spin_once(node,timeout_sec=.01)
+        if args.backend == 'fake' and any(s.get('metadata', {}).get('initial_support_contact') for s in cycle['steps']):
             raise RuntimeError('SUPPORT_CONTACT_PLAN_ONLY: execution of initial support separation is not commissioned')
         fresh = select_observations(intent, physical, objects, time.time()) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
         expected = initial
         for step in cycle['steps']:
+            if args.simulator_commission=='cancel' and step['stage']!='PREPLAN_APPROACH':
+                raise RuntimeError('cancellation trial cannot advance beyond the approach')
             label = step['stage'].replace('PREPLAN_','EXECUTE_')
             stage(label)
+            if measurements:
+                # The full-cycle authority supplied every approach, grasp and lift.
+                # This branch replaces mock exact-state bookkeeping with live evidence.
+                contact_guard.phase={'PREPLAN_APPROACH':'approach','PREPLAN_GRASP':'descent',
+                    'PREPLAN_CLOSE_GRIPPER':'closing','PREPLAN_LIFT':'lift','PREPLAN_TRANSFER':'transfer',
+                    'PREPLAN_PLACE':'place','PREPLAN_OPEN_GRIPPER':'opening','PREPLAN_RETREAT':'released',
+                    'PREPLAN_HOME':'released'}.get(step['stage'],contact_guard.phase)
+                if step['kind']=='motion':
+                    if not contact_guard.held:
+                        apply(PlanningScene(is_diff=True,allowed_collision_matrix=step['before'].allowed_collision_matrix))
+                    contact_guard.drain()
+                    controlled_cancel=args.simulator_commission=='cancel' and step['stage']=='PREPLAN_APPROACH'
+                    summary['execution_attempted']=True
+                    result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)
+                    controlled_cancel=False
+                    contact_guard.drain()
+                    summary.setdefault('execution_results',[]).append(dict(stage=label,code=result.error_code.val,action_status=4))
+                    if step['stage']=='PREPLAN_LIFT' and args.simulator_commission=='contact-release':
+                        monitored_hold(1.)
+                        summary['lift_hold_measurement']=measurements.fresh()
+                        summary['verified_lift_clearance_m']=contact_guard.bottom(measurements.object_pose(measurements.fresh(),contact_guard.name))-support['floor_z']
+                        if not contact_guard.separation or not contact_guard.separation.expired or summary['verified_lift_clearance_m']<.01:
+                            raise RuntimeError('physical lift separation not verified')
+                        # Plan release in the actual lifted scene with the existing planner.
+                        deadline=time.monotonic()+30
+                        release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group='gripper')
+                        contact_guard.phase='opening'
+                        action(execute_client,ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)
+                        contact_guard.phase='released';contact_guard.held=None
+                        measured_reconcile()
+                        monitored_hold(2.)
+                        from simulator_execution import verify_release
+                        summary['release_evidence']=verify_release(contact_guard,summary['lift_hold_measurement'])
+                        measured_reconcile()
+                        summary.update(result='COMMISSION_TRIAL_PASS',full_cycle_execution_success=False)
+                        break
+                elif step['kind']=='attach':
+                    if args.simulator_commission=='stationary':
+                        # Diagnostic boundary: retain the existing close command,
+                        # wait for measured convergence, and observe contact without
+                        # attaching or advancing to any arm motion.
+                        if not wait_stopped(monitor_contacts=True):
+                            raise RuntimeError('stationary closure did not converge')
+                        summary['stationary_hold_start']=measurements.fresh()
+                        monitored_hold(2.)
+                        summary['stationary_hold_end']=measurements.fresh()
+                        # Collection is not grasp qualification: no held state,
+                        # live attachment, or later motion is authorized here.
+                        measured_reconcile()
+                        summary.update(result='STATIONARY_DIAGNOSTIC_COMPLETE',commission_trial='stationary',
+                                       full_cycle_execution_success=False)
+                        break
+                    summary['measured_object_in_tool']=contact_guard.establish()
+                    summary['closure_measurement']=measurements.fresh()
+                    apply(measured_attachment(step['original'],contract,measurements,measurements.fresh()))
+                    apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
+                else:
+                    contact_guard.phase='released';monitored_hold(2.)
+                    measured_reconcile()
+                summary['stages'].append(label)
+                continue
             assert_scene_match(scene_now(),expected,selected_id)
             matrix = step['before'].allowed_collision_matrix
             if collision_matrix_signature(matrix) != collision_matrix_signature(expected.allowed_collision_matrix):
@@ -1009,6 +1404,10 @@ def main():
                 summary['detach_verified'] = not measured_scene.robot_state.attached_collision_objects and any(
                     o.id == selected_id for o in measured_scene.world.collision_objects)
             summary['stages'].append(label)
+        if measurements:
+            measured_reconcile()
+            if summary['result'] in ('COMMISSION_TRIAL_PASS','STATIONARY_DIAGNOSTIC_COMPLETE'):return 0
+            raise RuntimeError('full-cycle final measured acceptance not yet commissioned')
         final = scene_now()
         assert_scene_match(final, expected, selected_id)
         intended_home = dict(home, gripper_finger1_joint=0.0)
@@ -1059,7 +1458,11 @@ def main():
             summary['recovery_inspection_skipped'] = 'ROS context already invalid'
         if summary['execution_attempted'] and summary['result'] != 'PASS' and rclpy.ok():
             try:
-                apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
+                if measurements:
+                    apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
+                    if summary.get('motion_stop_verified') or wait_stopped():measured_reconcile()
+                    else:raise RuntimeError('cannot reconcile before measured motion stop')
+                else:apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
                 recovery = scene_now()
                 summary['recovery_scene'] = dict(
                     attached_ids=[o.object.id for o in recovery.robot_state.attached_collision_objects],
@@ -1067,12 +1470,20 @@ def main():
                     contact_acm_restored=collision_matrix_signature(recovery.allowed_collision_matrix)==collision_matrix_signature(baseline))
             except Exception as recovery_error:
                 summary['recovery_inspection_failure'] = str(recovery_error)
+        if args.simulator_commission=='cancel' and summary.get('failure')=='CONTROLLED_CANCELLATION':
+            try:
+                from simulator_execution import require_cancellation_acceptance
+                require_cancellation_acceptance(summary)
+                summary['result']='CANCELLATION_TRIAL_PASS'
+            except RuntimeError as acceptance_error:
+                summary['cancellation_acceptance_failure']=str(acceptance_error)
+        if measurements:measurements.close()
         node.destroy_node()
         rclpy.try_shutdown()
         summary['shutdown_clean'] = not rclpy.ok()
         Path(args.summary_output).write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
         print(json.dumps(summary,indent=2,sort_keys=True))
-    return 0 if summary['result']=='PASS' else 1
+    return 0 if summary['result'] in ('PASS','COMMISSION_TRIAL_PASS','CANCELLATION_TRIAL_PASS','STATIONARY_DIAGNOSTIC_COMPLETE') else 1
 
 
 if __name__ == '__main__':

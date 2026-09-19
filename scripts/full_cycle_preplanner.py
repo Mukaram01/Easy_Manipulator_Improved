@@ -23,6 +23,9 @@ from perceived_object_grasp_plan import (
     oriented_box_surface_distance,
     rotate_vector,
     tool_pose_for_grasp,
+    compose_pose,
+    inverse_pose,
+    quaternion_from_rpy,
 )
 from physical_destination import check_object_containment
 from grasp_strategy_candidates import generate_strategy_candidates
@@ -107,7 +110,10 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         stage(name)
         if time.monotonic() > deadline:
             raise RuntimeError('candidate search budget exhausted')
-        step = operations.plan_segment(view, name, goal, group, straight)
+        options = {}
+        if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
+            options['ik_binding'] = contract['approach_ik']
+        step = operations.plan_segment(view, name, goal, group, straight, **options)
         if (step['metadata'].get('success') is not True or
                 step['metadata'].get('moveit_code') != 1 or
                 not step['metadata'].get('points') or step.get('trajectory') is None):
@@ -250,15 +256,23 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         # Use the same swept tool/robot check as descent before admitting a grasp.
         motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, dz=retreat), straight=True)
         delta = [a-b for a, b in zip(destination['pose_xyz'], observation['pose'][:3])]
-        motion('PREPLAN_TRANSFER', operations.translated_pose(tool_at_grasp, delta[0], delta[1], delta[2]+place_approach))
-        motion('PREPLAN_PLACE', operations.translated_pose(tool_at_grasp, *delta))
+        place_goal = operations.translated_pose(tool_at_grasp, *delta)
+        if intent is not None:
+            # Preserve the actual grasp transform while meeting the authored
+            # destination orientation. Translation alone cannot reorient a part.
+            p, q = tool_at_grasp.pose.position, tool_at_grasp.pose.orientation
+            grasp_tool = [p.x, p.y, p.z, q.x, q.y, q.z, q.w]
+            object_in_tool = compose_pose(inverse_pose(grasp_tool), observation['pose'])
+            destination_object = destination['pose_xyz'] + quaternion_from_rpy(destination['pose_rpy'])
+            place_goal = operations.pose_message(compose_pose(destination_object, inverse_pose(object_in_tool)))
+        motion('PREPLAN_TRANSFER', operations.translated_pose(place_goal, dz=place_approach))
+        motion('PREPLAN_PLACE', place_goal)
         reached = operations.fk(view.robot_state, contract['tool_link'])
         achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
         if math.dist(achieved[:3], destination['pose_xyz']) > 0.003:
             raise RuntimeError('planned placement differs from destination by more than 3 mm')
         check_code = 'DESTINATION_CONTAINMENT'
         if intent is not None:
-            from perceived_object_grasp_plan import quaternion_from_rpy
             expected_orientation = quaternion_from_rpy(destination['pose_rpy'])
             angle = 2 * math.acos(min(1., abs(sum(a*b for a, b in zip(achieved[3:], expected_orientation)))))
             if angle > 0.01:

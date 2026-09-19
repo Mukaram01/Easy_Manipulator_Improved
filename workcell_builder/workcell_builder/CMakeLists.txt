@@ -46,11 +46,35 @@ find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
 
+option(WORKCELL_BUILD_COMMISSIONING_CAPABILITY "Build simulator-only MoveIt 2.5.9 cancellation correction" OFF)
+if(WORKCELL_BUILD_COMMISSIONING_CAPABILITY)
+  find_package(moveit_ros_move_group 2.5.9 EXACT REQUIRED)
+  find_package(rclcpp_action REQUIRED)
+  find_package(action_msgs REQUIRED)
+  find_package(control_msgs REQUIRED)
+  add_library(workcell_commission_execute SHARED src_commission_execute_capability.cpp)
+  ament_target_dependencies(workcell_commission_execute rclcpp rclcpp_action moveit_ros_move_group moveit_ros_planning_interface pluginlib control_msgs action_msgs)
+  pluginlib_export_plugin_description_file(moveit_ros_move_group execute_trajectory_plugins.xml)
+  install(TARGETS workcell_commission_execute LIBRARY DESTINATION lib)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(workcell_execute_action_test test/execute_trajectory_action_test.cpp)
+  target_include_directories(workcell_execute_action_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  ament_target_dependencies(workcell_execute_action_test rclcpp rclcpp_action moveit_msgs action_msgs control_msgs)
+endif()
+
 add_library(workcell_support_contact SHARED src_support_contact_adapter.cpp)
 ament_target_dependencies(workcell_support_contact moveit_core moveit_ros_planning pluginlib)
 target_link_libraries(workcell_support_contact yaml-cpp)
 pluginlib_export_plugin_description_file(moveit_core support_contact_plugins.xml)
 install(TARGETS workcell_support_contact LIBRARY DESTINATION lib)
+
+# Optional simulator adapter; the ordinary fake backend has no Gazebo dependency.
+find_package(ignition-gazebo6 QUIET)
+if(ignition-gazebo6_FOUND)
+  add_library(workcell_simulator_measurements SHARED src_simulator_measurements.cpp)
+  target_link_libraries(workcell_simulator_measurements ignition-gazebo6::ignition-gazebo6 yaml-cpp)
+  install(TARGETS workcell_simulator_measurements LIBRARY DESTINATION lib)
+endif()
 
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)
 find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
@@ -837,6 +861,7 @@ if(BUILD_TESTING)
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
     support_contact_policy_test.cpp
+    execute_trajectory_action_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test
     test/studio_log_issue_tracker_test.cpp)
@@ -907,6 +932,9 @@ install(PROGRAMS
   ../../scripts/full_cycle_preplanner.py
   ../../scripts/grasp_strategy_candidates.py
   ../../scripts/perceived_object_grasp_execute.py
+  ../../scripts/simulator_backend.py
+  ../../scripts/simulator_observations.py
+  ../../scripts/simulator_execution.py
   ../../scripts/run_p8b_replay_planning_scene_smoke.sh
   DESTINATION lib/${PROJECT_NAME})
 

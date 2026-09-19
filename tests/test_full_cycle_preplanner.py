@@ -374,3 +374,25 @@ def test_authored_resolver_keeps_policy_and_descent_rejection_evidence(policy, r
     assert failure['failure_kind'] == 'collision'
     assert failure['colliding_links'] == ['generic_tool_link']
     assert failure['collision_objects'] == ['generic_container']
+
+
+def test_authored_destination_orientation_is_planned_with_actual_grasp_transform():
+    from full_cycle_preplanner import preplan_full_cycle
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from tests.test_task_intent_resolver import valid_intent
+    kwargs, trace, goals, _ = fixture()
+    q = runtime._PLANNER.quaternion_from_rpy([0.,0.,.23])
+    kwargs['observation']['pose'][3:] = q
+    obj = kwargs['initial_scene'].world.collision_objects[0]
+    obj.pose.orientation.x,obj.pose.orientation.y,obj.pose.orientation.z,obj.pose.orientation.w = q
+    kwargs['candidate'] = generate_strategy_candidates('top_2f',kwargs['observation'],{'approach_distance_m':.12})[3]
+    kwargs['contract']['task_intent'] = valid_intent('AUTO')
+    result = preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    placed = result.cycle['steps'][-1]['after'].world.collision_objects[-1]
+    achieved = runtime.pose_values(placed.pose)
+    assert achieved[:3] == pytest.approx(kwargs['destination']['pose_xyz'])
+    assert abs(achieved[-1]) == pytest.approx(1.)
+    assert achieved[3:6] == pytest.approx([0.,0.,0.],abs=1e-9)
+    assert [g[0] for g in goals] == [s for s in EXPECTED if s.startswith('PREPLAN_')]
+    assert result.cycle['steps'][4]['stage'] == 'PREPLAN_LIFT'

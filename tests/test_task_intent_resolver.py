@@ -289,3 +289,26 @@ def test_yaml_json_resolution_artifacts_are_semantically_equal(tmp_path):
     import json
     json_doc = json.loads(Path(paths["json"]).read_text())
     assert yaml_doc == json_doc == result
+
+
+def test_resolution_binds_successful_ik_branch_after_rejected_candidate():
+    import pytest
+    resolver = resolver_module()
+    branch = {'schema': 'workcell_approach_ik/v1', 'joint_positions': {'joint': -2.43}}
+    seen = []
+    def evaluate(request):
+        seen.append(copy.deepcopy(request))
+        if len(seen) == 1:
+            return {'success': False, 'reason_code': 'PREPLAN_GRASP_FAILED', 'checks': []}
+        return dict(pass_cycle(request), approach_ik=copy.deepcopy(branch))
+    result = resolver.resolve_task_intent(valid_intent(), environment(), cell(), observations(), evaluate, now=100.)
+    assert result['grasp_resolution']['approach_ik'] == branch
+    def revalidate(request):
+        assert request['approach_ik'] == branch
+        assert request['candidate'].candidate_id == result['grasp_resolution']['selected_candidate_id']
+        return dict(pass_cycle(request), approach_ik=copy.deepcopy(branch))
+    checked = resolver.resolve_task_intent(valid_intent(), environment(), cell(), observations(), revalidate, now=100., resolved=result)
+    assert checked['resolution_sha256'] == result['resolution_sha256']
+    damaged = copy.deepcopy(result); damaged['grasp_resolution']['approach_ik']['joint_positions']['joint'] += 1
+    with pytest.raises(ValueError, match='CORRUPT'):
+        resolver.consume_resolution(damaged, valid_intent(), environment(), cell())

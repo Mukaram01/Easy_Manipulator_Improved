@@ -6,9 +6,11 @@ import tempfile
 import yaml
 import re
 import subprocess
+import sys
+from pathlib import Path
 
 from launch import LaunchDescription
-from launch.actions import OpaqueFunction
+from launch.actions import OpaqueFunction, ExecuteProcess
 from launch.actions import DeclareLaunchArgument
 from launch.actions import TimerAction
 from launch.conditions import IfCondition, UnlessCondition
@@ -274,6 +276,10 @@ def _write_robot_description_file(scene_name, robot_description_config):
 
 
 def _launch_setup(context):
+    backend = LaunchConfiguration("execution_backend").perform(context)
+    if backend not in ("fake", "simulator"):
+        raise RuntimeError("Unknown execution backend")
+    simulator_actions = []
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     launch_rviz = LaunchConfiguration("launch_rviz")
@@ -321,6 +327,30 @@ def _launch_setup(context):
             "robot_world_rpy": _format_xacro_vector(robot_pose["rpy"]),
         },
     )
+    if backend == "simulator":
+        if use_sim_time.perform(context).lower() != "true" or use_fake_hardware.perform(context).lower() != "true":
+            raise RuntimeError("Simulator requires use_sim_time:=true and safe mock-source model derivation")
+        # Source checkout and installed entry points use the same reusable backend.
+        source_scripts = Path(__file__).resolve().parents[3] / "scripts"
+        if source_scripts.is_dir():
+            sys.path.insert(0, str(source_scripts))
+        else:
+            from ament_index_python.packages import get_package_prefix
+            sys.path.insert(0, str(Path(get_package_prefix('workcell_builder')) / 'lib/workcell_builder'))
+        import simulator_backend
+        output = LaunchConfiguration("simulator_output").perform(context)
+        robot_description_config, controllers_config_path, simulator_spec = simulator_backend.prepare(
+            robot_description_config, controllers_config_path,
+            LaunchConfiguration("simulator_world").perform(context),
+            f"{scene_pkg}_robot_state_publisher", output)
+        simulator_actions = [
+            ExecuteProcess(cmd=[sys.executable, simulator_backend.__file__, output], output='screen',
+                           additional_env={'LIBGL_ALWAYS_SOFTWARE': '1'}),
+            Node(package='ros_gz_bridge', executable='parameter_bridge',
+                 parameters=[{'config_file': str(Path(output)/'bridges.yaml')}], output='screen'),
+            TimerAction(period=5.0, actions=[Node(package='controller_manager', executable='spawner',
+                arguments=['physical_joint_states', '--param-file', controllers_config_path], output='screen')]),
+        ]
     robot_description = {"robot_description": robot_description_config}
 
     robot_description_file = _write_robot_description_file(
@@ -351,7 +381,7 @@ def _launch_setup(context):
                 "default_planner_request_adapters/FixStartStateBounds",
                 "default_planner_request_adapters/FixStartStateCollision",
                 "default_planner_request_adapters/FixStartStatePathConstraints",
-            ]),
+            ] + (["workcell/PlanningEvidence"] if os.environ.get('WORKCELL_PLANNING_TRACE_DIR') else [])),
             "start_state_max_bounds_error": 0.1,
         }
     }
@@ -389,6 +419,9 @@ def _launch_setup(context):
 
     fake_hardware_enabled = use_fake_hardware.perform(context).lower() == "true"
     execution_requested = LaunchConfiguration("allow_trajectory_execution").perform(context).lower() == "true"
+    commissioning = LaunchConfiguration("simulator_commissioning").perform(context).lower() == "true"
+    if commissioning and (backend != 'simulator' or not execution_requested):
+        raise RuntimeError('simulator_commissioning requires simulator backend and explicit trajectory execution')
     if execution_requested and not fake_hardware_enabled:
         raise RuntimeError("This scene permits trajectory execution only with use_fake_hardware:=true")
     trajectory_execution = {
@@ -396,10 +429,15 @@ def _launch_setup(context):
         # while trajectory execution requires explicit fake-hardware opt-in.
         "allow_trajectory_execution": False,
         "moveit_manage_controllers": False,
-        "use_fake_hardware": fake_hardware_enabled,
+        "use_fake_hardware": fake_hardware_enabled and backend == "fake",
+        "execution_backend": backend,
+        "simulator_commissioning": commissioning,
     }
     if execution_requested:
         trajectory_execution["allow_trajectory_execution"] = True
+    if commissioning:
+        trajectory_execution.update(capabilities='workcell/CommissionExecuteTrajectory',
+            disable_capabilities='move_group/MoveGroupExecuteTrajectoryAction')
 
     planning_scene_monitor_params = {
         "publish_planning_scene": True,
@@ -631,7 +669,7 @@ def _launch_setup(context):
         robot_state_publisher,
         static_tf,
         joint_state_publisher,
-        control_node,
+        *([control_node] if backend == "fake" else simulator_actions),
         # ros2_control_node must advertise its controller-manager services
         # before the spawners query them; staggering also prevents three
         # simultaneous configure requests from racing on Humble.
@@ -639,7 +677,7 @@ def _launch_setup(context):
         TimerAction(period=3.0, actions=[arm_controller_spawner]),
         TimerAction(period=4.0, actions=[gripper_controller_spawner]),
         move_group,
-        canonical_mesh_preview,
+        *([canonical_mesh_preview] if backend == "fake" else []),
         planning_scene_loader,
         rviz_node,
     ]
@@ -647,6 +685,10 @@ def _launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument("execution_backend", default_value="fake"),
+        DeclareLaunchArgument("simulator_world", default_value=""),
+        DeclareLaunchArgument("simulator_output", default_value=""),
+        DeclareLaunchArgument("simulator_commissioning", default_value="false"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument(
             "allow_trajectory_execution", default_value="false",

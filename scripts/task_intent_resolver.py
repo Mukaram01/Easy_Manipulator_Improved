@@ -217,7 +217,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
             return _readiness(result, 'BLOCKED', 'TASK_CANDIDATE_CHANGED', 'Resolved candidate is no longer available.')
         evaluation = cycle_evaluator({'intent': copy.deepcopy(normalized), 'cell': copy.deepcopy(cell),
             'strategy_ref': candidate.strategy_ref, 'observation': copy.deepcopy(observation),
-            'candidate': candidate, 'destination': copy.deepcopy(checked['place_resolution']['destination'])})
+            'candidate': candidate, 'destination': copy.deepcopy(checked['place_resolution']['destination']),
+            'approach_ik': copy.deepcopy(chosen.get('approach_ik'))})
         checks = copy.deepcopy(evaluation.get('checks', []))
         checked['readiness']['checks'] = checks
         if evaluation.get('success') is not True or any(c.get('status') in ('FAIL', 'BLOCKED') for c in checks):
@@ -276,6 +277,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                         grasp_resolution.update(selected_strategy_ref=strategy,
                                                 selected_object_id=observation["id"],
                                                 selected_candidate_id=candidate.candidate_id)
+                        if evaluation.get('approach_ik') is not None:
+                            grasp_resolution['approach_ik'] = copy.deepcopy(evaluation['approach_ik'])
                         if grasp["policy"] == "PREFERRED" and strategy != requested:
                             grasp_resolution["fallback"] = {"used": True, **preferred_failure}
                         fallbacks = [block["fallback"] for block in (grasp_resolution, place_resolution)

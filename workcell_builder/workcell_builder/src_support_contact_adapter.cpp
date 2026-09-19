@@ -6,8 +6,51 @@
 #include <pluginlib/class_list_macros.hpp>
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
+#include <rclcpp/serialization.hpp>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 
 namespace workcell {
+// Opt-in evidence at the innermost adapter boundary; never changes a request.
+class PlanningEvidence : public planning_request_adapter::PlanningRequestAdapter {
+public:
+  void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
+  std::string getDescription() const override { return "Workcell effective planning evidence"; }
+  template<class Message> static void save(const std::string& path, const Message& msg) {
+    rclcpp::SerializedMessage bytes;
+    rclcpp::Serialization<Message>().serialize_message(&msg, &bytes);
+    std::ofstream out(path, std::ios::binary);
+    out.exceptions(std::ios::badbit | std::ios::failbit);
+    const auto& buffer=bytes.get_rcl_serialized_message();
+    out.write(reinterpret_cast<const char*>(buffer.buffer), buffer.buffer_length);
+  }
+  bool adaptAndPlan(const PlannerFn& planner, const planning_scene::PlanningSceneConstPtr& scene,
+      const planning_interface::MotionPlanRequest& req, planning_interface::MotionPlanResponse& res,
+      std::vector<std::size_t>&) const override {
+    const char* directory=std::getenv("WORKCELL_PLANNING_TRACE_DIR");
+    if (!directory || !*directory) return planner(scene,req,res);
+    static std::atomic<unsigned long> sequence{0};
+    std::filesystem::create_directories(directory);
+    const auto stamp=std::chrono::system_clock::now().time_since_epoch();
+    const auto prefix=std::string(directory)+"/"+std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(stamp).count())+"_"+std::to_string(sequence++);
+    save(prefix+".request.cdr",req);
+    moveit_msgs::msg::PlanningScene effective;
+    scene->getPlanningSceneMsg(effective);
+    save(prefix+".scene.cdr",effective);
+    std::ofstream acm(prefix+".acm.txt");
+    scene->getAllowedCollisionMatrix().print(acm);
+    const auto begin=std::chrono::steady_clock::now();
+    const bool ok=planner(scene,req,res);
+    std::ofstream result(prefix+".result.txt");
+    result << "success " << ok << "\nerror " << res.error_code_.val
+           << "\nplanning_time " << res.planning_time_ << "\nwall_time "
+           << std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count() << '\n';
+    return ok;
+  }
+};
 class InitialSupportContact : public planning_request_adapter::PlanningRequestAdapter {
 public:
   void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
@@ -115,3 +158,17 @@ public:
 };
 }
 PLUGINLIB_EXPORT_CLASS(workcell::InitialSupportContact, planning_request_adapter::PlanningRequestAdapter)
+PLUGINLIB_EXPORT_CLASS(workcell::PlanningEvidence, planning_request_adapter::PlanningRequestAdapter)
+
+// ABI for the simulator execution owner: exactly the planner's per-contact
+// predicate, with the caller's measured identities and geometry. No ACM writes.
+extern "C" bool workcell_support_contact_valid(const char* object,const char* support,
+ const char* first,const char* second,double floor,const double* point) {
+  collision_detection::Contact c;
+  c.body_name_1=first;c.body_name_2=second;
+  c.body_type_1=c.body_name_1==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.body_type_2=c.body_name_2==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.pos=Eigen::Vector3d(point[0],point[1],point[2]);
+  c.normal=Eigen::Vector3d(point[3],point[4],point[5]);c.depth=point[6];
+  return workcell::SupportContact{object,support,floor}(c);
+}

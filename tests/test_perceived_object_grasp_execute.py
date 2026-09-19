@@ -318,3 +318,108 @@ def test_support_binding_uses_reviewed_asset_footprint_not_nearest_obstacle():
     obj['pose'][:3] = [.1, .2, .0155]
     environment['assets'][0].pop('usable_placement')
     assert MODULE.legitimate_support_ids(obj, environment, manifest) == set()
+
+
+def test_observation_geometry_accepts_quaternion_sign_but_rejects_changed_geometry():
+    observed={'pose':[1.,2.,3.,.5,.5,.5,.5],'dimensions':[.025,.025,.025]}
+    actual={'pose':[1.,2.,3.,-.5,-.5,-.5,-.5],'dimensions':[.025,.025,.025]}
+    assert MODULE.observation_geometry_matches(observed,actual)
+    actual['pose'][0]+=.00001
+    assert not MODULE.observation_geometry_matches(observed,actual)
+    actual['pose'][0]=1.
+    actual['pose'][3]=-.4
+    assert not MODULE.observation_geometry_matches(observed,actual)
+
+
+def test_simulator_handoff_reuses_only_exact_observations():
+    observations_to_insert = MODULE.observations_to_insert
+    obj={'id':'runtime::x','pose':[0.,0.,0.,0.,0.,0.,1.],'dimensions':[.02]*3}
+    assert observations_to_insert([obj],{'runtime::x':obj},'simulator')==[]
+    assert observations_to_insert([obj],{},'simulator')==[obj]
+    import pytest
+    with pytest.raises(RuntimeError):observations_to_insert([obj],{'runtime::x':obj},'fake')
+    moved=dict(obj,pose=[.001,0.,0.,0.,0.,0.,1.])
+    with pytest.raises(RuntimeError):observations_to_insert([obj],{'runtime::x':moved},'simulator')
+    with pytest.raises(RuntimeError):observations_to_insert([obj],{'runtime::old':obj},'simulator')
+
+
+def test_bound_approach_seed_preserves_current_state_and_rejects_changed_inputs():
+    import copy
+    from geometry_msgs.msg import PoseStamped
+    from moveit_msgs.msg import RobotState
+    from sensor_msgs.msg import JointState
+    target = PoseStamped(); target.header.frame_id = 'world'; target.pose.orientation.w = 1.
+    contract = dict(home_joint_names=['arm'], planning_group='arm_group', tool_link='tcp', robot_model_sha256='model')
+    branch = MODULE.approach_ik_binding(target, contract, {'arm': -2.436685763798283})
+    current = RobotState(joint_state=JointState(name=['arm','leader','follower'], position=[1.57,.2,-.2]))
+    seeded = MODULE.bound_approach_seed(branch, target, contract, current, [('follower','leader',-1.,0.)])
+    assert list(seeded.joint_state.position) == [-2.436685763798283,.2,-.2]
+    assert list(current.joint_state.position) == [1.57,.2,-.2]
+    for key, value in [('tool_link','other'),('robot_model_sha256','changed'),('planning_group','other')]:
+        with pytest.raises(RuntimeError, match='APPROACH_IK_BINDING'):
+            MODULE.bound_approach_seed(branch,target,dict(contract,**{key:value}),current,[])
+    moved = copy.deepcopy(target); moved.pose.position.x += .001
+    with pytest.raises(RuntimeError, match='APPROACH_IK_BINDING'):
+        MODULE.bound_approach_seed(branch,moved,contract,current,[])
+    broken = copy.deepcopy(branch); broken['joint_positions']['arm'] = float('nan')
+    with pytest.raises(RuntimeError, match='APPROACH_IK_BINDING'):
+        MODULE.bound_approach_seed(broken,target,contract,current,[])
+
+
+@pytest.mark.parametrize('changed_branch',[False,True])
+def test_bound_approach_rechecks_ik_without_replacing_fresh_planning_start(changed_branch):
+    """Exercise the actual shared segment boundary; only ROS replies are doubles."""
+    import ast,copy,time
+    from geometry_msgs.msg import PoseStamped
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import Constraints,JointConstraint,MotionPlanRequest,PlanningScene,RobotState,RobotTrajectory
+    from moveit_msgs.srv import GetPositionIK
+    from sensor_msgs.msg import JointState
+    from trajectory_msgs.msg import JointTrajectory,JointTrajectoryPoint
+    target=PoseStamped();target.header.frame_id='world';target.pose.orientation.w=1.
+    contract=dict(home_joint_names=['arm'],planning_group='arm_group',tool_link='tcp',robot_model_sha256='model')
+    binding=MODULE.approach_ik_binding(target,contract,{'arm':-2.436685763798283})
+    initial=PlanningScene(robot_state=RobotState(joint_state=JointState(
+        name=['arm','leader','follower'],position=[1.57,.2,-.2],velocity=[0.,.01,-.01])))
+    original=copy.deepcopy(initial)
+    requests=[];goals=[]
+    def solve(client,request):
+        requests.append(copy.deepcopy(request))
+        # IK's non-arm output must not replace current gripper/mimic state.
+        solution=RobotState(joint_state=JointState(name=['arm','leader','follower'],
+            position=[binding['joint_positions']['arm']+(1. if changed_branch else 0.),.9,-.9]))
+        return GetPositionIK.Response(solution=solution,error_code=MODULE_error(val=1))
+    from moveit_msgs.msg import MoveItErrorCodes as MODULE_error
+    trajectory=RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'],points=[
+        JointTrajectoryPoint(positions=[1.57]),
+        JointTrajectoryPoint(positions=[binding['joint_positions']['arm']])]))
+    def plan(client,goal,timeout):
+        goals.append(copy.deepcopy(goal))
+        return MoveGroup.Result(error_code=MODULE_error(val=1),trajectory_start=copy.deepcopy(original.robot_state),
+            planned_trajectory=trajectory,planning_time=.1)
+    tree=ast.parse(SCRIPT.read_text())
+    main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    segment=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='plan_segment')
+    context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
+        MoveGroup=MoveGroup,stage=lambda name:None,deadline=time.monotonic()+10,contract=contract,
+        args=SimpleNamespace(segment_planning_time=3.),mimics=[('follower','leader',-1.,0.)],initial=initial,
+        ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,
+        joint_constraints=lambda values:Constraints(joint_constraints=[JointConstraint(joint_name=n,position=v,
+            tolerance_above=.0001,tolerance_below=.0001,weight=1.) for n,v in values.items()]))
+    exec(compile(ast.Module(body=[segment],type_ignores=[]),'<actual-plan-segment>','exec'),context)
+    if changed_branch:
+        with pytest.raises(RuntimeError,match='APPROACH_IK_BRANCH_CHANGED'):
+            context['plan_segment'](initial,'PREPLAN_APPROACH',target,ik_binding=binding)
+        assert goals==[]
+    else:
+        result=context['plan_segment'](initial,'PREPLAN_APPROACH',target,ik_binding=binding)
+        assert goals[0].request.start_state==original.robot_state
+        assert goals[0].planning_options.planning_scene_diff==original
+        assert goals[0].planning_options.plan_only
+        assert result['metadata']['approach_ik']==binding
+        assert list(result['after'].robot_state.joint_state.position[1:])==[.2,-.2]
+    assert initial==original
+    assert len(requests)==1 and requests[0].ik_request.avoid_collisions
+    assert requests[0].ik_request.pose_stamped==target
+    assert list(requests[0].ik_request.robot_state.joint_state.position)==[-2.436685763798283,.2,-.2]
+    assert list(requests[0].ik_request.robot_state.joint_state.velocity)==[0.,.01,-.01]

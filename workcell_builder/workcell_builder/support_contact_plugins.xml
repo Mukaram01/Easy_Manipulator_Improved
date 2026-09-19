@@ -1,4 +1,7 @@
 <library path="workcell_support_contact">
+  <class name="workcell/PlanningEvidence" type="workcell::PlanningEvidence" base_class_type="planning_request_adapter::PlanningRequestAdapter">
+    <description>Opt-in read-only effective request and scene evidence at the planner boundary.</description>
+  </class>
   <class name="workcell/InitialSupportContact" type="workcell::InitialSupportContact" base_class_type="planning_request_adapter::PlanningRequestAdapter">
     <description>Scoped initial object/support numerical contact, strict carried motion after separation.</description>
   </class>
