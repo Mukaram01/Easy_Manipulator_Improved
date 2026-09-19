@@ -80,6 +80,16 @@ def test_candidate_three_is_prioritized_without_dropping_existing_candidates():
     assert sorted(indices) == list(range(16))
 
 
+def test_plan_only_retry_policy_accepts_only_measured_stochastic_failures():
+    # The Stage-A workstation observed a fresh pregrasp TIMED_OUT (-6) after
+    # the same bound candidate had previously passed. Retrying keeps the exact
+    # request/scene/candidate; other planning failures remain terminal.
+    assert MODULE.retryable_plan_failure(-2)  # INVALID_MOTION_PLAN
+    assert MODULE.retryable_plan_failure(-6)  # TIMED_OUT
+    for code in (-1, -3, -4, -5, -7, 0, 1):
+        assert not MODULE.retryable_plan_failure(code)
+
+
 def test_fake_hardware_guard_requires_moveit_flag_and_mock_component():
     evidence = MODULE.fake_hardware_evidence(
         [parameter(True)], [component("mock_components/GenericSystem")])

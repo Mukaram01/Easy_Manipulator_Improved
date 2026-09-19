@@ -311,6 +311,13 @@ class MoveItActionFailure(RuntimeError):
         self.code = code
 
 
+def retryable_plan_failure(code):
+    """Retry only stochastic plan-only outcomes without changing scene or goal."""
+    # MoveItErrorCodes: INVALID_MOTION_PLAN=-2, TIMED_OUT=-6.
+    # A retry reuses the exact same MotionPlanRequest/PlanningScene/candidate.
+    return code in (-2, -6)
+
+
 class CandidateFailure(RuntimeError):
     def __init__(self, stage, reason):
         super().__init__(reason)
@@ -1063,15 +1070,16 @@ def main():
         goal_msg.planning_options.look_around = False
         goal_msg.planning_options.planning_scene_diff = copy.deepcopy(view)
         trace('move-group-goal', goal_msg)
-        # OMPL can return an invalid sampled path for a feasible fixed goal.
-        # Retry that identical plan-only request, never a different candidate,
-        # target, policy or execution action. All collision checks remain active.
+        # OMPL can return an invalid sampled path or exhaust one stochastic
+        # planning window for a feasible fixed goal. Retry that identical
+        # plan-only request, never a different candidate, target, policy,
+        # start state, scene or execution action. All collision checks remain active.
         for attempt in range(3):
             try:
                 result = action(plan_client, goal_msg, 12)
                 break
             except MoveItActionFailure as exc:
-                if exc.code != -2 or attempt == 2 or time.monotonic() >= deadline:
+                if not retryable_plan_failure(exc.code) or attempt == 2 or time.monotonic() >= deadline:
                     from full_cycle_preplanner import MotionFeasibilityFailure
                     # For a failed short Cartesian segment this is its first
                     # rejected waypoint. No invalid state is applied or executed.
@@ -1082,7 +1090,8 @@ def main():
                         contacts = []  # Unavailable collision evidence is not a collision claim.
                     raise MotionFeasibilityFailure(str(exc), moveit_code=exc.code, contacts=contacts) from exc
                 summary.setdefault('planning_retries', []).append(
-                    {'stage': name, 'moveit_code': exc.code, 'attempt': attempt + 1})
+                    {'stage': name, 'moveit_code': exc.code, 'attempt': attempt + 1,
+                     'retry_kind': 'timed_out' if exc.code == -6 else 'invalid_motion_plan'})
         trajectory = result.planned_trajectory
         if not trajectory.joint_trajectory.points:
             raise RuntimeError('MoveIt returned empty trajectory')
