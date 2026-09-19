@@ -38,3 +38,44 @@ Final capability physical qualification therefore remains pending. No further
 motion was sent; all changes are uncommitted. See
 `~/workcell_ws/a05-evidence-20260918/cancellation-qualification/REPORT.md`.
 Physical pick/place remains UNCOMMISSIONED; ordinary/hardware locks remain.
+
+
+### 2026-09-19 grasp-retention and telemetry continuation
+
+The final cancellation build above is now the qualified cancellation baseline;
+physical pick/place remains **UNCOMMISSIONED**. Subsequent bounded contact work
+kept real Robotiq mimic coupling, gravity and collision checking intact and did
+not use attachment, teleportation or kinematic parenting as physical evidence.
+
+Runtime evidence narrowed the remaining Stage-A blocker in sequence:
+
+1. the first physical close reached opposing contacts, but they disappeared after
+   settling, so acquisition failed before lift;
+2. object-aligned `finger_pinch_basic` geometry avoided the earlier corner
+   relaxation, but one `part_00` descent intersected `part_05` and the other
+   aligned orientations were blocked by neighboring pile parts;
+3. existing PREFERRED semantics correctly moved to a different permitted target
+   (`part_05 / candidate002`) and complete-cycle planning/revalidation passed;
+4. the first physical approach then failed closed when authoritative simulator
+   telemetry reached **358.395 ms** age against the unchanged **250 ms** guard;
+5. a 30.6-second stationary telemetry workload produced 10,400 samples and did
+   not reproduce that stale event; approximately 54 ms generation-2 GC pauses
+   were observed but are not sufficient evidence to blame GC for the 358 ms
+   failure;
+6. a later fresh Resolve produced no executable handoff because pregrasp planning
+   timed out before motion. No old trajectory was replayed.
+
+Commit `20c5fad5741b3c6760d9c3f48310338c31a7c6ce` therefore makes only the
+smallest planning-repeatability correction: an identical plan-only MoveGroup
+request may retry `TIMED_OUT (-6)` in the same bounded three-attempt loop already
+used for `INVALID_MOTION_PLAN (-2)`. Candidate, start state, private scene,
+collision policy and task semantics do not change, and the 250 ms telemetry
+freshness guard is untouched. Focused workstation verification is **84 passed**;
+Humble and Jazzy CI pass on the same head.
+
+Current gate order is deliberately unchanged:
+
+`fresh observation → Resolve → complete nine-stage revalidation → motion telemetry
+qualification → physical close → >=1 s stationary retention → lift`.
+
+PR #3174 remains draft until the runtime gates above are closed.

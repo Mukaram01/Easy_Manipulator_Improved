@@ -95,15 +95,31 @@ and a controllable backend, isolated from robot controllers. These tests and
 stationary telemetry are prerequisites; only a measured moving-cancellation
 trial can establish physical cancellation acceptance. Retain failed attempts.
 
-## Qualification boundary, 2026-09-18
+## Qualification boundary, 2026-09-19
 
-The one moving cancellation trial passed on capability SHA256
-`78c1d52610f7349bd7575f20d2ffb450abc77c1d099476b515158afe7143a023`.
-Subsequent source review added the immutable controller-result audit described
-above. The final build passes ten isolated action tests, including genuine
-controller success/canceled GetResult responses, but has **not** been loaded
-for a further moving trial. Do not treat the final capability as physically
-qualified until a new receipt-bound cancellation trial passes. Ordinary
-simulator and hardware execution remain locked. Detailed failed attempts,
-loaded/build hashes and measured outcomes are in
-`~/workcell_ws/a05-evidence-20260918/cancellation-qualification/REPORT.md`.
+An intermediate moving-cancellation trial passed on capability SHA256
+`78c1d52610f7349bd7575f20d2ffb450abc77c1d099476b515158afe7143a023`,
+after which source review added the immutable controller-result audit described
+above.
+
+The **final loaded commissioning capability** was subsequently qualified with
+SHA256
+`9f750e46a438d4b415afb07d3d3b77ee66f636fd3beedb3ec8b3e5d90d8d0489`.
+
+Measured final-build cancellation evidence:
+
+- the owned `ExecuteTrajectory` goal returned genuine **CANCELED**;
+- the owned controller goal independently returned genuine **CANCELED**;
+- controller-result callback observation: **3.062 ms**;
+- independent GetResult observation: **11.935 ms**;
+- measured stop began **411.113 ms** after cancellation;
+- **305** consecutive fresh samples over **304 ms** confirmed stationary motion;
+- maximum additional joint travel was **0.001385311 rad**;
+- baseline ACM was restored, no attachments remained, the collision state was
+  valid and all ten parts remained within the existing acceptance tolerances;
+- owned processes stopped and the frozen source/binary hashes remained unchanged.
+
+This qualifies the bounded moving-cancellation primitive for the frozen
+simulator commissioning build. It does **not** qualify physical grasp retention,
+release, transfer, full pick/place, ordinary simulator execution or real
+hardware. Those remain separately gated.
