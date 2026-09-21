@@ -312,3 +312,60 @@ def test_resolution_binds_successful_ik_branch_after_rejected_candidate():
     damaged = copy.deepcopy(result); damaged['grasp_resolution']['approach_ik']['joint_positions']['joint'] += 1
     with pytest.raises(ValueError, match='CORRUPT'):
         resolver.consume_resolution(damaged, valid_intent(), environment(), cell())
+
+
+def test_preferred_fallback_uses_selected_strategy_catalog_geometry():
+    resolver = resolver_module()
+    intent = valid_intent("PREFERRED", "AUTO")
+
+    def evaluator(request):
+        grasp = request["intent"]["pick"]["grasp"]
+        if request["strategy_ref"] == "top_2f":
+            return {
+                "success": False,
+                "reason_code": "GRASP_COLLISION",
+                "reason": "preferred top grasp collides",
+                "checks": [{"code": "collision_free", "status": "FAIL"}],
+            }
+        assert request["strategy_ref"] == "side_grip_basic"
+        assert grasp["strategy_ref"] == "side_grip_basic"
+        assert grasp["approach"] == {"axis": "x_plus", "distance_m": 0.08}
+        assert grasp["orientation"]["mode"] == "horizontal"
+        assert request["candidate"].effective["approach_distance_m"] == 0.08
+        return pass_cycle(request)
+
+    result = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), evaluator, now=100.0)
+    assert result["readiness_status"] == "WARNING"
+    assert result["grasp_resolution"]["selected_strategy_ref"] == "side_grip_basic"
+    effective = result["grasp_resolution"]["effective_grasp"]
+    assert effective["approach"] == {"axis": "x_plus", "distance_m": 0.08}
+    assert effective["orientation"]["mode"] == "horizontal"
+    assert effective["lift"] == {"axis": "z_up", "distance_m": 0.08}
+
+
+def test_resolved_preferred_fallback_replays_same_effective_grasp():
+    resolver = resolver_module()
+    intent = valid_intent("PREFERRED", "AUTO")
+
+    def first(request):
+        if request["strategy_ref"] == "top_2f":
+            return {"success": False, "reason_code": "BLOCKED",
+                    "reason": "preferred blocked", "checks": []}
+        return pass_cycle(request)
+
+    resolved = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), first, now=100.0)
+    assert resolved["grasp_resolution"]["selected_strategy_ref"] == "side_grip_basic"
+
+    def replay(request):
+        grasp = request["intent"]["pick"]["grasp"]
+        assert request["strategy_ref"] == "side_grip_basic"
+        assert grasp == resolved["grasp_resolution"]["effective_grasp"]
+        assert grasp["approach"]["axis"] == "x_plus"
+        assert grasp["orientation"]["mode"] == "horizontal"
+        return pass_cycle(request)
+
+    checked = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), replay, now=100.0, resolved=resolved)
+    assert checked["resolution_sha256"] == resolved["resolution_sha256"]

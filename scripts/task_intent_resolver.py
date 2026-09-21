@@ -22,6 +22,7 @@ from physical_destination import (
 )
 from task_intent_v2 import (
     TOOL_CAPABILITY_MAP,
+    STRATEGY_DIR,
     canonical_hash,
     normalized_intent_hash,
     parse_validate_normalize,
@@ -29,6 +30,52 @@ from task_intent_v2 import (
 
 
 STRATEGY_ORDER = ("top_2f", "side_grip_basic", "finger_pinch_basic")
+
+
+def _catalog_strategy(strategy_ref):
+    path = STRATEGY_DIR / f"{strategy_ref}.yaml"
+    if not path.is_file():
+        raise ValueError(f"strategy catalog entry missing: {strategy_ref}")
+    payload = (yaml.safe_load(path.read_text()) or {}).get("grasp_strategy") or {}
+    if payload.get("id") != strategy_ref:
+        raise ValueError(f"strategy catalog identity mismatch: {strategy_ref}")
+    return payload
+
+
+def _effective_intent_for_strategy(normalized, strategy_ref):
+    """Return the exact grasp constraints evaluated for one strategy.
+
+    EXACT and the requested PREFERRED strategy consume authored constraints
+    unchanged. AUTO choices and PREFERRED substitute strategies use the
+    selected strategy's reviewed catalog geometry instead of inheriting a
+    different strategy's axis/orientation.
+    """
+    effective = copy.deepcopy(normalized)
+    grasp = effective["pick"]["grasp"]
+    requested = grasp.get("strategy_ref")
+    if grasp["policy"] == "EXACT" or (
+            grasp["policy"] == "PREFERRED" and strategy_ref == requested):
+        return effective
+
+    catalog = _catalog_strategy(strategy_ref)
+    grasp["strategy_ref"] = strategy_ref
+    grasp["approach"] = {
+        "axis": catalog["approach_axis"],
+        "distance_m": catalog["approach_distance_m"],
+    }
+    grasp["orientation"] = {
+        "mode": catalog["orientation_mode"],
+        "allowed_roll_deg": list(catalog.get("allowed_roll_angles_deg", [0.0])),
+        "allowed_yaw_deg": list(catalog.get("allowed_yaw_angles_deg", [0.0, 90.0, 180.0, 270.0])),
+        "tolerance_rad": [0.0, 0.0, 0.0],
+    }
+    grasp["tcp_offset_xyz_m"] = list(catalog.get("tool_frame_offset_xyz", [0.0, 0.0, 0.0]))
+    grasp["tcp_offset_rpy_rad"] = list(catalog.get("tool_frame_offset_rpy", [0.0, 0.0, 0.0]))
+    grasp["lift"] = {
+        "axis": "z_up",
+        "distance_m": catalog["retreat_distance_m"],
+    }
+    return effective
 
 
 def _finite(value):
@@ -210,12 +257,22 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                               'Observed objects changed; explicitly resolve the saved task again.')
         chosen = checked['grasp_resolution']
         observation = next(item for item in eligible if item['id'] == chosen['selected_object_id'])
+        try:
+            effective_intent = _effective_intent_for_strategy(
+                normalized, chosen['selected_strategy_ref'])
+        except (ValueError, KeyError, TypeError) as exc:
+            return _readiness(result, 'BLOCKED', 'GRASP_CANDIDATE_INVALID', str(exc))
+        effective_grasp = effective_intent['pick']['grasp']
+        if (chosen.get('effective_grasp') is not None and
+                chosen['effective_grasp'] != effective_grasp):
+            return _readiness(result, 'BLOCKED', 'TASK_GRASP_EFFECTIVE_CHANGED',
+                              'Resolved strategy-effective grasp constraints changed; resolve again.')
         candidates = generate_strategy_candidates(chosen['selected_strategy_ref'], observation,
-            {'approach_distance_m': grasp['approach']['distance_m']})
+            {'approach_distance_m': effective_grasp['approach']['distance_m']})
         candidate = next((item for item in candidates if item.candidate_id == chosen['selected_candidate_id']), None)
         if candidate is None:
             return _readiness(result, 'BLOCKED', 'TASK_CANDIDATE_CHANGED', 'Resolved candidate is no longer available.')
-        evaluation = cycle_evaluator({'intent': copy.deepcopy(normalized), 'cell': copy.deepcopy(cell),
+        evaluation = cycle_evaluator({'intent': effective_intent, 'cell': copy.deepcopy(cell),
             'strategy_ref': candidate.strategy_ref, 'observation': copy.deepcopy(observation),
             'candidate': candidate, 'destination': copy.deepcopy(checked['place_resolution']['destination']),
             'approach_ik': copy.deepcopy(chosen.get('approach_ik'))})
@@ -249,16 +306,21 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                 world_pose={'xyz_m': list(destination['pose_xyz']), 'rpy_rad': list(destination['pose_rpy'])},
                 destination=copy.deepcopy(destination))
         for strategy in strategies:
+            try:
+                effective_intent = _effective_intent_for_strategy(normalized, strategy)
+                effective_grasp = effective_intent["pick"]["grasp"]
+            except (ValueError, KeyError, TypeError) as exc:
+                return _readiness(result, "BLOCKED", "GRASP_CANDIDATE_INVALID", str(exc))
             for observation in eligible:
                 try:
                     candidates = generate_strategy_candidates(
                         strategy, observation,
-                        {"approach_distance_m": grasp["approach"]["distance_m"]})
+                        {"approach_distance_m": effective_grasp["approach"]["distance_m"]})
                 except (ValueError, KeyError, TypeError) as exc:
                     return _readiness(result, "BLOCKED", "GRASP_CANDIDATE_INVALID", str(exc))
                 for candidate in candidates:
                     evaluation = cycle_evaluator({
-                        "intent": copy.deepcopy(normalized), "cell": copy.deepcopy(cell),
+                        "intent": copy.deepcopy(effective_intent), "cell": copy.deepcopy(cell),
                         "strategy_ref": strategy, "observation": copy.deepcopy(observation),
                         "candidate": candidate, "destination": copy.deepcopy(destination),
                     })
@@ -276,7 +338,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                     if success:
                         grasp_resolution.update(selected_strategy_ref=strategy,
                                                 selected_object_id=observation["id"],
-                                                selected_candidate_id=candidate.candidate_id)
+                                                selected_candidate_id=candidate.candidate_id,
+                                                effective_grasp=copy.deepcopy(effective_grasp))
                         if evaluation.get('approach_ik') is not None:
                             grasp_resolution['approach_ik'] = copy.deepcopy(evaluation['approach_ik'])
                         if grasp["policy"] == "PREFERRED" and strategy != requested:
