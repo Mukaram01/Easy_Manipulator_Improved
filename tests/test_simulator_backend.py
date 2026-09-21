@@ -125,3 +125,13 @@ def test_simulator_description_uses_selected_control_contract(tmp_path):
     assert '<plugin>ign_ros2_control/IgnitionSystem</plugin>' in result
     assert str(library) in result
     assert 'ign_ros2_control::IgnitionROS2ControlPlugin' in result
+
+
+def test_wait_ign_service_fails_closed_when_user_commands_service_absent(monkeypatch):
+    import simulator_backend
+    monkeypatch.setattr(simulator_backend,'run_ign',lambda *args,**kwargs:'/world/a0/control\n')
+    monkeypatch.setattr(simulator_backend.time,'sleep',lambda _:None)
+    ticks=iter([0.,0.5,1.1])
+    monkeypatch.setattr(simulator_backend.time,'monotonic',lambda:next(ticks,1.1))
+    with pytest.raises(RuntimeError,match='UserCommands'):
+        simulator_backend.wait_ign_service('/world/a0/create',1.0)

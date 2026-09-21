@@ -222,3 +222,14 @@ Simulator startup exceptions are also written to
 `runtime/startup-failure.json`. The Stage-A runner watches that file while
 waiting for `receipt.json`, so a failed physics/model spawn is reported
 immediately rather than appearing only as controller-manager spawner timeouts.
+
+
+### Fortress entity-creation service
+
+The portable Stage-A world explicitly loads Fortress Physics, UserCommands and
+SceneBroadcaster systems. Dynamic robot insertion uses
+`/world/<world>/create`; relying on host-specific default server plugins let
+the second workstation start physics without exposing that service. The
+simulator backend now verifies the create service is advertised before issuing
+the insertion request and fails immediately with a UserCommands diagnostic if
+it is missing.

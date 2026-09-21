@@ -127,3 +127,13 @@ def test_wait_file_surfaces_structured_simulator_startup_failure(tmp_path):
         def poll(self): return None
     with pytest.raises(RuntimeError,match='robot spawn failed'):
         MODULE.wait_file(receipt,Alive(),1.0)
+
+
+def test_tracked_stage_a0_world_explicitly_loads_fortress_user_commands():
+    import xml.etree.ElementTree as ET
+    world_path=Path(__file__).parents[1]/"scenes/ur5_2f_test/worlds/stage_a0.sdf"
+    root=ET.parse(world_path).getroot()
+    plugins={(p.get("filename"),p.get("name")) for p in root.findall("world/plugin")}
+    assert ("ignition-gazebo-physics-system","ignition::gazebo::systems::Physics") in plugins
+    assert ("ignition-gazebo-user-commands-system","ignition::gazebo::systems::UserCommands") in plugins
+    assert ("ignition-gazebo-scene-broadcaster-system","ignition::gazebo::systems::SceneBroadcaster") in plugins

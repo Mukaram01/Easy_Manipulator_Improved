@@ -195,6 +195,20 @@ def run_ign(args,timeout=15):
     return subprocess.check_output(['ign',*args],text=True,stderr=subprocess.STDOUT,timeout=timeout)
 
 
+def wait_ign_service(service,timeout=10):
+    deadline=time.monotonic()+timeout
+    last=''
+    while time.monotonic()<deadline:
+        try:
+            last=run_ign(['service','-l'],min(2,max(.1,deadline-time.monotonic())))
+        except (subprocess.CalledProcessError,subprocess.TimeoutExpired):
+            last=''
+        if service in {line.strip() for line in last.splitlines()}:
+            return
+        time.sleep(.1)
+    raise RuntimeError(f'Fortress service unavailable: {service}; UserCommands system was not loaded')
+
+
 def verify_receipt_process(receipt):
     receipt=Path(receipt);r=json.loads(receipt.read_text());out=receipt.parent
     if r['domain']!=os.environ.get('ROS_DOMAIN_ID','0') or r['partition']!=os.environ.get('IGN_PARTITION',''):
@@ -272,8 +286,10 @@ def serve(output):
             count=re.search(r'iterations: (\d+)',stats)
             if count and int(count[1])>1:break
         else:raise RuntimeError('physics initialization timed out')
+        create_service=f"/world/{spec['world']}/create"
+        wait_ign_service(create_service,10)
         spawn_started=time.time_ns()
-        result=run_ign(['service','-s',f"/world/{spec['world']}/create",'--reqtype','ignition.msgs.EntityFactory','--reptype','ignition.msgs.Boolean','--timeout','10000','--req',f'sdf_filename: "{out / "robot.urdf"}" name: "{spec["model"]}"'])
+        result=run_ign(['service','-s',create_service,'--reqtype','ignition.msgs.EntityFactory','--reptype','ignition.msgs.Boolean','--timeout','10000','--req',f'sdf_filename: "{out / "robot.urdf"}" name: "{spec["model"]}"'])
         (out/'spawn-response.json').write_text(json.dumps(dict(start_wall_ns=spawn_started,end_wall_ns=time.time_ns(),response=result),indent=2))
         if 'data: true' not in result:raise RuntimeError('simulator model creation failed: '+repr(result))
         record=dict(spec,pid=server.pid,start_ticks=process_info(server.pid)['start_ticks'],spawn_after_iteration=int(count[1]))
