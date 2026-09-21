@@ -134,15 +134,21 @@ ROS domain / Ignition partition, captures fresh settled physics observations,
 runs Resolve, regenerates the handoff, and revalidates all nine stages before
 that gate is allowed to move.
 
-The frozen inputs are pinned in the runner:
+The pristine Stage-A world remains pinned by SHA256:
+`39c2aafb62a01af49663f21b734534843d0d4e4e034a164da2eadb03a761f60e`.
 
-- pristine Stage-A world SHA256:
-  `39c2aafb62a01af49663f21b734534843d0d4e4e034a164da2eadb03a761f60e`;
-- qualified commissioning capability SHA256:
-  `9f750e46a438d4b415afb07d3d3b77ee66f636fd3beedb3ec8b3e5d90d8d0489`.
+For portability across the two development workstations, the runner no longer
+trusts a historical machine-specific capability binary. It rebuilds the pinned
+MoveIt 2.5.9 commissioning capability from the current tracked sources, runs its
+action tests, then performs a **fresh moving-cancellation qualification on that
+exact binary** before telemetry, retention, contact-release or full-cycle
+evidence may authorize the next gate. All prerequisite summaries and the final
+cycle must carry the same capability SHA256.
 
-Default workstation paths correspond to the retained September 18 evidence
-workspace. A new evidence root is always required:
+The Stage-A task fixture is also prepared from the tracked canonical
+`scenes/ur5_2f_test` source for every fresh session. The existing task-intent
+migration/validation and real grasp-strategy catalog are reused; no retained
+`/home/user` evidence path is required. A new evidence root is always required:
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -158,6 +164,7 @@ Gate sequence:
 
 ```text
 fresh Resolve / nine-stage revalidation
+→ fresh moving-cancellation qualification of current binary
 → approach-only motion telemetry (<250 ms unchanged guard)
 → physical close + >=1 s opposing-contact retention
 → physical lift + release + resettling
@@ -165,7 +172,7 @@ fresh Resolve / nine-stage revalidation
 ```
 
 The runner stops on the first failed gate, preserves its logs and summaries,
-and terminates only the process group it owns. Full-cycle admission additionally
-requires the already qualified cancellation summary plus successful telemetry,
-retention and contact-release summaries from the immediately preceding fresh
-sessions. Real hardware remains locked throughout.
+and terminates only the process group it owns. Full-cycle admission requires
+the cancellation, telemetry, retention and contact-release summaries produced
+by the immediately preceding fresh sessions, all bound to the same current
+capability binary. Real hardware remains locked throughout.
