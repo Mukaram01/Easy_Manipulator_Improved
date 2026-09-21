@@ -134,8 +134,13 @@ ROS domain / Ignition partition, captures fresh settled physics observations,
 runs Resolve, regenerates the handoff, and revalidates all nine stages before
 that gate is allowed to move.
 
-The pristine Stage-A world remains pinned by SHA256:
-`39c2aafb62a01af49663f21b734534843d0d4e4e034a164da2eadb03a761f60e`.
+The portable Stage-A physics world is tracked at
+`scenes/ur5_2f_test/worlds/stage_a0.sdf` and pinned by SHA256:
+`7100e920eba4ccfccef9ce5f60bc4cd0e39037fb0030d931e3464b24d5d83acc`.
+It contains a static support plane, a physical destination-bin floor/walls and
+ten identical 25 mm dynamic workpieces inside the authored pick zone. Runtime
+telemetry and ros2_control plugins are still injected only into the generated
+per-session world; the tracked source world contains neither.
 
 For portability across the two development workstations, the runner no longer
 trusts a historical machine-specific capability binary. It rebuilds the pinned

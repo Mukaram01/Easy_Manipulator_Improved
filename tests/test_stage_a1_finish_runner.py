@@ -67,3 +67,20 @@ def test_source_world_discovery_accepts_only_frozen_hash(tmp_path,monkeypatch):
     monkeypatch.setattr(MODULE,"SOURCE_WORLD_SHA256",MODULE.sha256(world))
     with pytest.raises(RuntimeError,match="not found"):
         MODULE.discover_source_world(world,tmp_path)
+
+
+def test_tracked_stage_a0_world_is_portable_and_has_ten_dynamic_parts():
+    import xml.etree.ElementTree as ET
+    world_path=Path(__file__).parents[1]/"scenes/ur5_2f_test/worlds/stage_a0.sdf"
+    assert MODULE.sha256(world_path)==MODULE.SOURCE_WORLD_SHA256
+    root=ET.parse(world_path).getroot()
+    world=root.find("world")
+    assert world is not None and world.get("name")=="a0"
+    dynamic=[m for m in world.findall("model") if m.findtext("static","false").lower()!="true"]
+    assert [m.get("name") for m in dynamic]==[f"part_{i:02d}" for i in range(10)]
+    for model in dynamic:
+        collisions=model.findall("link/collision")
+        assert len(collisions)==1
+        assert collisions[0].find("geometry/box/size") is not None
+        assert model.find("link/pose") is None
+        assert collisions[0].find("pose") is None

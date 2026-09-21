@@ -23,7 +23,7 @@ import time
 
 import yaml
 
-SOURCE_WORLD_SHA256="39c2aafb62a01af49663f21b734534843d0d4e4e034a164da2eadb03a761f60e"
+SOURCE_WORLD_SHA256="7100e920eba4ccfccef9ce5f60bc4cd0e39037fb0030d931e3464b24d5d83acc"
 STAGES=[
     "PREPLAN_APPROACH","PREPLAN_GRASP","PREPLAN_CLOSE_GRIPPER",
     "PREPLAN_LIFT","PREPLAN_TRANSFER","PREPLAN_PLACE",
@@ -98,7 +98,9 @@ def assert_domain_free(env,cwd):
 
 
 def candidate_worlds(workspace:Path):
-    roots=[Path("/tmp/stage-a01/full/world.sdf"),
+    repo=Path(__file__).resolve().parents[1]
+    roots=[repo/"scenes/ur5_2f_test/worlds/stage_a0.sdf",
+           Path("/tmp/stage-a01/full/world.sdf"),
            workspace/"a05-evidence-20260918/runtime/world.sdf"]
     for home in Path("/home").glob("*"):
         roots.append(home/"workcell_ws/a05-evidence-20260918/runtime/world.sdf")
