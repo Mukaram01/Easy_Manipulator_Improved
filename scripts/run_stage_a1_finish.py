@@ -312,11 +312,20 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
              "--output",observations,"--class-id",args.class_id],
             env=env,cwd=repo,log=session/"observations.log",timeout=90)
 
+        def refresh_observations(label):
+            run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
+                 "--output",observations,"--class-id",args.class_id,
+                 "--refresh-from",observations],
+                env=env,cwd=repo,log=session/f"{label}-observations.log",timeout=90)
+
         resolve_summary=session/"resolve/summary.json"
         run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,resolve=True),
             env=env,cwd=repo,log=session/"resolve/executor.log",timeout=420)
         resolved=json.loads(resolve_summary.read_text());assert_plan(resolved,require_resolved=True)
 
+        # The search may be long. Re-measure the same geometry and renew only
+        # timestamps before consuming the saved resolution.
+        refresh_observations("revalidate")
         generate_scene(scene)
         plan_summary=session/"revalidate/summary.json"
         run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time),
@@ -327,6 +336,9 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             resolution_sha256=planned.get("resolution_sha256"),no_motion_revalidation="PASS")
         if gate=="resolve":report["status"]="PASS";return plan_summary
 
+        # Motion never relies on the planning-search timestamp. Prove the same
+        # physical geometry is still present immediately before the gate.
+        refresh_observations(gate)
         evidence=None
         if gate=="full-cycle":
             required=["cancel","telemetry","stationary","contact-release"]

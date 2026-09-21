@@ -473,6 +473,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     from task_intent_resolver import resolve_task_intent
     from full_cycle_preplanner import preplan_full_cycle
     cycles = {}
+    resolution_reference_time = time.time()
 
     def evaluate(request):
         effective = dict(contract)
@@ -482,7 +483,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         effective['approach_ik'] = request.get('approach_ik')
         grasp = request['intent']['pick']['grasp']
         place = request['intent']['place']['placement']
-        effective.update(max_age_seconds=intent['pick']['selection']['object_filter']['max_age_seconds'],
+        effective.update(observation_reference_time=resolution_reference_time,
+                         max_age_seconds=intent['pick']['selection']['object_filter']['max_age_seconds'],
                          retreat_distance_m=grasp['lift']['distance_m'],
                          place_approach_distance_m=place['approach']['distance_m'],
                          place_retreat_distance_m=place['retreat']['distance_m'],
@@ -501,7 +503,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 'reason_code': result.reason_code, 'reason': result.reason,
                 'approach_ik': result.cycle['steps'][0]['metadata'].get('approach_ik') if result.success else None}
 
-    resolution = resolve_task_intent(intent, environment, cell, targets, evaluate, now=time.time(), resolved=resolved)
+    resolution = resolve_task_intent(intent, environment, cell, targets, evaluate,
+                                     now=resolution_reference_time, resolved=resolved)
     summary['task_intent_resolution'] = resolution
     summary['normalized_intent_sha256'] = resolution['normalized_intent_sha256']
     summary['resolution_sha256'] = resolution['resolution_sha256']

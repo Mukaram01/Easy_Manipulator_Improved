@@ -198,3 +198,27 @@ def test_create_model_data_true_waits_for_authoritative_scene_without_duplicate(
     assert create_calls==1
     assert result['attempts'][0]['readback']['checks']==4
     assert result['recovered_by_scene_readback'] is False
+
+
+def test_refresh_snapshot_geometry_renews_time_without_changing_bound_geometry():
+    from simulator_observations import refresh_snapshot_geometry
+    base=dict(schema_version='detected_objects/v1',simulator_receipt_sha256='same',
+        source='old',objects=[dict(object_id='part_00',class_id='part',confidence=None,timestamp=10.,
+        pose=dict(frame_id='world',xyz=[.4,-.2,.0125],rpy=[0.,0.,.2]),dimensions=[.025]*3)])
+    fresh=copy.deepcopy(base)
+    fresh['objects'][0]['timestamp']=200.
+    fresh['objects'][0]['pose']['xyz'][2]-=1e-6
+    rebound,evidence=refresh_snapshot_geometry(base,fresh)
+    assert rebound['objects'][0]['timestamp']==200.
+    assert rebound['objects'][0]['pose']==base['objects'][0]['pose']
+    assert evidence['max_position_delta_m']>0
+
+
+def test_refresh_snapshot_geometry_rejects_real_motion():
+    from simulator_observations import refresh_snapshot_geometry
+    base=dict(schema_version='detected_objects/v1',simulator_receipt_sha256='same',
+        objects=[dict(object_id='part_00',class_id='part',confidence=None,timestamp=10.,
+        pose=dict(frame_id='world',xyz=[.4,-.2,.0125],rpy=[0.,0.,0.]),dimensions=[.025]*3)])
+    fresh=copy.deepcopy(base);fresh['objects'][0]['pose']['xyz'][0]+=.001
+    with pytest.raises(RuntimeError,match='geometry changed'):
+        refresh_snapshot_geometry(base,fresh)

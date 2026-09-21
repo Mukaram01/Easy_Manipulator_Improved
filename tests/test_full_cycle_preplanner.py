@@ -396,3 +396,14 @@ def test_authored_destination_orientation_is_planned_with_actual_grasp_transform
     assert achieved[3:6] == pytest.approx([0.,0.,0.],abs=1e-9)
     assert [g[0] for g in goals] == [s for s in EXPECTED if s.startswith('PREPLAN_')]
     assert result.cycle['steps'][4]['stage'] == 'PREPLAN_LIFT'
+
+
+def test_preplanner_uses_bound_resolution_freshness_reference(monkeypatch):
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, _, _ = fixture()
+    captured = kwargs['observation']['timestamp']
+    kwargs['contract']['max_age_seconds'] = 5.0
+    kwargs['contract']['observation_reference_time'] = captured + 1.0
+    monkeypatch.setattr(time, 'time', lambda: captured + 1000.0)
+    result = preplan_full_cycle(**kwargs)
+    assert result.success, result.reason

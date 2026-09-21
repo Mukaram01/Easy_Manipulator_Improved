@@ -159,7 +159,12 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored placement orientation offset')
         if time.monotonic() > deadline:
             raise RuntimeError('candidate search budget exhausted')
-        if time.time() - observation['timestamp'] > contract['max_age_seconds']:
+        freshness_reference = contract.get('observation_reference_time', time.time())
+        if (not isinstance(freshness_reference, (int, float)) or
+                not math.isfinite(freshness_reference)):
+            raise RuntimeError('invalid observation freshness reference')
+        if (observation['timestamp'] > freshness_reference + .05 or
+                freshness_reference - observation['timestamp'] > contract['max_age_seconds']):
             raise RuntimeError('observation expired before candidate planning')
         if candidate.object_id != observation['id']:
             raise RuntimeError('candidate object differs from observation')

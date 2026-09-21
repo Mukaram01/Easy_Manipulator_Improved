@@ -137,3 +137,10 @@ def test_tracked_stage_a0_world_explicitly_loads_fortress_user_commands():
     assert ("ignition-gazebo-physics-system","ignition::gazebo::systems::Physics") in plugins
     assert ("ignition-gazebo-user-commands-system","ignition::gazebo::systems::UserCommands") in plugins
     assert ("ignition-gazebo-scene-broadcaster-system","ignition::gazebo::systems::SceneBroadcaster") in plugins
+
+
+def test_runner_refreshes_bound_physical_observation_before_revalidate_and_motion():
+    source=SCRIPT.read_text()
+    assert 'refresh_observations("revalidate")' in source
+    assert 'refresh_observations(gate)' in source
+    assert '"--refresh-from",observations' in source
