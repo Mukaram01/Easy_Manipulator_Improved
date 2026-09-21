@@ -59,12 +59,13 @@ def test_executor_full_cycle_requires_explicit_evidence(tmp_path):
     assert cmd[cmd.index("--commission-evidence")+1]==str(tmp_path/"evidence.json")
 
 
-def test_source_world_discovery_accepts_only_frozen_hash(tmp_path,monkeypatch):
+def test_source_world_discovery_accepts_only_frozen_git_blob(tmp_path,monkeypatch):
     world=tmp_path/"world.sdf";world.write_text("<sdf/>")
-    monkeypatch.setattr(MODULE,"SOURCE_WORLD_SHA256",MODULE.sha256(world))
+    repo=Path(__file__).parents[1]
+    monkeypatch.setattr(MODULE,"SOURCE_WORLD_GIT_BLOB",MODULE.git_blob(world,repo))
     assert MODULE.discover_source_world(world,tmp_path)==world.resolve()
     world.write_text("<sdf><plugin name='workcell::SimulatorMeasurements'/></sdf>")
-    monkeypatch.setattr(MODULE,"SOURCE_WORLD_SHA256",MODULE.sha256(world))
+    monkeypatch.setattr(MODULE,"SOURCE_WORLD_GIT_BLOB",MODULE.git_blob(world,repo))
     with pytest.raises(RuntimeError,match="not found"):
         MODULE.discover_source_world(world,tmp_path)
 
@@ -72,7 +73,7 @@ def test_source_world_discovery_accepts_only_frozen_hash(tmp_path,monkeypatch):
 def test_tracked_stage_a0_world_is_portable_and_has_ten_dynamic_parts():
     import xml.etree.ElementTree as ET
     world_path=Path(__file__).parents[1]/"scenes/ur5_2f_test/worlds/stage_a0.sdf"
-    assert MODULE.sha256(world_path)==MODULE.SOURCE_WORLD_SHA256
+    assert MODULE.git_blob(world_path,Path(__file__).parents[1])==MODULE.SOURCE_WORLD_GIT_BLOB
     root=ET.parse(world_path).getroot()
     world=root.find("world")
     assert world is not None and world.get("name")=="a0"

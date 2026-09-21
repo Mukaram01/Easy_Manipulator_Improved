@@ -23,7 +23,7 @@ import time
 
 import yaml
 
-SOURCE_WORLD_SHA256="7100e920eba4ccfccef9ce5f60bc4cd0e39037fb0030d931e3464b24d5d83acc"
+SOURCE_WORLD_GIT_BLOB="11f5af2227f3a70cf8b45bd946db028fabd5a979"
 STAGES=[
     "PREPLAN_APPROACH","PREPLAN_GRASP","PREPLAN_CLOSE_GRIPPER",
     "PREPLAN_LIFT","PREPLAN_TRANSFER","PREPLAN_PLACE",
@@ -97,6 +97,10 @@ def assert_domain_free(env,cwd):
         raise RuntimeError(f"ROS domain {env['ROS_DOMAIN_ID']} is not isolated: {nodes or probe.stdout.strip()}")
 
 
+def git_blob(path:Path,repo:Path)->str:
+    return subprocess.check_output(["git","hash-object",str(path)],cwd=repo,text=True).strip()
+
+
 def candidate_worlds(workspace:Path):
     repo=Path(__file__).resolve().parents[1]
     roots=[repo/"scenes/ur5_2f_test/worlds/stage_a0.sdf",
@@ -113,10 +117,11 @@ def candidate_worlds(workspace:Path):
 
 
 def discover_source_world(explicit:Path|None,workspace:Path)->Path:
+    repo=Path(__file__).resolve().parents[1]
     candidates=[explicit] if explicit is not None else list(candidate_worlds(workspace))
     for path in candidates:
         if path is None or not path.is_file():continue
-        if sha256(path)!=SOURCE_WORLD_SHA256:continue
+        if git_blob(path,repo)!=SOURCE_WORLD_GIT_BLOB:continue
         text=path.read_text(errors="ignore").lower()
         if any(token in text for token in ("workcell::simulatormeasurements","workcell_measurements",
                 "gz_ros2_control","ign_ros2_control","attach","magnet","suction")):continue
@@ -338,8 +343,8 @@ def main(argv=None):
         build=build_commissioning(repo,workspace,args.output,dict(os.environ))
         overall["preflight"]={"repo_head":subprocess.check_output(["git","rev-parse","HEAD"],cwd=repo,text=True).strip(),
             "repo_dirty":bool(subprocess.check_output(["git","status","--porcelain"],cwd=repo,text=True).strip()),
-            "source_world":str(source_world),"source_world_sha256":SOURCE_WORLD_SHA256,
-            "commissioning_build":build}
+            "source_world":str(source_world),"source_world_git_blob":SOURCE_WORLD_GIT_BLOB,
+            "source_world_sha256":sha256(source_world),"commissioning_build":build}
         prior={}
         selected=GATES[:GATES.index(args.through)+1]
         for index,gate in enumerate(selected,1):

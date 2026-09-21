@@ -135,8 +135,10 @@ runs Resolve, regenerates the handoff, and revalidates all nine stages before
 that gate is allowed to move.
 
 The portable Stage-A physics world is tracked at
-`scenes/ur5_2f_test/worlds/stage_a0.sdf` and pinned by SHA256:
-`7100e920eba4ccfccef9ce5f60bc4cd0e39037fb0030d931e3464b24d5d83acc`.
+`scenes/ur5_2f_test/worlds/stage_a0.sdf` and pinned by Git blob identity:
+`11f5af2227f3a70cf8b45bd946db028fabd5a979`.
+The runner also records its local SHA256 in the evidence report, but admission
+uses the Git blob identity so the check is reproducible across workstations.
 It contains a static support plane, a physical destination-bin floor/walls and
 ten identical 25 mm dynamic workpieces inside the authored pick zone. Runtime
 telemetry and ros2_control plugins are still injected only into the generated
