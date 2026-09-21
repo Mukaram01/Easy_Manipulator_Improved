@@ -127,6 +127,11 @@ def prepare_scene(repo:Path,destination:Path,class_id:str)->Path:
     """Materialize the tracked canonical cell into the exact Stage-A task policy."""
     source=repo/"scenes/ur5_2f_test"
     shutil.copytree(source,destination)
+    # export_scene's existing validator resolves the strategy catalog relative
+    # to the scene parent; provide the tracked catalog there rather than
+    # weakening validation or teaching commissioning a second lookup rule.
+    catalog_parent=destination.parent/"catalog"
+    shutil.copytree(repo/"catalog/grasp_strategies",catalog_parent/"grasp_strategies")
     sys.path.insert(0,str(repo/"scripts"))
     from task_intent_v2 import migrate_v1
     from export_builder_scene_to_cell_definition import export_scene
