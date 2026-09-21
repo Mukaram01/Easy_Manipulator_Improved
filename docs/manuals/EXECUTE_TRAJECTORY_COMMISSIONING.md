@@ -233,3 +233,18 @@ the second workstation start physics without exposing that service. The
 simulator backend now verifies the create service is advertised before issuing
 the insertion request and fails immediately with a UserCommands diagnostic if
 it is missing.
+
+
+### Fortress create-service discovery readback
+
+A later second-workstation run proved that Fortress itself logged
+`Create service on [/world/a0/create]` while a separate `ign service -l`
+probe still failed to discover that service. Service-list discovery is therefore
+not used as an admission gate.
+
+Robot insertion now calls the create service directly with a bounded maximum of
+three attempts. A timeout is retried **only after** the authoritative
+`/world/<world>/scene/info` readback proves that `workcell_robot` is absent.
+If a create response is lost but the scene readback proves the model exists, the
+runner accepts the insertion without issuing a duplicate request. The receipt
+records attempt count and whether scene readback recovered a lost response.

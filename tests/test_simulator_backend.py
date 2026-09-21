@@ -127,11 +127,42 @@ def test_simulator_description_uses_selected_control_contract(tmp_path):
     assert 'ign_ros2_control::IgnitionROS2ControlPlugin' in result
 
 
-def test_wait_ign_service_fails_closed_when_user_commands_service_absent(monkeypatch):
-    import simulator_backend
-    monkeypatch.setattr(simulator_backend,'run_ign',lambda *args,**kwargs:'/world/a0/control\n')
+
+
+def test_create_model_retries_only_after_scene_readback_proves_absent(tmp_path,monkeypatch):
+    import simulator_backend, subprocess
+    (tmp_path/'robot.urdf').write_text('<robot/>')
+    calls=[]
+    def fake(args,timeout=15):
+        calls.append(list(args))
+        if args[0]=='service' and '/create' in args:
+            creates=sum('/create' in item for call in calls for item in call)
+            if creates==1:
+                raise subprocess.TimeoutExpired(args,timeout)
+            return 'data: true\n'
+        if args[0]=='service' and '/scene/info' in args:
+            return 'name: "part_00"\n'
+        raise AssertionError(args)
+    monkeypatch.setattr(simulator_backend,'run_ign',fake)
     monkeypatch.setattr(simulator_backend.time,'sleep',lambda _:None)
-    ticks=iter([0.,0.5,1.1])
-    monkeypatch.setattr(simulator_backend.time,'monotonic',lambda:next(ticks,1.1))
-    with pytest.raises(RuntimeError,match='UserCommands'):
-        simulator_backend.wait_ign_service('/world/a0/create',1.0)
+    result=simulator_backend.create_model(tmp_path,{'world':'a0','model':'workcell_robot'})
+    assert len(result['attempts'])==2
+    assert result['recovered_by_scene_readback'] is False
+
+
+def test_create_model_accepts_lost_response_only_when_scene_proves_spawn(tmp_path,monkeypatch):
+    import simulator_backend, subprocess
+    (tmp_path/'robot.urdf').write_text('<robot/>')
+    create_calls=0
+    def fake(args,timeout=15):
+        nonlocal create_calls
+        if args[0]=='service' and '/create' in args:
+            create_calls+=1
+            raise subprocess.TimeoutExpired(args,timeout)
+        if args[0]=='service' and '/scene/info' in args:
+            return 'model { name: "workcell_robot" }\n'
+        raise AssertionError(args)
+    monkeypatch.setattr(simulator_backend,'run_ign',fake)
+    result=simulator_backend.create_model(tmp_path,{'world':'a0','model':'workcell_robot'})
+    assert create_calls==1
+    assert result['recovered_by_scene_readback'] is True

@@ -195,18 +195,53 @@ def run_ign(args,timeout=15):
     return subprocess.check_output(['ign',*args],text=True,stderr=subprocess.STDOUT,timeout=timeout)
 
 
-def wait_ign_service(service,timeout=10):
-    deadline=time.monotonic()+timeout
-    last=''
-    while time.monotonic()<deadline:
+def world_contains_model(world,model,timeout=5):
+    try:
+        scene=run_ign(['service','-s',f"/world/{world}/scene/info",
+            '--reqtype','ignition.msgs.Empty','--reptype','ignition.msgs.Scene',
+            '--timeout',str(int(timeout*1000)),'--req',''],timeout+2)
+    except (subprocess.CalledProcessError,subprocess.TimeoutExpired):
+        return False
+    return f'name: "{model}"' in scene
+
+
+def create_model(out,spec,max_attempts=3):
+    """Create once, retry only when readback proves the model is still absent."""
+    service=f"/world/{spec['world']}/create"
+    request=f'sdf_filename: "{out / "robot.urdf"}" name: "{spec["model"]}"'
+    attempts=[]
+    for attempt in range(1,max_attempts+1):
+        started=time.time_ns()
         try:
-            last=run_ign(['service','-l'],min(2,max(.1,deadline-time.monotonic())))
-        except (subprocess.CalledProcessError,subprocess.TimeoutExpired):
-            last=''
-        if service in {line.strip() for line in last.splitlines()}:
-            return
-        time.sleep(.1)
-    raise RuntimeError(f'Fortress service unavailable: {service}; UserCommands system was not loaded')
+            response=run_ign(['service','-s',service,
+                '--reqtype','ignition.msgs.EntityFactory',
+                '--reptype','ignition.msgs.Boolean',
+                '--timeout','10000','--req',request],12)
+            attempts.append(dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
+                                 response=response,timed_out=False))
+            if 'data: true' in response:
+                return dict(attempts=attempts,recovered_by_scene_readback=False)
+            if world_contains_model(spec['world'],spec['model']):
+                return dict(attempts=attempts,recovered_by_scene_readback=True)
+            if 'data: false' in response:
+                raise RuntimeError('simulator model creation rejected: '+repr(response))
+        except subprocess.TimeoutExpired as exc:
+            attempts.append(dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
+                                 response='Service call timed out',timed_out=True))
+            if world_contains_model(spec['world'],spec['model']):
+                return dict(attempts=attempts,recovered_by_scene_readback=True)
+            if attempt==max_attempts:
+                raise RuntimeError('simulator model creation timed out after readback proved the model absent') from exc
+            time.sleep(.5)
+        except subprocess.CalledProcessError as exc:
+            attempts.append(dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
+                                 response=exc.output or str(exc),timed_out=False))
+            if world_contains_model(spec['world'],spec['model']):
+                return dict(attempts=attempts,recovered_by_scene_readback=True)
+            if attempt==max_attempts:
+                raise RuntimeError('simulator model creation command failed and model is absent') from exc
+            time.sleep(.5)
+    raise RuntimeError('simulator model creation exhausted bounded attempts')
 
 
 def verify_receipt_process(receipt):
@@ -286,13 +321,13 @@ def serve(output):
             count=re.search(r'iterations: (\d+)',stats)
             if count and int(count[1])>1:break
         else:raise RuntimeError('physics initialization timed out')
-        create_service=f"/world/{spec['world']}/create"
-        wait_ign_service(create_service,10)
-        spawn_started=time.time_ns()
-        result=run_ign(['service','-s',create_service,'--reqtype','ignition.msgs.EntityFactory','--reptype','ignition.msgs.Boolean','--timeout','10000','--req',f'sdf_filename: "{out / "robot.urdf"}" name: "{spec["model"]}"'])
-        (out/'spawn-response.json').write_text(json.dumps(dict(start_wall_ns=spawn_started,end_wall_ns=time.time_ns(),response=result),indent=2))
-        if 'data: true' not in result:raise RuntimeError('simulator model creation failed: '+repr(result))
-        record=dict(spec,pid=server.pid,start_ticks=process_info(server.pid)['start_ticks'],spawn_after_iteration=int(count[1]))
+        spawn=create_model(out,spec)
+        (out/'spawn-response.json').write_text(json.dumps(spawn,indent=2))
+        if not world_contains_model(spec['world'],spec['model']):
+            raise RuntimeError('simulator model creation returned without authoritative scene readback')
+        record=dict(spec,pid=server.pid,start_ticks=process_info(server.pid)['start_ticks'],
+                    spawn_after_iteration=int(count[1]),spawn_attempts=len(spawn['attempts']),
+                    spawn_recovered_by_scene_readback=spawn['recovered_by_scene_readback'])
         (out/'receipt.json').write_text(json.dumps(record,indent=2))
         print('Simulator receipt:',out/'receipt.json',flush=True)
         return server.wait()
