@@ -87,13 +87,21 @@ def run(command,*,env,cwd,log,timeout,check=True):
     return completed
 
 
-def wait_file(path,process,timeout):
+def wait_file(path,process,timeout,log=None):
+    def log_tail():
+        if log is None:return ""
+        try:
+            lines=Path(log).read_text(errors="replace").splitlines()
+            return "\n--- launch log tail ---\n"+"\n".join(lines[-60:])+"\n--- end launch log tail ---"
+        except OSError:
+            return "\n--- launch log unavailable ---"
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
         if Path(path).is_file():return
-        if process.poll() is not None:raise RuntimeError(f"owned launch exited before {Path(path).name} appeared")
+        if process.poll() is not None:
+            raise RuntimeError(f"owned launch exited before {Path(path).name} appeared (rc={process.returncode})"+log_tail())
         time.sleep(.1)
-    raise TimeoutError(f"timed out waiting for {path}")
+    raise TimeoutError(f"timed out waiting for {path}"+log_tail())
 
 
 def assert_domain_free(env,cwd):
@@ -206,8 +214,15 @@ def build_commissioning(repo:Path,workspace:Path,output:Path,env:dict)->dict:
     test_env=dict(env,ROS_DOMAIN_ID="200",ROS_LOCALHOST_ONLY="1",ROS2CLI_DISABLE_DAEMON="1")
     run([workspace/"build/workcell_builder/workcell_execute_action_test"],env=test_env,cwd=repo,
         log=output/"commissioning-action-tests.log",timeout=120)
+    telemetry=Path(manifest.get("telemetry_library",""))
+    if not telemetry.is_file() or sha256(telemetry)!=manifest.get("telemetry_sha256"):
+        raise RuntimeError("commissioning telemetry library does not match its build manifest")
+    installed_telemetry=workspace/"install/workcell_builder/lib/libworkcell_simulator_measurements.so"
+    if not installed_telemetry.is_file() or installed_telemetry.resolve()!=telemetry.resolve():
+        raise RuntimeError("commissioning telemetry library is not registered in the workspace overlay")
     return {"sha256":manifest["sha256"],"moveit_version":manifest.get("moveit_version"),
-            "library":str(library)}
+            "library":str(library),"telemetry_sha256":manifest["telemetry_sha256"],
+            "telemetry_library":str(telemetry)}
 
 
 def assert_plan(summary,*,require_resolved):
@@ -287,7 +302,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             "use_sim_time:=true","launch_rviz:=false","use_fake_hardware:=true",
             "allow_trajectory_execution:=true"]
         launch=subprocess.Popen(launch_cmd,cwd=repo,env=env,stdout=launch_log,stderr=subprocess.STDOUT,start_new_session=True)
-        wait_file(receipt,launch,90)
+        wait_file(receipt,launch,90,session/"launch.log")
         run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
              "--output",observations,"--class-id",args.class_id],
             env=env,cwd=repo,log=session/"observations.log",timeout=90)

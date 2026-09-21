@@ -97,3 +97,22 @@ def test_runner_failure_includes_log_tail(tmp_path):
     assert "command failed (7)" in text
     assert "--- log tail ---" in text
     assert "second" in text
+
+
+def test_launch_wait_failure_surfaces_launch_log_tail(tmp_path):
+    log=tmp_path/"launch.log";log.write_text("alpha\nbeta\n")
+    class Dead:
+        returncode=9
+        def poll(self): return 9
+    with pytest.raises(RuntimeError) as exc:
+        MODULE.wait_file(tmp_path/"receipt.json",Dead(),.1,log)
+    text=str(exc.value)
+    assert "rc=9" in text
+    assert "beta" in text
+    assert "launch log tail" in text
+
+
+def test_commissioning_build_registers_measurement_library():
+    script=(Path(__file__).parents[1]/"scripts/build_commissioning_capability.sh").read_text()
+    assert "lib/libworkcell_simulator_measurements.so" in script
+    assert "telemetry_sha256" in script
