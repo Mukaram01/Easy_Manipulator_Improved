@@ -5,7 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 import pytest
 sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
-from simulator_backend import validate_identity, simulator_description, SUPPORTED_COMMISSION_MOVEIT_VERSIONS
+from simulator_backend import (validate_identity, simulator_description,
+    select_simulator_control_contract, SUPPORTED_COMMISSION_MOVEIT_VERSIONS)
 
 
 def evidence():
@@ -94,3 +95,33 @@ def test_telemetry_world_is_receipt_bound_and_does_not_change_geometry():
 def test_commissioning_moveit_versions_are_explicitly_bounded():
     assert SUPPORTED_COMMISSION_MOVEIT_VERSIONS == {'2.5.9','2.5.10'}
     assert '2.5.11' not in SUPPORTED_COMMISSION_MOVEIT_VERSIONS
+
+
+def test_control_contract_prefers_fortress_legacy_library_when_available(tmp_path):
+    lib=tmp_path/'lib';lib.mkdir()
+    (lib/'libgz_ros2_control-system.so').write_bytes(b'gz')
+    (lib/'libign_ros2_control-system.so').write_bytes(b'ign')
+    contract=select_simulator_control_contract([tmp_path])
+    assert contract['hardware_class']=='ign_ros2_control/IgnitionSystem'
+    assert contract['plugin_name']=='ign_ros2_control::IgnitionROS2ControlPlugin'
+    assert contract['plugin_library'].endswith('libign_ros2_control-system.so')
+
+
+def test_control_contract_falls_back_to_gz_library(tmp_path):
+    lib=tmp_path/'lib';lib.mkdir()
+    (lib/'libgz_ros2_control-system.so').write_bytes(b'gz')
+    contract=select_simulator_control_contract([tmp_path])
+    assert contract['hardware_class']=='gz_ros2_control/GazeboSimSystem'
+    assert contract['plugin_name']=='gz_ros2_control::GazeboSimROS2ControlPlugin'
+
+
+def test_simulator_description_uses_selected_control_contract(tmp_path):
+    library=tmp_path/'libign_ros2_control-system.so';library.write_bytes(b'x')
+    xml='<robot name="r"><ros2_control name="arm" type="system"><hardware><plugin>mock_components/GenericSystem</plugin></hardware><joint name="j"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint></ros2_control></robot>'
+    contract={'hardware_class':'ign_ros2_control/IgnitionSystem',
+              'plugin_name':'ign_ros2_control::IgnitionROS2ControlPlugin',
+              'plugin_library':str(library)}
+    result=simulator_description(xml,str(tmp_path/'c.yaml'),'rsp',contract)
+    assert '<plugin>ign_ros2_control/IgnitionSystem</plugin>' in result
+    assert str(library) in result
+    assert 'ign_ros2_control::IgnitionROS2ControlPlugin' in result

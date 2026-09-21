@@ -116,3 +116,14 @@ def test_commissioning_build_registers_measurement_library():
     script=(Path(__file__).parents[1]/"scripts/build_commissioning_capability.sh").read_text()
     assert "lib/libworkcell_simulator_measurements.so" in script
     assert "telemetry_sha256" in script
+
+
+def test_wait_file_surfaces_structured_simulator_startup_failure(tmp_path):
+    receipt=tmp_path/'runtime'/'receipt.json';receipt.parent.mkdir()
+    (receipt.parent/'startup-failure.json').write_text(json.dumps(
+        {'type':'RuntimeError','message':'robot spawn failed'}))
+    class Alive:
+        returncode=None
+        def poll(self): return None
+    with pytest.raises(RuntimeError,match='robot spawn failed'):
+        MODULE.wait_file(receipt,Alive(),1.0)

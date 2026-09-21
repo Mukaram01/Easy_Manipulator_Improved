@@ -16,10 +16,16 @@ import subprocess
 import sys
 import time
 import uuid
+import traceback
 import xml.etree.ElementTree as ET
 
 SIM_CLASSES = {'ign_ros2_control/IgnitionSystem', 'gz_ros2_control/GazeboSimSystem'}
 SUPPORTED_COMMISSION_MOVEIT_VERSIONS = {'2.5.9', '2.5.10'}
+DEFAULT_CONTROL_CONTRACT = {
+    'hardware_class': 'ign_ros2_control/IgnitionSystem',
+    'plugin_name': 'ign_ros2_control::IgnitionROS2ControlPlugin',
+    'plugin_library': '/opt/ros/humble/lib/libign_ros2_control-system.so',
+}
 
 
 def digest(data):
@@ -43,15 +49,51 @@ def validate_identity(e):
     return dict(e, real_hardware=False, accepted_reason='verified local Fortress process, simulator model, world and exclusive controller topology')
 
 
-def simulator_description(xml, controllers, publisher):
+def select_simulator_control_contract(prefixes):
+    """Select one installed Fortress/gz ros2_control contract by real library presence."""
+    unique=[]
+    for prefix in prefixes:
+        path=Path(prefix)
+        if path not in unique:unique.append(path)
+    candidates=[
+        ('libign_ros2_control-system.so','ign_ros2_control/IgnitionSystem',
+         'ign_ros2_control::IgnitionROS2ControlPlugin'),
+        ('libgz_ros2_control-system.so','gz_ros2_control/GazeboSimSystem',
+         'gz_ros2_control::GazeboSimROS2ControlPlugin'),
+    ]
+    for library_name,hardware_class,plugin_name in candidates:
+        for prefix in unique:
+            library=prefix/'lib'/library_name
+            if library.is_file():
+                return dict(hardware_class=hardware_class,plugin_name=plugin_name,
+                            plugin_library=str(library.resolve()))
+    raise RuntimeError('no reviewed Fortress/gz ros2_control system plugin library is installed')
+
+
+def simulator_control_contract():
+    from ament_index_python.packages import get_package_prefix
+    prefixes=[]
+    for package in ('gz_ros2_control','ign_ros2_control'):
+        try:prefixes.append(Path(get_package_prefix(package)))
+        except Exception:pass
+    return select_simulator_control_contract(prefixes)
+
+
+def simulator_description(xml, controllers, publisher, control_contract=None):
     """Derive runtime interfaces from source URDF; followers never accept commands."""
     root=ET.fromstring(xml); controls=root.findall('ros2_control')
     if not controls:raise ValueError('no hardware components')
+    control=control_contract or DEFAULT_CONTROL_CONTRACT
+    if control.get('hardware_class') not in SIM_CLASSES:
+        raise ValueError('unreviewed simulator hardware class')
+    library=Path(control.get('plugin_library',''))
+    if control_contract is not None and not library.is_file():
+        raise ValueError('selected simulator control plugin library is missing')
     owner={}
     for c in controls:
         plugin=c.find('hardware/plugin')
         if plugin is None or plugin.text!='mock_components/GenericSystem':raise ValueError('simulator derivation requires exclusively known mock source')
-        plugin.text='ign_ros2_control/IgnitionSystem'
+        plugin.text=control['hardware_class']
         for gpio in c.findall('gpio'):c.remove(gpio)
         for j in c.findall('joint'):
             if j.get('name') in owner:raise ValueError('duplicate joint ownership')
@@ -78,7 +120,7 @@ def simulator_description(xml, controllers, publisher):
             if 'mimic_joint_plugin' in plugin.get('filename',''):gazebo.remove(plugin)
             else:raise ValueError('unreviewed source Gazebo plugin')
     gazebo=ET.SubElement(root,'gazebo')
-    plugin=ET.SubElement(gazebo,'plugin',filename='/opt/ros/humble/lib/libgz_ros2_control-system.so',name='gz_ros2_control::GazeboSimROS2ControlPlugin')
+    plugin=ET.SubElement(gazebo,'plugin',filename=control['plugin_library'],name=control['plugin_name'])
     for key,value in [('robot_param','robot_description'),('robot_param_node',publisher),('parameters',controllers)]:ET.SubElement(plugin,key).text=value
     from ament_index_python.packages import get_package_share_directory
     for mesh in root.findall('.//mesh'):
@@ -113,7 +155,8 @@ def prepare(xml, controllers, world_path, publisher, output):
     joints=[j for n in controller_names for j in config[n]['ros__parameters']['joints']]
     config['joint_state_broadcaster']={'ros__parameters':{'joints':joints,'interfaces':['position','velocity']}}
     controller_path=output/'controllers.yaml';controller_path.write_text(yaml.safe_dump(config))
-    description=simulator_description(xml,str(controller_path),publisher)
+    control=simulator_control_contract()
+    description=simulator_description(xml,str(controller_path),publisher,control)
     (output/'robot.urdf').write_text(description)
     # A pristine initial world, with the robot inserted only after physics steps.
     from ament_index_python.packages import get_package_prefix
@@ -123,6 +166,9 @@ def prepare(xml, controllers, world_path, publisher, output):
     (output/'world.sdf').write_text(telemetry_world(Path(world_path).read_text(),library,run_id))
     spec=dict(world=world.get('name'),model='workcell_robot',output=str(output),
               run_id=run_id,telemetry_library=str(library),telemetry_sha256=digest(library.read_bytes()),
+              control_plugin_library=control['plugin_library'],
+              control_plugin_sha256=digest(Path(control['plugin_library']).read_bytes()),
+              control_plugin_name=control['plugin_name'],hardware_class=control['hardware_class'],
               domain=os.environ.get('ROS_DOMAIN_ID','0'),partition=os.environ.get('IGN_PARTITION',''),
               description_sha256=digest(description),world_sha256=digest((output/'world.sdf').read_bytes()),
               controllers_sha256=digest(controller_path.read_bytes()),expected_controllers=controller_names)
@@ -156,12 +202,16 @@ def verify_receipt_process(receipt):
     process=process_info(r['pid'])
     if r.get('telemetry_library') and (digest(Path(r['telemetry_library']).read_bytes())!=r['telemetry_sha256'] or str(Path(r['telemetry_library']).resolve()) not in process['libraries']):
         raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: measurement binary changed')
+    control_library=Path(r.get('control_plugin_library',''))
+    if (not control_library.is_file() or
+            digest(control_library.read_bytes())!=r.get('control_plugin_sha256') or
+            str(control_library.resolve()) not in process['libraries']):
+        raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: ros2_control simulator plugin changed')
     expected_files=[('world.sdf','world_sha256'),('controllers.yaml','controllers_sha256'),('robot.urdf','description_sha256')]
     if any(digest((out/f).read_bytes())!=r[key] for f,key in expected_files):
         raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: runtime input changed')
     verified=(process['start_ticks']==r['start_ticks'] and 'gazebo -s -r ' in process['command']
         and str(out/'world.sdf') in process['command']
-        and 'libgz_ros2_control-system.so' in process['libraries']
         and 'libignition-gazebo6' in process['libraries']
         and process['environ'].get('ROS_DOMAIN_ID')==r['domain']
         and process['environ'].get('IGN_PARTITION')==r['partition'])
@@ -181,7 +231,8 @@ def live_identity(receipt, description, components, controllers, interfaces, nod
     e['receipt_sha256']=digest(receipt.read_bytes())
     root=ET.fromstring(description);controls=root.findall('ros2_control')
     e['description_verified']=(digest(description)==r['description_sha256'] and bool(controls)
-        and all(c.findtext('hardware/plugin') in SIM_CLASSES for c in controls))
+        and r.get('hardware_class') in SIM_CLASSES
+        and all(c.findtext('hardware/plugin')==r.get('hardware_class') for c in controls))
     e['expected_components']=[c.get('name') for c in controls]
     e['expected_commands']=[j.get('name')+'/'+i.get('name') for c in controls for j in c.findall('joint') for i in j.findall('command_interface')]
     for p in Path('/proc').iterdir():
@@ -237,8 +288,22 @@ def serve(output):
 
 
 if __name__=='__main__':
-    try:raise SystemExit(serve(sys.argv[1]))
-    except KeyboardInterrupt:pass
+    try:
+        raise SystemExit(serve(sys.argv[1]))
+    except KeyboardInterrupt:
+        pass
+    except Exception as exc:
+        out=Path(sys.argv[1]) if len(sys.argv)>1 else None
+        if out is not None:
+            try:
+                out.mkdir(parents=True,exist_ok=True)
+                (out/'startup-failure.json').write_text(json.dumps({
+                    'type':type(exc).__name__,'message':str(exc),
+                    'traceback':traceback.format_exc(),'wall_ns':time.time_ns()
+                },indent=2)+'\n')
+            except Exception:
+                pass
+        raise
 
 
 def commissioning_capability_identity(node,receipt,enabled,capabilities,disabled):

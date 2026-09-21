@@ -95,11 +95,16 @@ def wait_file(path,process,timeout,log=None):
             return "\n--- launch log tail ---\n"+"\n".join(lines[-60:])+"\n--- end launch log tail ---"
         except OSError:
             return "\n--- launch log unavailable ---"
+    path=Path(path);failure=path.parent/'startup-failure.json'
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
-        if Path(path).is_file():return
+        if path.is_file():return
+        if failure.is_file():
+            try:payload=json.loads(failure.read_text())
+            except Exception:payload={'message':failure.read_text(errors='replace')}
+            raise RuntimeError('simulator startup failed: '+str(payload.get('message',payload))+log_tail())
         if process.poll() is not None:
-            raise RuntimeError(f"owned launch exited before {Path(path).name} appeared (rc={process.returncode})"+log_tail())
+            raise RuntimeError(f"owned launch exited before {path.name} appeared (rc={process.returncode})"+log_tail())
         time.sleep(.1)
     raise TimeoutError(f"timed out waiting for {path}"+log_tail())
 

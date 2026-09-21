@@ -203,3 +203,22 @@ and terminates only the process group it owns. Full-cycle admission requires
 the cancellation, telemetry, retention and contact-release summaries produced
 by the immediately preceding fresh sessions, all bound to the same current
 capability binary. Real hardware remains locked throughout.
+
+
+### Fortress ros2_control plugin identity
+
+The simulator backend no longer hard-codes a single renamed ros2_control library.
+At runtime it inspects the installed ROS prefix and selects one reviewed,
+matching contract by real library presence. For Fortress/Humble it prefers the
+legacy compatibility pair
+`libign_ros2_control-system.so` +
+`ign_ros2_control/IgnitionSystem` +
+`ign_ros2_control::IgnitionROS2ControlPlugin`; if only the renamed gz library
+is present it uses the matching gz hardware/plugin identities. The selected
+absolute library path and SHA256 are stored in the simulator spec/receipt and
+must be mapped into the owned Fortress process during live identity validation.
+
+Simulator startup exceptions are also written to
+`runtime/startup-failure.json`. The Stage-A runner watches that file while
+waiting for `receipt.json`, so a failed physics/model spawn is reported
+immediately rather than appearing only as controller-manager spawner timeouts.
