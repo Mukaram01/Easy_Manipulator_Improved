@@ -54,7 +54,7 @@ ROS_DOMAIN_ID=191 ~/workcell_ws/build/workcell_builder/workcell_execute_action_t
 ```
 
 `WORKCELL_BUILD_COMMISSIONING_CAPABILITY` defaults OFF. When enabled, CMake
-requires MoveIt **2.5.9 EXACT**. The script builds only the capability, its action
+accepts only reviewed MoveIt **2.5.9 or 2.5.10**. The script builds only the capability, its action
 test and the existing measurement target, then registers the local plugin via
 scoped overlay symlinks. It never installs to `/opt`. It writes a manifest
 binding source hashes to the resulting library hash in the existing install
@@ -69,6 +69,26 @@ and the usual explicit simulator world/output/domain/partition. This selects
 `simulator_commissioning` defaults false. The executor still requires the
 explicit existing `--simulator-commission cancel` path and current authoritative
 Resolve/Generate binding and full-cycle revalidation. No trajectory is replayed.
+
+
+
+### MoveIt 2.5.10 compatibility review
+
+The second workstation carries `moveit_ros_move_group 2.5.10` rather than 2.5.9.
+Before widening the commissioning build gate, the following upstream files were
+compared between MoveIt tags **2.5.9** and **2.5.10** and found byte-identical:
+
+- `moveit_ros/move_group/src/default_capabilities/execute_trajectory_action_capability.cpp`;
+- `moveit_ros/planning/trajectory_execution_manager/src/trajectory_execution_manager.cpp`;
+- `moveit_plugins/moveit_simple_controller_manager/include/moveit_simple_controller_manager/action_based_controller_handle.h`;
+- `moveit_ros/move_group/include/moveit/move_group/move_group_capability.h`;
+- `moveit_ros/move_group/include/moveit/move_group/move_group_context.h`.
+
+Therefore the local correction is explicitly bounded to **2.5.9 and 2.5.10 only**.
+Any later MoveIt version remains blocked until the same source/API review is
+repeated. The build records the actual installed MoveIt version in
+`commission_execute_build.json`, and the live identity gate checks that recorded
+version before accepting the loaded binary.
 
 ## Fresh telemetry
 

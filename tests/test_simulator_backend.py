@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 import pytest
 sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
-from simulator_backend import validate_identity, simulator_description
+from simulator_backend import validate_identity, simulator_description, SUPPORTED_COMMISSION_MOVEIT_VERSIONS
 
 
 def evidence():
@@ -89,3 +89,8 @@ def test_telemetry_world_is_receipt_bound_and_does_not_change_geometry():
     assert plugin.get('filename')=='/verified/plugin.so'
     assert plugin.findtext('run_id')=='nonce'
     assert plugin.findtext('topic')=='/world/cell/workcell_measurements'
+
+
+def test_commissioning_moveit_versions_are_explicitly_bounded():
+    assert SUPPORTED_COMMISSION_MOVEIT_VERSIONS == {'2.5.9','2.5.10'}
+    assert '2.5.11' not in SUPPORTED_COMMISSION_MOVEIT_VERSIONS

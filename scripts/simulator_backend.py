@@ -19,6 +19,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 SIM_CLASSES = {'ign_ros2_control/IgnitionSystem', 'gz_ros2_control/GazeboSimSystem'}
+SUPPORTED_COMMISSION_MOVEIT_VERSIONS = {'2.5.9', '2.5.10'}
 
 
 def digest(data):
@@ -251,7 +252,8 @@ def commissioning_capability_identity(node,receipt,enabled,capabilities,disabled
         raise RuntimeError('ExecuteTrajectory must have exactly one authoritative move_group server')
     prefix=Path(get_package_prefix('workcell_builder'))
     manifest=json.loads((prefix/'share/workcell_builder/commission_execute_build.json').read_text())
-    if manifest['moveit_version']!='2.5.9':raise RuntimeError('unqualified MoveIt capability version')
+    if manifest['moveit_version'] not in SUPPORTED_COMMISSION_MOVEIT_VERSIONS:
+        raise RuntimeError('unqualified MoveIt capability version')
     lib=Path(manifest['library']).resolve();stat=lib.stat()
     if digest(lib.read_bytes())!=manifest['sha256']:raise RuntimeError('commission capability differs from tracked build')
     for path,expected in manifest['sources'].items():

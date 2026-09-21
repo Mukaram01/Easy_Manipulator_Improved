@@ -37,7 +37,11 @@ for target,source in links.items():
 sources=[repo/'workcell_builder/workcell_builder'/name for name in (
  'commission_execute_server.hpp','controller_terminal_audit.hpp','src_commission_execute_capability.cpp','execute_trajectory_plugins.xml','CMakeLists.txt')]
 library=build/'libworkcell_commission_execute.so'
-manifest=dict(moveit_version='2.5.9',library=str(library),sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
+version_file=build/'workcell_commission_moveit_version.txt'
+if not version_file.is_file():raise RuntimeError('commissioning MoveIt version receipt missing')
+moveit_version=version_file.read_text().strip()
+if moveit_version not in {'2.5.9','2.5.10'}:raise RuntimeError('unreviewed MoveIt version: '+moveit_version)
+manifest=dict(moveit_version=moveit_version,library=str(library),sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
  sources={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in sources})
 (prefix/'share/workcell_builder/commission_execute_build.json').write_text(json.dumps(manifest,indent=2))
 PY

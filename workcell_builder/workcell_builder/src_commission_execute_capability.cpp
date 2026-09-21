@@ -1,4 +1,4 @@
-// Pinned overlay for MoveIt 2.5.9 ExecuteTrajectoryAction; provenance and build
+// Pinned overlay for reviewed MoveIt 2.5.9/2.5.10 ExecuteTrajectoryAction; provenance and build
 // instructions: docs/manuals/EXECUTE_TRAJECTORY_COMMISSIONING.md.
 #include "commission_execute_server.hpp"
 #include "controller_terminal_audit.hpp"
@@ -54,7 +54,7 @@ public:
  }
  ExecutionOutcome wait() override {
   std::unique_lock<std::mutex> lock(mutex_);cv_.wait(lock,[&]{return finished_;});auto outcome=outcome_;lock.unlock();
-  // Join TEM after its completion callback. cancelExecution() in 2.5.9 can
+  // Join TEM after its completion callback. cancelExecution() in reviewed 2.5.9/2.5.10 can
   // overwrite its handle's status even when the controller already succeeded.
   // Query each exact controller goal's immutable action result instead.
   manager_->waitForExecution();
@@ -77,7 +77,7 @@ public:
      node->get_parameter("use_fake_hardware").as_bool() ||
      !node->get_parameter("use_sim_time").as_bool())throw std::runtime_error("commissioning capability requires explicit simulator identity");
   server_=std::make_unique<CommissionExecuteServer>(node,std::make_shared<TemBackend>(node,context_->trajectory_execution_manager_));
-  RCLCPP_INFO(node->get_logger(),"workcell ExecuteTrajectory correction: upstream MoveIt 2.5.9, simulator commissioning only");
+  RCLCPP_INFO(node->get_logger(),"workcell ExecuteTrajectory correction: upstream MoveIt %s, simulator commissioning only", WORKCELL_MOVEIT_VERSION);
  }
 };
 }

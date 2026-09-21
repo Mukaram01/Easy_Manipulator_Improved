@@ -48,11 +48,21 @@ option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3
 
 option(WORKCELL_BUILD_COMMISSIONING_CAPABILITY "Build simulator-only MoveIt 2.5.9 cancellation correction" OFF)
 if(WORKCELL_BUILD_COMMISSIONING_CAPABILITY)
-  find_package(moveit_ros_move_group 2.5.9 EXACT REQUIRED)
+  find_package(moveit_ros_move_group REQUIRED)
+  if(NOT moveit_ros_move_group_VERSION VERSION_EQUAL "2.5.9" AND
+     NOT moveit_ros_move_group_VERSION VERSION_EQUAL "2.5.10")
+    message(FATAL_ERROR
+      "Simulator commissioning supports exactly MoveIt 2.5.9 or 2.5.10; "
+      "found ${moveit_ros_move_group_VERSION}. Review upstream cancellation/TEM/controller sources before extending this set.")
+  endif()
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/workcell_commission_moveit_version.txt"
+    "${moveit_ros_move_group_VERSION}\n")
   find_package(rclcpp_action REQUIRED)
   find_package(action_msgs REQUIRED)
   find_package(control_msgs REQUIRED)
   add_library(workcell_commission_execute SHARED src_commission_execute_capability.cpp)
+  target_compile_definitions(workcell_commission_execute PRIVATE
+    WORKCELL_MOVEIT_VERSION="${moveit_ros_move_group_VERSION}")
   ament_target_dependencies(workcell_commission_execute rclcpp rclcpp_action moveit_ros_move_group moveit_ros_planning_interface pluginlib control_msgs action_msgs)
   pluginlib_export_plugin_description_file(moveit_ros_move_group execute_trajectory_plugins.xml)
   install(TARGETS workcell_commission_execute LIBRARY DESTINATION lib)

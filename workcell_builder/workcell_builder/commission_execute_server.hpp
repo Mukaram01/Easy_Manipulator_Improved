@@ -1,5 +1,5 @@
 #pragma once
-// Action ownership correction for MoveIt 2.5.9. The backend remains its TEM.
+// Action ownership correction for reviewed MoveIt 2.5.9/2.5.10. The backend remains its TEM.
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <moveit_msgs/action/execute_trajectory.hpp>
