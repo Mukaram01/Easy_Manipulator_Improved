@@ -248,3 +248,18 @@ three attempts. A timeout is retried **only after** the authoritative
 If a create response is lost but the scene readback proves the model exists, the
 runner accepts the insertion without issuing a duplicate request. The receipt
 records attempt count and whether scene readback recovered a lost response.
+
+
+### Scene readback synchronization after create
+
+A successful Fortress create call can instantiate the model and initialize
+gz_ros2_control before SceneBroadcaster's `scene/info` service reflects the new
+entity. The second workstation demonstrated this ordering: the controller
+manager initialized successfully, then an immediate scene readback still missed
+`workcell_robot`.
+
+The create path now waits up to ten seconds for authoritative scene readback
+after a positive `data: true` response. A positive create is never retried.
+Lost/timeout responses get a shorter bounded readback window before a retry is
+permitted. This removes the race without weakening identity: the receipt is
+still written only after SceneBroadcaster proves the robot model exists.

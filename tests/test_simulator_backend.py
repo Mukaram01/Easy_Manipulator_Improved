@@ -166,3 +166,35 @@ def test_create_model_accepts_lost_response_only_when_scene_proves_spawn(tmp_pat
     result=simulator_backend.create_model(tmp_path,{'world':'a0','model':'workcell_robot'})
     assert create_calls==1
     assert result['recovered_by_scene_readback'] is True
+
+
+def test_wait_world_model_tolerates_scene_broadcast_delay(monkeypatch):
+    import simulator_backend
+    answers=iter([False,False,True])
+    monkeypatch.setattr(simulator_backend,'world_contains_model',
+                        lambda *args,**kwargs: next(answers))
+    monkeypatch.setattr(simulator_backend.time,'sleep',lambda _:None)
+    ticks=iter([0.,.01,.02,.03,.04])
+    monkeypatch.setattr(simulator_backend.time,'monotonic',lambda:next(ticks,.04))
+    result=simulator_backend.wait_world_model('a0','workcell_robot',1.0)
+    assert result['found'] is True
+    assert result['checks']==3
+
+
+def test_create_model_data_true_waits_for_authoritative_scene_without_duplicate(tmp_path,monkeypatch):
+    import simulator_backend
+    (tmp_path/'robot.urdf').write_text('<robot/>')
+    create_calls=0
+    def fake_ign(args,timeout=15):
+        nonlocal create_calls
+        if '/create' in args:
+            create_calls+=1
+            return 'data: true\n'
+        raise AssertionError(args)
+    monkeypatch.setattr(simulator_backend,'run_ign',fake_ign)
+    monkeypatch.setattr(simulator_backend,'wait_world_model',
+                        lambda *args,**kwargs:{'found':True,'checks':4,'wait_wall_ns':123})
+    result=simulator_backend.create_model(tmp_path,{'world':'a0','model':'workcell_robot'})
+    assert create_calls==1
+    assert result['attempts'][0]['readback']['checks']==4
+    assert result['recovered_by_scene_readback'] is False

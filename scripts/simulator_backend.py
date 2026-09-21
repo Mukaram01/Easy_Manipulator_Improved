@@ -205,8 +205,20 @@ def world_contains_model(world,model,timeout=5):
     return f'name: "{model}"' in scene
 
 
+def wait_world_model(world,model,timeout=10):
+    """Wait for SceneBroadcaster readback after an accepted/asynchronous create."""
+    deadline=time.monotonic()+timeout
+    checks=0
+    while time.monotonic()<deadline:
+        checks+=1
+        if world_contains_model(world,model,min(2,max(.2,deadline-time.monotonic()))):
+            return dict(found=True,checks=checks,wait_wall_ns=time.time_ns())
+        time.sleep(.05)
+    return dict(found=False,checks=checks,wait_wall_ns=time.time_ns())
+
+
 def create_model(out,spec,max_attempts=3):
-    """Create once, retry only when readback proves the model is still absent."""
+    """Create with bounded retries; never duplicate an accepted or observed model."""
     service=f"/world/{spec['world']}/create"
     request=f'sdf_filename: "{out / "robot.urdf"}" name: "{spec["model"]}"'
     attempts=[]
@@ -217,29 +229,42 @@ def create_model(out,spec,max_attempts=3):
                 '--reqtype','ignition.msgs.EntityFactory',
                 '--reptype','ignition.msgs.Boolean',
                 '--timeout','10000','--req',request],12)
-            attempts.append(dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
-                                 response=response,timed_out=False))
+            record=dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
+                        response=response,timed_out=False)
+            attempts.append(record)
             if 'data: true' in response:
+                readback=wait_world_model(spec['world'],spec['model'],10)
+                record['readback']=readback
+                if not readback['found']:
+                    raise RuntimeError('simulator create acknowledged but model never appeared in authoritative scene readback')
                 return dict(attempts=attempts,recovered_by_scene_readback=False)
-            if world_contains_model(spec['world'],spec['model']):
+            readback=wait_world_model(spec['world'],spec['model'],2)
+            record['readback']=readback
+            if readback['found']:
                 return dict(attempts=attempts,recovered_by_scene_readback=True)
             if 'data: false' in response:
                 raise RuntimeError('simulator model creation rejected: '+repr(response))
         except subprocess.TimeoutExpired as exc:
-            attempts.append(dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
-                                 response='Service call timed out',timed_out=True))
-            if world_contains_model(spec['world'],spec['model']):
+            record=dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
+                        response='Service call timed out',timed_out=True)
+            attempts.append(record)
+            readback=wait_world_model(spec['world'],spec['model'],3)
+            record['readback']=readback
+            if readback['found']:
                 return dict(attempts=attempts,recovered_by_scene_readback=True)
             if attempt==max_attempts:
-                raise RuntimeError('simulator model creation timed out after readback proved the model absent') from exc
+                raise RuntimeError('simulator model creation timed out after delayed readback proved the model absent') from exc
             time.sleep(.5)
         except subprocess.CalledProcessError as exc:
-            attempts.append(dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
-                                 response=exc.output or str(exc),timed_out=False))
-            if world_contains_model(spec['world'],spec['model']):
+            record=dict(attempt=attempt,start_wall_ns=started,end_wall_ns=time.time_ns(),
+                        response=exc.output or str(exc),timed_out=False)
+            attempts.append(record)
+            readback=wait_world_model(spec['world'],spec['model'],2)
+            record['readback']=readback
+            if readback['found']:
                 return dict(attempts=attempts,recovered_by_scene_readback=True)
             if attempt==max_attempts:
-                raise RuntimeError('simulator model creation command failed and model is absent') from exc
+                raise RuntimeError('simulator model creation command failed and delayed readback proves model absent') from exc
             time.sleep(.5)
     raise RuntimeError('simulator model creation exhausted bounded attempts')
 
@@ -323,8 +348,6 @@ def serve(output):
         else:raise RuntimeError('physics initialization timed out')
         spawn=create_model(out,spec)
         (out/'spawn-response.json').write_text(json.dumps(spawn,indent=2))
-        if not world_contains_model(spec['world'],spec['model']):
-            raise RuntimeError('simulator model creation returned without authoritative scene readback')
         record=dict(spec,pid=server.pid,start_ticks=process_info(server.pid)['start_ticks'],
                     spawn_after_iteration=int(count[1]),spawn_attempts=len(spawn['attempts']),
                     spawn_recovered_by_scene_readback=spawn['recovered_by_scene_readback'])
