@@ -406,14 +406,18 @@ def measured_attachment(original,contract,measurements,sample):
     return attachment_diff(obj,contract['grasp_frame'],contract['allowed_touch_links'])
 
 
-def require_trial_evidence(path,identity):
+def require_trial_evidence(path,current_capability):
     if path is None:raise RuntimeError('full cycle requires cancellation, motion telemetry, retention and contact-release evidence')
     records=json.loads(Path(path).read_text())
     expected={'CANCELLATION_TRIAL_PASS','MOTION_TELEMETRY_PASS','STATIONARY_RETENTION_PASS','CONTACT_RELEASE_PASS'}
     if len(records)!=4 or {r.get('result') for r in records}!=expected:
         raise RuntimeError('commissioning prerequisite trials have not all passed')
     capability={r.get('commissioning_capability',{}).get('sha256') for r in records}
-    if capability!={QUALIFIED_CAPABILITY_SHA256}:raise RuntimeError('commissioning evidence is not from the qualified capability build')
+    if len(capability)!=1 or None in capability:
+        raise RuntimeError('commissioning prerequisite evidence uses inconsistent capability binaries')
+    capability_sha=next(iter(capability))
+    if current_capability.get('sha256')!=capability_sha:
+        raise RuntimeError('current commissioning binary differs from freshly qualified evidence')
     for r in records:
         backend=r.get('motion_backend_identity') or r.get('backend_identity',{})
         if backend.get('backend')!='simulator':raise RuntimeError('commissioning evidence backend identity unproven')
@@ -431,7 +435,7 @@ def require_trial_evidence(path,identity):
     contact=next(r for r in records if r['result']=='CONTACT_RELEASE_PASS')
     if contact.get('verified_lift_clearance_m',0)<.01 or not contact.get('release_evidence',{}).get('settled'):
         raise RuntimeError('physical lift/release prerequisite missing')
-    return dict(capability_sha256=QUALIFIED_CAPABILITY_SHA256,results=sorted(expected))
+    return dict(capability_sha256=capability_sha,results=sorted(expected))
 
 
 def verify_release(guard,held_sample):

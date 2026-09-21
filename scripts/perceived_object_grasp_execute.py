@@ -1281,7 +1281,9 @@ def main():
                 current_params[5].bool_value,current_params[6].string_value,current_params[7].string_value)
             verify_snapshot_binding(snapshot,summary['motion_backend_identity']['receipt_sha256'])
             from simulator_execution import Measurements, ContactGuard, measured_attachment, require_trial_evidence
-            if args.simulator_commission=='full-cycle':require_trial_evidence(args.commission_evidence,summary['backend_identity'])
+            if args.simulator_commission=='full-cycle':
+                summary['commissioning_prerequisites']=require_trial_evidence(
+                    args.commission_evidence,summary['commissioning_capability'])
             measurements=Measurements(node,args.simulator_receipt,Path(args.summary_output).with_suffix('.measurements.jsonl'))
             until=time.monotonic()+5
             while measurements.latest is None and time.monotonic()<until:rclpy.spin_once(node,timeout_sec=.05)

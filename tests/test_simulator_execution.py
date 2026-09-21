@@ -242,8 +242,9 @@ def test_motion_telemetry_metrics_keep_250ms_guard_and_contiguous_iterations():
 
 
 def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
-    from simulator_execution import require_trial_evidence,QUALIFIED_CAPABILITY_SHA256
-    common=dict(commissioning_capability={'sha256':QUALIFIED_CAPABILITY_SHA256},
+    from simulator_execution import require_trial_evidence
+    capability_sha='freshly-qualified-build'
+    common=dict(commissioning_capability={'sha256':capability_sha},
         backend_identity={'backend':'simulator'},
         motion_backend_identity={'backend':'simulator'},
         measured_reconciliation={'acm_restored':True,'attached_ids':[],'measured_geometry_matches':True,'held':False},
@@ -262,7 +263,7 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
     contact=dict(common,result='CONTACT_RELEASE_PASS',verified_lift_clearance_m=.02,
         release_evidence={'settled':True})
     path=tmp_path/'evidence.json';path.write_text(json.dumps([cancellation,telemetry,retention,contact]))
-    accepted=require_trial_evidence(path,{'backend':'simulator'})
-    assert accepted['capability_sha256']==QUALIFIED_CAPABILITY_SHA256
+    accepted=require_trial_evidence(path,{'sha256':capability_sha})
+    assert accepted['capability_sha256']==capability_sha
     path.write_text(json.dumps([cancellation,telemetry,retention]))
-    with pytest.raises(RuntimeError):require_trial_evidence(path,{'backend':'simulator'})
+    with pytest.raises(RuntimeError):require_trial_evidence(path,{'sha256':capability_sha})
