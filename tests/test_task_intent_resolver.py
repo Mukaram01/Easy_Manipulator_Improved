@@ -369,3 +369,26 @@ def test_resolved_preferred_fallback_replays_same_effective_grasp():
     checked = resolver.resolve_task_intent(
         intent, environment(), cell(), observations(), replay, now=100.0, resolved=resolved)
     assert checked["resolution_sha256"] == resolved["resolution_sha256"]
+
+
+def test_support_resting_objects_remain_eligible_at_pick_zone_floor():
+    resolver = resolver_module()
+    intent = valid_intent()
+    intent["pick"]["selection"]["object_filter"]["min_confidence"] = None
+    intent["pick"]["selection"]["zone_ref"] = "pick_zone_main"
+    env = environment()
+    env["task_zones"][0] = {
+        "id": "pick_zone_main", "frame": "world",
+        "pose_xyz": [0.4, -0.2, 0.3], "pose_rpy": [0., 0., 0.],
+        "dimensions": [0.35, 0.30, 0.60],
+    }
+    objects = []
+    for index, z in enumerate((0.012499, 0.0375)):
+        objects.append({
+            "id": f"runtime::part_{index:02d}", "class_id": "bottle",
+            "confidence": None, "timestamp": 99.0, "frame_id": "world",
+            "shape": "BOX", "pose": [0.4 + index*.03, -0.2, z, 0., 0., 0., 1.],
+            "dimensions": [0.025, 0.025, 0.025],
+        })
+    selected = resolver.select_observations(intent, env, objects, 100.0)
+    assert [item["id"] for item in selected] == ["runtime::part_00", "runtime::part_01"]
