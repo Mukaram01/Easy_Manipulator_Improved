@@ -85,3 +85,15 @@ def test_tracked_stage_a0_world_is_portable_and_has_ten_dynamic_parts():
         assert collisions[0].find("geometry/box/size") is not None
         assert model.find("link/pose") is None
         assert collisions[0].find("pose") is None
+
+
+def test_runner_failure_includes_log_tail(tmp_path):
+    log=tmp_path/"failure.log"
+    env=dict(__import__("os").environ)
+    with pytest.raises(RuntimeError) as exc:
+        MODULE.run(["bash","-lc","printf 'first\\nsecond\\n' && exit 7"],
+            env=env,cwd=tmp_path,log=log,timeout=10)
+    text=str(exc.value)
+    assert "command failed (7)" in text
+    assert "--- log tail ---" in text
+    assert "second" in text

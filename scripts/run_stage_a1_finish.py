@@ -76,7 +76,14 @@ def run(command,*,env,cwd,log,timeout,check=True):
         completed=subprocess.run([str(x) for x in command],cwd=cwd,env=env,
             stdout=stream,stderr=subprocess.STDOUT,timeout=timeout,check=False)
     if check and completed.returncode:
-        raise RuntimeError(f"command failed ({completed.returncode}): {' '.join(map(str,command))}; log={log}")
+        try:
+            lines=log.read_text(errors="replace").splitlines()
+            tail="\n".join(lines[-40:])
+        except OSError:
+            tail="<log unavailable>"
+        raise RuntimeError(
+            f"command failed ({completed.returncode}): {' '.join(map(str,command))}; log={log}\n"
+            f"--- log tail ---\n{tail}\n--- end log tail ---")
     return completed
 
 

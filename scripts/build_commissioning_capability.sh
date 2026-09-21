@@ -6,8 +6,21 @@ workspace=$(cd "$repo/../.." && pwd)
 build="$workspace/build/workcell_builder"
 prefix="$workspace/install/workcell_builder"
 test -d "$build" && test -d "$prefix"
-cmake -S "$repo/workcell_builder/workcell_builder" -B "$build" -DWORKCELL_BUILD_COMMISSIONING_CAPABILITY=ON
-cmake --build "$build" --target workcell_commission_execute workcell_execute_action_test workcell_simulator_measurements -j2
+cmake -S "$repo/workcell_builder/workcell_builder" -B "$build" \
+  -DWORKCELL_BUILD_COMMISSIONING_CAPABILITY=ON \
+  -DWORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK=ON
+
+if ! cmake --build "$build" --target help | grep -q 'workcell_simulator_measurements'; then
+  echo "ERROR: workcell_simulator_measurements target is unavailable." >&2
+  echo "Fortress/ignition-gazebo6 development files must be discoverable by CMake." >&2
+  exit 41
+fi
+
+cmake --build "$build" --target \
+  workcell_commission_execute \
+  workcell_execute_action_test \
+  workcell_simulator_measurements \
+  -j2
 python3 - "$repo" "$build" "$prefix" <<'PY'
 from pathlib import Path
 import sys,json,hashlib
