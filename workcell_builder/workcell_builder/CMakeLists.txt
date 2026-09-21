@@ -46,7 +46,7 @@ find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
 
-option(WORKCELL_BUILD_COMMISSIONING_CAPABILITY "Build simulator-only MoveIt 2.5.9 cancellation correction" OFF)
+option(WORKCELL_BUILD_COMMISSIONING_CAPABILITY "Build simulator-only reviewed MoveIt 2.5.9/2.5.10 cancellation correction" OFF)
 if(WORKCELL_BUILD_COMMISSIONING_CAPABILITY)
   find_package(moveit_ros_move_group REQUIRED)
   if(NOT moveit_ros_move_group_VERSION VERSION_EQUAL "2.5.9" AND

@@ -1,4 +1,4 @@
-# Simulator commissioning ExecuteTrajectory capability (MoveIt 2.5.9)
+# Simulator commissioning ExecuteTrajectory capability (MoveIt 2.5.9 / 2.5.10)
 
 This opt-in correction keeps the existing MoveIt trajectory execution manager
 (TEM), controller manager, controller handles and `/execute_trajectory` action.
@@ -29,7 +29,7 @@ during start is acknowledged promptly and forwarded when TEM start returns.
 Cancellation before start prevents start. Stop and completion synchronize
 before the single terminal transition. After TEM's result wait and join, a read-only observer queries the exact newly
 active controller goal's immutable GetResult response. Missing or ambiguous
-goal identity fails closed. The existing 2.5.9 handle's cached PREEMPTED status
+goal identity fails closed. The reviewed 2.5.9/2.5.10 handle's cached PREEMPTED status
 is insufficient: its late cancel acknowledgement can overwrite natural success.
 TEM's cancel acknowledgement alone is never stop evidence. Natural success remains success. Shutdown rejects new
 work, requests stop and joins workers; no detached threads are used.
@@ -166,7 +166,7 @@ per-session world; the tracked source world contains neither.
 
 For portability across the two development workstations, the runner no longer
 trusts a historical machine-specific capability binary. It rebuilds the pinned
-MoveIt 2.5.9 commissioning capability from the current tracked sources, runs its
+reviewed MoveIt 2.5.9/2.5.10 commissioning capability from the current tracked sources, runs its
 action tests, then performs a **fresh moving-cancellation qualification on that
 exact binary** before telemetry, retention, contact-release or full-cycle
 evidence may authorize the next gate. All prerequisite summaries and the final

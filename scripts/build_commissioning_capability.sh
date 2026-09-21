@@ -10,7 +10,8 @@ cmake -S "$repo/workcell_builder/workcell_builder" -B "$build" \
   -DWORKCELL_BUILD_COMMISSIONING_CAPABILITY=ON \
   -DWORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK=ON
 
-if ! cmake --build "$build" --target help | grep -q 'workcell_simulator_measurements'; then
+targets=$(cmake --build "$build" --target help)
+if ! grep -q 'workcell_simulator_measurements' <<<"$targets"; then
   echo "ERROR: workcell_simulator_measurements target is unavailable." >&2
   echo "Fortress/ignition-gazebo6 development files must be discoverable by CMake." >&2
   exit 41
