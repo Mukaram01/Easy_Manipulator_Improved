@@ -335,6 +335,11 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                         "reason": evaluation.get("reason"),
                     })
                     result["readiness"]["checks"] = checks
+                    if evaluation.get("stop_search"):
+                        return _readiness(
+                            result, "BLOCKED",
+                            evaluation.get("reason_code") or "SEARCH_BUDGET_EXHAUSTED",
+                            evaluation.get("reason") or "Candidate search budget exhausted.")
                     if success:
                         grasp_resolution.update(selected_strategy_ref=strategy,
                                                 selected_object_id=observation["id"],
