@@ -150,6 +150,19 @@ public:
       const bool allow_initial_separation =
         data["allow_initial_attached_world_separation"] &&
         data["allow_initial_attached_world_separation"].as<bool>();
+      std::set<std::string> requested_initial_neighbors;
+      if (data["initial_separation_object_ids"]) {
+        if (!data["initial_separation_object_ids"].IsSequence())
+          return fail("CARTESIAN_PATH_INITIAL_SEPARATION_IDS_INVALID");
+        for (const auto& item:data["initial_separation_object_ids"]) {
+          const auto id=item.as<std::string>();
+          if (id.empty())
+            return fail("CARTESIAN_PATH_INITIAL_SEPARATION_ID_EMPTY");
+          requested_initial_neighbors.insert(id);
+        }
+      }
+      if (allow_initial_separation && requested_initial_neighbors.empty())
+        return fail("CARTESIAN_PATH_INITIAL_SEPARATION_IDS_MISSING");
       planning_scene::PlanningScenePtr separation_scene;
       std::string carried_id;
       Eigen::Isometry3d carried_origin=Eigen::Isometry3d::Identity();
@@ -188,12 +201,14 @@ public:
                 contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
               if (!forward && !reverse)
                 return fail("CARTESIAN_PATH_INITIAL_COLLISION_NOT_CARRIED_WORLD_CONTACT");
+              const auto neighbor=forward ? contact.body_name_2 : contact.body_name_1;
+              if (!requested_initial_neighbors.count(neighbor))
+                return fail("CARTESIAN_PATH_INITIAL_COLLISION_NOT_MEASURED_PILE_CONTACT");
               if (!std::isfinite(contact.depth) || contact.depth<0. ||
                   contact.depth>support_contact_tolerance_m ||
                   !contact.pos.allFinite() || !contact.normal.allFinite())
                 return fail("CARTESIAN_PATH_INITIAL_CONTACT_OUTSIDE_NUMERICAL_TOLERANCE");
-              certified_initial_neighbors.insert(
-                forward ? contact.body_name_2 : contact.body_name_1);
+              certified_initial_neighbors.insert(neighbor);
             }
           }
 
