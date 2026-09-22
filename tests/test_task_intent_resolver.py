@@ -303,6 +303,27 @@ def test_observation_filtering_is_deterministic():
     assert seen[0] == "epd::bottle-2"
 
 
+def test_missing_confidence_pile_targets_prioritize_exposed_top_surface():
+    resolver = resolver_module()
+    intent = valid_intent()
+    intent["pick"]["selection"]["object_filter"]["min_confidence"] = None
+    low = dict(observations()[0], id="runtime::part_00", confidence=None,
+               pose=[0.4, -0.1, 0.10, 0.0, 0.0, 0.0, 1.0])
+    high = dict(observations()[0], id="runtime::part_09", confidence=None,
+                pose=[0.4, -0.1, 0.40, 0.0, 0.0, 0.0, 1.0])
+    seen = []
+
+    def evaluator(request):
+        seen.append(request["observation"]["id"])
+        return pass_cycle(request)
+
+    result = resolver.resolve_task_intent(
+        intent, environment(), cell(), [low, high], evaluator, now=100.0)
+    assert result["readiness_status"] == "READY"
+    assert result["grasp_resolution"]["selected_object_id"] == "runtime::part_09"
+    assert seen == ["runtime::part_09"]
+
+
 def test_yaml_json_resolution_artifacts_are_semantically_equal(tmp_path):
     resolver = resolver_module()
     result = resolver.resolve_task_intent(
