@@ -587,9 +587,25 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         failed_stage = next((check.get('failed_stage') or check.get('code')
                              for check in reversed(result.checks)
                              if check.get('status') in ('FAIL', 'BLOCKED')), None)
+        approach_ik = None
+        if result.success:
+            approach_ik = result.cycle['steps'][0]['metadata'].get('approach_ik')
+        else:
+            # Discovery may prove a concrete approach IK branch and then use up
+            # its fair wall-clock slice later in the cycle. Preserve that
+            # already-proven branch for the retry instead of asking IK/OMPL to
+            # sample a different stochastic approach from scratch.
+            approach_stage = next((
+                stage for stage in result.stages
+                if stage.get('stage') == 'PREPLAN_APPROACH'
+                and stage.get('success') is True
+                and stage.get('approach_ik') is not None
+            ), None)
+            if approach_stage is not None:
+                approach_ik = copy.deepcopy(approach_stage['approach_ik'])
         return {'success': result.success, 'checks': result.checks,
                 'reason_code': result.reason_code, 'reason': result.reason,
-                'approach_ik': result.cycle['steps'][0]['metadata'].get('approach_ik') if result.success else None,
+                'approach_ik': approach_ik,
                 'retryable': preplan_retryable_failure(result),
                 'stop_search': result.reason_code == 'SEARCH_BUDGET_EXHAUSTED',
                 'progress_passes': progress_passes,
@@ -704,10 +720,20 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                     key = request_key(request)
                     cached = evaluation_cache.get(key)
                     if key == selected_key:
+                        retry_request = copy.deepcopy(request)
+                        # Bind the exact approach IK branch that discovery
+                        # already proved for this same candidate/scene. This is
+                        # a seed/branch identity only; the retry still performs
+                        # a fresh collision-aware MoveGroup plan from home.
+                        if cached is not None and cached.get('approach_ik') is not None:
+                            retry_request['approach_ik'] = copy.deepcopy(cached['approach_ik'])
                         outcome = evaluate_once(
-                            request, search_pass=f'retry:{strategy}',
+                            retry_request, search_pass=f'retry:{strategy}',
                             planning_attempts=3, segment_time=float(planning_time),
                             candidate_budget=retry_candidate_budget)
+                        if (outcome.get('approach_ik') is None and cached is not None and
+                                cached.get('approach_ik') is not None):
+                            outcome['approach_ik'] = copy.deepcopy(cached['approach_ik'])
                         evaluation_cache[key] = copy.deepcopy(outcome)
                         return outcome
                     if cached is not None:
