@@ -318,6 +318,23 @@ def retryable_plan_failure(code):
     return code in (-2, -6)
 
 
+def preplan_retryable_failure(result):
+    """Return whether a failed preplan deserves a later identical planning retry.
+
+    Discovery must not spend repeated stochastic planning windows on one candidate
+    while later objects/strategies remain untested. Deterministic IK, collision,
+    geometry, corridor and task-constraint failures are terminal for that candidate.
+    """
+    if result.success:
+        return False
+    for check in reversed(result.checks):
+        if check.get('status') not in ('FAIL', 'BLOCKED'):
+            continue
+        return (check.get('failure_kind') == 'planning' and
+                retryable_plan_failure(check.get('moveit_code')))
+    return False
+
+
 class CandidateFailure(RuntimeError):
     def __init__(self, stage, reason):
         super().__init__(reason)
@@ -468,18 +485,40 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
 
 
 def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
-                        contract, operations, deadline, summary, resolved=None):
-    """The resolver selects; the existing preplanner alone proves feasibility."""
+                        contract, operations, deadline, summary, resolved=None,
+                        planning_time=3.0):
+    """Resolve with fair discovery, then spend retries only on stochastic failures.
+
+    A fresh resolve gives every candidate one bounded planning window before any
+    candidate receives an identical retry. Revalidation of an already-resolved
+    handoff keeps the historical full planning budget because it checks exactly
+    one bound candidate and is not a search.
+    """
     from task_intent_resolver import resolve_task_intent
     from full_cycle_preplanner import preplan_full_cycle
     cycles = {}
     resolution_reference_time = time.time()
+    evaluation_cache = {}
+    retryable = set()
+    discovery_time = min(float(planning_time), 1.0)
 
-    def evaluate(request):
+    def request_key(request):
+        destination = request['destination']
+        return (
+            request['strategy_ref'],
+            request['observation']['id'],
+            request['candidate'].candidate_id,
+            destination.get('id'),
+            tuple(destination.get('pose_xyz', ())),
+            tuple(destination.get('pose_rpy', ())),
+        )
+
+    def evaluate_once(request, *, search_pass, planning_attempts, segment_time):
         effective = dict(contract)
         if resolved is not None and request.get('approach_ik') is None:
             return dict(success=False, checks=[], reason_code='TASK_APPROACH_IK_UNBOUND',
-                        reason='Resolve and Generate the current approach IK branch before consumption.')
+                        reason='Resolve and Generate the current approach IK branch before consumption.',
+                        retryable=False)
         effective['approach_ik'] = request.get('approach_ik')
         grasp = request['intent']['pick']['grasp']
         place = request['intent']['place']['placement']
@@ -490,21 +529,98 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                          place_retreat_distance_m=place['retreat']['distance_m'],
                          placement_clearance_m=place['clearance_m'],
                          task_intent=request['intent'])
-        result = preplan_full_cycle(initial_scene=initial_scene,
-            observation=request['observation'], candidate=request['candidate'],
-            destination=request['destination'], contract=effective,
-            operations=operations, deadline=deadline)
+
+        # plan_segment is the injected MoveIt boundary and closes over this
+        # contract object. Temporarily bind search policy without changing the
+        # serialized grasp contract or the preplanner's physical semantics.
+        sentinel = object()
+        old_attempts = contract.get('_candidate_planning_attempts', sentinel)
+        old_time = contract.get('_candidate_planning_time', sentinel)
+        old_pass = contract.get('_candidate_search_pass', sentinel)
+        contract['_candidate_planning_attempts'] = planning_attempts
+        contract['_candidate_planning_time'] = segment_time
+        contract['_candidate_search_pass'] = search_pass
+        try:
+            result = preplan_full_cycle(initial_scene=initial_scene,
+                observation=request['observation'], candidate=request['candidate'],
+                destination=request['destination'], contract=effective,
+                operations=operations, deadline=deadline)
+        finally:
+            for key, old in (
+                    ('_candidate_planning_attempts', old_attempts),
+                    ('_candidate_planning_time', old_time),
+                    ('_candidate_search_pass', old_pass)):
+                if old is sentinel:
+                    contract.pop(key, None)
+                else:
+                    contract[key] = old
+
         summary['candidate_attempts'].append({
             'candidate_id': result.candidate_id, 'object_id': request['observation']['id'],
-            'stages': result.stages, 'checks': result.checks, 'reason_code': result.reason_code})
+            'stages': result.stages, 'checks': result.checks, 'reason_code': result.reason_code,
+            'search_pass': search_pass, 'planning_attempts': planning_attempts,
+            'segment_planning_time': segment_time})
         if result.success:
             cycles[result.candidate_id, request['observation']['id']] = result.cycle
         return {'success': result.success, 'checks': result.checks,
                 'reason_code': result.reason_code, 'reason': result.reason,
-                'approach_ik': result.cycle['steps'][0]['metadata'].get('approach_ik') if result.success else None}
+                'approach_ik': result.cycle['steps'][0]['metadata'].get('approach_ik') if result.success else None,
+                'retryable': preplan_retryable_failure(result)}
 
-    resolution = resolve_task_intent(intent, environment, cell, targets, evaluate,
-                                     now=resolution_reference_time, resolved=resolved)
+    if resolved is not None:
+        resolution = resolve_task_intent(
+            intent, environment, cell, targets,
+            lambda request: evaluate_once(request, search_pass='revalidate',
+                                          planning_attempts=3, segment_time=float(planning_time)),
+            now=resolution_reference_time, resolved=resolved)
+        summary['candidate_search'] = {
+            'mode': 'resolved_revalidation',
+            'retry_pass_used': False,
+            'full_planning_time': float(planning_time),
+        }
+    else:
+        def discover(request):
+            key = request_key(request)
+            outcome = evaluate_once(request, search_pass='discovery',
+                                    planning_attempts=1, segment_time=discovery_time)
+            evaluation_cache[key] = copy.deepcopy(outcome)
+            if outcome.get('retryable'):
+                retryable.add(key)
+            return outcome
+
+        resolution = resolve_task_intent(
+            intent, environment, cell, targets, discover,
+            now=resolution_reference_time, resolved=None)
+        retry_used = False
+
+        # EXACT intentionally remains one evaluation of its one authored
+        # candidate. AUTO/PREFERRED may retry only stochastic failures, and
+        # only after the complete first-pass search has had its opportunity.
+        if (resolution['readiness_status'] == 'BLOCKED' and retryable and
+                intent['pick']['grasp']['policy'] != 'EXACT' and
+                time.monotonic() < deadline):
+            retry_used = True
+            def retry(request):
+                key = request_key(request)
+                cached = evaluation_cache.get(key)
+                if key not in retryable and cached is not None:
+                    return copy.deepcopy(cached)
+                return evaluate_once(request, search_pass='retry',
+                                     planning_attempts=3, segment_time=float(planning_time))
+
+            resolution = resolve_task_intent(
+                intent, environment, cell, targets, retry,
+                now=resolution_reference_time, resolved=None)
+
+        summary['candidate_search'] = {
+            'mode': 'fair_discovery_then_retry',
+            'discovery_planning_attempts': 1,
+            'discovery_planning_time': discovery_time,
+            'full_planning_time': float(planning_time),
+            'retryable_candidates': len(retryable),
+            'retry_pass_used': retry_used,
+        }
+
     summary['task_intent_resolution'] = resolution
     summary['normalized_intent_sha256'] = resolution['normalized_intent_sha256']
     summary['resolution_sha256'] = resolution['resolution_sha256']
@@ -670,7 +786,9 @@ def main():
     from geometry_msgs.msg import Pose, PoseStamped
     from moveit_msgs.action import MoveGroup, ExecuteTrajectory
     from moveit_msgs.msg import (PlanningScene, PlanningSceneComponents, Constraints,
-        JointConstraint, MotionPlanRequest)
+        JointConstraint, MotionPlanRequest, PositionConstraint, OrientationConstraint,
+        BoundingVolume)
+    from shape_msgs.msg import SolidPrimitive
     from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene, GetPositionFK, GetPositionIK, GetStateValidity
     from rcl_interfaces.srv import GetParameters
     from controller_manager_msgs.srv import ListHardwareComponents, ListControllers, ListHardwareInterfaces
@@ -963,14 +1081,80 @@ def main():
     def joint_constraints(values):
         return Constraints(joint_constraints=[JointConstraint(joint_name=n, position=float(v),
             tolerance_above=0.0001, tolerance_below=0.0001, weight=1.0) for n,v in values.items()])
-    def plan_segment(view, name, goal, group=None, straight=False, initial_support=None, ik_binding=None):
+
+    def cartesian_corridor_constraints(start, goal, frame_id, link_name, initial_support=None,
+                                       position_tolerance=0.0025, orientation_tolerance=0.005):
+        """Constrain OMPL itself to the same Cartesian tube verified afterwards."""
+        direction = [b-a for a, b in zip(start[:3], goal[:3])]
+        length = math.sqrt(sum(value*value for value in direction))
+        if length < 1e-12:
+            axis = [0.0, 0.0, 1.0]
+        else:
+            axis = [value/length for value in direction]
+        # Quaternion rotating +Z onto the corridor axis.
+        dot = max(-1.0, min(1.0, axis[2]))
+        if dot > 1.0 - 1e-12:
+            rotation = [0.0, 0.0, 0.0, 1.0]
+        elif dot < -1.0 + 1e-12:
+            rotation = [1.0, 0.0, 0.0, 0.0]
+        else:
+            raw = [-axis[1], axis[0], 0.0, 1.0 + dot]
+            norm = math.sqrt(sum(value*value for value in raw))
+            rotation = [value/norm for value in raw]
+
+        primitive = SolidPrimitive()
+        primitive.type = SolidPrimitive.CYLINDER
+        primitive.dimensions = [length + 2.0*position_tolerance, position_tolerance]
+        region_pose = Pose()
+        region_pose.position.x = (start[0] + goal[0]) / 2.0
+        region_pose.position.y = (start[1] + goal[1]) / 2.0
+        region_pose.position.z = (start[2] + goal[2]) / 2.0
+        (region_pose.orientation.x, region_pose.orientation.y,
+         region_pose.orientation.z, region_pose.orientation.w) = rotation
+
+        position = PositionConstraint()
+        position.header.frame_id = frame_id
+        position.link_name = link_name
+        position.constraint_region = BoundingVolume(
+            primitives=[primitive], primitive_poses=[region_pose])
+        position.weight = 1.0
+
+        orientation = OrientationConstraint()
+        orientation.header.frame_id = frame_id
+        orientation.link_name = link_name
+        (orientation.orientation.x, orientation.orientation.y,
+         orientation.orientation.z, orientation.orientation.w) = goal[3:]
+        # Quaternion Euclidean error 0.005 is approximately 0.01 rad.
+        angular_tolerance = 2.0 * orientation_tolerance
+        orientation.absolute_x_axis_tolerance = angular_tolerance
+        orientation.absolute_y_axis_tolerance = angular_tolerance
+        orientation.absolute_z_axis_tolerance = angular_tolerance
+        orientation.weight = 1.0
+
+        constraints = Constraints(
+            position_constraints=[position], orientation_constraints=[orientation])
+        if initial_support is not None:
+            constraints.name = 'workcell_initial_support_contact:' + json.dumps(
+                initial_support, sort_keys=True)
+        return constraints
+
+    def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
+                     ik_binding=None, cartesian_corridor=None):
         stage(name)
         if time.monotonic() > deadline:
             raise RuntimeError('candidate search budget exhausted')
+        planning_attempts = int(contract.get('_candidate_planning_attempts', 3))
+        planning_time = float(contract.get('_candidate_planning_time', args.segment_planning_time))
+        if planning_attempts < 1 or planning_attempts > 3:
+            raise RuntimeError('candidate planning attempts must be in [1, 3]')
+        if not math.isfinite(planning_time) or planning_time <= 0:
+            raise RuntimeError('candidate planning time must be finite and positive')
+        planning_time = min(planning_time, args.segment_planning_time,
+                            max(0.05, deadline-time.monotonic()))
         before = copy.deepcopy(view)
         request = MotionPlanRequest(group_name=group or contract['planning_group'],
             start_state=copy.deepcopy(view.robot_state), num_planning_attempts=1,
-            allowed_planning_time=args.segment_planning_time, max_velocity_scaling_factor=0.2, max_acceleration_scaling_factor=0.2)
+            allowed_planning_time=planning_time, max_velocity_scaling_factor=0.2, max_acceleration_scaling_factor=0.2)
         request.start_state.is_diff = False
         if isinstance(goal, dict):
             request.goal_constraints = [joint_constraints(goal)]
@@ -1005,7 +1189,10 @@ def main():
                                    floor_z=floor_contacts[0][1], tool_link=contract['tool_link'])
             for i in range(1, count+1):
                 waypoint = pose_message([x+(y-x)*i/count for x,y in zip(a[:3],b[:3])] + b[3:])
-                part = plan_segment(view, name, waypoint, group, initial_support=support if i == 1 else None)
+                part = plan_segment(
+                    view, name, waypoint, group,
+                    initial_support=support if i == 1 else None,
+                    cartesian_corridor=(a, b))
                 trajectory = part['trajectory']
                 for point in trajectory.joint_trajectory.points:
                     sample = updated_state(view.robot_state, dict(zip(trajectory.joint_trajectory.joint_names, point.positions)), mimics)
@@ -1065,7 +1252,11 @@ def main():
             request.goal_constraints = [joint_constraints({n:values[n] for n in contract['home_joint_names']})]
             goal_state = updated_state(view.robot_state,
                                        {n: values[n] for n in contract['home_joint_names']}, mimics)
-        if initial_support is not None:
+        if cartesian_corridor is not None:
+            request.path_constraints = cartesian_corridor_constraints(
+                cartesian_corridor[0], cartesian_corridor[1],
+                goal.header.frame_id or 'world', contract['tool_link'], initial_support)
+        elif initial_support is not None:
             request.path_constraints.name = 'workcell_initial_support_contact:' + json.dumps(initial_support, sort_keys=True)
         goal_msg = MoveGroup.Goal(request=request)
         goal_msg.planning_options.plan_only = True
@@ -1077,12 +1268,13 @@ def main():
         # planning window for a feasible fixed goal. Retry that identical
         # plan-only request, never a different candidate, target, policy,
         # start state, scene or execution action. All collision checks remain active.
-        for attempt in range(3):
+        for attempt in range(planning_attempts):
             try:
                 result = action(plan_client, goal_msg, 12)
                 break
             except MoveItActionFailure as exc:
-                if not retryable_plan_failure(exc.code) or attempt == 2 or time.monotonic() >= deadline:
+                if (not retryable_plan_failure(exc.code) or
+                        attempt == planning_attempts - 1 or time.monotonic() >= deadline):
                     from full_cycle_preplanner import MotionFeasibilityFailure
                     # For a failed short Cartesian segment this is its first
                     # rejected waypoint. No invalid state is applied or executed.
@@ -1094,7 +1286,8 @@ def main():
                     raise MotionFeasibilityFailure(str(exc), moveit_code=exc.code, contacts=contacts) from exc
                 summary.setdefault('planning_retries', []).append(
                     {'stage': name, 'moveit_code': exc.code, 'attempt': attempt + 1,
-                     'retry_kind': 'timed_out' if exc.code == -6 else 'invalid_motion_plan'})
+                     'retry_kind': 'timed_out' if exc.code == -6 else 'invalid_motion_plan',
+                     'search_pass': contract.get('_candidate_search_pass', 'normal')})
         trajectory = result.planned_trajectory
         if not trajectory.joint_trajectory.points:
             raise RuntimeError('MoveIt returned empty trajectory')
@@ -1109,6 +1302,7 @@ def main():
         return dict(kind='motion', stage=name, before=before, after=after, trajectory=trajectory,
                     metadata=dict(stage=name, success=True, moveit_code=result.error_code.val,
                         planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
+                        allowed_planning_time=planning_time, planning_attempts=planning_attempts,
                         **({'approach_ik': copy.deepcopy(ik_binding) if ik_binding is not None else approach_ik_binding(goal, contract, values)}
                            if name == 'PREPLAN_APPROACH' and not isinstance(goal, dict) else {}),
                         attached_ids=[o.object.id for o in view.robot_state.attached_collision_objects],
@@ -1237,7 +1431,8 @@ def main():
         if authored:
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,
-                deadline=deadline, summary=summary, resolved=expected_resolution)
+                deadline=deadline, summary=summary, resolved=expected_resolution,
+                planning_time=args.segment_planning_time)
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')
