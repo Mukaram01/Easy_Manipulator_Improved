@@ -496,19 +496,21 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     handoff keeps the historical full planning budget because it checks exactly
     one bound candidate and is not a search.
     """
-    from task_intent_resolver import resolve_task_intent
+    from task_intent_resolver import resolve_task_intent, STRATEGY_ORDER
     from full_cycle_preplanner import preplan_full_cycle
     cycles = {}
     resolution_reference_time = time.time()
     evaluation_cache = {}
     discovery_order = {}
-    retryable = set()
-    discovery_time = min(float(planning_time), 1.0)
-    # Fairness is wall-clock, not just per-MoveIt-request. Straight extraction
-    # can contain many 5 mm waypoint plans, so one candidate otherwise can still
-    # monopolize the whole 300 s resolver budget even with a 1 s request limit.
-    discovery_candidate_budget = 1.5
-    retry_candidate_budget = 30.0
+    discovery_time = min(float(planning_time), 0.75)
+    # The resolver is intentionally phased by strategy. A PREFERRED strategy
+    # gets a real bounded chance before fallback discovery, rather than paying
+    # to sample every fallback candidate first. These bounds are chosen so the
+    # complete current 10-part / 130-candidate Stage-A search can still sample
+    # every strategy and retry a small progress-ranked beam inside 300 s.
+    discovery_candidate_budget = 0.75
+    retry_candidate_budget = 20.0
+    retry_beam_width = 3
 
     def request_key(request):
         destination = request['destination']
@@ -606,62 +608,117 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             'full_planning_time': float(planning_time),
         }
     else:
-        def discover(request):
-            key = request_key(request)
-            if key not in discovery_order:
-                discovery_order[key] = len(discovery_order)
-            outcome = evaluate_once(request, search_pass='discovery',
-                                    planning_attempts=1, segment_time=discovery_time,
-                                    candidate_budget=discovery_candidate_budget)
-            evaluation_cache[key] = copy.deepcopy(outcome)
-            if outcome.get('retryable'):
-                retryable.add(key)
-            return outcome
+        grasp_policy = intent['pick']['grasp']['policy']
+        requested_strategy = intent['pick']['grasp'].get('strategy_ref')
+        if grasp_policy == 'EXACT':
+            strategy_phases = [requested_strategy]
+        elif grasp_policy == 'PREFERRED':
+            strategy_phases = [requested_strategy] + [
+                strategy for strategy in STRATEGY_ORDER if strategy != requested_strategy]
+        else:
+            strategy_phases = list(STRATEGY_ORDER)
 
-        resolution = resolve_task_intent(
-            intent, environment, cell, targets, discover,
-            now=resolution_reference_time, resolved=None)
-        retry_used = False
-
-        # EXACT intentionally remains one evaluation of its one authored
-        # candidate. AUTO/PREFERRED retries only stochastic/slice failures after
-        # discovery, but not in raw candidate enumeration order. Retry the
-        # candidates that proved the deepest complete-cycle progress first.
-        # This prevents shallow pregrasp timeouts from consuming the remaining
-        # global budget before a candidate that already reached grasp/lift.
-        retry_priority = sorted(
-            retryable,
-            key=lambda key: (-evaluation_cache[key].get('progress_passes', 0),
-                             discovery_order.get(key, 1 << 30)))
         retry_attempted = []
-        if (resolution['readiness_status'] == 'BLOCKED' and retry_priority and
-                intent['pick']['grasp']['policy'] != 'EXACT' and
-                time.monotonic() < deadline):
-            retry_used = True
-            for selected_key in retry_priority:
+        phase_evidence = []
+        resolution = None
+        stop_all = False
+
+        def phase_boundary(strategy):
+            return {
+                'success': False,
+                'checks': [],
+                'reason_code': 'STRATEGY_PHASE_COMPLETE',
+                'reason': f'Bounded discovery for {strategy} is complete; retry before fallback.',
+                'retryable': False,
+                'stop_search': True,
+                'progress_passes': 0,
+                'failed_stage': None,
+            }
+
+        for phase_index, strategy in enumerate(strategy_phases):
+            phase_retryable = set()
+            phase_discovered = []
+
+            def discover(request, strategy=strategy):
+                key = request_key(request)
+                cached = evaluation_cache.get(key)
+                if request['strategy_ref'] != strategy:
+                    if cached is not None:
+                        return copy.deepcopy(cached)
+                    return phase_boundary(strategy)
+                if cached is not None:
+                    return copy.deepcopy(cached)
+                if key not in discovery_order:
+                    discovery_order[key] = len(discovery_order)
+                outcome = evaluate_once(
+                    request, search_pass=f'discovery:{strategy}',
+                    planning_attempts=1, segment_time=discovery_time,
+                    candidate_budget=discovery_candidate_budget)
+                evaluation_cache[key] = copy.deepcopy(outcome)
+                phase_discovered.append(key)
+                if outcome.get('retryable'):
+                    phase_retryable.add(key)
+                return outcome
+
+            resolution = resolve_task_intent(
+                intent, environment, cell, targets, discover,
+                now=resolution_reference_time, resolved=None)
+
+            phase_record = {
+                'strategy_ref': strategy,
+                'phase_index': phase_index,
+                'discovered_candidates': len(phase_discovered),
+                'retryable_candidates': len(phase_retryable),
+                'discovery_status': resolution['readiness_status'],
+                'discovery_code': resolution['readiness']['primary_code'],
+                'retry_priority': [],
+                'retries': [],
+            }
+            phase_evidence.append(phase_record)
+
+            if resolution['readiness_status'] in ('READY', 'WARNING'):
+                break
+            if resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED':
+                stop_all = True
+                break
+            if grasp_policy == 'EXACT':
+                break
+
+            retry_priority = sorted(
+                phase_retryable,
+                key=lambda key: (-evaluation_cache[key].get('progress_passes', 0),
+                                 discovery_order.get(key, 1 << 30)))
+            phase_record['retry_priority'] = [
+                {'strategy_ref': key[0], 'object_id': key[1], 'candidate_id': key[2],
+                 'progress_passes': evaluation_cache[key].get('progress_passes', 0),
+                 'failed_stage': evaluation_cache[key].get('failed_stage')}
+                for key in retry_priority
+            ]
+
+            for selected_key in retry_priority[:retry_beam_width]:
                 if time.monotonic() >= deadline:
+                    stop_all = True
                     break
 
-                def retry(request, selected_key=selected_key):
+                def retry(request, selected_key=selected_key, strategy=strategy):
                     key = request_key(request)
                     cached = evaluation_cache.get(key)
-                    if key != selected_key:
-                        return copy.deepcopy(cached) if cached is not None else {
-                            'success': False, 'checks': [],
-                            'reason_code': 'CANDIDATE_NOT_DISCOVERED',
-                            'reason': 'Candidate was not part of the completed discovery pass.'}
-                    outcome = evaluate_once(
-                        request, search_pass='retry',
-                        planning_attempts=3, segment_time=float(planning_time),
-                        candidate_budget=retry_candidate_budget)
-                    evaluation_cache[key] = copy.deepcopy(outcome)
-                    return outcome
+                    if key == selected_key:
+                        outcome = evaluate_once(
+                            request, search_pass=f'retry:{strategy}',
+                            planning_attempts=3, segment_time=float(planning_time),
+                            candidate_budget=retry_candidate_budget)
+                        evaluation_cache[key] = copy.deepcopy(outcome)
+                        return outcome
+                    if cached is not None:
+                        return copy.deepcopy(cached)
+                    return phase_boundary(strategy)
 
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, retry,
                     now=resolution_reference_time, resolved=None)
                 current = evaluation_cache.get(selected_key, {})
-                retry_attempted.append({
+                attempt = {
                     'strategy_ref': selected_key[0],
                     'object_id': selected_key[1],
                     'candidate_id': selected_key[2],
@@ -669,27 +726,35 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                     'failed_stage': current.get('failed_stage'),
                     'result_status': resolution['readiness_status'],
                     'result_code': resolution['readiness']['primary_code'],
-                })
+                }
+                phase_record['retries'].append(copy.deepcopy(attempt))
+                retry_attempted.append(attempt)
+
                 if resolution['readiness_status'] in ('READY', 'WARNING'):
                     break
+                if resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED':
+                    stop_all = True
+                    break
+
+            if resolution['readiness_status'] in ('READY', 'WARNING') or stop_all:
+                break
 
         summary['candidate_search'] = {
-            'mode': 'fair_discovery_then_progress_retry',
+            'mode': 'strategy_phased_progress_beam',
+            'strategy_phases': strategy_phases,
             'discovery_planning_attempts': 1,
             'discovery_planning_time': discovery_time,
             'discovery_candidate_wall_budget': discovery_candidate_budget,
             'retry_candidate_wall_budget': retry_candidate_budget,
+            'retry_beam_width': retry_beam_width,
             'full_planning_time': float(planning_time),
-            'retryable_candidates': len(retryable),
-            'retry_priority': [
-                {'strategy_ref': key[0], 'object_id': key[1], 'candidate_id': key[2],
-                 'progress_passes': evaluation_cache[key].get('progress_passes', 0),
-                 'failed_stage': evaluation_cache[key].get('failed_stage')}
-                for key in retry_priority
-            ],
+            'phases': phase_evidence,
             'retry_attempted': retry_attempted,
-            'retry_pass_used': retry_used,
+            'retry_pass_used': bool(retry_attempted),
         }
+
+        if resolution is None:
+            raise RuntimeError('candidate strategy search produced no resolution')
 
     summary['task_intent_resolution'] = resolution
     summary['normalized_intent_sha256'] = resolution['normalized_intent_sha256']
