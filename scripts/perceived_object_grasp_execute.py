@@ -565,7 +565,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         return {'success': result.success, 'checks': result.checks,
                 'reason_code': result.reason_code, 'reason': result.reason,
                 'approach_ik': result.cycle['steps'][0]['metadata'].get('approach_ik') if result.success else None,
-                'retryable': preplan_retryable_failure(result)}
+                'retryable': preplan_retryable_failure(result),
+                'stop_search': result.reason_code == 'SEARCH_BUDGET_EXHAUSTED'}
 
     if resolved is not None:
         resolution = resolve_task_intent(
@@ -1142,15 +1143,19 @@ def main():
                      ik_binding=None, cartesian_corridor=None):
         stage(name)
         if time.monotonic() > deadline:
-            raise RuntimeError('candidate search budget exhausted')
+            from full_cycle_preplanner import SearchBudgetExhausted
+            raise SearchBudgetExhausted('candidate search budget exhausted')
         planning_attempts = int(contract.get('_candidate_planning_attempts', 3))
         planning_time = float(contract.get('_candidate_planning_time', args.segment_planning_time))
         if planning_attempts < 1 or planning_attempts > 3:
             raise RuntimeError('candidate planning attempts must be in [1, 3]')
         if not math.isfinite(planning_time) or planning_time <= 0:
             raise RuntimeError('candidate planning time must be finite and positive')
-        planning_time = min(planning_time, args.segment_planning_time,
-                            max(0.05, deadline-time.monotonic()))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            from full_cycle_preplanner import SearchBudgetExhausted
+            raise SearchBudgetExhausted('candidate search budget exhausted')
+        planning_time = min(planning_time, args.segment_planning_time, remaining)
         before = copy.deepcopy(view)
         request = MotionPlanRequest(group_name=group or contract['planning_group'],
             start_state=copy.deepcopy(view.robot_state), num_planning_attempts=1,
