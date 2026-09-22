@@ -376,6 +376,7 @@ def _launch_setup(context):
             "planning_plugin": "ompl_interface/OMPLPlanner",
             "request_adapters": " ".join([
                 "workcell/InitialSupportContact",
+                "workcell/StraightCartesianPath",
                 "default_planner_request_adapters/AddTimeOptimalParameterization",
                 "default_planner_request_adapters/FixWorkspaceBounds",
                 "default_planner_request_adapters/FixStartStateBounds",
