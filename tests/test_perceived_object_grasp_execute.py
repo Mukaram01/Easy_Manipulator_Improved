@@ -196,7 +196,7 @@ def test_plan_segment_discovery_policy_does_not_retry_before_other_candidates():
     exec(compile(ast.Module(body=[segment], type_ignores=[]),
                  '<actual-plan-segment-discovery>', 'exec'), context)
 
-    with pytest.raises(MODULE.MotionFeasibilityFailure if hasattr(MODULE, 'MotionFeasibilityFailure') else RuntimeError):
+    with pytest.raises(RuntimeError, match='MoveIt action failed'):
         context['plan_segment'](
             initial, 'PREPLAN_APPROACH', {'arm': 0.5}, group='arm_group')
 
