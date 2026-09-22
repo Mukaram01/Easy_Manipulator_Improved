@@ -2,6 +2,9 @@
 #include <moveit/planning_request_adapter/planning_request_adapter.h>
 #include <moveit/robot_state/conversions.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
+#include <moveit/robot_state/cartesian_interpolator.h>
+#include <moveit/trajectory_processing/iterative_time_parameterization.h>
+#include <moveit/kinematic_constraints/kinematic_constraint.h>
 #include <geometric_shapes/shapes.h>
 #include <pluginlib/class_list_macros.hpp>
 #include <yaml-cpp/yaml.h>
@@ -12,6 +15,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <memory>
 
 namespace workcell {
 // Opt-in evidence at the innermost adapter boundary; never changes a request.
@@ -51,6 +56,179 @@ public:
     return ok;
   }
 };
+
+class StraightCartesianPath : public planning_request_adapter::PlanningRequestAdapter {
+public:
+  void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
+  std::string getDescription() const override {
+    return "Workcell straight Cartesian interpolation in the effective private planning scene";
+  }
+
+  static Eigen::Isometry3d parsePose(const YAML::Node& node) {
+    if (!node || !node.IsSequence() || node.size()!=7)
+      throw std::runtime_error("CARTESIAN_PATH_POSE_INVALID");
+    for (std::size_t i=0;i<7;++i)
+      if (!std::isfinite(node[i].as<double>()))
+        throw std::runtime_error("CARTESIAN_PATH_POSE_NONFINITE");
+    Eigen::Quaterniond q(node[6].as<double>(),node[3].as<double>(),
+                         node[4].as<double>(),node[5].as<double>());
+    if (q.norm()<1e-12) throw std::runtime_error("CARTESIAN_PATH_QUATERNION_INVALID");
+    q.normalize();
+    Eigen::Isometry3d result=Eigen::Isometry3d::Identity();
+    result.linear()=q.toRotationMatrix();
+    result.translation()=Eigen::Vector3d(
+      node[0].as<double>(),node[1].as<double>(),node[2].as<double>());
+    return result;
+  }
+
+  bool adaptAndPlan(const PlannerFn& planner,
+      const planning_scene::PlanningSceneConstPtr& scene,
+      const planning_interface::MotionPlanRequest& req,
+      planning_interface::MotionPlanResponse& res,
+      std::vector<std::size_t>&) const override {
+    const std::string prefix="workcell_cartesian_path:";
+    const YAML::Node* metadata_node=nullptr;
+    std::string metadata_text;
+    for (const auto& constraint:req.trajectory_constraints.constraints) {
+      if (constraint.name.compare(0,prefix.size(),prefix)==0) {
+        if (metadata_node) {
+          res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN;
+          res.trajectory_.reset();
+          return false;
+        }
+        metadata_text=constraint.name.substr(prefix.size());
+        metadata_node=reinterpret_cast<const YAML::Node*>(1);  // presence sentinel only
+      }
+    }
+    if (!metadata_node) return planner(scene,req,res);
+
+    const auto begin=std::chrono::steady_clock::now();
+    auto fail=[&](const char* why) {
+      RCLCPP_WARN(rclcpp::get_logger("workcell.cartesian_path"),"%s",why);
+      res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN;
+      res.trajectory_.reset();
+      res.planning_time_=std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-begin).count();
+      return false;
+    };
+
+    try {
+      const auto data=YAML::Load(metadata_text);
+      if (!data["schema"] || data["schema"].as<std::string>()!="workcell_cartesian_path/v1")
+        return fail("CARTESIAN_PATH_SCHEMA_INVALID");
+      const auto link_name=data["tool_link"].as<std::string>();
+      const double step=data["max_step_m"].as<double>();
+      if (!std::isfinite(step) || step<=0. || step>.01)
+        return fail("CARTESIAN_PATH_STEP_INVALID");
+
+      moveit::core::RobotState start(scene->getRobotModel());
+      start=scene->getCurrentState();
+      moveit::core::robotStateMsgToRobotState(req.start_state,start);
+      start.update();
+
+      const auto* jmg=start.getJointModelGroup(req.group_name);
+      const auto* link=start.getLinkModel(link_name);
+      if (!jmg || !link) return fail("CARTESIAN_PATH_BINDING_INVALID");
+
+      const Eigen::Isometry3d expected_start=parsePose(data["start_pose"]);
+      const Eigen::Isometry3d goal=parsePose(data["goal_pose"]);
+      const Eigen::Isometry3d actual_start=start.getGlobalLinkTransform(link);
+      const double start_translation_error=
+        (actual_start.translation()-expected_start.translation()).norm();
+      const double start_angle_error=Eigen::AngleAxisd(
+        actual_start.linear()*expected_start.linear().transpose()).angle();
+      if (start_translation_error>1e-5 || start_angle_error>1e-5)
+        return fail("CARTESIAN_PATH_START_CHANGED");
+
+      auto kset=std::make_shared<kinematic_constraints::KinematicConstraintSet>(
+        scene->getRobotModel());
+      kset->add(req.path_constraints,scene->getTransforms());
+
+      std::size_t collision_rejections=0;
+      std::size_t constraint_rejections=0;
+      moveit::core::GroupStateValidityCallbackFn valid=[
+        scene,kset,&collision_rejections,&constraint_rejections](
+          moveit::core::RobotState* state,
+          const moveit::core::JointModelGroup* group,
+          const double* solution) {
+        state->setJointGroupPositions(group,solution);
+        state->update();
+        if (scene->isStateColliding(*state,group->getName())) {
+          ++collision_rejections;
+          return false;
+        }
+        if (!kset->empty() && !kset->decide(*state).satisfied) {
+          ++constraint_rejections;
+          return false;
+        }
+        return true;
+      };
+
+      EigenSTL::vector_Isometry3d waypoints{goal};
+      std::vector<moveit::core::RobotStatePtr> states;
+      const double fraction=moveit::core::CartesianInterpolator::computeCartesianPath(
+        &start,jmg,states,link,waypoints,true,
+        moveit::core::MaxEEFStep(step),
+        moveit::core::JumpThreshold(0.0),valid);
+      if (!std::isfinite(fraction) || fraction<1.0-1e-9) {
+        RCLCPP_WARN(
+          rclcpp::get_logger("workcell.cartesian_path"),
+          "CARTESIAN_PATH_INCOMPLETE fraction=%.9f collision_rejections=%zu constraint_rejections=%zu",
+          fraction,collision_rejections,constraint_rejections);
+        return fail("CARTESIAN_PATH_INCOMPLETE");
+      }
+
+      auto trajectory=std::make_shared<robot_trajectory::RobotTrajectory>(
+        scene->getRobotModel(),req.group_name);
+      trajectory->addSuffixWayPoint(start,0.0);
+      for (const auto& state:states) {
+        if (!state) return fail("CARTESIAN_PATH_STATE_MISSING");
+        if (trajectory->getLastWayPoint().distance(*state)>1e-12)
+          trajectory->addSuffixWayPoint(*state,0.0);
+      }
+      if (trajectory->getWayPointCount()<2)
+        return fail("CARTESIAN_PATH_EMPTY");
+
+      trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
+      const double velocity=(req.max_velocity_scaling_factor>0. &&
+                             req.max_velocity_scaling_factor<=1.)
+                              ? req.max_velocity_scaling_factor : 0.2;
+      const double acceleration=(req.max_acceleration_scaling_factor>0. &&
+                                 req.max_acceleration_scaling_factor<=1.)
+                                  ? req.max_acceleration_scaling_factor : 0.2;
+      if (!time_parameterization.computeTimeStamps(
+            *trajectory,velocity,acceleration))
+        return fail("CARTESIAN_PATH_TIMING_FAILED");
+
+      // Final fail-closed validation over every emitted state in the exact
+      // effective private scene. The Python runtime independently performs a
+      // denser FK corridor audit after this adapter returns.
+      for (std::size_t i=0;i<trajectory->getWayPointCount();++i) {
+        const auto& state=trajectory->getWayPoint(i);
+        if (scene->isStateColliding(state,req.group_name))
+          return fail("CARTESIAN_PATH_EMITTED_COLLISION");
+        if (!kset->empty() && !kset->decide(state).satisfied)
+          return fail("CARTESIAN_PATH_EMITTED_CONSTRAINT_FAILURE");
+      }
+
+      res.trajectory_=trajectory;
+      res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+      res.planning_time_=std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-begin).count();
+      RCLCPP_INFO(
+        rclcpp::get_logger("workcell.cartesian_path"),
+        "CARTESIAN_PATH_PASS points=%zu step=%.4f collision_rejections=%zu constraint_rejections=%zu",
+        trajectory->getWayPointCount(),step,collision_rejections,constraint_rejections);
+      return true;
+    } catch (const std::exception& e) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("workcell.cartesian_path"),
+        "CARTESIAN_PATH_REJECTED: %s",e.what());
+      return fail("CARTESIAN_PATH_REJECTED");
+    }
+  }
+};
+
 class InitialSupportContact : public planning_request_adapter::PlanningRequestAdapter {
 public:
   void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
@@ -157,6 +335,7 @@ public:
   }
 };
 }
+PLUGINLIB_EXPORT_CLASS(workcell::StraightCartesianPath, planning_request_adapter::PlanningRequestAdapter)
 PLUGINLIB_EXPORT_CLASS(workcell::InitialSupportContact, planning_request_adapter::PlanningRequestAdapter)
 PLUGINLIB_EXPORT_CLASS(workcell::PlanningEvidence, planning_request_adapter::PlanningRequestAdapter)
 
