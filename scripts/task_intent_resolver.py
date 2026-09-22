@@ -88,6 +88,24 @@ def _vector(value, size):
             and all(_finite(item) for item in value))
 
 
+def _observation_priority(item):
+    """Prefer confidence, then physically exposed/high targets, then stable ID.
+
+    Missing-confidence simulator/perception observations previously fell back to
+    lexical IDs, which makes a piled-bin search spend its budget on buried
+    objects first. Height is only a deterministic search-order hint: complete
+    collision-aware cycle planning remains the acceptance authority.
+    """
+    try:
+        from perceived_object_grasp_plan import build_grasp_target, oriented_box_extents
+        z_extent = oriented_box_extents(build_grasp_target(item))[2]
+        top_z = float(item["pose"][2]) + float(z_extent) / 2.0
+    except (KeyError, TypeError, ValueError, IndexError):
+        top_z = float(item.get("pose", [0.0, 0.0, -math.inf])[2])
+    confidence = item.get("confidence")
+    return (confidence is None, -(confidence or 0.0), -top_z, item["id"])
+
+
 def _eligible_observations(observations, filters, now):
     eligible = []
     for observation in observations:
@@ -112,7 +130,7 @@ def _eligible_observations(observations, filters, now):
                for key in ("class_id", "color")):
             continue
         eligible.append(copy.deepcopy(observation))
-    return sorted(eligible, key=lambda item: (item["confidence"] is None, -(item["confidence"] or 0.0), item["id"]))
+    return sorted(eligible, key=_observation_priority)
 
 
 def select_observations(intent, environment, observations, now):
