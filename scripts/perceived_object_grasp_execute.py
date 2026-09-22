@@ -1168,19 +1168,23 @@ def main():
     def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
                      ik_binding=None, cartesian_corridor=None):
         stage(name)
-        if time.monotonic() > deadline:
-            from full_cycle_preplanner import SearchBudgetExhausted
-            raise SearchBudgetExhausted('candidate search budget exhausted')
+        wall_deadline = min(deadline, float(contract.get('_candidate_wall_deadline', deadline)))
+        def wall_budget_failure():
+            from full_cycle_preplanner import SearchBudgetExhausted, CandidateBudgetExhausted
+            if time.monotonic() >= deadline:
+                return SearchBudgetExhausted('candidate search budget exhausted')
+            return CandidateBudgetExhausted('candidate wall-clock slice exhausted')
+        if time.monotonic() > wall_deadline:
+            raise wall_budget_failure()
         planning_attempts = int(contract.get('_candidate_planning_attempts', 3))
         planning_time = float(contract.get('_candidate_planning_time', args.segment_planning_time))
         if planning_attempts < 1 or planning_attempts > 3:
             raise RuntimeError('candidate planning attempts must be in [1, 3]')
         if not math.isfinite(planning_time) or planning_time <= 0:
             raise RuntimeError('candidate planning time must be finite and positive')
-        remaining = deadline - time.monotonic()
+        remaining = wall_deadline - time.monotonic()
         if remaining <= 0:
-            from full_cycle_preplanner import SearchBudgetExhausted
-            raise SearchBudgetExhausted('candidate search budget exhausted')
+            raise wall_budget_failure()
         planning_time = min(planning_time, args.segment_planning_time, remaining)
         before = copy.deepcopy(view)
         request = MotionPlanRequest(group_name=group or contract['planning_group'],
@@ -1304,8 +1308,10 @@ def main():
                 result = action(plan_client, goal_msg, 12)
                 break
             except MoveItActionFailure as exc:
+                if time.monotonic() >= wall_deadline:
+                    raise wall_budget_failure() from exc
                 if (not retryable_plan_failure(exc.code) or
-                        attempt == planning_attempts - 1 or time.monotonic() >= deadline):
+                        attempt == planning_attempts - 1):
                     from full_cycle_preplanner import MotionFeasibilityFailure
                     # For a failed short Cartesian segment this is its first
                     # rejected waypoint. No invalid state is applied or executed.
