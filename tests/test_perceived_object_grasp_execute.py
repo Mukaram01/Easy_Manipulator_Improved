@@ -146,11 +146,73 @@ def test_plan_segment_timeout_retry_reuses_identical_private_request():
     assert goals[0] == goals[1] == goals[2]
     assert initial == original
     assert summary['planning_retries'] == [
-        {'stage':'PREPLAN_APPROACH','moveit_code':-6,'attempt':1,'retry_kind':'timed_out'},
-        {'stage':'PREPLAN_APPROACH','moveit_code':-6,'attempt':2,'retry_kind':'timed_out'},
+        {'stage':'PREPLAN_APPROACH','moveit_code':-6,'attempt':1,'retry_kind':'timed_out',
+         'search_pass':'normal'},
+        {'stage':'PREPLAN_APPROACH','moveit_code':-6,'attempt':2,'retry_kind':'timed_out',
+         'search_pass':'normal'},
     ]
     assert result['metadata']['success'] is True
+    assert result['metadata']['planning_attempts'] == 3
+    assert result['metadata']['allowed_planning_time'] == pytest.approx(3.0)
     assert result['after'].robot_state.joint_state.position == pytest.approx([0.5])
+
+
+def test_plan_segment_discovery_policy_does_not_retry_before_other_candidates():
+    """The unresolved discovery pass gets exactly one bounded planning window."""
+    import ast
+    import copy
+    import time
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import (
+        Constraints, JointConstraint, MotionPlanRequest, PlanningScene, RobotState)
+    from sensor_msgs.msg import JointState
+
+    tree = ast.parse(SCRIPT.read_text())
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    segment = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'plan_segment')
+
+    initial = PlanningScene(robot_state=RobotState(
+        joint_state=JointState(name=['arm'], position=[0.0])))
+    goals = []
+    def action(client, goal, timeout):
+        goals.append(copy.deepcopy(goal))
+        raise MODULE.MoveItActionFailure(6, -6)
+
+    contract = {
+        'planning_group':'arm_group', 'home_joint_names':['arm'], 'tool_link':'tcp',
+        '_candidate_planning_attempts':1, '_candidate_planning_time':1.0,
+        '_candidate_search_pass':'discovery',
+    }
+    summary = {}
+    context = dict(
+        vars(MODULE),
+        copy=copy, time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
+        stage=lambda name: None, deadline=time.monotonic()+10, contract=contract,
+        args=SimpleNamespace(segment_planning_time=3.), mimics=[], initial=initial,
+        plan_client=object(), action=action, trace=lambda *args: None, summary=summary,
+        joint_constraints=lambda values: Constraints(joint_constraints=[
+            JointConstraint(joint_name=n, position=v, tolerance_above=.0001,
+                            tolerance_below=.0001, weight=1.) for n, v in values.items()]))
+    exec(compile(ast.Module(body=[segment], type_ignores=[]),
+                 '<actual-plan-segment-discovery>', 'exec'), context)
+
+    with pytest.raises(MODULE.MotionFeasibilityFailure if hasattr(MODULE, 'MotionFeasibilityFailure') else RuntimeError):
+        context['plan_segment'](
+            initial, 'PREPLAN_APPROACH', {'arm': 0.5}, group='arm_group')
+
+    assert len(goals) == 1
+    assert summary.get('planning_retries', []) == []
+    assert goals[0].request.allowed_planning_time == pytest.approx(1.0)
+
+
+def test_straight_segments_bind_ompl_to_cartesian_corridor_before_postcheck():
+    source = SCRIPT.read_text()
+    assert 'cartesian_corridor=(a, b)' in source
+    assert 'request.path_constraints = cartesian_corridor_constraints(' in source
+    assert 'PositionConstraint()' in source
+    assert 'OrientationConstraint()' in source
+    # Keep the independent trajectory-point verification as a second guard.
+    assert 'pose_within_cartesian_corridor(actual_pose, a, b)' in source
 
 
 def test_fake_hardware_guard_requires_moveit_flag_and_mock_component():
