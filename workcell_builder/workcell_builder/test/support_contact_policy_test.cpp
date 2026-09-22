@@ -190,11 +190,27 @@ struct SupportFixture {
     const auto& state=scene->getCurrentState();
     const auto* body=state.getAttachedBody("part");
     ASSERT_NE(body,nullptr);
-    const double bottom=body->getGlobalPose().translation().z()-.0125;
+    ASSERT_EQ(body->getGlobalCollisionBodyTransforms().size(),1U);
+    // AttachedBody::getGlobalPose() is the attached-frame transform, while the
+    // BOX itself is offset by shape_poses. Build the neighbour against the
+    // actual global collision geometry so this fixture really exercises
+    // carried-object/world contact depth.
+    const double bottom=
+      body->getGlobalCollisionBodyTransforms()[0].translation().z()-.0125;
     Eigen::Isometry3d pose=Eigen::Isometry3d::Identity();
     pose.translation().z()=bottom-.0125+overlap;
     scene->getWorldNonConst()->addToObject(
       "pile_neighbor",shapes::ShapeConstPtr(new shapes::Box(.025,.025,.025)),pose);
+
+    collision_detection::CollisionRequest request;
+    request.contacts=true;
+    request.max_contacts=32;
+    request.max_contacts_per_pair=16;
+    request.group_name="arm";
+    collision_detection::CollisionResult result;
+    scene->checkCollision(request,result,state);
+    ASSERT_TRUE(result.collision);
+    ASSERT_FALSE(result.contacts.empty());
   }
   bool run(std::vector<double> heights={0.,.005}, bool* called=nullptr) {
     workcell::InitialSupportContact adapter;
