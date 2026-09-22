@@ -219,15 +219,24 @@ def build_commissioning(repo:Path,workspace:Path,output:Path,env:dict)->dict:
     test_env=dict(env,ROS_DOMAIN_ID="200",ROS_LOCALHOST_ONLY="1",ROS2CLI_DISABLE_DAEMON="1")
     run([workspace/"build/workcell_builder/workcell_execute_action_test"],env=test_env,cwd=repo,
         log=output/"commissioning-action-tests.log",timeout=120)
+    run([workspace/"build/workcell_builder/workcell_support_contact_test"],env=test_env,cwd=repo,
+        log=output/"support-cartesian-adapter-tests.log",timeout=120)
     telemetry=Path(manifest.get("telemetry_library",""))
     if not telemetry.is_file() or sha256(telemetry)!=manifest.get("telemetry_sha256"):
         raise RuntimeError("commissioning telemetry library does not match its build manifest")
     installed_telemetry=workspace/"install/workcell_builder/lib/libworkcell_simulator_measurements.so"
     if not installed_telemetry.is_file() or installed_telemetry.resolve()!=telemetry.resolve():
         raise RuntimeError("commissioning telemetry library is not registered in the workspace overlay")
+    support=Path(manifest.get("support_library",""))
+    if not support.is_file() or sha256(support)!=manifest.get("support_sha256"):
+        raise RuntimeError("support/Cartesian planning library does not match its build manifest")
+    installed_support=workspace/"install/workcell_builder/lib/libworkcell_support_contact.so"
+    if not installed_support.is_file() or installed_support.resolve()!=support.resolve():
+        raise RuntimeError("support/Cartesian planning library is not registered in the workspace overlay")
     return {"sha256":manifest["sha256"],"moveit_version":manifest.get("moveit_version"),
             "library":str(library),"telemetry_sha256":manifest["telemetry_sha256"],
-            "telemetry_library":str(telemetry)}
+            "telemetry_library":str(telemetry),"support_sha256":manifest["support_sha256"],
+            "support_library":str(support)}
 
 
 def assert_plan(summary,*,require_resolved):
