@@ -343,8 +343,8 @@ public:
             return fail("CARTESIAN_PATH_EMITTED_ATTACHMENT_MISSING");
           const auto motion=
             carried->getGlobalPose().translation()-carried_origin.translation();
-          if (motion.z()<last_height-1e-9 || !separation_motion_valid(state))
-            return fail("CARTESIAN_PATH_INITIAL_SEPARATION_MOTION_INVALID");
+          if (motion.z()<last_height-1e-9)
+            return fail("CARTESIAN_PATH_INITIAL_SEPARATION_REVERSED");
           last_height=motion.z();
         }
 
@@ -354,6 +354,7 @@ public:
           separated=true;
         } else {
           if (separated || !separation_scene ||
+              !separation_motion_valid(state) ||
               separation_scene->isStateColliding(state,req.group_name))
             return fail("CARTESIAN_PATH_EMITTED_COLLISION");
         }
@@ -435,6 +436,105 @@ public:
       auto local=scene->diff(); local->decoupleParent();
       collision_detection::DecideContactFn predicate=[policy](collision_detection::Contact& c) { return policy(c); };
       local->getAllowedCollisionMatrixNonConst().setEntry(policy.object,policy.support,predicate);
+
+      // If this lift was bound to measured piled-object contacts, certify those
+      // exact object IDs after the stricter support-floor exception has been
+      // installed. This composes the two policies: support contact remains
+      // floor/normal certified, while only measured shallow pile neighbors may
+      // coexist during the first <=10 mm of vertical separation.
+      std::set<std::string> requested_neighbors;
+      const std::string cartesian_prefix="workcell_cartesian_path:";
+      for (const auto& constraint:req.trajectory_constraints.constraints) {
+        if (constraint.name.compare(0,cartesian_prefix.size(),cartesian_prefix)!=0)
+          continue;
+        const auto metadata=YAML::Load(constraint.name.substr(cartesian_prefix.size()));
+        const bool allow=metadata["allow_initial_attached_world_separation"] &&
+          metadata["allow_initial_attached_world_separation"].as<bool>();
+        if (!allow) continue;
+        if (!metadata["initial_separation_object_ids"] ||
+            !metadata["initial_separation_object_ids"].IsSequence())
+          return fail("SUPPORT_CONTACT_INITIAL_SEPARATION_IDS_INVALID");
+        for (const auto& item:metadata["initial_separation_object_ids"]) {
+          const auto id=item.as<std::string>();
+          if (id.empty() || id==policy.object || id==policy.support)
+            return fail("SUPPORT_CONTACT_INITIAL_SEPARATION_ID_INVALID");
+          requested_neighbors.insert(id);
+        }
+      }
+
+      if (!requested_neighbors.empty()) {
+        collision_detection::CollisionRequest collision_request;
+        collision_request.contacts=true;
+        collision_request.max_contacts=256;
+        collision_request.max_contacts_per_pair=64;
+        collision_request.group_name=req.group_name;
+        collision_detection::CollisionResult collision_result;
+        local->checkCollision(collision_request,collision_result,start);
+
+        std::set<std::string> certified_neighbors;
+        if (collision_result.collision) {
+          if (collision_result.contacts.empty() ||
+              collision_result.contact_count>=collision_request.max_contacts)
+            return fail("SUPPORT_CONTACT_INITIAL_SEPARATION_EVIDENCE_INCOMPLETE");
+          for (const auto& pair_contacts:collision_result.contacts) {
+            for (const auto& contact:pair_contacts.second) {
+              const bool forward=
+                contact.body_name_1==policy.object &&
+                contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
+              const bool reverse=
+                contact.body_name_2==policy.object &&
+                contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
+              if (!forward && !reverse)
+                return fail("SUPPORT_CONTACT_INITIAL_COLLISION_NOT_CARRIED_WORLD_CONTACT");
+              const auto neighbor=forward ? contact.body_name_2 : contact.body_name_1;
+              if (!requested_neighbors.count(neighbor))
+                return fail("SUPPORT_CONTACT_INITIAL_COLLISION_NOT_MEASURED_PILE_CONTACT");
+              if (!std::isfinite(contact.depth) || contact.depth<0. ||
+                  contact.depth>support_contact_tolerance_m ||
+                  !contact.pos.allFinite() || !contact.normal.allFinite())
+                return fail("SUPPORT_CONTACT_INITIAL_PILE_CONTACT_OUTSIDE_TOLERANCE");
+              certified_neighbors.insert(neighbor);
+            }
+          }
+        }
+
+        for (const auto& neighbor:certified_neighbors) {
+          collision_detection::DecideContactFn pile_predicate=[
+            object_id=policy.object,neighbor](collision_detection::Contact& contact) {
+            const bool forward=
+              contact.body_name_1==object_id &&
+              contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+              contact.body_name_2==neighbor &&
+              contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
+            const bool reverse=
+              contact.body_name_2==object_id &&
+              contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+              contact.body_name_1==neighbor &&
+              contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
+            return (forward || reverse) && std::isfinite(contact.depth) &&
+              contact.depth>=0. && contact.depth<=support_contact_tolerance_m &&
+              contact.pos.allFinite() && contact.normal.allFinite();
+          };
+          local->getAllowedCollisionMatrixNonConst().setEntry(
+            policy.object,neighbor,pile_predicate);
+        }
+
+        if (!certified_neighbors.empty()) {
+          std::ostringstream names;
+          std::size_t index=0;
+          for (const auto& neighbor:certified_neighbors) {
+            if (index++) names << ",";
+            names << neighbor;
+          }
+          RCLCPP_INFO(
+            rclcpp::get_logger("workcell.support_contact"),
+            "SUPPORT_CONTACT_INITIAL_PILE_SEPARATION object=%s neighbors=[%s] tolerance=%.6f",
+            policy.object.c_str(),names.str().c_str(),support_contact_tolerance_m);
+        }
+      }
+
       auto clean=req; clean.path_constraints.name.clear();
       if (!local->isStateValid(start,clean.path_constraints,"")) return fail("SUPPORT_CONTACT_INVALID_START");
       // All FCL contacts for this pair are evaluated by the conditional callback;
