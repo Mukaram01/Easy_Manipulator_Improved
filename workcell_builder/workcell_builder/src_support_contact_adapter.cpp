@@ -164,6 +164,7 @@ public:
         return true;
       };
 
+      const moveit::core::RobotState original_start(start);
       EigenSTL::vector_Isometry3d waypoints{goal};
       std::vector<moveit::core::RobotStatePtr> states;
       const double fraction=moveit::core::CartesianInterpolator::computeCartesianPath(
@@ -180,7 +181,7 @@ public:
 
       auto trajectory=std::make_shared<robot_trajectory::RobotTrajectory>(
         scene->getRobotModel(),req.group_name);
-      trajectory->addSuffixWayPoint(start,0.0);
+      trajectory->addSuffixWayPoint(original_start,0.0);
       for (const auto& state:states) {
         if (!state) return fail("CARTESIAN_PATH_STATE_MISSING");
         if (trajectory->getLastWayPoint().distance(*state)>1e-12)
@@ -225,6 +226,8 @@ public:
         rclcpp::get_logger("workcell.cartesian_path"),
         "CARTESIAN_PATH_REJECTED: %s",e.what());
       return fail("CARTESIAN_PATH_REJECTED");
+    } catch (...) {
+      return fail("CARTESIAN_PATH_REJECTED_UNKNOWN_EXCEPTION");
     }
   }
 };
