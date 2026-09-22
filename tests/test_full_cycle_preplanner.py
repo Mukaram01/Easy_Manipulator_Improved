@@ -376,6 +376,49 @@ def test_authored_resolver_keeps_policy_and_descent_rejection_evidence(policy, r
     assert failure['collision_objects'] == ['generic_container']
 
 
+def test_authored_resolve_discovers_all_candidates_before_retrying_timeouts():
+    """A stochastic timeout cannot monopolize the unresolved candidate search."""
+    from dataclasses import replace
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+    from full_cycle_preplanner import MotionFeasibilityFailure
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    intent = valid_intent('AUTO')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    base_contract = kwargs['contract']
+    plan = kwargs['operations'].plan_segment
+
+    def transient_timeout(view, name, goal, group=None, straight=False):
+        if (name == 'PREPLAN_APPROACH' and
+                base_contract.get('_candidate_search_pass') == 'discovery'):
+            raise MotionFeasibilityFailure(
+                'MoveIt action failed: status=6, code=-6', moveit_code=-6)
+        return plan(view, name, goal, group, straight)
+
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=transient_timeout)
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    # One object has 8 top + 1 side + 4 pinch candidates. Every one receives
+    # a single discovery attempt before the first retry gets a full budget.
+    discovery = [a for a in summary['candidate_attempts'] if a['search_pass'] == 'discovery']
+    retries = [a for a in summary['candidate_attempts'] if a['search_pass'] == 'retry']
+    assert len(discovery) == 13
+    assert all(a['planning_attempts'] == 1 and a['segment_planning_time'] == 1.0
+               for a in discovery)
+    assert retries and retries[0]['candidate_id'] == 'top_2f::000'
+    assert retries[0]['planning_attempts'] == 3
+    assert cycle['candidate'].candidate_id == 'top_2f::000'
+    assert summary['candidate_search']['retryable_candidates'] == 13
+    assert summary['candidate_search']['retry_pass_used'] is True
+
+
 def test_authored_destination_orientation_is_planned_with_actual_grasp_transform():
     from full_cycle_preplanner import preplan_full_cycle
     from grasp_strategy_candidates import generate_strategy_candidates
