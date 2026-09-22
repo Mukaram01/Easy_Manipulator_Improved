@@ -432,6 +432,67 @@ def test_authored_resolve_discovers_all_candidates_before_retrying_timeouts():
     assert summary['candidate_search']['retry_pass_used'] is True
 
 
+def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
+    """A later candidate that reached lift is retried before shallow timeouts."""
+    from types import SimpleNamespace
+    import full_cycle_preplanner
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    intent = valid_intent('AUTO')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    counts = {}
+
+    def fake_preplan_full_cycle(*, observation, candidate, **unused):
+        cid = candidate.candidate_id
+        counts[cid] = counts.get(cid, 0) + 1
+        if counts[cid] == 1:
+            if cid == 'top_2f::003':
+                checks = [
+                    {'code':'PREPLAN_APPROACH','status':'PASS'},
+                    {'code':'PREPLAN_GRASP','status':'PASS'},
+                    {'code':'PREPLAN_CLOSE_GRIPPER','status':'PASS'},
+                    {'code':'ATTACH','status':'PASS'},
+                    {'code':'PREPLAN_LIFT','status':'FAIL','failed_stage':'PREPLAN_LIFT',
+                     'failure_kind':'planning','moveit_code':-6},
+                ]
+                code, reason = 'PREPLAN_LIFT_FAILED', 'timed out after physical grasp'
+            else:
+                checks = [
+                    {'code':'PREPLAN_APPROACH','status':'FAIL','failed_stage':'PREPLAN_APPROACH',
+                     'failure_kind':'planning','moveit_code':-6},
+                ]
+                code, reason = 'PREPLAN_APPROACH_FAILED', 'pregrasp timed out'
+            return SimpleNamespace(
+                success=False, candidate_id=cid, reason_code=code, reason=reason,
+                checks=checks, stages=[], cycle=None)
+        cycle = {
+            'object_id': observation['id'], 'candidate': copy.deepcopy(candidate),
+            'steps':[{'metadata':{}}], 'full_cycle_prevalidated':True}
+        return SimpleNamespace(
+            success=True, candidate_id=cid, reason_code=None, reason=None,
+            checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
+            stages=[], cycle=cycle)
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle', fake_preplan_full_cycle)
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    retries = [a for a in summary['candidate_attempts'] if a['search_pass'] == 'retry']
+    assert len(retries) == 1
+    assert retries[0]['candidate_id'] == 'top_2f::003'
+    assert cycle['candidate'].candidate_id == 'top_2f::003'
+    assert summary['candidate_search']['mode'] == 'fair_discovery_then_progress_retry'
+    assert summary['candidate_search']['retry_priority'][0]['candidate_id'] == 'top_2f::003'
+    assert summary['candidate_search']['retry_priority'][0]['progress_passes'] == 4
+
+
 def test_authored_destination_orientation_is_planned_with_actual_grasp_transform():
     from full_cycle_preplanner import preplan_full_cycle
     from grasp_strategy_candidates import generate_strategy_candidates
