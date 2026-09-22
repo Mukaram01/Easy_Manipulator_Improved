@@ -1116,8 +1116,10 @@ def main():
         position = PositionConstraint()
         position.header.frame_id = frame_id
         position.link_name = link_name
-        position.constraint_region = BoundingVolume(
-            primitives=[primitive], primitive_poses=[region_pose])
+        region = BoundingVolume()
+        region.primitives = [primitive]
+        region.primitive_poses = [region_pose]
+        position.constraint_region = region
         position.weight = 1.0
 
         orientation = OrientationConstraint()
@@ -1132,8 +1134,9 @@ def main():
         orientation.absolute_z_axis_tolerance = angular_tolerance
         orientation.weight = 1.0
 
-        constraints = Constraints(
-            position_constraints=[position], orientation_constraints=[orientation])
+        constraints = Constraints()
+        constraints.position_constraints = [position]
+        constraints.orientation_constraints = [orientation]
         if initial_support is not None:
             constraints.name = 'workcell_initial_support_contact:' + json.dumps(
                 initial_support, sort_keys=True)
