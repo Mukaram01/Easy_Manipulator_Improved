@@ -216,7 +216,7 @@ struct SupportFixture {
 TEST(CartesianAdapter, StraightLiftUsesEffectivePrivateSupportScene) {
   SupportFixture f(1.44e-8);
   moveit_msgs::msg::Constraints marker;
-  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
+  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":false,"goal_pose":[0,0,0.005,0,0,0,1],"initial_separation_object_ids":[],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
   f.request.trajectory_constraints.constraints={marker};
 
   workcell::InitialSupportContact support;
@@ -249,7 +249,7 @@ TEST(CartesianAdapter, CertifiedInitialPileContactSeparatesDuringLift) {
   SupportFixture f(1.44e-8);
   f.addPileNeighbor(0.00005);
   moveit_msgs::msg::Constraints marker;
-  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
+  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"initial_separation_object_ids":["pile_neighbor"],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
   f.request.trajectory_constraints.constraints={marker};
 
   workcell::InitialSupportContact support;
@@ -279,7 +279,7 @@ TEST(CartesianAdapter, InitialPileContactAboveNumericalToleranceFailsClosed) {
   SupportFixture f(1.44e-8);
   f.addPileNeighbor(0.00011);
   moveit_msgs::msg::Constraints marker;
-  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
+  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"initial_separation_object_ids":["pile_neighbor"],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
   f.request.trajectory_constraints.constraints={marker};
 
   workcell::InitialSupportContact support;
