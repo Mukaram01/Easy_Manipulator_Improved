@@ -65,6 +65,10 @@ class PreplanResult:
     cycle: dict | None
 
 
+class SearchBudgetExhausted(RuntimeError):
+    """The global candidate-search wall-clock budget ended."""
+
+
 class MotionFeasibilityFailure(RuntimeError):
     """Serializable rejection evidence from the existing collision/planning API."""
 
@@ -109,7 +113,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         nonlocal view
         stage(name)
         if time.monotonic() > deadline:
-            raise RuntimeError('candidate search budget exhausted')
+            raise SearchBudgetExhausted('candidate search budget exhausted')
         options = {}
         if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
             options['ik_binding'] = contract['approach_ik']
@@ -158,7 +162,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             if any(abs(v) > 1e-12 for v in placement['orientation'].get('rpy_rad', [0., 0., 0.])):
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored placement orientation offset')
         if time.monotonic() > deadline:
-            raise RuntimeError('candidate search budget exhausted')
+            raise SearchBudgetExhausted('candidate search budget exhausted')
         freshness_reference = contract.get('observation_reference_time', time.time())
         if (not isinstance(freshness_reference, (int, float)) or
                 not math.isfinite(freshness_reference)):
@@ -303,8 +307,12 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                      full_cycle_prevalidated=True)
         return PreplanResult(True, candidate.candidate_id, None, None, checks, stages, cycle)
     except Exception as exc:
-        reason_code = check_code + '_FAILED'
-        failure = dict(failure_kind='planning' if check_code.startswith('PREPLAN_') else 'constraint')
+        if isinstance(exc, SearchBudgetExhausted):
+            reason_code = 'SEARCH_BUDGET_EXHAUSTED'
+            failure = dict(failure_kind='budget')
+        else:
+            reason_code = check_code + '_FAILED'
+            failure = dict(failure_kind='planning' if check_code.startswith('PREPLAN_') else 'constraint')
         failure.update(getattr(exc, 'details', {}))
         failure.update(candidate_id=candidate.candidate_id, failed_stage=current_stage)
         stages.append(dict(stage=current_stage, success=False, reason=str(exc), reason_code=reason_code, **failure))
