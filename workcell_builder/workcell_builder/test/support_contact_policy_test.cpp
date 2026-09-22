@@ -40,6 +40,125 @@ TEST(SupportContact, InvalidNumericsFailClosed) {
 #include <urdf_parser/urdf_parser.h>
 #include <srdfdom/model.h>
 
+
+class PrismaticTestIK : public kinematics::KinematicsBase {
+public:
+  PrismaticTestIK() {
+    setValues("test_robot", "arm", "base", {"tool"}, 0.001);
+  }
+
+  bool solve(const geometry_msgs::msg::Pose& pose,
+             std::vector<double>& solution,
+             moveit_msgs::msg::MoveItErrorCodes& error_code,
+             const IKCallbackFn& callback = IKCallbackFn()) const {
+    const double qnorm =
+      pose.orientation.x*pose.orientation.x +
+      pose.orientation.y*pose.orientation.y +
+      pose.orientation.z*pose.orientation.z +
+      pose.orientation.w*pose.orientation.w;
+    if (!std::isfinite(pose.position.x) || !std::isfinite(pose.position.y) ||
+        !std::isfinite(pose.position.z) || !std::isfinite(qnorm) ||
+        std::abs(pose.position.x)>1e-9 || std::abs(pose.position.y)>1e-9 ||
+        pose.position.z < -0.1-1e-12 || pose.position.z > 0.2+1e-12 ||
+        std::abs(pose.orientation.x)>1e-9 ||
+        std::abs(pose.orientation.y)>1e-9 ||
+        std::abs(pose.orientation.z)>1e-9 ||
+        std::abs(std::abs(pose.orientation.w)-1.0)>1e-9) {
+      error_code.val=moveit_msgs::msg::MoveItErrorCodes::NO_IK_SOLUTION;
+      return false;
+    }
+    solution={pose.position.z};
+    error_code.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+    if (callback) {
+      callback(pose,solution,error_code);
+      return error_code.val==moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+    }
+    return true;
+  }
+
+  bool getPositionIK(
+      const geometry_msgs::msg::Pose& pose,
+      const std::vector<double>&,
+      std::vector<double>& solution,
+      moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,solution,error_code);
+  }
+
+  bool searchPositionIK(
+      const geometry_msgs::msg::Pose& pose,
+      const std::vector<double>&,
+      double,
+      std::vector<double>& solution,
+      moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,solution,error_code);
+  }
+
+  bool searchPositionIK(
+      const geometry_msgs::msg::Pose& pose,
+      const std::vector<double>&,
+      double,
+      const std::vector<double>&,
+      std::vector<double>& solution,
+      moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,solution,error_code);
+  }
+
+  bool searchPositionIK(
+      const geometry_msgs::msg::Pose& pose,
+      const std::vector<double>&,
+      double,
+      std::vector<double>& solution,
+      const IKCallbackFn& callback,
+      moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,solution,error_code,callback);
+  }
+
+  bool searchPositionIK(
+      const geometry_msgs::msg::Pose& pose,
+      const std::vector<double>&,
+      double,
+      const std::vector<double>&,
+      std::vector<double>& solution,
+      const IKCallbackFn& callback,
+      moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,solution,error_code,callback);
+  }
+
+  bool getPositionFK(
+      const std::vector<std::string>& link_names,
+      const std::vector<double>& joint_angles,
+      std::vector<geometry_msgs::msg::Pose>& poses) const override {
+    if (joint_angles.size()!=1) return false;
+    poses.clear();
+    poses.reserve(link_names.size());
+    for (const auto& link:link_names) {
+      geometry_msgs::msg::Pose pose;
+      pose.orientation.w=1.0;
+      if (link=="tool") pose.position.z=joint_angles[0];
+      else if (link!="base") return false;
+      poses.push_back(pose);
+    }
+    return true;
+  }
+
+  const std::vector<std::string>& getJointNames() const override {
+    return joint_names_;
+  }
+
+  const std::vector<std::string>& getLinkNames() const override {
+    return link_names_;
+  }
+
+private:
+  const std::vector<std::string> joint_names_{"lift"};
+  const std::vector<std::string> link_names_{"base","tool"};
+};
+
 struct SupportFixture {
   planning_scene::PlanningScenePtr scene;
   planning_interface::MotionPlanRequest request;
@@ -50,6 +169,11 @@ struct SupportFixture {
     auto robot=urdf::parseURDF(urdf); auto srdf=std::make_shared<srdf::Model>();
     srdf->initString(*robot,"<robot name='test'><group name='arm'><joint name='lift'/></group></robot>");
     auto model=std::make_shared<moveit::core::RobotModel>(robot,srdf);
+    model->setKinematicsAllocators({
+      {"arm", [](const moveit::core::JointModelGroup*) {
+        return std::make_shared<PrismaticTestIK>();
+      }}
+    });
     scene=std::make_shared<planning_scene::PlanningScene>(model);
     Eigen::Isometry3d floor=Eigen::Isometry3d::Identity(); floor.translation().z()=-.05;
     scene->getWorldNonConst()->addToObject("fixture",shapes::ShapeConstPtr(new shapes::Box(1,1,.1)),floor);
