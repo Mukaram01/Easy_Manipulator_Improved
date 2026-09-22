@@ -1439,10 +1439,12 @@ def main():
             marker = Constraints()
             marker.name = 'workcell_cartesian_path:' + json.dumps({
                 'schema': 'workcell_cartesian_path/v1',
+                'stage': name,
                 'tool_link': contract['tool_link'],
                 'start_pose': list(cartesian_corridor[0]),
                 'goal_pose': list(cartesian_corridor[1]),
                 'max_step_m': 0.0025,
+                'allow_initial_attached_world_separation': name == 'PREPLAN_LIFT',
             }, sort_keys=True, separators=(',', ':'))
             request.trajectory_constraints.constraints = [marker]
         elif initial_support is not None:
