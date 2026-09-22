@@ -239,6 +239,9 @@ def test_straight_segments_bind_ompl_to_cartesian_corridor_before_postcheck():
     assert 'request.path_constraints = cartesian_corridor_constraints(' in source
     assert "'workcell_cartesian_path:' + json.dumps" in source
     assert "'workcell/StraightCartesianPath' not in support_adapters.split()" in source
+    assert "'initial_separation_object_ids': list(initial_separation_object_ids or [])" in source
+    assert "bool(initial_separation_object_ids) and name == 'PREPLAN_LIFT'" in source
+    assert "c.depth > 0.0001" in source
     assert 'request.trajectory_constraints.constraints = [marker]' in source
     assert 'PositionConstraint()' in source
     assert 'OrientationConstraint()' in source
