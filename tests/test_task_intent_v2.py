@@ -152,6 +152,25 @@ def test_v1_migration_preserves_top2f_and_records_catalog_materialization():
     migrated = migrate_v1(base, env)
     assert migrated["place"]["placement"]["clearance_m"] == pytest.approx(0.01)
 
+    # Canonical Stage-A part geometry must fit the canonical R1.9 placement
+    # region with the implicit migration default. This guards against
+    # accidentally interpreting the legacy-missing field as a 5 cm region
+    # shrink, which makes any nonzero-width part impossible in the 10 cm zone.
+    from scripts.physical_destination import resolve_local_destination, check_object_containment
+    placement = migrated["place"]["placement"]
+    destination = resolve_local_destination(
+        env,
+        migrated["place"]["target"]["asset_ref"],
+        migrated["place"]["target"]["region_ref"],
+        placement["requested_local_pose"],
+    )
+    check_object_containment(
+        destination,
+        destination["pose_xyz"] + [0.0, 0.0, 0.0, 1.0],
+        [0.025, 0.025, 0.025],
+        clearance=placement["clearance_m"],
+    )
+
     explicit = copy.deepcopy(base)
     explicit["place"]["place_clearance_m"] = 0.05
     migrated_explicit = migrate_v1(explicit, env)
