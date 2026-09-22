@@ -407,7 +407,7 @@ def test_authored_resolve_discovers_all_candidates_before_retrying_timeouts():
 
     def transient_timeout(view, name, goal, group=None, straight=False):
         if (name == 'PREPLAN_APPROACH' and
-                base_contract.get('_candidate_search_pass') == 'discovery'):
+                str(base_contract.get('_candidate_search_pass', '')).startswith('discovery:')):
             raise MotionFeasibilityFailure(
                 'MoveIt action failed: status=6, code=-6', moveit_code=-6)
         return plan(view, name, goal, group, straight)
@@ -418,18 +418,26 @@ def test_authored_resolve_discovers_all_candidates_before_retrying_timeouts():
         intent=intent, environment=env, cell=cell(), targets=[observation],
         summary=summary, planning_time=3.0, **kwargs)
 
-    # One object has 8 top + 1 side + 4 pinch candidates. Every one receives
-    # a single discovery attempt before the first retry gets a full budget.
-    discovery = [a for a in summary['candidate_attempts'] if a['search_pass'] == 'discovery']
-    retries = [a for a in summary['candidate_attempts'] if a['search_pass'] == 'retry']
-    assert len(discovery) == 13
-    assert all(a['planning_attempts'] == 1 and a['segment_planning_time'] == 1.0
+    # AUTO is strategy-phased: all eight top candidates get one cheap discovery
+    # window, then the strongest top candidate is retried before side/pinch
+    # discovery is allowed to spend budget.
+    discovery = [a for a in summary['candidate_attempts']
+                 if a['search_pass'].startswith('discovery:')]
+    retries = [a for a in summary['candidate_attempts']
+               if a['search_pass'].startswith('retry:')]
+    assert len(discovery) == 8
+    assert all(a['planning_attempts'] == 1 and a['segment_planning_time'] == .75
                for a in discovery)
     assert retries and retries[0]['candidate_id'] == 'top_2f::000'
     assert retries[0]['planning_attempts'] == 3
     assert cycle['candidate'].candidate_id == 'top_2f::000'
-    assert summary['candidate_search']['retryable_candidates'] == 13
-    assert summary['candidate_search']['retry_pass_used'] is True
+    search = summary['candidate_search']
+    assert search['mode'] == 'strategy_phased_progress_beam'
+    assert search['strategy_phases'][0] == 'top_2f'
+    assert search['phases'][0]['discovered_candidates'] == 8
+    assert search['phases'][0]['retryable_candidates'] == 8
+    assert search['retry_beam_width'] == 3
+    assert search['retry_pass_used'] is True
 
 
 def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
@@ -484,13 +492,66 @@ def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
         intent=intent, environment=env, cell=cell(), targets=[observation],
         summary=summary, planning_time=3.0, **kwargs)
 
-    retries = [a for a in summary['candidate_attempts'] if a['search_pass'] == 'retry']
+    retries = [a for a in summary['candidate_attempts']
+               if a['search_pass'].startswith('retry:')]
     assert len(retries) == 1
     assert retries[0]['candidate_id'] == 'top_2f::003'
     assert cycle['candidate'].candidate_id == 'top_2f::003'
-    assert summary['candidate_search']['mode'] == 'fair_discovery_then_progress_retry'
-    assert summary['candidate_search']['retry_priority'][0]['candidate_id'] == 'top_2f::003'
-    assert summary['candidate_search']['retry_priority'][0]['progress_passes'] == 4
+    search = summary['candidate_search']
+    assert search['mode'] == 'strategy_phased_progress_beam'
+    assert search['phases'][0]['retry_priority'][0]['candidate_id'] == 'top_2f::003'
+    assert search['phases'][0]['retry_priority'][0]['progress_passes'] == 4
+
+
+def test_preferred_strategy_retries_before_fallback_discovery(monkeypatch):
+    """PREFERRED must spend its retry beam before evaluating fallback strategy candidates."""
+    from types import SimpleNamespace
+    import full_cycle_preplanner
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    intent = valid_intent('PREFERRED')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    calls = []
+
+    def fake_preplan_full_cycle(*, observation, candidate, **unused):
+        calls.append(candidate.strategy_ref)
+        if candidate.strategy_ref == 'top_2f':
+            return SimpleNamespace(
+                success=False, candidate_id=candidate.candidate_id,
+                reason_code='PREPLAN_APPROACH_FAILED', reason='timeout',
+                checks=[{'code':'PREPLAN_APPROACH','status':'FAIL',
+                         'failed_stage':'PREPLAN_APPROACH',
+                         'failure_kind':'planning','moveit_code':-6}],
+                stages=[], cycle=None)
+        cycle = {
+            'object_id': observation['id'], 'candidate': copy.deepcopy(candidate),
+            'steps':[{'metadata':{}}], 'full_cycle_prevalidated':True}
+        return SimpleNamespace(
+            success=True, candidate_id=candidate.candidate_id,
+            reason_code=None, reason=None,
+            checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
+            stages=[], cycle=cycle)
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle', fake_preplan_full_cycle)
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    search = summary['candidate_search']
+    assert search['strategy_phases'][:2] == ['top_2f', 'side_grip_basic']
+    assert search['phases'][0]['discovered_candidates'] == 8
+    assert len(search['phases'][0]['retries']) == 3
+    # Only after three bounded retries of the preferred top strategy may the
+    # fallback side strategy be evaluated, where this fixture succeeds.
+    assert calls[:11] == ['top_2f'] * 11
+    assert calls[11] == 'side_grip_basic'
+    assert cycle['candidate'].strategy_ref == 'side_grip_basic'
 
 
 def test_authored_destination_orientation_is_planned_with_actual_grasp_transform():
