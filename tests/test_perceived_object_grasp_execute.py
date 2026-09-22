@@ -205,6 +205,34 @@ def test_plan_segment_discovery_policy_does_not_retry_before_other_candidates():
     assert goals[0].request.allowed_planning_time == pytest.approx(1.0)
 
 
+def test_plan_segment_candidate_wall_deadline_is_not_misreported_as_global_budget():
+    import ast
+    import time
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import Constraints, MotionPlanRequest, PlanningScene
+
+    tree = ast.parse(SCRIPT.read_text())
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    segment = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'plan_segment')
+    global_deadline = time.monotonic() + 30.0
+    contract = {
+        'planning_group':'arm_group', 'home_joint_names':['arm'], 'tool_link':'tcp',
+        '_candidate_wall_deadline':time.monotonic() - 0.001,
+    }
+    context = dict(
+        vars(MODULE), time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
+        stage=lambda name: None, deadline=global_deadline, contract=contract,
+        args=SimpleNamespace(segment_planning_time=3.), mimics=[], initial=PlanningScene(),
+        summary={},
+        joint_constraints=lambda values: Constraints())
+    exec(compile(ast.Module(body=[segment], type_ignores=[]),
+                 '<actual-plan-segment-wall-budget>', 'exec'), context)
+
+    with pytest.raises(RuntimeError, match='candidate wall-clock slice exhausted'):
+        context['plan_segment'](
+            PlanningScene(), 'PREPLAN_APPROACH', {'arm': 0.5}, group='arm_group')
+
+
 def test_straight_segments_bind_ompl_to_cartesian_corridor_before_postcheck():
     source = SCRIPT.read_text()
     assert 'cartesian_corridor=(a, b)' in source
