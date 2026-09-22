@@ -1430,9 +1430,21 @@ def main():
             goal_state = updated_state(view.robot_state,
                                        {n: values[n] for n in contract['home_joint_names']}, mimics)
         if cartesian_corridor is not None:
+            if 'workcell/StraightCartesianPath' not in support_adapters.split():
+                raise RuntimeError(
+                    'CARTESIAN_PATH_ADAPTER_MISSING: rebuild and launch the current MoveIt configuration')
             request.path_constraints = cartesian_corridor_constraints(
                 cartesian_corridor[0], cartesian_corridor[1],
                 goal.header.frame_id or 'world', contract['tool_link'], initial_support)
+            marker = Constraints()
+            marker.name = 'workcell_cartesian_path:' + json.dumps({
+                'schema': 'workcell_cartesian_path/v1',
+                'tool_link': contract['tool_link'],
+                'start_pose': list(cartesian_corridor[0]),
+                'goal_pose': list(cartesian_corridor[1]),
+                'max_step_m': 0.0025,
+            }, sort_keys=True, separators=(',', ':'))
+            request.trajectory_constraints.constraints = [marker]
         elif initial_support is not None:
             request.path_constraints.name = 'workcell_initial_support_contact:' + json.dumps(initial_support, sort_keys=True)
         goal_msg = MoveGroup.Goal(request=request)
@@ -1482,6 +1494,8 @@ def main():
                     metadata=dict(stage=name, success=True, moveit_code=result.error_code.val,
                         planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
                         allowed_planning_time=planning_time, planning_attempts=planning_attempts,
+                        **({'cartesian_planner':'workcell/StraightCartesianPath'}
+                           if cartesian_corridor is not None else {}),
                         **({'approach_ik': copy.deepcopy(ik_binding) if ik_binding is not None else approach_ik_binding(goal, contract, values)}
                            if name == 'PREPLAN_APPROACH' and not isinstance(goal, dict) else {}),
                         attached_ids=[o.object.id for o in view.robot_state.attached_collision_objects],
