@@ -17,6 +17,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 
 namespace workcell {
 // Opt-in evidence at the innermost adapter boundary; never changes a request.
