@@ -1268,41 +1268,76 @@ def main():
                         raise RuntimeError('SUPPORT_CONTACT_ADAPTER_MISSING: regenerate and launch the current MoveIt configuration')
                     support = dict(object_id=object_id, support_id=floor_contacts[0][0],
                                    floor_z=floor_contacts[0][1], tool_link=contract['tool_link'])
-            for i in range(1, count+1):
-                waypoint = pose_message([x+(y-x)*i/count for x,y in zip(a[:3],b[:3])] + b[3:])
-                part = plan_segment(
-                    view, name, waypoint, group,
-                    initial_support=support if i == 1 else None,
-                    cartesian_corridor=(a, b))
-                trajectory = part['trajectory']
-                for point in trajectory.joint_trajectory.points:
-                    sample = updated_state(view.robot_state, dict(zip(trajectory.joint_trajectory.joint_names, point.positions)), mimics)
+            # Path constraints now encode the complete Cartesian tube, so one
+            # constrained MoveGroup request is both stronger and dramatically
+            # cheaper than chaining ~20 independent 5 mm OMPL requests. Keep an
+            # independent dense FK audit over the returned trajectory as a
+            # second guard; the planner constraint is never treated as proof by
+            # itself.
+            part = plan_segment(
+                view, name, goal, group,
+                initial_support=support,
+                cartesian_corridor=(a, b))
+            trajectory = part['trajectory']
+            names = list(trajectory.joint_trajectory.joint_names)
+            points = trajectory.joint_trajectory.points
+            if not points:
+                raise RuntimeError('Cartesian-constrained plan returned empty trajectory')
+
+            previous_positions = dict(zip(names, points[0].positions))
+            samples_checked = 0
+            for point_index, point in enumerate(points):
+                current_positions = dict(zip(names, point.positions))
+                if point_index == 0:
+                    fractions = (1.0,)
+                else:
+                    # Densify the post-plan audit in joint space. 0.02 rad is
+                    # intentionally conservative for the short contact/lift/
+                    # retreat motions while avoiding extra planning requests.
+                    max_delta = max(
+                        (abs(current_positions[n] - previous_positions[n]) for n in names),
+                        default=0.0)
+                    subdivisions = max(1, math.ceil(max_delta / 0.02))
+                    fractions = tuple(i / subdivisions for i in range(1, subdivisions + 1))
+                for fraction in fractions:
+                    if point_index == 0:
+                        positions = current_positions
+                    else:
+                        positions = {
+                            n: previous_positions[n] +
+                               (current_positions[n] - previous_positions[n]) * fraction
+                            for n in names
+                        }
+                    sample = updated_state(view.robot_state, positions, mimics)
                     actual_pose = pose_values(fk(sample, contract['tool_link']).pose)
+                    samples_checked += 1
                     if not pose_within_cartesian_corridor(actual_pose, a, b):
                         from full_cycle_preplanner import MotionFeasibilityFailure
-                        failure = MotionFeasibilityFailure('planned contact/retreat path leaves the Cartesian corridor')
-                        failure.details.update(path_pose=actual_pose, corridor_start=a, corridor_goal=b)
+                        failure = MotionFeasibilityFailure(
+                            'planned contact/retreat path leaves the Cartesian corridor')
+                        failure.details.update(
+                            path_pose=actual_pose, corridor_start=a, corridor_goal=b,
+                            trajectory_point_index=point_index,
+                            interpolation_fraction=fraction)
                         raise failure
-                if combined is None:
-                    combined = copy.deepcopy(trajectory)
-                else:
-                    if combined.joint_trajectory.joint_names != trajectory.joint_trajectory.joint_names:
-                        raise RuntimeError('waypoint trajectory joint order changed')
-                    for point in trajectory.joint_trajectory.points[1:]:
-                        point = copy.deepcopy(point)
-                        stamp = point.time_from_start.sec*1000000000 + point.time_from_start.nanosec + elapsed_ns
-                        point.time_from_start.sec, point.time_from_start.nanosec = divmod(stamp,1000000000)
-                        combined.joint_trajectory.points.append(point)
-                last = combined.joint_trajectory.points[-1].time_from_start
-                elapsed_ns = last.sec*1000000000+last.nanosec
-                total_planning_time += part['metadata']['planning_time']
-                view = copy.deepcopy(part['after'])
-            return dict(kind='motion',stage=name,before=before,after=view,trajectory=combined,
-                metadata=dict(stage=name,success=True,moveit_code=1,planning_time=total_planning_time,
-                    points=len(combined.joint_trajectory.points),cartesian_waypoints=count,
-                    initial_support_contact=support,
-                    attached_ids=[o.object.id for o in before.robot_state.attached_collision_objects],
-                    world_ids=[o.id for o in before.world.collision_objects]))
+                previous_positions = current_positions
+
+            metadata = copy.deepcopy(part['metadata'])
+            metadata.update(
+                stage=name,
+                success=True,
+                moveit_code=1,
+                points=len(points),
+                cartesian_waypoints=1,
+                cartesian_validation_segments=count,
+                cartesian_validation_samples=samples_checked,
+                initial_support_contact=support,
+                attached_ids=[o.object.id for o in before.robot_state.attached_collision_objects],
+                world_ids=[o.id for o in before.world.collision_objects])
+            return dict(
+                kind='motion', stage=name, before=before,
+                after=copy.deepcopy(part['after']), trajectory=trajectory,
+                metadata=metadata)
         if not isinstance(goal, dict):
             ik_request = GetPositionIK.Request()
             ik_request.ik_request.group_name = contract['planning_group']
