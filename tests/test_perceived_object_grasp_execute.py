@@ -237,9 +237,13 @@ def test_straight_segments_bind_ompl_to_cartesian_corridor_before_postcheck():
     source = SCRIPT.read_text()
     assert 'cartesian_corridor=(a, b)' in source
     assert 'request.path_constraints = cartesian_corridor_constraints(' in source
+    assert "'workcell_cartesian_path:' + json.dumps" in source
+    assert "'workcell/StraightCartesianPath' not in support_adapters.split()" in source
+    assert 'request.trajectory_constraints.constraints = [marker]' in source
     assert 'PositionConstraint()' in source
     assert 'OrientationConstraint()' in source
-    # One constrained plan replaces the old chain of 5 mm MoveGroup requests.
+    # One private-scene Cartesian interpolation replaces the old chain of
+    # independent 5 mm MoveGroup requests.
     assert 'for i in range(1, count+1)' not in source
     assert 'cartesian_waypoints=1' in source
     assert 'cartesian_validation_segments=count' in source
