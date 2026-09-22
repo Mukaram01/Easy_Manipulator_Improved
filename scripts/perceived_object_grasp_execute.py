@@ -1241,15 +1241,11 @@ def main():
             request.goal_constraints = [joint_constraints(goal)]
             goal_state = updated_state(view.robot_state, goal, mimics)
         if straight:
-            # Chain short collision-planned moves in the same private scene.
-            # Validate FK along each returned trajectory, rather than treating
-            # endpoint feasibility as proof of a straight collision-safe path.
+            # Constrain one MoveGroup request to the full Cartesian tube, then
+            # independently audit the returned trajectory with dense FK samples.
             start_pose = fk(view.robot_state, contract['tool_link'])
             a, b = pose_values(start_pose.pose), pose_values(goal.pose)
             count = max(1, math.ceil(math.dist(a[:3], b[:3]) / 0.005))
-            combined = None
-            elapsed_ns = 0
-            total_planning_time = 0.0
             support = None
             if name == 'PREPLAN_LIFT' and len(view.robot_state.attached_collision_objects) == 1:
                 object_id = view.robot_state.attached_collision_objects[0].object.id
