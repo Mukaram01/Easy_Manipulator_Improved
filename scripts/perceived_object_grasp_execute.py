@@ -327,6 +327,8 @@ def preplan_retryable_failure(result):
     """
     if result.success:
         return False
+    if result.reason_code == 'CANDIDATE_SLICE_EXHAUSTED':
+        return True
     for check in reversed(result.checks):
         if check.get('status') not in ('FAIL', 'BLOCKED'):
             continue
@@ -501,6 +503,11 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     evaluation_cache = {}
     retryable = set()
     discovery_time = min(float(planning_time), 1.0)
+    # Fairness is wall-clock, not just per-MoveIt-request. Straight extraction
+    # can contain many 5 mm waypoint plans, so one candidate otherwise can still
+    # monopolize the whole 300 s resolver budget even with a 1 s request limit.
+    discovery_candidate_budget = 1.5
+    retry_candidate_budget = 30.0
 
     def request_key(request):
         destination = request['destination']
@@ -513,8 +520,14 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             tuple(destination.get('pose_rpy', ())),
         )
 
-    def evaluate_once(request, *, search_pass, planning_attempts, segment_time):
+    def evaluate_once(request, *, search_pass, planning_attempts, segment_time,
+                      candidate_budget=None):
         effective = dict(contract)
+        started = time.monotonic()
+        candidate_deadline = deadline
+        if candidate_budget is not None:
+            candidate_deadline = min(deadline, started + float(candidate_budget))
+        effective['search_deadline'] = deadline
         if resolved is not None and request.get('approach_ik') is None:
             return dict(success=False, checks=[], reason_code='TASK_APPROACH_IK_UNBOUND',
                         reason='Resolve and Generate the current approach IK branch before consumption.',
@@ -537,19 +550,22 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         old_attempts = contract.get('_candidate_planning_attempts', sentinel)
         old_time = contract.get('_candidate_planning_time', sentinel)
         old_pass = contract.get('_candidate_search_pass', sentinel)
+        old_wall = contract.get('_candidate_wall_deadline', sentinel)
         contract['_candidate_planning_attempts'] = planning_attempts
         contract['_candidate_planning_time'] = segment_time
         contract['_candidate_search_pass'] = search_pass
+        contract['_candidate_wall_deadline'] = candidate_deadline
         try:
             result = preplan_full_cycle(initial_scene=initial_scene,
                 observation=request['observation'], candidate=request['candidate'],
                 destination=request['destination'], contract=effective,
-                operations=operations, deadline=deadline)
+                operations=operations, deadline=candidate_deadline)
         finally:
             for key, old in (
                     ('_candidate_planning_attempts', old_attempts),
                     ('_candidate_planning_time', old_time),
-                    ('_candidate_search_pass', old_pass)):
+                    ('_candidate_search_pass', old_pass),
+                    ('_candidate_wall_deadline', old_wall)):
                 if old is sentinel:
                     contract.pop(key, None)
                 else:
@@ -559,7 +575,9 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             'candidate_id': result.candidate_id, 'object_id': request['observation']['id'],
             'stages': result.stages, 'checks': result.checks, 'reason_code': result.reason_code,
             'search_pass': search_pass, 'planning_attempts': planning_attempts,
-            'segment_planning_time': segment_time})
+            'segment_planning_time': segment_time,
+            'candidate_wall_budget': candidate_budget,
+            'candidate_wall_seconds': time.monotonic() - started})
         if result.success:
             cycles[result.candidate_id, request['observation']['id']] = result.cycle
         return {'success': result.success, 'checks': result.checks,
@@ -572,7 +590,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         resolution = resolve_task_intent(
             intent, environment, cell, targets,
             lambda request: evaluate_once(request, search_pass='revalidate',
-                                          planning_attempts=3, segment_time=float(planning_time)),
+                                          planning_attempts=3, segment_time=float(planning_time),
+                                          candidate_budget=None),
             now=resolution_reference_time, resolved=resolved)
         summary['candidate_search'] = {
             'mode': 'resolved_revalidation',
@@ -583,7 +602,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         def discover(request):
             key = request_key(request)
             outcome = evaluate_once(request, search_pass='discovery',
-                                    planning_attempts=1, segment_time=discovery_time)
+                                    planning_attempts=1, segment_time=discovery_time,
+                                    candidate_budget=discovery_candidate_budget)
             evaluation_cache[key] = copy.deepcopy(outcome)
             if outcome.get('retryable'):
                 retryable.add(key)
@@ -607,7 +627,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 if key not in retryable and cached is not None:
                     return copy.deepcopy(cached)
                 return evaluate_once(request, search_pass='retry',
-                                     planning_attempts=3, segment_time=float(planning_time))
+                                     planning_attempts=3, segment_time=float(planning_time),
+                                     candidate_budget=retry_candidate_budget)
 
             resolution = resolve_task_intent(
                 intent, environment, cell, targets, retry,
@@ -617,6 +638,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             'mode': 'fair_discovery_then_retry',
             'discovery_planning_attempts': 1,
             'discovery_planning_time': discovery_time,
+            'discovery_candidate_wall_budget': discovery_candidate_budget,
+            'retry_candidate_wall_budget': retry_candidate_budget,
             'full_planning_time': float(planning_time),
             'retryable_candidates': len(retryable),
             'retry_pass_used': retry_used,
