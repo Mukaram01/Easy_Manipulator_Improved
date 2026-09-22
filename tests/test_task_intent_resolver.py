@@ -220,6 +220,30 @@ def test_exact_grasp_failure_blocks_without_substitution():
     assert result["grasp_resolution"]["fallback"]["used"] is False
 
 
+def test_search_budget_exhaustion_stops_without_fake_later_attempts():
+    resolver = resolver_module()
+    intent = valid_intent("AUTO", "AUTO")
+    calls = []
+
+    def evaluator(request):
+        calls.append(request["candidate"].candidate_id)
+        return {
+            "success": False,
+            "reason_code": "SEARCH_BUDGET_EXHAUSTED",
+            "reason": "candidate search budget exhausted",
+            "checks": [{"code": "SEARCH_BUDGET", "status": "FAIL"}],
+            "stop_search": True,
+        }
+
+    result = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), evaluator, now=100.0)
+    assert result["readiness_status"] == "BLOCKED"
+    assert result["readiness"]["primary_code"] == "SEARCH_BUDGET_EXHAUSTED"
+    assert result["readiness"]["reason"] == "candidate search budget exhausted"
+    assert len(calls) == 1
+    assert len(result["grasp_resolution"]["attempts"]) == 1
+
+
 def test_exact_place_outside_region_blocks_without_clamp_or_fallback():
     resolver = resolver_module()
     intent = valid_intent("EXACT", "EXACT")
