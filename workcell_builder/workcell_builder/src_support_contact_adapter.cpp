@@ -17,6 +17,8 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <set>
+#include <sstream>
 #include <stdexcept>
 
 namespace workcell {
@@ -145,16 +147,126 @@ public:
         scene->getRobotModel());
       kset->add(req.path_constraints,scene->getTransforms());
 
+      const bool allow_initial_separation =
+        data["allow_initial_attached_world_separation"] &&
+        data["allow_initial_attached_world_separation"].as<bool>();
+      planning_scene::PlanningScenePtr separation_scene;
+      std::string carried_id;
+      Eigen::Isometry3d carried_origin=Eigen::Isometry3d::Identity();
+      std::set<std::string> certified_initial_neighbors;
+
+      if (allow_initial_separation) {
+        std::vector<const moveit::core::AttachedBody*> attached;
+        start.getAttachedBodies(attached);
+        if (attached.size()!=1)
+          return fail("CARTESIAN_PATH_INITIAL_SEPARATION_REQUIRES_ONE_ATTACHMENT");
+        carried_id=attached.front()->getName();
+        carried_origin=attached.front()->getGlobalPose();
+
+        collision_detection::CollisionRequest collision_request;
+        collision_request.contacts=true;
+        collision_request.max_contacts=256;
+        collision_request.max_contacts_per_pair=64;
+        collision_request.group_name=req.group_name;
+        collision_detection::CollisionResult collision_result;
+        scene->checkCollision(collision_request,collision_result,start);
+
+        if (collision_result.collision) {
+          if (collision_result.contacts.empty() ||
+              collision_result.contact_count>=collision_request.max_contacts)
+            return fail("CARTESIAN_PATH_INITIAL_COLLISION_EVIDENCE_INCOMPLETE");
+
+          for (const auto& pair_contacts:collision_result.contacts) {
+            for (const auto& contact:pair_contacts.second) {
+              const bool forward=
+                contact.body_name_1==carried_id &&
+                contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
+              const bool reverse=
+                contact.body_name_2==carried_id &&
+                contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
+              if (!forward && !reverse)
+                return fail("CARTESIAN_PATH_INITIAL_COLLISION_NOT_CARRIED_WORLD_CONTACT");
+              if (!std::isfinite(contact.depth) || contact.depth<0. ||
+                  contact.depth>support_contact_tolerance_m ||
+                  !contact.pos.allFinite() || !contact.normal.allFinite())
+                return fail("CARTESIAN_PATH_INITIAL_CONTACT_OUTSIDE_NUMERICAL_TOLERANCE");
+              certified_initial_neighbors.insert(
+                forward ? contact.body_name_2 : contact.body_name_1);
+            }
+          }
+
+          if (certified_initial_neighbors.empty())
+            return fail("CARTESIAN_PATH_INITIAL_COLLISION_UNCERTIFIED");
+
+          separation_scene=scene->diff();
+          separation_scene->decoupleParent();
+          for (const auto& neighbor:certified_initial_neighbors) {
+            collision_detection::DecideContactFn predicate=[
+              carried_id,neighbor](collision_detection::Contact& contact) {
+              const bool forward=
+                contact.body_name_1==carried_id &&
+                contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_name_2==neighbor &&
+                contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
+              const bool reverse=
+                contact.body_name_2==carried_id &&
+                contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_name_1==neighbor &&
+                contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
+              return (forward || reverse) && std::isfinite(contact.depth) &&
+                contact.depth>=0. && contact.depth<=support_contact_tolerance_m &&
+                contact.pos.allFinite() && contact.normal.allFinite();
+            };
+            separation_scene->getAllowedCollisionMatrixNonConst().setEntry(
+              carried_id,neighbor,predicate);
+          }
+
+          std::ostringstream names;
+          std::size_t index=0;
+          for (const auto& neighbor:certified_initial_neighbors) {
+            if (index++) names << ",";
+            names << neighbor;
+          }
+          RCLCPP_INFO(
+            rclcpp::get_logger("workcell.cartesian_path"),
+            "CARTESIAN_PATH_INITIAL_SEPARATION carried=%s neighbors=[%s] tolerance=%.6f",
+            carried_id.c_str(),names.str().c_str(),support_contact_tolerance_m);
+        }
+      }
+
+      auto separation_motion_valid=[
+        &carried_id,&carried_origin](const moveit::core::RobotState& state) {
+        if (carried_id.empty()) return true;
+        const auto* carried=state.getAttachedBody(carried_id);
+        if (!carried) return false;
+        const auto motion=
+          carried->getGlobalPose().translation()-carried_origin.translation();
+        const double angle=Eigen::AngleAxisd(
+          carried->getGlobalPose().linear()*carried_origin.linear().transpose()).angle();
+        return motion.head<2>().norm()<=.0025 &&
+          motion.z()>=-1e-9 && motion.z()<=.01 &&
+          angle<=.01;
+      };
+
       std::size_t collision_rejections=0;
       std::size_t constraint_rejections=0;
       moveit::core::GroupStateValidityCallbackFn valid=[
-        scene,kset,&collision_rejections,&constraint_rejections](
+        scene,separation_scene,kset,separation_motion_valid,
+        &collision_rejections,&constraint_rejections](
           moveit::core::RobotState* state,
           const moveit::core::JointModelGroup* group,
           const double* solution) {
         state->setJointGroupPositions(group,solution);
         state->update();
-        if (scene->isStateColliding(*state,group->getName())) {
+
+        const bool strict_collision_free=
+          !scene->isStateColliding(*state,group->getName());
+        bool collision_free=strict_collision_free;
+        if (!collision_free && separation_scene && separation_motion_valid(*state))
+          collision_free=!separation_scene->isStateColliding(*state,group->getName());
+        if (!collision_free) {
           ++collision_rejections;
           return false;
         }
@@ -202,16 +314,40 @@ public:
             *trajectory,velocity,acceleration))
         return fail("CARTESIAN_PATH_TIMING_FAILED");
 
-      // Final fail-closed validation over every emitted state in the exact
-      // effective private scene. The Python runtime independently performs a
-      // denser FK corridor audit after this adapter returns.
+      // Final fail-closed validation over every emitted state. Certified
+      // carried-object/world numerical contacts may exist only at the beginning
+      // of a lift, must disappear within 10 mm of monotonic vertical separation,
+      // and may never reappear. Every unrelated pair remains strict throughout.
+      bool separated=!separation_scene;
+      double last_height=-1e-12;
       for (std::size_t i=0;i<trajectory->getWayPointCount();++i) {
         const auto& state=trajectory->getWayPoint(i);
-        if (scene->isStateColliding(state,req.group_name))
-          return fail("CARTESIAN_PATH_EMITTED_COLLISION");
+        if (!carried_id.empty()) {
+          const auto* carried=state.getAttachedBody(carried_id);
+          if (!carried)
+            return fail("CARTESIAN_PATH_EMITTED_ATTACHMENT_MISSING");
+          const auto motion=
+            carried->getGlobalPose().translation()-carried_origin.translation();
+          if (motion.z()<last_height-1e-9 || !separation_motion_valid(state))
+            return fail("CARTESIAN_PATH_INITIAL_SEPARATION_MOTION_INVALID");
+          last_height=motion.z();
+        }
+
+        const bool strict_collision_free=
+          !scene->isStateColliding(state,req.group_name);
+        if (strict_collision_free) {
+          separated=true;
+        } else {
+          if (separated || !separation_scene ||
+              separation_scene->isStateColliding(state,req.group_name))
+            return fail("CARTESIAN_PATH_EMITTED_COLLISION");
+        }
+
         if (!kset->empty() && !kset->decide(state).satisfied)
           return fail("CARTESIAN_PATH_EMITTED_CONSTRAINT_FAILURE");
       }
+      if (separation_scene && !separated)
+        return fail("CARTESIAN_PATH_INITIAL_CONTACT_NOT_SEPARATED");
 
       res.trajectory_=trajectory;
       res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
