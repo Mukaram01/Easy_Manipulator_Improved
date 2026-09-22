@@ -239,7 +239,12 @@ def test_straight_segments_bind_ompl_to_cartesian_corridor_before_postcheck():
     assert 'request.path_constraints = cartesian_corridor_constraints(' in source
     assert 'PositionConstraint()' in source
     assert 'OrientationConstraint()' in source
-    # Keep the independent trajectory-point verification as a second guard.
+    # One constrained plan replaces the old chain of 5 mm MoveGroup requests.
+    assert 'for i in range(1, count+1)' not in source
+    assert 'cartesian_waypoints=1' in source
+    assert 'cartesian_validation_segments=count' in source
+    # Keep an independently densified FK verification as a second guard.
+    assert 'subdivisions = max(1, math.ceil(max_delta / 0.02))' in source
     assert 'pose_within_cartesian_corridor(actual_pose, a, b)' in source
 
 
