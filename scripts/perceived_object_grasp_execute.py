@@ -501,6 +501,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     cycles = {}
     resolution_reference_time = time.time()
     evaluation_cache = {}
+    discovery_order = {}
     retryable = set()
     discovery_time = min(float(planning_time), 1.0)
     # Fairness is wall-clock, not just per-MoveIt-request. Straight extraction
@@ -580,11 +581,17 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             'candidate_wall_seconds': time.monotonic() - started})
         if result.success:
             cycles[result.candidate_id, request['observation']['id']] = result.cycle
+        progress_passes = sum(1 for check in result.checks if check.get('status') == 'PASS')
+        failed_stage = next((check.get('failed_stage') or check.get('code')
+                             for check in reversed(result.checks)
+                             if check.get('status') in ('FAIL', 'BLOCKED')), None)
         return {'success': result.success, 'checks': result.checks,
                 'reason_code': result.reason_code, 'reason': result.reason,
                 'approach_ik': result.cycle['steps'][0]['metadata'].get('approach_ik') if result.success else None,
                 'retryable': preplan_retryable_failure(result),
-                'stop_search': result.reason_code == 'SEARCH_BUDGET_EXHAUSTED'}
+                'stop_search': result.reason_code == 'SEARCH_BUDGET_EXHAUSTED',
+                'progress_passes': progress_passes,
+                'failed_stage': failed_stage}
 
     if resolved is not None:
         resolution = resolve_task_intent(
@@ -601,6 +608,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     else:
         def discover(request):
             key = request_key(request)
+            if key not in discovery_order:
+                discovery_order[key] = len(discovery_order)
             outcome = evaluate_once(request, search_pass='discovery',
                                     planning_attempts=1, segment_time=discovery_time,
                                     candidate_budget=discovery_candidate_budget)
@@ -615,33 +624,70 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         retry_used = False
 
         # EXACT intentionally remains one evaluation of its one authored
-        # candidate. AUTO/PREFERRED may retry only stochastic failures, and
-        # only after the complete first-pass search has had its opportunity.
-        if (resolution['readiness_status'] == 'BLOCKED' and retryable and
+        # candidate. AUTO/PREFERRED retries only stochastic/slice failures after
+        # discovery, but not in raw candidate enumeration order. Retry the
+        # candidates that proved the deepest complete-cycle progress first.
+        # This prevents shallow pregrasp timeouts from consuming the remaining
+        # global budget before a candidate that already reached grasp/lift.
+        retry_priority = sorted(
+            retryable,
+            key=lambda key: (-evaluation_cache[key].get('progress_passes', 0),
+                             discovery_order.get(key, 1 << 30)))
+        retry_attempted = []
+        if (resolution['readiness_status'] == 'BLOCKED' and retry_priority and
                 intent['pick']['grasp']['policy'] != 'EXACT' and
                 time.monotonic() < deadline):
             retry_used = True
-            def retry(request):
-                key = request_key(request)
-                cached = evaluation_cache.get(key)
-                if key not in retryable and cached is not None:
-                    return copy.deepcopy(cached)
-                return evaluate_once(request, search_pass='retry',
-                                     planning_attempts=3, segment_time=float(planning_time),
-                                     candidate_budget=retry_candidate_budget)
+            for selected_key in retry_priority:
+                if time.monotonic() >= deadline:
+                    break
 
-            resolution = resolve_task_intent(
-                intent, environment, cell, targets, retry,
-                now=resolution_reference_time, resolved=None)
+                def retry(request, selected_key=selected_key):
+                    key = request_key(request)
+                    cached = evaluation_cache.get(key)
+                    if key != selected_key:
+                        return copy.deepcopy(cached) if cached is not None else {
+                            'success': False, 'checks': [],
+                            'reason_code': 'CANDIDATE_NOT_DISCOVERED',
+                            'reason': 'Candidate was not part of the completed discovery pass.'}
+                    outcome = evaluate_once(
+                        request, search_pass='retry',
+                        planning_attempts=3, segment_time=float(planning_time),
+                        candidate_budget=retry_candidate_budget)
+                    evaluation_cache[key] = copy.deepcopy(outcome)
+                    return outcome
+
+                resolution = resolve_task_intent(
+                    intent, environment, cell, targets, retry,
+                    now=resolution_reference_time, resolved=None)
+                current = evaluation_cache.get(selected_key, {})
+                retry_attempted.append({
+                    'strategy_ref': selected_key[0],
+                    'object_id': selected_key[1],
+                    'candidate_id': selected_key[2],
+                    'progress_passes': current.get('progress_passes', 0),
+                    'failed_stage': current.get('failed_stage'),
+                    'result_status': resolution['readiness_status'],
+                    'result_code': resolution['readiness']['primary_code'],
+                })
+                if resolution['readiness_status'] in ('READY', 'WARNING'):
+                    break
 
         summary['candidate_search'] = {
-            'mode': 'fair_discovery_then_retry',
+            'mode': 'fair_discovery_then_progress_retry',
             'discovery_planning_attempts': 1,
             'discovery_planning_time': discovery_time,
             'discovery_candidate_wall_budget': discovery_candidate_budget,
             'retry_candidate_wall_budget': retry_candidate_budget,
             'full_planning_time': float(planning_time),
             'retryable_candidates': len(retryable),
+            'retry_priority': [
+                {'strategy_ref': key[0], 'object_id': key[1], 'candidate_id': key[2],
+                 'progress_passes': evaluation_cache[key].get('progress_passes', 0),
+                 'failed_stage': evaluation_cache[key].get('failed_stage')}
+                for key in retry_priority
+            ],
+            'retry_attempted': retry_attempted,
             'retry_pass_used': retry_used,
         }
 
