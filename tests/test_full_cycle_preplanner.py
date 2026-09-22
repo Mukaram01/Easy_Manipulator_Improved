@@ -503,6 +503,104 @@ def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
     assert search['phases'][0]['retry_priority'][0]['progress_passes'] == 4
 
 
+def test_retry_reuses_discovery_proven_approach_ik_branch(monkeypatch):
+    """Deep discovery must not throw away an already-proven approach branch."""
+    from types import SimpleNamespace
+    import full_cycle_preplanner
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(
+        kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate')
+    kwargs.pop('destination')
+    intent = valid_intent('AUTO')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+
+    binding = {
+        'schema': 'workcell_approach_ik/v1',
+        'robot_model_sha256': 'fixture',
+        'planning_group': 'arm',
+        'tool_link': 'tool',
+        'frame_id': 'world',
+        'target_pose': [0., 0., 0., 0., 0., 0., 1.],
+        'joint_positions': {'x': 0.1},
+    }
+    calls = {}
+
+    def fake_preplan_full_cycle(*, observation, candidate, contract, **unused):
+        key = candidate.candidate_id
+        calls[key] = calls.get(key, 0) + 1
+        if calls[key] == 1:
+            if key == 'top_2f::003':
+                checks = [
+                    {'code':'PREPLAN_APPROACH','status':'PASS'},
+                    {'code':'PREPLAN_GRASP','status':'PASS'},
+                    {'code':'PREPLAN_CLOSE_GRIPPER','status':'PASS'},
+                    {'code':'ATTACH','status':'PASS'},
+                    {'code':'PREPLAN_LIFT','status':'PASS'},
+                    {'code':'PREPLAN_TRANSFER','status':'FAIL',
+                     'failed_stage':'PREPLAN_TRANSFER',
+                     'failure_kind':'budget'},
+                ]
+                stages = [
+                    {'stage':'PREPLAN_APPROACH','success':True,
+                     'moveit_code':1,'approach_ik':copy.deepcopy(binding)},
+                    {'stage':'PREPLAN_GRASP','success':True,'moveit_code':1},
+                    {'stage':'PREPLAN_CLOSE_GRIPPER','success':True,'moveit_code':1},
+                    {'stage':'PREPLAN_LIFT','success':True,'moveit_code':1},
+                    {'stage':'PREPLAN_TRANSFER','success':False,
+                     'reason_code':'CANDIDATE_SLICE_EXHAUSTED'},
+                ]
+                return SimpleNamespace(
+                    success=False, candidate_id=key,
+                    reason_code='CANDIDATE_SLICE_EXHAUSTED',
+                    reason='candidate wall-clock slice exhausted',
+                    checks=checks, stages=stages, cycle=None)
+            return SimpleNamespace(
+                success=False, candidate_id=key,
+                reason_code='PREPLAN_APPROACH_FAILED', reason='blocked',
+                checks=[{'code':'PREPLAN_APPROACH','status':'FAIL',
+                         'failed_stage':'PREPLAN_APPROACH',
+                         'failure_kind':'planning','moveit_code':-2}],
+                stages=[{'stage':'PREPLAN_APPROACH','success':False}],
+                cycle=None)
+
+        assert key == 'top_2f::003'
+        assert contract.get('approach_ik') == binding
+        cycle = {
+            'object_id': observation['id'],
+            'candidate': copy.deepcopy(candidate),
+            'steps': [
+                {'metadata': {'stage':'PREPLAN_APPROACH',
+                              'approach_ik':copy.deepcopy(binding)}}
+            ],
+            'full_cycle_prevalidated': True,
+        }
+        return SimpleNamespace(
+            success=True, candidate_id=key, reason_code=None, reason=None,
+            checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
+            stages=[], cycle=cycle)
+
+    monkeypatch.setattr(
+        full_cycle_preplanner, 'preplan_full_cycle', fake_preplan_full_cycle)
+
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    assert cycle['candidate'].candidate_id == 'top_2f::003'
+    retries = [
+        item for item in summary['candidate_attempts']
+        if item['search_pass'].startswith('retry:')
+    ]
+    assert len(retries) == 1
+    assert retries[0]['candidate_id'] == 'top_2f::003'
+
+
 def test_preferred_strategy_retries_before_fallback_discovery(monkeypatch):
     """PREFERRED must spend its retry beam before evaluating fallback strategy candidates."""
     from types import SimpleNamespace
