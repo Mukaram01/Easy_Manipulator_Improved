@@ -79,6 +79,59 @@ struct SupportFixture {
     return result;
   }
 };
+TEST(CartesianAdapter, StraightLiftUsesEffectivePrivateSupportScene) {
+  SupportFixture f(1.44e-8);
+  moveit_msgs::msg::Constraints marker;
+  marker.name=R"(workcell_cartesian_path:{"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
+  f.request.trajectory_constraints.constraints={marker};
+
+  workcell::InitialSupportContact support;
+  workcell::StraightCartesianPath cartesian;
+  planning_interface::MotionPlanResponse response;
+  std::vector<std::size_t> indexes;
+  bool downstream_called=false;
+  const bool result=support.adaptAndPlan(
+    [&](const auto& private_scene,const auto& clean,auto& out) {
+      std::vector<std::size_t> nested_indexes;
+      return cartesian.adaptAndPlan(
+        [&](const auto&,const auto&,auto&) {
+          downstream_called=true;
+          return false;
+        },
+        private_scene,clean,out,nested_indexes);
+    },
+    f.scene,f.request,response,indexes);
+
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(downstream_called);
+  ASSERT_TRUE(response.trajectory_);
+  ASSERT_GE(response.trajectory_->getWayPointCount(),2U);
+  EXPECT_NEAR(response.trajectory_->getFirstWayPoint().getVariablePosition("lift"),0.,1e-12);
+  EXPECT_NEAR(response.trajectory_->getLastWayPoint().getVariablePosition("lift"),.005,1e-6);
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::SUCCESS);
+}
+
+TEST(CartesianAdapter, MalformedMetadataFailsClosedWithoutPlannerFallback) {
+  SupportFixture f(0.);
+  f.request.path_constraints.name.clear();
+  moveit_msgs::msg::Constraints marker;
+  marker.name="workcell_cartesian_path:{";
+  f.request.trajectory_constraints.constraints={marker};
+  workcell::StraightCartesianPath cartesian;
+  planning_interface::MotionPlanResponse response;
+  std::vector<std::size_t> indexes;
+  bool downstream_called=false;
+  EXPECT_FALSE(cartesian.adaptAndPlan(
+    [&](const auto&,const auto&,auto&) {
+      downstream_called=true;
+      return true;
+    },
+    f.scene,f.request,response,indexes));
+  EXPECT_FALSE(downstream_called);
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN);
+  EXPECT_FALSE(response.trajectory_);
+}
+
 TEST(SupportAdapter, NumericalSupportStartAndStrictLift) {
   for(double depth : {0.,1.44e-8,0.00009}) {
     SupportFixture f(depth); bool called=false; EXPECT_TRUE(f.run({0.,.005},&called)); EXPECT_TRUE(called);
