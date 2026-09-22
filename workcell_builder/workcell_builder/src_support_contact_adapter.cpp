@@ -87,20 +87,20 @@ public:
       planning_interface::MotionPlanResponse& res,
       std::vector<std::size_t>&) const override {
     const std::string prefix="workcell_cartesian_path:";
-    const YAML::Node* metadata_node=nullptr;
+    bool found_metadata=false;
     std::string metadata_text;
     for (const auto& constraint:req.trajectory_constraints.constraints) {
       if (constraint.name.compare(0,prefix.size(),prefix)==0) {
-        if (metadata_node) {
+        if (found_metadata) {
           res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN;
           res.trajectory_.reset();
           return false;
         }
         metadata_text=constraint.name.substr(prefix.size());
-        metadata_node=reinterpret_cast<const YAML::Node*>(1);  // presence sentinel only
+        found_metadata=true;
       }
     }
-    if (!metadata_node) return planner(scene,req,res);
+    if (!found_metadata) return planner(scene,req,res);
 
     const auto begin=std::chrono::steady_clock::now();
     auto fail=[&](const char* why) {
