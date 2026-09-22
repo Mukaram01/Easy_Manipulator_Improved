@@ -69,6 +69,10 @@ class SearchBudgetExhausted(RuntimeError):
     """The global candidate-search wall-clock budget ended."""
 
 
+class CandidateBudgetExhausted(RuntimeError):
+    """One candidate used its fair-share discovery/retry wall-clock slice."""
+
+
 class MotionFeasibilityFailure(RuntimeError):
     """Serializable rejection evidence from the existing collision/planning API."""
 
@@ -109,11 +113,17 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             current_stage = name
             operations.stage(name)
 
+    def budget_failure():
+        if (contract.get('search_deadline') is not None and
+                time.monotonic() >= contract['search_deadline']):
+            return SearchBudgetExhausted('candidate search budget exhausted')
+        return CandidateBudgetExhausted('candidate wall-clock slice exhausted')
+
     def motion(name, goal, group=None, straight=False):
         nonlocal view
         stage(name)
         if time.monotonic() > deadline:
-            raise SearchBudgetExhausted('candidate search budget exhausted')
+            raise budget_failure()
         options = {}
         if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
             options['ik_binding'] = contract['approach_ik']
@@ -162,7 +172,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             if any(abs(v) > 1e-12 for v in placement['orientation'].get('rpy_rad', [0., 0., 0.])):
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored placement orientation offset')
         if time.monotonic() > deadline:
-            raise SearchBudgetExhausted('candidate search budget exhausted')
+            raise budget_failure()
         freshness_reference = contract.get('observation_reference_time', time.time())
         if (not isinstance(freshness_reference, (int, float)) or
                 not math.isfinite(freshness_reference)):
@@ -309,6 +319,9 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
     except Exception as exc:
         if isinstance(exc, SearchBudgetExhausted):
             reason_code = 'SEARCH_BUDGET_EXHAUSTED'
+            failure = dict(failure_kind='budget')
+        elif isinstance(exc, CandidateBudgetExhausted):
+            reason_code = 'CANDIDATE_SLICE_EXHAUSTED'
             failure = dict(failure_kind='budget')
         else:
             reason_code = check_code + '_FAILED'
