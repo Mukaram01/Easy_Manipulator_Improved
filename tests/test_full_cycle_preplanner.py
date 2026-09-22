@@ -188,6 +188,19 @@ def test_invalid_preconditions_never_reach_planning(change, reason):
     assert goals == []
 
 
+def test_candidate_slice_exhaustion_is_retryable_but_not_global_search_stop():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, _ = fixture()
+    kwargs["contract"]["search_deadline"] = time.monotonic() + 30.0
+    kwargs["deadline"] = time.monotonic() - 0.001
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code == "CANDIDATE_SLICE_EXHAUSTED"
+    assert result.checks[-1]["failure_kind"] == "budget"
+    assert runtime.preplan_retryable_failure(result)
+    assert goals == []
+
+
 def test_failed_motion_evidence_cannot_become_prevalidated():
     from dataclasses import replace
     from full_cycle_preplanner import preplan_full_cycle
