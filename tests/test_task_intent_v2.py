@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
 from pathlib import Path
 
 import pytest
@@ -131,7 +132,33 @@ def test_v1_migration_preserves_top2f_and_records_catalog_materialization():
     assert migrated["pick"]["grasp"]["policy"] == "EXACT"
     assert migrated["pick"]["grasp"]["strategy_ref"] == "top_2f"
     assert migrated["provenance"]["migration"]["materialized_from_catalog"]
-    assert migrated["place"]["target"]["region_ref"] == "default_drop_zone"
+    assert migrated["place"]["target"]["region_ref"] == "default_ddef test_v1_missing_place_clearance_uses_current_v2_default_and_explicit_value_survives():
+    import yaml
+    env = yaml.safe_load(
+        (Path(__file__).parents[1] / "scenes/ur5_2f_test/environment.yaml").read_text()
+    )["environment"]
+    base = {
+        "schema": "workcell_builder_task_intent/v1",
+        "task": {"type": "pick_place"},
+        "pick": {
+            "source": {"id": "objects"},
+            "zone": {"id": "pick_zone_main"},
+            "object_filter": {"class_id": "bottle"},
+        },
+        "grasp": {"strategy_ref": "top_2f"},
+        "place": {"target": {"id": "default_drop_zone"}},
+    }
+
+    migrated = migrate_v1(base, env)
+    assert migrated["place"]["placement"]["clearance_m"] == pytest.approx(0.01)
+
+    explicit = copy.deepcopy(base)
+    explicit["place"]["place_clearance_m"] = 0.05
+    migrated_explicit = migrate_v1(explicit, env)
+    assert migrated_explicit["place"]["placement"]["clearance_m"] == pytest.approx(0.05)
+
+
+rop_zone"
 
 
 def test_v1_non_z_up_retreat_axis_survives_migration():
