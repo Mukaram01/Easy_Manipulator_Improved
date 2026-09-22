@@ -186,6 +186,16 @@ struct SupportFixture {
     request.group_name="arm";
     request.path_constraints.name="workcell_initial_support_contact:{object_id: part, support_id: fixture, floor_z: 0, tool_link: tool}";
   }
+  void addPileNeighbor(double overlap) {
+    const auto& state=scene->getCurrentState();
+    const auto* body=state.getAttachedBody("part");
+    ASSERT_NE(body,nullptr);
+    const double bottom=body->getGlobalPose().translation().z()-.0125;
+    Eigen::Isometry3d pose=Eigen::Isometry3d::Identity();
+    pose.translation().z()=bottom-.0125+overlap;
+    scene->getWorldNonConst()->addToObject(
+      "pile_neighbor",shapes::ShapeConstPtr(new shapes::Box(.025,.025,.025)),pose);
+  }
   bool run(std::vector<double> heights={0.,.005}, bool* called=nullptr) {
     workcell::InitialSupportContact adapter;
     planning_interface::MotionPlanResponse response; std::vector<std::size_t> indexes;
@@ -206,7 +216,7 @@ struct SupportFixture {
 TEST(CartesianAdapter, StraightLiftUsesEffectivePrivateSupportScene) {
   SupportFixture f(1.44e-8);
   moveit_msgs::msg::Constraints marker;
-  marker.name=R"(workcell_cartesian_path:{"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
+  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
   f.request.trajectory_constraints.constraints={marker};
 
   workcell::InitialSupportContact support;
@@ -233,6 +243,63 @@ TEST(CartesianAdapter, StraightLiftUsesEffectivePrivateSupportScene) {
   EXPECT_NEAR(response.trajectory_->getFirstWayPoint().getVariablePosition("lift"),0.,1e-12);
   EXPECT_NEAR(response.trajectory_->getLastWayPoint().getVariablePosition("lift"),.005,1e-6);
   EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::SUCCESS);
+}
+
+TEST(CartesianAdapter, CertifiedInitialPileContactSeparatesDuringLift) {
+  SupportFixture f(1.44e-8);
+  f.addPileNeighbor(0.00005);
+  moveit_msgs::msg::Constraints marker;
+  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
+  f.request.trajectory_constraints.constraints={marker};
+
+  workcell::InitialSupportContact support;
+  workcell::StraightCartesianPath cartesian;
+  planning_interface::MotionPlanResponse response;
+  std::vector<std::size_t> indexes;
+  bool downstream_called=false;
+  const bool result=support.adaptAndPlan(
+    [&](const auto& private_scene,const auto& clean,auto& out) {
+      std::vector<std::size_t> nested_indexes;
+      return cartesian.adaptAndPlan(
+        [&](const auto&,const auto&,auto&) {
+          downstream_called=true;
+          return false;
+        },
+        private_scene,clean,out,nested_indexes);
+    },
+    f.scene,f.request,response,indexes);
+
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(downstream_called);
+  ASSERT_TRUE(response.trajectory_);
+  EXPECT_NEAR(response.trajectory_->getLastWayPoint().getVariablePosition("lift"),.005,1e-6);
+}
+
+TEST(CartesianAdapter, InitialPileContactAboveNumericalToleranceFailsClosed) {
+  SupportFixture f(1.44e-8);
+  f.addPileNeighbor(0.00011);
+  moveit_msgs::msg::Constraints marker;
+  marker.name=R"(workcell_cartesian_path:{"allow_initial_attached_world_separation":true,"goal_pose":[0,0,0.005,0,0,0,1],"max_step_m":0.001,"schema":"workcell_cartesian_path/v1","stage":"PREPLAN_LIFT","start_pose":[0,0,0,0,0,0,1],"tool_link":"tool"})";
+  f.request.trajectory_constraints.constraints={marker};
+
+  workcell::InitialSupportContact support;
+  workcell::StraightCartesianPath cartesian;
+  planning_interface::MotionPlanResponse response;
+  std::vector<std::size_t> indexes;
+  bool downstream_called=false;
+  EXPECT_FALSE(support.adaptAndPlan(
+    [&](const auto& private_scene,const auto& clean,auto& out) {
+      std::vector<std::size_t> nested_indexes;
+      return cartesian.adaptAndPlan(
+        [&](const auto&,const auto&,auto&) {
+          downstream_called=true;
+          return true;
+        },
+        private_scene,clean,out,nested_indexes);
+    },
+    f.scene,f.request,response,indexes));
+  EXPECT_FALSE(downstream_called);
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN);
 }
 
 TEST(CartesianAdapter, MalformedMetadataFailsClosedWithoutPlannerFallback) {
