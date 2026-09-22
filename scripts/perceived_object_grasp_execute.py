@@ -1277,7 +1277,8 @@ def main():
         return constraints
 
     def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
-                     ik_binding=None, cartesian_corridor=None):
+                     ik_binding=None, cartesian_corridor=None,
+                     initial_separation_object_ids=None):
         stage(name)
         wall_deadline = min(deadline, float(contract.get('_candidate_wall_deadline', deadline)))
         def wall_budget_failure():
@@ -1312,18 +1313,39 @@ def main():
             a, b = pose_values(start_pose.pose), pose_values(goal.pose)
             count = max(1, math.ceil(math.dist(a[:3], b[:3]) / 0.005))
             support = None
+            initial_separation_ids = []
             if name == 'PREPLAN_LIFT' and len(view.robot_state.attached_collision_objects) == 1:
                 object_id = view.robot_state.attached_collision_objects[0].object.id
                 original = next(o for o in initial.world.collision_objects if o.id == object_id)
                 eligible_supports = legitimate_support_ids(collision_object_dict(original), cell['environment'], manifest)
                 measured = call(validity_client, GetStateValidity.Request(robot_state=view.robot_state, group_name=''))
                 contacts = contacts_in_planned_scene(measured.contacts, view, initial)
+                perceived_ids = {item['id'] for item in summary.get('normalized_objects', [])}
                 floor_contacts = []
                 for c in contacts:
                     if c.contact_body_1 == object_id and c.body_type_1 == 2 and c.contact_body_2 in eligible_supports and c.normal.z < -.999999:
                         floor_contacts.append((c.contact_body_2, c.position.z))
-                    elif c.contact_body_2 == object_id and c.body_type_2 == 2 and c.contact_body_1 in eligible_supports and c.normal.z > .999999:
+                        continue
+                    if c.contact_body_2 == object_id and c.body_type_2 == 2 and c.contact_body_1 in eligible_supports and c.normal.z > .999999:
                         floor_contacts.append((c.contact_body_1, c.position.z))
+                        continue
+
+                    neighbor = None
+                    if (c.contact_body_1 == object_id and c.body_type_1 == 2 and
+                            c.body_type_2 == 1 and c.contact_body_2 in perceived_ids):
+                        neighbor = c.contact_body_2
+                    elif (c.contact_body_2 == object_id and c.body_type_2 == 2 and
+                            c.body_type_1 == 1 and c.contact_body_1 in perceived_ids):
+                        neighbor = c.contact_body_1
+                    if neighbor is not None:
+                        if (not math.isfinite(c.depth) or c.depth < 0.0 or
+                                c.depth > 0.0001):
+                            from full_cycle_preplanner import MotionFeasibilityFailure
+                            raise MotionFeasibilityFailure(
+                                'initial piled-object contact exceeds 0.1 mm numerical separation tolerance',
+                                contacts=[c])
+                        initial_separation_ids.append(neighbor)
+                initial_separation_ids = sorted(set(initial_separation_ids))
                 if floor_contacts and len({p[0] for p in floor_contacts}) == 1:
                     if 'workcell/InitialSupportContact' not in support_adapters.split():
                         raise RuntimeError('SUPPORT_CONTACT_ADAPTER_MISSING: regenerate and launch the current MoveIt configuration')
@@ -1338,7 +1360,8 @@ def main():
             part = plan_segment(
                 view, name, goal, group,
                 initial_support=support,
-                cartesian_corridor=(a, b))
+                cartesian_corridor=(a, b),
+                initial_separation_object_ids=initial_separation_ids)
             trajectory = part['trajectory']
             names = list(trajectory.joint_trajectory.joint_names)
             points = trajectory.joint_trajectory.points
@@ -1393,6 +1416,7 @@ def main():
                 cartesian_validation_segments=count,
                 cartesian_validation_samples=samples_checked,
                 initial_support_contact=support,
+                initial_separation_object_ids=initial_separation_ids,
                 attached_ids=[o.object.id for o in before.robot_state.attached_collision_objects],
                 world_ids=[o.id for o in before.world.collision_objects])
             return dict(
@@ -1444,7 +1468,9 @@ def main():
                 'start_pose': list(cartesian_corridor[0]),
                 'goal_pose': list(cartesian_corridor[1]),
                 'max_step_m': 0.0025,
-                'allow_initial_attached_world_separation': name == 'PREPLAN_LIFT',
+                'initial_separation_object_ids': list(initial_separation_object_ids or []),
+                'allow_initial_attached_world_separation':
+                    bool(initial_separation_object_ids) and name == 'PREPLAN_LIFT',
             }, sort_keys=True, separators=(',', ':'))
             request.trajectory_constraints.constraints = [marker]
         elif initial_support is not None:
