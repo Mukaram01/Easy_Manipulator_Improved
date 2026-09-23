@@ -294,7 +294,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
             'strategy_ref': candidate.strategy_ref, 'observation': copy.deepcopy(observation),
             'candidate': candidate, 'destination': copy.deepcopy(checked['place_resolution']['destination']),
             'approach_ik': copy.deepcopy(chosen.get('approach_ik')),
-            'transfer_ik_seed': copy.deepcopy(chosen.get('transfer_ik_seed'))})
+            'transfer_ik_seed': copy.deepcopy(chosen.get('transfer_ik_seed')),
+            'extraction_intent': copy.deepcopy(chosen.get('extraction_intent'))})
         checks = copy.deepcopy(evaluation.get('checks', []))
         checked['readiness']['checks'] = checks
         if evaluation.get('success') is not True or any(c.get('status') in ('FAIL', 'BLOCKED') for c in checks):
@@ -352,6 +353,7 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                         "checks": checks,
                         "reason_code": evaluation.get("reason_code"),
                         "reason": evaluation.get("reason"),
+                        "extraction_attempts": copy.deepcopy(evaluation.get("extraction_attempts", [])),
                     })
                     result["readiness"]["checks"] = checks
                     if evaluation.get("stop_search"):
@@ -364,6 +366,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                                                 selected_object_id=observation["id"],
                                                 selected_candidate_id=candidate.candidate_id,
                                                 effective_grasp=copy.deepcopy(effective_grasp))
+                        if evaluation.get('extraction_intent') is not None:
+                            grasp_resolution['extraction_intent'] = copy.deepcopy(evaluation['extraction_intent'])
                         if evaluation.get('approach_ik') is not None:
                             grasp_resolution['approach_ik'] = copy.deepcopy(evaluation['approach_ik'])
                         if evaluation.get('transfer_ik_seed') is not None:

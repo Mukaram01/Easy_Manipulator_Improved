@@ -255,7 +255,9 @@ measured geometry. That run did not prove retention or any later physical gate.
 
 Resolve retains the arm IK seed from a successfully planned transfer in the
 existing hashed task handoff. Revalidation seeds only the transfer IK query
-from that configuration; the current Cartesian goal, measured planning start,
+from that configuration and rejects missing, nonfinite or changed arm solutions
+outside the existing approach tolerance of 0.0001 rad. Missing saved transfer
+bindings block revalidation. The current Cartesian goal, measured planning start,
 gripper state and private collision scene are still used. The seed is bound
 to model, planning group, tool, frame and stage. It is neither a trajectory
 nor collision authority, and it does not change planning time or tolerances.
@@ -350,9 +352,52 @@ neighbor gap of 6.82 micrometres near peak initial acceleration. The measured
 certificate correctly rejected the new contact. Dense replay of the commanded
 trajectory with the measured attachment remained collision-free.
 
-This conservative lift profile addresses physical dynamics; it does not change
-the Cartesian generator, poses, collision/contact/slip/freshness bounds, frozen
-certificate, planning budget or execution deadline. Its live effectiveness must
-be demonstrated by the unchanged contact-release and full-cycle gates. The
+This conservative lift profile reduces commanded dynamics; it does not change
+collision/contact/slip/freshness bounds, the frozen certificate, planning budget
+or execution deadline. The subsequent `20260923-131514` trial still failed at
+10 mm rise because a same-height side neighbor had not cleared 0.1 mm. Speed
+reduction therefore does not establish extraction feasibility. The
 planning metadata records the applied scaling, and the owned goal records the
 resulting positions, velocities, accelerations and times.
+
+
+### Generic single-cycle extraction feasibility
+
+The existing resolver considers all fresh targets allowed by TaskIntent in its
+confidence/height order, with ID only breaking ties. EXACT still evaluates its
+one object/grasp; AUTO and PREFERRED retain their permitted fallback semantics.
+A grasp is selectable only after the entire cycle has passed.
+
+At the private post-close attachment checkpoint, the existing preplanner tries
+at most four extraction intents: the authored vertical lift, then an aggregate
+and up to two individual away directions derived from obstructing nearby BOX
+geometry. Each has the same authored rise and at most 2 mm total lateral offset,
+inside the unchanged 2.5 mm initial-separation corridor. Downward support normals
+that already clear vertically do not distort the away direction. No object ID,
+world axis or captured pile coordinate determines a direction.
+
+The existing FCL geometry interface rejects a predicted extraction unless exact
+initial contacts and initially nearby pairs clear 0.1 mm before 10 mm rise.
+Positive-gap pairs never gain contact permission. Initial penetration remains
+bounded by 0.1 mm; new contacts and regained expired allowances fail. Geometry
+is checked before planning and along densified object poses from the actual
+planned Cartesian trajectory. Full-arm MoveIt/private-scene checks remain
+required, including non-BOX obstacles. Geometry prediction never certifies a
+physical grasp or changes the live ACM/contact policy.
+
+Every variant must also pass transfer, placement, containment, release,
+retreat and home before selection. Failed variants restore the same private
+checkpoint, retain structured rejection evidence and share the existing
+candidate/global deadlines. Exhausted extraction variants yield
+`NO_VALID_EXTRACTION`; later-stage and budget failures remain distinct.
+The resolution hash binds the successful relative extraction intent and proven
+IK solutions. Consumption checks only that bound candidate and plans fresh
+trajectories against the current scene. Failed variants cannot export transfer
+seeds to another variant.
+
+Evidence records fresh targets, evaluated objects/grasps/variants, rejection
+stages and selected intent. During execution all existing fresh physical
+measurements, opposing fingertips, retention, slip, exact pile certification,
+irreversible expiry and cancellation checks remain authoritative. This is one
+pick/place cycle; reobserve/repeat orchestration and hardware access remain out
+of scope. Use the same six-gate runner above with a fresh output directory.

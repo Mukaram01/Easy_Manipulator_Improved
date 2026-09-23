@@ -940,6 +940,7 @@ install(PROGRAMS
   ../../scripts/physical_destination.py
   ../../scripts/runtime_pick_inputs.py
   ../../scripts/full_cycle_preplanner.py
+  ../../scripts/pile_extraction.py
   ../../scripts/grasp_strategy_candidates.py
   ../../scripts/perceived_object_grasp_execute.py
   ../../scripts/simulator_backend.py

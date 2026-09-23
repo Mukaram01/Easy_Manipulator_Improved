@@ -232,7 +232,8 @@ def test_preplanner_operations_have_no_execution_capability():
     assert {f.name for f in fields(PreplanOperations)} == {
         'plan_segment', 'fk', 'state_validity', 'updated_state', 'pose_message',
         'translated_pose', 'target_contact_matrix', 'verify_selected_contacts',
-        'private_attachment', 'object_pose_after_motion', 'place_detachment_diff', 'stage'}
+        'private_attachment', 'object_pose_after_motion', 'place_detachment_diff', 'stage',
+        'extraction_candidates'}
 
 
 @pytest.mark.parametrize('change,reason', [
@@ -548,13 +549,13 @@ def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
                      'failure_kind':'planning','moveit_code':-6},
                 ]
                 code, reason = 'PREPLAN_APPROACH_FAILED', 'pregrasp timed out'
-            return SimpleNamespace(
+            return SimpleNamespace(extraction_attempts=[],
                 success=False, candidate_id=cid, reason_code=code, reason=reason,
                 checks=checks, stages=[], cycle=None)
         cycle = {
             'object_id': observation['id'], 'candidate': copy.deepcopy(candidate),
             'steps':[{'metadata':{}}], 'full_cycle_prevalidated':True}
-        return SimpleNamespace(
+        return SimpleNamespace(extraction_attempts=[],
             success=True, candidate_id=cid, reason_code=None, reason=None,
             checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
             stages=[], cycle=cycle)
@@ -627,12 +628,12 @@ def test_retry_reuses_discovery_proven_approach_ik_branch(monkeypatch):
                     {'stage':'PREPLAN_TRANSFER','success':False,
                      'reason_code':'CANDIDATE_SLICE_EXHAUSTED'},
                 ]
-                return SimpleNamespace(
+                return SimpleNamespace(extraction_attempts=[],
                     success=False, candidate_id=key,
                     reason_code='CANDIDATE_SLICE_EXHAUSTED',
                     reason='candidate wall-clock slice exhausted',
                     checks=checks, stages=stages, cycle=None)
-            return SimpleNamespace(
+            return SimpleNamespace(extraction_attempts=[],
                 success=False, candidate_id=key,
                 reason_code='PREPLAN_APPROACH_FAILED', reason='blocked',
                 checks=[{'code':'PREPLAN_APPROACH','status':'FAIL',
@@ -652,7 +653,7 @@ def test_retry_reuses_discovery_proven_approach_ik_branch(monkeypatch):
             ],
             'full_cycle_prevalidated': True,
         }
-        return SimpleNamespace(
+        return SimpleNamespace(extraction_attempts=[],
             success=True, candidate_id=key, reason_code=None, reason=None,
             checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
             stages=[], cycle=cycle)
@@ -692,7 +693,7 @@ def test_preferred_strategy_retries_before_fallback_discovery(monkeypatch):
     def fake_preplan_full_cycle(*, observation, candidate, **unused):
         calls.append(candidate.strategy_ref)
         if candidate.strategy_ref == 'top_2f':
-            return SimpleNamespace(
+            return SimpleNamespace(extraction_attempts=[],
                 success=False, candidate_id=candidate.candidate_id,
                 reason_code='PREPLAN_APPROACH_FAILED', reason='timeout',
                 checks=[{'code':'PREPLAN_APPROACH','status':'FAIL',
@@ -702,7 +703,7 @@ def test_preferred_strategy_retries_before_fallback_discovery(monkeypatch):
         cycle = {
             'object_id': observation['id'], 'candidate': copy.deepcopy(candidate),
             'steps':[{'metadata':{}}], 'full_cycle_prevalidated':True}
-        return SimpleNamespace(
+        return SimpleNamespace(extraction_attempts=[],
             success=True, candidate_id=candidate.candidate_id,
             reason_code=None, reason=None,
             checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
@@ -775,3 +776,170 @@ def test_transfer_seed_is_forwarded_only_to_fresh_transfer_planning():
     assert next(options for name,options in calls if name=='PREPLAN_TRANSFER')=={'ik_seed':seed}
     assert all(not options for name,options in calls if name!='PREPLAN_TRANSFER')
     assert kwargs['contract']['transfer_ik_seed']==seed
+
+
+def extraction_fixture(fail_stage='PREPLAN_LIFT', fail_all=False):
+    from dataclasses import replace
+    kwargs, trace, goals, validity = fixture()
+    base=kwargs['operations']; seen=[]; active=[None]
+    variants=[dict(schema='workcell_extraction_intent/v1',variant_id=name,
+        object_id=kwargs['observation']['id'],candidate_id=kwargs['candidate'].candidate_id,
+        offset_xyz_m=[x,0.,kwargs['contract']['retreat_distance_m']])
+        for name,x in [('vertical',0.),('away',.002)]]
+    def segment(view,name,goal,group=None,straight=False,**options):
+        if name=='PREPLAN_LIFT':
+            active[0]=options['extraction_intent']['variant_id']
+            seen.append((active[0],copy.deepcopy(view)))
+        if name==fail_stage and (fail_all or active[0]=='vertical'):
+            raise RuntimeError('variant collision')
+        return base.plan_segment(view,name,goal,group,straight)
+    kwargs['operations']=replace(base,plan_segment=segment,
+        extraction_candidates=lambda view,observation,candidate,retreat:copy.deepcopy(variants))
+    return kwargs,seen,variants
+
+
+@pytest.mark.parametrize('failed_stage',['PREPLAN_LIFT','PREPLAN_TRANSFER','PREPLAN_HOME'])
+def test_extraction_variants_require_entire_suffix_and_restore_checkpoint(failed_stage):
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,seen,variants=extraction_fixture(failed_stage)
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert [x[0] for x in seen]==['vertical','away']
+    assert seen[0][1]==seen[1][1]
+    assert result.cycle['extraction_intent']==variants[1]
+    assert [x['stage'] for x in result.cycle['steps']]==EXPECTED
+    assert all(c['status']=='PASS' for c in result.checks)
+    assert result.extraction_attempts[0]['failed_stage']==failed_stage
+    assert result.extraction_attempts[1]['success'] is True
+
+
+def test_all_extraction_variants_fail_with_explicit_reason():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,seen,_=extraction_fixture(fail_all=True)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.cycle is None
+    assert result.reason_code=='NO_VALID_EXTRACTION'
+    assert len(result.extraction_attempts)==2
+
+
+def test_bound_extraction_revalidation_never_substitutes_variant():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,seen,variants=extraction_fixture()
+    kwargs['contract']['extraction_intent']=copy.deepcopy(variants[0])
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code=='NO_VALID_EXTRACTION'
+    assert [x[0] for x in seen]==['vertical']
+    kwargs['contract']['extraction_intent']['offset_xyz_m'][0]=.001
+    seen.clear();result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code=='EXTRACTION_INTENT_CHANGED'
+    assert not seen
+
+
+def test_unbound_transfer_seed_cannot_cross_extraction_variants():
+    from full_cycle_preplanner import preplan_full_cycle
+    from dataclasses import replace
+    kwargs,_,_=extraction_fixture('PREPLAN_TRANSFER')
+    base=kwargs['operations']; received=[]
+    def segment(*args,**options):
+        if args[1]=='PREPLAN_TRANSFER':received.append(options.get('ik_seed'))
+        return base.plan_segment(*args,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    kwargs['contract']['transfer_ik_seed']={'unbound':'seed'}
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert received==[None,None]
+
+
+def test_extraction_exhaustion_preserves_later_phase_failure():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,_,_=extraction_fixture('PREPLAN_TRANSFER',fail_all=True)
+    result=preplan_full_cycle(**kwargs)
+    assert result.reason_code=='PREPLAN_TRANSFER_FAILED'
+    assert len(result.extraction_attempts)==2
+
+
+def test_extraction_budget_exhaustion_does_not_start_another_variant():
+    from full_cycle_preplanner import preplan_full_cycle,CandidateBudgetExhausted
+    from dataclasses import replace
+    kwargs,_,_=extraction_fixture();base=kwargs['operations'];seen=[]
+    def segment(*args,**options):
+        if args[1]=='PREPLAN_LIFT':
+            seen.append(options['extraction_intent']['variant_id'])
+            raise CandidateBudgetExhausted('shared slice exhausted')
+        return base.plan_segment(*args,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert result.reason_code=='CANDIDATE_SLICE_EXHAUSTED'
+    assert seen==['vertical']
+
+
+def test_bound_transfer_seed_is_forwarded_only_with_matching_extraction():
+    from full_cycle_preplanner import preplan_full_cycle
+    from dataclasses import replace
+    kwargs,_,variants=extraction_fixture();base=kwargs['operations'];received=[]
+    kwargs['contract'].update(extraction_intent=copy.deepcopy(variants[1]),transfer_ik_seed={'bound':'seed'})
+    def segment(*args,**options):
+        if args[1]=='PREPLAN_TRANSFER':received.append(options.pop('ik_seed',None))
+        return base.plan_segment(*args,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert received==[{'bound':'seed'}]
+
+
+def test_selected_extraction_has_explicit_feasibility_check_without_extra_motion():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,_,variants=extraction_fixture()
+    result=preplan_full_cycle(**kwargs)
+    evidence=next(c for c in result.checks if c['code']=='INITIAL_PILE_EXTRACTION')
+    assert evidence['status']=='PASS'
+    assert evidence['extraction_intent']==variants[1]
+    assert [s['stage'] for s in result.cycle['steps']]==EXPECTED
+
+
+@pytest.mark.parametrize('offset',[[.003,0.,.15],[float('nan'),0.,.15],[0.,0.,.14]])
+def test_invalid_extraction_offset_fails_before_lift(offset):
+    from full_cycle_preplanner import preplan_full_cycle
+    from dataclasses import replace
+    kwargs,seen,variants=extraction_fixture()
+    variants[0]['offset_xyz_m']=offset
+    kwargs['operations']=replace(kwargs['operations'],extraction_candidates=lambda *args:variants)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code=='EXTRACTION_INTENT_INVALID'
+    assert not seen
+
+
+@pytest.mark.parametrize('all_fail',[False,True])
+def test_real_extraction_failure_preserves_details_and_safe_variant_fallback(all_fail):
+    from dataclasses import replace
+    from full_cycle_preplanner import preplan_full_cycle
+    from pile_extraction import ExtractionFailure
+    kwargs,seen,variants=extraction_fixture(fail_stage=None)
+    base=kwargs['operations']; attempted=[]
+    def segment(view,name,goal,group=None,straight=False,**options):
+        if name=='PREPLAN_LIFT':
+            variant=options['extraction_intent']['variant_id'];attempted.append(variant)
+            if all_fail or variant=='vertical':
+                raise ExtractionFailure('EXTRACTION_CLEARANCE_INSUFFICIENT',
+                                        neighbor='fixture-neighbor',separation_m=.000002)
+        return base.plan_segment(view,name,goal,group,straight,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert attempted==['vertical','away']
+    rejected=result.extraction_attempts[0]
+    assert rejected['failed_stage']=='PREPLAN_LIFT'
+    assert rejected['failure_kind']=='extraction'
+    assert rejected['extraction_reason_code']=='EXTRACTION_CLEARANCE_INSUFFICIENT'
+    assert rejected['neighbor']=='fixture-neighbor'
+    assert rejected['separation_m']==.000002
+    assert 'TypeError' not in (result.reason or '')
+    if all_fail:
+        assert not result.success and result.cycle is None
+        assert result.reason_code=='NO_VALID_EXTRACTION'
+        assert result.checks[-1]['failure_kind']=='extraction'
+        assert result.checks[-1]['extraction_reason_code']=='EXTRACTION_CLEARANCE_INSUFFICIENT'
+    else:
+        assert result.success,result.reason
+        assert result.cycle['extraction_intent']==variants[1]
+        assert [step['stage'] for step in result.cycle['steps']]==EXPECTED
+        assert all(check['status']=='PASS' for check in result.checks)

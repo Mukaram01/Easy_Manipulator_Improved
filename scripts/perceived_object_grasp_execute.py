@@ -325,9 +325,16 @@ def preplan_retryable_failure(result):
     while later objects/strategies remain untested. Deterministic IK, collision,
     geometry, corridor and task-constraint failures are terminal for that candidate.
     """
-    if result.success:
+    if result.success or result.reason_code == 'SEARCH_BUDGET_EXHAUSTED':
         return False
     if result.reason_code == 'CANDIDATE_SLICE_EXHAUSTED':
+        return True
+    # A later geometric rejection must not erase an earlier variant's
+    # stochastic failure. The same existing candidate retry budget still caps
+    # the whole evaluation; no variant receives an extra planning budget.
+    if any(attempt.get('failure_kind') == 'planning' and
+           retryable_plan_failure(attempt.get('moveit_code'))
+           for attempt in getattr(result, 'extraction_attempts', [])):
         return True
     for check in reversed(result.checks):
         if check.get('status') not in ('FAIL', 'BLOCKED'):
@@ -438,7 +445,7 @@ def bound_approach_seed(binding, goal, contract, current, mimics):
 
 
 def transfer_ik_seed(goal, contract, positions):
-    """A successful transfer's arm seed, never a saved goal or trajectory."""
+    """A proven transfer arm branch for fresh IK/planning, never a trajectory."""
     arm = {n: positions[n] for n in contract['home_joint_names']}
     if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
                for v in arm.values()):
@@ -559,8 +566,16 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             return dict(success=False, checks=[], reason_code='TASK_APPROACH_IK_UNBOUND',
                         reason='Resolve and Generate the current approach IK branch before consumption.',
                         retryable=False)
+        if resolved is not None and request.get('transfer_ik_seed') is None:
+            return dict(success=False, checks=[], reason_code='TASK_TRANSFER_IK_UNBOUND',
+                        reason='Resolve and Generate the current transfer IK branch before consumption.',
+                        retryable=False)
         effective['approach_ik'] = request.get('approach_ik')
         effective['transfer_ik_seed'] = request.get('transfer_ik_seed')
+        effective['extraction_intent'] = request.get('extraction_intent')
+        if resolved is not None and operations.extraction_candidates is not None and request.get('extraction_intent') is None:
+            return dict(success=False, checks=[], reason_code='TASK_EXTRACTION_UNBOUND',
+                        reason='Resolve and Generate the current extraction intent before consumption.', retryable=False)
         grasp = request['intent']['pick']['grasp']
         place = request['intent']['place']['placement']
         effective.update(observation_reference_time=resolution_reference_time,
@@ -605,7 +620,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             'search_pass': search_pass, 'planning_attempts': planning_attempts,
             'segment_planning_time': segment_time,
             'candidate_wall_budget': candidate_budget,
-            'candidate_wall_seconds': time.monotonic() - started})
+            'candidate_wall_seconds': time.monotonic() - started,
+            'extraction_attempts': copy.deepcopy(result.extraction_attempts)})
         if result.success:
             cycles[result.candidate_id, request['observation']['id']] = result.cycle
         progress_passes = sum(1 for check in result.checks if check.get('status') == 'PASS')
@@ -635,7 +651,11 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         return {'success': result.success, 'checks': result.checks,
                 'reason_code': result.reason_code, 'reason': result.reason,
                 'approach_ik': approach_ik,
-                'transfer_ik_seed': copy.deepcopy(transfer_stage['transfer_ik_seed']) if transfer_stage else None,
+                'extraction_intent': copy.deepcopy(result.cycle.get('extraction_intent')) if result.success else None,
+                'extraction_attempts': copy.deepcopy(result.extraction_attempts),
+                # Only complete candidates bind transfer IK; failed variant
+                # seeds must never escape into another extraction alternative.
+                'transfer_ik_seed': copy.deepcopy(transfer_stage['transfer_ik_seed']) if result.success and transfer_stage else None,
                 'retryable': preplan_retryable_failure(result),
                 'stop_search': result.reason_code == 'SEARCH_BUDGET_EXHAUSTED',
                 'progress_passes': progress_passes,
@@ -757,8 +777,9 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         # a fresh collision-aware MoveGroup plan from home.
                         if cached is not None and cached.get('approach_ik') is not None:
                             retry_request['approach_ik'] = copy.deepcopy(cached['approach_ik'])
-                        if cached is not None and cached.get('transfer_ik_seed') is not None:
-                            retry_request['transfer_ik_seed'] = copy.deepcopy(cached['transfer_ik_seed'])
+                        if cached is not None and cached.get('extraction_intent') is not None:
+                            retry_request['extraction_intent'] = copy.deepcopy(cached['extraction_intent'])
+                            retry_request['transfer_ik_seed'] = copy.deepcopy(cached.get('transfer_ik_seed'))
                         outcome = evaluate_once(
                             retry_request, search_pass=f'retry:{strategy}',
                             planning_attempts=3, segment_time=float(planning_time),
@@ -766,9 +787,6 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         if (outcome.get('approach_ik') is None and cached is not None and
                                 cached.get('approach_ik') is not None):
                             outcome['approach_ik'] = copy.deepcopy(cached['approach_ik'])
-                        if (outcome.get('transfer_ik_seed') is None and cached is not None and
-                                cached.get('transfer_ik_seed') is not None):
-                            outcome['transfer_ik_seed'] = copy.deepcopy(cached['transfer_ik_seed'])
                         evaluation_cache[key] = copy.deepcopy(outcome)
                         return outcome
                     if cached is not None:
@@ -817,6 +835,13 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         if resolution is None:
             raise RuntimeError('candidate strategy search produced no resolution')
 
+    attempts = summary.get('candidate_attempts', [])
+    summary['candidate_search'].update(
+        fresh_target_objects=len(targets),
+        objects_considered=len({a['object_id'] for a in attempts}),
+        grasps_considered=len({(a['object_id'], a['candidate_id']) for a in attempts}),
+        extraction_variants_evaluated=sum(len(a.get('extraction_attempts', [])) for a in attempts),
+        selected_extraction=copy.deepcopy(resolution.get('grasp_resolution', {}).get('extraction_intent')))
     summary['task_intent_resolution'] = resolution
     summary['normalized_intent_sha256'] = resolution['normalized_intent_sha256']
     summary['resolution_sha256'] = resolution['resolution_sha256']
@@ -1366,7 +1391,7 @@ def main():
 
     def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
                      ik_binding=None, ik_seed=None, cartesian_corridor=None,
-                     initial_separation_object_ids=None):
+                     initial_separation_object_ids=None, extraction_intent=None):
         stage(name)
         if ik_seed is not None and (name != 'PREPLAN_TRANSFER' or isinstance(goal, dict)
                                    or (group is not None and group != contract['planning_group'])
@@ -1411,6 +1436,27 @@ def main():
             count = max(1, math.ceil(math.dist(a[:3], b[:3]) / 0.005))
             support = None
             initial_separation_ids = []
+            extraction_geometry = None
+            extraction_poses = []
+            if extraction_intent is not None:
+                if name != 'PREPLAN_LIFT' or len(view.robot_state.attached_collision_objects) != 1:
+                    raise RuntimeError('extraction intent requires one attached target at lift')
+                object_id = view.robot_state.attached_collision_objects[0].object.id
+                offset = extraction_intent.get('offset_xyz_m', [])
+                if (extraction_intent.get('object_id') != object_id or len(offset) != 3 or
+                        any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in offset) or
+                        math.dist([b[i]-a[i] for i in range(3)], offset) > 1e-9):
+                    raise RuntimeError('extraction intent disagrees with current Cartesian goal')
+                original = next(o for o in initial.world.collision_objects if o.id == object_id)
+                target_geometry = collision_object_dict(original)
+                neighbor_geometry = [item for obj in view.world.collision_objects
+                                     if obj.id != object_id and (item := collision_object_dict(obj)) is not None]
+                extraction_geometry = (target_geometry, neighbor_geometry)
+                from pile_extraction import audit_extraction
+                # Geometry predicts suitability; it cannot create a physical
+                # pile certificate or permit a new collision in MoveIt.
+                audit_extraction(*extraction_geometry, extraction_intent)
+                object_in_tool = _PLANNER.compose_pose(_PLANNER.inverse_pose(a), target_geometry['pose'])
             if name == 'PREPLAN_LIFT' and len(view.robot_state.attached_collision_objects) == 1:
                 object_id = view.robot_state.attached_collision_objects[0].object.id
                 original = next(o for o in initial.world.collision_objects if o.id == object_id)
@@ -1492,6 +1538,8 @@ def main():
                     sample = updated_state(view.robot_state, positions, mimics)
                     actual_pose = pose_values(fk(sample, contract['tool_link']).pose)
                     samples_checked += 1
+                    if extraction_geometry is not None:
+                        extraction_poses.append(_PLANNER.compose_pose(actual_pose, object_in_tool))
                     if not pose_within_cartesian_corridor(actual_pose, a, b):
                         from full_cycle_preplanner import MotionFeasibilityFailure
                         failure = MotionFeasibilityFailure(
@@ -1504,6 +1552,10 @@ def main():
                 previous_positions = current_positions
 
             metadata = copy.deepcopy(part['metadata'])
+            if extraction_geometry is not None:
+                metadata['extraction_geometry_audit'] = audit_extraction(
+                    *extraction_geometry, extraction_intent, poses=extraction_poses)
+                metadata['extraction_intent'] = copy.deepcopy(extraction_intent)
             metadata.update(
                 stage=name,
                 success=True,
@@ -1550,6 +1602,12 @@ def main():
                 if any(n not in values or not math.isfinite(values[n]) or abs(values[n]-v) > 0.0001
                        for n,v in ik_binding['joint_positions'].items()):
                     raise RuntimeError('APPROACH_IK_BRANCH_CHANGED: resolve current scene again')
+            if ik_seed is not None:
+                # Revalidate the proven transfer branch without silently
+                # substituting another solution under the saved candidate.
+                if any(n not in values or not math.isfinite(values[n]) or abs(values[n]-v) > 0.0001
+                       for n,v in ik_seed['joint_positions'].items()):
+                    raise RuntimeError('TRANSFER_IK_BRANCH_CHANGED: resolve current scene again')
             request.goal_constraints = [joint_constraints({n:values[n] for n in contract['home_joint_names']})]
             goal_state = updated_state(view.robot_state,
                                        {n: values[n] for n in contract['home_joint_names']}, mimics)
@@ -1627,7 +1685,7 @@ def main():
                            if cartesian_corridor is not None else {}),
                         **({'approach_ik': copy.deepcopy(ik_binding) if ik_binding is not None else approach_ik_binding(goal, contract, values)}
                            if name == 'PREPLAN_APPROACH' and not isinstance(goal, dict) else {}),
-                        **({'transfer_ik_seed': transfer_ik_seed(goal, contract, values)}
+                        **({'transfer_ik_seed': copy.deepcopy(ik_seed) if ik_seed is not None else transfer_ik_seed(goal, contract, values)}
                            if name == 'PREPLAN_TRANSFER' and not isinstance(goal, dict) else {}),
                         attached_ids=[o.object.id for o in view.robot_state.attached_collision_objects],
                         world_ids=[o.id for o in view.world.collision_objects]))
@@ -1747,6 +1805,11 @@ def main():
             raise RuntimeError('retreat distance must be finite and positive')
         deadline = time.monotonic()+args.timeout
         from full_cycle_preplanner import PreplanOperations
+        def extraction_candidates(view, observation, candidate, lift_distance):
+            from pile_extraction import extraction_intents
+            neighbors = [item for obj in view.world.collision_objects
+                         if obj.id != observation['id'] and (item := collision_object_dict(obj)) is not None]
+            return extraction_intents(observation, neighbors, candidate.candidate_id, lift_distance)
         operations = PreplanOperations(plan_segment=plan_segment, fk=fk,
             state_validity=lambda state: call(validity_client,
                 GetStateValidity.Request(robot_state=state, group_name='')),
@@ -1754,7 +1817,8 @@ def main():
             pose_message=pose_message, translated_pose=translated_pose,
             target_contact_matrix=target_contact_matrix, verify_selected_contacts=verify_selected_contacts,
             private_attachment=private_attachment, object_pose_after_motion=object_pose_after_motion,
-            place_detachment_diff=place_detachment_diff, stage=stage)
+            place_detachment_diff=place_detachment_diff, stage=stage,
+            extraction_candidates=extraction_candidates if authored else None)
         if authored:
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,
@@ -1768,7 +1832,8 @@ def main():
                 contract=dict(contract, max_age_seconds=task['max_age_seconds'], retreat_distance_m=retreat),
                 operations=operations, deadline=deadline, summary=summary)
         selected_id = cycle['object_id']
-        summary.update(selected_object_id=selected_id,selected_grasp_index=cycle['grasp_index'],full_cycle_prevalidated=True,
+        summary.update(selected_object_id=selected_id,selected_grasp_index=cycle['grasp_index'],
+                       selected_extraction_intent=copy.deepcopy(cycle.get('extraction_intent')),full_cycle_prevalidated=True,
                        full_cycle_plan_success=True,plan_metadata=[s['metadata'] for s in cycle['steps'] if s['kind']=='motion'])
         stage('VERIFY_PREPLAN_UNCHANGED')
         assert_scene_match(scene_now(),initial)

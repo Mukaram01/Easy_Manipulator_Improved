@@ -633,11 +633,11 @@ def transfer_segment_fixture():
     def solve(client,request):
         if not isinstance(request,GetPositionIK.Request):return SimpleNamespace(contacts=[])
         requests.append(copy.deepcopy(request))
-        # Seed is only a hint: fresh destination IK is allowed to change it.
+        # Fresh numerical IK may differ slightly within the existing branch tolerance.
         return GetPositionIK.Response(solution=RobotState(joint_state=JointState(
-            name=['arm','leader','follower'],position=[-2.3,.9,-.9])),error_code=MoveItErrorCodes(val=1))
+            name=['arm','leader','follower'],position=[-2.39995,.9,-.9])),error_code=MoveItErrorCodes(val=1))
     trajectory=RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'],points=[
-        JointTrajectoryPoint(positions=[1.57]),JointTrajectoryPoint(positions=[-2.3])]))
+        JointTrajectoryPoint(positions=[1.57]),JointTrajectoryPoint(positions=[-2.39995])]))
     def plan(client,goal,timeout):
         goals.append(copy.deepcopy(goal))
         return MoveGroup.Result(error_code=MoveItErrorCodes(val=1),trajectory_start=copy.deepcopy(view.robot_state),
@@ -665,10 +665,43 @@ def test_transfer_seed_rechecks_fresh_target_without_replacing_current_start_or_
     assert goals[0].request.start_state==original.robot_state
     assert goals[0].planning_options.planning_scene_diff==original
     assert goals[0].planning_options.plan_only
-    assert goals[0].request.goal_constraints[0].joint_constraints[0].position==-2.3
-    assert list(result['after'].robot_state.joint_state.position)==[-2.3,.2,-.2]
-    assert result['metadata']['transfer_ik_seed']==dict(seed,joint_positions={'arm':-2.3})
+    assert goals[0].request.goal_constraints[0].joint_constraints[0].position==-2.39995
+    assert list(result['after'].robot_state.joint_state.position)==[-2.39995,.2,-.2]
+    assert result['metadata']['transfer_ik_seed']==seed
+    result['metadata']['transfer_ik_seed']['joint_positions']['arm']=0.
     assert view==original and seed['joint_positions']=={'arm':-2.4}
+
+
+@pytest.mark.parametrize('position',[-2.3,-2.4+2*MODULE.math.pi,float('nan'),float('inf'),None])
+def test_transfer_seed_rejects_changed_or_missing_fresh_branch_before_planning(position):
+    from moveit_msgs.msg import RobotState,MoveItErrorCodes
+    from moveit_msgs.srv import GetPositionIK
+    from sensor_msgs.msg import JointState
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    def solve(client,request):
+        requests.append(request)
+        joint_state=JointState(name=[] if position is None else ['arm'],
+                               position=[] if position is None else [position])
+        return GetPositionIK.Response(solution=RobotState(joint_state=joint_state),
+                                      error_code=MoveItErrorCodes(val=1))
+    context['call']=solve
+    with pytest.raises(RuntimeError,match='TRANSFER_IK_BRANCH_CHANGED'):
+        context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+    assert len(requests)==1 and goals==[]
+
+
+def test_resolved_cycle_requires_proven_transfer_binding_before_planning():
+    import ast,time
+    tree=ast.parse(SCRIPT.read_text())
+    authored=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='plan_authored_cycle')
+    evaluate=next(n for n in authored.body if isinstance(n,ast.FunctionDef) and n.name=='evaluate_once')
+    context=dict(time=time,contract={},deadline=time.monotonic()+10,resolved={'saved':True})
+    exec(compile(ast.Module(body=[evaluate],type_ignores=[]),'<actual-resolved-evaluator>','exec'),context)
+    result=context['evaluate_once']({'approach_ik':{'bound':True}},
+        search_pass='revalidate',planning_attempts=3,segment_time=3.)
+    assert result['success'] is False
+    assert result['reason_code']=='TASK_TRANSFER_IK_UNBOUND'
+    assert result['retryable'] is False
 
 
 @pytest.mark.parametrize('field,value', [

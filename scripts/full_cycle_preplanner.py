@@ -14,7 +14,7 @@ grasp/place constraints remain unsupported.
 import copy
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from perceived_object_grasp_plan import (
@@ -52,6 +52,7 @@ class PreplanOperations:
     object_pose_after_motion: Callable
     place_detachment_diff: Callable
     stage: Callable
+    extraction_candidates: Callable | None = None
 
 
 @dataclass
@@ -63,6 +64,7 @@ class PreplanResult:
     checks: list[dict]
     stages: list[dict]
     cycle: dict | None
+    extraction_attempts: list[dict] = field(default_factory=list)
 
 
 class SearchBudgetExhausted(RuntimeError):
@@ -101,6 +103,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
     comparison. The deadline is a time.monotonic() absolute search deadline.
     """
     steps, stages, checks = [], [], []
+    extraction_attempts = []
+    active_extraction = None
     view = copy.deepcopy(initial_scene)
     baseline = copy.deepcopy(initial_scene.allowed_collision_matrix)
     current_stage = None
@@ -127,8 +131,12 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         options = {}
         if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
             options['ik_binding'] = contract['approach_ik']
-        if name == 'PREPLAN_TRANSFER' and contract.get('transfer_ik_seed') is not None:
+        if (name == 'PREPLAN_TRANSFER' and contract.get('transfer_ik_seed') is not None
+                and (operations.extraction_candidates is None
+                     or contract.get('extraction_intent') == active_extraction)):
             options['ik_seed'] = contract['transfer_ik_seed']
+        if name == 'PREPLAN_LIFT' and operations.extraction_candidates is not None:
+            options['extraction_intent'] = copy.deepcopy(active_extraction)
         step = operations.plan_segment(view, name, goal, group, straight, **options)
         if (step['metadata'].get('success') is not True or
                 step['metadata'].get('moveit_code') != 1 or
@@ -304,51 +312,122 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         view.allowed_collision_matrix = copy.deepcopy(baseline)
         steps.append(dict(kind='attach', stage='ATTACH', before=before, after=copy.deepcopy(view), original=original))
         checks.append(dict(code='ATTACH', status='PASS'))
-        # A reachable lift endpoint does not prove the required retreat corridor.
-        # Use the same swept tool/robot check as descent before admitting a grasp.
-        motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, dz=retreat), straight=True)
-        delta = [a-b for a, b in zip(destination['pose_xyz'], observation['pose'][:3])]
-        place_goal = operations.translated_pose(tool_at_grasp, *delta)
-        if intent is not None:
-            # Preserve the actual grasp transform while meeting the authored
-            # destination orientation. Translation alone cannot reorient a part.
-            p, q = tool_at_grasp.pose.position, tool_at_grasp.pose.orientation
-            grasp_tool = [p.x, p.y, p.z, q.x, q.y, q.z, q.w]
-            object_in_tool = compose_pose(inverse_pose(grasp_tool), observation['pose'])
-            destination_object = destination['pose_xyz'] + quaternion_from_rpy(destination['pose_rpy'])
-            place_goal = operations.pose_message(compose_pose(destination_object, inverse_pose(object_in_tool)))
-        motion('PREPLAN_TRANSFER', operations.translated_pose(place_goal, dz=place_approach))
-        motion('PREPLAN_PLACE', place_goal)
-        reached = operations.fk(view.robot_state, contract['tool_link'])
-        achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
-        if math.dist(achieved[:3], destination['pose_xyz']) > 0.003:
-            raise RuntimeError('planned placement differs from destination by more than 3 mm')
-        check_code = 'DESTINATION_CONTAINMENT'
-        if intent is not None:
-            expected_orientation = quaternion_from_rpy(destination['pose_rpy'])
-            angle = 2 * math.acos(min(1., abs(sum(a*b for a, b in zip(achieved[3:], expected_orientation)))))
-            if angle > 0.01:
-                raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: planned placement orientation differs from physical destination')
-        check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=clearance)
-        checks.append(dict(code=check_code, status='PASS'))
-        motion('PREPLAN_OPEN_GRIPPER', {'gripper_finger1_joint': 0.0}, group='gripper')
-        stage('DETACH')
-        before = copy.deepcopy(view)
-        placed = operations.place_detachment_diff(original, contract['grasp_frame'], achieved[:3], achieved[3:]).world.collision_objects[0]
-        view = copy.deepcopy(view)
-        view.robot_state.attached_collision_objects = []
-        view.world.collision_objects.append(placed)
-        steps.append(dict(kind='detach', stage='DETACH', before=before, after=copy.deepcopy(view),
-                          original=original, tool_at_grasp=tool_at_grasp))
-        checks.append(dict(code='DETACH', status='PASS'))
-        view.allowed_collision_matrix = operations.target_contact_matrix(baseline, observation['id'], contract['allowed_touch_links'])
-        motion('PREPLAN_RETREAT', operations.translated_pose(reached, dz=place_retreat), straight=True)
-        view.allowed_collision_matrix = copy.deepcopy(baseline)
-        motion('PREPLAN_HOME', home)
-        stage('CANDIDATE_READY')
-        cycle = dict(object_id=observation['id'], candidate=copy.deepcopy(candidate), steps=steps,
-                     full_cycle_prevalidated=True)
-        return PreplanResult(True, candidate.candidate_id, None, None, checks, stages, cycle)
+        # Each extraction shares this grasp/close checkpoint and the existing
+        # candidate deadline. A failed later transfer/place also rejects the
+        # extraction variant; only a complete suffix may become selectable.
+        variants = (operations.extraction_candidates(copy.deepcopy(view), observation, candidate, retreat)
+                    if operations.extraction_candidates is not None else [dict(
+                        schema='workcell_extraction_intent/v1', variant_id='vertical',
+                        object_id=observation['id'], candidate_id=candidate.candidate_id,
+                        offset_xyz_m=[0., 0., retreat])])
+        if not isinstance(variants, list) or not variants:
+            exc = RuntimeError('no bounded extraction variants available')
+            exc.reason_code = 'NO_VALID_EXTRACTION'
+            raise exc
+        identifiers = set()
+        for variant in variants:
+            offset = variant.get('offset_xyz_m') if isinstance(variant, dict) else None
+            if (not isinstance(variant, dict)
+                    or variant.get('schema') != 'workcell_extraction_intent/v1'
+                    or variant.get('object_id') != observation['id']
+                    or variant.get('candidate_id') != candidate.candidate_id
+                    or not isinstance(variant.get('variant_id'), str) or not variant['variant_id']
+                    or variant['variant_id'] in identifiers
+                    or not isinstance(offset, (list, tuple)) or len(offset) != 3
+                    or any(not isinstance(v, (int, float)) or isinstance(v, bool)
+                           or not math.isfinite(v) for v in offset)
+                    or offset[2] != retreat or math.hypot(*offset[:2]) > .0025):
+                exc = RuntimeError('invalid or unbound extraction intent')
+                exc.reason_code = 'EXTRACTION_INTENT_INVALID'
+                raise exc
+            identifiers.add(variant['variant_id'])
+        bound = contract.get('extraction_intent')
+        if bound is not None:
+            variants = [variant for variant in variants if variant == bound]
+            if len(variants) != 1:
+                exc = RuntimeError('resolved extraction intent changed; resolve current geometry again')
+                exc.reason_code = 'EXTRACTION_INTENT_CHANGED'
+                raise exc
+        checkpoint = copy.deepcopy(view)
+        prefix_steps, prefix_stages, prefix_checks = len(steps), len(stages), len(checks)
+        last_error = None
+        for active_extraction in variants:
+            view = copy.deepcopy(checkpoint)
+            del steps[prefix_steps:]; del stages[prefix_stages:]; del checks[prefix_checks:]
+            try:
+                motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, *active_extraction['offset_xyz_m']), straight=True)
+                if operations.extraction_candidates is not None:
+                    checks.append(dict(code='INITIAL_PILE_EXTRACTION', status='PASS',
+                                       extraction_intent=copy.deepcopy(active_extraction)))
+                delta = [a-b for a, b in zip(destination['pose_xyz'], observation['pose'][:3])]
+                place_goal = operations.translated_pose(tool_at_grasp, *delta)
+                if intent is not None:
+                    # Preserve the actual grasp transform while meeting the authored
+                    # destination orientation. Translation alone cannot reorient a part.
+                    p, q = tool_at_grasp.pose.position, tool_at_grasp.pose.orientation
+                    grasp_tool = [p.x, p.y, p.z, q.x, q.y, q.z, q.w]
+                    object_in_tool = compose_pose(inverse_pose(grasp_tool), observation['pose'])
+                    destination_object = destination['pose_xyz'] + quaternion_from_rpy(destination['pose_rpy'])
+                    place_goal = operations.pose_message(compose_pose(destination_object, inverse_pose(object_in_tool)))
+                motion('PREPLAN_TRANSFER', operations.translated_pose(place_goal, dz=place_approach))
+                motion('PREPLAN_PLACE', place_goal)
+                reached = operations.fk(view.robot_state, contract['tool_link'])
+                achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
+                if math.dist(achieved[:3], destination['pose_xyz']) > 0.003:
+                    raise RuntimeError('planned placement differs from destination by more than 3 mm')
+                check_code = 'DESTINATION_CONTAINMENT'
+                if intent is not None:
+                    expected_orientation = quaternion_from_rpy(destination['pose_rpy'])
+                    angle = 2 * math.acos(min(1., abs(sum(a*b for a, b in zip(achieved[3:], expected_orientation)))))
+                    if angle > 0.01:
+                        raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: planned placement orientation differs from physical destination')
+                check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=clearance)
+                checks.append(dict(code=check_code, status='PASS'))
+                motion('PREPLAN_OPEN_GRIPPER', {'gripper_finger1_joint': 0.0}, group='gripper')
+                stage('DETACH')
+                before = copy.deepcopy(view)
+                placed = operations.place_detachment_diff(original, contract['grasp_frame'], achieved[:3], achieved[3:]).world.collision_objects[0]
+                view = copy.deepcopy(view)
+                view.robot_state.attached_collision_objects = []
+                view.world.collision_objects.append(placed)
+                steps.append(dict(kind='detach', stage='DETACH', before=before, after=copy.deepcopy(view),
+                                  original=original, tool_at_grasp=tool_at_grasp))
+                checks.append(dict(code='DETACH', status='PASS'))
+                view.allowed_collision_matrix = operations.target_contact_matrix(baseline, observation['id'], contract['allowed_touch_links'])
+                motion('PREPLAN_RETREAT', operations.translated_pose(reached, dz=place_retreat), straight=True)
+                view.allowed_collision_matrix = copy.deepcopy(baseline)
+                motion('PREPLAN_HOME', home)
+                extraction_attempts.append(dict(
+                    extraction_intent=copy.deepcopy(active_extraction),
+                    variant_id=active_extraction['variant_id'], success=True,
+                    failed_stage=None, reason_code=None, checks=copy.deepcopy(checks[prefix_checks:]),
+                    stages=copy.deepcopy(stages[prefix_stages:])))
+                stage('CANDIDATE_READY')
+                cycle = dict(object_id=observation['id'], candidate=copy.deepcopy(candidate), steps=steps,
+                             full_cycle_prevalidated=True, extraction_intent=copy.deepcopy(active_extraction),
+                             extraction_attempts=copy.deepcopy(extraction_attempts))
+                return PreplanResult(True, candidate.candidate_id, None, None, checks, stages, cycle,
+                                     extraction_attempts)
+            except Exception as exc:
+                code = (getattr(exc, 'reason_code', None) or
+                        ('SEARCH_BUDGET_EXHAUSTED' if isinstance(exc, SearchBudgetExhausted) else
+                         'CANDIDATE_SLICE_EXHAUSTED' if isinstance(exc, CandidateBudgetExhausted) else
+                         check_code + '_FAILED'))
+                extraction_attempts.append(dict(
+                    extraction_intent=copy.deepcopy(active_extraction),
+                    variant_id=active_extraction['variant_id'], success=False,
+                    failed_stage=current_stage, reason_code=code, reason=str(exc),
+                    checks=copy.deepcopy(checks[prefix_checks:]),
+                    stages=copy.deepcopy(stages[prefix_stages:]),
+                    **getattr(exc, 'details', {})))
+                last_error = exc
+                if isinstance(exc, (SearchBudgetExhausted, CandidateBudgetExhausted)):
+                    raise
+        if operations.extraction_candidates is not None and all(
+                attempt['failed_stage'] in ('PREPLAN_LIFT', 'PREPLAN_EXTRACTION')
+                for attempt in extraction_attempts):
+            last_error.reason_code = 'NO_VALID_EXTRACTION'
+        raise last_error
     except Exception as exc:
         if isinstance(exc, SearchBudgetExhausted):
             reason_code = 'SEARCH_BUDGET_EXHAUSTED'
@@ -357,10 +436,11 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             reason_code = 'CANDIDATE_SLICE_EXHAUSTED'
             failure = dict(failure_kind='budget')
         else:
-            reason_code = check_code + '_FAILED'
+            reason_code = getattr(exc, 'reason_code', None) or check_code + '_FAILED'
             failure = dict(failure_kind='planning' if check_code.startswith('PREPLAN_') else 'constraint')
         failure.update(getattr(exc, 'details', {}))
         failure.update(candidate_id=candidate.candidate_id, failed_stage=current_stage)
         stages.append(dict(stage=current_stage, success=False, reason=str(exc), reason_code=reason_code, **failure))
         checks.append(dict(code=check_code, status='FAIL', reason_code=reason_code, reason=str(exc), **failure))
-        return PreplanResult(False, candidate.candidate_id, reason_code, str(exc), checks, stages, None)
+        return PreplanResult(False, candidate.candidate_id, reason_code, str(exc), checks, stages, None,
+                             extraction_attempts)

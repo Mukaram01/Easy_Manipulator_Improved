@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 
 import copy
 import importlib
@@ -468,3 +469,54 @@ def test_support_resting_objects_remain_eligible_at_pick_zone_floor():
     selected = resolver.select_observations(intent, env, objects, 100.0)
     # Existing height-first selection orders the elevated part before its support.
     assert [item["id"] for item in selected] == ["runtime::part_01", "runtime::part_00"]
+
+
+def test_selected_extraction_is_digest_bound_and_revalidated_as_deep_copy():
+    import copy
+    resolver=resolver_module();seen=[]
+    extraction={'schema':'workcell_extraction_intent/v1','variant_id':'away',
+                'object_id':observations()[0]['id'],'candidate_id':'top_2f::000',
+                'offset_xyz_m':[.002,0.,.1]}
+    def evaluate(request):
+        seen.append(copy.deepcopy(request))
+        return {**pass_cycle(request),'extraction_intent':copy.deepcopy(extraction),
+                'extraction_attempts':[{'variant_id':'vertical','success':False},
+                                       {'variant_id':'away','success':True}]}
+    resolved=resolver.resolve_task_intent(valid_intent(),environment(),cell(),observations(),evaluate,now=100.)
+    assert resolved['grasp_resolution']['extraction_intent']==extraction
+    assert len(resolved['grasp_resolution']['attempts'][0]['extraction_attempts'])==2
+    resolver.resolve_task_intent(valid_intent(),environment(),cell(),observations(),evaluate,now=100.,resolved=resolved)
+    assert seen[-1]['extraction_intent']==extraction
+    changed=copy.deepcopy(resolved);changed['grasp_resolution']['extraction_intent']['offset_xyz_m'][0]=0.
+    assert resolver.resolution_hash(changed)!=resolved['resolution_sha256']
+
+
+@pytest.mark.parametrize('policy',['AUTO','PREFERRED','EXACT'])
+@pytest.mark.parametrize('fallback',['object','grasp'])
+def test_nonextractable_candidate_continues_only_with_permitted_substitution(policy,fallback):
+    import copy
+    resolver=resolver_module();items=observations();items.append(copy.deepcopy(items[0]));items[1]['id']='other-box';items[1]['confidence']=.8
+    calls=[]
+    def evaluate(request):
+        calls.append((request['observation']['id'],request['candidate'].candidate_id))
+        success=(request['observation']['id']==items[1]['id'] if fallback=='object'
+                 else request['candidate'].candidate_id=='top_2f::001')
+        return pass_cycle(request) if success else {'success':False,'checks':[],
+            'reason_code':'NO_VALID_EXTRACTION','reason':'bounded extraction variants exhausted'}
+    result=resolver.resolve_task_intent(valid_intent(policy),environment(),cell(),items,evaluate,now=100.)
+    assert result['readiness_status']==('BLOCKED' if policy=='EXACT' else 'READY')
+    if policy=='EXACT':assert len(calls)==1
+    else:
+        selected=result['grasp_resolution']
+        assert (selected['selected_object_id']==items[1]['id'] if fallback=='object'
+                else selected['selected_candidate_id']=='top_2f::001')
+
+
+def test_all_objects_without_extraction_remain_blocked():
+    resolver=resolver_module()
+    result=resolver.resolve_task_intent(valid_intent(),environment(),cell(),observations(),
+        lambda request:dict(success=False,checks=[],reason_code='NO_VALID_EXTRACTION',
+                            reason='bounded extraction variants exhausted'),now=100.)
+    assert result['readiness_status']=='BLOCKED'
+    assert result['readiness']['primary_code']=='NO_VALID_EXTRACTION'
+    assert result['grasp_resolution']['selected_object_id'] is None
