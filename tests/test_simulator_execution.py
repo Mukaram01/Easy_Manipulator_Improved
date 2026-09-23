@@ -5,6 +5,100 @@ sys.path.insert(0,str(Path(__file__).parents[1]/'scripts'))
 import pytest
 
 
+def recorded_pile_guard(tmp_path, monkeypatch):
+    """Replay the escaped five-neighbor state through real compiled FCL policy."""
+    import xml.etree.ElementTree as ET
+    from types import SimpleNamespace as N
+    from simulator_execution import ContactGuard
+    data=json.loads((Path(__file__).parent/'fixtures/stage_a1_pile_contacts.json').read_text())
+    sample=data['sample']
+    monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.001)
+    monkeypatch.setattr('simulator_execution.time.time_ns',lambda:sample['wall_ns']+1000000)
+    models=''.join(f'<model name="{o["object_id"]}"><link name="link"><collision name="collision"><geometry><box><size>0.025 0.025 0.025</size></box></geometry></collision></link></model>' for o in data['objects'])
+    (tmp_path/'world.sdf').write_text('<sdf><world name="a0">'+models+'</world></sdf>')
+    m=N(receipt=dict(world='a0',model='workcell_robot',run_id=sample['run_id'],pid=sample['pid']),
+        receipt_path=tmp_path/'receipt.json',robot=ET.fromstring('<robot/>'),
+        fresh=lambda:sample,object_pose=lambda s,n:s['poses']['a0::'+n],
+        frame=lambda s,n:[0,0,0,0,0,0,1],joints=lambda s:{},record=lambda p,s:None)
+    guard=ContactGuard(m,'runtime::part_06',[.025]*3,['left','right'],None,
+                       N(entry_names=[],entry_values=[]),'tool')
+    guard.bind_pile(data['objects'],data['binding'])
+    return guard,sample,data
+
+
+def test_recorded_five_neighbor_certificate_uses_measured_geometry(tmp_path,monkeypatch):
+    guard,sample,data=recorded_pile_guard(tmp_path,monkeypatch)
+    evidence=guard.certify_pile(sample)
+    assert evidence['certified_set']==['runtime::part_00','runtime::part_01','runtime::part_03','runtime::part_04','runtime::part_07']
+    assert evidence['binding']==data['binding']
+    assert evidence['iteration']==41679
+    assert all(0<=c['geometry']['depth_m']<=.0001 for c in evidence['contacts'])
+    assert guard.identity('a0::part_00::link::collision')=='runtime::part_00'
+    with pytest.raises(RuntimeError,match='identity'):
+        guard.identity('a0::part_00::other_link::collision')
+
+
+def test_pile_certificate_rejects_unknown_identity_stale_or_deep_contact(tmp_path,monkeypatch):
+    guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
+    for change in ('unknown','stale','deep','point','preclose'):
+        bad=copy.deepcopy(sample)
+        if change=='unknown':bad['contacts'][0]['a']='a0::intruder::link::collision'
+        if change=='stale':bad['wall_ns']-=300000000
+        if change=='deep':bad['poses']['a0::part_06'][2]-=.001
+        if change=='point':bad['contacts'][0]['points'][0][0]+=.01
+        if change=='preclose':guard.pile_binding['close_goal_terminal_wall_ns']=sample['wall_ns']+1
+        with pytest.raises(RuntimeError):guard.certify_pile(bad)
+        assert guard.pile_certificate['rejected']
+
+
+@pytest.mark.parametrize('phase',['closing','lift'])
+def test_pile_allowance_expires_and_cannot_recapture_contact(tmp_path,monkeypatch,phase):
+    guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.certify_pile(sample)
+    guard.phase=phase
+    if phase=='lift':guard.begin_pile_separation(sample)
+    separated=copy.deepcopy(sample);separated['iteration']+=1;separated['sim_ns']+=1000000
+    separated['poses']['a0::part_06'][2]+=.001;separated['contacts']=[]
+    guard.check_pile(separated)
+    # The four lower supports clear after 1 mm. The same-height side neighbor
+    # remains touching in measured FCL geometry and MUST NOT expire yet.
+    assert guard.pile_expired=={'runtime::part_00','runtime::part_01','runtime::part_03','runtime::part_04'}
+    with pytest.raises(RuntimeError,match='recontact'):guard.check_pile(sample)
+
+
+@pytest.mark.parametrize('delta',[(.003,0,0),(0,0,-.00001),(0,0,.011)])
+def test_pile_departure_preserves_bounded_monotonic_corridor(tmp_path,monkeypatch,delta):
+    guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.certify_pile(sample);guard.phase='lift';guard.begin_pile_separation(sample)
+    moved=copy.deepcopy(sample)
+    moved['poses']['a0::part_06'][:3]=[a+b for a,b in zip(moved['poses']['a0::part_06'][:3],delta)]
+    with pytest.raises(RuntimeError):guard.check_pile(moved)
+
+
+def test_pile_certificate_rechecks_current_depth_and_neighbor_motion(tmp_path,monkeypatch):
+    guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.certify_pile(sample)
+    bad=copy.deepcopy(sample);bad['poses']['a0::part_00'][2]+=.001
+    with pytest.raises(RuntimeError):guard.check_pile(bad)
+
+
+def test_measured_fcl_pile_exception_requires_exact_active_pair_and_depth(tmp_path,monkeypatch):
+    from simulator_execution import validate_measured_contacts
+    from types import SimpleNamespace as N
+    guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.certify_pile(sample)
+    def contact(neighbor='runtime::part_00',depth=.00001,kind=2):
+        return N(contact_body_1=guard.object,contact_body_2=neighbor,body_type_1=kind,body_type_2=1,
+                 position=N(x=0.,y=0.,z=.025),normal=N(x=0.,y=0.,z=-1.),depth=depth)
+    validate_measured_contacts(N(valid=False,contacts=[contact()]),None,False,pile_guard=guard)
+    for c in (contact('runtime::intruder'),contact(depth=.000101),contact(kind=0)):
+        with pytest.raises(RuntimeError):
+            validate_measured_contacts(N(valid=False,contacts=[c]),None,False,pile_guard=guard)
+    guard.pile_expired.add('runtime::part_00')
+    with pytest.raises(RuntimeError):
+        validate_measured_contacts(N(valid=False,contacts=[contact()]),None,False,pile_guard=guard)
+
+
 def test_measurement_rejects_stale_wrong_run_and_missing_samples():
     from simulator_execution import validate_sample
     sample=dict(run_id='r',pid=12,iteration=10,sim_ns=10000000,wall_ns=1000000000,

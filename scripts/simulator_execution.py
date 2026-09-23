@@ -321,15 +321,155 @@ class ContactGuard:
         self.phase='approach';self.last=None;self.min_clearance=math.inf;self.validate_current=None
         self.allowed={(a,b) for i,a in enumerate(baseline.entry_names) for j,b in enumerate(baseline.entry_names) if baseline.entry_values[i].enabled[j]}
         self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None
+        self.pile_objects={};self.pile_collisions={};self.pile_certificate=None
+        self.pile_expired=set();self.pile_origin=None;self.pile_height=0.;self.planning_attached=False
+        self.library=library
+
+    def bind_pile(self,objects,binding):
+        """Bind perceived BOX geometry to the receipt's immutable physical world."""
+        world=ET.parse(self.m.receipt_path.parent/'world.sdf').getroot().find('world')
+        if world is None or world.get('name')!=self.m.receipt['world']:
+            raise RuntimeError('pile world identity mismatch')
+        if not binding.get('resolution_sha256') or not binding.get('execution_attempt'):
+            raise RuntimeError('pile execution binding missing')
+        self.pile_binding=copy.deepcopy(binding)
+        for obj in objects:
+            name=obj['object_id'];oid=obj['id']
+            if oid!='runtime::'+name or oid in self.pile_objects or '::' in name:
+                raise RuntimeError('ambiguous pile object identity')
+            models=world.findall(f"model[@name='{name}']")
+            if len(models)!=1 or models[0].findtext('static','false').lower() not in ('false','0'):
+                raise RuntimeError('unknown/non-dynamic pile model '+name)
+            links=models[0].findall('link')
+            collisions=links[0].findall('collision') if len(links)==1 else []
+            if len(collisions)!=1 or obj['shape']!='BOX':raise RuntimeError('unsupported pile geometry '+name)
+            link=links[0];collision=collisions[0]
+            for element in (link,collision):
+                pose=element.find('pose')
+                if pose is not None and (pose.attrib or any(float(x)!=0. for x in pose.text.split())):
+                    raise RuntimeError('unsupported pile collision frame '+name)
+            size=[float(x) for x in collision.findtext('geometry/box/size','').split()]
+            if len(size)!=3 or size!=obj['dimensions'] or any(not math.isfinite(x) or x<=0 for x in size):
+                raise RuntimeError('physical/perceived pile geometry mismatch '+name)
+            scoped='::'.join((self.m.receipt['world'],name,link.get('name'),collision.get('name')))
+            self.pile_collisions[scoped]=oid
+            self.pile_objects[oid]=dict(name=name,size=size)
+        if self.object not in self.pile_objects:raise RuntimeError('selected pile identity missing')
+        self.pile_geometry_fn=self.library.workcell_measured_pile_contact
+        pointer=ctypes.POINTER(ctypes.c_double)
+        self.pile_geometry_fn.argtypes=[pointer]*5+[ctypes.c_size_t,pointer]
+        self.pile_geometry_fn.restype=ctypes.c_bool
+        self.pile_predicate=self.library.workcell_pile_contact_valid
+        self.pile_predicate.argtypes=[ctypes.c_char_p]*4+[pointer]
+        self.pile_predicate.restype=ctypes.c_bool
+
+    def pile_geometry(self,s,neighbor,points):
+        a=self.pile_objects[self.object];b=self.pile_objects[neighbor]
+        def array(values):return (ctypes.c_double*len(values))(*values)
+        output=(ctypes.c_double*8)()
+        valid=self.pile_geometry_fn(array(a['size']),array(self.m.object_pose(s,a['name'])),
+            array(b['size']),array(self.m.object_pose(s,b['name'])),
+            array([x for point in points for x in point]),len(points),output)
+        return bool(valid),dict(depth_m=output[0],separation_m=output[1],normal=list(output[2:5]),point=list(output[5:8]))
+
+    def pile_contacts(self,s):
+        result={}
+        for c in s['contacts']:
+            if c['a'] not in s['collisions'] or c['b'] not in s['collisions']:
+                raise RuntimeError('unknown measured collision identity')
+            a,b=self.identity(c['a']),self.identity(c['b'])
+            if self.object not in (a,b):continue
+            neighbor=b if a==self.object else a
+            if neighbor in self.touch or (self.support and neighbor==self.support['support_id']):continue
+            if neighbor not in self.pile_objects:raise RuntimeError('uncertified target contact identity '+neighbor)
+            if neighbor in result:raise RuntimeError('ambiguous duplicate pile contact '+neighbor)
+            if not c.get('points') or any(len(p)!=3 or not all(math.isfinite(x) for x in p) for p in c['points']):
+                raise RuntimeError('incomplete measured pile contact')
+            result[neighbor]=c
+        return result
+
+    def certify_pile(self,s):
+        # Admission occurs only on fresh post-close measurements. A resolution's
+        # predicted contact set is never reused as physical execution authority.
+        evidence=dict(target=self.object,physical_target=self.m.receipt['world']+'::'+self.name,
+            binding=copy.deepcopy(self.pile_binding),run_id=s.get('run_id'),iteration=s.get('iteration'),
+            sim_ns=s.get('sim_ns'),wall_ns=s.get('wall_ns'),certified_set=[],contacts=[],rejected=[])
+        self.pile_certificate=evidence;self.pile_expired=set();self.pile_origin=None
+        try:
+            validate_sample(s,self.m.receipt,time.time())
+            admitted=self.pile_binding.get('close_goal_terminal_wall_ns')
+            accepted=self.pile_binding.get('close_goal_accepted_wall_ns')
+            if (not self.pile_binding.get('close_goal_uuid') or not isinstance(admitted,int) or
+                not isinstance(accepted,int) or accepted>admitted or s['wall_ns']<admitted):
+                raise RuntimeError('pile admission requires measured state after successful owned close')
+            evidence['freshness_ms']=(time.time_ns()-s['wall_ns'])/1e6
+            for neighbor,c in sorted(self.pile_contacts(s).items()):
+                valid,geometry=self.pile_geometry(s,neighbor,c['points'])
+                entry=dict(neighbor=neighbor,physical_pair=[c['a'],c['b']],points=c['points'],
+                    target_pose=self.m.object_pose(s,self.name),
+                    neighbor_pose=self.m.object_pose(s,self.pile_objects[neighbor]['name']),geometry=geometry)
+                evidence['contacts'].append(entry)
+                if not valid:raise RuntimeError('measured pile geometry/depth rejected: '+neighbor)
+                evidence['certified_set'].append(neighbor)
+            evidence['initial_bottom_m']=self.bottom(self.m.object_pose(s,self.name))
+            evidence['checked_samples']=0;evidence['expired_pairs']=[]
+        except Exception as exc:
+            evidence['rejected'].append(str(exc));evidence['certified_set']=[]
+            raise
+        return evidence
+
+    def begin_pile_separation(self,s):
+        if self.pile_certificate is None:raise RuntimeError('missing measured pile certificate')
+        self.pile_origin=list(self.m.object_pose(s,self.name));self.pile_height=0.
+        self.pile_lift_start_sim_ns=s['sim_ns']
+
+    def check_pile(self,s):
+        certificate=self.pile_certificate
+        if certificate is None or certificate['rejected']:raise RuntimeError('missing valid pile certificate')
+        if s['run_id']!=certificate['run_id'] or s['iteration']<certificate['iteration']:
+            raise RuntimeError('pile certificate measurement binding changed')
+        contacts=self.pile_contacts(s);certified=set(certificate['certified_set'])
+        if set(contacts)-certified:raise RuntimeError('new uncertified pile contact')
+        if set(contacts)&self.pile_expired:raise RuntimeError('pile contact recontact after separation')
+        active=certified-self.pile_expired
+        lifting=self.phase=='lift' and self.pile_origin is not None and s['sim_ns']>=self.pile_lift_start_sim_ns
+        if lifting and active:
+            obj=self.m.object_pose(s,self.name);motion=[a-b for a,b in zip(obj[:3],self.pile_origin[:3])]
+            if math.hypot(*motion[:2])>.0025 or motion[2]<self.pile_height-1e-9 or motion[2]>.01 or angle(obj,self.pile_origin)>.01:
+                raise RuntimeError('initial pile separation leaves certified corridor')
+            self.pile_height=motion[2]
+        if self.phase in ('transfer','place','opening','released') and active:
+            raise RuntimeError('initial pile contacts did not separate before transfer')
+        for entry in certificate['contacts']:
+            neighbor=entry['neighbor']
+            if neighbor not in active:continue
+            pose=self.m.object_pose(s,self.pile_objects[neighbor]['name'])
+            radius=math.sqrt(sum(x*x for x in self.pile_objects[neighbor]['size']))/2
+            if math.dist(pose[:3],entry['neighbor_pose'][:3])+radius*angle(pose,entry['neighbor_pose'])>.0001:
+                raise RuntimeError('certified pile neighbor geometry moved '+neighbor)
+            valid,geometry=self.pile_geometry(s,neighbor,contacts.get(neighbor,{}).get('points',[]))
+            if neighbor in contacts:
+                if not valid:raise RuntimeError('measured pile geometry/depth rejected: '+neighbor)
+            elif math.isfinite(geometry['separation_m']) and geometry['separation_m']>.0001:
+                self.pile_expired.add(neighbor)
+                certificate['expired_pairs'].append(dict(neighbor=neighbor,iteration=s['iteration'],sim_ns=s['sim_ns'],geometry=geometry))
+            elif not math.isfinite(geometry['depth_m']) or geometry['depth_m']>.0001:
+                raise RuntimeError('incomplete/overdeep pile separation geometry '+neighbor)
+        certificate['checked_samples']+=1
+
     def identity(self,collision):
         fields=collision.split('::')
         if len(fields)<4 or fields[0]!=self.m.receipt['world']:raise RuntimeError('unknown collision identity '+collision)
         model,link=fields[1:3]
+        if 'runtime::'+model in self.pile_objects:
+            if collision not in self.pile_collisions:raise RuntimeError('unknown pile collision identity '+collision)
+            return self.pile_collisions[collision]
         return link if model==self.m.receipt['model'] else ('runtime::'+model if model==self.name else 'workcell::'+model)
     def bottom(self,p):
         return min(p[2]+rotate_vector(p[3:],[x*self.dimensions[0]/2,y*self.dimensions[1]/2,z*self.dimensions[2]/2])[2] for x in (-1,1) for y in (-1,1) for z in (-1,1))
     def check(self,s):
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool);fingers=set();support_contact=False
+        if self.held:self.check_pile(s)
         robot_prefix=self.m.receipt['world']+'::'+self.m.receipt['model']+'::'
         for contact in s['contacts']:
             if not contact.get('points') or any(len(p)!=3 or not all(math.isfinite(v) for v in p) for p in contact['points']):
@@ -341,6 +481,8 @@ class ContactGuard:
             if selected and pair-{self.object} <= self.touch and self.phase!='approach':
                 fingers.update(pair-{self.object});continue
             if robot and not selected and (a,b) in self.allowed:continue
+            if selected and self.held and pair-{self.object} <= set(self.pile_certificate['certified_set'])-self.pile_expired:
+                continue
             if selected and self.held and self.support and pair=={self.object,self.support['support_id']}:
                 # Physical identities and positions must agree with the certified
                 # floor. Normals/depth are checked independently by measured_fcl.
@@ -365,7 +507,17 @@ class ContactGuard:
         if self.phase=='released':self.release_samples.append(s)
         self.m.record(self.phase,s)
     def establish(self):
-        s=self.m.fresh();self.check(s)
+        admitted=self.pile_binding.get('close_goal_terminal_wall_ns',0)
+        deadline=time.monotonic()+.25
+        while self.m.fresh()['wall_ns']<admitted:
+            if time.monotonic()>=deadline:raise RuntimeError('post-close physical measurement not received')
+            time.sleep(.001)
+        # Consume pre-admission samples under their original (not-held) phase;
+        # lock acquisition briefly so none can later masquerade as held data.
+        with self.m.lock:
+            for pending in self.m.drain():self.check(pending)
+            s=self.m.fresh();self.check(s)
+            self.certify_pile(s)
         joints=self.m.joints(s)
         leaders=[j.get('name') for c in self.m.robot.findall('ros2_control') for j in c.findall('joint') if j.find('command_interface') is not None and j.get('name') not in self.arm_names]
         if len(leaders)!=1:raise RuntimeError('unsupported gripper command topology')
@@ -469,21 +621,30 @@ def verify_settled_release(guard,held_sample):
         final_pose=p,settled=True,sim_ns=s['sim_ns'],samples=len(recent))
 
 
-def validate_measured_contacts(response,support,expired,predicate=None):
+def validate_measured_contacts(response,support,expired,predicate=None,pile_guard=None):
     """Use actual MoveIt contact geometry; never synthesize missing physics normals."""
     if response.valid:return
-    if not support or expired or not response.contacts:
+    if not response.contacts:
         raise RuntimeError('measured carried/robot collision or invalid state')
-    if predicate is None:
+    if support and predicate is None:
         from ament_index_python.packages import get_package_prefix
         lib=ctypes.CDLL(str(Path(get_package_prefix('workcell_builder'))/'lib/libworkcell_support_contact.so'))
         predicate=lib.workcell_support_contact_valid
         predicate.argtypes=[ctypes.c_char_p]*4+[ctypes.c_double,ctypes.POINTER(ctypes.c_double)];predicate.restype=ctypes.c_bool
     for c in response.contacts:
         types={c.contact_body_1:c.body_type_1,c.contact_body_2:c.body_type_2}
+        point=[c.position.x,c.position.y,c.position.z,c.normal.x,c.normal.y,c.normal.z,c.depth]
+        if pile_guard and pile_guard.pile_certificate:
+            target=pile_guard.object
+            neighbor=next(iter(set(types)-{target}),None)
+            allowed=set(pile_guard.pile_certificate['certified_set'])-pile_guard.pile_expired
+            if (types.get(target)==2 and types.get(neighbor)==1 and neighbor in allowed and
+                pile_guard.pile_predicate(target.encode(),neighbor.encode(),c.contact_body_1.encode(),
+                    c.contact_body_2.encode(),(ctypes.c_double*7)(*point))):continue
+        if not support or expired:
+            raise RuntimeError('measured carried/robot collision or invalid state')
         if types.get(support['object_id'])!=2 or types.get(support['support_id'])!=1:
             raise RuntimeError('measured support body types contradict carried state')
-        point=[c.position.x,c.position.y,c.position.z,c.normal.x,c.normal.y,c.normal.z,c.depth]
         if not predicate(support['object_id'].encode(),support['support_id'].encode(),c.contact_body_1.encode(),c.contact_body_2.encode(),support['floor_z'],(ctypes.c_double*7)(*point)):
             raise RuntimeError('measured FCL support contact rejected: pair/normal/depth/position')
 

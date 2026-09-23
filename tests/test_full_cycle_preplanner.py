@@ -163,7 +163,7 @@ def test_preplanner_operations_have_no_execution_capability():
 
 
 @pytest.mark.parametrize('change,reason', [
-    ('expired', 'observation expired'), ('deadline', 'budget exhausted'),
+    ('expired', 'observation expired'), ('deadline', 'slice exhausted'),
     ('identity', 'candidate object'), ('strategy', 'unsupported'),
     ('retreat', 'retreat distance'),
 ])

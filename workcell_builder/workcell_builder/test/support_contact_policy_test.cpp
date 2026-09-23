@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <array>
 #include "support_contact_policy.hpp"
 
 using workcell::SupportContact;
@@ -39,6 +40,137 @@ TEST(SupportContact, InvalidNumericsFailClosed) {
 #include "src_support_contact_adapter.cpp"
 #include <urdf_parser/urdf_parser.h>
 #include <srdfdom/model.h>
+
+
+TEST(PileContact, ExactIdentitiesTypesAndFiniteGeometry) {
+  workcell::PileContact policy{"part", "fixture"};
+  for (double depth : {0., 0.0001}) EXPECT_TRUE(policy(contact(depth)));
+  EXPECT_FALSE(policy(contact(0.000100001)));
+  EXPECT_FALSE(policy(contact(-1e-8)));
+  EXPECT_FALSE(policy(contact(NAN)));
+  auto c=contact(0.); c.normal.x()=NAN; EXPECT_FALSE(policy(c));
+  c=contact(0.); c.pos.z()=NAN; EXPECT_FALSE(policy(c));
+  c=contact(0.); c.body_name_1="fixture_extra"; EXPECT_FALSE(policy(c));
+  c=contact(0.); c.body_type_2=collision_detection::BodyTypes::ROBOT_LINK;
+  EXPECT_FALSE(policy(c));
+  c=contact(0.); std::swap(c.body_name_1,c.body_name_2);
+  std::swap(c.body_type_1,c.body_type_2); c.normal=-c.normal;
+  EXPECT_TRUE(policy(c));
+}
+
+TEST(PileContact, RuntimeAbiUsesExactPairAndSharedDepthBound) {
+  double point[7]{0,0,0,1,0,0,.0001};
+  EXPECT_TRUE(workcell_pile_contact_valid("part","neighbor","part","neighbor",point));
+  EXPECT_TRUE(workcell_pile_contact_valid("part","neighbor","neighbor","part",point));
+  EXPECT_FALSE(workcell_pile_contact_valid("part","neighbor","part","neighbor_extra",point));
+  EXPECT_FALSE(workcell_pile_contact_valid("part","neighbor","finger","neighbor",point));
+  EXPECT_FALSE(workcell_pile_contact_valid("part","part","part","part",point));
+  EXPECT_FALSE(workcell_pile_contact_valid(nullptr,"neighbor","part","neighbor",point));
+  point[6]=.000100001;
+  EXPECT_FALSE(workcell_pile_contact_valid("part","neighbor","part","neighbor",point));
+}
+
+struct MeasuredBoxes {
+  double size[3]{.025,.025,.025};
+  double target[7]{0,0,0,0,0,0,1};
+  double neighbor[7]{.025,0,0,0,0,0,1};
+  double points[6]{.0125,0,0,.0125,.005,0};
+  double evidence[8];
+  bool run(std::size_t count=2) {
+    return workcell_measured_pile_contact(size,target,size,neighbor,points,count,evidence);
+  }
+};
+TEST(MeasuredPileContact, ShallowContactUsesActualFclDepthAndNormal) {
+  MeasuredBoxes b;
+  b.neighbor[0]=.025-.00005;
+  ASSERT_TRUE(b.run());
+  EXPECT_NEAR(b.evidence[0],.00005,1e-12);
+  EXPECT_DOUBLE_EQ(b.evidence[1],0.);
+  EXPECT_NEAR(b.evidence[2],1.,1e-12);
+  for (double value:b.evidence) EXPECT_TRUE(std::isfinite(value));
+  b.neighbor[0]=.025-.000099999999;
+  EXPECT_TRUE(b.run());
+  b.neighbor[0]=.025-.000100001;
+  EXPECT_FALSE(b.run());
+  EXPECT_GT(b.evidence[0],.0001);
+}
+TEST(MeasuredPileContact, SeparatedGeometryUsesFclNearestPoints) {
+  MeasuredBoxes b;
+  b.neighbor[0]=.025+.00005;
+  ASSERT_TRUE(b.run());
+  EXPECT_DOUBLE_EQ(b.evidence[0],0.);
+  EXPECT_NEAR(b.evidence[1],.00005,1e-12);
+  EXPECT_NEAR(b.evidence[2],1.,1e-9);
+  b.neighbor[0]=.025+.000100001;
+  EXPECT_FALSE(b.run());
+  EXPECT_GT(b.evidence[1],.0001);
+  EXPECT_FALSE(b.run(0));
+  EXPECT_GT(b.evidence[1],.0001);
+  b.neighbor[0]=.2;
+  EXPECT_FALSE(b.run());
+}
+TEST(MeasuredPileContact, EveryPhysicalPointMustMatchBothBoxSurfaces) {
+  MeasuredBoxes b;
+  b.neighbor[0]=.025-.00005;
+  ASSERT_TRUE(b.run());
+  b.points[3]=.011;
+  EXPECT_FALSE(b.run());
+  b.points[3]=.0125; b.points[4]=.1;
+  EXPECT_FALSE(b.run());
+  b.points[4]=NAN;
+  EXPECT_FALSE(b.run());
+}
+TEST(MeasuredPileContact, RotatedMeasuredBoxesUseFullPose) {
+  MeasuredBoxes b;
+  const Eigen::AngleAxisd rotation(.71,Eigen::Vector3d(1,2,3).normalized());
+  const Eigen::Quaterniond q(rotation);
+  Eigen::Map<Eigen::Vector3d>(b.neighbor)=rotation*Eigen::Vector3d(.025-.00005,0,0);
+  for (double* pose:{b.target,b.neighbor}) {
+    pose[3]=q.x(); pose[4]=q.y(); pose[5]=q.z(); pose[6]=q.w();
+  }
+  for (unsigned int i=0;i<2;++i)
+    Eigen::Map<Eigen::Vector3d>(b.points+3*i)=rotation*Eigen::Vector3d(.0125,.005*i,0);
+  ASSERT_TRUE(b.run());
+  EXPECT_NEAR(b.evidence[0],.00005,1e-12);
+  EXPECT_NEAR((Eigen::Map<Eigen::Vector3d>(b.evidence+2)-rotation*Eigen::Vector3d::UnitX()).norm(),0.,1e-10);
+}
+TEST(MeasuredPileContact, InvalidInputsFailClosedWithDeterministicEvidence) {
+  MeasuredBoxes b;
+  EXPECT_FALSE(b.run(0));
+  EXPECT_DOUBLE_EQ(b.evidence[1],0.);
+  b.size[0]=-1.; EXPECT_FALSE(b.run());
+  for (double value:b.evidence) EXPECT_TRUE(std::isnan(value));
+  b.size[0]=INFINITY; EXPECT_FALSE(b.run());
+  b.size[0]=.025; b.target[6]=0.; EXPECT_FALSE(b.run());
+  b.target[6]=2.; EXPECT_FALSE(b.run());
+  b.target[6]=1.; b.target[0]=NAN; EXPECT_FALSE(b.run());
+  EXPECT_FALSE(workcell_measured_pile_contact(nullptr,b.target,b.size,b.neighbor,b.points,2,b.evidence));
+  EXPECT_FALSE(workcell_measured_pile_contact(b.size,b.target,b.size,b.neighbor,b.points,2,nullptr));
+}
+
+// Literal measured BOX poses and physical points from the preserved stationary
+// failure evidence, iteration 41672 (2026-09-23). This protects the escaped
+// predicted-pose mismatch: the physical target touches all five neighbors.
+TEST(MeasuredPileContact, RecordedFivePhysicalNeighborsUseMeasuredPoses) {
+  const double size[3]{.025,.025,.025};
+  const double target[7]{0.3847929167274054,-0.22440961888336086,0.03749985893218837,2.137887752146462e-07,6.314741267587348e-07,0.12332964599661471,0.9923657583864456};
+  struct Pair { const char* name; std::array<double,7> pose; std::vector<double> points; };
+  const std::vector<Pair> pairs{
+    {"part_00",{0.3699988381564545,-0.2500016810888486,0.01249997994770509,-2.4633481557677397e-06,2.0680720280557986e-06,0.07496885809228575,0.9971858755046592},{0.3757328446599582,-0.2395890099707328,0.02499986318150591,0.3749798463463771,-0.23660633331083447,0.024999865917407035,0.38048941764208033,-0.23577320105809152,0.024999857618738457,0.3808703022046534,-0.23829202162490176,0.024999855712364953}},
+    {"part_01",{0.3999455376089018,-0.25000172020418737,0.012499314673824792,2.5486464821529496e-05,-3.486050750188227e-06,-0.09970726486117532,0.995016814266066},{0.39165272378933497,-0.2355699212444393,0.02499988853788514}},
+    {"part_03",{0.3700000002546573,-0.2000000024884246,0.01249992871028953,3.579333205517817e-07,1.016065358196973e-06,-0.17410826120679215,0.9847265170484579},{0.3785249467357782,-0.21309974535742393,0.02499991347448979}},
+    {"part_04",{0.39999891896792333,-0.19999992561312946,0.01249996098772407,1.307694556660767e-06,-5.755825687317762e-07,0.04996377346971057,0.9987510307071658},{0.38849760152292684,-0.2105820764669521,0.024999857960547642,0.39385289477595187,-0.20923009391969913,0.024999850174704186,0.39482523651048873,-0.21308160453365457,0.024999846641853195,0.3888088408427896,-0.21368506715530255,0.024999855862355914}},
+    {"part_07",{0.4152177426999811,-0.22541668722725056,0.03749878236489574,3.317809853697e-05,7.195735808274394e-06,-0.13646492327064116,0.9906449028608451},{0.39997232774344743,-0.23346957700321053,0.024999827940705502}},
+  };
+  for (const auto& pair:pairs) {
+    SCOPED_TRACE(pair.name);
+    double evidence[8];
+    EXPECT_TRUE(workcell_measured_pile_contact(size,target,size,pair.pose.data(),
+      pair.points.data(),pair.points.size()/3,evidence));
+    EXPECT_LE(evidence[0],.0001);
+    EXPECT_LE(evidence[1],.0001);
+  }
+}
 
 
 class PrismaticTestIK : public kinematics::KinematicsBase {

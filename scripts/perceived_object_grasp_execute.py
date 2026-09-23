@@ -1174,7 +1174,20 @@ def main():
         state=copy.deepcopy(initial.robot_state)
         measured=measurements.joints(s)
         state=updated_state(state,{k:v[0] for k,v in measured.items()}, {})
-        if contact_guard.held and contact_guard.phase not in ('released',):
+        carried=contact_guard.planning_attached and contact_guard.phase!='released'
+        # The state-validity service otherwise compares measured robot joints
+        # against the old observation world. Keep every physical BOX at the
+        # same authoritative measurement used for this query.
+        world_diff=PlanningScene(is_diff=True)
+        for original in (initial.world.collision_objects if contact_guard.held else []):
+            if original.id not in contact_guard.pile_objects or (carried and original.id==selected_id):continue
+            obj=copy.deepcopy(original)
+            values=measurements.object_pose(s,contact_guard.pile_objects[obj.id]['name'])
+            (obj.pose.position.x,obj.pose.position.y,obj.pose.position.z,
+             obj.pose.orientation.x,obj.pose.orientation.y,obj.pose.orientation.z,obj.pose.orientation.w)=values
+            world_diff.world.collision_objects.append(obj)
+        if world_diff.world.collision_objects:apply(world_diff)
+        if carried:
             original=next(o for o in initial.world.collision_objects if o.id==selected_id)
             state.attached_collision_objects=measured_attachment(original,contract,measurements,s).robot_state.attached_collision_objects
         else:state.attached_collision_objects=[]
@@ -1183,7 +1196,8 @@ def main():
         rclpy.spin_until_future_complete(node,future,timeout_sec=.2)
         if not future.done() or not future.result():raise RuntimeError('measured collision query timed out')
         validate_measured_contacts(future.result(),contact_guard.support if contact_guard.held else None,
-            bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate)
+            bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate,
+            pile_guard=contact_guard if carried else None)
         measurements.fresh()
         summary['last_measured_collision_check']=dict(sim_ns=s['sim_ns'],valid=future.result().valid,contacts=len(future.result().contacts))
     def measured_reconcile():
@@ -1735,6 +1749,10 @@ def main():
             support=next((s['metadata']['initial_support_contact'] for s in cycle['steps'] if s.get('metadata',{}).get('initial_support_contact')),None)
             selected=next(o for o in objects if o['id']==selected_id)
             contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,contract['tool_link'])
+            contact_guard.bind_pile(objects,dict(resolution_sha256=summary['resolution_sha256'],
+                execution_attempt=measurements.receipt['run_id']+':'+str(time.monotonic_ns()),
+                selected_grasp_index=summary['selected_grasp_index'],
+                commissioning_sha256=summary['commissioning_capability']['sha256']))
             contact_guard.arm_names=set(contract['home_joint_names'])
             initial_joints=measurements.joints(measurements.fresh())
             leaders=set(initial_joints)-contact_guard.arm_names-{j.get('name') for j in measurements.robot.findall('joint') if j.find('mimic') is not None}
@@ -1776,9 +1794,11 @@ def main():
                     if not contact_guard.held:
                         apply(PlanningScene(is_diff=True,allowed_collision_matrix=step['before'].allowed_collision_matrix))
                     contact_guard.drain()
+                    if step['stage']=='PREPLAN_LIFT':contact_guard.begin_pile_separation(measurements.fresh())
                     controlled_cancel=args.simulator_commission=='cancel' and step['stage']=='PREPLAN_APPROACH'
                     summary['execution_attempted']=True
                     result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)
+                    if step['stage']=='PREPLAN_CLOSE_GRIPPER':summary['close_terminal_wall_ns']=time.time_ns()
                     controlled_cancel=False
                     contact_guard.drain()
                     summary.setdefault('execution_results',[]).append(dict(stage=label,code=result.error_code.val,action_status=4))
@@ -1793,9 +1813,12 @@ def main():
                     if step['stage']=='PREPLAN_LIFT' and args.simulator_commission in ('contact-release','full-cycle'):
                         monitored_hold(1.)
                         summary['lift_hold_measurement']=measurements.fresh()
-                        if support is None:raise RuntimeError('physical lift has no certified initial support')
-                        summary['verified_lift_clearance_m']=contact_guard.bottom(measurements.object_pose(measurements.fresh(),contact_guard.name))-support['floor_z']
-                        if not contact_guard.separation or not contact_guard.separation.expired or summary['verified_lift_clearance_m']<.01:
+                        pile=contact_guard.pile_certificate
+                        if support is None and not pile['certified_set']:raise RuntimeError('physical lift has no certified initial support')
+                        floor=support['floor_z'] if support else pile['initial_bottom_m']
+                        summary['verified_lift_clearance_m']=contact_guard.bottom(measurements.object_pose(measurements.fresh(),contact_guard.name))-floor
+                        if ((support and (not contact_guard.separation or not contact_guard.separation.expired)) or
+                            set(pile['certified_set'])!=contact_guard.pile_expired or summary['verified_lift_clearance_m']<.01):
                             raise RuntimeError('physical lift separation not verified')
                         if args.simulator_commission=='contact-release':
                             # Plan release in the actual lifted scene with the existing planner.
@@ -1814,6 +1837,9 @@ def main():
                     if step['stage']=='PREPLAN_PLACE' and args.simulator_commission=='full-cycle':
                         summary['pre_release_measurement']=measurements.fresh()
                 elif step['kind']=='attach':
+                    contact_guard.pile_binding.update(close_goal_uuid=summary['owned_execution_goal']['uuid'],
+                        close_goal_accepted_wall_ns=summary['owned_execution_goal']['wall_ns'],
+                        close_goal_terminal_wall_ns=summary['close_terminal_wall_ns'])
                     if args.simulator_commission=='stationary':
                         # This gate proves physical retention only. No planning-scene
                         # attachment or later arm motion is used as grasp evidence.
@@ -1835,6 +1861,7 @@ def main():
                     summary['measured_object_in_tool']=contact_guard.establish()
                     summary['closure_measurement']=measurements.fresh()
                     apply(measured_attachment(step['original'],contract,measurements,measurements.fresh()))
+                    contact_guard.planning_attached=True
                     apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
                 else:
                     contact_guard.phase='released';monitored_hold(2.)
@@ -1987,6 +2014,8 @@ def main():
                 summary['result']='CANCELLATION_TRIAL_PASS'
             except RuntimeError as acceptance_error:
                 summary['cancellation_acceptance_failure']=str(acceptance_error)
+        if contact_guard and contact_guard.pile_certificate is not None:
+            summary['pile_contact_certification']=contact_guard.pile_certificate
         if measurements:measurements.close()
         node.destroy_node()
         rclpy.try_shutdown()

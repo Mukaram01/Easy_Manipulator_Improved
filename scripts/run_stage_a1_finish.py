@@ -14,6 +14,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -53,21 +54,66 @@ def group_alive(pgid:int)->bool:
     return False
 
 
-def stop_owned(process):
+def launch_child_exits(log,*,cleanup_offset=None,sent_signals=()):
+    """Classify exits against the owned cleanup boundary, preserving launch order."""
+    if log is None:return []
+    raw=Path(log).read_bytes();text=raw.decode(errors="replace")
+    boundary=len(text) if cleanup_offset is None else len(raw[:cleanup_offset].decode(errors="replace"))
+    pattern=re.compile(r"\[(?P<name>[^]\n]+)\]: process (?:has died \[pid (?P<pid>\d+), exit code (?P<rc>-?\d+),|has finished cleanly \[pid (?P<clean_pid>\d+)\])")
+    signal_pattern=re.compile(r"\[(?P<name>[^]\n]+)\]: sending signal '(?P<signal>SIGINT|SIGTERM)' to process")
+    launch_signals=list(signal_pattern.finditer(text))
+    children=[]
+    for match in pattern.finditer(text):
+        rc=int(match['rc'] or 0);before=match.start()<boundary
+        try:sig=signal.Signals(-rc).name if rc<0 else None
+        except ValueError:sig=f"SIGNAL_{-rc}"
+        transient=bool(re.fullmatch(r"spawner(?:\.py)?-\d+",match['name']))
+        child_signals={event['signal'] for event in launch_signals
+            if event['name']==match['name'] and boundary<=event.start()<match.start()}
+        requested={signal.Signals(item).name for item in sent_signals}|child_signals
+        expected=(rc==0 and (transient or (not before and bool(requested)))) or (
+            not before and sig in ("SIGINT","SIGTERM") and sig in requested)
+        children.append(dict(name=match['name'],pid=int(match['pid'] or match['clean_pid']),
+            returncode=rc,signal=sig,before_cleanup=before,expected=expected))
+    return children
+
+
+def stop_owned(process,log=None):
     if process is None:return {"started":False,"clean":True,"escalation":None}
-    escalation=None
-    if process.poll() is None:os.killpg(process.pid,signal.SIGINT)
+    # Snapshot before signalling: a previously dead launch/long-lived child is
+    # never excused by the SIGINT that the runner sends later.
+    cleanup_offset=Path(log).stat().st_size if log is not None else 0
+    alive_before=process.poll() is None
+    escalation=None;sent_signals=[]
+    def send(sig):
+        try:os.killpg(process.pid,sig)
+        except ProcessLookupError:return
+        sent_signals.append(sig)
+    if alive_before:send(signal.SIGINT)
     deadline=time.monotonic()+10
     while group_alive(process.pid) and time.monotonic()<deadline:time.sleep(.1)
     if group_alive(process.pid):
-        escalation="SIGTERM";os.killpg(process.pid,signal.SIGTERM);deadline=time.monotonic()+5
+        escalation="SIGTERM";send(signal.SIGTERM);deadline=time.monotonic()+5
         while group_alive(process.pid) and time.monotonic()<deadline:time.sleep(.1)
     if group_alive(process.pid):
-        escalation="SIGKILL";os.killpg(process.pid,signal.SIGKILL);deadline=time.monotonic()+3
+        escalation="SIGKILL";send(signal.SIGKILL);deadline=time.monotonic()+3
         while group_alive(process.pid) and time.monotonic()<deadline:time.sleep(.05)
     try:rc=process.wait(timeout=3)
     except subprocess.TimeoutExpired:rc=None
-    return {"started":True,"clean":not group_alive(process.pid),"returncode":rc,"escalation":escalation}
+    children=launch_child_exits(log,cleanup_offset=cleanup_offset,sent_signals=sent_signals)
+    crash_evidence=[]
+    if log is not None:
+        crash_evidence=[line for line in Path(log).read_text(errors="replace").splitlines()
+            if re.search(r"segmentation fault|core dumped|\bSIGSEGV\b|\bSIGABRT\b",line,re.IGNORECASE)]
+    remaining=group_alive(process.pid)
+    root_expected=alive_before and bool(sent_signals) and (rc==0 or
+        (rc in (-signal.SIGINT,-signal.SIGTERM) and -rc in sent_signals))
+    return {"started":True,"clean":not remaining and root_expected and not crash_evidence
+            and escalation!="SIGKILL" and all(child["expected"] for child in children),
+            "returncode":rc,"escalation":escalation,"remaining_owned_processes":remaining,
+            "root_alive_before_cleanup":alive_before,"cleanup_log_offset":cleanup_offset,
+            "sent_signals":[signal.Signals(item).name for item in sent_signals],
+            "children":children,"crash_evidence":crash_evidence}
 
 
 def run(command,*,env,cwd,log,timeout,check=True):
@@ -364,9 +410,16 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
     except Exception as exc:
         report["failure"]=str(exc);raise
     finally:
-        report["shutdown"]=stop_owned(launch)
+        report["shutdown"]=stop_owned(launch,session/"launch.log" if launch_log is not None else None)
         if launch_log is not None:launch_log.close()
+        shutdown_failure=None
+        if not report["shutdown"]["clean"]:
+            shutdown_failure="owned shutdown failed: "+json.dumps(report["shutdown"],sort_keys=True)
+            report["status"]="BLOCKED"
+            report["shutdown_failure"]=shutdown_failure
         (session/"session-report.json").write_text(json.dumps(report,indent=2)+"\n")
+        if shutdown_failure is not None and "failure" not in report:
+            raise RuntimeError(shutdown_failure)
 
 
 def main(argv=None):
@@ -396,12 +449,23 @@ def main(argv=None):
         prior={}
         selected=GATES[:GATES.index(args.through)+1]
         for index,gate in enumerate(selected,1):
-            path=one_session(args,repo,source_world,build["sha256"],gate,index,prior)
+            try:
+                path=one_session(args,repo,source_world,build["sha256"],gate,index,prior)
+            except Exception as exc:
+                failed={"status":"FAILED","failure":str(exc)}
+                session_report=args.output/f"{index:02d}-{gate}"/"session-report.json"
+                if session_report.is_file():
+                    failed["session_report"]=str(session_report.relative_to(args.output))
+                    recorded=json.loads(session_report.read_text())
+                    for key in ("shutdown","shutdown_failure"):
+                        if key in recorded:failed[key]=recorded[key]
+                overall["gates"][gate]=failed
+                raise
             prior[gate]=path;overall["gates"][gate]={"status":"PASS","summary":str(path.relative_to(args.output))}
             overall["status"]="PASS" if gate==args.through else "IN_PROGRESS"
         return 0
     except Exception as exc:
-        overall["failure"]=str(exc);return 1
+        overall["status"]="BLOCKED";overall["failure"]=str(exc);return 1
     finally:
         overall["finished_wall_ns"]=time.time_ns()
         (args.output/"stage-a1-final-report.json").write_text(json.dumps(overall,indent=2)+"\n")

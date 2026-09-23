@@ -6,6 +6,7 @@
 #include <moveit/trajectory_processing/iterative_time_parameterization.h>
 #include <moveit/kinematic_constraints/kinematic_constraint.h>
 #include <geometric_shapes/shapes.h>
+#include <fcl/fcl.h>
 #include <pluginlib/class_list_macros.hpp>
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
@@ -204,9 +205,7 @@ public:
               const auto neighbor=forward ? contact.body_name_2 : contact.body_name_1;
               if (!requested_initial_neighbors.count(neighbor))
                 return fail("CARTESIAN_PATH_INITIAL_COLLISION_NOT_MEASURED_PILE_CONTACT");
-              if (!std::isfinite(contact.depth) || contact.depth<0. ||
-                  contact.depth>support_contact_tolerance_m ||
-                  !contact.pos.allFinite() || !contact.normal.allFinite())
+              if (!PileContact{carried_id,neighbor}(contact))
                 return fail("CARTESIAN_PATH_INITIAL_CONTACT_OUTSIDE_NUMERICAL_TOLERANCE");
               certified_initial_neighbors.insert(neighbor);
             }
@@ -220,19 +219,7 @@ public:
           for (const auto& neighbor:certified_initial_neighbors) {
             collision_detection::DecideContactFn predicate=[
               carried_id,neighbor](collision_detection::Contact& contact) {
-              const bool forward=
-                contact.body_name_1==carried_id &&
-                contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
-                contact.body_name_2==neighbor &&
-                contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
-              const bool reverse=
-                contact.body_name_2==carried_id &&
-                contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
-                contact.body_name_1==neighbor &&
-                contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
-              return (forward || reverse) && std::isfinite(contact.depth) &&
-                contact.depth>=0. && contact.depth<=support_contact_tolerance_m &&
-                contact.pos.allFinite() && contact.normal.allFinite();
+              return PileContact{carried_id,neighbor}(contact);
             };
             separation_scene->getAllowedCollisionMatrixNonConst().setEntry(
               carried_id,neighbor,predicate);
@@ -491,9 +478,7 @@ public:
               const auto neighbor=forward ? contact.body_name_2 : contact.body_name_1;
               if (!requested_neighbors.count(neighbor))
                 return fail("SUPPORT_CONTACT_INITIAL_COLLISION_NOT_MEASURED_PILE_CONTACT");
-              if (!std::isfinite(contact.depth) || contact.depth<0. ||
-                  contact.depth>support_contact_tolerance_m ||
-                  !contact.pos.allFinite() || !contact.normal.allFinite())
+              if (!PileContact{policy.object,neighbor}(contact))
                 return fail("SUPPORT_CONTACT_INITIAL_PILE_CONTACT_OUTSIDE_TOLERANCE");
               certified_neighbors.insert(neighbor);
             }
@@ -503,19 +488,7 @@ public:
         for (const auto& neighbor:certified_neighbors) {
           collision_detection::DecideContactFn pile_predicate=[
             object_id=policy.object,neighbor](collision_detection::Contact& contact) {
-            const bool forward=
-              contact.body_name_1==object_id &&
-              contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
-              contact.body_name_2==neighbor &&
-              contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
-            const bool reverse=
-              contact.body_name_2==object_id &&
-              contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
-              contact.body_name_1==neighbor &&
-              contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
-            return (forward || reverse) && std::isfinite(contact.depth) &&
-              contact.depth>=0. && contact.depth<=support_contact_tolerance_m &&
-              contact.pos.allFinite() && contact.normal.allFinite();
+            return PileContact{object_id,neighbor}(contact);
           };
           local->getAllowedCollisionMatrixNonConst().setEntry(
             policy.object,neighbor,pile_predicate);
@@ -605,4 +578,115 @@ extern "C" bool workcell_support_contact_valid(const char* object,const char* su
   c.pos=Eigen::Vector3d(point[0],point[1],point[2]);
   c.normal=Eigen::Vector3d(point[3],point[4],point[5]);c.depth=point[6];
   return workcell::SupportContact{object,support,floor}(c);
+}
+
+
+// Runtime MoveIt contacts retain exact names and the same pile predicate used
+// above. The caller must first require carried/world body types in its response.
+extern "C" bool workcell_pile_contact_valid(const char* object,const char* neighbor,
+ const char* first,const char* second,const double* point) {
+  if (!object || !neighbor || !first || !second || !point ||
+      !*object || !*neighbor || std::string(object)==neighbor) return false;
+  collision_detection::Contact c;
+  c.body_name_1=first; c.body_name_2=second;
+  c.body_type_1=c.body_name_1==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.body_type_2=c.body_name_2==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.pos=Eigen::Map<const Eigen::Vector3d>(point);
+  c.normal=Eigen::Map<const Eigen::Vector3d>(point+3); c.depth=point[6];
+  return workcell::PileContact{object,neighbor}(c);
+}
+
+namespace {
+bool measuredBoxPose(const double* size,const double* pose,Eigen::Isometry3d& transform) {
+  if (!size || !pose) return false;
+  for (std::size_t i=0;i<3;++i)
+    if (!std::isfinite(size[i]) || size[i]<=0.) return false;
+  for (std::size_t i=0;i<7;++i) if (!std::isfinite(pose[i])) return false;
+  Eigen::Quaterniond orientation(pose[6],pose[3],pose[4],pose[5]);
+  if (std::abs(orientation.squaredNorm()-1.)>1e-6) return false;
+  transform=Eigen::Isometry3d::Identity();
+  transform.translation()=Eigen::Map<const Eigen::Vector3d>(pose);
+  transform.linear()=orientation.normalized().toRotationMatrix();
+  return transform.matrix().allFinite();
+}
+
+// This checks telemetry association against a known BOX surface, not collision
+// between shapes. Pair penetration and separation are exclusively FCL results.
+bool measuredPointOnBox(const Eigen::Vector3d& point,const double* size,
+                        const Eigen::Isometry3d& transform) {
+  const Eigen::Vector3d local=transform.inverse()*point;
+  const Eigen::Vector3d face_distance=local.cwiseAbs()-Eigen::Map<const Eigen::Vector3d>(size)*.5;
+  const double surface_distance=face_distance.maxCoeff()<=0. ?
+    -face_distance.maxCoeff() : face_distance.cwiseMax(0.).norm();
+  return std::isfinite(surface_distance) && surface_distance<=workcell::support_contact_tolerance_m;
+}
+}
+
+// BOX-only measured pair query through the same FCL library used by MoveIt.
+// Poses are xyz+xyzw. Output: maximum penetration, separation, normal xyz,
+// point xyz. A colliding result reports the deepest actual FCL contact; a
+// separated result reports the FCL nearest-point midpoint and their direction.
+// Every supplied physical point must agree with BOTH measured surfaces within
+// the unchanged 0.1 mm bound. Empty points cannot certify contact, but geometry
+// evidence is retained so callers can prove a previously certified pair cleared.
+// Invalid input/unsupported geometry yields NaNs. No exception crosses the ABI.
+extern "C" bool workcell_measured_pile_contact(
+ const double* target_size3,const double* target_pose7,
+ const double* neighbor_size3,const double* neighbor_pose7,
+ const double* physical_points3n,std::size_t n,double* evidence8) {
+  if (!evidence8) return false;
+  std::fill(evidence8,evidence8+8,std::numeric_limits<double>::quiet_NaN());
+  try {
+    Eigen::Isometry3d target_pose,neighbor_pose;
+    if (!measuredBoxPose(target_size3,target_pose7,target_pose) ||
+        !measuredBoxPose(neighbor_size3,neighbor_pose7,neighbor_pose) || n>256 ||
+        (n && !physical_points3n)) return false;
+    const fcl::Boxd target(target_size3[0],target_size3[1],target_size3[2]);
+    const fcl::Boxd neighbor(neighbor_size3[0],neighbor_size3[1],neighbor_size3[2]);
+    const fcl::CollisionRequestd request(64,true);
+    fcl::CollisionResultd result;
+    fcl::collide(&target,target_pose,&neighbor,neighbor_pose,request,result);
+    bool geometry_valid=false;
+    if (result.isCollision()) {
+      std::vector<fcl::Contactd> contacts;
+      result.getContacts(contacts);
+      if (contacts.empty() || contacts.size()>=request.num_max_contacts) return false;
+      double max_depth=-1.;
+      for (const auto& c:contacts) {
+        if (!std::isfinite(c.penetration_depth) || c.penetration_depth<0. ||
+            !c.pos.allFinite() || !c.normal.allFinite()) return false;
+        if (c.penetration_depth>max_depth) {
+          max_depth=c.penetration_depth;
+          evidence8[0]=max_depth; evidence8[1]=0.;
+          Eigen::Map<Eigen::Vector3d>(evidence8+2)=c.normal;
+          Eigen::Map<Eigen::Vector3d>(evidence8+5)=c.pos;
+        }
+      }
+      geometry_valid=max_depth<=workcell::support_contact_tolerance_m;
+    } else {
+      fcl::DistanceRequestd distance_request;
+      distance_request.enable_nearest_points=true;
+      fcl::DistanceResultd distance_result;
+      fcl::distance(&target,target_pose,&neighbor,neighbor_pose,distance_request,distance_result);
+      const double separation=distance_result.min_distance;
+      const Eigen::Vector3d delta=distance_result.nearest_points[1]-distance_result.nearest_points[0];
+      if (!std::isfinite(separation) || separation<=0. || !delta.allFinite() ||
+          delta.norm()<=0. || !distance_result.nearest_points[0].allFinite()) return false;
+      evidence8[0]=0.; evidence8[1]=separation;
+      Eigen::Map<Eigen::Vector3d>(evidence8+2)=delta.normalized();
+      Eigen::Map<Eigen::Vector3d>(evidence8+5)=
+        (distance_result.nearest_points[0]+distance_result.nearest_points[1])*.5;
+      geometry_valid=separation<=workcell::support_contact_tolerance_m;
+    }
+    if (!geometry_valid || !n) return false;
+    for (std::size_t i=0;i<n;++i) {
+      const Eigen::Vector3d point=Eigen::Map<const Eigen::Vector3d>(physical_points3n+3*i);
+      if (!point.allFinite() || !measuredPointOnBox(point,target_size3,target_pose) ||
+          !measuredPointOnBox(point,neighbor_size3,neighbor_pose)) return false;
+    }
+    return true;
+  } catch (...) {
+    std::fill(evidence8,evidence8+8,std::numeric_limits<double>::quiet_NaN());
+    return false;
+  }
 }

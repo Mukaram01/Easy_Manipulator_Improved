@@ -144,3 +144,143 @@ def test_runner_refreshes_bound_physical_observation_before_revalidate_and_motio
     assert 'refresh_observations("revalidate")' in source
     assert 'refresh_observations(gate)' in source
     assert '"--refresh-from",observations' in source
+
+@pytest.mark.parametrize('rc,clean', [(0, False),(-2, False),(-15, False),(-11, False),(7, False),(-9, False)])
+def test_owned_shutdown_reports_abnormal_root_exit(tmp_path, rc, clean):
+    import subprocess, sys
+    code = 'import os, signal; ' + (f'os.kill(os.getpid(), {-rc})' if rc < 0 else f'raise SystemExit({rc})')
+    process=subprocess.Popen([sys.executable,'-c',code],start_new_session=True)
+    process.wait(timeout=5)
+    report=MODULE.stop_owned(process)
+    assert report['returncode']==rc
+    assert report['clean'] is clean
+
+
+def test_owned_shutdown_reports_child_segfault_even_when_launch_exits_zero(tmp_path):
+    import subprocess, sys
+    log=tmp_path/'launch.log'
+    log.write_text("[INFO] [worker-1]: process started with pid [123]\n"
+        "[ERROR] [worker-1]: process has died [pid 123, exit code -11, cmd 'worker'].\n")
+    process=subprocess.Popen([sys.executable,'-c','pass'],start_new_session=True)
+    process.wait(timeout=5)
+    report=MODULE.stop_owned(process,log)
+    assert report['clean'] is False
+    assert report['children'][0]['signal']=='SIGSEGV'
+    assert report['children'][0]['expected'] is False
+
+
+@pytest.mark.parametrize('rc', [-2, -15])
+def test_owned_shutdown_rejects_child_signals_before_cleanup(tmp_path,rc):
+    import subprocess, sys
+    log=tmp_path/'launch.log'
+    log.write_text(f"[ERROR] [worker-1]: process has died [pid 123, exit code {rc}, cmd 'worker'].\n")
+    process=subprocess.Popen([sys.executable,'-c','pass'],start_new_session=True)
+    process.wait(timeout=5)
+    assert MODULE.stop_owned(process,log)['clean'] is False
+
+
+def test_main_failure_after_prior_gate_does_not_leave_in_progress(tmp_path,monkeypatch):
+    monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
+    monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test'})
+    def session(args,repo,world,sha,gate,index,prior):
+        if index==2:raise RuntimeError('owned shutdown failed: SIGSEGV')
+        return args.output/'summary.json'
+    monkeypatch.setattr(MODULE,'one_session',session)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--through','cancel'])==1
+    assert json.loads((output/'stage-a1-final-report.json').read_text())['status']=='BLOCKED'
+
+
+def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import subprocess,sys
+    args=SimpleNamespace(output=tmp_path,base_domain=201,partition_prefix='test',
+                         class_id='part',segment_planning_time=3.)
+    monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,path,class_id:path)
+    monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
+    monkeypatch.setattr(MODULE,'generate_scene',lambda *args:None)
+    monkeypatch.setattr(MODULE,'wait_file',lambda *args:None)
+    monkeypatch.setattr(MODULE,'assert_plan',lambda *args,**kwargs:None)
+    real_popen=subprocess.Popen
+    def launch(*args,**kwargs):
+        process=real_popen([sys.executable,'-c',
+            'print("[ERROR] [move_group-5]: process has died [pid 123, exit code -11, cmd \\\'move_group\\\'].")'],
+            stdout=kwargs['stdout'],stderr=kwargs['stderr'],start_new_session=True)
+        process.wait(timeout=5)
+        return process
+    monkeypatch.setattr(MODULE.subprocess,'Popen',launch)
+    def run(command,**kwargs):
+        if '--summary-output' in command:
+            output=Path(command[command.index('--summary-output')+1]);output.parent.mkdir(parents=True)
+            output.write_text('{}')
+    monkeypatch.setattr(MODULE,'run',run)
+    with pytest.raises(RuntimeError,match='owned shutdown failed'):
+        MODULE.one_session(args,tmp_path,tmp_path/'world.sdf','test','resolve',1,{})
+    report=json.loads((tmp_path/'01-resolve/session-report.json').read_text())
+    assert report['status']=='BLOCKED'
+    assert report['shutdown']['clean'] is False
+    assert report['shutdown']['children'][0]['signal']=='SIGSEGV'
+
+
+@pytest.mark.parametrize('name', ['move_group-5','python3-3','robot_state_publisher-1','parameter_bridge-4','static_transform_publisher-2'])
+def test_long_lived_clean_exit_before_cleanup_is_abnormal(tmp_path,name):
+    log=tmp_path/'launch.log'
+    log.write_text(f"[INFO] [{name}]: process has finished cleanly [pid 123]\n")
+    exits=MODULE.launch_child_exits(log)
+    assert exits[0]['expected'] is False
+
+
+@pytest.mark.parametrize('rc', [0,-2,-15,-11])
+def test_child_exit_classification_requires_cleanup_and_matching_signal(tmp_path,rc):
+    import signal
+    log=tmp_path/'launch.log'
+    prefix="[INFO] [spawner-6]: process has finished cleanly [pid 122]\n"
+    log.write_text(prefix+"[INFO] [move_group-5]: sending signal 'SIGTERM' to process[move_group-5]\n"
+        +f"[ERROR] [move_group-5]: process has died [pid 123, exit code {rc}, cmd 'move_group'].\n")
+    exits=MODULE.launch_child_exits(log,cleanup_offset=len(prefix),sent_signals=[signal.SIGINT])
+    assert exits[0]['expected'] is True
+    assert exits[0]['before_cleanup'] is True
+    assert exits[1]['expected'] is (rc in (0,-2,-15))
+    assert exits[1]['before_cleanup'] is False
+
+
+def test_unsent_child_signal_is_not_expected_after_cleanup(tmp_path):
+    import signal
+    log=tmp_path/'launch.log'
+    log.write_text("[ERROR] [move_group-5]: process has died [pid 123, exit code -15, cmd 'move_group'].\n")
+    assert MODULE.launch_child_exits(log,cleanup_offset=0,sent_signals=[signal.SIGINT])[0]['expected'] is False
+
+
+@pytest.mark.parametrize('handler,rootcode', [('lambda *args:exit(0)',0),('signal.SIG_DFL',-2)])
+def test_owned_signal_cleanup_accepts_running_launch_but_retains_crash_text(tmp_path,handler,rootcode):
+    import subprocess,sys
+    for crash in (False,True):
+        log=tmp_path/f'launch-{crash}.log';ready=tmp_path/f'ready-{crash}'
+        with log.open('w') as stream:
+            code=f"import signal,time,pathlib; signal.signal(signal.SIGINT,{handler}); "
+            if crash:code+="print('Segmentation fault (core dumped)',flush=True); "
+            code+=f"pathlib.Path({str(ready)!r}).touch(); time.sleep(30)"
+            process=subprocess.Popen([sys.executable,'-c',code],stdout=stream,start_new_session=True)
+            MODULE.wait_file(ready,process,5)
+            report=MODULE.stop_owned(process,log)
+        assert report['clean'] is (not crash)
+        assert bool(report['crash_evidence']) is crash
+        assert report['root_alive_before_cleanup'] is True
+        assert report['returncode']==rootcode
+
+
+def test_final_report_includes_failed_gate_shutdown(tmp_path,monkeypatch):
+    monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
+    monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test'})
+    shutdown={'clean':False,'children':[{'name':'move_group-5','returncode':-11}]}
+    def session(args,repo,world,sha,gate,index,prior):
+        report=args.output/f'{index:02d}-{gate}'/'session-report.json';report.parent.mkdir()
+        report.write_text(json.dumps({'status':'BLOCKED','shutdown':shutdown,'shutdown_failure':'SIGSEGV'}))
+        raise RuntimeError('owned shutdown failed: SIGSEGV')
+    monkeypatch.setattr(MODULE,'one_session',session)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--through','resolve'])==1
+    gate=json.loads((output/'stage-a1-final-report.json').read_text())['gates']['resolve']
+    assert gate['status']=='FAILED'
+    assert gate['shutdown']==shutdown
+    assert gate['shutdown_failure']=='SIGSEGV'
