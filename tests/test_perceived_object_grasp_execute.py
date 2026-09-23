@@ -788,3 +788,26 @@ def test_owned_execution_evidence_preserves_exact_command_trajectory():
     goal.trajectory.joint_trajectory.points[1].positions[0] = .9
     assert summary['owned_execution_goal']['trajectory'] == expected
     assert summary['owned_execution_goal']['stage'] == 'EXECUTE_APPROACH'
+
+
+def test_trajectory_serialization_failure_occurs_before_goal_submission(monkeypatch):
+    import ast
+    import rosidl_runtime_py.convert as convert
+    tree=ast.parse(SCRIPT.read_text())
+    main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    submissions=[]
+    finished=SimpleNamespace(done=lambda:True,result=lambda:None)
+    handle=SimpleNamespace(accepted=True,goal_id=SimpleNamespace(uuid=[1]*16),get_result_async=lambda:finished)
+    def send(goal):
+        submissions.append(goal)
+        return SimpleNamespace(done=lambda:True,result=lambda:handle)
+    client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=send)
+    def broken(message):raise RuntimeError('serialization failed')
+    monkeypatch.setattr(convert,'message_to_ordereddict',broken)
+    context=dict(vars(MODULE),execute_client=client,controlled_cancel=False,controller_audit=None,
+                 node=object(),summary={},rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-owned-action>','exec'),context)
+    with pytest.raises(RuntimeError,match='serialization failed'):
+        context['action'](client,SimpleNamespace(trajectory=object()),5)
+    assert submissions==[]

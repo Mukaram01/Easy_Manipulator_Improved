@@ -1052,6 +1052,9 @@ def main():
         if not call(apply_client, ApplyPlanningScene.Request(scene=diff)).success:
             raise RuntimeError('PlanningScene rejected transition')
     def action(client, goal, timeout):
+        if client is execute_client:
+            from rosidl_runtime_py.convert import message_to_ordereddict
+            trajectory_evidence=message_to_ordereddict(goal.trajectory)
         if not client.wait_for_server(timeout_sec=5):
             raise RuntimeError('MoveIt action unavailable')
         if controlled_cancel and controller_audit:controller_audit.arm()
@@ -1068,10 +1071,9 @@ def main():
         owned_uuid=list(handle.goal_id.uuid)
         motion_trial=None
         if client is execute_client:
-            from rosidl_runtime_py.convert import message_to_ordereddict
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
                 stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
-                trajectory=message_to_ordereddict(goal.trajectory))
+                trajectory=trajectory_evidence)
         try:
             cancel_start=measurements.fresh()['sim_ns'] if measurements else 0
             if controlled_cancel:
