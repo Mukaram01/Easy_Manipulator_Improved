@@ -380,6 +380,83 @@ if __name__=='__main__':
         raise
 
 
+
+MOVEIT_TEARDOWN_SOURCE_COMMIT='c62753946ae3629a8cb745767844f7e69ca51489'
+
+
+def read_moveit_overlay(manifest_path,patch_path):
+    """Verify the one reviewed TEM dependency build, not arbitrary overlay claims."""
+    try:
+        path=Path(manifest_path);data=json.loads(path.read_text())
+        if (data['schema']!='workcell_moveit_teardown_overlay/v1' or
+            data['source']['version']!='2.5.10' or data['source']['commit']!=MOVEIT_TEARDOWN_SOURCE_COMMIT):
+            raise ValueError('unreviewed source/version')
+        if digest(Path(patch_path).read_bytes())!=data['patch']['sha256']:
+            raise ValueError('patch differs from reviewed repository patch')
+        lib=Path(data['library']['path']).resolve()
+        if (str(lib).startswith('/opt/') or
+            lib.name!='libmoveit_trajectory_execution_manager.so.2.5.10' or
+            digest(lib.read_bytes())!=data['library']['sha256']):
+            raise ValueError('patched library path/hash mismatch')
+        proof=data['reproduction']
+        if proof['baseline_returncode']!=-11 or proof['cycles']<20 or proof['passed']!=proof['cycles']:
+            raise ValueError('twenty consecutive clean dependency cycles required')
+        if (data['baseline']['package']!='ros-humble-moveit-ros-planning' or
+            not data['baseline']['version'].startswith('2.5.10-')):
+            raise ValueError('unreviewed installed baseline')
+        return dict(data,manifest_path=str(path.resolve()),manifest_sha256=digest(path.read_bytes()))
+    except (KeyError,ValueError,TypeError,OSError) as exc:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: '+str(exc)) from exc
+
+
+def active_moveit_overlay():
+    """Check package discovery and the loader's actual resolution before launch."""
+    from ament_index_python.packages import get_package_prefix
+    prefix=Path(get_package_prefix('moveit_ros_planning'))
+    patch=Path(__file__).resolve().parents[1]/'patches/moveit_humble_tem_teardown.patch'
+    data=read_moveit_overlay(prefix/'share/moveit_ros_planning/workcell_teardown_overlay.json',patch)
+    library=Path(data['library']['path']).resolve()
+    if (prefix/'lib/libmoveit_trajectory_execution_manager.so').resolve()!=library:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: package prefix selects a different TEM library')
+    installed=subprocess.check_output(['dpkg-query','-W','-f='+chr(36)+'{Version}',data['baseline']['package']],text=True).strip()
+    if installed!=data['baseline']['version']:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: installed baseline changed; rebuild/requalify overlay')
+    executable=Path(get_package_prefix('moveit_ros_move_group'))/'lib/moveit_ros_move_group/move_group'
+    linked=subprocess.check_output(['ldd',str(executable)],text=True)
+    resolved=re.findall(r'libmoveit_trajectory_execution_manager\.so[^\s]*\s+=>\s+(\S+)',linked)
+    if len(resolved)!=1 or Path(resolved[0]).resolve()!=library:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: dynamic loader still selects unpatched MoveIt; source overlay')
+    return dict(data,ldd_library=str(Path(resolved[0]).resolve()))
+
+
+def verify_moveit_overlay_maps(data,maps):
+    """Require the verified inode/path to be mapped; a matching version is insufficient."""
+    library=Path(data['library']['path']).resolve()
+    fields=[line.split() for line in maps.splitlines() if 'libmoveit_trajectory_execution_manager.so' in line]
+    if (not fields or digest(library.read_bytes())!=data['library']['sha256'] or
+        any(len(f)!=6 or f[-1]!=str(library) or int(f[4])!=library.stat().st_ino for f in fields)):
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: move_group did not map the qualified TEM inode/path/hash')
+    return dict(data,loaded_library=str(library),loaded_inode=library.stat().st_ino)
+
+
+def live_moveit_overlay(domain,partition,expected_sha):
+    data=active_moveit_overlay()
+    if data['library']['sha256']!=expected_sha:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: dependency differs from runner preflight')
+    matches=[]
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():continue
+        try:
+            info=process_info(int(proc.name))
+            if '/moveit_ros_move_group/move_group ' not in info['command'] or info['environ'].get('ROS_DOMAIN_ID')!=str(domain):continue
+            if info['environ'].get('IGN_PARTITION')!=partition:
+                raise RuntimeError('MOVEIT_OVERLAY_REJECTED: ambiguous MoveIt partition')
+            matches.append(dict(verify_moveit_overlay_maps(data,info['libraries']),pid=int(proc.name),start_ticks=info['start_ticks']))
+        except (FileNotFoundError,ProcessLookupError,PermissionError):continue
+    if len(matches)!=1:raise RuntimeError('MOVEIT_OVERLAY_REJECTED: exactly one live MoveIt process required')
+    return matches[0]
+
+
 def commissioning_capability_identity(node,receipt,enabled,capabilities,disabled):
     """Fail closed unless the explicit, sole action server maps the pinned build."""
     from ament_index_python.packages import get_package_prefix
@@ -397,6 +474,9 @@ def commissioning_capability_identity(node,receipt,enabled,capabilities,disabled
     if digest(lib.read_bytes())!=manifest['sha256']:raise RuntimeError('commission capability differs from tracked build')
     for path,expected in manifest['sources'].items():
         if digest(Path(path).read_bytes())!=expected:raise RuntimeError('commission capability source changed since build: '+path)
+    overlay=active_moveit_overlay()
+    if manifest.get('moveit_overlay',{}).get('library',{}).get('sha256')!=overlay['library']['sha256']:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: rebuild commissioning capability against qualified overlay')
     matches=[]
     for proc in Path('/proc').iterdir():
         if not proc.name.isdigit():continue
@@ -407,7 +487,9 @@ def commissioning_capability_identity(node,receipt,enabled,capabilities,disabled
             mapped=[line.split() for line in info['libraries'].splitlines() if str(lib) in line]
             if not mapped or any(fields[-1]!=str(lib) or int(fields[4])!=stat.st_ino for fields in mapped):
                 raise RuntimeError('MoveIt has not loaded the current commissioning binary')
-            matches.append(dict(pid=int(proc.name),start_ticks=info['start_ticks'],library=str(lib),sha256=manifest['sha256']))
+            dependency=verify_moveit_overlay_maps(overlay,info['libraries'])
+            matches.append(dict(pid=int(proc.name),start_ticks=info['start_ticks'],library=str(lib),
+                sha256=manifest['sha256'],moveit_overlay=dependency))
         except (FileNotFoundError,ProcessLookupError,PermissionError):continue
     if len(matches)!=1:raise RuntimeError('one identity-bound MoveIt process required')
     return dict(**matches[0],moveit_version=manifest['moveit_version'],sources=manifest['sources'],action_servers=1,

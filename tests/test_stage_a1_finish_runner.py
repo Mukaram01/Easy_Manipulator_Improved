@@ -33,7 +33,7 @@ def test_plan_gate_requires_complete_nine_stage_plan():
 def test_gate_results_bind_to_same_current_capability(gate,result):
     sha="current-build"
     summary={"result":result,"full_cycle_prevalidated":True,
-             "commissioning_capability":{"sha256":sha}}
+             "commissioning_capability":{"sha256":sha,"moveit_overlay":{"library":{"sha256":"patched-tem"}}}}
     if gate=="cancel":
         summary.update(cancellation_confirmed=True,motion_stop_verified=True)
     elif gate=="telemetry":
@@ -46,9 +46,14 @@ def test_gate_results_bind_to_same_current_capability(gate,result):
     else:
         summary.update(full_cycle_execution_success=True,
             full_cycle_physical_acceptance={"final_collision_valid":True,"attached_ids":[]})
-    MODULE.assert_gate(gate,summary,sha)
+    MODULE.assert_gate(gate,summary,sha,"patched-tem")
     with pytest.raises(RuntimeError,match="different commissioning"):
-        MODULE.assert_gate(gate,summary,"other-build")
+        MODULE.assert_gate(gate,summary,"other-build","patched-tem")
+    with pytest.raises(RuntimeError,match="different MoveIt"):
+        MODULE.assert_gate(gate,summary,sha,"stale-tem")
+    del summary["commissioning_capability"]["moveit_overlay"]
+    with pytest.raises(RuntimeError,match="different MoveIt"):
+        MODULE.assert_gate(gate,summary,sha,"patched-tem")
 
 
 def test_executor_full_cycle_requires_explicit_evidence(tmp_path):
@@ -181,7 +186,7 @@ def test_owned_shutdown_rejects_child_signals_before_cleanup(tmp_path,rc):
 
 def test_main_failure_after_prior_gate_does_not_leave_in_progress(tmp_path,monkeypatch):
     monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
-    monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test'})
+    monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test','moveit_overlay':{'library':{'sha256':'test-tem'}}})
     def session(args,repo,world,sha,gate,index,prior):
         if index==2:raise RuntimeError('owned shutdown failed: SIGSEGV')
         return args.output/'summary.json'
@@ -195,9 +200,10 @@ def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypa
     from types import SimpleNamespace
     import subprocess,sys
     args=SimpleNamespace(output=tmp_path,base_domain=201,partition_prefix='test',
-                         class_id='part',segment_planning_time=3.)
+                         class_id='part',segment_planning_time=3.,moveit_overlay_sha256='test-tem')
     monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,path,class_id:path)
     monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
+    monkeypatch.setattr(MODULE,'verify_session_moveit',lambda *args:{'library':{'sha256':'test-tem'}})
     monkeypatch.setattr(MODULE,'generate_scene',lambda *args:None)
     monkeypatch.setattr(MODULE,'wait_file',lambda *args:None)
     monkeypatch.setattr(MODULE,'assert_plan',lambda *args,**kwargs:None)
@@ -271,7 +277,7 @@ def test_owned_signal_cleanup_accepts_running_launch_but_retains_crash_text(tmp_
 
 def test_final_report_includes_failed_gate_shutdown(tmp_path,monkeypatch):
     monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
-    monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test'})
+    monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test','moveit_overlay':{'library':{'sha256':'test-tem'}}})
     shutdown={'clean':False,'children':[{'name':'move_group-5','returncode':-11}]}
     def session(args,repo,world,sha,gate,index,prior):
         report=args.output/f'{index:02d}-{gate}'/'session-report.json';report.parent.mkdir()

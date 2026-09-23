@@ -6,7 +6,18 @@ workspace=$(cd "$repo/../.." && pwd)
 build="$workspace/build/workcell_builder"
 prefix="$workspace/install/workcell_builder"
 test -d "$build" && test -d "$prefix"
+# Resolve the qualified package through the caller's overlay, before CMake can
+# reuse an old /opt package directory from its cache.
+moveit_prefix=$(python3 - "$repo" <<'PYPREFIX'
+from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(sys.argv[1])/'scripts'))
+from simulator_backend import active_moveit_overlay
+print(Path(active_moveit_overlay()['library']['path']).parents[1])
+PYPREFIX
+)
 cmake -S "$repo/workcell_builder/workcell_builder" -B "$build" \
+  -Dmoveit_ros_planning_DIR="$moveit_prefix/share/moveit_ros_planning/cmake" \
   -DWORKCELL_BUILD_COMMISSIONING_CAPABILITY=ON \
   -DWORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK=ON
 
@@ -28,6 +39,8 @@ python3 - "$repo" "$build" "$prefix" <<'PY'
 from pathlib import Path
 import sys,json,hashlib
 repo,build,prefix=map(Path,sys.argv[1:])
+sys.path.insert(0,str(repo/"scripts"))
+from simulator_backend import active_moveit_overlay
 links={prefix/'lib/libworkcell_commission_execute.so':build/'libworkcell_commission_execute.so',
  prefix/'lib/libworkcell_simulator_measurements.so':build/'libworkcell_simulator_measurements.so',
  prefix/'share/workcell_builder/execute_trajectory_plugins.xml':repo/'workcell_builder/workcell_builder/execute_trajectory_plugins.xml',
@@ -64,7 +77,7 @@ moveit_version=version_file.read_text().strip()
 if moveit_version not in {'2.5.9','2.5.10'}:raise RuntimeError('unreviewed MoveIt version: '+moveit_version)
 telemetry=build/'libworkcell_simulator_measurements.so'
 support=build/'libworkcell_support_contact.so'
-manifest=dict(moveit_version=moveit_version,library=str(library),sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
+manifest=dict(moveit_overlay=active_moveit_overlay(),moveit_version=moveit_version,library=str(library),sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
  telemetry_library=str(telemetry),telemetry_sha256=hashlib.sha256(telemetry.read_bytes()).hexdigest(),
  support_library=str(support),support_sha256=hashlib.sha256(support.read_bytes()).hexdigest(),
  sources={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in sources})

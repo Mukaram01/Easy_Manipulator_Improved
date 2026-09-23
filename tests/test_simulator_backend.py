@@ -135,13 +135,13 @@ def test_create_model_retries_only_after_scene_readback_proves_absent(tmp_path,m
     calls=[]
     def fake(args,timeout=15):
         calls.append(list(args))
-        if args[0]=='service' and '/create' in args:
+        if args[0]=='service' and '/world/a0/create' in args:
             creates=sum('/create' in item for call in calls for item in call)
             if creates==1:
                 raise subprocess.TimeoutExpired(args,timeout)
             return 'data: true\n'
-        if args[0]=='service' and '/scene/info' in args:
-            return 'name: "part_00"\n'
+        if args[0]=='service' and '/world/a0/scene/info' in args:
+            return ('model { name: "workcell_robot" }\n' if sum('/world/a0/create' in call for call in calls)>=2 else 'name: "part_00"\n')
         raise AssertionError(args)
     monkeypatch.setattr(simulator_backend,'run_ign',fake)
     monkeypatch.setattr(simulator_backend.time,'sleep',lambda _:None)
@@ -156,10 +156,10 @@ def test_create_model_accepts_lost_response_only_when_scene_proves_spawn(tmp_pat
     create_calls=0
     def fake(args,timeout=15):
         nonlocal create_calls
-        if args[0]=='service' and '/create' in args:
+        if args[0]=='service' and '/world/a0/create' in args:
             create_calls+=1
             raise subprocess.TimeoutExpired(args,timeout)
-        if args[0]=='service' and '/scene/info' in args:
+        if args[0]=='service' and '/world/a0/scene/info' in args:
             return 'model { name: "workcell_robot" }\n'
         raise AssertionError(args)
     monkeypatch.setattr(simulator_backend,'run_ign',fake)
@@ -187,7 +187,7 @@ def test_create_model_data_true_waits_for_authoritative_scene_without_duplicate(
     create_calls=0
     def fake_ign(args,timeout=15):
         nonlocal create_calls
-        if '/create' in args:
+        if '/world/a0/create' in args:
             create_calls+=1
             return 'data: true\n'
         raise AssertionError(args)
@@ -222,3 +222,48 @@ def test_refresh_snapshot_geometry_rejects_real_motion():
     fresh=copy.deepcopy(base);fresh['objects'][0]['pose']['xyz'][0]+=.001
     with pytest.raises(RuntimeError,match='geometry changed'):
         refresh_snapshot_geometry(base,fresh)
+
+
+def overlay_fixture(tmp_path):
+    import json
+    from simulator_backend import digest
+    patch=tmp_path/'fix.patch';patch.write_text('reviewed destructor ordering')
+    library=tmp_path/'libmoveit_trajectory_execution_manager.so.2.5.10'
+    library.write_bytes(b'patched TEM')
+    manifest=tmp_path/'provenance.json'
+    data=dict(schema='workcell_moveit_teardown_overlay/v1',
+        source=dict(version='2.5.10',commit='c62753946ae3629a8cb745767844f7e69ca51489'),
+        patch=dict(path=str(patch),sha256=digest(patch.read_bytes())),
+        library=dict(path=str(library),sha256=digest(library.read_bytes())),
+        baseline=dict(package='ros-humble-moveit-ros-planning',version='2.5.10-1jammy.test'),
+        reproduction=dict(baseline_returncode=-11,cycles=20,passed=20))
+    manifest.write_text(json.dumps(data))
+    return manifest,patch,library,data
+
+
+def test_moveit_overlay_provenance_requires_current_patch_binary_and_twenty_cycles(tmp_path):
+    import json
+    from simulator_backend import read_moveit_overlay
+    manifest,patch,library,data=overlay_fixture(tmp_path)
+    assert read_moveit_overlay(manifest,patch)['library']['path']==str(library)
+    for field,value in [('patch',dict(data['patch'],sha256='stale')),
+                        ('library',dict(data['library'],sha256='stale')),
+                        ('source',dict(data['source'],version='2.5.9')),
+                        ('source',dict(data['source'],commit='b'*40)),
+                        ('reproduction',dict(data['reproduction'],passed=19)),
+                        ('reproduction',dict(data['reproduction'],baseline_returncode=0))]:
+        changed=copy.deepcopy(data);changed[field]=value;manifest.write_text(json.dumps(changed))
+        with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):read_moveit_overlay(manifest,patch)
+    manifest.write_text(json.dumps(data));library.write_bytes(b'original TEM replaced overlay')
+    with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):read_moveit_overlay(manifest,patch)
+
+
+def test_moveit_process_maps_must_match_patched_path_inode_and_hash(tmp_path):
+    from simulator_backend import read_moveit_overlay, verify_moveit_overlay_maps
+    manifest,patch,library,_=overlay_fixture(tmp_path)
+    data=read_moveit_overlay(manifest,patch)
+    mapping=f'1000-2000 r-xp 0 00:01 {library.stat().st_ino} {library}\n'
+    assert verify_moveit_overlay_maps(data,mapping)['loaded_library']==str(library)
+    for changed in ['',mapping.rstrip()+' (deleted)\n',mapping.replace(str(library),'/opt/ros/humble/lib/'+library.name),
+                    mapping.replace(str(library.stat().st_ino),'0')]:
+        with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):verify_moveit_overlay_maps(data,changed)

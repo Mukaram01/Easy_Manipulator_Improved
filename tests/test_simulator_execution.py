@@ -338,7 +338,9 @@ def test_motion_telemetry_metrics_keep_250ms_guard_and_contiguous_iterations():
 def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
     from simulator_execution import require_trial_evidence
     capability_sha='freshly-qualified-build'
-    common=dict(commissioning_capability={'sha256':capability_sha},
+    overlay_sha='freshly-qualified-tem-overlay'
+    current=dict(sha256=capability_sha,moveit_overlay={'library':{'sha256':overlay_sha}})
+    common=dict(commissioning_capability=current,
         backend_identity={'backend':'simulator'},
         motion_backend_identity={'backend':'simulator'},
         measured_reconciliation={'acm_restored':True,'attached_ids':[],'measured_geometry_matches':True,'held':False},
@@ -356,8 +358,29 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
         stationary_retention={'duration_sim_ns':1_100_000_000,'samples':50})
     contact=dict(common,result='CONTACT_RELEASE_PASS',verified_lift_clearance_m=.02,
         release_evidence={'settled':True})
-    path=tmp_path/'evidence.json';path.write_text(json.dumps([cancellation,telemetry,retention,contact]))
-    accepted=require_trial_evidence(path,{'sha256':capability_sha})
+    records=[copy.deepcopy(r) for r in (cancellation,telemetry,retention,contact)]
+    path=tmp_path/'evidence.json';path.write_text(json.dumps(records))
+    accepted=require_trial_evidence(path,current)
     assert accepted['capability_sha256']==capability_sha
+    assert accepted['moveit_overlay_sha256']==overlay_sha
+    for index in range(4):
+        for invalid_overlay in ({'library':{'sha256':'different-tem-overlay'}},
+                {'library':{'sha256':''}}, {'library':{}}, {}):
+            invalid=copy.deepcopy(records)
+            invalid[index]['commissioning_capability']['moveit_overlay']=invalid_overlay
+            path.write_text(json.dumps(invalid))
+            with pytest.raises(RuntimeError,match='MoveIt overlay'):
+                require_trial_evidence(path,current)
+        invalid=copy.deepcopy(records)
+        del invalid[index]['commissioning_capability']['moveit_overlay']
+        path.write_text(json.dumps(invalid))
+        with pytest.raises(RuntimeError,match='MoveIt overlay'):
+            require_trial_evidence(path,current)
+    path.write_text(json.dumps(records))
+    for invalid_current in ({'sha256':capability_sha},
+            dict(current,moveit_overlay={'library':{'sha256':'stale-tem-overlay'}}),
+            dict(current,moveit_overlay={'library':{'sha256':''}})):
+        with pytest.raises(RuntimeError,match='MoveIt overlay'):
+            require_trial_evidence(path,invalid_current)
     path.write_text(json.dumps([cancellation,telemetry,retention]))
-    with pytest.raises(RuntimeError):require_trial_evidence(path,{'sha256':capability_sha})
+    with pytest.raises(RuntimeError):require_trial_evidence(path,current)
