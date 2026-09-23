@@ -88,11 +88,16 @@ def stop_owned(process,log=None):
     cleanup_offset=Path(log).stat().st_size if log is not None else 0
     alive_before=process.poll() is None
     escalation=None;sent_signals=[]
-    def send(sig):
-        try:os.killpg(process.pid,sig)
+    def send(sig,*,supervisor_only=False):
+        try:
+            if supervisor_only:process.send_signal(sig)
+            else:os.killpg(process.pid,sig)
         except ProcessLookupError:return
         sent_signals.append(sig)
-    if alive_before:send(signal.SIGINT)
+    # ROS launch owns child signalling/reaping. Interrupt its supervisor once;
+    # broadcasting first makes launch send a second SIGINT and can race its
+    # asyncio child watcher into losing a fast child's real exit status.
+    if alive_before:send(signal.SIGINT,supervisor_only=True)
     deadline=time.monotonic()+10
     while group_alive(process.pid) and time.monotonic()<deadline:time.sleep(.1)
     if group_alive(process.pid):

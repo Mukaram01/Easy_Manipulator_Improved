@@ -238,7 +238,7 @@ def test_long_lived_clean_exit_before_cleanup_is_abnormal(tmp_path,name):
     assert exits[0]['expected'] is False
 
 
-@pytest.mark.parametrize('rc', [0,-2,-15,-11])
+@pytest.mark.parametrize('rc', [0,-2,-15,-11,255])
 def test_child_exit_classification_requires_cleanup_and_matching_signal(tmp_path,rc):
     import signal
     log=tmp_path/'launch.log'
@@ -319,3 +319,34 @@ def test_real_resolve_log_accepts_completed_scene_loader_and_owned_cleanup():
     move_group=next(child for child in children if child['name']=='move_group-5')
     assert move_group['before_cleanup'] is False
     assert move_group['signal']=='SIGINT'
+
+
+def test_owned_launch_forwards_interrupt_once_to_child(tmp_path):
+    import subprocess,sys
+    child=tmp_path/'child.py';ready=tmp_path/'ready';child_ready=tmp_path/'child-ready';result=tmp_path/'signals'
+    child.write_text('''import signal,time,pathlib,sys
+hits=0;first=None
+def stop(*args):
+ global hits,first
+ hits+=1
+ if first is None:first=time.monotonic()
+signal.signal(signal.SIGINT,stop)
+pathlib.Path(sys.argv[1]).touch()
+while first is None or time.monotonic()-first<.3:time.sleep(.005)
+pathlib.Path(sys.argv[2]).write_text(str(hits))
+''')
+    launch=tmp_path/'launch.py'
+    launch.write_text('''import signal,subprocess,pathlib,time,sys
+child=subprocess.Popen([sys.executable,sys.argv[1],sys.argv[2],sys.argv[3]])
+def stop(*args):child.send_signal(signal.SIGINT)
+signal.signal(signal.SIGINT,stop)
+while not pathlib.Path(sys.argv[2]).exists():time.sleep(.005)
+pathlib.Path(sys.argv[4]).touch()
+raise SystemExit(child.wait())
+''')
+    process=subprocess.Popen([sys.executable,str(launch),str(child),str(child_ready),str(result),str(ready)],start_new_session=True)
+    MODULE.wait_file(ready,process,5)
+    report=MODULE.stop_owned(process)
+    assert report['clean'] is True
+    assert report['remaining_owned_processes'] is False
+    assert result.read_text()=='1'

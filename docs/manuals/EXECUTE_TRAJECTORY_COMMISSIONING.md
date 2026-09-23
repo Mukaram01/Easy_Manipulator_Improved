@@ -156,7 +156,7 @@ that gate is allowed to move.
 
 The portable Stage-A physics world is tracked at
 `scenes/ur5_2f_test/worlds/stage_a0.sdf` and pinned by Git blob identity:
-`11f5af2227f3a70cf8b45bd946db028fabd5a979`.
+`b687b5bf3c48e4a731d87c86f99e6c3696b21599`.
 The runner also records its local SHA256 in the evidence report, but admission
 uses the Git blob identity so the check is reproducible across workstations.
 It contains a static support plane, a physical destination-bin floor/walls and
@@ -179,6 +179,7 @@ migration/validation and real grasp-strategy catalog are reused; no retained
 
 ```bash
 source /opt/ros/humble/setup.bash
+source ~/workcell_ws/moveit_teardown_overlay/install/local_setup.bash
 source ~/workcell_ws/install/local_setup.bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
 
@@ -202,7 +203,17 @@ The runner stops on the first failed gate, preserves its logs and summaries,
 and terminates only the process group it owns. Full-cycle admission requires
 the cancellation, telemetry, retention and contact-release summaries produced
 by the immediately preceding fresh sessions, all bound to the same current
-capability binary. Real hardware remains locked throughout.
+capability binary and both qualified MoveIt overlay binaries. Build the local
+source overlay using [the dependency instructions](MOVEIT_HUMBLE_TEARDOWN_OVERLAY.md)
+first. Real hardware remains locked throughout.
+
+Shutdown sends its initial SIGINT only to the owned ROS launch supervisor,
+which forwards it to children and collects their exit status. Sending SIGINT
+to the entire group first caused duplicate delivery and a race between
+`Popen.poll()` and the asyncio child watcher, losing a bridge exit status as
+`Unknown child process ... returncode 255`. Group-wide TERM/KILL escalation
+remains available for stragglers with the same deadlines; missing or abnormal
+exit status still fails the gate.
 
 
 ### Fresh post-close pile admission
