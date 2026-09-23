@@ -204,6 +204,13 @@ def attachment_status(scene, object_id, link_name):
     }
 
 
+def measured_payload_attached_for_collision(guard):
+    # The physical contact stream continues checking the released target
+    # against robot links while the owned OPEN action is still completing.
+    return (guard.planning_attached and guard.ownership in ('CARRIED','RELEASING')
+            and guard.release_candidate is None)
+
+
 def detachment_cleanup_diff(object_id, link_name):
     """Remove an attachment after any post-attach failure."""
     from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, PlanningScene
@@ -1077,6 +1084,8 @@ def main():
         if not call(apply_client, ApplyPlanningScene.Request(scene=diff)).success:
             raise RuntimeError('PlanningScene rejected transition')
     def action(client, goal, timeout):
+        opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
+        held_before_open=contact_guard.checked_current() if opening_action else None
         if client is execute_client:
             from rosidl_runtime_py.convert import message_to_ordereddict
             trajectory_evidence=message_to_ordereddict(goal.trajectory)
@@ -1099,7 +1108,16 @@ def main():
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
                 stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
                 trajectory=trajectory_evidence)
+            if opening_action:
+                summary['owned_execution_goal'].update(run_id=measurements.receipt['run_id'],
+                    target=selected_id,resolution_sha256=summary['resolution_sha256'],
+                    execution_attempt=contact_guard.pile_binding['execution_attempt'],
+                    selected_grasp_index=summary['selected_grasp_index'])
         try:
+            if opening_action:
+                contact_guard.phase='opening'
+                contact_guard.begin_release(summary['owned_execution_goal'],held_before_open)
+                summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
             cancel_start=measurements.fresh()['sim_ns'] if measurements else 0
             if controlled_cancel:
                 from simulator_execution import CancellationMotion
@@ -1202,6 +1220,10 @@ def main():
         response = future.result()
         if response.status != 4 or response.result.error_code.val != 1:
             raise MoveItActionFailure(response.status, response.result.error_code.val)
+        if opening_action:
+            contact_guard.terminal_release(bytes(owned_uuid).hex(),response.status,
+                                           response.result.error_code.val,time.time_ns())
+            summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
         return response.result
     def wait_stopped(monitor_contacts=False):
         from simulator_execution import StopWindow
@@ -1238,13 +1260,13 @@ def main():
         state=copy.deepcopy(initial.robot_state)
         measured=measurements.joints(s)
         state=updated_state(state,{k:v[0] for k,v in measured.items()}, {})
-        carried=contact_guard.planning_attached and contact_guard.phase!='released'
+        carried=measured_payload_attached_for_collision(contact_guard)
         # The state-validity service otherwise compares measured robot joints
         # against the old observation world. Keep every physical BOX at the
         # same authoritative measurement used for this query.
         world_diff=PlanningScene(is_diff=True)
         for original in (initial.world.collision_objects if contact_guard.held else []):
-            if original.id not in contact_guard.pile_objects or (carried and original.id==selected_id):continue
+            if original.id not in contact_guard.pile_objects or (contact_guard.planning_attached and original.id==selected_id):continue
             obj=copy.deepcopy(original)
             values=measurements.object_pose(s,contact_guard.pile_objects[obj.id]['name'])
             (obj.pose.position.x,obj.pose.position.y,obj.pose.position.z,
@@ -1260,7 +1282,7 @@ def main():
         rclpy.spin_until_future_complete(node,future,timeout_sec=.2)
         if not future.done() or not future.result():raise RuntimeError('measured collision query timed out')
         try:
-            validate_measured_contacts(future.result(),contact_guard.support if contact_guard.held else None,
+            validate_measured_contacts(future.result(),contact_guard.support if carried else None,
                 bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate,
                 pile_guard=contact_guard if carried else None)
         except RuntimeError:
@@ -1298,13 +1320,24 @@ def main():
         actual_objects=[o for o in measured_objects if o.id==selected_id]
         geometry_matches=(len(actual_objects)==1 and observation_geometry_matches(
             collision_object_dict(expected_object),collision_object_dict(actual_objects[0])))
-        summary['measured_reconciliation']=dict(held=held,pose=p,sim_ns=s['sim_ns'],
+        summary['measured_reconciliation']=dict(held=held,run_id=s['run_id'],target=selected_id,pose=p,sim_ns=s['sim_ns'],
             acm_restored=collision_matrix_signature(current.allowed_collision_matrix)==collision_matrix_signature(baseline),
             measured_geometry_matches=geometry_matches,
             attached_ids=[o.object.id for o in current.robot_state.attached_collision_objects])
         evidence_scene('planning_scene_reconciled',current)
         if not geometry_matches or not summary['measured_reconciliation']['acm_restored']:
             raise RuntimeError('measured scene reconciliation did not preserve geometry/ACM')
+    def await_release_ready():
+        # Only the existing 250 ms freshness window is used to obtain a sample
+        # generated after the successful OPEN result.
+        deadline=time.monotonic()+.25
+        while True:
+            try:return contact_guard.release_ready()
+            except RuntimeError as exc:
+                if str(exc) not in ('post-terminal measured release sample missing','physical release has not been measured') or time.monotonic()>=deadline:
+                    raise
+                rclpy.spin_once(node,timeout_sec=.005)
+
     def monitored_hold(seconds):
         start=measurements.fresh()['sim_ns'];until=time.monotonic()+max(10,seconds*20)
         while measurements.fresh()['sim_ns']-start<seconds*1e9:
@@ -1919,7 +1952,7 @@ def main():
                 # This branch replaces mock exact-state bookkeeping with live evidence.
                 contact_guard.phase={'PREPLAN_APPROACH':'approach','PREPLAN_GRASP':'descent',
                     'PREPLAN_CLOSE_GRIPPER':'closing','PREPLAN_LIFT':'lift','PREPLAN_TRANSFER':'transfer',
-                    'PREPLAN_PLACE':'place','PREPLAN_OPEN_GRIPPER':'opening','PREPLAN_RETREAT':'released',
+                    'PREPLAN_PLACE':'place','PREPLAN_OPEN_GRIPPER':'place','PREPLAN_RETREAT':'released',
                     'PREPLAN_HOME':'released'}.get(step['stage'],contact_guard.phase)
                 if step['kind']=='motion':
                     if not contact_guard.held:
@@ -1955,10 +1988,10 @@ def main():
                             # Plan release in the actual lifted scene with the existing planner.
                             deadline=time.monotonic()+30
                             release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group='gripper')
-                            contact_guard.phase='opening'
                             action(execute_client,ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)
-                            contact_guard.phase='released';contact_guard.held=None
+                            await_release_ready()
                             measured_reconcile()
+                            summary['release_transition']=contact_guard.finish_release(summary['measured_reconciliation'])
                             monitored_hold(2.)
                             from simulator_execution import verify_release
                             summary['release_evidence']=verify_release(contact_guard,summary['lift_hold_measurement'])
@@ -1992,7 +2025,7 @@ def main():
                         # attachment or later arm motion is used as grasp evidence.
                         # Drop only the executor's held-state bookkeeping after
                         # evidence capture; the physics object was never parented.
-                        contact_guard.held=None;contact_guard.separation=None
+                        contact_guard.held=None;contact_guard.separation=None;contact_guard.ownership='UNHELD'
                         measured_reconcile()
                         summary.update(result='STATIONARY_RETENTION_PASS',commission_trial='stationary',
                                        full_cycle_execution_success=False)
@@ -2002,14 +2035,17 @@ def main():
                     contact_guard.planning_attached=True
                     apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
                 else:
-                    contact_guard.phase='released';monitored_hold(2.)
                     if args.simulator_commission=='full-cycle':
                         from simulator_execution import verify_settled_release
                         held_sample=summary.get('pre_release_measurement')
                         if held_sample is None:raise RuntimeError('full-cycle release lacks a measured pre-release state')
+                        await_release_ready()
+                        measured_reconcile()
+                        summary['release_transition']=contact_guard.finish_release(summary['measured_reconciliation'])
+                        monitored_hold(2.)
                         summary['release_evidence']=verify_settled_release(contact_guard,held_sample)
-                        contact_guard.held=None;contact_guard.separation=None
-                    measured_reconcile()
+                    else:
+                        raise RuntimeError('unexpected simulator detachment stage')
                 summary['stages'].append(label)
                 continue
             assert_scene_match(scene_now(),expected,selected_id)

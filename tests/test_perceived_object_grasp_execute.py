@@ -945,3 +945,15 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
             assert calls.index('retention')<calls.index('attachment')<calls.index('apply')
             assert summary['closure_measurement'] is current
             assert guard.planning_attached
+
+
+def test_measured_collision_query_stops_virtual_carry_after_physical_separation():
+    from types import SimpleNamespace as N
+    guard=N(planning_attached=True,ownership='CARRIED',release_candidate=None)
+    assert MODULE.measured_payload_attached_for_collision(guard)
+    guard.ownership='RELEASING'
+    assert MODULE.measured_payload_attached_for_collision(guard)
+    guard.release_candidate={'iteration':10}
+    assert not MODULE.measured_payload_attached_for_collision(guard)
+    guard.ownership='FREE_SETTLING';guard.planning_attached=False
+    assert not MODULE.measured_payload_attached_for_collision(guard)

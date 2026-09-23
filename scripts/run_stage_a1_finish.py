@@ -310,6 +310,47 @@ def assert_plan(summary,*,require_resolved):
         raise RuntimeError("fresh Resolve did not produce a consumable task handoff")
 
 
+def assert_release_evidence(gate,summary,retention):
+    from simulator_backend import PHYSICS_POSE_METHOD
+    evidence=summary.get('release_evidence') or {}
+    goal=evidence.get('goal') or {}
+    observed=evidence.get('separation') or {}
+    source=observed.get('pose_source') or {}
+    detached=evidence.get('detachment') or {}
+    binding=retention.get('binding') or {}
+    if (evidence.get('run_id')!=retention.get('run_id') or
+        evidence.get('target')!=summary.get('selected_object_id') or
+        evidence.get('binding')!=binding or
+        goal!=summary.get('owned_open_goal') or
+        goal.get('run_id')!=retention.get('run_id') or
+        goal.get('target')!=summary.get('selected_object_id') or
+        goal.get('resolution_sha256')!=summary.get('resolution_sha256') or
+        goal.get('execution_attempt')!=binding.get('execution_attempt') or
+        goal.get('selected_grasp_index')!=summary.get('selected_grasp_index') or
+        goal.get('stage')!=('COMMISSION_RELEASE' if gate=='contact-release' else 'EXECUTE_OPEN_GRIPPER') or
+        not goal.get('uuid') or goal.get('accepted') is not True or
+        goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or
+        not isinstance(goal.get('wall_ns'),int) or not isinstance(goal.get('terminal_wall_ns'),int) or
+        goal['terminal_wall_ns']<goal['wall_ns'] or
+        observed.get('run_id')!=retention.get('run_id') or
+        observed.get('target')!=summary.get('selected_object_id') or
+        observed.get('required_finger_contacts_absent') is not True or
+        source.get('method')!=PHYSICS_POSE_METHOD or source.get('frame')!='world' or
+        source.get('read_only') is not True or
+        source.get('query_iteration')!=observed.get('iteration') or
+        source.get('query_sim_ns')!=observed.get('sim_ns') or
+        observed.get('relative_translation_m',0)<=.000001 or
+        not isinstance(observed.get('wall_ns'),int) or observed['wall_ns']<=goal['wall_ns'] or
+        not isinstance(observed.get('sim_ns'),int) or
+        evidence.get('transition_sim_ns',-1)<observed['sim_ns'] or
+        evidence.get('sim_ns',-1)<evidence.get('transition_sim_ns',0) or
+        evidence.get('state')!='RELEASE_CONFIRMED' or evidence.get('settled') is not True or
+        detached.get('held') is not False or detached.get('attached_ids') or
+        detached.get('acm_restored') is not True or
+        detached.get('measured_geometry_matches') is not True):
+        raise RuntimeError('physical release evidence is missing or bound to another attempt')
+
+
 def assert_gate(gate,summary,capability_sha,overlay_identity):
     from simulator_backend import moveit_overlay_identity
     expected=EXPECTED_RESULTS[gate]
@@ -338,6 +379,8 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
             not retention.get("start_sim_ns",-1)<=begin.get("sim_ns",-2)<=retention.get("end_sim_ns",-1)<=end.get("sim_ns",-2) or
             len(required)<2 or not required.issubset(retention.get("contact_links",[]))):
             raise RuntimeError("current-grasp retention is missing, incomplete or bound to another attempt")
+    if gate in ("contact-release","full-cycle"):
+        assert_release_evidence(gate,summary,summary.get("stationary_retention",{}))
     if gate=="cancel":
         if not summary.get("cancellation_confirmed") or not summary.get("motion_stop_verified"):
             raise RuntimeError("fresh cancellation qualification is incomplete")

@@ -695,3 +695,107 @@ def test_measurements_rejects_old_pose_receipt_before_acquisition(tmp_path,monke
     with pytest.raises(RuntimeError,match='physics pose source'):
         Measurements(None,tmp_path/'receipt.json',tmp_path/'measurements.jsonl')
     assert not (tmp_path/'measurements.jsonl').exists()
+
+
+def release_boundary_guard(tmp_path, monkeypatch):
+    """A lifted, still held version of the existing physical pile fixture."""
+    guard, sample, advance, contact = provisional_pile_guard(tmp_path, monkeypatch)
+    guard.begin_pile_admission();guard.establish()
+    guard.phase = 'opening'
+    guard.pile_expired = set(guard.pile_certificate['certified_set'])
+    guard.pile_certificate['active_set'] = []
+    sample['contacts'] = sample['contacts'][:2]
+    position = [.3]
+    guard.m.joints = lambda s: {'leader': [position[0], 0.]}
+    goal = dict(uuid='a'*32,accepted=True,stage='COMMISSION_RELEASE',
+        wall_ns=sample['wall_ns']+1,run_id=sample['run_id'],target=guard.object,
+        resolution_sha256=guard.pile_binding['resolution_sha256'],
+        execution_attempt=guard.pile_binding['execution_attempt'],
+        selected_grasp_index=guard.pile_binding.get('selected_grasp_index',0))
+    guard.begin_release(goal, copy.deepcopy(sample))
+    return guard, sample, advance, position, goal, contact
+
+
+def test_release_requires_owned_success_physical_loss_and_detachment(tmp_path, monkeypatch):
+    guard, sample, advance, position, goal, _ = release_boundary_guard(tmp_path, monkeypatch)
+    assert guard.ownership == 'RELEASING'
+    with pytest.raises(RuntimeError, match='physical release'):
+        guard.finish_release(dict(held=False,attached_ids=[],acm_restored=True,measured_geometry_matches=True))
+    advance();position[0]=.28;sample['poses']['a0::part_06'][0]+=.0001
+    guard.check(sample)
+    assert guard.release_candidate is None  # Exact fingertips still touch.
+    sample['contacts']=[];advance();guard.check(sample)
+    assert guard.release_candidate['iteration']==sample['iteration']
+    assert guard.ownership=='RELEASING'
+    with pytest.raises(RuntimeError, match='terminal'):
+        guard.finish_release(dict(held=False,attached_ids=[],acm_restored=True,measured_geometry_matches=True))
+    with pytest.raises(RuntimeError, match='owned'):
+        guard.terminal_release('b'*32,4,1,sample['wall_ns'])
+    guard.terminal_release(goal['uuid'],4,1,sample['wall_ns']+1)
+    with pytest.raises(RuntimeError, match='attachment'):
+        guard.finish_release(dict(held=False,attached_ids=[guard.object],acm_restored=True,measured_geometry_matches=True))
+    assert guard.ownership=='RELEASING'
+    position[0]=0.
+    with pytest.raises(RuntimeError,match='post-terminal'):
+        guard.release_ready()
+    advance()
+    evidence=guard.finish_release(dict(held=False,attached_ids=[],acm_restored=True,measured_geometry_matches=True))
+    assert evidence['run_id']==sample['run_id'] and evidence['target']==guard.object
+    assert evidence['goal']['uuid']==goal['uuid']
+    assert evidence['separation']['wall_ns']<evidence['goal']['terminal_wall_ns']
+    assert guard.ownership=='FREE_SETTLING' and guard.held is None
+    with pytest.raises(RuntimeError, match='cannot regress'):
+        guard.begin_release(goal,sample)
+    sample['contacts']=[dict(a='a0::workcell_robot::arm_link::collision',
+                             b='a0::part_06::link::collision',points=[[0,0,0]])]
+    advance()
+    with pytest.raises(RuntimeError,match='released target recontacted robot/tool'):guard.check(sample)
+
+
+def test_release_landing_is_accepted_only_after_measured_loss_and_robot_contact_still_fails(tmp_path,monkeypatch):
+    guard,sample,advance,position,goal,contact=release_boundary_guard(tmp_path,monkeypatch)
+    advance();position[0]=.28;sample['poses']['a0::part_06'][0]+=.0001
+    guard.check(sample)
+    sample['contacts']=[];advance();guard.check(sample)
+    assert guard.release_candidate is not None
+    advance();sample['contacts']=[contact('07',[0,.0125,0])]
+    guard.check(sample)  # Expired pair landing is no longer carried-object recontact.
+    assert guard.ownership=='RELEASING'
+    sample['contacts'].append(dict(a='a0::workcell_robot::arm_link::collision',
+                                  b='a0::part_07::link::collision',points=[[0,0,0]]))
+    advance()
+    with pytest.raises(RuntimeError,match='unpermitted physical contact'):guard.check(sample)
+
+
+@pytest.mark.parametrize('fault',['other_run','stale','foreign_goal','failed_open','no_motion'])
+def test_release_rejects_foreign_stale_failed_or_unmoved_evidence(tmp_path,monkeypatch,fault):
+    guard,sample,advance,position,goal,_=release_boundary_guard(tmp_path,monkeypatch)
+    advance()
+    if fault=='other_run':sample['run_id']='foreign'
+    elif fault=='stale':monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.3)
+    elif fault!='no_motion':position[0]=.28
+    sample['contacts']=[];sample['poses']['a0::part_06'][0]+=.0001
+    if fault in ('other_run','stale'):
+        with pytest.raises(RuntimeError):guard.check(sample)
+        return
+    guard.check(sample)
+    if fault=='no_motion':
+        assert guard.release_candidate is None
+        return
+    if fault=='foreign_goal':
+        with pytest.raises(RuntimeError,match='owned'):guard.terminal_release('b'*32,4,1,sample['wall_ns'])
+    else:
+        with pytest.raises(RuntimeError,match='successful'):guard.terminal_release(goal['uuid'],5,1,sample['wall_ns'])
+    assert guard.ownership=='RELEASING'
+
+
+def test_release_ready_consumes_pending_physical_separation_before_rejecting(tmp_path,monkeypatch):
+    guard,sample,advance,position,goal,_=release_boundary_guard(tmp_path,monkeypatch)
+    guard.terminal_release(goal['uuid'],4,1,sample['wall_ns']+1)
+    advance();position[0]=0.;sample['contacts']=[]
+    sample['poses']['a0::part_06'][0]+=.0001
+    guard.m.drain=lambda:[copy.deepcopy(sample)]
+    assert guard.release_candidate is None
+    ready=guard.release_ready()
+    assert ready['iteration']==sample['iteration']
+    assert guard.release_candidate['iteration']==sample['iteration']

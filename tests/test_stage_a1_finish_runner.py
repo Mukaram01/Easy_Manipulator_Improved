@@ -69,7 +69,9 @@ def test_gate_results_bind_to_same_current_capability(gate,result):
     else:
         summary.update(full_cycle_execution_success=True,
             full_cycle_physical_acceptance={"final_collision_valid":True,"attached_ids":[]})
-    if gate in ("stationary","contact-release","full-cycle"):
+    if gate in ("contact-release","full-cycle"):
+        summary.update(current_release_summary(gate))
+    elif gate=="stationary":
         summary.update(current_retention_summary())
     MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group"))
     with pytest.raises(RuntimeError,match="different commissioning"):
@@ -450,4 +452,59 @@ def test_lifting_gates_reject_retention_from_another_attempt(gate,invalid):
     elif invalid=='wrong_duration':retention['start_sim_ns']=1
     elif invalid=='missing_finger':retention['contact_links']=['left']
     with pytest.raises(RuntimeError,match='retention'):
+        MODULE.assert_gate(gate,summary,'build',('tem','group'))
+
+
+def current_release_summary(gate):
+    retained=current_retention_summary()
+    goal=dict(uuid='a'*32,accepted=True,
+        stage='COMMISSION_RELEASE' if gate=='contact-release' else 'EXECUTE_OPEN_GRIPPER',
+        wall_ns=200,terminal_wall_ns=500,terminal_status=4,moveit_code=1,
+        run_id='current-run',target='runtime::part',resolution_sha256='resolution',
+        execution_attempt='attempt',selected_grasp_index=1)
+    retained['pile_contact_certification']['binding']['execution_attempt']='attempt'
+    retained['pile_contact_certification']['binding']['selected_grasp_index']=1
+    retained['stationary_retention']['binding']['execution_attempt']='attempt'
+    retained['stationary_retention']['binding']['selected_grasp_index']=1
+    retained['selected_grasp_index']=1
+    retained['owned_open_goal']=dict(goal)
+    retained['release_evidence']=dict(run_id='current-run',target='runtime::part',
+        binding=dict(retained['stationary_retention']['binding']),goal=dict(goal),
+        separation=dict(run_id='current-run',target='runtime::part',iteration=10,sim_ns=10,
+                        wall_ns=300,gripper_position_rad=.2,relative_translation_m=.0001,
+                        required_finger_contacts_absent=True,
+                        pose_source=dict(method='physics_link_frame_data_at_offset',frame='world',
+                            read_only=True,query_iteration=10,query_sim_ns=10)),
+        detachment=dict(held=False,attached_ids=[],acm_restored=True,measured_geometry_matches=True),
+        transition_iteration=11,transition_sim_ns=11,state='RELEASE_CONFIRMED',
+        settled=True,sim_ns=1_000_000_011)
+    return retained
+
+
+@pytest.mark.parametrize('gate,result', [('contact-release','CONTACT_RELEASE_PASS'),('full-cycle','PASS')])
+@pytest.mark.parametrize('bad',['missing','other_run','other_target','other_goal','other_resolution',
+                                 'other_attempt','wrong_stage','no_terminal','no_separation','stale_separation',
+                                 'attachment','not_settled','missing_source'])
+def test_gate_rejects_release_evidence_not_owned_by_current_attempt(gate,result,bad):
+    summary=dict(result=result,full_cycle_prevalidated=True,
+        commissioning_capability={'sha256':'build','moveit_overlay':{
+            'library':{'sha256':'tem'},'move_group':{'executable':{'sha256':'group'}}}},
+        verified_lift_clearance_m=.02,full_cycle_execution_success=True,
+        full_cycle_physical_acceptance={'final_collision_valid':True,'attached_ids':[]})
+    summary.update(current_release_summary(gate))
+    evidence=summary['release_evidence']
+    if bad=='missing':summary.pop('release_evidence')
+    elif bad=='other_run':evidence['run_id']='other-run'
+    elif bad=='other_target':evidence['target']='runtime::other'
+    elif bad=='other_goal':evidence['goal']['uuid']='b'*32
+    elif bad=='other_resolution':evidence['binding']['resolution_sha256']='other'
+    elif bad=='other_attempt':evidence['binding']['execution_attempt']='other'
+    elif bad=='wrong_stage':evidence['goal']['stage']='EXECUTE_TRANSFER'
+    elif bad=='no_terminal':evidence['goal']['terminal_status']=5
+    elif bad=='no_separation':evidence['separation']['required_finger_contacts_absent']=False
+    elif bad=='stale_separation':evidence['separation']['wall_ns']=100
+    elif bad=='attachment':evidence['detachment']['attached_ids']=['runtime::part']
+    elif bad=='missing_source':evidence['separation'].pop('pose_source')
+    else:evidence['settled']=False
+    with pytest.raises(RuntimeError,match='release'):
         MODULE.assert_gate(gate,summary,'build',('tem','group'))

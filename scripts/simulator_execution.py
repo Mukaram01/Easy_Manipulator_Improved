@@ -358,6 +358,7 @@ class ContactGuard:
         self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None;self.held_proof=None
         self.pile_objects={};self.pile_collisions={};self.pile_certificate=None
         self.pile_expired=set();self.pile_origin=None;self.pile_height=0.;self.planning_attached=False
+        self.ownership='UNHELD';self.release_goal=None;self.release_candidate=None;self.release_transition=None
         self.library=library;self.pile_admitting=False;self.pile_live_sequence=False;self.pile_last_iteration=None
 
     def bind_pile(self,objects,binding):
@@ -558,14 +559,29 @@ class ContactGuard:
 
     def _check(self,s):
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool);fingers=set();support_contact=False
-        if self.held or self.pile_admitting:self.check_pile(s)
         robot_prefix=self.m.receipt['world']+'::'+self.m.receipt['model']+'::'
+        # Detect actual fingertip loss before applying the carried pile rule to
+        # this same sample. An accepted OPEN by itself never creates this boundary.
+        for contact in s['contacts']:
+            a,b=self.identity(contact['a']),self.identity(contact['b'])
+            if self.object in (a,b) and {a,b}-{self.object} <= self.touch:
+                fingers.update({a,b}-{self.object})
+        self._observe_release(s,obj,tool,fingers)
+        physically_free=(self.release_candidate is not None and self.ownership=='RELEASING') or self.ownership in ('FREE_SETTLING','RELEASE_CONFIRMED')
+        if physically_free:
+            previous=self.pile_last_iteration if self.pile_live_sequence and s['iteration']!=self.pile_last_iteration else None
+            validate_sample(s,self.m.receipt,time.time(),previous)
+            self.pile_last_iteration=s['iteration']
+        elif self.held or self.pile_admitting:self.check_pile(s)
         for contact in s['contacts']:
             if not contact.get('points') or any(len(p)!=3 or not all(math.isfinite(v) for v in p) for p in contact['points']):
                 raise RuntimeError('incomplete measured contact')
             a,b=self.identity(contact['a']),self.identity(contact['b']);pair={a,b}
             selected=self.object in pair
             robot=contact['a'].startswith(robot_prefix) or contact['b'].startswith(robot_prefix)
+            if selected and physically_free and robot:
+                raise RuntimeError('released target recontacted robot/tool: '+a+' / '+b)
+            if selected and physically_free and not robot:continue
             if not robot and not (selected and self.held):continue
             if selected and pair-{self.object} <= self.touch and self.phase!='approach':
                 fingers.update(pair-{self.object});continue
@@ -615,13 +631,106 @@ class ContactGuard:
         if len(leaders)!=1:raise RuntimeError('unsupported gripper command topology')
         self.leader=leaders[0]
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool)
+        if self.ownership!='UNHELD':raise RuntimeError('physical ownership cannot regress to carried')
         self.held=HeldObject(tool,obj,self.fingers,self.touch,joints[self.leader][0],self.open_position)
+        self.ownership='CARRIED'
         self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
         self.held_proof=dict(run_id=s['run_id'],target=self.object,
             binding=copy.deepcopy(certificate['binding']),start_iteration=s['iteration'],
             start_sim_ns=s['sim_ns'],start_wall_ns=s['wall_ns'])
         if self.support:self.separation=Separation(obj,self.support['floor_z'])
         return self.held.relative
+    def begin_release(self,goal,held_sample):
+        if self.ownership!='CARRIED' or self.held is None or self.phase!='opening':
+            raise RuntimeError('physical ownership cannot regress or open without a carried target')
+        binding=self.pile_binding
+        if (not goal.get('accepted') or not isinstance(goal.get('uuid'),str) or len(goal['uuid'])!=32 or
+            goal.get('stage') not in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER') or
+            goal.get('run_id')!=self.m.receipt['run_id'] or goal.get('target')!=self.object or
+            goal.get('resolution_sha256')!=binding['resolution_sha256'] or
+            goal.get('execution_attempt')!=binding['execution_attempt'] or
+            goal.get('selected_grasp_index')!=binding.get('selected_grasp_index',0) or
+            not isinstance(goal.get('wall_ns'),int)):
+            raise RuntimeError('owned OPEN goal does not match current grasp attempt')
+        validate_sample(held_sample,self.m.receipt,time.time())
+        if held_sample['wall_ns']>=goal['wall_ns']:
+            raise RuntimeError('owned OPEN goal lacks a preceding held measurement')
+        self.release_goal=copy.deepcopy(goal)
+        self.release_goal['terminal_wall_ns']=None
+        self.release_candidate=None;self.release_transition=None
+        self.release_start_joint=self.m.joints(held_sample)[self.leader][0]
+        self.ownership='RELEASING'
+
+    def _observe_release(self,s,obj,tool,fingers):
+        if self.ownership!='RELEASING' or self.release_candidate is not None:return
+        goal=self.release_goal
+        if s.get('run_id')!=goal['run_id'] or s.get('wall_ns',0)<=goal['wall_ns']:
+            return
+        if self.held.required.intersection(fingers):return
+        joint=self.m.joints(s)[self.leader][0]
+        relative=compose_pose(inverse_pose(tool),obj)
+        displacement=math.dist(relative[:3],self.held.relative[:3])
+        if self.release_start_joint-joint<=.001 or displacement<=.000001:return
+        validate_sample(s,self.m.receipt,time.time(),self.pile_last_iteration if self.pile_live_sequence and s['iteration']!=self.pile_last_iteration else None)
+        self.release_candidate=dict(iteration=s['iteration'],sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],
+            run_id=s['run_id'],target=self.object,gripper_position_rad=joint,
+            relative_translation_m=displacement,required_finger_contacts_absent=True,
+            pose_source=copy.deepcopy(s.get('pose_source')))
+
+    def terminal_release(self,uuid,status,moveit_code,terminal_wall_ns):
+        if self.ownership!='RELEASING' or not self.release_goal or uuid!=self.release_goal['uuid']:
+            raise RuntimeError('owned OPEN terminal goal mismatch')
+        if status!=4 or moveit_code!=1 or terminal_wall_ns<self.release_goal['wall_ns']:
+            raise RuntimeError('owned OPEN did not reach successful terminal state')
+        self.release_goal.update(terminal_status=status,moveit_code=moveit_code,
+                                 terminal_wall_ns=terminal_wall_ns)
+
+    def release_ready(self):
+        if self.ownership!='RELEASING':
+            raise RuntimeError('physical release has not been measured')
+        goal=self.release_goal
+        if goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or not goal.get('terminal_wall_ns'):
+            raise RuntimeError('owned OPEN successful terminal state missing')
+        s=self.checked_current()
+        if self.release_candidate is None:
+            raise RuntimeError('physical release has not been measured')
+        if s['wall_ns']<goal['terminal_wall_ns']:
+            raise RuntimeError('post-terminal measured release sample missing')
+        if s['run_id']!=goal['run_id'] or s['sim_ns']<self.release_candidate['sim_ns'] or self.fingers:
+            raise RuntimeError('physical release current measurement changed')
+        joint=self.m.joints(s)[self.leader][0]
+        if abs(joint-self.open_position)>.01:
+            raise RuntimeError('physical release gripper did not open')
+        return s
+
+    def finish_release(self,detachment):
+        if self.ownership!='RELEASING' or self.release_candidate is None:
+            raise RuntimeError('physical release has not been measured')
+        goal=self.release_goal
+        if goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or not goal.get('terminal_wall_ns'):
+            raise RuntimeError('owned OPEN successful terminal state missing')
+        if (detachment.get('held') is not False or detachment.get('attached_ids') or
+            detachment.get('acm_restored') is not True or detachment.get('measured_geometry_matches') is not True):
+            raise RuntimeError('physical release cannot retain a planning attachment')
+        if detachment.get('run_id') not in (None,goal['run_id']) or detachment.get('target') not in (None,self.object):
+            raise RuntimeError('physical release planning attachment identity changed')
+        s=self.release_ready()
+        evidence=dict(run_id=s['run_id'],target=self.object,binding=copy.deepcopy(self.pile_binding),
+            goal=copy.deepcopy(goal),separation=copy.deepcopy(self.release_candidate),
+            detachment=copy.deepcopy(detachment),transition_sim_ns=s['sim_ns'],
+            transition_iteration=s['iteration'],state='FREE_SETTLING')
+        self.release_transition=copy.deepcopy(evidence)
+        self.ownership='FREE_SETTLING';self.held=None;self.separation=None
+        self.planning_attached=False;self.phase='released'
+        return evidence
+
+    def confirm_settled_release(self,settling):
+        if self.ownership!='FREE_SETTLING' or not self.release_transition:
+            raise RuntimeError('free settling transition missing')
+        evidence=dict(copy.deepcopy(self.release_transition),**settling,state='RELEASE_CONFIRMED')
+        self.ownership='RELEASE_CONFIRMED'
+        return evidence
+
     def checked_current(self):
         # Keep latest sampling and queue consumption in one acquisition lock so
         # a newer snapshot cannot skip unvalidated sequential physical samples.
@@ -731,7 +840,8 @@ def verify_release(guard,held_sample):
         raise RuntimeError('insufficient release settling measurements')
     if any(math.dist(guard.m.object_pose(x,guard.name)[:3],p[:3])>.001 for x in recent):
         raise RuntimeError('released object has not resettled')
-    return dict(open_position_rad=joint[0],fall_m=old[2]-p[2],final_pose=p,settled=True,sim_ns=s['sim_ns'])
+    return guard.confirm_settled_release(dict(open_position_rad=joint[0],fall_m=old[2]-p[2],
+        final_pose=p,settled=True,sim_ns=s['sim_ns']))
 
 
 def verify_settled_release(guard,held_sample):
@@ -746,8 +856,8 @@ def verify_settled_release(guard,held_sample):
         raise RuntimeError('insufficient release settling measurements')
     if any(math.dist(guard.m.object_pose(x,guard.name)[:3],p[:3])>.001 for x in recent):
         raise RuntimeError('released object has not resettled')
-    return dict(open_position_rad=joint[0],vertical_change_m=old[2]-p[2],
-        final_pose=p,settled=True,sim_ns=s['sim_ns'],samples=len(recent))
+    return guard.confirm_settled_release(dict(open_position_rad=joint[0],vertical_change_m=old[2]-p[2],
+        final_pose=p,settled=True,sim_ns=s['sim_ns'],samples=len(recent)))
 
 
 def validate_measured_contacts(response,support,expired,predicate=None,pile_guard=None):
