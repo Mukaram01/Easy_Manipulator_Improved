@@ -351,6 +351,12 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
+  if(ignition-gazebo6_FOUND)
+    ament_add_gtest(workcell_simulator_physics_poses_test test/simulator_physics_poses_test.cpp)
+    target_include_directories(workcell_simulator_physics_poses_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(workcell_simulator_physics_poses_test ignition-gazebo6::ignition-gazebo6)
+  endif()
+
   ament_add_gtest(workcell_support_contact_test test/support_contact_policy_test.cpp)
   target_include_directories(workcell_support_contact_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   ament_target_dependencies(workcell_support_contact_test moveit_core moveit_ros_planning pluginlib joint_trajectory_controller)
@@ -830,6 +836,7 @@ if(BUILD_TESTING)
   endif()
 
   set(workcell_builder_registered_cpp_tests
+    simulator_physics_poses_test.cpp
     link_deletion_test.cpp
     workcell_directory_inspection_test.cpp
     scene_select_paths_test.cpp

@@ -319,6 +319,25 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
         raise RuntimeError(f"{gate} used a different commissioning capability binary")
     if moveit_overlay_identity(summary.get("commissioning_capability",{}).get("moveit_overlay",{}))!=overlay_identity:
         raise RuntimeError(f"{gate} used a different MoveIt teardown dependency")
+    if gate in ("stationary","contact-release","full-cycle"):
+        retention=summary.get("stationary_retention",{})
+        certificate=summary.get("pile_contact_certification",{})
+        binding=retention.get("binding",{})
+        begin=summary.get("stationary_hold_start",{})
+        end=summary.get("stationary_hold_end",{})
+        required=set(retention.get("required_contact_links",[]))
+        if (not retention.get("run_id") or
+            any(record.get("run_id")!=retention["run_id"] for record in (certificate,begin,end)) or
+            retention.get("target")!=summary.get("selected_object_id") or
+            certificate.get("target")!=retention.get("target") or
+            not binding.get("close_goal_uuid") or binding!=certificate.get("binding") or
+            binding.get("resolution_sha256")!=summary.get("resolution_sha256") or
+            binding.get("close_goal_terminal_wall_ns")!=summary.get("close_terminal_wall_ns") or
+            retention.get("duration_sim_ns",0)<1_000_000_000 or
+            retention.get("end_sim_ns",-1)-retention.get("start_sim_ns",0)!=retention.get("duration_sim_ns") or
+            not retention.get("start_sim_ns",-1)<=begin.get("sim_ns",-2)<=retention.get("end_sim_ns",-1)<=end.get("sim_ns",-2) or
+            len(required)<2 or not required.issubset(retention.get("contact_links",[]))):
+            raise RuntimeError("current-grasp retention is missing, incomplete or bound to another attempt")
     if gate=="cancel":
         if not summary.get("cancellation_confirmed") or not summary.get("motion_stop_verified"):
             raise RuntimeError("fresh cancellation qualification is incomplete")
@@ -326,12 +345,6 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
         metrics=summary.get("motion_telemetry",{})
         if metrics.get("max_fresh_age_ms",1e9)>=250 or metrics.get("max_delivery_ms",1e9)>=250:
             raise RuntimeError("motion telemetry does not satisfy the unchanged 250 ms guard")
-    elif gate=="stationary":
-        retention=summary.get("stationary_retention",{})
-        if retention.get("duration_sim_ns",0)<1_000_000_000:
-            raise RuntimeError("stationary physical retention is shorter than one second")
-        if set(retention.get("required_contact_links",[]))-set(retention.get("contact_links",[])):
-            raise RuntimeError("stationary retention lacks opposing required contacts")
     elif gate=="contact-release":
         if summary.get("verified_lift_clearance_m",0)<.01 or not summary.get("release_evidence",{}).get("settled"):
             raise RuntimeError("contact-release did not prove lift and physical settling")

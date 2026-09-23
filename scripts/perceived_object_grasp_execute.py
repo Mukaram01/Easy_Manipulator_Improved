@@ -1978,14 +1978,18 @@ def main():
                     summary['motion_stop_verified']=wait_stopped(monitor_contacts=True)
                     if not summary['motion_stop_verified']:
                         raise RuntimeError('physical closure did not converge')
+                    # Every current grasp must prove physical retention before
+                    # planning attachment or further arm motion. Keep the frozen
+                    # contact certificate and held reference throughout the hold.
+                    summary['measured_object_in_tool']=contact_guard.establish()
+                    summary['stationary_hold_start']=contact_guard.checked_current()
+                    monitored_hold(1.1)
+                    summary['stationary_retention']=contact_guard.retention_evidence()
+                    retained_sample=contact_guard.checked_current()
+                    summary['stationary_hold_end']=retained_sample
                     if args.simulator_commission=='stationary':
                         # This gate proves physical retention only. No planning-scene
                         # attachment or later arm motion is used as grasp evidence.
-                        summary['measured_object_in_tool']=contact_guard.establish()
-                        summary['stationary_hold_start']=measurements.fresh()
-                        monitored_hold(1.1)
-                        summary['stationary_hold_end']=measurements.fresh()
-                        summary['stationary_retention']=contact_guard.retention_evidence()
                         # Drop only the executor's held-state bookkeeping after
                         # evidence capture; the physics object was never parented.
                         contact_guard.held=None;contact_guard.separation=None
@@ -1993,9 +1997,8 @@ def main():
                         summary.update(result='STATIONARY_RETENTION_PASS',commission_trial='stationary',
                                        full_cycle_execution_success=False)
                         break
-                    summary['measured_object_in_tool']=contact_guard.establish()
-                    summary['closure_measurement']=measurements.fresh()
-                    apply(measured_attachment(step['original'],contract,measurements,measurements.fresh()))
+                    summary['closure_measurement']=retained_sample
+                    apply(measured_attachment(step['original'],contract,measurements,retained_sample))
                     contact_guard.planning_attached=True
                     apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
                 else:

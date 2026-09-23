@@ -885,3 +885,63 @@ def test_physical_lift_uses_conservative_scaling_without_changing_request_geomet
     assert request.goal_constraints[0].joint_constraints[0].tolerance_above==.0001
     assert request.allowed_planning_time==3.
     assert goals[0].planning_options.planning_scene_diff==initial
+
+
+@pytest.mark.parametrize('mode',['stationary','contact-release','full-cycle'])
+@pytest.mark.parametrize('retention_failure',[None,'duration','contact','slip'])
+def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retention_failure):
+    """Execute the real attach branch with observable boundary calls."""
+    import ast
+    calls=[];current={'iteration':1200};summary={'owned_execution_goal':{'uuid':'close','wall_ns':1},'close_terminal_wall_ns':2}
+    def record(name,result=None):
+        def call(*args,**kwargs):
+            calls.append(name)
+            return result
+        return call
+    def hold(seconds):
+        assert seconds==1.1
+        calls.append('hold')
+        if retention_failure in ('contact','slip'):
+            raise RuntimeError('physical retention '+retention_failure+' rejected during hold')
+    def retention():
+        calls.append('retention')
+        if retention_failure=='duration':raise RuntimeError('physical retention duration rejected')
+        return {'duration_sim_ns':1_100_000_000,'samples':1101}
+    guard=SimpleNamespace(pile_binding={},begin_pile_admission=record('admission'),
+        establish=record('establish',[0,0,0,0,0,0,1]),checked_current=record('checked',current),
+        retention_evidence=retention,held=object(),separation=object(),planning_attached=False)
+    def attachment(original,contract,measurements,sample):
+        assert sample is current
+        assert calls.index('retention')<len(calls)
+        calls.append('attachment')
+        return 'attached-diff'
+    scope={'summary':summary,'contact_guard':guard,'args':SimpleNamespace(simulator_commission=mode),
+        'wait_stopped':record('stop',True),'measurements':SimpleNamespace(fresh=record('unchecked',{'iteration':1})),
+        'monitored_hold':hold,'measured_reconcile':record('reconcile'),'measured_attachment':attachment,
+        'step':{'original':'original'},'contract':{},'apply':record('apply'),'baseline':'baseline',
+        'PlanningScene':lambda **kwargs:kwargs,'RuntimeError':RuntimeError}
+    tree=ast.parse(SCRIPT.read_text())
+    branch=next(n for n in ast.walk(tree) if isinstance(n,ast.If) and
+        ast.unparse(n.test)=="step['kind'] == 'attach'" and 'begin_pile_admission' in ast.unparse(n))
+    function=ast.parse('def exercise():\n    for _ in [None]:\n        pass\n').body[0]
+    function.body[0].body=branch.body
+    module=ast.fix_missing_locations(ast.Module(body=[function],type_ignores=[]))
+    exec(compile(module,str(SCRIPT),'exec'),scope)
+    if retention_failure:
+        with pytest.raises(RuntimeError,match='physical retention'):
+            scope['exercise']()
+        assert 'attachment' not in calls and 'apply' not in calls
+        assert 'stationary_retention' not in summary
+    else:
+        scope['exercise']()
+        assert summary['stationary_retention']['duration_sim_ns']>=1_000_000_000
+        assert calls.index('admission')<calls.index('stop')<calls.index('establish')<calls.index('hold')<calls.index('retention')
+        assert calls.count('establish')==1 and calls.count('admission')==1
+        assert 'unchecked' not in calls
+        if mode=='stationary':
+            assert 'attachment' not in calls
+            assert summary['result']=='STATIONARY_RETENTION_PASS'
+        else:
+            assert calls.index('retention')<calls.index('attachment')<calls.index('apply')
+            assert summary['closure_measurement'] is current
+            assert guard.planning_attached

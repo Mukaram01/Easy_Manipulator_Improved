@@ -382,6 +382,7 @@ def test_prepare_binds_moved_rotated_support_to_manifest_and_preserves_identity(
     assert model.findtext('.//surface/friction/ode/mu')=='0.8'
     assert model.findtext('.//visual/material/ambient')=='0.2 0.3 0.4 1'
     assert ET.tostring(root.find("world/model[@name='bin']"))==ET.tostring(original.find("world/model[@name='bin']"))
+    assert spec['measurement_pose_source']=='physics_link_frame_data_at_offset'
     binding=spec['support_geometry_binding']
     assert binding['manifest_path']==str(manifest.resolve())
     assert binding['manifest_sha256']==digest(manifest.read_bytes())

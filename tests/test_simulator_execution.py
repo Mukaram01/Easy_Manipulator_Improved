@@ -563,3 +563,135 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
         require_trial_evidence(path,invalid_current)
     path.write_text(json.dumps([cancellation,telemetry,retention]))
     with pytest.raises(RuntimeError):require_trial_evidence(path,current)
+
+
+def test_same_attempt_retention_proof_is_bound_to_actual_frozen_interval(tmp_path,monkeypatch):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish()
+    start=copy.deepcopy(sample);frozen=copy.deepcopy(guard.pile_certificate['freeze'])
+    for _ in range(1000):advance();guard.check(sample)
+    proof=guard.retention_evidence()
+    assert proof['run_id']==sample['run_id']
+    assert proof['target']==guard.object
+    assert proof['binding']==guard.pile_binding
+    assert proof['binding']['close_goal_uuid']
+    assert proof['binding']['resolution_sha256']
+    assert proof['start_iteration']==start['iteration']
+    assert proof['start_sim_ns']==start['sim_ns']
+    assert proof['start_wall_ns']==start['wall_ns']
+    assert proof['end_iteration']==proof['final_iteration']==sample['iteration']
+    assert proof['end_sim_ns']==proof['final_sim_ns']==sample['sim_ns']
+    assert proof['end_wall_ns']==sample['wall_ns']
+    assert proof['duration_sim_ns']==1_000_000_000
+    assert proof['required_contact_links']==proof['contact_links']==['left','right']
+    assert guard.pile_certificate['freeze']==frozen
+    assert guard.pile_certificate['certified_set']==['runtime::part_07']
+    proof['binding']['close_goal_uuid']='foreign-close'
+    assert guard.retention_evidence()['binding']['close_goal_uuid']==guard.pile_binding['close_goal_uuid']
+
+
+@pytest.mark.parametrize('bad',['another_run','stale','changed_close','changed_resolution'])
+def test_live_retention_rejects_foreign_stale_or_changed_attempt(tmp_path,monkeypatch,bad):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish()
+    for _ in range(1000):advance();guard.check(sample)
+    if bad=='another_run':sample['run_id']='foreign-run'
+    elif bad=='stale':monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.251)
+    elif bad=='changed_close':guard.pile_binding['close_goal_uuid']='foreign-close'
+    else:guard.pile_binding['resolution_sha256']='foreign-resolution'
+    with pytest.raises(RuntimeError):guard.retention_evidence()
+
+
+@pytest.mark.parametrize('bad',['contact_loss','translation_slip','rotation_slip'])
+def test_failed_current_hold_cannot_later_produce_retention_proof(tmp_path,monkeypatch,bad):
+    import math
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    # Isolate the held-object limits from pile geometry; exact fingertips remain required.
+    sample['contacts']=sample['contacts'][:2]
+    guard.begin_pile_admission();guard.establish()
+    for _ in range(500):advance();guard.check(sample)
+    good=copy.deepcopy(sample)
+    advance()
+    if bad=='contact_loss':sample['contacts']=sample['contacts'][:1]
+    elif bad=='translation_slip':sample['poses']['a0::part_06'][0]=.0021
+    else:sample['poses']['a0::part_06'][3:]=[0,0,math.sin(.011/2),math.cos(.011/2)]
+    with pytest.raises(RuntimeError,match='retention lost'):guard.check(sample)
+    assert guard.pile_certificate['rejected_sample']['iteration']==sample['iteration']
+    sample['contacts']=good['contacts'];sample['poses']=good['poses']
+    for _ in range(500):advance()
+    with pytest.raises(RuntimeError,match='missing valid pile certificate'):guard.retention_evidence()
+
+
+def test_current_grasp_retention_cannot_reuse_a_shorter_hold(tmp_path,monkeypatch):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish()
+    for _ in range(999):advance();guard.check(sample)
+    with pytest.raises(RuntimeError,match='duration is too short'):guard.retention_evidence()
+
+
+def physics_pose_sample():
+    """Synthetic declared-source contract, not relabelled historical physics data."""
+    method='physics_link_frame_data_at_offset'
+    receipt=dict(run_id='physics-run',pid=12,world='a0',measurement_pose_source=method)
+    sample=dict(run_id='physics-run',pid=12,iteration=10,sim_ns=10_000_000,wall_ns=1_000_000_000,
+        poses={'a0::part':[0,0,0,0,0,0,1],'a0::part::link':[0,0,0,0,0,0,1]},
+        joints={'a0::robot::j':[0,0]},collisions=['collision'],contacts=[],
+        pose_source=dict(method=method,frame='world',query_iteration=10,query_sim_ns=10_000_000,
+                         gazebo_version='6.17.0',read_only=True),
+        pose_entities={'a0::part':dict(entity=2,link_entity=3,query_entity=5,kind='model'),
+                       'a0::part::link':dict(entity=3,link_entity=3,query_entity=5,kind='link')})
+    return sample,receipt
+
+
+def test_authoritative_physics_pose_source_accepts_complete_current_identity():
+    from simulator_execution import validate_sample
+    sample,receipt=physics_pose_sample()
+    validate_sample(sample,receipt,1.01,9)
+
+
+@pytest.mark.parametrize('bad',['missing_source','wrong_method','wrong_receipt_method','wrong_frame',
+    'writable','missing_version','stale_iteration','stale_sim_time','missing_entities','missing_link',
+    'extra_entity','zero_entity','wrong_link_identity','wrong_kind','foreign_world','query_error','stale_wall',
+    'wrong_model_link','wrong_model_query','duplicate_entity','shared_link_query','query_is_original'])
+def test_authoritative_physics_pose_source_fails_closed(tmp_path,bad):
+    from simulator_execution import validate_sample
+    sample,receipt=physics_pose_sample()
+    if bad=='missing_source':sample.pop('pose_source')
+    elif bad=='wrong_method':sample['pose_source']['method']='cached_ecs'
+    elif bad=='wrong_receipt_method':receipt['measurement_pose_source']='cached_ecs'
+    elif bad=='wrong_frame':sample['pose_source']['frame']='model'
+    elif bad=='writable':sample['pose_source']['read_only']=False
+    elif bad=='missing_version':sample['pose_source']['gazebo_version']=''
+    elif bad=='stale_iteration':sample['pose_source']['query_iteration']-=1
+    elif bad=='stale_sim_time':sample['pose_source']['query_sim_ns']-=1
+    elif bad=='missing_entities':sample.pop('pose_entities')
+    elif bad=='missing_link':sample['pose_entities'].pop('a0::part::link')
+    elif bad=='extra_entity':sample['pose_entities']['a0::extra']=sample['pose_entities']['a0::part']
+    elif bad=='zero_entity':sample['pose_entities']['a0::part']['query_entity']=0
+    elif bad=='wrong_link_identity':sample['pose_entities']['a0::part::link']['link_entity']=20
+    elif bad=='wrong_kind':sample['pose_entities']['a0::part']['kind']='visual'
+    elif bad=='wrong_model_link':sample['pose_entities']['a0::part']['link_entity']=20
+    elif bad=='wrong_model_query':sample['pose_entities']['a0::part']['query_entity']=20
+    elif bad=='duplicate_entity':sample['pose_entities']['a0::part']['entity']=3
+    elif bad=='shared_link_query':
+        sample['poses']['a0::part::other']=[0,0,0,0,0,0,1]
+        sample['pose_entities']['a0::part::other']=dict(entity=6,link_entity=6,query_entity=5,kind='link')
+    elif bad=='query_is_original':
+        for entity in sample['pose_entities'].values():entity['query_entity']=2
+    elif bad=='foreign_world':
+        sample['poses']['other::part']=sample['poses'].pop('a0::part')
+        sample['pose_entities']['other::part']=sample['pose_entities'].pop('a0::part')
+    elif bad=='query_error':sample['error']='physics pose query unavailable'
+    elif bad=='stale_wall':sample['wall_ns']=700_000_000
+    with pytest.raises(RuntimeError):validate_sample(sample,receipt,1.01,9)
+
+
+@pytest.mark.parametrize('method',[None,'cached_ecs'])
+def test_measurements_rejects_old_pose_receipt_before_acquisition(tmp_path,monkeypatch,method):
+    from simulator_execution import Measurements
+    receipt={'world':'a0'}
+    if method is not None:receipt['measurement_pose_source']=method
+    monkeypatch.setattr('simulator_backend.verify_receipt_process',lambda _:receipt)
+    with pytest.raises(RuntimeError,match='physics pose source'):
+        Measurements(None,tmp_path/'receipt.json',tmp_path/'measurements.jsonl')
+    assert not (tmp_path/'measurements.jsonl').exists()

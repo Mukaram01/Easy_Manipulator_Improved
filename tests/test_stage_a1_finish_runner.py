@@ -33,6 +33,19 @@ def test_plan_gate_requires_complete_nine_stage_plan():
     with pytest.raises(RuntimeError,match="nine-stage"):MODULE.assert_plan(bad,require_resolved=True)
 
 
+def current_retention_summary():
+    binding={"close_goal_uuid":"current-close","close_goal_terminal_wall_ns":100,
+             "resolution_sha256":"resolution"}
+    return dict(selected_object_id="runtime::part",resolution_sha256="resolution",
+        close_terminal_wall_ns=100,
+        pile_contact_certification={"run_id":"current-run","target":"runtime::part","binding":binding},
+        stationary_hold_start={"run_id":"current-run","sim_ns":0},
+        stationary_hold_end={"run_id":"current-run","sim_ns":1_100_000_000},
+        stationary_retention={"run_id":"current-run","target":"runtime::part","binding":dict(binding),
+            "duration_sim_ns":1_100_000_000,"start_sim_ns":0,"end_sim_ns":1_100_000_000,
+            "required_contact_links":["left","right"],"contact_links":["left","right"]})
+
+
 @pytest.mark.parametrize("gate,result",[
     ("cancel","CANCELLATION_TRIAL_PASS"),
     ("telemetry","MOTION_TELEMETRY_PASS"),
@@ -56,6 +69,8 @@ def test_gate_results_bind_to_same_current_capability(gate,result):
     else:
         summary.update(full_cycle_execution_success=True,
             full_cycle_physical_acceptance={"final_collision_valid":True,"attached_ids":[]})
+    if gate in ("stationary","contact-release","full-cycle"):
+        summary.update(current_retention_summary())
     MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group"))
     with pytest.raises(RuntimeError,match="different commissioning"):
         MODULE.assert_gate(gate,summary,"other-build",("patched-tem","patched-move-group"))
@@ -415,3 +430,24 @@ raise SystemExit(child.wait())
     assert report['clean'] is True
     assert report['remaining_owned_processes'] is False
     assert result.read_text()=='1'
+
+
+@pytest.mark.parametrize('gate',['stationary','contact-release','full-cycle'])
+@pytest.mark.parametrize('invalid',['missing','other_run','other_close','other_resolution','other_target','too_short','wrong_duration','missing_finger'])
+def test_lifting_gates_reject_retention_from_another_attempt(gate,invalid):
+    summary=current_retention_summary()
+    summary.update(result=MODULE.EXPECTED_RESULTS[gate],full_cycle_prevalidated=True,
+        commissioning_capability={'sha256':'build','moveit_overlay':{'library':{'sha256':'tem'},'move_group':{'executable':{'sha256':'group'}}}},
+        verified_lift_clearance_m=.02,release_evidence={'settled':True},full_cycle_execution_success=True,
+        full_cycle_physical_acceptance={'final_collision_valid':True,'attached_ids':[]})
+    retention=summary['stationary_retention']
+    if invalid=='missing':del summary['stationary_retention']
+    elif invalid=='other_run':retention['run_id']='old-run'
+    elif invalid=='other_close':retention['binding']['close_goal_uuid']='old-close'
+    elif invalid=='other_resolution':retention['binding']['resolution_sha256']='old-resolution'
+    elif invalid=='other_target':retention['target']='runtime::another'
+    elif invalid=='too_short':retention['duration_sim_ns']=999_000_000
+    elif invalid=='wrong_duration':retention['start_sim_ns']=1
+    elif invalid=='missing_finger':retention['contact_links']=['left']
+    with pytest.raises(RuntimeError,match='retention'):
+        MODULE.assert_gate(gate,summary,'build',('tem','group'))

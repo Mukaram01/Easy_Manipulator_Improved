@@ -30,6 +30,39 @@ def validate_sample(s,receipt,now,previous=None):
             raise RuntimeError('invalid measured pose')
     if any(len(v)!=2 or not all(math.isfinite(x) for x in v) for v in s['joints'].values()):
         raise RuntimeError('invalid measured joint')
+    # Historical geometry-only fixtures do not declare a measurement source.
+    # Live acquisition below requires the declaration, so it cannot take this path.
+    if 'measurement_pose_source' in receipt:
+        from simulator_backend import PHYSICS_POSE_METHOD
+        source=s.get('pose_source');entities=s.get('pose_entities')
+        if (receipt['measurement_pose_source']!=PHYSICS_POSE_METHOD or not isinstance(source,dict) or
+            source.get('method')!=PHYSICS_POSE_METHOD or source.get('frame')!='world' or
+            source.get('read_only') is not True or not isinstance(source.get('gazebo_version'),str) or
+            not source['gazebo_version'].strip() or
+            any(type(source.get(query)) is not int or source[query]!=s[field]
+                for query,field in [('query_iteration','iteration'),('query_sim_ns','sim_ns')])):
+            raise RuntimeError('authoritative physics pose source missing, stale or mismatched')
+        if not isinstance(entities,dict) or set(entities)!=set(s['poses']):
+            raise RuntimeError('authoritative physics pose entity coverage mismatch')
+        for name,entity in entities.items():
+            if (not isinstance(name,str) or not name.startswith(receipt['world']+'::') or
+                not isinstance(entity,dict) or entity.get('kind') not in ('model','link') or
+                any(type(entity.get(key)) is not int or entity[key]<=0
+                    for key in ('entity','link_entity','query_entity')) or
+                (entity['kind']=='link' and entity['entity']!=entity['link_entity'])):
+                raise RuntimeError('authoritative physics pose entity identity mismatch')
+        if len({e['entity'] for e in entities.values()})!=len(entities):
+            raise RuntimeError('authoritative physics pose entity identity is ambiguous')
+        links={e['entity']:(name,e) for name,e in entities.items() if e['kind']=='link'}
+        queries={e['query_entity'] for _,e in links.values()}
+        if len(queries)!=len(links) or queries & {e['entity'] for e in entities.values()}:
+            raise RuntimeError('authoritative physics query entity identity is ambiguous')
+        for name,entity in entities.items():
+            if entity['kind']=='model':
+                link=links.get(entity['link_entity'])
+                if (link is None or not link[0].startswith(name+'::') or
+                    link[1]['query_entity']!=entity['query_entity']):
+                    raise RuntimeError('authoritative physics model/link identity mismatch')
 
 
 class Separation:
@@ -200,8 +233,10 @@ class Measurements:
         import yaml
         from std_msgs.msg import String
         from rclpy.qos import QoSProfile,ReliabilityPolicy,HistoryPolicy
-        from simulator_backend import verify_receipt_process
+        from simulator_backend import verify_receipt_process,PHYSICS_POSE_METHOD
         self.receipt_path=Path(receipt);self.receipt=verify_receipt_process(receipt)
+        if self.receipt.get('measurement_pose_source')!=PHYSICS_POSE_METHOD:
+            raise RuntimeError('authoritative physics pose source required before acquisition')
         from rclpy.node import Node
         from rclpy.executors import SingleThreadedExecutor
         self.node=Node('simulator_measurement_acquisition',context=node.context)
@@ -320,7 +355,7 @@ class ContactGuard:
         self.touch=set(touch_links);self.support=support;self.tool=tool;self.held=None;self.separation=None
         self.phase='approach';self.last=None;self.min_clearance=math.inf;self.validate_current=None
         self.allowed={(a,b) for i,a in enumerate(baseline.entry_names) for j,b in enumerate(baseline.entry_names) if baseline.entry_values[i].enabled[j]}
-        self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None
+        self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None;self.held_proof=None
         self.pile_objects={};self.pile_collisions={};self.pile_certificate=None
         self.pile_expired=set();self.pile_origin=None;self.pile_height=0.;self.planning_attached=False
         self.library=library;self.pile_admitting=False;self.pile_live_sequence=False;self.pile_last_iteration=None
@@ -582,6 +617,9 @@ class ContactGuard:
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool)
         self.held=HeldObject(tool,obj,self.fingers,self.touch,joints[self.leader][0],self.open_position)
         self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
+        self.held_proof=dict(run_id=s['run_id'],target=self.object,
+            binding=copy.deepcopy(certificate['binding']),start_iteration=s['iteration'],
+            start_sim_ns=s['sim_ns'],start_wall_ns=s['wall_ns'])
         if self.support:self.separation=Separation(obj,self.support['floor_z'])
         return self.held.relative
     def checked_current(self):
@@ -594,6 +632,12 @@ class ContactGuard:
 
     def retention_evidence(self,min_duration_ns=1000000000):
         if not self.held or self.held_start_sim_ns is None:raise RuntimeError('physical retention was not established')
+        proof=self.held_proof;certificate=self.pile_certificate
+        if (not proof or not certificate or certificate.get('frozen') is not True or
+            proof['run_id']!=self.m.receipt['run_id'] or proof['run_id']!=certificate['run_id'] or
+            proof['target']!=self.object or proof['target']!=certificate['target'] or
+            proof['binding']!=self.pile_binding or proof['binding']!=certificate['binding']):
+            raise RuntimeError('physical retention attempt binding changed')
         s=self.checked_current()
         duration=s['sim_ns']-self.held_start_sim_ns
         if duration<min_duration_ns:raise RuntimeError('physical retention duration is too short')
@@ -602,10 +646,11 @@ class ContactGuard:
         translation=math.dist(actual[:3],self.held.relative[:3]);rotation=angle(actual,self.held.relative)
         if translation>.002 or rotation>.01:raise RuntimeError('physical retention relative slip exceeds limit')
         joints=self.m.joints(s)
-        return dict(duration_sim_ns=duration,samples=self.held_samples,
+        return dict(copy.deepcopy(proof),duration_sim_ns=duration,samples=self.held_samples,
             contact_links=sorted(self.fingers),required_contact_links=sorted(self.held.required),
             relative_translation_m=translation,relative_rotation_rad=rotation,
             closure_position_rad=joints[self.leader][0],open_position_rad=self.open_position,
+            end_iteration=s['iteration'],end_sim_ns=s['sim_ns'],end_wall_ns=s['wall_ns'],
             final_iteration=s['iteration'],final_sim_ns=s['sim_ns'])
     def drain(self):
         self.m.fresh()

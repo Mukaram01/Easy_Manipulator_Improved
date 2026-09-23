@@ -455,3 +455,49 @@ The preserved run is `/home/ubuntu/workcell_ws/stage-a1-finish-20260923-141151`.
 Independent geometry and exact controller replay evidence are in
 `/home/ubuntu/workcell_ws/support-parity-analysis-20260923-141151` and
 `/home/ubuntu/workcell_ws/approach-support-analysis-20260923-141151`.
+
+### Direct physics poses and current-grasp retention
+
+The `20260923-143517` trial passed Resolve, cancellation, telemetry and stationary
+retention, then stopped safely during lift on a 617.184 nm measured downward
+step. Exact replay of its 42 waypoints and 4533 controller samples is monotonically
+upward, with matching initial arm joints. The historical stream cannot recover
+poses that it never recorded, so it does not establish whether that entire
+reversal was physical.
+
+Installed Fortress 6.18.0 / DART physics 5.4.0 suppresses `ChangedWorldPoses`
+updates below 1 micrometre. Both composed ECS poses and link `WorldPose` follow
+that cache. The existing telemetry plugin now requests world poses on identity
+observation children of the original links. Fortress resolves these read-only
+requests directly from physics each tick. They add no bodies, collisions,
+constraints, forces or commands. Model poses use the direct canonical-link pose
+and its validated fixed local transform; unsupported frame relationships fail.
+
+Each tick invalidates old query data before physics updates it. Missing entities,
+changed bindings, unavailable/nonfinite results or stale ticks produce an explicit
+error with no fallback poses. The existing acquisition error latch blocks motion.
+The receipt declares the required source, and every sample records method,
+world frame, simulator version, query iteration/time and original model/link/query
+entity identities. Live acquisition rejects legacy receipts and mismatched source
+metadata; ordinary fake-hardware behavior is unchanged.
+
+An independent gravity-only probe observes 100 distinct monotonic poses spanning
+504.9 nm while both cached link channels remain unchanged. A paired control
+without queries for its first 99 ticks has the same cached trajectory and exactly
+the same final direct physics state. Production telemetry emits 1000 valid
+source-bound samples; disabling physics produces 1000 explicit errors and no
+poses. Six focused C++ regressions cover frame identity, nonzero canonical offsets,
+missing entities, stale/unavailable writes and observation-only components.
+The sources, commands, actual loaded-library identities and trace hashes are in
+`/home/ubuntu/workcell_ws/simulator-pose-precision-20260923/provenance.json`.
+
+Every current grasp now runs the existing 1.1 s monitored hold and requires
+at least 1.0 simulated second of retention before attachment or lift. Stationary,
+contact-release and full-cycle share that sequence. The held reference and frozen
+pile certificate remain unchanged throughout; every queued measurement is checked.
+Retention evidence binds the current run, target, close goal and resolution to
+its measured start/end ticks. Another session's stationary result cannot authorize
+this grasp. The runner requires this binding for all three physical grasp gates.
+Collision, penetration, slip, freshness, extraction, rotation and duration limits
+remain unchanged. Retention qualification and pose precision are independent
+requirements; neither substitutes for the other.

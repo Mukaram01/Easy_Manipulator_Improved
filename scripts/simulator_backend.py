@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 
 SIM_CLASSES = {'ign_ros2_control/IgnitionSystem', 'gz_ros2_control/GazeboSimSystem'}
 SUPPORTED_COMMISSION_MOVEIT_VERSIONS = {'2.5.9', '2.5.10'}
+PHYSICS_POSE_METHOD = 'physics_link_frame_data_at_offset'
 DEFAULT_CONTROL_CONTRACT = {
     'hardware_class': 'ign_ros2_control/IgnitionSystem',
     'plugin_name': 'ign_ros2_control::IgnitionROS2ControlPlugin',
@@ -252,7 +253,7 @@ def prepare(xml, controllers, world_path, publisher, output, *, collision_manife
               domain=os.environ.get('ROS_DOMAIN_ID','0'),partition=os.environ.get('IGN_PARTITION',''),
               description_sha256=digest(description),world_sha256=digest((output/'world.sdf').read_bytes()),
               controllers_sha256=digest(controller_path.read_bytes()),expected_controllers=controller_names,
-              support_geometry_binding=support_binding)
+              support_geometry_binding=support_binding,measurement_pose_source=PHYSICS_POSE_METHOD)
     if not spec['partition'] or spec['domain']=='0':raise ValueError('simulator requires explicit isolated ROS_DOMAIN_ID and IGN_PARTITION')
     bridges=[]
     for topic,ros,gz,lazy in [('/clock','rosgraph_msgs/msg/Clock','ignition.msgs.Clock',False),
