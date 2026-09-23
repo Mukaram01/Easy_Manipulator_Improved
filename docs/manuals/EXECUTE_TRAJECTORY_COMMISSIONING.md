@@ -429,3 +429,29 @@ spline segments. Rejections return `INVALID_MOTION_PLAN` to the existing bounded
 retry policy. The adapter returns failure locally because throwing out of an
 adapter can cause MoveIt to skip it. The build now explicitly depends on
 `joint_trajectory_controller`, whose actual interpolation implementation is used.
+
+### Simulator support geometry parity
+
+The `20260923-141151` trial passed the first four gates, then stopped during
+approach on a fingertip/support contact. Its 122 waypoints and 12020 controller
+samples are clear against the frozen private scene. The simulator, however,
+had an additional plane at z=0 while MoveIt had the canonical finite table box.
+The first preserved contacting state lies more than 557 mm outside that box.
+Replacing only the diagnostic planning support with the physical plane makes
+2477 commanded samples collide; tracking error is not required to explain it.
+The exact first rejected sample was not preserved; the cancellation sample at
+iteration 101401 is the first preserved contacting state.
+
+Simulator preparation must consume the same canonical collision manifest as
+MoveIt for its support fixture, including dimensions and world pose. A plane
+placeholder is not an alternate source of physical geometry. Missing,
+ambiguous or unsupported support geometry must fail before simulation starts.
+Keep fixture identity and friction, bind the manifest and generated geometry
+in the runtime receipt, and retain every existing physical contact guard.
+This corrects the simulator environment to the authored table; it does not
+qualify the earlier failed run or establish release/full-cycle acceptance.
+
+The preserved run is `/home/ubuntu/workcell_ws/stage-a1-finish-20260923-141151`.
+Independent geometry and exact controller replay evidence are in
+`/home/ubuntu/workcell_ws/support-parity-analysis-20260923-141151` and
+`/home/ubuntu/workcell_ws/approach-support-analysis-20260923-141151`.

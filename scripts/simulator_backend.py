@@ -140,10 +140,90 @@ def telemetry_world(xml, library, run_id):
     return ET.tostring(root,encoding='unicode')
 
 
-def prepare(xml, controllers, world_path, publisher, output):
+def bind_support_geometry(xml, manifest_path):
+    """Use the same authored collision box as MoveIt for the Stage-A support."""
+    import yaml
+    root=ET.fromstring(xml)
+    models=root.findall("world/model[@name='pick_support']")
+    if not models:return xml,None
+    if len(models)!=1 or manifest_path is None:
+        raise ValueError('support requires one model and a collision manifest')
+    try:
+        path=Path(manifest_path).resolve();raw=path.read_bytes()
+        manifest=yaml.safe_load(raw)
+        if (not isinstance(manifest,dict) or not isinstance(manifest.get('objects'),list) or
+                any(not isinstance(item,dict) for item in manifest['objects'])):
+            raise ValueError('invalid support manifest objects')
+        supports=[item for item in manifest['objects'] if item.get('semantic_role')=='support_surface']
+        if len(supports)!=1:raise ValueError('ambiguous support objects')
+        item=supports[0];geometry=item['collision_geometry'];pose=item['pose']
+        if (item['frame_id']!='world' or item['operation']!='ADD' or
+                geometry['type']!='box' or not isinstance(item['id'],str) or not item['id']):
+            raise ValueError('unsupported support identity/frame/geometry')
+        def vector(values,size):
+            if len(values)!=size:raise ValueError('support vector dimension')
+            result=[float(v) for v in values]
+            if not all(math.isfinite(v) for v in result):raise ValueError('nonfinite support geometry')
+            return result
+        dimensions=vector(geometry['dimensions_m'],3);xyz=vector(pose['xyz'],3)
+        quaternion=vector(pose['quaternion_xyzw'],4)
+        if min(dimensions)<=0 or abs(sum(v*v for v in quaternion)-1.)>1e-9:
+            raise ValueError('invalid support dimensions/quaternion')
+        norm=math.sqrt(sum(v*v for v in quaternion))
+        x,y,z,w=[v/norm for v in quaternion]
+        r00,r10=1-2*(y*y+z*z),2*(x*y+w*z)
+        r01,r11=2*(x*y-w*z),1-2*(x*x+z*z)
+        sin_pitch=2*(w*y-z*x);cos_pitch=math.hypot(r00,r10)
+        pitch=math.atan2(sin_pitch,cos_pitch)
+        if cos_pitch<1e-12:
+            roll=0.;yaw=math.atan2(-r01,r11)
+        else:
+            roll=math.atan2(2*(w*x+y*z),1-2*(x*x+y*y))
+            if cos_pitch<1e-4:
+                # Near gimbal lock, recover yaw from the well-conditioned second
+                # matrix column and chosen roll, not two tiny first-column terms.
+                a=sin_pitch*math.sin(roll);b=math.cos(roll)
+                yaw=math.atan2(a*r11-b*r01,a*r01+b*r11)
+            else:yaw=math.atan2(r10,r00)
+        rpy=[roll,pitch,yaw]
+        cr,sr=math.cos(roll/2),math.sin(roll/2)
+        cp,sp=math.cos(pitch/2),math.sin(pitch/2)
+        cy,sy=math.cos(yaw/2),math.sin(yaw/2)
+        reconstructed=[sr*cp*cy-cr*sp*sy,cr*sp*cy+sr*cp*sy,
+                       cr*cp*sy-sr*sp*cy,cr*cp*cy+sr*sp*sy]
+        if min(sum((a-b)**2 for a,b in zip(reconstructed,quaternion)),
+               sum((a+b)**2 for a,b in zip(reconstructed,quaternion)))>1e-18:
+            raise ValueError('support quaternion/Euler roundtrip mismatch')
+        model=models[0];links=model.findall('link')
+        if (model.findtext('static')!='true' or model.get('placement_frame') or model.findall('joint') or
+                len(links)!=1 or links[0].get('name')!='support_link'):
+            raise ValueError('unsupported support model/link')
+        link=links[0];collisions=link.findall('collision');visuals=link.findall('visual')
+        if (len(collisions)!=1 or collisions[0].get('name')!='support_collision' or
+                len(visuals)!=1 or visuals[0].get('name')!='support_visual'):
+            raise ValueError('ambiguous support collision/visual')
+        def set_pose(element,values):
+            for old in element.findall('pose'):element.remove(old)
+            ET.SubElement(element,'pose').text=' '.join(format(v,'.17g') for v in values)
+        set_pose(model,xyz+rpy);set_pose(link,[0.]*6)
+        for shape in collisions+visuals:
+            set_pose(shape,[0.]*6)
+            for old in shape.findall('geometry'):shape.remove(old)
+            box=ET.SubElement(ET.SubElement(shape,'geometry'),'box')
+            ET.SubElement(box,'size').text=' '.join(format(v,'.17g') for v in dimensions)
+        binding=dict(manifest_path=str(path),manifest_sha256=digest(raw),object_id=item['id'],
+                     model='pick_support',link='support_link',collision='support_collision',
+                     dimensions_m=dimensions,pose_xyz=xyz,quaternion_xyzw=quaternion,pose_rpy=rpy)
+        return ET.tostring(root,encoding='unicode'),binding
+    except (OSError,KeyError,TypeError,ValueError,yaml.YAMLError) as exc:
+        raise ValueError('support geometry binding rejected: '+str(exc)) from exc
+
+
+def prepare(xml, controllers, world_path, publisher, output, *, collision_manifest_path=None):
     import yaml
     output=Path(output);output.mkdir(parents=True,exist_ok=False)
-    world=ET.parse(world_path).getroot().find('world')
+    world_xml,support_binding=bind_support_geometry(Path(world_path).read_text(),collision_manifest_path)
+    world=ET.fromstring(world_xml).find('world')
     if world is None:raise ValueError('one explicit simulator world required')
     plugins=world.findall('.//plugin')
     if any(any(s in p.get('filename','').lower() for s in ('ros2_control','attach','magnet','suction')) for p in plugins):raise ValueError('world already controls/attaches objects')
@@ -163,7 +243,7 @@ def prepare(xml, controllers, world_path, publisher, output):
     library=Path(get_package_prefix('workcell_builder'))/'lib/libworkcell_simulator_measurements.so'
     if not library.is_file():raise RuntimeError('build affected workcell_simulator_measurements target before simulator launch')
     run_id=uuid.uuid4().hex
-    (output/'world.sdf').write_text(telemetry_world(Path(world_path).read_text(),library,run_id))
+    (output/'world.sdf').write_text(telemetry_world(world_xml,library,run_id))
     spec=dict(world=world.get('name'),model='workcell_robot',output=str(output),
               run_id=run_id,telemetry_library=str(library),telemetry_sha256=digest(library.read_bytes()),
               control_plugin_library=control['plugin_library'],
@@ -171,7 +251,8 @@ def prepare(xml, controllers, world_path, publisher, output):
               control_plugin_name=control['plugin_name'],hardware_class=control['hardware_class'],
               domain=os.environ.get('ROS_DOMAIN_ID','0'),partition=os.environ.get('IGN_PARTITION',''),
               description_sha256=digest(description),world_sha256=digest((output/'world.sdf').read_bytes()),
-              controllers_sha256=digest(controller_path.read_bytes()),expected_controllers=controller_names)
+              controllers_sha256=digest(controller_path.read_bytes()),expected_controllers=controller_names,
+              support_geometry_binding=support_binding)
     if not spec['partition'] or spec['domain']=='0':raise ValueError('simulator requires explicit isolated ROS_DOMAIN_ID and IGN_PARTITION')
     bridges=[]
     for topic,ros,gz,lazy in [('/clock','rosgraph_msgs/msg/Clock','ignition.msgs.Clock',False),

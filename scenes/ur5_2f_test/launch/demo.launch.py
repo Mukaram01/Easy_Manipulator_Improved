@@ -342,7 +342,8 @@ def _launch_setup(context):
         robot_description_config, controllers_config_path, simulator_spec = simulator_backend.prepare(
             robot_description_config, controllers_config_path,
             LaunchConfiguration("simulator_world").perform(context),
-            f"{scene_pkg}_robot_state_publisher", output)
+            f"{scene_pkg}_robot_state_publisher", output,
+            collision_manifest_path=collision_manifest_path)
         simulator_actions = [
             ExecuteProcess(cmd=[sys.executable, simulator_backend.__file__, output], output='screen',
                            additional_env={'LIBGL_ALWAYS_SOFTWARE': '1'}),

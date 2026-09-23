@@ -344,3 +344,111 @@ def test_bridge_overlay_only_required_for_explicit_commissioning(monkeypatch):
     monkeypatch.setattr(backend,'active_bridge_overlay',missing)
     assert backend.bridge_executable(False)=='parameter_bridge'
     with pytest.raises(RuntimeError,match='missing'):backend.bridge_executable(True)
+
+
+def support_prepare_inputs(tmp_path, monkeypatch):
+    import json, yaml, simulator_backend as backend
+    import ament_index_python.packages
+    world=tmp_path/'input.sdf'
+    world.write_text('''<sdf version="1.8"><world name="cell"><model name="pick_support"><static>true</static><link name="support_link"><collision name="support_collision"><geometry><plane><normal>0 0 1</normal><size>2 2</size></plane></geometry><surface><friction><ode><mu>0.8</mu><mu2>0.8</mu2></ode></friction></surface></collision><visual name="support_visual"><pose>9 9 9 0 0 0</pose><geometry><box><size>1 1 1</size></box></geometry><material><ambient>0.2 0.3 0.4 1</ambient></material></visual></link></model><model name="bin"><static>true</static></model></world></sdf>''')
+    item={'id':'workcell::authored_table','source_item_id':'authored_table','semantic_role':'support_surface','frame_id':'world','operation':'ADD',
+          'pose':{'xyz':[.3,-.4,.2],'quaternion_xyzw':[0.,0.,2**-.5,2**-.5]},
+          'collision_geometry':{'type':'box','dimensions_m':[.9,.6,.4]}}
+    manifest=tmp_path/'manifest.yaml';manifest.write_text(yaml.safe_dump({'objects':[item]}))
+    controllers=tmp_path/'controllers.yaml';controllers.write_text(yaml.safe_dump({'controller_manager':{'ros__parameters':{'arm':{'type':'joint_trajectory_controller/JointTrajectoryController'}}},'arm':{'ros__parameters':{'joints':['j']}}}))
+    lib=tmp_path/'lib';lib.mkdir();(lib/'libworkcell_simulator_measurements.so').write_bytes(b'telemetry')
+    control=lib/'control.so';control.write_bytes(b'control')
+    monkeypatch.setattr(ament_index_python.packages,'get_package_prefix',lambda _:str(tmp_path))
+    monkeypatch.setattr(backend,'simulator_control_contract',lambda:dict(backend.DEFAULT_CONTROL_CONTRACT,plugin_library=str(control)))
+    monkeypatch.setattr(backend,'simulator_description',lambda *args:'<robot/>')
+    monkeypatch.setenv('ROS_DOMAIN_ID','199');monkeypatch.setenv('IGN_PARTITION','test_support_parity')
+    return world,manifest,controllers,item
+
+
+def test_prepare_binds_moved_rotated_support_to_manifest_and_preserves_identity(tmp_path,monkeypatch):
+    import json, math, xml.etree.ElementTree as ET
+    from simulator_backend import prepare,digest
+    world,manifest,controllers,item=support_prepare_inputs(tmp_path,monkeypatch)
+    original=ET.parse(world).getroot();output=tmp_path/'runtime'
+    _,_,spec=prepare('<robot/>',controllers,world,'rsp',output,collision_manifest_path=manifest)
+    root=ET.parse(output/'world.sdf').getroot();model=root.find("world/model[@name='pick_support']")
+    pose=[float(v) for v in model.findtext('pose').split()]
+    assert pose==pytest.approx([.3,-.4,.2,0,0,math.pi/2])
+    for kind,name in [('collision','support_collision'),('visual','support_visual')]:
+        shape=model.find(f"link[@name='support_link']/{kind}[@name='{name}']")
+        assert [float(v) for v in shape.findtext('geometry/box/size').split()]==pytest.approx([.9,.6,.4])
+        assert shape.find('geometry/plane') is None
+        assert [float(v) for v in shape.findtext('pose').split()]==[0.]*6
+    assert model.findtext('.//surface/friction/ode/mu')=='0.8'
+    assert model.findtext('.//visual/material/ambient')=='0.2 0.3 0.4 1'
+    assert ET.tostring(root.find("world/model[@name='bin']"))==ET.tostring(original.find("world/model[@name='bin']"))
+    binding=spec['support_geometry_binding']
+    assert binding['manifest_path']==str(manifest.resolve())
+    assert binding['manifest_sha256']==digest(manifest.read_bytes())
+    assert binding['object_id']==item['id']
+    assert binding['dimensions_m']==item['collision_geometry']['dimensions_m']
+    assert binding['pose_xyz']==item['pose']['xyz']
+    assert binding['quaternion_xyzw']==item['pose']['quaternion_xyzw']
+    assert json.loads((output/'spec.json').read_text())['support_geometry_binding']==binding
+
+
+@pytest.mark.parametrize('invalid',['missing_manifest','missing_support','ambiguous','non_world','mesh','zero_size','nan_size','nan_pose','bad_quaternion','remove','duplicate_model','malformed_manifest','placement_frame'])
+def test_prepare_rejects_unbound_or_unsupported_support(tmp_path,monkeypatch,invalid):
+    import yaml
+    from simulator_backend import prepare
+    world,manifest,controllers,item=support_prepare_inputs(tmp_path,monkeypatch)
+    objects=[item]
+    if invalid=='missing_manifest':manifest=None
+    elif invalid=='missing_support':objects=[]
+    elif invalid=='ambiguous':objects.append(copy.deepcopy(item))
+    elif invalid=='non_world':item['frame_id']='map'
+    elif invalid=='mesh':item['collision_geometry']['type']='mesh'
+    elif invalid=='zero_size':item['collision_geometry']['dimensions_m'][0]=0.
+    elif invalid=='nan_size':item['collision_geometry']['dimensions_m'][0]=float('nan')
+    elif invalid=='nan_pose':item['pose']['xyz'][0]=float('nan')
+    elif invalid=='bad_quaternion':item['pose']['quaternion_xyzw']=[0.,0.,0.,0.]
+    elif invalid=='remove':item['operation']='REMOVE'
+    elif invalid=='duplicate_model':world.write_text(world.read_text().replace('</world>','<model name="pick_support"/></world>'))
+    elif invalid=='placement_frame':world.write_text(world.read_text().replace('<model name="pick_support">','<model name="pick_support" placement_frame="other">'))
+    if manifest:manifest.write_text(yaml.safe_dump({'objects':objects}))
+    if invalid=='malformed_manifest':manifest.write_text('[]')
+    with pytest.raises(ValueError,match='support'):
+        prepare('<robot/>',controllers,world,'rsp',tmp_path/'runtime',collision_manifest_path=manifest)
+    assert not (tmp_path/'runtime/world.sdf').exists()
+
+
+def test_canonical_curated_launch_passes_shared_manifest_only_in_simulator_branch():
+    import ast, importlib.util
+    repo=Path(__file__).parents[1];launch=repo/'scenes/ur5_2f_test/launch/demo.launch.py'
+    tree=ast.parse(launch.read_text())
+    calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and
+           isinstance(n.func.value,ast.Name) and n.func.value.id=='simulator_backend' and n.func.attr=='prepare']
+    assert len(calls)==1
+    keyword=next(k for k in calls[0].keywords if k.arg=='collision_manifest_path')
+    assert isinstance(keyword.value,ast.Name) and keyword.value.id=='collision_manifest_path'
+    branches=[n for n in ast.walk(tree) if isinstance(n,ast.If) and ast.unparse(n.test)=="backend == 'simulator'"]
+    assert any(calls[0] in list(ast.walk(branch)) for branch in branches)
+    spec=importlib.util.spec_from_file_location('parity_generator',repo/'scripts/generate_workcell_from_cell_definition.py')
+    generator=importlib.util.module_from_spec(spec);spec.loader.exec_module(generator)
+    assert not generator._is_existing_package_generator_owned_output(Path('launch/demo.launch.py'))
+    assert not generator._profile_review_launch_owned(launch.parents[1],'ur5_2f_test','world')
+
+
+@pytest.mark.parametrize('pitch_offset',[0.,1e-9,-1e-9,1e-6,-1e-6])
+@pytest.mark.parametrize('pitch_sign',[-1.,1.])
+def test_support_binding_preserves_pitched_orientation_at_euler_singularities(tmp_path,monkeypatch,pitch_offset,pitch_sign):
+    import math, yaml, xml.etree.ElementTree as ET
+    from simulator_backend import bind_support_geometry
+    def quaternion(roll,pitch,yaw):
+        cr,sr=math.cos(roll/2),math.sin(roll/2)
+        cp,sp=math.cos(pitch/2),math.sin(pitch/2)
+        cy,sy=math.cos(yaw/2),math.sin(yaw/2)
+        return [sr*cp*cy-cr*sp*sy,cr*sp*cy+sr*cp*sy,cr*cp*sy-sr*sp*cy,cr*cp*cy+sr*sp*sy]
+    world,manifest,_,item=support_prepare_inputs(tmp_path,monkeypatch)
+    expected=quaternion(.3,pitch_sign*math.pi/2+pitch_offset,.7)
+    item['pose']['quaternion_xyzw']=expected
+    manifest.write_text(yaml.safe_dump({'objects':[item]}))
+    xml,_=bind_support_geometry(world.read_text(),manifest)
+    emitted=[float(v) for v in ET.fromstring(xml).findtext("world/model[@name='pick_support']/pose").split()]
+    actual=quaternion(*emitted[3:])
+    assert min(sum((a-b)**2 for a,b in zip(actual,expected)),sum((a+b)**2 for a,b in zip(actual,expected)))**.5 < 1e-12
