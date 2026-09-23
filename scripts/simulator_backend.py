@@ -382,9 +382,10 @@ if __name__=='__main__':
 
 
 MOVEIT_TEARDOWN_SOURCE_COMMIT='c62753946ae3629a8cb745767844f7e69ca51489'
+MOVE_GROUP_TEARDOWN_SOURCE_COMMIT='66d37b40594e2b0ce8e8bd407122d20791d8c3b5'
 
 
-def read_moveit_overlay(manifest_path,patch_path):
+def read_moveit_overlay(manifest_path,patch_path,move_group_patch_path):
     """Verify the one reviewed TEM dependency build, not arbitrary overlay claims."""
     try:
         path=Path(manifest_path);data=json.loads(path.read_text())
@@ -404,6 +405,22 @@ def read_moveit_overlay(manifest_path,patch_path):
         if (data['baseline']['package']!='ros-humble-moveit-ros-planning' or
             not data['baseline']['version'].startswith('2.5.10-')):
             raise ValueError('unreviewed installed baseline')
+        group=data['move_group']
+        if group['source']['version']!='2.5.10' or group['source']['commit']!=MOVE_GROUP_TEARDOWN_SOURCE_COMMIT:
+            raise ValueError('unreviewed MoveGroup source/version')
+        if digest(Path(move_group_patch_path).read_bytes())!=group['patch']['sha256']:
+            raise ValueError('MoveGroup patch differs from reviewed repository patch')
+        executable=Path(group['executable']['path']).resolve()
+        if (str(executable).startswith('/opt/') or
+            not str(executable).endswith('/lib/moveit_ros_move_group/move_group') or
+            digest(executable.read_bytes())!=group['executable']['sha256']):
+            raise ValueError('patched MoveGroup executable path/hash mismatch')
+        proof=group['reproduction']
+        if proof['baseline_returncode']!=-11 or proof['cycles']<20 or proof['passed']!=proof['cycles']:
+            raise ValueError('twenty consecutive clean MoveGroup cycles required')
+        if (group['baseline']['package']!='ros-humble-moveit-ros-move-group' or
+            not group['baseline']['version'].startswith('2.5.10-')):
+            raise ValueError('unreviewed installed MoveGroup baseline')
         return dict(data,manifest_path=str(path.resolve()),manifest_sha256=digest(path.read_bytes()))
     except (KeyError,ValueError,TypeError,OSError) as exc:
         raise RuntimeError('MOVEIT_OVERLAY_REJECTED: '+str(exc)) from exc
@@ -414,7 +431,8 @@ def active_moveit_overlay():
     from ament_index_python.packages import get_package_prefix
     prefix=Path(get_package_prefix('moveit_ros_planning'))
     patch=Path(__file__).resolve().parents[1]/'patches/moveit_humble_tem_teardown.patch'
-    data=read_moveit_overlay(prefix/'share/moveit_ros_planning/workcell_teardown_overlay.json',patch)
+    data=read_moveit_overlay(prefix/'share/moveit_ros_planning/workcell_teardown_overlay.json',patch,
+        patch.parent/'moveit_humble_capability_teardown.patch')
     library=Path(data['library']['path']).resolve()
     if (prefix/'lib/libmoveit_trajectory_execution_manager.so').resolve()!=library:
         raise RuntimeError('MOVEIT_OVERLAY_REJECTED: package prefix selects a different TEM library')
@@ -422,6 +440,12 @@ def active_moveit_overlay():
     if installed!=data['baseline']['version']:
         raise RuntimeError('MOVEIT_OVERLAY_REJECTED: installed baseline changed; rebuild/requalify overlay')
     executable=Path(get_package_prefix('moveit_ros_move_group'))/'lib/moveit_ros_move_group/move_group'
+    if executable.resolve()!=Path(data['move_group']['executable']['path']).resolve():
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: package discovery selects unpatched MoveGroup')
+    group_baseline=data['move_group']['baseline']
+    installed_group=subprocess.check_output(['dpkg-query','-W','-f='+chr(36)+'{Version}',group_baseline['package']],text=True).strip()
+    if installed_group!=group_baseline['version']:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: installed MoveGroup baseline changed; rebuild/requalify overlay')
     linked=subprocess.check_output(['ldd',str(executable)],text=True)
     resolved=re.findall(r'libmoveit_trajectory_execution_manager\.so[^\s]*\s+=>\s+(\S+)',linked)
     if len(resolved)!=1 or Path(resolved[0]).resolve()!=library:
@@ -431,17 +455,26 @@ def active_moveit_overlay():
 
 def verify_moveit_overlay_maps(data,maps):
     """Require the verified inode/path to be mapped; a matching version is insufficient."""
-    library=Path(data['library']['path']).resolve()
-    fields=[line.split() for line in maps.splitlines() if 'libmoveit_trajectory_execution_manager.so' in line]
-    if (not fields or digest(library.read_bytes())!=data['library']['sha256'] or
-        any(len(f)!=6 or f[-1]!=str(library) or int(f[4])!=library.stat().st_ino for f in fields)):
-        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: move_group did not map the qualified TEM inode/path/hash')
-    return dict(data,loaded_library=str(library),loaded_inode=library.stat().st_ino)
+    loaded={}
+    for field,item,marker in [('library',data['library'],'/libmoveit_trajectory_execution_manager.so'),
+            ('executable',data['move_group']['executable'],'/moveit_ros_move_group/move_group')]:
+        path=Path(item['path']).resolve();stat=path.stat()
+        fields=[line.split() for line in maps.splitlines() if marker in line]
+        if (not fields or digest(path.read_bytes())!=item['sha256'] or
+            any(len(f)!=6 or f[-1]!=str(path) or int(f[4])!=stat.st_ino for f in fields)):
+            raise RuntimeError('MOVEIT_OVERLAY_REJECTED: move_group did not map the qualified '+field+' inode/path/hash')
+        loaded['loaded_'+field]=str(path);loaded['loaded_'+field+'_inode']=stat.st_ino
+    return dict(data,**loaded)
 
 
-def live_moveit_overlay(domain,partition,expected_sha):
+def moveit_overlay_identity(data):
+    return (data.get('library',{}).get('sha256'),
+        data.get('move_group',{}).get('executable',{}).get('sha256'))
+
+
+def live_moveit_overlay(domain,partition,expected_identity):
     data=active_moveit_overlay()
-    if data['library']['sha256']!=expected_sha:
+    if moveit_overlay_identity(data)!=expected_identity:
         raise RuntimeError('MOVEIT_OVERLAY_REJECTED: dependency differs from runner preflight')
     matches=[]
     for proc in Path('/proc').iterdir():
@@ -475,7 +508,7 @@ def commissioning_capability_identity(node,receipt,enabled,capabilities,disabled
     for path,expected in manifest['sources'].items():
         if digest(Path(path).read_bytes())!=expected:raise RuntimeError('commission capability source changed since build: '+path)
     overlay=active_moveit_overlay()
-    if manifest.get('moveit_overlay',{}).get('library',{}).get('sha256')!=overlay['library']['sha256']:
+    if moveit_overlay_identity(manifest.get('moveit_overlay',{}))!=moveit_overlay_identity(overlay):
         raise RuntimeError('MOVEIT_OVERLAY_REJECTED: rebuild commissioning capability against qualified overlay')
     matches=[]
     for proc in Path('/proc').iterdir():

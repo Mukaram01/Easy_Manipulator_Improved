@@ -578,6 +578,14 @@ def require_trial_evidence(path,current_capability):
     current_overlay=((current_capability.get('moveit_overlay') or {}).get('library') or {}).get('sha256')
     if current_overlay!=overlay_sha:
         raise RuntimeError('current MoveIt overlay binary differs from freshly qualified evidence')
+    executables=[(((r.get('commissioning_capability',{}).get('moveit_overlay') or {}).get('move_group') or {}).get('executable') or {}).get('sha256')
+                 for r in records]
+    if any(not isinstance(sha,str) or not sha.strip() for sha in executables) or len(set(executables))!=1:
+        raise RuntimeError('commissioning prerequisite evidence uses missing or inconsistent MoveGroup executable binaries')
+    move_group_sha=executables[0]
+    current_executable=(((current_capability.get('moveit_overlay') or {}).get('move_group') or {}).get('executable') or {}).get('sha256')
+    if current_executable!=move_group_sha:
+        raise RuntimeError('current MoveGroup executable differs from freshly qualified evidence')
     for r in records:
         backend=r.get('motion_backend_identity') or r.get('backend_identity',{})
         if backend.get('backend')!='simulator':raise RuntimeError('commissioning evidence backend identity unproven')
@@ -595,7 +603,8 @@ def require_trial_evidence(path,current_capability):
     contact=next(r for r in records if r['result']=='CONTACT_RELEASE_PASS')
     if contact.get('verified_lift_clearance_m',0)<.01 or not contact.get('release_evidence',{}).get('settled'):
         raise RuntimeError('physical lift/release prerequisite missing')
-    return dict(capability_sha256=capability_sha,moveit_overlay_sha256=overlay_sha,results=sorted(expected))
+    return dict(capability_sha256=capability_sha,moveit_overlay_sha256=overlay_sha,
+        move_group_sha256=move_group_sha,results=sorted(expected))
 
 
 def verify_release(guard,held_sample):

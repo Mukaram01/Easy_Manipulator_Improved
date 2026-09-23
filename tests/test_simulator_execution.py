@@ -339,7 +339,9 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
     from simulator_execution import require_trial_evidence
     capability_sha='freshly-qualified-build'
     overlay_sha='freshly-qualified-tem-overlay'
-    current=dict(sha256=capability_sha,moveit_overlay={'library':{'sha256':overlay_sha}})
+    move_group_sha='freshly-qualified-move-group'
+    current=dict(sha256=capability_sha,moveit_overlay={'library':{'sha256':overlay_sha},
+        'move_group':{'executable':{'sha256':move_group_sha}}})
     common=dict(commissioning_capability=current,
         backend_identity={'backend':'simulator'},
         motion_backend_identity={'backend':'simulator'},
@@ -363,6 +365,7 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
     accepted=require_trial_evidence(path,current)
     assert accepted['capability_sha256']==capability_sha
     assert accepted['moveit_overlay_sha256']==overlay_sha
+    assert accepted['move_group_sha256']==move_group_sha
     for index in range(4):
         for invalid_overlay in ({'library':{'sha256':'different-tem-overlay'}},
                 {'library':{'sha256':''}}, {'library':{}}, {}):
@@ -382,5 +385,29 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
             dict(current,moveit_overlay={'library':{'sha256':''}})):
         with pytest.raises(RuntimeError,match='MoveIt overlay'):
             require_trial_evidence(path,invalid_current)
+    for index in range(4):
+        for invalid_executable in ({'executable':{'sha256':'different-move-group'}},
+                {'executable':{'sha256':''}}, {'executable':{}}, {}):
+            invalid=copy.deepcopy(records)
+            invalid[index]['commissioning_capability']['moveit_overlay']['move_group']=invalid_executable
+            path.write_text(json.dumps(invalid))
+            with pytest.raises(RuntimeError,match='MoveGroup executable'):
+                require_trial_evidence(path,current)
+        invalid=copy.deepcopy(records)
+        del invalid[index]['commissioning_capability']['moveit_overlay']['move_group']
+        path.write_text(json.dumps(invalid))
+        with pytest.raises(RuntimeError,match='MoveGroup executable'):
+            require_trial_evidence(path,current)
+    path.write_text(json.dumps(records))
+    for invalid_executable in ({'executable':{'sha256':'stale-move-group'}},
+            {'executable':{'sha256':''}}, {'executable':{}}, {}):
+        invalid_current=copy.deepcopy(current)
+        invalid_current['moveit_overlay']['move_group']=invalid_executable
+        with pytest.raises(RuntimeError,match='MoveGroup executable'):
+            require_trial_evidence(path,invalid_current)
+    invalid_current=copy.deepcopy(current)
+    del invalid_current['moveit_overlay']['move_group']
+    with pytest.raises(RuntimeError,match='MoveGroup executable'):
+        require_trial_evidence(path,invalid_current)
     path.write_text(json.dumps([cancellation,telemetry,retention]))
     with pytest.raises(RuntimeError):require_trial_evidence(path,current)

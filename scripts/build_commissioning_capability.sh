@@ -16,7 +16,9 @@ from simulator_backend import active_moveit_overlay
 print(Path(active_moveit_overlay()['library']['path']).parents[1])
 PYPREFIX
 )
+moveit_group_prefix=$(python3 -c 'from ament_index_python.packages import get_package_prefix; print(get_package_prefix("moveit_ros_move_group"))')
 cmake -S "$repo/workcell_builder/workcell_builder" -B "$build" \
+  -Dmoveit_ros_move_group_DIR="$moveit_group_prefix/share/moveit_ros_move_group/cmake" \
   -Dmoveit_ros_planning_DIR="$moveit_prefix/share/moveit_ros_planning/cmake" \
   -DWORKCELL_BUILD_COMMISSIONING_CAPABILITY=ON \
   -DWORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK=ON

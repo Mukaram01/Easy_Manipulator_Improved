@@ -33,7 +33,7 @@ def test_plan_gate_requires_complete_nine_stage_plan():
 def test_gate_results_bind_to_same_current_capability(gate,result):
     sha="current-build"
     summary={"result":result,"full_cycle_prevalidated":True,
-             "commissioning_capability":{"sha256":sha,"moveit_overlay":{"library":{"sha256":"patched-tem"}}}}
+             "commissioning_capability":{"sha256":sha,"moveit_overlay":{"library":{"sha256":"patched-tem"},"move_group":{"executable":{"sha256":"patched-move-group"}}}}}
     if gate=="cancel":
         summary.update(cancellation_confirmed=True,motion_stop_verified=True)
     elif gate=="telemetry":
@@ -46,14 +46,16 @@ def test_gate_results_bind_to_same_current_capability(gate,result):
     else:
         summary.update(full_cycle_execution_success=True,
             full_cycle_physical_acceptance={"final_collision_valid":True,"attached_ids":[]})
-    MODULE.assert_gate(gate,summary,sha,"patched-tem")
+    MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group"))
     with pytest.raises(RuntimeError,match="different commissioning"):
-        MODULE.assert_gate(gate,summary,"other-build","patched-tem")
+        MODULE.assert_gate(gate,summary,"other-build",("patched-tem","patched-move-group"))
     with pytest.raises(RuntimeError,match="different MoveIt"):
-        MODULE.assert_gate(gate,summary,sha,"stale-tem")
+        MODULE.assert_gate(gate,summary,sha,("stale-tem","patched-move-group"))
+    with pytest.raises(RuntimeError,match="different MoveIt"):
+        MODULE.assert_gate(gate,summary,sha,("patched-tem","stale-move-group"))
     del summary["commissioning_capability"]["moveit_overlay"]
     with pytest.raises(RuntimeError,match="different MoveIt"):
-        MODULE.assert_gate(gate,summary,sha,"patched-tem")
+        MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group"))
 
 
 def test_executor_full_cycle_requires_explicit_evidence(tmp_path):
@@ -200,7 +202,7 @@ def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypa
     from types import SimpleNamespace
     import subprocess,sys
     args=SimpleNamespace(output=tmp_path,base_domain=201,partition_prefix='test',
-                         class_id='part',segment_planning_time=3.,moveit_overlay_sha256='test-tem')
+                         class_id='part',segment_planning_time=3.,moveit_overlay_identity=('test-tem','test-exe'))
     monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,path,class_id:path)
     monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
     monkeypatch.setattr(MODULE,'verify_session_moveit',lambda *args:{'library':{'sha256':'test-tem'}})

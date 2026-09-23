@@ -257,14 +257,14 @@ def generate_scene(scene:Path):
 
 
 def build_commissioning(repo:Path,workspace:Path,output:Path,env:dict)->dict:
-    from simulator_backend import active_moveit_overlay
+    from simulator_backend import active_moveit_overlay,moveit_overlay_identity
     overlay=active_moveit_overlay()
     build_log=output/"commissioning-build.log"
     run([repo/"scripts/build_commissioning_capability.sh"],env=env,cwd=repo,log=build_log,timeout=600)
     manifest_path=workspace/"install/workcell_builder/share/workcell_builder/commission_execute_build.json"
     if not manifest_path.is_file():raise RuntimeError("commissioning build manifest missing after build")
     manifest=json.loads(manifest_path.read_text())
-    if manifest.get("moveit_overlay",{}).get("library",{}).get("sha256")!=overlay["library"]["sha256"]:
+    if moveit_overlay_identity(manifest.get("moveit_overlay",{}))!=moveit_overlay_identity(overlay):
         raise RuntimeError("commissioning build did not bind the qualified MoveIt overlay")
     library=Path(manifest["library"])
     if not library.is_file() or sha256(library)!=manifest.get("sha256"):
@@ -305,14 +305,15 @@ def assert_plan(summary,*,require_resolved):
         raise RuntimeError("fresh Resolve did not produce a consumable task handoff")
 
 
-def assert_gate(gate,summary,capability_sha,overlay_sha):
+def assert_gate(gate,summary,capability_sha,overlay_identity):
+    from simulator_backend import moveit_overlay_identity
     expected=EXPECTED_RESULTS[gate]
     if summary.get("result")!=expected:raise RuntimeError(f"{gate} gate returned {summary.get('result')!r}, expected {expected!r}")
     if summary.get("full_cycle_prevalidated") is not True:raise RuntimeError(f"{gate} gate did not revalidate the complete cycle")
     if summary.get("commissioning_capability",{}).get("sha256")!=capability_sha:
         raise RuntimeError(f"{gate} used a different commissioning capability binary")
-    if summary.get("commissioning_capability",{}).get("moveit_overlay",{}).get("library",{}).get("sha256")!=overlay_sha:
-        raise RuntimeError(f"{gate} used a different MoveIt teardown library")
+    if moveit_overlay_identity(summary.get("commissioning_capability",{}).get("moveit_overlay",{}))!=overlay_identity:
+        raise RuntimeError(f"{gate} used a different MoveIt teardown dependency")
     if gate=="cancel":
         if not summary.get("cancellation_confirmed") or not summary.get("motion_stop_verified"):
             raise RuntimeError("fresh cancellation qualification is incomplete")
@@ -349,9 +350,9 @@ def executor_command(repo,scene,receipt,observations,summary,planning_time,*,res
     return cmd
 
 
-def verify_session_moveit(domain,partition,expected_sha):
+def verify_session_moveit(domain,partition,expected_identity):
     from simulator_backend import live_moveit_overlay
-    return live_moveit_overlay(domain,partition,expected_sha)
+    return live_moveit_overlay(domain,partition,expected_identity)
 
 
 def one_session(args,repo,source_world,capability_sha,gate,index,prior):
@@ -387,7 +388,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
                  "--refresh-from",observations],
                 env=env,cwd=repo,log=session/f"{label}-observations.log",timeout=90)
 
-        report["moveit_overlay"]=verify_session_moveit(domain,env["IGN_PARTITION"],args.moveit_overlay_sha256)
+        report["moveit_overlay"]=verify_session_moveit(domain,env["IGN_PARTITION"],args.moveit_overlay_identity)
         resolve_summary=session/"resolve/summary.json"
         run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,resolve=True),
             env=env,cwd=repo,log=session/"resolve/executor.log",timeout=420)
@@ -418,7 +419,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         gate_summary=session/f"{gate}/summary.json"
         run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,gate=gate,evidence=evidence),
             env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=600)
-        result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_sha256)
+        result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity)
         report.update(status="PASS",result=result["result"],selected_object_id=result.get("selected_object_id"),
                       selected_grasp_index=result.get("selected_grasp_index"))
         return gate_summary
@@ -457,7 +458,8 @@ def main(argv=None):
     try:
         source_world=discover_source_world(args.source_world,workspace)
         build=build_commissioning(repo,workspace,args.output,dict(os.environ))
-        args.moveit_overlay_sha256=build["moveit_overlay"]["library"]["sha256"]
+        from simulator_backend import moveit_overlay_identity
+        args.moveit_overlay_identity=moveit_overlay_identity(build["moveit_overlay"])
         overall["preflight"]={"repo_head":subprocess.check_output(["git","rev-parse","HEAD"],cwd=repo,text=True).strip(),
             "repo_dirty":bool(subprocess.check_output(["git","status","--porcelain"],cwd=repo,text=True).strip()),
             "source_world":str(source_world),"source_world_git_blob":SOURCE_WORLD_GIT_BLOB,

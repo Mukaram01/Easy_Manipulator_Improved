@@ -230,13 +230,20 @@ def overlay_fixture(tmp_path):
     patch=tmp_path/'fix.patch';patch.write_text('reviewed destructor ordering')
     library=tmp_path/'libmoveit_trajectory_execution_manager.so.2.5.10'
     library.write_bytes(b'patched TEM')
+    group_patch=tmp_path/'moveit_humble_capability_teardown.patch';group_patch.write_text('retain capability loader past main node')
+    executable=tmp_path/'lib/moveit_ros_move_group/move_group';executable.parent.mkdir(parents=True);executable.write_bytes(b'patched MoveGroup')
     manifest=tmp_path/'provenance.json'
     data=dict(schema='workcell_moveit_teardown_overlay/v1',
         source=dict(version='2.5.10',commit='c62753946ae3629a8cb745767844f7e69ca51489'),
         patch=dict(path=str(patch),sha256=digest(patch.read_bytes())),
         library=dict(path=str(library),sha256=digest(library.read_bytes())),
         baseline=dict(package='ros-humble-moveit-ros-planning',version='2.5.10-1jammy.test'),
-        reproduction=dict(baseline_returncode=-11,cycles=20,passed=20))
+        reproduction=dict(baseline_returncode=-11,cycles=20,passed=20),
+        move_group=dict(source=dict(version='2.5.10',commit='66d37b40594e2b0ce8e8bd407122d20791d8c3b5'),
+            patch=dict(path=str(group_patch),sha256=digest(group_patch.read_bytes())),
+            executable=dict(path=str(executable),sha256=digest(executable.read_bytes())),
+            baseline=dict(package='ros-humble-moveit-ros-move-group',version='2.5.10-1jammy.test'),
+            reproduction=dict(baseline_returncode=-11,cycles=20,passed=20)))
     manifest.write_text(json.dumps(data))
     return manifest,patch,library,data
 
@@ -245,7 +252,7 @@ def test_moveit_overlay_provenance_requires_current_patch_binary_and_twenty_cycl
     import json
     from simulator_backend import read_moveit_overlay
     manifest,patch,library,data=overlay_fixture(tmp_path)
-    assert read_moveit_overlay(manifest,patch)['library']['path']==str(library)
+    assert read_moveit_overlay(manifest,patch,patch.parent/"moveit_humble_capability_teardown.patch")['library']['path']==str(library)
     for field,value in [('patch',dict(data['patch'],sha256='stale')),
                         ('library',dict(data['library'],sha256='stale')),
                         ('source',dict(data['source'],version='2.5.9')),
@@ -253,17 +260,27 @@ def test_moveit_overlay_provenance_requires_current_patch_binary_and_twenty_cycl
                         ('reproduction',dict(data['reproduction'],passed=19)),
                         ('reproduction',dict(data['reproduction'],baseline_returncode=0))]:
         changed=copy.deepcopy(data);changed[field]=value;manifest.write_text(json.dumps(changed))
-        with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):read_moveit_overlay(manifest,patch)
+        with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):read_moveit_overlay(manifest,patch,patch.parent/"moveit_humble_capability_teardown.patch")
+    for field,value in [('patch',dict(data['move_group']['patch'],sha256='stale')),
+            ('executable',dict(data['move_group']['executable'],sha256='stale')),
+            ('source',dict(data['move_group']['source'],commit='b'*40)),
+            ('reproduction',dict(data['move_group']['reproduction'],passed=19))]:
+        changed=copy.deepcopy(data);changed['move_group'][field]=value;manifest.write_text(json.dumps(changed))
+        with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):read_moveit_overlay(manifest,patch,patch.parent/'moveit_humble_capability_teardown.patch')
     manifest.write_text(json.dumps(data));library.write_bytes(b'original TEM replaced overlay')
-    with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):read_moveit_overlay(manifest,patch)
+    with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):read_moveit_overlay(manifest,patch,patch.parent/"moveit_humble_capability_teardown.patch")
 
 
 def test_moveit_process_maps_must_match_patched_path_inode_and_hash(tmp_path):
     from simulator_backend import read_moveit_overlay, verify_moveit_overlay_maps
     manifest,patch,library,_=overlay_fixture(tmp_path)
-    data=read_moveit_overlay(manifest,patch)
+    data=read_moveit_overlay(manifest,patch,patch.parent/"moveit_humble_capability_teardown.patch")
+    executable=Path(data['move_group']['executable']['path'])
     mapping=f'1000-2000 r-xp 0 00:01 {library.stat().st_ino} {library}\n'
+    mapping+=f'3000-4000 r-xp 0 00:01 {executable.stat().st_ino} {executable}\n'
     assert verify_moveit_overlay_maps(data,mapping)['loaded_library']==str(library)
     for changed in ['',mapping.rstrip()+' (deleted)\n',mapping.replace(str(library),'/opt/ros/humble/lib/'+library.name),
-                    mapping.replace(str(library.stat().st_ino),'0')]:
+                    mapping.replace(str(library.stat().st_ino),'0'),
+                    mapping.replace(str(executable),'/opt/ros/humble/lib/moveit_ros_move_group/move_group'),
+                    mapping.replace(str(executable.stat().st_ino),'0')]:
         with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):verify_moveit_overlay_maps(data,changed)
