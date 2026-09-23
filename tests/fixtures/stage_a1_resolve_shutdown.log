@@ -1,0 +1,16 @@
+[workcell_studio_planning_scene_node.py-6] [INFO] [1790155148.146491460] [ur5_2f_test_planning_scene_loader]: Applied and verified 2 authored collision objects; MoveIt is planning truth
+[INFO] [workcell_studio_planning_scene_node.py-6]: process has finished cleanly [pid 20385]
+[INFO] [spawner-7]: process has finished cleanly [pid 20478]
+[INFO] [spawner-8]: process has finished cleanly [pid 20559]
+[INFO] [spawner-9]: process has finished cleanly [pid 20624]
+[INFO] [spawner-10]: process has finished cleanly [pid 20654]
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [move_group-5]: sending signal 'SIGINT' to process[move_group-5]
+[INFO] [parameter_bridge-4]: process has finished cleanly [pid 20363]
+[INFO] [python3-3]: sending signal 'SIGINT' to process[python3-3]
+[INFO] [static_transform_publisher-2]: sending signal 'SIGINT' to process[static_transform_publisher-2]
+[INFO] [robot_state_publisher-1]: sending signal 'SIGINT' to process[robot_state_publisher-1]
+[ERROR] [static_transform_publisher-2]: process has died [pid 20359, exit code -2, cmd '/opt/ros/humble/lib/tf2_ros/static_transform_publisher --x 0 --y 0 --z 0 --roll 0 --pitch 0 --yaw 0 --frame-id world --child-frame-id workcell_reference --ros-args -r __node:=ur5_2f_test_cell_reference_tf'].
+[ERROR] [move_group-5]: process has died [pid 20365, exit code -2, cmd '/opt/ros/humble/lib/moveit_ros_move_group/move_group --ros-args --params-file /tmp/launch_params_f92po739 --params-file /tmp/launch_params_w4w_9phb --params-file /tmp/launch_params_8jarzlbz --params-file /tmp/launch_params_u90nvsrk --params-file /tmp/launch_params_8xa2s9yo --params-file /tmp/launch_params_l0gtmmy0 --params-file /tmp/launch_params_i5jonlcs --params-file /tmp/launch_params_vnuj50hl --params-file /tmp/launch_params_fa8o1kv8 --params-file /tmp/launch_params_l3wsfyl2 -r joint_states:=/joint_states -r /joint_states:=/joint_states'].
+[INFO] [robot_state_publisher-1]: process has finished cleanly [pid 20357]
+[INFO] [python3-3]: process has finished cleanly [pid 20361]

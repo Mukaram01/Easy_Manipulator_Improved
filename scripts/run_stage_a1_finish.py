@@ -67,7 +67,10 @@ def launch_child_exits(log,*,cleanup_offset=None,sent_signals=()):
         rc=int(match['rc'] or 0);before=match.start()<boundary
         try:sig=signal.Signals(-rc).name if rc<0 else None
         except ValueError:sig=f"SIGNAL_{-rc}"
-        transient=bool(re.fullmatch(r"spawner(?:\.py)?-\d+",match['name']))
+        # These helpers deliberately exit after controller setup or verified
+        # scene application. Their nonzero/signal exits remain failures.
+        transient=bool(re.fullmatch(
+            r"(?:spawner(?:\.py)?|workcell_studio_planning_scene_node\.py)-\d+",match['name']))
         child_signals={event['signal'] for event in launch_signals
             if event['name']==match['name'] and boundary<=event.start()<match.start()}
         requested={signal.Signals(item).name for item in sent_signals}|child_signals

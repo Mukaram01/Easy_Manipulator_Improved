@@ -284,3 +284,30 @@ def test_final_report_includes_failed_gate_shutdown(tmp_path,monkeypatch):
     assert gate['status']=='FAILED'
     assert gate['shutdown']==shutdown
     assert gate['shutdown_failure']=='SIGSEGV'
+
+
+@pytest.mark.parametrize('rc,expected', [(0,True),(1,False),(-2,False),(-15,False),(-11,False)])
+def test_one_shot_scene_loader_only_accepts_successful_early_exit(tmp_path,rc,expected):
+    log=tmp_path/'launch.log'
+    log.write_text(f"[ERROR] [workcell_studio_planning_scene_node.py-6]: process has died [pid 20385, exit code {rc}, cmd 'loader'].\n")
+    child=MODULE.launch_child_exits(log)[0]
+    assert child['before_cleanup'] is True
+    assert child['expected'] is expected
+
+
+def test_real_resolve_log_accepts_completed_scene_loader_and_owned_cleanup():
+    # Exact exit/signal excerpt from the fresh 20260923-101850 resolve session.
+    # The loader applies/verifies the scene then exits; critical nodes stay up
+    # until the recorded runner SIGINT boundary.
+    import signal
+    log=Path(__file__).parent/'fixtures/stage_a1_resolve_shutdown.log'
+    cleanup_offset=log.read_bytes().index(b'[WARNING] [launch]: user interrupted')
+    children=MODULE.launch_child_exits(log,cleanup_offset=cleanup_offset,sent_signals=[signal.SIGINT])
+    assert len(children)==10
+    assert all(child['expected'] for child in children)
+    loader=next(child for child in children if child['name']=='workcell_studio_planning_scene_node.py-6')
+    assert loader['before_cleanup'] is True
+    assert loader['returncode']==0
+    move_group=next(child for child in children if child['name']=='move_group-5')
+    assert move_group['before_cleanup'] is False
+    assert move_group['signal']=='SIGINT'
