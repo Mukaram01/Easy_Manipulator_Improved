@@ -1641,6 +1641,9 @@ def main():
             interfaces = call(node.create_client(ListHardwareInterfaces, '/controller_manager/list_hardware_interfaces'), ListHardwareInterfaces.Request()).command_interfaces
             summary['backend_identity'] = live_identity(args.simulator_receipt, params[2].string_value,
                 components, controllers, interfaces, node.get_node_names_and_namespaces(), settings[1].bool_value)
+            # Physical position control needs reserve beyond a tangent first
+            # contact. This opt-in is confined to the verified simulator path.
+            contract['simulator_closure_reserve'] = True
             from simulator_observations import verify_snapshot_binding
             verify_snapshot_binding(snapshot, summary['backend_identity']['receipt_sha256'])
         if args.start and not params[1].bool_value:

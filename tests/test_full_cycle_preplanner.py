@@ -141,6 +141,79 @@ def test_missing_contact_never_passes_on_validity_alone():
     assert len(validity) == 80
 
 
+def closure_fixture(contact_links_at):
+    from dataclasses import replace
+    kwargs, trace, goals, validity = fixture()
+    kwargs['contract'].update(simulator_closure_reserve=True, allowed_touch_links=['left_tip', 'right_tip'])
+    kwargs['initial_scene'].allowed_collision_matrix.entry_names=['left_tip','right_tip','obstacle']
+    def state_validity(state):
+        position=state.joint_state.position[-1]
+        validity.append(position)
+        links=contact_links_at(round(position / .01005))
+        pairs=[NS(contact_body_1='observed-box', contact_body_2=link,
+                  body_type_1=1, body_type_2=0, depth=.00001) for link in links]
+        return NS(valid=not pairs, contacts=pairs)
+    kwargs['operations']=replace(kwargs['operations'], state_validity=state_validity)
+    return kwargs, trace, goals, validity
+
+
+def test_simulator_closure_waits_for_opposing_contacts_then_checks_one_reserve_step():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, validity=closure_fixture(
+        lambda i:['left_tip'] if i==1 else ['left_tip','right_tip'])
+    result=preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    assert validity==pytest.approx([.01005,.0201,.03015])
+    close=next(goal for name,goal,_,_ in goals if name=='PREPLAN_CLOSE_GRIPPER')
+    assert close['gripper_finger1_joint']==pytest.approx(.03015)
+    metadata=next(s for s in result.stages if s['stage']=='PREPLAN_CLOSE_GRIPPER')
+    assert metadata['first_opposing_position_rad']==pytest.approx(.0201)
+    assert metadata['commanded_position_rad']==pytest.approx(.03015)
+    assert metadata['position_reserve_rad']==pytest.approx(.01005)
+    assert metadata['required_contact_links']==['left_tip','right_tip']
+    assert metadata['planned_contact_links']==['left_tip','right_tip']
+
+
+@pytest.mark.parametrize('reserve_links,reason', [
+    (['left_tip','right_tip','forearm'], 'non-contact link'),
+    (['left_tip'], 'opposing'),
+    ([], 'opposing'),
+])
+def test_simulator_closure_rejects_forbidden_or_lost_contacts_at_reserve(reserve_links,reason):
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, trace, goals, validity=closure_fixture(
+        lambda i:['left_tip','right_tip'] if i==1 else reserve_links)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code=='PREPLAN_CLOSE_GRIPPER_FAILED'
+    assert reason in result.reason.lower()
+    assert validity==pytest.approx([.01005,.0201])
+    assert all(name!='PREPLAN_CLOSE_GRIPPER' for name,_,_,_ in goals)
+    assert 'ATTACH' not in trace
+
+
+def test_simulator_closure_rejects_opposing_contact_at_limit_without_reserve():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, trace, _, validity=closure_fixture(
+        lambda i:['left_tip','right_tip'] if i==80 else ['left_tip'])
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code=='PREPLAN_CLOSE_GRIPPER_FAILED'
+    assert 'reserve' in result.reason
+    assert len(validity)==80 and validity[-1]==pytest.approx(.804)
+    assert 'ATTACH' not in trace
+
+
+def test_default_closure_still_stops_at_first_single_allowed_contact():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, validity=fixture()
+    result=preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    assert validity==pytest.approx([.01005,.0201])
+    assert next(goal for name,goal,_,_ in goals if name=='PREPLAN_CLOSE_GRIPPER')=={'gripper_finger1_joint':.0201}
+    assert 'position_reserve_rad' not in next(s for s in result.stages if s['stage']=='PREPLAN_CLOSE_GRIPPER')
+
+
 def test_destination_containment_fails_before_open_detach_or_success():
     from full_cycle_preplanner import preplan_full_cycle
     kwargs, trace, _, _ = fixture()

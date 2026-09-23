@@ -249,6 +249,11 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         motion('PREPLAN_GRASP', contact, straight=True)
         stage('PREPLAN_CLOSE_GRIPPER')
         close = None
+        reserve = contract.get('simulator_closure_reserve') is True
+        required_contacts = set(contract['allowed_touch_links'])
+        first_opposing = None
+        if reserve and len(required_contacts) < 2:
+            raise RuntimeError('simulator closure requires opposing fingertip links')
         for i in range(1, 81):
             trial = operations.updated_state(view.robot_state, {'gripper_finger1_joint': 0.804*i/80})
             response = operations.state_validity(trial)
@@ -257,11 +262,37 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     operations.verify_selected_contacts(response.contacts, observation['id'], contract['allowed_touch_links'])
                 except RuntimeError as exc:
                     raise MotionFeasibilityFailure(str(exc), contacts=response.contacts) from exc
-                close = 0.804*i/80
-                break
+                if not reserve:
+                    close = 0.804*i/80
+                    break
+            if reserve:
+                planned_contacts = {
+                    c.contact_body_2 if c.contact_body_1 == observation['id'] else c.contact_body_1
+                    for c in response.contacts
+                    if observation['id'] in (c.contact_body_1, c.contact_body_2)
+                }
+                opposing = required_contacts.issubset(planned_contacts)
+                if first_opposing is not None:
+                    if not opposing:
+                        raise RuntimeError('opposing fingertip contact lost at closure reserve endpoint')
+                    close = 0.804*i/80
+                    break
+                if opposing:
+                    if i == 80:
+                        raise RuntimeError('no closure reserve remains within gripper range')
+                    first_opposing = 0.804*i/80
         if close is None:
             raise RuntimeError('no allowed fingertip contact in closing range')
         motion('PREPLAN_CLOSE_GRIPPER', {'gripper_finger1_joint': close}, group='gripper')
+        if reserve:
+            # A position reserve is not a force measurement. Execution must
+            # still establish and continuously retain actual opposing contact.
+            steps[-1]['metadata'].update(
+                first_opposing_position_rad=first_opposing,
+                commanded_position_rad=close,
+                position_reserve_rad=close-first_opposing,
+                required_contact_links=sorted(required_contacts),
+                planned_contact_links=sorted(planned_contacts))
         tool_at_grasp = operations.fk(view.robot_state, contract['tool_link'])
         frame_at_grasp = operations.fk(view.robot_state, contract['grasp_frame'])
         stage('ATTACH')

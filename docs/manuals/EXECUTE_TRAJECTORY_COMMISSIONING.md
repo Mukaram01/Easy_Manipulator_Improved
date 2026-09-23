@@ -237,6 +237,22 @@ The escaped stationary evidence is preserved at
 `part_00`, despite earlier valid post-close contact and continuously bounded
 measured geometry. That run did not prove retention or any later physical gate.
 
+### Simulator closure position reserve
+
+Simulator planning requires both exact allowed fingertip contacts, then checks
+one additional existing closure-search step (0.804 / 80 = 0.01005 rad). Every
+examined contact must still involve only the target and allowed fingertips;
+the final step must retain both contacts and remain within the existing joint
+range. If the reserve does not fit or introduces a forbidden contact, the
+candidate fails. Fake-hardware closure keeps its existing policy.
+
+This is a bounded position command, not force control or proof of retention.
+The commanded and first-opposing-contact positions are recorded in close-stage
+metadata. Live opposing contacts, slip, freshness, pile geometry, lift and
+release still have to pass unchanged. The motivating run
+`~/workcell_ws/stage-a1-finish-20260923-115152` stopped safely at lift when one
+near-tangent fingertip contact disappeared; its physical gate remains failed.
+
 ### Fortress ros2_control plugin identity
 
 The simulator backend no longer hard-codes a single renamed ros2_control library.
