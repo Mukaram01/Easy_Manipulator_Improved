@@ -323,7 +323,7 @@ class ContactGuard:
         self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None
         self.pile_objects={};self.pile_collisions={};self.pile_certificate=None
         self.pile_expired=set();self.pile_origin=None;self.pile_height=0.;self.planning_attached=False
-        self.library=library
+        self.library=library;self.pile_admitting=False;self.pile_live_sequence=False;self.pile_last_iteration=None
 
     def bind_pile(self,objects,binding):
         """Bind perceived BOX geometry to the receipt's immutable physical world."""
@@ -384,17 +384,39 @@ class ContactGuard:
             if neighbor not in self.pile_objects:raise RuntimeError('uncertified target contact identity '+neighbor)
             if neighbor in result:raise RuntimeError('ambiguous duplicate pile contact '+neighbor)
             if not c.get('points') or any(len(p)!=3 or not all(math.isfinite(x) for x in p) for p in c['points']):
-                raise RuntimeError('incomplete measured pile contact')
+                raise RuntimeError('incomplete measured pile contact: '+neighbor)
             result[neighbor]=c
         return result
 
+    def _pile_rejection(self,s,exc):
+        if self.pile_certificate is not None:
+            if not self.pile_certificate['rejected'] or self.pile_certificate['rejected'][-1]!=str(exc):
+                self.pile_certificate['rejected'].append(str(exc))
+            if 'rejected_sample' not in self.pile_certificate:
+                self.pile_certificate['rejected_sample']=copy.deepcopy(s)
+
+    def _admit_pile_contact(self,s,neighbor,c):
+        valid,geometry=self.pile_geometry(s,neighbor,c['points'])
+        entry=dict(neighbor=neighbor,physical_pair=[c['a'],c['b']],points=copy.deepcopy(c['points']),
+            target_pose=list(self.m.object_pose(s,self.name)),
+            neighbor_pose=list(self.m.object_pose(s,self.pile_objects[neighbor]['name'])),geometry=geometry)
+        if not valid:raise RuntimeError('measured pile geometry/depth rejected: '+neighbor)
+        self.pile_certificate['contacts'].append(entry)
+        self.pile_certificate['certified_set'].append(neighbor)
+        self.pile_certificate['certified_set'].sort()
+        self.pile_certificate['admissions'].append(dict(copy.deepcopy(entry),iteration=s['iteration'],
+            sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],freshness_ms=(time.time_ns()-s['wall_ns'])/1e6))
+
     def certify_pile(self,s):
-        # Admission occurs only on fresh post-close measurements. A resolution's
-        # predicted contact set is never reused as physical execution authority.
+        # Direct certification stays a frozen, one-sample operation. The live
+        # post-close path explicitly opens admission below, before the existing
+        # stationary stop proof; predicted planning contacts are never authority.
         evidence=dict(target=self.object,physical_target=self.m.receipt['world']+'::'+self.name,
             binding=copy.deepcopy(self.pile_binding),run_id=s.get('run_id'),iteration=s.get('iteration'),
-            sim_ns=s.get('sim_ns'),wall_ns=s.get('wall_ns'),certified_set=[],contacts=[],rejected=[])
+            sim_ns=s.get('sim_ns'),wall_ns=s.get('wall_ns'),certified_set=[],contacts=[],rejected=[],
+            admissions=[],active_set=[],frozen=True,checked_samples=0,expired_pairs=[])
         self.pile_certificate=evidence;self.pile_expired=set();self.pile_origin=None
+        self.pile_admitting=False;self.pile_live_sequence=False;self.pile_last_iteration=s.get('iteration')
         try:
             validate_sample(s,self.m.receipt,time.time())
             admitted=self.pile_binding.get('close_goal_terminal_wall_ns')
@@ -403,20 +425,30 @@ class ContactGuard:
                 not isinstance(accepted,int) or accepted>admitted or s['wall_ns']<admitted):
                 raise RuntimeError('pile admission requires measured state after successful owned close')
             evidence['freshness_ms']=(time.time_ns()-s['wall_ns'])/1e6
-            for neighbor,c in sorted(self.pile_contacts(s).items()):
-                valid,geometry=self.pile_geometry(s,neighbor,c['points'])
-                entry=dict(neighbor=neighbor,physical_pair=[c['a'],c['b']],points=c['points'],
-                    target_pose=self.m.object_pose(s,self.name),
-                    neighbor_pose=self.m.object_pose(s,self.pile_objects[neighbor]['name']),geometry=geometry)
-                evidence['contacts'].append(entry)
-                if not valid:raise RuntimeError('measured pile geometry/depth rejected: '+neighbor)
-                evidence['certified_set'].append(neighbor)
+            for neighbor,c in sorted(self.pile_contacts(s).items()):self._admit_pile_contact(s,neighbor,c)
+            evidence['active_set']=list(evidence['certified_set'])
             evidence['initial_bottom_m']=self.bottom(self.m.object_pose(s,self.name))
-            evidence['checked_samples']=0;evidence['expired_pairs']=[]
         except Exception as exc:
-            evidence['rejected'].append(str(exc));evidence['certified_set']=[]
+            self._pile_rejection(s,exc);evidence['certified_set']=[];evidence['active_set']=[]
             raise
         return evidence
+
+    def begin_pile_admission(self):
+        if self.pile_certificate is not None or self.held:
+            raise RuntimeError('pile admission already initialized')
+        admitted=self.pile_binding.get('close_goal_terminal_wall_ns',0)
+        deadline=time.monotonic()+.25
+        while self.m.fresh()['wall_ns']<admitted:
+            if time.monotonic()>=deadline:raise RuntimeError('post-close physical measurement not received')
+            time.sleep(.001)
+        # Consume buffered pre-admission measurements in the original unheld
+        # phase. Only a fresh post-close sample can open the live certificate.
+        with self.m.lock:
+            for pending in self.m.drain():self.check(pending)
+            s=self.m.fresh();self.check(s);self.certify_pile(s)
+            self.pile_admitting=True;self.pile_live_sequence=True
+            self.pile_certificate['frozen']=False
+        return self.pile_certificate
 
     def begin_pile_separation(self,s):
         if self.pile_certificate is None:raise RuntimeError('missing measured pile certificate')
@@ -424,13 +456,27 @@ class ContactGuard:
         self.pile_lift_start_sim_ns=s['sim_ns']
 
     def check_pile(self,s):
+        try:self._check_pile(s)
+        except Exception as exc:
+            self._pile_rejection(s,exc)
+            raise
+
+    def _check_pile(self,s):
         certificate=self.pile_certificate
         if certificate is None or certificate['rejected']:raise RuntimeError('missing valid pile certificate')
         if s['run_id']!=certificate['run_id'] or s['iteration']<certificate['iteration']:
             raise RuntimeError('pile certificate measurement binding changed')
+        if self.pile_live_sequence:
+            previous=self.pile_last_iteration if s['iteration']!=self.pile_last_iteration else None
+            validate_sample(s,self.m.receipt,time.time(),previous)
         contacts=self.pile_contacts(s);certified=set(certificate['certified_set'])
-        if set(contacts)-certified:raise RuntimeError('new uncertified pile contact')
-        if set(contacts)&self.pile_expired:raise RuntimeError('pile contact recontact after separation')
+        recontact=set(contacts)&self.pile_expired
+        if recontact:raise RuntimeError('pile contact recontact after separation: '+','.join(sorted(recontact)))
+        new=set(contacts)-certified
+        if new and not self.pile_admitting:
+            raise RuntimeError('new uncertified pile contact: '+','.join(sorted(new)))
+        for neighbor in sorted(new):self._admit_pile_contact(s,neighbor,contacts[neighbor])
+        certified=set(certificate['certified_set'])
         active=certified-self.pile_expired
         lifting=self.phase=='lift' and self.pile_origin is not None and s['sim_ns']>=self.pile_lift_start_sim_ns
         if lifting and active:
@@ -455,7 +501,9 @@ class ContactGuard:
                 certificate['expired_pairs'].append(dict(neighbor=neighbor,iteration=s['iteration'],sim_ns=s['sim_ns'],geometry=geometry))
             elif not math.isfinite(geometry['depth_m']) or geometry['depth_m']>.0001:
                 raise RuntimeError('incomplete/overdeep pile separation geometry '+neighbor)
-        certificate['checked_samples']+=1
+        certificate['active_set']=sorted(certified-self.pile_expired)
+        if s['iteration']!=self.pile_last_iteration:certificate['checked_samples']+=1
+        self.pile_last_iteration=s['iteration']
 
     def identity(self,collision):
         fields=collision.split('::')
@@ -468,8 +516,14 @@ class ContactGuard:
     def bottom(self,p):
         return min(p[2]+rotate_vector(p[3:],[x*self.dimensions[0]/2,y*self.dimensions[1]/2,z*self.dimensions[2]/2])[2] for x in (-1,1) for y in (-1,1) for z in (-1,1))
     def check(self,s):
+        try:self._check(s)
+        except Exception as exc:
+            self._pile_rejection(s,exc)
+            raise
+
+    def _check(self,s):
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool);fingers=set();support_contact=False
-        if self.held:self.check_pile(s)
+        if self.held or self.pile_admitting:self.check_pile(s)
         robot_prefix=self.m.receipt['world']+'::'+self.m.receipt['model']+'::'
         for contact in s['contacts']:
             if not contact.get('points') or any(len(p)!=3 or not all(math.isfinite(v) for v in p) for p in contact['points']):
@@ -507,17 +561,20 @@ class ContactGuard:
         if self.phase=='released':self.release_samples.append(s)
         self.m.record(self.phase,s)
     def establish(self):
-        admitted=self.pile_binding.get('close_goal_terminal_wall_ns',0)
-        deadline=time.monotonic()+.25
-        while self.m.fresh()['wall_ns']<admitted:
-            if time.monotonic()>=deadline:raise RuntimeError('post-close physical measurement not received')
-            time.sleep(.001)
-        # Consume pre-admission samples under their original (not-held) phase;
-        # lock acquisition briefly so none can later masquerade as held data.
+        if not self.pile_admitting:
+            raise RuntimeError('live post-close pile admission must precede retention')
+        # Finish all provisional checks before freezing. No stale point is
+        # recertified, and no pair can be added after this held-state boundary.
         with self.m.lock:
             for pending in self.m.drain():self.check(pending)
             s=self.m.fresh();self.check(s)
-            self.certify_pile(s)
+            self.pile_admitting=False
+            certificate=self.pile_certificate
+            certificate['certified_set']=list(certificate['active_set'])
+            certificate['frozen']=True
+            certificate['freeze']=dict(iteration=s['iteration'],sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],
+                freshness_ms=(time.time_ns()-s['wall_ns'])/1e6)
+            certificate['initial_bottom_m']=self.bottom(self.m.object_pose(s,self.name))
         joints=self.m.joints(s)
         leaders=[j.get('name') for c in self.m.robot.findall('ros2_control') for j in c.findall('joint') if j.find('command_interface') is not None and j.get('name') not in self.arm_names]
         if len(leaders)!=1:raise RuntimeError('unsupported gripper command topology')
@@ -527,9 +584,17 @@ class ContactGuard:
         self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
         if self.support:self.separation=Separation(obj,self.support['floor_z'])
         return self.held.relative
+    def checked_current(self):
+        # Keep latest sampling and queue consumption in one acquisition lock so
+        # a newer snapshot cannot skip unvalidated sequential physical samples.
+        with self.m.lock:
+            for pending in self.m.drain():self.check(pending)
+            s=self.m.fresh();self.check(s)
+            return s
+
     def retention_evidence(self,min_duration_ns=1000000000):
         if not self.held or self.held_start_sim_ns is None:raise RuntimeError('physical retention was not established')
-        s=self.m.fresh();self.check(s)
+        s=self.checked_current()
         duration=s['sim_ns']-self.held_start_sim_ns
         if duration<min_duration_ns:raise RuntimeError('physical retention duration is too short')
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool)
@@ -608,7 +673,7 @@ def require_trial_evidence(path,current_capability):
 
 
 def verify_release(guard,held_sample):
-    s=guard.m.fresh();guard.check(s)
+    s=guard.checked_current()
     p=guard.m.object_pose(s,guard.name);old=guard.m.object_pose(held_sample,guard.name)
     joint=guard.m.joints(s)[guard.leader]
     if guard.fingers or abs(joint[0]-guard.open_position)>.01 or old[2]-p[2]<.01:
@@ -624,7 +689,7 @@ def verify_release(guard,held_sample):
 
 def verify_settled_release(guard,held_sample):
     """Prove opening + loss of finger contact + one-second physical settling."""
-    s=guard.m.fresh();guard.check(s)
+    s=guard.checked_current()
     p=guard.m.object_pose(s,guard.name);old=guard.m.object_pose(held_sample,guard.name)
     joint=guard.m.joints(s)[guard.leader]
     if guard.fingers or abs(joint[0]-guard.open_position)>.01:

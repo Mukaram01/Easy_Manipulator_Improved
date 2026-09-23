@@ -1208,7 +1208,7 @@ def main():
         held=False
         if contact_guard.held and contact_guard.phase not in ('opening','released'):
             try:
-                contact_guard.check(s);held=True
+                s=contact_guard.checked_current();p=measurements.object_pose(s,contact_guard.name);held=True
             except RuntimeError:pass
         if held:
             from simulator_execution import measured_attachment
@@ -1818,7 +1818,7 @@ def main():
                         floor=support['floor_z'] if support else pile['initial_bottom_m']
                         summary['verified_lift_clearance_m']=contact_guard.bottom(measurements.object_pose(measurements.fresh(),contact_guard.name))-floor
                         if ((support and (not contact_guard.separation or not contact_guard.separation.expired)) or
-                            set(pile['certified_set'])!=contact_guard.pile_expired or summary['verified_lift_clearance_m']<.01):
+                            not set(pile['certified_set']).issubset(contact_guard.pile_expired) or summary['verified_lift_clearance_m']<.01):
                             raise RuntimeError('physical lift separation not verified')
                         if args.simulator_commission=='contact-release':
                             # Plan release in the actual lifted scene with the existing planner.
@@ -1840,12 +1840,16 @@ def main():
                     contact_guard.pile_binding.update(close_goal_uuid=summary['owned_execution_goal']['uuid'],
                         close_goal_accepted_wall_ns=summary['owned_execution_goal']['wall_ns'],
                         close_goal_terminal_wall_ns=summary['close_terminal_wall_ns'])
+                    # Observe exact post-close contacts while the existing stop
+                    # window settles. Freeze this continuously checked set before
+                    # retention admission or any further commanded arm motion.
+                    contact_guard.begin_pile_admission()
+                    summary['motion_stop_verified']=wait_stopped(monitor_contacts=True)
+                    if not summary['motion_stop_verified']:
+                        raise RuntimeError('physical closure did not converge')
                     if args.simulator_commission=='stationary':
                         # This gate proves physical retention only. No planning-scene
                         # attachment or later arm motion is used as grasp evidence.
-                        summary['motion_stop_verified']=wait_stopped(monitor_contacts=True)
-                        if not summary['motion_stop_verified']:
-                            raise RuntimeError('stationary closure did not converge')
                         summary['measured_object_in_tool']=contact_guard.establish()
                         summary['stationary_hold_start']=measurements.fresh()
                         monitored_hold(1.1)

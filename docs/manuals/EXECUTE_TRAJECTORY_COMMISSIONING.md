@@ -205,6 +205,27 @@ by the immediately preceding fresh sessions, all bound to the same current
 capability binary. Real hardware remains locked throughout.
 
 
+### Fresh post-close pile admission
+
+After successful physical close, the guard opens a provisional certificate
+using fresh measured contacts, then checks every sample through the existing
+closure-stop window. This preserves a valid, exact pair when contact telemetry
+is intermittent but current measured FCL geometry and neighbor motion remain
+within the unchanged 0.1 mm bound. Each newly admitted pair needs actual fresh
+physical contact points; stale points or predicted neighbors cannot admit it.
+
+The guard expires cleared pairs irreversibly, then freezes the remaining exact
+set before retention or further arm motion. Later new pairs and recontacts
+fail closed. The one-second opposing-fingertip retention proof, slip limits,
+250 ms freshness limit and bounded lift corridor remain independent and
+unchanged. Evidence includes admission samples, continuous check counts,
+freeze state, expiry events and the first rejected sample/pair when present.
+
+The escaped stationary evidence is preserved at
+`~/workcell_ws/stage-a1-finish-20260923-110012`: a single late sample omitted
+`part_00`, despite earlier valid post-close contact and continuously bounded
+measured geometry. That run did not prove retention or any later physical gate.
+
 ### Fortress ros2_control plugin identity
 
 The simulator backend no longer hard-codes a single renamed ros2_control library.

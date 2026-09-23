@@ -26,6 +26,126 @@ def recorded_pile_guard(tmp_path, monkeypatch):
     return guard,sample,data
 
 
+def provisional_pile_guard(tmp_path,monkeypatch):
+    import threading
+    import xml.etree.ElementTree as ET
+    guard,sample,data=recorded_pile_guard(tmp_path,monkeypatch)
+    sample['poses']['a0::part_06']=[0,0,0,0,0,0,1]
+    sample['poses']['a0::part_00']=[-.025,0,0,0,0,0,1]
+    sample['poses']['a0::part_07']=[0,.025,0,0,0,0,1]
+    sample['contacts']=[]
+    guard.phase='closing';guard.arm_names=set();guard.open_position=0.
+    guard.m.lock=threading.RLock();guard.m.drain=lambda:[]
+    guard.m.robot=ET.fromstring('<robot><ros2_control><joint name="leader"><command_interface name="position"/></joint></ros2_control></robot>')
+    guard.m.joints=lambda s:{'leader':[.3,0.]}
+    for side in ['left','right']:
+        name=f'a0::workcell_robot::{side}::collision'
+        sample['collisions'].append(name)
+        sample['contacts'].append(dict(a='a0::part_06::link::collision',b=name,points=[[0,0,0]]))
+    def contact(name,point):
+        return dict(a='a0::part_06::link::collision',b=f'a0::part_{name}::link::collision',points=[point])
+    def advance():
+        sample['iteration']+=1;sample['sim_ns']+=1000000;sample['wall_ns']+=1000000
+    sample['contacts'].append(contact('07',[0,.0125,0]))
+    return guard,sample,advance,contact
+
+
+def test_live_postclose_admission_carries_current_geometry_then_freezes(tmp_path,monkeypatch):
+    guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission()
+    assert guard.pile_certificate['certified_set']==['runtime::part_07']
+    advance();sample['contacts'].append(contact('00',[-.0125,0,0]));guard.check(sample)
+    admitted_iteration=sample['iteration']
+    # No repeated physical point is required while every fresh geometry query
+    # still proves numerical contact. The neighbor itself does not move.
+    sample['contacts']=sample['contacts'][:2]
+    sample['poses']['a0::part_06'][1]=-.0002
+    sample['poses']['a0::part_06'][2]=.00001
+    for _ in range(300):advance();guard.check(sample)
+    assert guard.pile_expired=={'runtime::part_07'}
+    assert guard.pile_certificate['active_set']==['runtime::part_00']
+    assert guard.pile_certificate['admissions'][1]['iteration']==admitted_iteration
+    relative=guard.establish()
+    assert len(relative)==7
+    assert guard.pile_certificate['frozen'] is True
+    assert guard.pile_certificate['certified_set']==['runtime::part_00']
+    assert guard.held_start_sim_ns==sample['sim_ns']
+    assert guard.pile_certificate['freeze']['iteration']==sample['iteration']
+    assert guard.pile_certificate['freeze']['freshness_ms']==pytest.approx(1.)
+    assert guard.pile_certificate['initial_bottom_m']==pytest.approx(-.01249)
+    assert guard.pile_certificate['admissions'][0]['target_pose'][2]==0.
+    assert guard.pile_certificate['rejected']==[]
+    # Once frozen, even an exact, shallow newly measured pair cannot be added.
+    advance();sample['poses']['a0::part_01']=[.025,-.0002,0,0,0,0,1]
+    sample['contacts'].append(contact('01',[.0125,-.0002,0]))
+    with pytest.raises(RuntimeError,match='new uncertified pile contact.*part_01'):guard.check(sample)
+    failure=guard.pile_certificate['rejected_sample']
+    assert failure['iteration']==sample['iteration']
+    assert failure['contacts'][-1]['b']=='a0::part_01::link::collision'
+
+
+@pytest.mark.parametrize('freeze',[False,True])
+def test_provisional_expiry_is_irreversible_before_and_after_freeze(tmp_path,monkeypatch,freeze):
+    guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission()
+    advance();sample['contacts']=sample['contacts'][:2]
+    sample['poses']['a0::part_06'][1]=-.0002;guard.check(sample)
+    assert guard.pile_expired=={'runtime::part_07'}
+    if freeze:guard.establish()
+    advance();sample['poses']['a0::part_06'][1]=0.
+    sample['contacts'].append(contact('07',[0,.0125,0]))
+    with pytest.raises(RuntimeError,match='recontact.*part_07'):guard.check(sample)
+    assert guard.pile_certificate['rejected_sample']['iteration']==sample['iteration']
+
+
+@pytest.mark.parametrize('bad',['stale','gap','deep','neighbor_moved'])
+def test_provisional_admission_preserves_freshness_sequence_and_geometry(tmp_path,monkeypatch,bad):
+    guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();advance()
+    if bad=='stale':monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.251)
+    if bad=='gap':sample['iteration']+=1
+    if bad=='deep':sample['poses']['a0::part_06'][1]+=.001
+    if bad=='neighbor_moved':sample['poses']['a0::part_07'][0]+=.001
+    with pytest.raises(RuntimeError):guard.check(sample)
+    assert guard.pile_certificate['rejected_sample']['iteration']==sample['iteration']
+
+
+def test_frozen_live_certificate_rejects_sequence_gap_and_preserves_sample(tmp_path,monkeypatch):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();advance();guard.check(sample);guard.establish()
+    advance();sample['iteration']+=1
+    with pytest.raises(RuntimeError,match='skipped measurement'):guard.check(sample)
+    assert guard.pile_certificate['rejected_sample']['iteration']==sample['iteration']
+
+
+def test_live_certificate_preserves_rejected_opposing_contact_sample(tmp_path,monkeypatch):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish();advance()
+    sample['contacts']=sample['contacts'][1:]
+    with pytest.raises(RuntimeError,match='retention lost'):guard.check(sample)
+    assert guard.pile_certificate['rejected_sample']['contacts']==sample['contacts']
+
+
+def test_checked_current_drains_pending_before_latest_retention_sample(tmp_path,monkeypatch):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish()
+    pending=[]
+    for _ in range(4):advance();pending.append(copy.deepcopy(sample))
+    def drain():
+        result=pending[:];pending.clear();return result
+    guard.m.drain=drain
+    current=guard.checked_current()
+    assert current['iteration']==sample['iteration']
+    assert pending==[]
+    assert guard.pile_last_iteration==sample['iteration']
+    # Retention uses that same serialized helper, never latest-before-queue.
+    for _ in range(4):advance();pending.append(copy.deepcopy(sample))
+    evidence=guard.retention_evidence(min_duration_ns=0)
+    assert evidence['final_iteration']==sample['iteration']
+    assert pending==[]
+    assert guard.pile_certificate['rejected']==[]
+
+
 def test_recorded_five_neighbor_certificate_uses_measured_geometry(tmp_path,monkeypatch):
     guard,sample,data=recorded_pile_guard(tmp_path,monkeypatch)
     evidence=guard.certify_pile(sample)
