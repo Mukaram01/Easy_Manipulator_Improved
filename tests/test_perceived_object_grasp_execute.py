@@ -609,3 +609,104 @@ def test_simulator_commissioning_modes_include_telemetry_retention_and_full_cycl
     assert "full_cycle_physical_acceptance" in source
     # The physical path must keep the original freshness guard; no timeout inflation.
     assert "max_fresh_age_ms']>=250.0" not in source  # policy lives in simulator_execution
+
+
+def transfer_segment_fixture():
+    import ast,copy,time
+    from geometry_msgs.msg import PoseStamped
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import (Constraints,JointConstraint,MotionPlanRequest,PlanningScene,
+        RobotState,RobotTrajectory,MoveItErrorCodes,AttachedCollisionObject)
+    from moveit_msgs.srv import GetPositionIK
+    from sensor_msgs.msg import JointState
+    from trajectory_msgs.msg import JointTrajectory,JointTrajectoryPoint
+    target=PoseStamped();target.header.frame_id='world';target.pose.orientation.w=1.;target.pose.position.x=.61
+    contract=dict(home_joint_names=['arm'],planning_group='arm_group',tool_link='tcp',robot_model_sha256='model')
+    seed=dict(schema='workcell_transfer_ik_seed/v1',robot_model_sha256='model',planning_group='arm_group',
+              tool_link='tcp',frame_id='world',stage='PREPLAN_TRANSFER',joint_positions={'arm':-2.4})
+    initial=PlanningScene(robot_state=RobotState(joint_state=JointState(
+        name=['arm','leader','follower'],position=[1.57,.2,-.2],velocity=[0.,.01,-.01])))
+    view=copy.deepcopy(initial)
+    attached=AttachedCollisionObject();attached.link_name='tcp';attached.object.id='target'
+    view.robot_state.attached_collision_objects=[attached]
+    requests=[];goals=[]
+    def solve(client,request):
+        if not isinstance(request,GetPositionIK.Request):return SimpleNamespace(contacts=[])
+        requests.append(copy.deepcopy(request))
+        # Seed is only a hint: fresh destination IK is allowed to change it.
+        return GetPositionIK.Response(solution=RobotState(joint_state=JointState(
+            name=['arm','leader','follower'],position=[-2.3,.9,-.9])),error_code=MoveItErrorCodes(val=1))
+    trajectory=RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'],points=[
+        JointTrajectoryPoint(positions=[1.57]),JointTrajectoryPoint(positions=[-2.3])]))
+    def plan(client,goal,timeout):
+        goals.append(copy.deepcopy(goal))
+        return MoveGroup.Result(error_code=MoveItErrorCodes(val=1),trajectory_start=copy.deepcopy(view.robot_state),
+            planned_trajectory=trajectory,planning_time=.1)
+    tree=ast.parse(SCRIPT.read_text());main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    segment=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='plan_segment')
+    context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
+        MoveGroup=MoveGroup,stage=lambda name:None,deadline=time.monotonic()+10,contract=contract,
+        args=SimpleNamespace(segment_planning_time=3.),mimics=[('follower','leader',-1.,0.)],initial=initial,
+        ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,summary={},
+        joint_constraints=lambda values:Constraints(joint_constraints=[JointConstraint(joint_name=n,position=v,
+            tolerance_above=.0001,tolerance_below=.0001,weight=1.) for n,v in values.items()]))
+    exec(compile(ast.Module(body=[segment],type_ignores=[]),'<actual-transfer-segment>','exec'),context)
+    return context,view,target,seed,requests,goals
+
+
+def test_transfer_seed_rechecks_fresh_target_without_replacing_current_start_or_gripper():
+    import copy
+    context,view,target,seed,requests,goals=transfer_segment_fixture();original=copy.deepcopy(view)
+    result=context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+    assert list(requests[0].ik_request.robot_state.joint_state.position)==[-2.4,.2,-.2]
+    assert list(requests[0].ik_request.robot_state.joint_state.velocity)==[0.,.01,-.01]
+    assert requests[0].ik_request.pose_stamped==target
+    assert requests[0].ik_request.avoid_collisions is False
+    assert goals[0].request.start_state==original.robot_state
+    assert goals[0].planning_options.planning_scene_diff==original
+    assert goals[0].planning_options.plan_only
+    assert goals[0].request.goal_constraints[0].joint_constraints[0].position==-2.3
+    assert list(result['after'].robot_state.joint_state.position)==[-2.3,.2,-.2]
+    assert result['metadata']['transfer_ik_seed']==dict(seed,joint_positions={'arm':-2.3})
+    assert view==original and seed['joint_positions']=={'arm':-2.4}
+
+
+@pytest.mark.parametrize('field,value', [
+    ('schema','other'),('robot_model_sha256','changed'),('planning_group','other'),
+    ('tool_link','other'),('frame_id','other'),('stage','PREPLAN_PLACE'),
+    ('joint_positions',{}),('joint_positions',{'arm':float('nan')}),
+    ('joint_positions',{'arm':-2.4,'leader':.9}),('joint_positions',{'arm':True}),
+])
+def test_transfer_seed_rejects_changed_context_or_malformed_arm_positions(field,value):
+    context,view,target,seed,requests,goals=transfer_segment_fixture();seed[field]=value
+    with pytest.raises(RuntimeError,match='TRANSFER_IK_SEED'):
+        context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+    assert requests==goals==[]
+
+
+def test_transfer_seed_is_not_accepted_for_another_stage():
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    with pytest.raises(RuntimeError,match='TRANSFER_IK_SEED'):
+        context['plan_segment'](view,'PREPLAN_APPROACH',target,ik_seed=seed)
+    assert requests==goals==[]
+
+
+def test_transfer_seed_is_not_accepted_for_another_requested_group():
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    with pytest.raises(RuntimeError,match='TRANSFER_IK_SEED'):
+        context['plan_segment'](view,'PREPLAN_TRANSFER',target,group='other',ik_seed=seed)
+    assert requests==goals==[]
+
+
+def test_transfer_seed_does_not_accept_newly_colliding_private_plan():
+    import copy
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    def reject(client,goal,timeout):
+        goals.append(copy.deepcopy(goal))
+        raise MODULE.MoveItActionFailure(6,-27)
+    context['action']=reject
+    with pytest.raises(RuntimeError,match='MoveIt action failed'):
+        context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+    assert len(requests)==len(goals)==1
+    assert goals[0].planning_options.planning_scene_diff==view
+    assert context['summary'].get('planning_retries',[])==[]

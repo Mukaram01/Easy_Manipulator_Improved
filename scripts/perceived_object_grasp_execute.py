@@ -437,6 +437,30 @@ def bound_approach_seed(binding, goal, contract, current, mimics):
         raise RuntimeError('APPROACH_IK_BINDING_CHANGED: resolve current model/target again') from exc
 
 
+def transfer_ik_seed(goal, contract, positions):
+    """A successful transfer's arm seed, never a saved goal or trajectory."""
+    arm = {n: positions[n] for n in contract['home_joint_names']}
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+               for v in arm.values()):
+        raise ValueError('nonfinite or nonnumeric transfer arm seed')
+    return dict(schema='workcell_transfer_ik_seed/v1',
+                robot_model_sha256=contract['robot_model_sha256'],
+                planning_group=contract['planning_group'], tool_link=contract['tool_link'],
+                frame_id=goal.header.frame_id, stage='PREPLAN_TRANSFER',
+                joint_positions={n: float(v) for n, v in arm.items()})
+
+
+def bound_transfer_seed(seed, goal, contract, current, mimics):
+    try:
+        positions = seed['joint_positions']
+        if (set(positions) != set(contract['home_joint_names']) or
+                seed != transfer_ik_seed(goal, contract, positions)):
+            raise ValueError('transfer seed context differs')
+        return updated_state(current, positions, mimics)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError('TRANSFER_IK_SEED_CHANGED: resolve current transfer context again') from exc
+
+
 def choose_cycle(targets, indices, preplan, attempts):
     """First fully feasible pair in confidence/id then preferred-grasp order."""
     for target in sorted(targets, key=lambda o: (o['confidence'] is None, -(o['confidence'] or 0.0), o['id'])):
@@ -536,6 +560,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         reason='Resolve and Generate the current approach IK branch before consumption.',
                         retryable=False)
         effective['approach_ik'] = request.get('approach_ik')
+        effective['transfer_ik_seed'] = request.get('transfer_ik_seed')
         grasp = request['intent']['pick']['grasp']
         place = request['intent']['place']['placement']
         effective.update(observation_reference_time=resolution_reference_time,
@@ -603,9 +628,14 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             ), None)
             if approach_stage is not None:
                 approach_ik = copy.deepcopy(approach_stage['approach_ik'])
+        transfer_stage = next((stage for stage in result.stages
+                               if stage.get('stage') == 'PREPLAN_TRANSFER'
+                               and stage.get('success') is True
+                               and stage.get('transfer_ik_seed') is not None), None)
         return {'success': result.success, 'checks': result.checks,
                 'reason_code': result.reason_code, 'reason': result.reason,
                 'approach_ik': approach_ik,
+                'transfer_ik_seed': copy.deepcopy(transfer_stage['transfer_ik_seed']) if transfer_stage else None,
                 'retryable': preplan_retryable_failure(result),
                 'stop_search': result.reason_code == 'SEARCH_BUDGET_EXHAUSTED',
                 'progress_passes': progress_passes,
@@ -727,6 +757,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         # a fresh collision-aware MoveGroup plan from home.
                         if cached is not None and cached.get('approach_ik') is not None:
                             retry_request['approach_ik'] = copy.deepcopy(cached['approach_ik'])
+                        if cached is not None and cached.get('transfer_ik_seed') is not None:
+                            retry_request['transfer_ik_seed'] = copy.deepcopy(cached['transfer_ik_seed'])
                         outcome = evaluate_once(
                             retry_request, search_pass=f'retry:{strategy}',
                             planning_attempts=3, segment_time=float(planning_time),
@@ -734,6 +766,9 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         if (outcome.get('approach_ik') is None and cached is not None and
                                 cached.get('approach_ik') is not None):
                             outcome['approach_ik'] = copy.deepcopy(cached['approach_ik'])
+                        if (outcome.get('transfer_ik_seed') is None and cached is not None and
+                                cached.get('transfer_ik_seed') is not None):
+                            outcome['transfer_ik_seed'] = copy.deepcopy(cached['transfer_ik_seed'])
                         evaluation_cache[key] = copy.deepcopy(outcome)
                         return outcome
                     if cached is not None:
@@ -1317,9 +1352,13 @@ def main():
         return constraints
 
     def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
-                     ik_binding=None, cartesian_corridor=None,
+                     ik_binding=None, ik_seed=None, cartesian_corridor=None,
                      initial_separation_object_ids=None):
         stage(name)
+        if ik_seed is not None and (name != 'PREPLAN_TRANSFER' or isinstance(goal, dict)
+                                   or (group is not None and group != contract['planning_group'])
+                                   or ik_binding is not None or straight or cartesian_corridor is not None):
+            raise RuntimeError('TRANSFER_IK_SEED_CONTEXT: seed requires an unbound transfer pose')
         wall_deadline = min(deadline, float(contract.get('_candidate_wall_deadline', deadline)))
         def wall_budget_failure():
             from full_cycle_preplanner import SearchBudgetExhausted, CandidateBudgetExhausted
@@ -1470,6 +1509,9 @@ def main():
             ik_request.ik_request.pose_stamped = goal
             ik_request.ik_request.robot_state = (bound_approach_seed(ik_binding, goal, contract, view.robot_state, mimics)
                                                 if ik_binding is not None else copy.deepcopy(view.robot_state))
+            if ik_seed is not None:
+                ik_request.ik_request.robot_state = bound_transfer_seed(
+                    ik_seed, goal, contract, view.robot_state, mimics)
             # Avoid rejecting a pose solely because IK selected a colliding arm
             # branch. The live service is usable only while its collision scene
             # matches this private view; otherwise preserve seed continuity and
@@ -1566,6 +1608,8 @@ def main():
                            if cartesian_corridor is not None else {}),
                         **({'approach_ik': copy.deepcopy(ik_binding) if ik_binding is not None else approach_ik_binding(goal, contract, values)}
                            if name == 'PREPLAN_APPROACH' and not isinstance(goal, dict) else {}),
+                        **({'transfer_ik_seed': transfer_ik_seed(goal, contract, values)}
+                           if name == 'PREPLAN_TRANSFER' and not isinstance(goal, dict) else {}),
                         attached_ids=[o.object.id for o in view.robot_state.attached_collision_objects],
                         world_ids=[o.id for o in view.world.collision_objects]))
     try:

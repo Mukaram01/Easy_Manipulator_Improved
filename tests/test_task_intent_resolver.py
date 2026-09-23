@@ -359,6 +359,36 @@ def test_resolution_binds_successful_ik_branch_after_rejected_candidate():
         resolver.consume_resolution(damaged, valid_intent(), environment(), cell())
 
 
+def test_resolution_roundtrips_transfer_ik_seed_as_digest_bound_deep_copy():
+    import pytest
+    resolver = resolver_module()
+    seed = {'joint_positions': {'shoulder': -1.4, 'elbow': -2.1}}
+    expected = copy.deepcopy(seed)
+    def evaluate(request):
+        return dict(pass_cycle(request), transfer_ik_seed=seed)
+    result = resolver.resolve_task_intent(
+        valid_intent(), environment(), cell(), observations(), evaluate, now=100.)
+    assert result['grasp_resolution']['transfer_ik_seed'] == expected
+    seed['joint_positions']['elbow'] = 0.
+    assert result['grasp_resolution']['transfer_ik_seed'] == expected
+    checked_requests = []
+    def revalidate(request):
+        assert request['transfer_ik_seed'] == expected
+        checked_requests.append(request['candidate'].candidate_id)
+        request['transfer_ik_seed']['joint_positions']['shoulder'] = 0.
+        return pass_cycle(request)
+    checked = resolver.resolve_task_intent(
+        valid_intent(), environment(), cell(), observations(), revalidate, now=100., resolved=result)
+    assert checked_requests == [result['grasp_resolution']['selected_candidate_id']]
+    assert checked['grasp_resolution']['transfer_ik_seed'] == expected
+    assert result['grasp_resolution']['transfer_ik_seed'] == expected
+    assert checked['resolution_sha256'] == result['resolution_sha256']
+    damaged = copy.deepcopy(result)
+    damaged['grasp_resolution']['transfer_ik_seed']['joint_positions']['elbow'] += 1.
+    with pytest.raises(ValueError, match='CORRUPT'):
+        resolver.consume_resolution(damaged, valid_intent(), environment(), cell())
+
+
 def test_preferred_fallback_uses_selected_strategy_catalog_geometry():
     resolver = resolver_module()
     intent = valid_intent("PREFERRED", "AUTO")
@@ -436,4 +466,5 @@ def test_support_resting_objects_remain_eligible_at_pick_zone_floor():
             "dimensions": [0.025, 0.025, 0.025],
         })
     selected = resolver.select_observations(intent, env, objects, 100.0)
-    assert [item["id"] for item in selected] == ["runtime::part_00", "runtime::part_01"]
+    # Existing height-first selection orders the elevated part before its support.
+    assert [item["id"] for item in selected] == ["runtime::part_01", "runtime::part_00"]

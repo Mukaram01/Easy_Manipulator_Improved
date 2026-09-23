@@ -127,6 +127,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         options = {}
         if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
             options['ik_binding'] = contract['approach_ik']
+        if name == 'PREPLAN_TRANSFER' and contract.get('transfer_ik_seed') is not None:
+            options['ik_seed'] = contract['transfer_ik_seed']
         step = operations.plan_segment(view, name, goal, group, straight, **options)
         if (step['metadata'].get('success') is not True or
                 step['metadata'].get('moveit_code') != 1 or

@@ -756,3 +756,22 @@ def test_preplanner_uses_bound_resolution_freshness_reference(monkeypatch):
     monkeypatch.setattr(time, 'time', lambda: captured + 1000.0)
     result = preplan_full_cycle(**kwargs)
     assert result.success, result.reason
+
+
+def test_transfer_seed_is_forwarded_only_to_fresh_transfer_planning():
+    from dataclasses import replace
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, _, _=fixture()
+    seed={'schema':'workcell_transfer_ik_seed/v1','joint_positions':{'arm':.5}}
+    kwargs['contract']['transfer_ik_seed']=copy.deepcopy(seed)
+    original=kwargs['operations'].plan_segment
+    calls=[]
+    def segment(view,name,goal,group=None,straight=False,**options):
+        calls.append((name,copy.deepcopy(options)))
+        return original(view,name,goal,group,straight)
+    kwargs['operations']=replace(kwargs['operations'],plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert next(options for name,options in calls if name=='PREPLAN_TRANSFER')=={'ik_seed':seed}
+    assert all(not options for name,options in calls if name!='PREPLAN_TRANSFER')
+    assert kwargs['contract']['transfer_ik_seed']==seed

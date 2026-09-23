@@ -237,6 +237,20 @@ The escaped stationary evidence is preserved at
 `part_00`, despite earlier valid post-close contact and continuously bounded
 measured geometry. That run did not prove retention or any later physical gate.
 
+### Transfer IK seed continuity
+
+Resolve retains the arm IK seed from a successfully planned transfer in the
+existing hashed task handoff. Revalidation seeds only the transfer IK query
+from that configuration; the current Cartesian goal, measured planning start,
+gripper state and private collision scene are still used. The seed is bound
+to model, planning group, tool, frame and stage. It is neither a trajectory
+nor collision authority, and it does not change planning time or tolerances.
+
+This addresses the failure preserved at
+`~/workcell_ws/stage-a1-finish-20260923-121649`: Resolve proved the complete
+cycle, but revalidation selected a different transfer IK branch intersecting
+the bin. The strict existing approach-branch binding remains unchanged.
+
 ### Simulator closure position reserve
 
 Simulator planning requires both exact allowed fingertip contacts, then checks

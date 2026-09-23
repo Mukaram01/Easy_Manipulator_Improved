@@ -293,7 +293,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
         evaluation = cycle_evaluator({'intent': effective_intent, 'cell': copy.deepcopy(cell),
             'strategy_ref': candidate.strategy_ref, 'observation': copy.deepcopy(observation),
             'candidate': candidate, 'destination': copy.deepcopy(checked['place_resolution']['destination']),
-            'approach_ik': copy.deepcopy(chosen.get('approach_ik'))})
+            'approach_ik': copy.deepcopy(chosen.get('approach_ik')),
+            'transfer_ik_seed': copy.deepcopy(chosen.get('transfer_ik_seed'))})
         checks = copy.deepcopy(evaluation.get('checks', []))
         checked['readiness']['checks'] = checks
         if evaluation.get('success') is not True or any(c.get('status') in ('FAIL', 'BLOCKED') for c in checks):
@@ -365,6 +366,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                                                 effective_grasp=copy.deepcopy(effective_grasp))
                         if evaluation.get('approach_ik') is not None:
                             grasp_resolution['approach_ik'] = copy.deepcopy(evaluation['approach_ik'])
+                        if evaluation.get('transfer_ik_seed') is not None:
+                            grasp_resolution['transfer_ik_seed'] = copy.deepcopy(evaluation['transfer_ik_seed'])
                         if grasp["policy"] == "PREFERRED" and strategy != requested:
                             grasp_resolution["fallback"] = {"used": True, **preferred_failure}
                         fallbacks = [block["fallback"] for block in (grasp_resolution, place_resolution)
