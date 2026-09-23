@@ -11,6 +11,7 @@
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
 #include <rclcpp/serialization.hpp>
+#include <joint_trajectory_controller/trajectory.hpp>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -23,6 +24,107 @@
 #include <stdexcept>
 
 namespace workcell {
+// Audit the emitted controller spline, not a different interpolation between
+// collision-free waypoints. No sampled RobotState or contact permission escapes.
+template<class Valid>
+static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& trajectory,
+                                      Valid valid) {
+  constexpr std::size_t max_samples=120001;
+  constexpr int64_t max_duration_ns=120000000000LL;
+  if (trajectory.getWayPointCount()<2 || trajectory.getWayPointCount()>max_samples)
+    throw std::runtime_error("CONTROLLER_TRAJECTORY_POINT_COUNT_INVALID");
+  double duration=0.;
+  for (std::size_t i=0;i<trajectory.getWayPointCount();++i) {
+    const double delta=trajectory.getWayPointDurationFromPrevious(i);
+    if (!std::isfinite(delta) || (i==0 ? delta!=0. : delta<=0.))
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_TIMING_INVALID");
+    duration+=delta;
+    if (!std::isfinite(duration) || duration>120.)
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_DURATION_EXCEEDED");
+  }
+  moveit_msgs::msg::RobotTrajectory message;
+  trajectory.getRobotTrajectoryMsg(message);
+  const auto& joint=message.joint_trajectory;
+  const auto size=joint.joint_names.size();
+  if (!size || !message.multi_dof_joint_trajectory.points.empty() ||
+      std::set<std::string>(joint.joint_names.begin(),joint.joint_names.end()).size()!=size)
+    throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINTS_INVALID");
+  const auto& known=trajectory.getRobotModel()->getVariableNames();
+  for (const auto& name:joint.joint_names)
+    if (std::find(known.begin(),known.end(),name)==known.end())
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINT_UNKNOWN");
+  auto time_ns=[](const auto& p) {
+    return int64_t(p.time_from_start.sec)*1000000000LL+p.time_from_start.nanosec;
+  };
+  for (std::size_t i=0;i<joint.points.size();++i) {
+    const auto& p=joint.points[i];
+    auto finite=[size](const auto& values,bool required) {
+      return ((!required && values.empty()) || values.size()==size) &&
+        std::all_of(values.begin(),values.end(),[](double x){return std::isfinite(x);});
+    };
+    if (!finite(p.positions,true) || !finite(p.velocities,false) || !finite(p.accelerations,false) ||
+        (i==0 ? time_ns(p)!=0 : time_ns(p)<=time_ns(joint.points[i-1])) ||
+        time_ns(p)>max_duration_ns)
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_FIELDS_INVALID");
+  }
+  moveit::core::RobotState state(trajectory.getFirstWayPoint());
+  state.update();
+  if (!state.satisfiesBounds() || !valid(state,false)) return false;
+  std::size_t samples=1;
+  joint_trajectory_controller::Trajectory interpolation;
+  for (std::size_t i=1;i<joint.points.size();++i) {
+    const auto& a=joint.points[i-1]; const auto& b=joint.points[i];
+    const int64_t begin=time_ns(a),end=time_ns(b),span=end-begin;
+    std::size_t divisions=static_cast<std::size_t>((span+999999)/1000000);
+    // Bernstein derivative hull bounds joint travel in normalized segment time.
+    // This only bounds sampling density; positions always come from installed JTC.
+    const double seconds=double(span)*1e-9;
+    const bool velocities=!a.velocities.empty() && !b.velocities.empty();
+    const bool accelerations=velocities && !a.accelerations.empty() && !b.accelerations.empty();
+    for (std::size_t j=0;j<size;++j) {
+      std::vector<double> controls;
+      if (accelerations) {
+        controls={a.positions[j],a.positions[j]+a.velocities[j]*seconds/5.,
+          a.positions[j]+2.*a.velocities[j]*seconds/5.+a.accelerations[j]*seconds*seconds/20.,
+          b.positions[j]-2.*b.velocities[j]*seconds/5.+b.accelerations[j]*seconds*seconds/20.,
+          b.positions[j]-b.velocities[j]*seconds/5.,b.positions[j]};
+      } else if (velocities) {
+        controls={a.positions[j],a.positions[j]+a.velocities[j]*seconds/3.,
+          b.positions[j]-b.velocities[j]*seconds/3.,b.positions[j]};
+      } else controls={a.positions[j],b.positions[j]};
+      if (!std::all_of(controls.begin(),controls.end(),[](double x){return std::isfinite(x);}))
+        throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINT_TRAVEL_INVALID");
+      double bound=0.;
+      for (std::size_t k=1;k<controls.size();++k)
+        bound=std::max(bound,std::abs(controls[k]-controls[k-1])*double(controls.size()-1));
+      if (!std::isfinite(bound) || bound/.001>double(max_samples))
+        throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINT_TRAVEL_EXCEEDED");
+      divisions=std::max(divisions,static_cast<std::size_t>(std::ceil(bound/.001)));
+    }
+    if (divisions>max_samples-samples || divisions>static_cast<std::size_t>(span))
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_SAMPLE_LIMIT");
+    for (std::size_t k=1;k<=divisions;++k) {
+      const int64_t stamp=begin+span*int64_t(k)/int64_t(divisions);
+      trajectory_msgs::msg::JointTrajectoryPoint sample;
+      interpolation.interpolate_between_points(rclcpp::Time(begin),a,rclcpp::Time(end),b,
+                                                rclcpp::Time(stamp),sample);
+      auto finite=[size](const auto& values,bool required) {
+        return ((!required && values.empty()) || values.size()==size) &&
+          std::all_of(values.begin(),values.end(),[](double x){return std::isfinite(x);});
+      };
+      if (!finite(sample.positions,true) || !finite(sample.velocities,false) ||
+          !finite(sample.accelerations,false))
+        throw std::runtime_error("CONTROLLER_INTERPOLATION_INVALID");
+      for (std::size_t j=0;j<size;++j)
+        state.setVariablePosition(joint.joint_names[j],sample.positions[j]); // updates mimics
+      state.update();
+      if (!state.satisfiesBounds() || !valid(state,k==divisions)) return false;
+      ++samples;
+    }
+  }
+  return true;
+}
+
 // Opt-in evidence at the innermost adapter boundary; never changes a request.
 class PlanningEvidence : public planning_request_adapter::PlanningRequestAdapter {
 public:
@@ -104,7 +206,26 @@ public:
         found_metadata=true;
       }
     }
-    if (!found_metadata) return planner(scene,req,res);
+    if (!found_metadata) {
+      try {
+        if (!planner(scene,req,res)) return false;
+        kinematic_constraints::KinematicConstraintSet constraints(scene->getRobotModel());
+        constraints.add(req.path_constraints,scene->getTransforms());
+        if (!res.trajectory_ || res.error_code_.val!=moveit_msgs::msg::MoveItErrorCodes::SUCCESS ||
+            !auditControllerTrajectory(*res.trajectory_,[&](const auto& state,bool) {
+              return scene->isStateValid(state,constraints,"");
+            }))
+          throw std::runtime_error("CONTROLLER_INTERPOLATED_STATE_INVALID");
+        return true;
+      } catch (const std::exception& e) {
+        RCLCPP_WARN(rclcpp::get_logger("workcell.cartesian_path"),"%s",e.what());
+      } catch (...) {
+        RCLCPP_WARN(rclcpp::get_logger("workcell.cartesian_path"),"CONTROLLER_AUDIT_UNKNOWN_EXCEPTION");
+      }
+      // Throwing adapters can be skipped by MoveIt; this failure must be returned.
+      res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN;
+      res.trajectory_.reset(); return false;
+    }
 
     const auto begin=std::chrono::steady_clock::now();
     auto fail=[&](const char* why) {
@@ -352,6 +473,27 @@ public:
       if (separation_scene && !separated)
         return fail("CARTESIAN_PATH_INITIAL_CONTACT_NOT_SEPARATED");
 
+      // The emitted controller spline is an independent chronological stream.
+      // Its initial exceptions expire once and never reset between segments.
+      bool spline_separated=!separation_scene;
+      double spline_last_height=-1e-12;
+      if (!auditControllerTrajectory(*trajectory,[&](const auto& state,bool) {
+        if (!carried_id.empty()) {
+          const auto* carried=state.getAttachedBody(carried_id);
+          if (!carried) return false;
+          const double height=carried->getGlobalPose().translation().z()-carried_origin.translation().z();
+          if (height<spline_last_height-1e-9) return false;
+          spline_last_height=height;
+        }
+        const bool strict=!scene->isStateColliding(state,"");
+        if (strict) spline_separated=true;
+        else if (spline_separated || !separation_scene || !separation_motion_valid(state) ||
+                 separation_scene->isStateColliding(state,"")) return false;
+        return scene->isStateFeasible(state) && (kset->empty() || kset->decide(state).satisfied);
+      })) return fail("CARTESIAN_PATH_CONTROLLER_INTERPOLATION_INVALID");
+      if (separation_scene && !spline_separated)
+        return fail("CARTESIAN_PATH_CONTROLLER_CONTACT_NOT_SEPARATED");
+
       res.trajectory_=trajectory;
       res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
       res.planning_time_=std::chrono::duration<double>(
@@ -550,6 +692,12 @@ public:
         }
       }
       if (!separated) return fail("SUPPORT_CONTACT_NOT_SEPARATED");
+      // Retain the original geometric/waypoint audit above, then independently
+      // replay actual controller interpolation under the same irreversible policy.
+      separated=false; last_height=0.;
+      if (!auditControllerTrajectory(trajectory,valid))
+        return fail("SUPPORT_CONTACT_CONTROLLER_INTERPOLATION_INVALID");
+      if (!separated) return fail("SUPPORT_CONTACT_CONTROLLER_NOT_SEPARATED");
       // No fabricated adapter-added indexes. Humble's pipeline independently
       // checks the original scene and permits solely invalid start index 0.
       // We have qualified that start more strictly above and every later state

@@ -353,7 +353,7 @@ struct SupportFixture {
       out.trajectory_=std::make_shared<robot_trajectory::RobotTrajectory>(scene->getRobotModel(),"arm");
       for(double h:heights) {
         auto state=scene->getCurrentState(); state.setVariablePosition("lift",h); state.update();
-        out.trajectory_->addSuffixWayPoint(state,.1);
+        out.trajectory_->addSuffixWayPoint(state,out.trajectory_->getWayPointCount() ? .1 : 0.);
       }
       out.error_code_.val=1; return true;
     },scene,request,response,indexes);
@@ -538,4 +538,101 @@ TEST(SupportAdapter, TravelBoundIncludesMimicAmplification) {
   b.setVariablePosition("drive",.001);a.update();b.update();
   const double actual=(a.getGlobalLinkTransform("tool").translation()-b.getGlobalLinkTransform("tool").translation()).norm();
   EXPECT_GT(actual,.01);EXPECT_GE(workcell::carriedTravelBound(a,b,.1),actual);
+}
+
+// Ordinary requests must audit the same p/v/a interpolation that the controller
+// executes, even when both MoveIt response waypoints are collision-free.
+robot_trajectory::RobotTrajectoryPtr ordinaryQuintic(
+    const SupportFixture& fixture, double duration=1., double velocity=.2,
+    double acceleration=0., double first_delay=0.) {
+  auto trajectory=std::make_shared<robot_trajectory::RobotTrajectory>(
+    fixture.scene->getRobotModel(),"arm");
+  for (unsigned i=0;i<2;++i) {
+    auto state=fixture.scene->getCurrentState();
+    state.setVariablePosition("lift",0.);
+    state.setVariableVelocity("lift",i ? -velocity : velocity);
+    state.setVariableAcceleration("lift",acceleration);
+    state.update();
+    trajectory->addSuffixWayPoint(state,i ? duration : first_delay);
+  }
+  return trajectory;
+}
+
+void prepareOrdinaryRequest(SupportFixture& fixture, double obstacle_z) {
+  fixture.scene->getWorldNonConst()->removeObject("fixture");
+  fixture.request.path_constraints.name.clear();
+  Eigen::Isometry3d pose=Eigen::Isometry3d::Identity();
+  pose.translation().z()=obstacle_z;
+  fixture.scene->getWorldNonConst()->addToObject(
+    "spline_obstacle",shapes::ShapeConstPtr(new shapes::Box(.025,.025,.005)),pose);
+}
+
+TEST(CartesianAdapter, OrdinaryQuinticOvershootCollisionRejectsClearWaypoints) {
+  SupportFixture fixture(0.); prepareOrdinaryRequest(fixture,.075);
+  auto planned=ordinaryQuintic(fixture);
+  ASSERT_FALSE(fixture.scene->isStateColliding(planned->getFirstWayPoint(),"arm"));
+  ASSERT_FALSE(fixture.scene->isStateColliding(planned->getLastWayPoint(),"arm"));
+  // These p/v/a endpoints produce q(.5)=.0625, so the carried BOX intersects
+  // the obstacle even though q(0)=q(1)=0 are both clear and within bounds.
+  auto interior=fixture.scene->getCurrentState();
+  interior.setVariablePosition("lift",.0625); interior.update();
+  ASSERT_TRUE(fixture.scene->isStateColliding(interior,"arm"));
+  workcell::StraightCartesianPath adapter;
+  planning_interface::MotionPlanResponse response; std::vector<std::size_t> indexes;
+  unsigned calls=0;
+  EXPECT_FALSE(adapter.adaptAndPlan([&](const auto&,const auto&,auto& out) {
+    ++calls;out.trajectory_=planned;
+    out.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;return true;
+  },fixture.scene,fixture.request,response,indexes));
+  EXPECT_EQ(calls,1U); EXPECT_TRUE(indexes.empty());
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN);
+  EXPECT_FALSE(response.trajectory_);
+}
+
+TEST(CartesianAdapter, OrdinaryClearQuinticRetainsSuccessfulPlannerResult) {
+  SupportFixture fixture(0.); prepareOrdinaryRequest(fixture,.15);
+  auto planned=ordinaryQuintic(fixture);
+  workcell::StraightCartesianPath adapter;
+  planning_interface::MotionPlanResponse response; std::vector<std::size_t> indexes;
+  unsigned calls=0;
+  EXPECT_TRUE(adapter.adaptAndPlan([&](const auto&,const auto&,auto& out) {
+    ++calls;out.trajectory_=planned;
+    out.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;return true;
+  },fixture.scene,fixture.request,response,indexes));
+  EXPECT_EQ(calls,1U); EXPECT_TRUE(indexes.empty());
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::SUCCESS);
+  EXPECT_EQ(response.trajectory_,planned);
+}
+
+TEST(CartesianAdapter, OrdinaryNonfiniteStateAndInvalidTimingFailClosed) {
+  struct Input { double duration,velocity,acceleration; double first_delay=0.; };
+  for (const auto& input:std::vector<Input>{{0.,.2,0.},{-1.,.2,0.},
+      {NAN,.2,0.},{1.,NAN,0.},{1.,.2,INFINITY},{1.,.2,0.,.1}}) {
+    SCOPED_TRACE(::testing::Message()<<"duration="<<input.duration
+      <<" velocity="<<input.velocity<<" acceleration="<<input.acceleration
+      <<" first_delay="<<input.first_delay);
+    SupportFixture fixture(0.); prepareOrdinaryRequest(fixture,.15);
+    auto planned=ordinaryQuintic(fixture,input.duration,input.velocity,input.acceleration,input.first_delay);
+    workcell::StraightCartesianPath adapter;
+    planning_interface::MotionPlanResponse response; std::vector<std::size_t> indexes;
+    EXPECT_FALSE(adapter.adaptAndPlan([&](const auto&,const auto&,auto& out) {
+      out.trajectory_=planned;out.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+      return true;
+    },fixture.scene,fixture.request,response,indexes));
+    EXPECT_TRUE(indexes.empty());
+    EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN);
+    EXPECT_FALSE(response.trajectory_);
+  }
+}
+
+TEST(CartesianAdapter, OrdinaryInnerPlannerFailureIsNotReplacedWithSuccess) {
+  SupportFixture fixture(0.); prepareOrdinaryRequest(fixture,.15);
+  workcell::StraightCartesianPath adapter;
+  planning_interface::MotionPlanResponse response; std::vector<std::size_t> indexes;
+  unsigned calls=0;
+  EXPECT_FALSE(adapter.adaptAndPlan([&](const auto&,const auto&,auto& out) {
+    ++calls;out.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::TIMED_OUT;return false;
+  },fixture.scene,fixture.request,response,indexes));
+  EXPECT_EQ(calls,1U);EXPECT_TRUE(indexes.empty());EXPECT_FALSE(response.trajectory_);
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::TIMED_OUT);
 }

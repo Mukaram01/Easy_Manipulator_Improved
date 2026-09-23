@@ -401,3 +401,31 @@ measurements, opposing fingertips, retention, slip, exact pile certification,
 irreversible expiry and cancellation checks remain authoritative. This is one
 pick/place cycle; reobserve/repeat orchestration and hardware access remain out
 of scope. Use the same six-gate runner above with a fresh output directory.
+
+### Controller interpolation feasibility
+
+The `20260923-134919` contact-release trial stopped during approach, before
+physical close or extraction. Its 129 MoveIt waypoints were collision-free,
+but replay through the installed joint trajectory controller found eight
+self-colliding samples between waypoints 49 and 50 (4.954–4.961 s). The measured
+forearm/wrist contact reproduced exactly in the unchanged private scene.
+Cancellation, reconciliation and shutdown were clean; the first four gates
+passed and the full-cycle gate did not run.
+
+The existing Cartesian adapter now audits ordinary planner responses after time
+parameterization, using the installed controller's interpolation of emitted
+positions, velocities and accelerations. The same audit supplements its
+Cartesian and initial-support paths. Sampling is chronological, at most 1 ms
+apart and additionally bounded by polynomial joint travel; malformed data,
+invalid states or an exhausted sample bound reject the trajectory before it
+can make a candidate READY. The maximum duration is the existing 120 s
+execution deadline, with at most 120001 checked states. No timing, waypoint,
+collision allowance or trajectory is repaired by this audit.
+
+Every sample retains the private scene, carried geometry and other joint states;
+leader updates propagate mimics. Full-robot collision/path checks and existing
+initial-contact predicates remain in force. Contact expiry never resets between
+spline segments. Rejections return `INVALID_MOTION_PLAN` to the existing bounded
+retry policy. The adapter returns failure locally because throwing out of an
+adapter can cause MoveIt to skip it. The build now explicitly depends on
+`joint_trajectory_controller`, whose actual interpolation implementation is used.
