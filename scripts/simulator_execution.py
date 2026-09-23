@@ -620,7 +620,9 @@ def measured_attachment(original,contract,measurements,sample):
     relative=compose_pose(inverse_pose(measurements.frame(sample,contract['grasp_frame'])),measurements.object_pose(sample,obj.id.removeprefix('runtime::')))
     obj.header.frame_id=contract['grasp_frame']
     (obj.pose.position.x,obj.pose.position.y,obj.pose.position.z,obj.pose.orientation.x,obj.pose.orientation.y,obj.pose.orientation.z,obj.pose.orientation.w)=relative
-    return attachment_diff(obj,contract['grasp_frame'],contract['allowed_touch_links'])
+    # MoveIt consumes the world object while applying attached ADD, before
+    # processing world updates. An explicit REMOVE would then reject the diff.
+    return attachment_diff(obj,contract['grasp_frame'],contract['allowed_touch_links'],remove_world=False)
 
 
 def require_trial_evidence(path,current_capability):

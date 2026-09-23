@@ -5,6 +5,35 @@ sys.path.insert(0,str(Path(__file__).parents[1]/'scripts'))
 import pytest
 
 
+def test_measured_attachment_supplies_actual_pose_without_duplicate_world_remove():
+    from types import SimpleNamespace as N
+    from geometry_msgs.msg import Pose
+    from moveit_msgs.msg import CollisionObject
+    from shape_msgs.msg import SolidPrimitive
+    from simulator_execution import measured_attachment
+    original=CollisionObject()
+    original.id='runtime::part_06';original.header.frame_id='world'
+    original.pose.orientation.w=1.
+    original.primitives=[SolidPrimitive(type=SolidPrimitive.BOX,dimensions=[.025]*3)]
+    original.primitive_poses=[Pose()]
+    original.primitive_poses[0].orientation.w=1.
+    measurements=N(frame=lambda s,f:[1.,2.,3.,0.,0.,0.,1.],
+                   object_pose=lambda s,n:[1.01,2.02,3.03,0.,0.,0.,1.])
+    diff=measured_attachment(original,dict(grasp_frame='tool',allowed_touch_links=['left','right']),measurements,{})
+    # MoveIt processes attached ADD before world updates and consumes the
+    # same-ID world object itself. A following REMOVE rejects the whole diff.
+    assert diff.world.collision_objects==[]
+    attached=diff.robot_state.attached_collision_objects[0]
+    assert attached.object.id=='runtime::part_06'
+    assert attached.link_name==attached.object.header.frame_id=='tool'
+    assert attached.touch_links==['left','right']
+    assert attached.object.primitives==original.primitives
+    pose=attached.object.pose
+    assert [pose.position.x,pose.position.y,pose.position.z]==pytest.approx([.01,.02,.03])
+    assert pose.orientation.w==1.
+    assert original.header.frame_id=='world' and original.pose.position.x==0.
+
+
 def recorded_pile_guard(tmp_path, monkeypatch):
     """Replay the escaped five-neighbor state through real compiled FCL policy."""
     import xml.etree.ElementTree as ET
