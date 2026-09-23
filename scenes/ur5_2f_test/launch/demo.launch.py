@@ -346,7 +346,8 @@ def _launch_setup(context):
         simulator_actions = [
             ExecuteProcess(cmd=[sys.executable, simulator_backend.__file__, output], output='screen',
                            additional_env={'LIBGL_ALWAYS_SOFTWARE': '1'}),
-            Node(package='ros_gz_bridge', executable='parameter_bridge',
+            Node(package='ros_gz_bridge', executable=simulator_backend.bridge_executable(
+                     LaunchConfiguration('simulator_commissioning').perform(context).lower() == 'true'),
                  parameters=[{'config_file': str(Path(output)/'bridges.yaml')}], output='screen'),
             TimerAction(period=5.0, actions=[Node(package='controller_manager', executable='spawner',
                 arguments=['physical_joint_states', '--param-file', controllers_config_path], output='screen')]),

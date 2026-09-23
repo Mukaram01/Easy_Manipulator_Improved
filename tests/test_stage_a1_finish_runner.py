@@ -9,6 +9,16 @@ SPEC=importlib.util.spec_from_file_location("run_stage_a1_finish",SCRIPT)
 MODULE=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(MODULE)
 
 
+@pytest.fixture
+def bridge_preflight(monkeypatch):
+    import simulator_backend
+    manifest={'executable':{'sha256':'test-bridge-exe'},'library':{'sha256':'test-bridge-lib'}}
+    monkeypatch.setattr(simulator_backend,'active_bridge_overlay',lambda:manifest,raising=False)
+    monkeypatch.setattr(simulator_backend,'bridge_overlay_identity',
+        lambda data:(data['executable']['sha256'],data['library']['sha256']),raising=False)
+    return manifest
+
+
 def test_gate_sequence_requalifies_cancellation_before_motion_acceptance():
     assert MODULE.GATES==("resolve","cancel","telemetry","stationary","contact-release","full-cycle")
 
@@ -186,7 +196,7 @@ def test_owned_shutdown_rejects_child_signals_before_cleanup(tmp_path,rc):
     assert MODULE.stop_owned(process,log)['clean'] is False
 
 
-def test_main_failure_after_prior_gate_does_not_leave_in_progress(tmp_path,monkeypatch):
+def test_main_failure_after_prior_gate_does_not_leave_in_progress(tmp_path,monkeypatch,bridge_preflight):
     monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
     monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test','moveit_overlay':{'library':{'sha256':'test-tem'}}})
     def session(args,repo,world,sha,gate,index,prior):
@@ -198,14 +208,63 @@ def test_main_failure_after_prior_gate_does_not_leave_in_progress(tmp_path,monke
     assert json.loads((output/'stage-a1-final-report.json').read_text())['status']=='BLOCKED'
 
 
-def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypatch):
+def test_bridge_preflight_rejection_prevents_build_and_launch(tmp_path,monkeypatch,bridge_preflight):
+    import simulator_backend
+    monkeypatch.setattr(MODULE,'discover_source_world',lambda *args:SCRIPT)
+    def reject():
+        raise RuntimeError('BRIDGE_OVERLAY_REJECTED: library hash differs')
+    monkeypatch.setattr(simulator_backend,'active_bridge_overlay',reject)
+    def forbidden(*args):
+        pytest.fail('unqualified bridge must block before build or launch')
+    monkeypatch.setattr(MODULE,'build_commissioning',forbidden)
+    monkeypatch.setattr(MODULE,'one_session',forbidden)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--through','resolve'])==1
+    report=json.loads((output/'stage-a1-final-report.json').read_text())
+    assert report['status']=='BLOCKED'
+    assert report['failure']=='BRIDGE_OVERLAY_REJECTED: library hash differs'
+    assert report['gates']=={}
+
+
+def test_session_bridge_mismatch_blocks_resolve_and_records_cleanup(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import simulator_backend
+    args=SimpleNamespace(output=tmp_path,base_domain=201,partition_prefix='test',
+        class_id='part',segment_planning_time=3.,moveit_overlay_identity=('tem','move-group'),
+        bridge_overlay_identity=('qualified-exe','qualified-library'))
+    monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,path,class_id:path)
+    monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
+    monkeypatch.setattr(MODULE,'generate_scene',lambda *args:None)
+    monkeypatch.setattr(MODULE,'wait_file',lambda *args:None)
+    monkeypatch.setattr(MODULE,'verify_session_moveit',lambda *args:{'verified':True})
+    monkeypatch.setattr(MODULE.subprocess,'Popen',lambda *args,**kwargs:object())
+    shutdown={'clean':True,'owned_cleanup':True}
+    monkeypatch.setattr(MODULE,'stop_owned',lambda *args:shutdown)
+    def bridge(domain,partition,expected_identity):
+        assert (domain,partition,expected_identity)==(201,'test_resolve',('qualified-exe','qualified-library'))
+        raise RuntimeError('BRIDGE_OVERLAY_REJECTED: dependency differs from runner preflight')
+    monkeypatch.setattr(simulator_backend,'live_bridge_overlay',bridge,raising=False)
+    def run(command,**kwargs):
+        assert '--summary-output' not in command,'Resolve must not run after bridge mismatch'
+    monkeypatch.setattr(MODULE,'run',run)
+    with pytest.raises(RuntimeError,match='BRIDGE_OVERLAY_REJECTED'):
+        MODULE.one_session(args,tmp_path,tmp_path/'world.sdf','test','resolve',1,{})
+    report=json.loads((tmp_path/'01-resolve/session-report.json').read_text())
+    assert report['status']=='BLOCKED'
+    assert report['shutdown']==shutdown
+    assert report['failure']=='BRIDGE_OVERLAY_REJECTED: dependency differs from runner preflight'
+
+
+def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypatch,bridge_preflight):
     from types import SimpleNamespace
     import subprocess,sys
     args=SimpleNamespace(output=tmp_path,base_domain=201,partition_prefix='test',
-                         class_id='part',segment_planning_time=3.,moveit_overlay_identity=('test-tem','test-exe'))
+                         class_id='part',segment_planning_time=3.,moveit_overlay_identity=('test-tem','test-exe'),
+                         bridge_overlay_identity=('test-bridge-exe','test-bridge-lib'))
     monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,path,class_id:path)
     monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
     monkeypatch.setattr(MODULE,'verify_session_moveit',lambda *args:{'library':{'sha256':'test-tem'}})
+    monkeypatch.setattr(MODULE,'verify_session_bridge',lambda *args:bridge_preflight,raising=False)
     monkeypatch.setattr(MODULE,'generate_scene',lambda *args:None)
     monkeypatch.setattr(MODULE,'wait_file',lambda *args:None)
     monkeypatch.setattr(MODULE,'assert_plan',lambda *args,**kwargs:None)
@@ -228,6 +287,7 @@ def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypa
     assert report['status']=='BLOCKED'
     assert report['shutdown']['clean'] is False
     assert report['shutdown']['children'][0]['signal']=='SIGSEGV'
+    assert report['bridge_overlay']==bridge_preflight
 
 
 @pytest.mark.parametrize('name', ['move_group-5','python3-3','robot_state_publisher-1','parameter_bridge-4','static_transform_publisher-2'])
@@ -277,19 +337,24 @@ def test_owned_signal_cleanup_accepts_running_launch_but_retains_crash_text(tmp_
         assert report['returncode']==rootcode
 
 
-def test_final_report_includes_failed_gate_shutdown(tmp_path,monkeypatch):
+def test_final_report_includes_failed_gate_shutdown(tmp_path,monkeypatch,bridge_preflight):
     monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
     monkeypatch.setattr(MODULE,'build_commissioning',lambda *args: {'sha256':'test','moveit_overlay':{'library':{'sha256':'test-tem'}}})
     shutdown={'clean':False,'children':[{'name':'move_group-5','returncode':-11}]}
     def session(args,repo,world,sha,gate,index,prior):
+        assert args.bridge_overlay_identity==('test-bridge-exe','test-bridge-lib')
         report=args.output/f'{index:02d}-{gate}'/'session-report.json';report.parent.mkdir()
-        report.write_text(json.dumps({'status':'BLOCKED','shutdown':shutdown,'shutdown_failure':'SIGSEGV'}))
+        report.write_text(json.dumps({'status':'BLOCKED','shutdown':shutdown,'shutdown_failure':'SIGSEGV',
+                                     'bridge_overlay':bridge_preflight}))
         raise RuntimeError('owned shutdown failed: SIGSEGV')
     monkeypatch.setattr(MODULE,'one_session',session)
     output=tmp_path/'evidence'
     assert MODULE.main(['--output',str(output),'--through','resolve'])==1
-    gate=json.loads((output/'stage-a1-final-report.json').read_text())['gates']['resolve']
+    final=json.loads((output/'stage-a1-final-report.json').read_text())
+    assert final['preflight']['bridge_overlay']==bridge_preflight
+    gate=final['gates']['resolve']
     assert gate['status']=='FAILED'
+    assert gate['bridge_overlay']==bridge_preflight
     assert gate['shutdown']==shutdown
     assert gate['shutdown_failure']=='SIGSEGV'
 

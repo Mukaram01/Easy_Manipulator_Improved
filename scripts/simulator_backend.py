@@ -527,3 +527,95 @@ def commissioning_capability_identity(node,receipt,enabled,capabilities,disabled
     if len(matches)!=1:raise RuntimeError('one identity-bound MoveIt process required')
     return dict(**matches[0],moveit_version=manifest['moveit_version'],sources=manifest['sources'],action_servers=1,
         receipt_sha256=digest(Path(receipt).read_bytes()))
+
+
+BRIDGE_SHUTDOWN_SOURCE_COMMIT='90cdc5361059a6f949bc004658e7363df33bcffe'
+
+
+def read_bridge_overlay(manifest_path,patch_path):
+    """Require the source-matched bridge shutdown fix and its traffic proof."""
+    try:
+        path=Path(manifest_path);data=json.loads(path.read_text())
+        if (data['schema']!='workcell_ros_gz_bridge_shutdown/v1' or
+            data['source']['version']!='0.244.26' or data['source']['commit']!=BRIDGE_SHUTDOWN_SOURCE_COMMIT):
+            raise ValueError('unreviewed bridge source/version')
+        if digest(Path(patch_path).read_bytes())!=data['patch']['sha256']:
+            raise ValueError('bridge patch differs from reviewed repository patch')
+        executable=Path(data['executable']['path']).resolve()
+        if str(executable).startswith('/opt/') or not str(executable).endswith('/lib/ros_gz_bridge/parameter_bridge'):
+            raise ValueError('patched bridge executable must be outside /opt')
+        for field in ('executable','library'):
+            if digest(Path(data[field]['path']).read_bytes())!=data[field]['sha256']:
+                raise ValueError('bridge '+field+' hash mismatch')
+        if Path(data['library']['path']).name!='libros_gz_bridge.so':
+            raise ValueError('unexpected bridge library')
+        if (data['baseline']['package']!='ros-humble-ros-gz-bridge' or
+            not data['baseline']['version'].startswith('0.244.26-')):
+            raise ValueError('unreviewed installed bridge baseline')
+        proof=data['reproduction']
+        if proof['baseline_returncode']!=-6:raise ValueError('bridge abort baseline proof missing')
+        for name,minimum in (('native',20),('memcheck',1)):
+            result=proof[name]
+            if (type(result['cycles']) is not int or result['cycles']<minimum or
+                result['passed']!=result['cycles'] or (name=='memcheck' and result['errors']!=0)):
+                raise ValueError('clean bridge '+name+' repetitions required')
+            if digest(Path(result['results_path']).read_bytes())!=result['results_sha256']:
+                raise ValueError('bridge '+name+' proof hash mismatch')
+        return dict(data,manifest_path=str(path.resolve()),manifest_sha256=digest(path.read_bytes()))
+    except (KeyError,ValueError,TypeError,OSError) as exc:
+        raise RuntimeError('BRIDGE_OVERLAY_REJECTED: '+str(exc)) from exc
+
+
+def active_bridge_overlay():
+    root=os.environ.get('ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY')
+    if not root:raise RuntimeError('BRIDGE_OVERLAY_REJECTED: source the qualified bridge shutdown overlay')
+    patch=Path(__file__).resolve().parents[1]/'patches/ros_gz_bridge_humble_shutdown.patch'
+    data=read_bridge_overlay(Path(root)/'provenance.json',patch)
+    installed=subprocess.check_output(['dpkg-query','-W','-f='+chr(36)+'{Version}',data['baseline']['package']],text=True).strip()
+    if installed!=data['baseline']['version']:
+        raise RuntimeError('BRIDGE_OVERLAY_REJECTED: installed bridge changed; rebuild/requalify overlay')
+    linked=subprocess.check_output(['ldd',data['executable']['path']],text=True)
+    libraries=re.findall(r'libros_gz_bridge\.so\s+=>\s+(\S+)',linked)
+    if len(libraries)!=1 or Path(libraries[0]).resolve()!=Path(data['library']['path']).resolve():
+        raise RuntimeError('BRIDGE_OVERLAY_REJECTED: patched executable selects a different bridge library')
+    return data
+
+
+def bridge_executable(commissioning):
+    return active_bridge_overlay()['executable']['path'] if commissioning else 'parameter_bridge'
+
+
+def bridge_overlay_identity(data):
+    return (data.get('executable',{}).get('sha256'),data.get('library',{}).get('sha256'))
+
+
+def verify_bridge_overlay_maps(data,maps):
+    loaded={}
+    for field,marker in (('executable','/ros_gz_bridge/parameter_bridge'),('library','/libros_gz_bridge.so')):
+        path=Path(data[field]['path']).resolve();stat=path.stat()
+        fields=[line.split() for line in maps.splitlines() if marker in line]
+        if (not fields or digest(path.read_bytes())!=data[field]['sha256'] or
+            any(len(f)!=6 or f[-1]!=str(path) or int(f[4])!=stat.st_ino for f in fields)):
+            raise RuntimeError('BRIDGE_OVERLAY_REJECTED: live bridge differs from qualified '+field+' inode/path/hash')
+        loaded['loaded_'+field]=str(path);loaded['loaded_'+field+'_inode']=stat.st_ino
+    return dict(data,**loaded)
+
+
+def live_bridge_overlay(domain,partition,expected_identity):
+    data=active_bridge_overlay()
+    if bridge_overlay_identity(data)!=expected_identity:
+        raise RuntimeError('BRIDGE_OVERLAY_REJECTED: dependency differs from runner preflight')
+    matches=[]
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():continue
+        try:
+            info=process_info(int(proc.name))
+            if '/ros_gz_bridge/parameter_bridge ' not in info['command'] or info['environ'].get('ROS_DOMAIN_ID')!=str(domain):continue
+            if info['environ'].get('IGN_PARTITION')!=partition:
+                raise RuntimeError('BRIDGE_OVERLAY_REJECTED: ambiguous bridge partition')
+            if (proc/'exe').resolve()!=Path(data['executable']['path']).resolve():
+                raise RuntimeError('BRIDGE_OVERLAY_REJECTED: live executable differs from qualified bridge')
+            matches.append(dict(verify_bridge_overlay_maps(data,info['libraries']),pid=int(proc.name),start_ticks=info['start_ticks']))
+        except (FileNotFoundError,ProcessLookupError,PermissionError):continue
+    if len(matches)!=1:raise RuntimeError('BRIDGE_OVERLAY_REJECTED: exactly one qualified live bridge required')
+    return matches[0]

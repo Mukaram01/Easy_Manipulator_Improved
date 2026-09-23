@@ -284,3 +284,63 @@ def test_moveit_process_maps_must_match_patched_path_inode_and_hash(tmp_path):
                     mapping.replace(str(executable),'/opt/ros/humble/lib/moveit_ros_move_group/move_group'),
                     mapping.replace(str(executable.stat().st_ino),'0')]:
         with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):verify_moveit_overlay_maps(data,changed)
+
+
+def bridge_overlay_fixture(tmp_path):
+    import json
+    from simulator_backend import digest
+    patch=tmp_path/'bridge.patch';patch.write_text('shutdown before main returns')
+    exe=tmp_path/'lib/ros_gz_bridge/parameter_bridge';exe.parent.mkdir(parents=True);exe.write_bytes(b'patched bridge')
+    library=tmp_path/'libros_gz_bridge.so';library.write_bytes(b'installed bridge library')
+    proof=tmp_path/'results.json';proof.write_text('qualified results')
+    result=dict(cycles=20,passed=20,errors=0,results_path=str(proof),results_sha256=digest(proof.read_bytes()))
+    data=dict(schema='workcell_ros_gz_bridge_shutdown/v1',
+        source=dict(version='0.244.26',commit='90cdc5361059a6f949bc004658e7363df33bcffe'),
+        patch=dict(path=str(patch),sha256=digest(patch.read_bytes())),
+        executable=dict(path=str(exe),sha256=digest(exe.read_bytes())),
+        library=dict(path=str(library),sha256=digest(library.read_bytes())),
+        baseline=dict(package='ros-humble-ros-gz-bridge',version='0.244.26-1jammy.test'),
+        reproduction=dict(baseline_returncode=-6,native=result,memcheck=dict(result,cycles=5,passed=5)))
+    manifest=tmp_path/'provenance.json';manifest.write_text(json.dumps(data))
+    return manifest,patch,data
+
+
+def test_bridge_overlay_requires_qualified_source_binary_patch_and_clean_proof(tmp_path):
+    import json
+    from simulator_backend import read_bridge_overlay
+    manifest,patch,data=bridge_overlay_fixture(tmp_path)
+    assert read_bridge_overlay(manifest,patch)['executable']==data['executable']
+    for path,value in [('source.commit','wrong'),('source.version','0.244.25'),
+                       ('patch.sha256','wrong'),('executable.sha256','wrong'),('library.sha256','wrong'),
+                       ('reproduction.baseline_returncode',0),('reproduction.native.cycles',19),
+                       ('reproduction.native.passed',19),('reproduction.memcheck.errors',1),
+                       ('reproduction.memcheck.cycles',0),('reproduction.memcheck.results_sha256','wrong')]:
+        changed=copy.deepcopy(data);part=changed;keys=path.split('.')
+        for key in keys[:-1]:part=part[key]
+        part[keys[-1]]=value;manifest.write_text(json.dumps(changed))
+        with pytest.raises(RuntimeError,match='BRIDGE_OVERLAY_REJECTED'):
+            read_bridge_overlay(manifest,patch)
+
+
+def test_bridge_live_maps_require_exact_qualified_executable_and_library_inode(tmp_path):
+    from simulator_backend import verify_bridge_overlay_maps
+    _,_,data=bridge_overlay_fixture(tmp_path)
+    exe=Path(data['executable']['path']);lib=Path(data['library']['path'])
+    mapping=f'1000-2000 r-xp 0 00:01 {exe.stat().st_ino} {exe}\n'
+    mapping+=f'3000-4000 r-xp 0 00:01 {lib.stat().st_ino} {lib}\n'
+    assert verify_bridge_overlay_maps(data,mapping)['loaded_executable']==str(exe)
+    for changed in ['',mapping.replace(str(exe),'/opt/ros/humble/lib/ros_gz_bridge/parameter_bridge'),
+                    mapping.replace(str(lib.stat().st_ino),'0'),mapping.rstrip()+' (deleted)\n']:
+        with pytest.raises(RuntimeError,match='BRIDGE_OVERLAY_REJECTED'):
+            verify_bridge_overlay_maps(data,changed)
+
+
+def test_bridge_overlay_only_required_for_explicit_commissioning(monkeypatch):
+    import simulator_backend as backend
+    monkeypatch.setattr(backend,'active_bridge_overlay',lambda: {'executable':{'path':'/qualified/parameter_bridge'}})
+    assert backend.bridge_executable(False)=='parameter_bridge'
+    assert backend.bridge_executable(True)=='/qualified/parameter_bridge'
+    def missing():raise RuntimeError('BRIDGE_OVERLAY_REJECTED: missing')
+    monkeypatch.setattr(backend,'active_bridge_overlay',missing)
+    assert backend.bridge_executable(False)=='parameter_bridge'
+    with pytest.raises(RuntimeError,match='missing'):backend.bridge_executable(True)

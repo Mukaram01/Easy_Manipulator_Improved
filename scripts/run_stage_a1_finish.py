@@ -360,6 +360,11 @@ def verify_session_moveit(domain,partition,expected_identity):
     return live_moveit_overlay(domain,partition,expected_identity)
 
 
+def verify_session_bridge(domain,partition,expected_identity):
+    from simulator_backend import live_bridge_overlay
+    return live_bridge_overlay(domain,partition,expected_identity)
+
+
 def one_session(args,repo,source_world,capability_sha,gate,index,prior):
     session=args.output/f"{index:02d}-{gate}"
     if session.exists():raise RuntimeError(f"refusing to reuse evidence directory {session}")
@@ -394,6 +399,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
                 env=env,cwd=repo,log=session/f"{label}-observations.log",timeout=90)
 
         report["moveit_overlay"]=verify_session_moveit(domain,env["IGN_PARTITION"],args.moveit_overlay_identity)
+        report["bridge_overlay"]=verify_session_bridge(domain,env["IGN_PARTITION"],args.bridge_overlay_identity)
         resolve_summary=session/"resolve/summary.json"
         run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,resolve=True),
             env=env,cwd=repo,log=session/"resolve/executor.log",timeout=420)
@@ -462,13 +468,15 @@ def main(argv=None):
     overall={"status":"BLOCKED","gates":{},"preflight":None}
     try:
         source_world=discover_source_world(args.source_world,workspace)
+        from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
+        bridge=active_bridge_overlay()
+        args.bridge_overlay_identity=bridge_overlay_identity(bridge)
         build=build_commissioning(repo,workspace,args.output,dict(os.environ))
-        from simulator_backend import moveit_overlay_identity
         args.moveit_overlay_identity=moveit_overlay_identity(build["moveit_overlay"])
         overall["preflight"]={"repo_head":subprocess.check_output(["git","rev-parse","HEAD"],cwd=repo,text=True).strip(),
             "repo_dirty":bool(subprocess.check_output(["git","status","--porcelain"],cwd=repo,text=True).strip()),
             "source_world":str(source_world),"source_world_git_blob":SOURCE_WORLD_GIT_BLOB,
-            "source_world_sha256":sha256(source_world),"commissioning_build":build}
+            "source_world_sha256":sha256(source_world),"commissioning_build":build,"bridge_overlay":bridge}
         prior={}
         selected=GATES[:GATES.index(args.through)+1]
         for index,gate in enumerate(selected,1):
@@ -480,7 +488,7 @@ def main(argv=None):
                 if session_report.is_file():
                     failed["session_report"]=str(session_report.relative_to(args.output))
                     recorded=json.loads(session_report.read_text())
-                    for key in ("shutdown","shutdown_failure","moveit_overlay"):
+                    for key in ("shutdown","shutdown_failure","moveit_overlay","bridge_overlay"):
                         if key in recorded:failed[key]=recorded[key]
                 overall["gates"][gate]=failed
                 raise

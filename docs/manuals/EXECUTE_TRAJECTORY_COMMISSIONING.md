@@ -180,6 +180,7 @@ migration/validation and real grasp-strategy catalog are reused; no retained
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/workcell_ws/moveit_teardown_overlay/install/local_setup.bash
+source ~/workcell_ws/ros_gz_bridge_shutdown_overlay/setup.bash
 source ~/workcell_ws/install/local_setup.bash
 cd ~/workcell_ws/src/easy_manipulation_deployment
 
@@ -187,6 +188,12 @@ python3 scripts/run_stage_a1_finish.py \
   --output ~/workcell_ws/stage-a1-finish-$(date +%Y%m%d-%H%M%S) \
   --through full-cycle
 ```
+
+The qualified bridge executable is built and proven using
+[the bridge shutdown overlay instructions](ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY.md).
+The runner checks its source, patch, proof and binary hashes before launch and
+its actual executable/library mappings before Resolve in every session.
+A missing or changed bridge overlay blocks commissioning.
 
 Gate sequence:
 
@@ -206,6 +213,13 @@ by the immediately preceding fresh sessions, all bound to the same current
 capability binary and both qualified MoveIt overlay binaries. Build the local
 source overlay using [the dependency instructions](MOVEIT_HUMBLE_TEARDOWN_OVERLAY.md)
 first. Real hardware remains locked throughout.
+
+On a measured collision rejection, the executor preserves the first rejected
+measurement, exact queried robot state and full MoveIt validity response before
+cancellation or reconciliation. The owned goal record also retains its exact
+commanded trajectory, serialized before submission, so planned and measured
+motion can be compared without reconstructing a stochastic plan. These records
+do not change collision acceptance or owned cancellation.
 
 Shutdown sends its initial SIGINT only to the owned ROS launch supervisor,
 which forwards it to children and collects their exit status. Sending SIGINT
