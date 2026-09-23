@@ -811,3 +811,44 @@ def test_trajectory_serialization_failure_occurs_before_goal_submission(monkeypa
     with pytest.raises(RuntimeError,match='serialization failed'):
         context['action'](client,SimpleNamespace(trajectory=object()),5)
     assert submissions==[]
+
+
+@pytest.mark.parametrize('backend,stage_name,expected',[
+    ('simulator','PREPLAN_LIFT',.02),('fake','PREPLAN_LIFT',.2),
+    ('simulator','PREPLAN_APPROACH',.2),('simulator','PREPLAN_TRANSFER',.2),
+    ('simulator','PREPLAN_CLOSE_GRIPPER',.2)])
+def test_physical_lift_uses_conservative_scaling_without_changing_request_geometry(backend,stage_name,expected):
+    import ast
+    import copy
+    import time
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import Constraints, JointConstraint, MotionPlanRequest, MoveItErrorCodes, PlanningScene, RobotState, RobotTrajectory
+    from sensor_msgs.msg import JointState
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+    tree=ast.parse(SCRIPT.read_text())
+    main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='plan_segment')
+    initial=PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'],position=[.1])))
+    trajectory=RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'],points=[
+        JointTrajectoryPoint(positions=[.1]),JointTrajectoryPoint(positions=[.2])]))
+    goals=[]
+    def action(client,goal,timeout):
+        goals.append(copy.deepcopy(goal))
+        return MoveGroup.Result(error_code=MoveItErrorCodes(val=1),trajectory_start=copy.deepcopy(initial.robot_state),
+                                planned_trajectory=trajectory,planning_time=.1)
+    context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,MoveGroup=MoveGroup,
+        stage=lambda name:None,deadline=time.monotonic()+10,contract={'planning_group':'arm_group','home_joint_names':['arm'],'tool_link':'tcp'},
+        args=SimpleNamespace(backend=backend,segment_planning_time=3.),mimics=[],initial=initial,
+        plan_client=object(),action=action,trace=lambda *a:None,summary={},
+        joint_constraints=lambda values:Constraints(joint_constraints=[JointConstraint(joint_name=n,position=v,
+            tolerance_above=.0001,tolerance_below=.0001,weight=1.) for n,v in values.items()]))
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-lift-scaling>','exec'),context)
+    context['plan_segment'](initial,stage_name,{'arm':.2},group='arm_group')
+    request=goals[0].request
+    assert request.max_velocity_scaling_factor==expected
+    assert request.max_acceleration_scaling_factor==expected
+    assert request.start_state==initial.robot_state
+    assert request.goal_constraints[0].joint_constraints[0].position==.2
+    assert request.goal_constraints[0].joint_constraints[0].tolerance_above==.0001
+    assert request.allowed_planning_time==3.
+    assert goals[0].planning_options.planning_scene_diff==initial

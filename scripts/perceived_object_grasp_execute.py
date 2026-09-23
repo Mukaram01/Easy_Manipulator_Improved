@@ -1391,9 +1391,14 @@ def main():
             raise wall_budget_failure()
         planning_time = min(planning_time, args.segment_planning_time, remaining)
         before = copy.deepcopy(view)
+        # Physical initial pile separation needs a conservative dynamic profile:
+        # measured tracking and grasp slip can consume micron-scale side gaps.
+        # Keep the same Cartesian path, collision policy and execution deadline.
+        motion_scaling = .02 if getattr(args, 'backend', 'fake') == 'simulator' and name == 'PREPLAN_LIFT' else .2
         request = MotionPlanRequest(group_name=group or contract['planning_group'],
             start_state=copy.deepcopy(view.robot_state), num_planning_attempts=1,
-            allowed_planning_time=planning_time, max_velocity_scaling_factor=0.2, max_acceleration_scaling_factor=0.2)
+            allowed_planning_time=planning_time, max_velocity_scaling_factor=motion_scaling,
+            max_acceleration_scaling_factor=motion_scaling)
         request.start_state.is_diff = False
         if isinstance(goal, dict):
             request.goal_constraints = [joint_constraints(goal)]
@@ -1617,6 +1622,7 @@ def main():
                     metadata=dict(stage=name, success=True, moveit_code=result.error_code.val,
                         planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
                         allowed_planning_time=planning_time, planning_attempts=planning_attempts,
+                        max_velocity_scaling_factor=motion_scaling, max_acceleration_scaling_factor=motion_scaling,
                         **({'cartesian_planner':'workcell/StraightCartesianPath'}
                            if cartesian_corridor is not None else {}),
                         **({'approach_ik': copy.deepcopy(ik_binding) if ik_binding is not None else approach_ik_binding(goal, contract, values)}

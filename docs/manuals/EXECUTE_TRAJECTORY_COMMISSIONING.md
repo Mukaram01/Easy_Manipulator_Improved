@@ -339,3 +339,20 @@ after a positive `data: true` response. A positive create is never retried.
 Lost/timeout responses get a shorter bounded readback window before a retry is
 permitted. This removes the race without weakening identity: the receipt is
 still written only after SceneBroadcaster proves the robot model exists.
+
+### Simulator lift dynamics
+
+The existing Cartesian lift uses velocity and acceleration scaling 0.02 in the
+verified simulator path; other stages and fake-hardware planning retain 0.2.
+The physical trial at `~/workcell_ws/stage-a1-finish-20260923-125904` showed that
+tracking error and 7.27 micrometres of held-object slip closed an uncertified
+neighbor gap of 6.82 micrometres near peak initial acceleration. The measured
+certificate correctly rejected the new contact. Dense replay of the commanded
+trajectory with the measured attachment remained collision-free.
+
+This conservative lift profile addresses physical dynamics; it does not change
+the Cartesian generator, poses, collision/contact/slip/freshness bounds, frozen
+certificate, planning budget or execution deadline. Its live effectiveness must
+be demonstrated by the unchanged contact-release and full-cycle gates. The
+planning metadata records the applied scaling, and the owned goal records the
+resulting positions, velocities, accelerations and times.
