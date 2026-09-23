@@ -1068,8 +1068,10 @@ def main():
         owned_uuid=list(handle.goal_id.uuid)
         motion_trial=None
         if client is execute_client:
+            from rosidl_runtime_py.convert import message_to_ordereddict
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
-                stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
+                stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
+                trajectory=message_to_ordereddict(goal.trajectory))
         try:
             cancel_start=measurements.fresh()['sim_ns'] if measurements else 0
             if controlled_cancel:
@@ -1230,9 +1232,18 @@ def main():
         future=validity_client.call_async(GetStateValidity.Request(robot_state=state,group_name=''))
         rclpy.spin_until_future_complete(node,future,timeout_sec=.2)
         if not future.done() or not future.result():raise RuntimeError('measured collision query timed out')
-        validate_measured_contacts(future.result(),contact_guard.support if contact_guard.held else None,
-            bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate,
-            pile_guard=contact_guard if carried else None)
+        try:
+            validate_measured_contacts(future.result(),contact_guard.support if contact_guard.held else None,
+                bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate,
+                pile_guard=contact_guard if carried else None)
+        except RuntimeError:
+            from rosidl_runtime_py.convert import message_to_ordereddict
+            # Preserve the exact rejected query before cancellation changes the
+            # physical state or reconciliation changes the planning scene.
+            summary.setdefault('rejected_measured_collision_check', dict(
+                measurement=copy.deepcopy(s), robot_state=message_to_ordereddict(state),
+                response=message_to_ordereddict(future.result())))
+            raise
         measurements.fresh()
         summary['last_measured_collision_check']=dict(sim_ns=s['sim_ns'],valid=future.result().valid,contacts=len(future.result().contacts))
     def measured_reconcile():

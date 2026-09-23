@@ -710,3 +710,81 @@ def test_transfer_seed_does_not_accept_newly_colliding_private_plan():
     assert len(requests)==len(goals)==1
     assert goals[0].planning_options.planning_scene_diff==view
     assert context['summary'].get('planning_retries',[])==[]
+
+
+@pytest.mark.parametrize('with_contact', [False, True])
+def test_measured_fcl_preserves_first_rejected_query_before_cancellation(with_contact):
+    """A rejected validity response must survive cancellation/reconciliation."""
+    import ast
+    import copy
+    from moveit_msgs.msg import ContactInformation, PlanningScene, RobotState
+    from moveit_msgs.srv import GetStateValidity
+    from sensor_msgs.msg import JointState
+
+    tree = ast.parse(SCRIPT.read_text())
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    boundary = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'measured_fcl')
+    sample = {'sim_ns': 69389000000, 'iteration': 69389, 'wall_ns': 1000,
+              'joints': {'arm': [0.2, 0.0]}}
+    contact = ContactInformation(contact_body_1='wrist', contact_body_2='bin', depth=.0002)
+    response = GetStateValidity.Response(valid=False, contacts=[contact] if with_contact else [])
+    requests = []
+    def query(request):
+        requests.append(copy.deepcopy(request))
+        return SimpleNamespace(done=lambda: True, result=lambda: response)
+    summary = {'last_measured_collision_check': {'sim_ns': 69387000000, 'valid': True, 'contacts': 0}}
+    context = dict(vars(MODULE), copy=copy,
+        measurements=SimpleNamespace(fresh=lambda: sample, joints=lambda s: s['joints']),
+        initial=PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'], position=[0.0]))),
+        contact_guard=SimpleNamespace(planning_attached=False, held=False, phase='approach',
+                                     separation=None, predicate=None),
+        PlanningScene=PlanningScene, GetStateValidity=GetStateValidity,
+        validity_client=SimpleNamespace(call_async=query), node=object(), summary=summary,
+        rclpy=SimpleNamespace(spin_until_future_complete=lambda *a, **kw: None))
+    exec(compile(ast.Module(body=[boundary], type_ignores=[]), '<actual-measured-fcl>', 'exec'), context)
+    with pytest.raises(RuntimeError, match='measured carried/robot collision or invalid state'):
+        context['measured_fcl']()
+    evidence = copy.deepcopy(summary['rejected_measured_collision_check'])
+    assert evidence['measurement'] == sample
+    assert evidence['robot_state']['joint_state']['position'] == [0.2]
+    assert evidence['response']['valid'] is False
+    assert len(evidence['response']['contacts']) == int(with_contact)
+    if with_contact:
+        assert evidence['response']['contacts'][0]['contact_body_1'] == 'wrist'
+        assert evidence['response']['contacts'][0]['depth'] == .0002
+    assert summary['last_measured_collision_check']['sim_ns'] == 69387000000
+    sample['iteration'] += 1
+    sample['joints']['arm'][0] = .3
+    with pytest.raises(RuntimeError):
+        context['measured_fcl']()
+    assert summary['rejected_measured_collision_check'] == evidence
+
+
+def test_owned_execution_evidence_preserves_exact_command_trajectory():
+    import ast
+    import copy
+    from moveit_msgs.action import ExecuteTrajectory
+    from moveit_msgs.msg import MoveItErrorCodes, RobotTrajectory
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+    from rosidl_runtime_py.convert import message_to_ordereddict
+
+    tree = ast.parse(SCRIPT.read_text())
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    boundary = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'action')
+    goal = ExecuteTrajectory.Goal(trajectory=RobotTrajectory(joint_trajectory=JointTrajectory(
+        joint_names=['arm'], points=[JointTrajectoryPoint(positions=[.1]), JointTrajectoryPoint(positions=[.2])])))
+    expected = message_to_ordereddict(copy.deepcopy(goal.trajectory))
+    response = SimpleNamespace(status=4, result=ExecuteTrajectory.Result(error_code=MoveItErrorCodes(val=1)))
+    finished = SimpleNamespace(done=lambda: True, result=lambda: response)
+    handle = SimpleNamespace(accepted=True, goal_id=SimpleNamespace(uuid=list(range(16))), get_result_async=lambda: finished)
+    sent = SimpleNamespace(done=lambda: True, result=lambda: handle)
+    client = SimpleNamespace(wait_for_server=lambda **kw: True, send_goal_async=lambda g: sent)
+    summary = {'current_stage': 'EXECUTE_APPROACH'}
+    context = dict(vars(MODULE), summary=summary, controlled_cancel=False, controller_audit=None,
+        execute_client=client, measurements=None, execution_monitor=None, node=object(),
+        rclpy=SimpleNamespace(spin_until_future_complete=lambda *a, **kw: None))
+    exec(compile(ast.Module(body=[boundary], type_ignores=[]), '<actual-owned-action>', 'exec'), context)
+    context['action'](client, goal, 5)
+    goal.trajectory.joint_trajectory.points[1].positions[0] = .9
+    assert summary['owned_execution_goal']['trajectory'] == expected
+    assert summary['owned_execution_goal']['stage'] == 'EXECUTE_APPROACH'

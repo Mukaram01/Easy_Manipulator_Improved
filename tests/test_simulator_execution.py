@@ -415,7 +415,10 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
         wait_stopped=lambda:True,apply=lambda diff:events.append('revoke'),PlanningScene=N,baseline=N(),
         measured_reconcile=lambda:events.append('reconcile'))
     exec(compile(ast.Module(body=[owner],type_ignores=[]),'<actual-action-owner>','exec'),context)
-    goal=N(trajectory=N(joint_trajectory=N(joint_names=['arm'])))
+    from moveit_msgs.action import ExecuteTrajectory
+    from moveit_msgs.msg import RobotTrajectory
+    from trajectory_msgs.msg import JointTrajectory
+    goal=ExecuteTrajectory.Goal(trajectory=RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'])))
     with pytest.raises(RuntimeError,match='ENDED_BEFORE_CANCEL'):context['action'](client,goal,1)
     assert summary['owned_execution_goal']['accepted']
     assert summary['interrupted_action_terminal_status']==4
