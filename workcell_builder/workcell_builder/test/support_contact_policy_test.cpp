@@ -636,3 +636,176 @@ TEST(CartesianAdapter, OrdinaryInnerPlannerFailureIsNotReplacedWithSuccess) {
   EXPECT_EQ(calls,1U);EXPECT_TRUE(indexes.empty());EXPECT_FALSE(response.trajectory_);
   EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::TIMED_OUT);
 }
+
+TEST(CartesianAdapter, SavedOneMillisecondQuinticCollisionRejects) {
+  SupportFixture fixture(0.);
+  prepareOrdinaryRequest(fixture,.027500010);
+  auto trajectory=ordinaryQuintic(fixture,.001,.0002,0.);
+  ASSERT_FALSE(fixture.scene->isStateColliding(trajectory->getFirstWayPoint(),""));
+  ASSERT_FALSE(fixture.scene->isStateColliding(trajectory->getLastWayPoint(),""));
+  moveit_msgs::msg::RobotTrajectory msg; trajectory->getRobotTrajectoryMsg(msg);
+  joint_trajectory_controller::Trajectory jtc;
+  trajectory_msgs::msg::JointTrajectoryPoint midpoint;
+  jtc.interpolate_between_points(rclcpp::Time(0),msg.joint_trajectory.points[0],
+    rclcpp::Time(1000000),msg.joint_trajectory.points[1],rclcpp::Time(500000),midpoint);
+  auto state=trajectory->getFirstWayPoint(); state.setVariablePosition("lift",midpoint.positions[0]); state.update();
+  ASSERT_NEAR(midpoint.positions[0],6.25e-8,1e-14);
+  ASSERT_TRUE(fixture.scene->isStateColliding(state,""));
+  workcell::StraightCartesianPath adapter;
+  planning_interface::MotionPlanResponse response; std::vector<std::size_t> indexes;
+  EXPECT_FALSE(adapter.adaptAndPlan([&](const auto&,const auto&,auto& out) {
+    out.trajectory_=trajectory;out.error_code_.val=1;return true;
+  },fixture.scene,fixture.request,response,indexes));
+}
+
+TEST(ControllerCertificate, SameSubmillisecondGeometryWithClearanceCertifies) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,.028);
+  const auto report=workcell::controller_certificate::certify(*ordinaryQuintic(f,.001,.0002),*f.scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.certified,1U);EXPECT_EQ(report.subdivided,0U);
+}
+TEST(ControllerCertificate, LargeMotionWithLargeClearanceCertifies) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  const auto report=workcell::controller_certificate::certify(*ordinaryQuintic(f,1.,.4),*f.scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.inspected,1U);
+}
+TEST(ControllerCertificate, PrecisionLimitCannotBecomeSuccess) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,.0275000000005);
+  workcell::ControllerAuditOptions options;options.max_depth=0;
+  const auto report=workcell::controller_certificate::certify(*ordinaryQuintic(f,.001,0.),*f.scene,options);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(report.reason,"PRECISION_OR_DEPTH_LIMIT");
+  EXPECT_EQ(report.certified,0U);EXPECT_EQ(report.failure_begin_ns,0);
+}
+TEST(ControllerCertificate, MovingWorldWithoutBoundRejects) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  workcell::ControllerAuditOptions options;options.stationary_world=false;
+  EXPECT_EQ(workcell::controller_certificate::certify(*ordinaryQuintic(f),*f.scene,options).result,
+            workcell::ControllerCertificate::UNCERTIFIED);
+}
+TEST(ControllerCertificate, IntervalContainsActualInstalledJtcInteriorExtrema) {
+  using namespace workcell::controller_certificate;
+  trajectory_msgs::msg::JointTrajectoryPoint a,b;
+  a.positions={.01};b.positions={.01000000001};
+  a.velocities={.2};b.velocities={-.2};a.accelerations={.4};b.accelerations={-.4};
+  auto c=polynomial(a,b,0,1000000000);
+  EXPECT_GT(hull(c).upper(),.05);
+  joint_trajectory_controller::Trajectory jtc;
+  for(int64_t t=0;t<=1000000000;t+=100000) {
+    trajectory_msgs::msg::JointTrajectoryPoint point;
+    jtc.interpolate_between_points(rclcpp::Time(0),a,rclcpp::Time(1000000000),b,rclcpp::Time(t),point);
+    EXPECT_GE(point.positions[0],hull(c).lower()-1e-14);
+    EXPECT_LE(point.positions[0],hull(c).upper()+1e-14);
+  }
+}
+TEST(ControllerCertificate, CollisionNearEitherEndCannotHideBetweenSamples) {
+  for(bool reverse:{false,true}) {
+    SupportFixture f(0.);prepareOrdinaryRequest(f,.027500010);
+    // q(u)=.002*u*(.02-u)*(1-u)^3. The positive bump is
+    // within the first 2% of the segment; its time reversal is near the end.
+    prepareOrdinaryRequest(f,.027500075);
+    auto trajectory=ordinaryQuintic(f,.001,.001);
+    auto& first=*trajectory->getWayPointPtr(0);auto& last=*trajectory->getWayPointPtr(1);
+    first.setVariableVelocity("lift",reverse?0.:.04);
+    last.setVariableVelocity("lift",reverse?-.04:0.);
+    first.setVariableAcceleration("lift",reverse?0.:-4240.);
+    last.setVariableAcceleration("lift",reverse?-4240.:0.);
+    // Endpoint/midpoint oracle must actually be clear; the interior bump collides.
+    moveit_msgs::msg::RobotTrajectory msg;trajectory->getRobotTrajectoryMsg(msg);
+    joint_trajectory_controller::Trajectory jtc;bool collision=false;
+    for(int64_t t=0;t<=1000000;t+=1000) {
+      trajectory_msgs::msg::JointTrajectoryPoint point;
+      jtc.interpolate_between_points(rclcpp::Time(0),msg.joint_trajectory.points[0],rclcpp::Time(1000000),
+        msg.joint_trajectory.points[1],rclcpp::Time(t),point);
+      auto state=first;state.setVariablePosition("lift",point.positions[0]);state.update();
+      const bool hit=f.scene->isStateColliding(state,"");collision=collision||hit;
+      if(t==0||t==500000||t==1000000) { EXPECT_FALSE(hit); }
+    }
+    ASSERT_TRUE(collision);
+    const auto report=workcell::controller_certificate::certify(*trajectory,*f.scene);
+    EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+    EXPECT_GT(report.subdivided,0U);
+  }
+}
+TEST(ControllerCertificate, RevoluteRadiusAndBothSelfCollisionBodies) {
+  const std::string urdf=R"(<robot name="two"><link name="base"/>
+    <link name="left"><collision><origin xyz="2 0 0"/><geometry><sphere radius="0.05"/></geometry></collision></link>
+    <link name="right"><collision><origin xyz="2 0 0"/><geometry><sphere radius="0.05"/></geometry></collision></link>
+    <joint name="l" type="revolute"><parent link="base"/><child link="left"/><axis xyz="0 0 1"/>
+      <limit lower="-2" upper="2" effort="1" velocity="1"/></joint>
+    <joint name="r" type="revolute"><parent link="base"/><child link="right"/><axis xyz="0 0 1"/>
+      <limit lower="-2" upper="2" effort="1" velocity="1"/></joint></robot>)";
+  auto u=urdf::parseURDF(urdf);auto semantic=std::make_shared<srdf::Model>();
+  semantic->initString(*u,"<robot name='two'><group name='arm'><joint name='l'/><joint name='r'/></group></robot>");
+  auto model=std::make_shared<moveit::core::RobotModel>(u,semantic);planning_scene::PlanningScene scene(model);
+  auto a=scene.getCurrentState();a.setVariablePosition("l",-.1);a.setVariablePosition("r",.1);a.update();
+  auto b=a;b.setVariablePosition("l",.1);b.setVariablePosition("r",-.1);b.update();
+  robot_trajectory::RobotTrajectory trajectory(model,"arm");trajectory.addSuffixWayPoint(a,0.);trajectory.addSuffixWayPoint(b,1.);
+  using namespace workcell::controller_certificate;
+  Polynomials p{{"l",{Interval(-.1),Interval(.1)}},{"r",{Interval(.1),Interval(-.1)}}};
+  const auto movement=bodyDisplacements(scene,a,p);
+  EXPECT_GE(movement.at("left"),.2*2.05);EXPECT_GE(movement.at("right"),.2*2.05);
+  EXPECT_GE(movement.at("left")+movement.at("right"),.82);
+  ASSERT_FALSE(scene.isStateColliding(a,""));ASSERT_FALSE(scene.isStateColliding(b,""));
+  EXPECT_EQ(certify(trajectory,scene).result,workcell::ControllerCertificate::COLLISION);
+}
+
+TEST(ControllerCertificate, UnsupportedOrNonfiniteWorldFailsClosedBeforeFcl) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  f.scene->getWorldNonConst()->addToObject("unbounded",shapes::ShapeConstPtr(new shapes::Plane(0,0,1,0)),Eigen::Isometry3d::Identity());
+  EXPECT_EQ(workcell::controller_certificate::certify(*ordinaryQuintic(f),*f.scene).result,workcell::ControllerCertificate::UNCERTIFIED);
+}
+TEST(ControllerCertificate, FclDistanceOverestimateCannotProvideClearance) {
+  using namespace workcell::controller_certificate;
+  GeometryBody a{"a",collision_detection::BodyTypes::ROBOT_LINK,{shapes::ShapeConstPtr(new shapes::Box(1,1,1))},{Eigen::Isometry3d::Identity()}, {}};
+  auto b=a;b.name="b";b.poses[0].translation().x()=.5;
+  collision_detection::DistanceResultsData distance;distance.distance=1e100;
+  distance.nearest_points[0]=Eigen::Vector3d::Zero();distance.nearest_points[1]=Eigen::Vector3d::UnitX();
+  EXPECT_EQ(clearanceLowerBound(a,b,distance),0.);
+  b.poses[0].translation().x()=2.;
+  EXPECT_GT(clearanceLowerBound(a,b,distance),.999999999);
+  EXPECT_LE(clearanceLowerBound(a,b,distance),1.);
+}
+TEST(ControllerCertificate, OddNanosecondSubdivisionEnclosesPolynomial) {
+  using namespace workcell::controller_certificate;
+  trajectory_msgs::msg::JointTrajectoryPoint a,b;a.positions={0.};b.positions={0.};
+  a.velocities={.04};b.velocities={0.};a.accelerations={-4240.};b.accelerations={0.};
+  double error=0.;auto original=polynomial(a,b,0,1000001,&error);
+  auto children=split(original,Interval(500000.)/Interval(1000001.));
+  joint_trajectory_controller::Trajectory jtc;
+  for(int64_t t:{0,10000,499999,500000,500001,990000,1000001}) {
+    trajectory_msgs::msg::JointTrajectoryPoint point;
+    jtc.interpolate_between_points(rclcpp::Time(0),a,rclcpp::Time(1000001),b,rclcpp::Time(t),point);
+    auto range=hull(t<=500000?children.first:children.second)+Interval(-error,error);
+    EXPECT_GE(point.positions[0],range.lower());EXPECT_LE(point.positions[0],range.upper());
+  }
+}
+TEST(ControllerCertificate, KnownClearRealStageAApproach) {
+  const char* directory=std::getenv("WORKCELL_STAGE_A_CERTIFICATE_FIXTURE");
+  if(!directory) GTEST_SKIP()<<"Set the historical scene/trajectory fixture directory for the real Stage A acceptance gate";
+  auto read=[&](const std::string& name) {
+    std::ifstream file(std::string(directory)+"/"+name,std::ios::binary);
+    if(!file) throw std::runtime_error("Missing real Stage A evidence: "+name);
+    return std::string(std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>());
+  };
+  auto u=urdf::parseURDF(read("robot.urdf"));ASSERT_TRUE(u);
+  auto semantic=std::make_shared<srdf::Model>();ASSERT_TRUE(semantic->initString(*u,read("robot.srdf")));
+  auto model=std::make_shared<moveit::core::RobotModel>(u,semantic);
+  auto deserialize=[&](const std::string& name,auto& message) {
+    auto bytes=read(name);rclcpp::SerializedMessage serialized(bytes.size());
+    auto& raw=serialized.get_rcl_serialized_message();std::memcpy(raw.buffer,bytes.data(),bytes.size());raw.buffer_length=bytes.size();
+    rclcpp::Serialization<std::decay_t<decltype(message)>> serializer;serializer.deserialize_message(&serialized,&message);
+  };
+  moveit_msgs::msg::PlanningScene message;deserialize("scene.cdr",message);
+  planning_scene::PlanningScene scene(model);scene.setPlanningSceneMsg(message);
+  moveit_msgs::msg::RobotTrajectory emitted;deserialize("trajectory.cdr",emitted);
+  ASSERT_EQ(emitted.joint_trajectory.points.size(),101U); // original telemetry-stage approach
+  robot_trajectory::RobotTrajectory trajectory(model,"manipulator");
+  trajectory.setRobotTrajectoryMsg(scene.getCurrentState(),emitted);
+  const auto report=workcell::controller_certificate::certify(trajectory,scene);
+  std::cout<<"REAL_STAGE_A result="<<int(report.result)<<" reason="<<report.reason<<" inspected="<<report.inspected
+    <<" certified="<<report.certified<<" subdivided="<<report.subdivided<<" depth="<<report.deepest
+    <<" seconds="<<report.wall_seconds<<" failure=["<<report.failure_begin_ns<<","<<report.failure_end_ns<<"]\n";
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}

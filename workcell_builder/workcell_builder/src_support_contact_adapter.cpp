@@ -1,4 +1,5 @@
 #include "support_contact_policy.hpp"
+#include "controller_interval_certificate.hpp"
 #include <moveit/planning_request_adapter/planning_request_adapter.h>
 #include <moveit/robot_state/conversions.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
@@ -28,7 +29,13 @@ namespace workcell {
 // collision-free waypoints. No sampled RobotState or contact permission escapes.
 template<class Valid>
 static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& trajectory,
-                                      Valid valid) {
+                                      const planning_scene::PlanningScene& scene, Valid valid) {
+  const auto certificate=controller_certificate::certify(trajectory,scene);
+  RCLCPP_INFO(rclcpp::get_logger("workcell.controller_certificate"),
+    "result=%d reason=%s inspected=%zu certified=%zu subdivided=%zu depth=%u interval=[%ld,%ld] seconds=%.6f",
+    static_cast<int>(certificate.result),certificate.reason.c_str(),certificate.inspected,certificate.certified,
+    certificate.subdivided,certificate.deepest,certificate.failure_begin_ns,certificate.failure_end_ns,certificate.wall_seconds);
+  if(certificate.result!=ControllerCertificate::CERTIFIED_CLEAR) return false;
   constexpr std::size_t max_samples=120001;
   constexpr int64_t max_duration_ns=120000000000LL;
   if (trajectory.getWayPointCount()<2 || trajectory.getWayPointCount()>max_samples)
@@ -212,7 +219,7 @@ public:
         kinematic_constraints::KinematicConstraintSet constraints(scene->getRobotModel());
         constraints.add(req.path_constraints,scene->getTransforms());
         if (!res.trajectory_ || res.error_code_.val!=moveit_msgs::msg::MoveItErrorCodes::SUCCESS ||
-            !auditControllerTrajectory(*res.trajectory_,[&](const auto& state,bool) {
+            !auditControllerTrajectory(*res.trajectory_,*scene,[&](const auto& state,bool) {
               return scene->isStateValid(state,constraints,"");
             }))
           throw std::runtime_error("CONTROLLER_INTERPOLATED_STATE_INVALID");
@@ -338,10 +345,7 @@ public:
           separation_scene=scene->diff();
           separation_scene->decoupleParent();
           for (const auto& neighbor:certified_initial_neighbors) {
-            collision_detection::DecideContactFn predicate=[
-              carried_id,neighbor](collision_detection::Contact& contact) {
-              return PileContact{carried_id,neighbor}(contact);
-            };
+            collision_detection::DecideContactFn predicate=PileContact{carried_id,neighbor};
             separation_scene->getAllowedCollisionMatrixNonConst().setEntry(
               carried_id,neighbor,predicate);
           }
@@ -477,7 +481,7 @@ public:
       // Its initial exceptions expire once and never reset between segments.
       bool spline_separated=!separation_scene;
       double spline_last_height=-1e-12;
-      if (!auditControllerTrajectory(*trajectory,[&](const auto& state,bool) {
+      if (!auditControllerTrajectory(*trajectory,*(separation_scene?separation_scene:scene),[&](const auto& state,bool) {
         if (!carried_id.empty()) {
           const auto* carried=state.getAttachedBody(carried_id);
           if (!carried) return false;
@@ -563,7 +567,7 @@ public:
       if (std::abs(bottom-policy.floor_z)>support_contact_tolerance_m)
         return fail("SUPPORT_CONTACT_OUTSIDE_TOLERANCE");
       auto local=scene->diff(); local->decoupleParent();
-      collision_detection::DecideContactFn predicate=[policy](collision_detection::Contact& c) { return policy(c); };
+      collision_detection::DecideContactFn predicate=policy;
       local->getAllowedCollisionMatrixNonConst().setEntry(policy.object,policy.support,predicate);
 
       // If this lift was bound to measured piled-object contacts, certify those
@@ -628,10 +632,7 @@ public:
         }
 
         for (const auto& neighbor:certified_neighbors) {
-          collision_detection::DecideContactFn pile_predicate=[
-            object_id=policy.object,neighbor](collision_detection::Contact& contact) {
-            return PileContact{object_id,neighbor}(contact);
-          };
+          collision_detection::DecideContactFn pile_predicate=PileContact{policy.object,neighbor};
           local->getAllowedCollisionMatrixNonConst().setEntry(
             policy.object,neighbor,pile_predicate);
         }
@@ -695,7 +696,7 @@ public:
       // Retain the original geometric/waypoint audit above, then independently
       // replay actual controller interpolation under the same irreversible policy.
       separated=false; last_height=0.;
-      if (!auditControllerTrajectory(trajectory,valid))
+      if (!auditControllerTrajectory(trajectory,*local,valid))
         return fail("SUPPORT_CONTACT_CONTROLLER_INTERPOLATION_INVALID");
       if (!separated) return fail("SUPPORT_CONTACT_CONTROLLER_NOT_SEPARATED");
       // No fabricated adapter-added indexes. Humble's pipeline independently
