@@ -809,3 +809,264 @@ TEST(ControllerCertificate, KnownClearRealStageAApproach) {
     <<" seconds="<<report.wall_seconds<<" failure=["<<report.failure_begin_ns<<","<<report.failure_end_ns<<"]\n";
   EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
 }
+
+#include <geometric_shapes/mesh_operations.h>
+struct DetachedFixture {
+  moveit::core::RobotModelPtr model;
+  planning_scene::PlanningScenePtr scene;
+  explicit DetachedFixture(double overlap=.00005,bool self_risk=false,bool disjoint_lobe=false) {
+    auto robot=urdf::parseURDF(R"(<robot name="detached"><link name="base"/>
+      <link name="tip"><collision><geometry><box size=".02 .02 .02"/></geometry></collision></link>
+      <link name="other"><collision><geometry><box size=".02 .02 .02"/></geometry></collision></link>
+      <joint name="slide" type="prismatic"><parent link="base"/><child link="tip"/><axis xyz="0 0 1"/>
+        <limit lower="-.2" upper=".2" effort="10" velocity="1"/></joint>
+      <joint name="second" type="prismatic"><origin xyz=".2 0 0"/><parent link="base"/><child link="other"/><axis xyz="0 0 1"/>
+        <limit lower="-.2" upper=".2" effort="10" velocity="1"/></joint></robot>)");
+    auto srdf=std::make_shared<srdf::Model>();
+    srdf->initString(*robot,"<robot name='detached'><group name='hand'><joint name='slide'/><joint name='second'/></group></robot>");
+    model=std::make_shared<moveit::core::RobotModel>(robot,srdf);
+    for(const auto* name:{"tip","other"})
+      const_cast<moveit::core::LinkModel*>(model->getLinkModel(name))->setGeometry(
+        {shapes::ShapeConstPtr(shapes::createMeshFromShape(shapes::Box(.02,.02,.02)))},{Eigen::Isometry3d::Identity()});
+    if(self_risk) {
+      auto pose=Eigen::Isometry3d::Identity();pose.translation().z()=.025;
+      const_cast<moveit::core::LinkModel*>(model->getLinkModel("other"))->setJointOriginTransform(pose);
+    }
+    if(disjoint_lobe) {
+      const std::unique_ptr<shapes::Mesh> cube(shapes::createMeshFromShape(shapes::Box(.02,.02,.02)));
+      auto* combined=new shapes::Mesh(2*cube->vertex_count,2*cube->triangle_count);
+      for(unsigned lobe=0;lobe<2;++lobe) {
+        for(unsigned v=0;v<cube->vertex_count;++v) for(unsigned axis=0;axis<3;++axis)
+          combined->vertices[3*(v+lobe*cube->vertex_count)+axis]=cube->vertices[3*v+axis]+(lobe?(axis==0?.1:axis==2?-.02:0.):0.);
+        for(unsigned t=0;t<3*cube->triangle_count;++t)
+          combined->triangles[t+3*lobe*cube->triangle_count]=cube->triangles[t]+lobe*cube->vertex_count;
+      }
+      combined->computeTriangleNormals();combined->computeVertexNormals();
+      const_cast<moveit::core::LinkModel*>(model->getLinkModel("tip"))->setGeometry({shapes::ShapeConstPtr(combined)},{Eigen::Isometry3d::Identity()});
+    }
+    scene=std::make_shared<planning_scene::PlanningScene>(model);
+    scene->getCurrentStateNonConst().setToDefaultValues();scene->getCurrentStateNonConst().update();
+    box("work",0.,-.02+overlap);
+  }
+  void box(const std::string& name,double x,double z) {
+    auto pose=Eigen::Isometry3d::Identity();pose.translation()=Eigen::Vector3d(x,0,z);
+    scene->getWorldNonConst()->addToObject(name,shapes::ShapeConstPtr(new shapes::Box(.02,.02,.02)),pose);
+  }
+  robot_trajectory::RobotTrajectory path(std::vector<std::array<double,2>> positions={{0.,0.},{.01,0.}}) {
+    robot_trajectory::RobotTrajectory result(model,"hand");
+    for(const auto& q:positions) {
+      auto state=scene->getCurrentState();state.setVariablePosition("slide",q[0]);state.setVariablePosition("second",q[1]);state.update();
+      result.addSuffixWayPoint(state,result.getWayPointCount()?1.:0.);
+    }
+    return result;
+  }
+};
+TEST(DetachedContact, SeparatingMeshMustQualify) {
+  DetachedFixture f;
+  ASSERT_TRUE(f.scene->isStateColliding());
+  auto trajectory=f.path();ASSERT_FALSE(f.scene->isStateColliding(trajectory.getLastWayPoint(),""));
+  const auto report=workcell::controller_certificate::certifyDetached(trajectory,*f.scene,"epoch-1").audit;
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+}
+namespace dc=workcell::controller_certificate;
+TEST(DetachedContact, ExactInitialPairStartsActiveWithGeometryAndEpoch) {
+  DetachedFixture f;const auto pairs=dc::enumerateDetached(*f.scene,f.scene->getCurrentState(),"measured-epoch");
+  ASSERT_EQ(pairs.size(),1U);const auto& p=pairs[0];
+  EXPECT_EQ(p.robot_link,"tip");EXPECT_EQ(p.world_object,"work");EXPECT_EQ(p.epoch,"measured-epoch");
+  EXPECT_EQ(p.state,dc::DetachedPairState::ACTIVE_INITIAL_CONTACT);
+  EXPECT_FALSE(p.geometry_identity.empty());EXPECT_FALSE(p.initial_evidence.empty());
+  EXPECT_EQ(p.robot_poses.size(),1U);EXPECT_EQ(p.world_poses.size(),1U);
+  EXPECT_NEAR(p.axis.z(),1.,1e-15);EXPECT_GE(p.initial_gap,-.0001);
+}
+TEST(DetachedContact, DifferentPairNeverInheritsPermission) {
+  DetachedFixture f;const auto pairs=dc::enumerateDetached(*f.scene,f.scene->getCurrentState(),"e");
+  EXPECT_NE(dc::activePair(pairs,dc::pairKey("tip","work")),nullptr);
+  EXPECT_EQ(dc::activePair(pairs,dc::pairKey("other","work")),nullptr);
+  EXPECT_EQ(dc::activePair(pairs,dc::pairKey("tip","work_extra")),nullptr);
+}
+TEST(DetachedContact, RawDepthFluctuationsAreNotAMonotonicityOracle) {
+  DetachedFixture f;auto pair=dc::enumerateDetached(*f.scene,f.scene->getCurrentState(),"e")[0];
+  dc::Polynomials p{{"slide",{dc::Interval(0.),dc::Interval(.01)}},{"second",{dc::Interval(0.)}}};
+  const auto speed=dc::derivativeControls(p,1000000000);
+  // Deliberately perturb only reported witness depths. Every run still uses
+  // actual full mesh geometry and interval kinematics, never this ordering.
+  for(double raw_depth:{58.07e-9,57.72e-9,64.56e-9,59.70e-9}) {
+    for(auto& c:pair.initial_evidence) c.depth=raw_depth;
+    EXPECT_TRUE(dc::separatingInterval(pair,*f.scene,f.scene->getCurrentState(),p,speed,{}));
+  }
+}
+TEST(DetachedContact, GeometricApproachRejectsWithoutExpiry) {
+  DetachedFixture f;const auto r=dc::certifyDetached(f.path({{0.,0.},{-.01,0.}}),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(r.audit.reason,"DETACHED_MONOTONICITY_UNCERTIFIED");
+  ASSERT_EQ(r.pairs.size(),1U);EXPECT_TRUE(r.pairs[0].transitions.empty());
+}
+TEST(DetachedContact, PositiveFullGeometryClearanceExpiresWithoutChangingAcm) {
+  DetachedFixture f;moveit_msgs::msg::AllowedCollisionMatrix before,after;
+  f.scene->getAllowedCollisionMatrix().getMessage(before);
+  const auto r=dc::certifyDetached(f.path(),*f.scene,"e");
+  ASSERT_EQ(r.audit.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.audit.reason;
+  ASSERT_EQ(r.pairs.size(),1U);const auto& p=r.pairs[0];
+  EXPECT_EQ(p.state,dc::DetachedPairState::EXPIRED);ASSERT_EQ(p.transitions.size(),2U);
+  EXPECT_EQ(p.transitions[0].state,dc::DetachedPairState::SEPARATED);
+  EXPECT_EQ(p.transitions[1].state,dc::DetachedPairState::EXPIRED);
+  EXPECT_GT(p.transitions[1].clearance_lower,0.);EXPECT_EQ(p.transitions[1].end_ns,1000000000);
+  f.scene->getAllowedCollisionMatrix().getMessage(after);EXPECT_EQ(before,after);
+  EXPECT_TRUE(f.scene->isStateColliding()); // no durable policy mutation
+}
+TEST(DetachedContact, ExpiredPairRecontactIsHardFailure) {
+  DetachedFixture f;const auto r=dc::certifyDetached(f.path({{0.,0.},{.01,0.},{0.,0.}}),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::COLLISION);
+  EXPECT_EQ(r.audit.reason,"DETACHED_NEW_OR_EXPIRED_CONTACT");
+  ASSERT_EQ(r.pairs.size(),1U);EXPECT_EQ(r.pairs[0].state,dc::DetachedPairState::EXPIRED);
+}
+TEST(DetachedContact, IndependentPairsExpireSeparately) {
+  DetachedFixture f;f.box("second_work",.2,-.01995);
+  const auto r=dc::certifyDetached(f.path(),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(r.audit.reason,"DETACHED_CONTACTS_UNEXPIRED");ASSERT_EQ(r.pairs.size(),2U);
+  for(const auto& p:r.pairs) EXPECT_EQ(p.state,p.robot_link=="tip"?dc::DetachedPairState::EXPIRED:dc::DetachedPairState::ACTIVE_INITIAL_CONTACT);
+  const auto complete=dc::certifyDetached(f.path({{0.,0.},{.01,0.},{.01,.01}}),*f.scene,"e");
+  EXPECT_EQ(complete.audit.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<complete.audit.reason;
+  for(const auto& p:complete.pairs) {
+    EXPECT_EQ(p.state,dc::DetachedPairState::EXPIRED);
+    EXPECT_EQ(p.transitions.back().end_ns,p.robot_link=="tip"?1000000000LL:2000000000LL);
+  }
+}
+TEST(DetachedContact, NewThirdPairIsHardFailure) {
+  DetachedFixture f;f.box("second_work",.2,-.01995);f.box("third",0.,.025);
+  const auto r=dc::certifyDetached(f.path({{0.,0.},{.01,.01}}),*f.scene,"e");
+  ASSERT_EQ(r.pairs.size(),2U);EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::COLLISION);
+  EXPECT_EQ(r.audit.reason,"DETACHED_NEW_OR_EXPIRED_CONTACT");
+}
+TEST(DetachedContact, SelfCollisionIsHardFailure) {
+  DetachedFixture f(.00005,true);
+  const auto r=dc::certifyDetached(f.path(),*f.scene,"e");
+  ASSERT_EQ(r.pairs.size(),1U);EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::COLLISION);
+}
+TEST(DetachedContact, FullMeshWithoutStablePlaneFailsClosed) {
+  DetachedFixture f(.00005,false,true);
+  const auto r=dc::certifyDetached(f.path(),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(r.audit.reason,"DETACHED_STABLE_PLANE_UNAVAILABLE");
+}
+TEST(DetachedContact, TruncatedEnumerationFailsClosed) {
+  DetachedFixture f;
+  for(std::size_t cap:{0U,1U}) {
+    const auto r=dc::certifyDetached(f.path(),*f.scene,"e",{},cap);
+    EXPECT_FALSE(r.enumeration_complete);EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::UNCERTIFIED);
+    EXPECT_EQ(r.audit.reason,"CONTACT_ENUMERATION_INCOMPLETE");
+  }
+}
+TEST(DetachedContact, MidpointCollisionOutsideInitialPairStillRejects) {
+  DetachedFixture f;f.box("interior_obstacle",.2,.08);auto trajectory=f.path();
+  auto& first=*trajectory.getWayPointPtr(0);auto& last=*trajectory.getWayPointPtr(1);
+  for(auto* state:{&first,&last}) {state->zeroVelocities();state->zeroAccelerations();state->setVariableVelocity("slide",.01);}
+  first.setVariableVelocity("second",.2);last.setVariableVelocity("second",-.2);
+  ASSERT_FALSE(f.scene->isStateColliding(last,""));
+  const auto r=dc::certifyDetached(trajectory,*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::COLLISION);
+  EXPECT_EQ(r.audit.reason,"DETACHED_NEW_OR_EXPIRED_CONTACT");
+}
+TEST(DetachedContact, OrdinaryClearTrajectoryNeedsNoContactAllowance) {
+  DetachedFixture f(-.01);const auto r=dc::certifyDetached(f.path(),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);EXPECT_TRUE(r.pairs.empty());
+}
+TEST(DetachedContact, StaleStartAndMissingEpochReject) {
+  DetachedFixture f;
+  EXPECT_EQ(dc::certifyDetached(f.path(),*f.scene,"").audit.reason,"RECOVERY_EPOCH_REQUIRED");
+  EXPECT_EQ(dc::certifyDetached(f.path({{.001,0.},{.01,0.}}),*f.scene,"e").audit.reason,"DETACHED_START_STATE_MISMATCH");
+}
+TEST(DetachedContact, ZeroStartVelocityCannotBeProvedByAnErrorTube) {
+  DetachedFixture f;auto trajectory=f.path();
+  for(std::size_t i=0;i<trajectory.getWayPointCount();++i) {
+    trajectory.getWayPointPtr(i)->zeroVelocities();trajectory.getWayPointPtr(i)->zeroAccelerations();
+  }
+  const auto r=dc::certifyDetached(trajectory,*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(r.audit.reason,"DETACHED_MONOTONICITY_UNCERTIFIED");
+  EXPECT_EQ(r.audit.failure_begin_ns,0);EXPECT_LE(r.audit.failure_end_ns,1);
+  ASSERT_EQ(r.pairs.size(),1U);EXPECT_TRUE(r.pairs[0].transitions.empty());
+}
+TEST(DetachedContact, InitialBoundCannotBeExpanded) {
+  DetachedFixture f(.000100001);const auto r=dc::certifyDetached(f.path(),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(r.audit.reason,"DETACHED_INITIAL_CONTACT_INVALID");
+}
+TEST(DetachedContact, OrdinaryEntryPointNeverEnablesDetachedPermission) {
+  DetachedFixture f;
+  EXPECT_EQ(dc::certify(f.path(),*f.scene).result,workcell::ControllerCertificate::COLLISION);
+}
+struct MimicDetachedFixture {
+  moveit::core::RobotModelPtr model;
+  planning_scene::PlanningScenePtr scene;
+  MimicDetachedFixture() {
+    auto u=urdf::parseURDF(R"(<robot name="mimic"><link name="base"/><link name="arm"/>
+      <link name="tip"><collision><geometry><box size=".02 .02 .02"/></geometry></collision></link>
+      <joint name="leader" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 1 0"/>
+        <limit lower="-1" upper="1" effort="1" velocity="1"/></joint>
+      <joint name="follower" type="revolute"><origin xyz=".1 0 0"/><parent link="arm"/><child link="tip"/><axis xyz="0 1 0"/>
+        <limit lower="-1" upper="1" effort="1" velocity="1"/><mimic joint="leader" multiplier="-1" offset="0"/></joint></robot>)");
+    auto srdf=std::make_shared<srdf::Model>();srdf->initString(*u,"<robot name='mimic'><group name='hand'><chain base_link='base' tip_link='tip'/></group></robot>");
+    model=std::make_shared<moveit::core::RobotModel>(u,srdf);
+    const_cast<moveit::core::LinkModel*>(model->getLinkModel("tip"))->setGeometry(
+      {shapes::ShapeConstPtr(shapes::createMeshFromShape(shapes::Box(.02,.02,.02)))},{Eigen::Isometry3d::Identity()});
+    scene=std::make_shared<planning_scene::PlanningScene>(model);auto& state=scene->getCurrentStateNonConst();
+    state.setToDefaultValues();state.update();auto pose=Eigen::Isometry3d::Identity();pose.translation()=Eigen::Vector3d(.1,0.,-.01995);
+    scene->getWorldNonConst()->addToObject("box",shapes::ShapeConstPtr(new shapes::Box(.02,.02,.02)),pose);
+  }
+  robot_trajectory::RobotTrajectory path() {
+    auto a=scene->getCurrentState(),b=a;b.setVariablePosition("leader",-.1);b.update();
+    robot_trajectory::RobotTrajectory t(model,"hand");t.addSuffixWayPoint(a,0.);t.addSuffixWayPoint(b,1.);return t;
+  }
+};
+TEST(DetachedContact, RevoluteMimicFullMeshAndFixedOriginsCertify) {
+  MimicDetachedFixture f;const auto r=dc::certifyDetached(f.path(),*f.scene,"mimic-epoch");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.audit.reason;
+  ASSERT_EQ(r.pairs.size(),1U);EXPECT_EQ(r.pairs[0].state,dc::DetachedPairState::EXPIRED);
+}
+TEST(DetachedContact, MimicStartDiscontinuityCannotBeSilentlyNormalized) {
+  MimicDetachedFixture f;f.scene->getCurrentStateNonConst().setVariablePosition("follower",1e-6);f.scene->getCurrentStateNonConst().update();
+  const auto r=dc::certifyDetached(f.path(),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(r.audit.reason,"DETACHED_CONTROLLER_START_DISCONTINUITY");
+}
+TEST(DetachedContact, UniformErrorIncludesFullPrismaticReach) {
+  auto u=urdf::parseURDF(R"(<robot name="reach"><link name="base"/><link name="arm"/>
+    <link name="tip"><collision><geometry><box size=".02 .02 .02"/></geometry></collision></link>
+    <joint name="turn" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 1 0"/>
+      <limit lower="-1" upper="1" effort="1" velocity="1"/></joint>
+    <joint name="extend" type="prismatic"><parent link="arm"/><child link="tip"/><axis xyz="1 0 0"/>
+      <limit lower="-2" upper="2" effort="1" velocity="1"/></joint></robot>)");
+  auto srdf=std::make_shared<srdf::Model>();srdf->initString(*u,"<robot name='reach'/>");
+  auto model=std::make_shared<moveit::core::RobotModel>(u,srdf);
+  const_cast<moveit::core::LinkModel*>(model->getLinkModel("tip"))->setGeometry(
+    {shapes::ShapeConstPtr(shapes::createMeshFromShape(shapes::Box(.02,.02,.02)))},{Eigen::Isometry3d::Identity()});
+  planning_scene::PlanningScene scene(model);auto state=scene.getCurrentState();state.setToDefaultValues();state.update();
+  dc::DetachedPair pair;pair.robot_link="tip";pair.axis=Eigen::Vector3d::UnitX();
+  dc::Polynomials controls{{"turn",{dc::Interval(0.)}},{"extend",{dc::Interval(-1.),dc::Interval(1.)}}};
+  const auto speed=dc::derivativeControls(controls,100000000000LL);
+  // The supplied uniform angular error is amplified by the full +/-1m reach,
+  // not merely the 17mm mesh radius at the midpoint (extension zero).
+  EXPECT_FALSE(dc::separatingInterval(pair,scene,state,controls,speed,{{"turn",1e-10},{"extend",0.}}));
+}
+TEST(DetachedContact, FailedParentDoesNotCommitPrematureExpiry) {
+  DetachedFixture f;f.box("side_obstacle",.221,.005);
+  const auto r=dc::certifyDetached(f.path({{0.,0.},{.01,.01}}),*f.scene,"e");
+  EXPECT_EQ(r.audit.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.audit.reason;
+  EXPECT_GT(r.audit.subdivided,0U);ASSERT_EQ(r.pairs.size(),1U);ASSERT_EQ(r.pairs[0].transitions.size(),2U);
+  EXPECT_LT(r.pairs[0].transitions[0].end_ns,1000000000);
+}
+TEST(DetachedContact, BackwardsStoredWaypointSwitchRejects) {
+  DetachedFixture f;const auto pair=dc::enumerateDetached(*f.scene,f.scene->getCurrentState(),"e")[0];
+  auto prior=f.scene->getCurrentState(),terminal=prior;
+  prior.setVariablePosition("slide",.01);terminal.setVariablePosition("slide",.009);prior.update();terminal.update();
+  EXPECT_FALSE(dc::detachedBoundaryMonotone(pair,*f.scene,prior,terminal,{}));
+}
+TEST(DetachedContact, ClearanceIsMetricForNonUnitPlaneCoefficients) {
+  DetachedFixture f;auto pair=dc::enumerateDetached(*f.scene,f.scene->getCurrentState(),"e")[0];
+  auto terminal=f.path().getLastWayPoint();const double original=dc::detachedGap(pair,*f.scene,terminal,{});
+  pair.axis*=2.;pair.world_support*=2.;
+  const double scaled=dc::detachedGap(pair,*f.scene,terminal,{});
+  EXPECT_NEAR(scaled,original,1e-11);
+}

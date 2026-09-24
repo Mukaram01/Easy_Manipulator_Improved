@@ -382,8 +382,12 @@ inline bool upwardBoxContact(const planning_scene::PlanningScene& scene,
   return !support||std::abs(top-support->floor_z)+penetration+guard<=support_contact_tolerance_m;
 }
 
+} } // shared helpers
+#include "detached_contact_certificate.hpp"
+namespace workcell { namespace controller_certificate {
 inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& trajectory,
-    const planning_scene::PlanningScene& scene,const ControllerAuditOptions& options={}) {
+    const planning_scene::PlanningScene& scene,const ControllerAuditOptions& options={},
+    DetachedAudit* detached=nullptr,std::size_t contact_cap=1000000) {
   ControllerAuditReport report;const auto started=std::chrono::steady_clock::now();
   auto finish=[&]() {report.wall_seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();return report;};
   try {
@@ -416,6 +420,13 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
     }
     auto first=trajectory.getFirstWayPoint();first.update();
     geometryBodies(scene,first); // fail before FCL on malformed or unsupported geometry
+    if(detached) {
+      for(const auto& name:scene.getRobotModel()->getVariableNames())
+        if(first.getVariablePosition(name)!=scene.getCurrentState().getVariablePosition(name))
+          throw std::runtime_error("DETACHED_START_STATE_MISMATCH");
+      detached->pairs=enumerateDetached(scene,first,detached->epoch,contact_cap);
+      detached->enumeration_complete=true;
+    }
     // Conditional permissions are identifiable policies, not arbitrary sampled
     // predicates. Keep exact pairs and never change the PlanningScene ACM.
     struct Conditional {std::string object,world;SupportContact support;bool floor=false;};
@@ -472,8 +483,15 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         for(std::size_t j=0;j<msg.joint_names.size();++j) state.setVariablePosition(msg.joint_names[j],sample.positions[j]);
         state.update();return state;
       };
-      std::function<bool(int64_t,int64_t,const Polynomials&,unsigned)> visit;
-      visit=[&](int64_t lo,int64_t hi,const Polynomials& controls,unsigned depth) {
+      if(detached) {
+        const auto controller_start=evaluate(begin);
+        for(const auto& name:scene.getRobotModel()->getVariableNames())
+          if(controller_start.getVariablePosition(name)!=trajectory.getWayPoint(segment-1).getVariablePosition(name))
+            throw std::runtime_error("DETACHED_CONTROLLER_START_DISCONTINUITY");
+      }
+      const auto derivatives=detached?derivativeControls(p,end-begin):Polynomials{};
+      std::function<bool(int64_t,int64_t,const Polynomials&,const Polynomials&,unsigned)> visit;
+      visit=[&](int64_t lo,int64_t hi,const Polynomials& controls,const Polynomials& speeds,unsigned depth) {
         report.failure_begin_ns=lo;report.failure_end_ns=hi;
         if(++report.inspected>options.max_intervals) {report.reason="INTERVAL_LIMIT";return false;}
         report.deepest=std::max(report.deepest,depth);
@@ -483,11 +501,34 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         for(int64_t t:{lo,mid,hi}) {
           auto state=t==mid?anchor:evaluate(t);
           if(!state.satisfiesBounds()) {report.reason="JOINT_LIMIT";return false;}
-          if(scene.isStateColliding(state,"")) {report.result=ControllerCertificate::COLLISION;report.reason="FCL_COLLISION";return false;}
+          if(detached) {
+            const auto contacts=completeContacts(scene,state,contact_cap);
+            for(const auto& contact:contacts.contacts) if(!activePair(detached->pairs,contact.first)) {
+              report.result=ControllerCertificate::COLLISION;report.reason="DETACHED_NEW_OR_EXPIRED_CONTACT";return false;
+            }
+          } else if(scene.isStateColliding(state,"")) {report.result=ControllerCertificate::COLLISION;report.reason="FCL_COLLISION";return false;}
         }
         const auto movement=bodyDisplacements(scene,anchor,controls,errors);
         auto acm=scene.getAllowedCollisionMatrix();
         const auto start=evaluate(lo);
+        bool detached_proven=true;
+        auto proposed=detached?detached->pairs:std::vector<DetachedPair>{};
+        for(auto& pair:proposed) if(pair.state==DetachedPairState::ACTIVE_INITIAL_CONTACT) {
+          const auto* link=scene.getRobotModel()->getLinkModel(pair.robot_link);
+          const bool stationary=stationaryLink(link,controls);
+          bool proven=separatingInterval(pair,scene,anchor,controls,speeds,errors);
+          if(proven&&hi==end&&!stationary)
+            proven=detachedBoundaryMonotone(pair,scene,evaluate(end-1),evaluate(end),errors);
+          if(!proven) {detached_proven=false;continue;}
+          acm.setEntry(pair.robot_link,pair.world_object,true); // interval proof ONLY, never scene policy
+          const double gap=detachedGap(pair,scene,evaluate(hi),errors);
+          if(gap>0.) {
+            pair.state=DetachedPairState::SEPARATED;
+            pair.transitions.push_back({pair.state,lo,hi,gap});
+            pair.state=DetachedPairState::EXPIRED;
+            pair.transitions.push_back({pair.state,lo,hi,gap});
+          }
+        }
         for(const auto& pair:initial) {
           bool boundary_monotone=true;
           if(hi==end) {
@@ -520,7 +561,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         collision_detection::DistanceResult world,self;
         scene.getCollisionEnv()->distanceRobot(req,world,anchor);
         scene.getCollisionEnvUnpadded()->distanceSelf(req,self,anchor);
-        bool clear=!world.collision&&!self.collision;
+        bool clear=detached_proven&&!world.collision&&!self.collision;
         for(auto a=geometry.begin();a!=geometry.end();++a) for(auto b=std::next(a);b!=geometry.end();++b) {
           if(!requiredPair(a->second,b->second,acm)) continue;
           const bool robot_world=a->second.type==collision_detection::BodyTypes::WORLD_OBJECT||b->second.type==collision_detection::BodyTypes::WORLD_OBJECT;
@@ -546,24 +587,42 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
           const auto range=hull(item.second)+Interval(-errors.at(item.first),errors.at(item.first));const auto& bounds=scene.getRobotModel()->getVariableBounds(item.first);
           if(bounds.position_bounded_&&(range.lower()<bounds.min_position_||range.upper()>bounds.max_position_)) clear=false;
         }
-        if(clear) {++report.certified;return true;}
+        if(clear) {if(detached) detached->pairs=std::move(proposed);++report.certified;return true;}
         if(depth>=options.max_depth||hi-lo<=options.min_interval_ns||mid==lo||mid==hi) {
-          report.reason="PRECISION_OR_DEPTH_LIMIT";return false;
+          report.reason=detached_proven?"PRECISION_OR_DEPTH_LIMIT":"DETACHED_MONOTONICITY_UNCERTIFIED";return false;
         }
         ++report.subdivided;Polynomials left,right;
         for(const auto& item:controls) {
           auto halves=split(item.second,Interval(double(mid-lo))/Interval(double(hi-lo)));
           left[item.first]=std::move(halves.first);right[item.first]=std::move(halves.second);
         }
-        return visit(lo,mid,left,depth+1)&&visit(mid,hi,right,depth+1);
+        Polynomials left_speeds,right_speeds;
+        for(const auto& item:speeds) {
+          auto halves=split(item.second,Interval(double(mid-lo))/Interval(double(hi-lo)));
+          left_speeds[item.first]=std::move(halves.first);right_speeds[item.first]=std::move(halves.second);
+        }
+        return visit(lo,mid,left,left_speeds,depth+1)&&visit(mid,hi,right,right_speeds,depth+1);
       };
-      if(!visit(begin,end,p,0)) return finish();
+      if(!visit(begin,end,p,derivatives,0)) return finish();
+    }
+    if(detached) {
+      for(const auto& pair:detached->pairs) if(pair.state!=DetachedPairState::EXPIRED)
+        throw std::runtime_error("DETACHED_CONTACTS_UNEXPIRED");
+      if(scene.isStateColliding(trajectory.getLastWayPoint(),"")) {
+        report.result=ControllerCertificate::COLLISION;report.reason="DETACHED_FINAL_STATE_COLLISION";return finish();
+      }
     }
     report.result=ControllerCertificate::CERTIFIED_CLEAR;report.reason="ALL_INTERVALS_CERTIFIED";
     report.failure_begin_ns=report.failure_end_ns=-1;
   } catch(const std::exception& e) {report.result=ControllerCertificate::UNCERTIFIED;report.reason=e.what();}
   catch(...) {report.result=ControllerCertificate::UNCERTIFIED;report.reason="UNKNOWN_CERTIFICATION_FAILURE";}
   return finish();
+}
+inline DetachedAudit certifyDetached(const robot_trajectory::RobotTrajectory& trajectory,
+    const planning_scene::PlanningScene& scene,const std::string& epoch,
+    const ControllerAuditOptions& options={},std::size_t contact_cap=1000000) {
+  DetachedAudit result;result.epoch=epoch;
+  result.audit=certify(trajectory,scene,options,&result,contact_cap);return result;
 }
 } // namespace controller_certificate
 } // namespace workcell
