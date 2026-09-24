@@ -251,6 +251,61 @@ def place_detachment_diff(original, link_name, place_xyz, place_orientation=None
     return scene
 
 
+def retention_reconciliation_scene(initial, current, baseline, measurements, guard, sample):
+    """Rebuild the disturbed world from one measured sample, never a grasp transform.
+
+    Initial objects supply immutable BOX shapes only. All moving object poses and
+    every robot joint come from the post-stop sample. Static scene data is retained.
+    """
+    from moveit_msgs.msg import PlanningScene
+    attached=current.robot_state.attached_collision_objects
+    if any(a.object.id!=guard.object for a in attached):
+        raise RuntimeError('RECOVERY_UNKNOWN_ATTACHMENT')
+    shapes={o.id:o for o in initial.world.collision_objects}
+    current_ids=[o.id for o in current.world.collision_objects]
+    if (len(set(current_ids))!=len(current_ids) or
+            set(current_ids)|{a.object.id for a in attached}!=set(shapes) or
+            not guard.pile_objects or not set(guard.pile_objects).issubset(shapes)):
+        raise RuntimeError('RECOVERY_SCENE_COVERAGE_MISMATCH')
+    joints=measurements.joints(sample)
+    names=list(current.robot_state.joint_state.name)
+    if (not names or len(set(names))!=len(names) or
+            set(names)!=set(initial.robot_state.joint_state.name) or not set(names).issubset(joints) or
+            current.robot_state.multi_dof_joint_state.joint_names or
+            any(len(joints[n])!=2 or not all(math.isfinite(v) for v in joints[n]) or
+                abs(joints[n][1])>=.002 for n in names)):
+        raise RuntimeError('RECOVERY_CURRENT_JOINT_STATE_INVALID')
+    expected=copy.deepcopy(current)
+    expected.robot_state=updated_state(current.robot_state,{n:joints[n][0] for n in names})
+    expected.robot_state.joint_state.velocity=[float(joints[n][1]) for n in names]
+    expected.robot_state.joint_state.effort=[]
+    expected.robot_state.attached_collision_objects=[]
+    expected.allowed_collision_matrix=copy.deepcopy(baseline)
+    world={o.id:copy.deepcopy(o) for o in current.world.collision_objects}
+    diff=PlanningScene(is_diff=True,allowed_collision_matrix=copy.deepcopy(baseline))
+    diff.robot_state.is_diff=True
+    for object_id, identity in sorted(guard.pile_objects.items()):
+        original=shapes[object_id]
+        geometry=collision_object_dict(original)
+        if (geometry is None or geometry['shape']!='BOX' or original.header.frame_id!='world' or
+                list(geometry['dimensions'])!=list(identity['size'])):
+            raise RuntimeError('RECOVERY_OBJECT_SHAPE_MISMATCH: '+object_id)
+        try:pose=measurements.object_pose(sample,identity['name'])
+        except (KeyError,ValueError) as exc:raise RuntimeError('RECOVERY_OBJECT_MEASUREMENT_MISSING: '+object_id) from exc
+        if (len(pose)!=7 or not all(math.isfinite(v) for v in pose) or
+                abs(sum(v*v for v in pose[3:])-1.)>.00001):
+            raise RuntimeError('RECOVERY_OBJECT_POSE_INVALID: '+object_id)
+        update=place_detachment_diff(original,'',pose[:3],pose[3:])
+        obj=update.world.collision_objects[0]
+        diff.world.collision_objects.append(obj);world[object_id]=copy.deepcopy(obj)
+        if object_id==guard.object:
+            detached=update.robot_state.attached_collision_objects[0]
+            detached.link_name=next((a.link_name for a in attached if a.object.id==object_id),'')
+            diff.robot_state.attached_collision_objects.append(detached)
+    expected.world.collision_objects=[world[k] for k in sorted(world)]
+    return diff,expected
+
+
 def pose_values(pose):
     return [pose.position.x, pose.position.y, pose.position.z,
             pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
@@ -1055,6 +1110,19 @@ def main():
     execution_monitor = None
     controlled_cancel = False
     controller_audit = None
+    recovery = None
+    cycle = {}
+    def begin_recovery(exc, during_action=False):
+        nonlocal recovery
+        from simulator_execution import GraspRetentionLoss, RetentionRecovery
+        if isinstance(exc,GraspRetentionLoss) and recovery is None:
+            summary.setdefault('failed_stage',summary['current_stage'])
+            recovery=RetentionRecovery(cycle,summary,exc,during_action=during_action)
+            # Earlier close/hold stop evidence cannot authorize post-loss cleanup.
+            summary['motion_stop_verified']=False
+            summary['cancellation_confirmed']=False
+            summary.pop('stopped_measurement',None)
+            summary.pop('stopped_window',None)
     trace_sequence = 0
     def trace(label, message):
         nonlocal trace_sequence
@@ -1084,6 +1152,9 @@ def main():
         if not call(apply_client, ApplyPlanningScene.Request(scene=diff)).success:
             raise RuntimeError('PlanningScene rejected transition')
     def action(client, goal, timeout):
+        from simulator_execution import GraspRetentionLoss
+        if client is execute_client and summary.get('grasp_recovery'):
+            raise RuntimeError('RECOVERY_EXECUTION_INVALIDATED: fresh recovery continuation is unqualified')
         opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
         held_before_open=contact_guard.checked_current() if opening_action else None
         if client is execute_client:
@@ -1147,7 +1218,8 @@ def main():
                 # A short/successful approach must never turn this bounded trial
                 # into contact motion when cancellation was not demonstrated.
                 raise RuntimeError('CANCELLATION_TRIAL_ENDED_BEFORE_CANCEL')
-        except BaseException:
+        except BaseException as exc:
+            if isinstance(exc,GraspRetentionLoss):begin_recovery(exc,during_action=True)
             if measurements:
                 from simulator_execution import cancel_owned,cancel_response_matches
                 def request_cancel():
@@ -1171,7 +1243,7 @@ def main():
                     summary['cancellation_response']=dict(return_code=response.return_code if response else None,
                         goal_uuids=[bytes(g.goal_id.uuid).hex() for g in response.goals_canceling] if response else [],
                         wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
-                    return accepted if controlled_cancel else accepted or future.done()
+                    return accepted if controlled_cancel or summary.get('grasp_recovery') else accepted or future.done()
                 def terminal():
                     rclpy.spin_until_future_complete(node,future,timeout_sec=5)
                     ended=bool(future.done() and future.result() and future.result().status in (4,5,6))
@@ -1190,11 +1262,13 @@ def main():
                 def stopped():
                     summary['motion_stop_verified']=wait_stopped()
                     return summary['motion_stop_verified']
+                def reconcile_cancelled():
+                    summary['cancellation_confirmed']=True
+                    measured_reconcile()
                 summary['cancellation_confirmed']=False
                 try:
                     cancel_owned(request_cancel,terminal,stopped,
-                        lambda:apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline)),measured_reconcile)
-                    summary['cancellation_confirmed']=True
+                        lambda:apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline)),reconcile_cancelled)
                 except Exception as cancel_error:summary['cancellation_failure']=str(cancel_error)
                 raise
             summary['cancellation_confirmed'] = False
@@ -1295,7 +1369,53 @@ def main():
             raise
         measurements.fresh()
         summary['last_measured_collision_check']=dict(sim_ns=s['sim_ns'],valid=future.result().valid,contacts=len(future.result().contacts))
+    def reconcile_retention_loss():
+        from hashlib import sha256
+        from rosidl_runtime_py.convert import message_to_ordereddict
+        from simulator_execution import RecoveryState
+        if recovery.state==RecoveryState.BLOCKED:return
+        def digest(value):
+            return sha256(json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
+        try:
+            if not summary.get('motion_stop_verified'):raise RuntimeError('RECOVERY_STOP_UNCONFIRMED')
+            recovery.confirm_stop(summary.get('stopped_measurement'),summary.get('cancellation_confirmed',False))
+            # Baseline revocation is also unconditional in cancel_owned/finally.
+            apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
+            s=measurements.fresh();stop=summary['stopped_measurement']
+            if (s.get('run_id')!=measurements.receipt['run_id'] or s.get('pid')!=measurements.receipt['pid'] or
+                    s.get('run_id')!=stop.get('run_id') or s.get('pid')!=stop.get('pid') or
+                    any(s[k]<=stop[k] for k in ('iteration','sim_ns','wall_ns'))):
+                raise RuntimeError('RECOVERY_MEASUREMENT_NOT_POST_STOP')
+            diff,expected=retention_reconciliation_scene(initial,scene_now(),baseline,measurements,contact_guard,s)
+            apply(diff)
+            current=scene_now()
+            assert_scene_match(current,expected)
+            evidence=dict(held=False,run_id=s['run_id'],pid=s['pid'],target=contact_guard.object,
+                iteration=s['iteration'],sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],
+                measured_object_ids=sorted(contact_guard.pile_objects),attached_ids=[],
+                acm_restored=True,measured_geometry_matches=True,
+                sample_sha256=digest(s),robot_state_sha256=digest(message_to_ordereddict(expected.robot_state)),
+                scene_sha256=digest(message_to_ordereddict(expected)),
+                receipt_sha256=summary.get('motion_backend_identity',{}).get('receipt_sha256'))
+            summary['measured_reconciliation']=evidence
+            evidence_scene('planning_scene_reconciled',current)
+            # A recovered opposing contact never resurrects the pre-failure grasp.
+            contact_guard.held=None;contact_guard.held_proof=None;contact_guard.planning_attached=False
+            contact_guard.separation=None;contact_guard.ownership='RECOVERY_UNHELD';contact_guard.phase='recovery'
+            recovery.reconciled(evidence)
+            result=call(validity_client,GetStateValidity.Request(robot_state=expected.robot_state,group_name=''))
+            recovery.evidence['current_state_validity']=message_to_ordereddict(result)
+            robot_prefix=measurements.receipt['world']+'::'+measurements.receipt['model']+'::'
+            robot_contacts=[c for c in s['contacts'] if any(c[k].startswith(robot_prefix) for k in ('a','b'))]
+            recovery.qualify_retreat(result.valid and not result.contacts,robot_contacts)
+        except Exception as exc:
+            recovery.block('RECOVERY_QUALIFICATION_FAILED',str(exc))
+            raise
+
     def measured_reconcile():
+        if recovery is not None:
+            reconcile_retention_loss()
+            return
         # Revoke first. Never restore predicted pre-motion poses.
         apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
         s=measurements.fresh(); p=measurements.object_pose(s,contact_guard.name)
@@ -1758,7 +1878,12 @@ def main():
                 raise ValueError('Legacy task request missing; Save and Generate a TaskIntent v2 task')
             task = inputs.task_request(yaml.safe_load(Path(args.task_request).read_text()), cell)
         stage('ACQUIRE_OBJECTS')
-        snapshot = yaml.safe_load(Path(args.detections).read_text())
+        from hashlib import sha256
+        observation_text=Path(args.detections).read_text()
+        snapshot = yaml.safe_load(observation_text)
+        summary['observation_sha256']=sha256(observation_text.encode()).hexdigest()
+        summary['observation_input']=dict(path=str(Path(args.detections).resolve()),
+            sha256=summary['observation_sha256'],loaded_wall_ns=time.time_ns())
         if args.replay:
             snapshot = inputs.replay_snapshot(snapshot, time.time())
         objects = inputs.normalize(snapshot, time.time(), _PLANNER)
@@ -1917,6 +2042,7 @@ def main():
                 execution_attempt=measurements.receipt['run_id']+':'+str(time.monotonic_ns()),
                 selected_grasp_index=summary['selected_grasp_index'],
                 commissioning_sha256=summary['commissioning_capability']['sha256']))
+            summary['execution_attempt']=contact_guard.pile_binding['execution_attempt']
             contact_guard.arm_names=set(contract['home_joint_names'])
             initial_joints=measurements.joints(measurements.fresh())
             leaders=set(initial_joints)-contact_guard.arm_names-{j.get('name') for j in measurements.robot.findall('joint') if j.find('mimic') is not None}
@@ -2151,7 +2277,8 @@ def main():
         stage('COMPLETE')
         summary.update(result='PASS',full_cycle_execution_success=True)
     except (Exception,KeyboardInterrupt) as exc:
-        summary.update(failed_stage=exc.stage if isinstance(exc,CandidateFailure) else summary['current_stage'],failure=str(exc))
+        begin_recovery(exc)
+        summary.update(failed_stage=summary.get('failed_stage',exc.stage if isinstance(exc,CandidateFailure) else summary['current_stage']),failure=str(exc))
         stage('FAILED')
         summary['recovery_required'] = summary['execution_attempted']
         resolution = summary.get('task_intent_resolution')
@@ -2167,20 +2294,23 @@ def main():
     finally:
         if summary['execution_attempted'] and summary['result'] != 'PASS' and not rclpy.ok():
             summary['recovery_inspection_skipped'] = 'ROS context already invalid'
+            if recovery is not None:recovery.block('RECOVERY_CONTEXT_UNAVAILABLE')
         if summary['execution_attempted'] and summary['result'] != 'PASS' and rclpy.ok():
             try:
                 if measurements:
                     apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
-                    if summary.get('motion_stop_verified') or wait_stopped():measured_reconcile()
+                    if not summary.get('motion_stop_verified'):summary['motion_stop_verified']=wait_stopped()
+                    if summary['motion_stop_verified']:measured_reconcile()
                     else:raise RuntimeError('cannot reconcile before measured motion stop')
                 else:apply(PlanningScene(is_diff=True,allowed_collision_matrix=baseline))
-                recovery = scene_now()
+                recovered_scene = scene_now()
                 summary['recovery_scene'] = dict(
-                    attached_ids=[o.object.id for o in recovery.robot_state.attached_collision_objects],
-                    world_ids=[o.id for o in recovery.world.collision_objects],
-                    contact_acm_restored=collision_matrix_signature(recovery.allowed_collision_matrix)==collision_matrix_signature(baseline))
+                    attached_ids=[o.object.id for o in recovered_scene.robot_state.attached_collision_objects],
+                    world_ids=[o.id for o in recovered_scene.world.collision_objects],
+                    contact_acm_restored=collision_matrix_signature(recovered_scene.allowed_collision_matrix)==collision_matrix_signature(baseline))
             except Exception as recovery_error:
                 summary['recovery_inspection_failure'] = str(recovery_error)
+                if recovery is not None:recovery.block('RECOVERY_CLEANUP_FAILED',str(recovery_error))
         if args.simulator_commission=='cancel' and summary.get('failure')=='CONTROLLED_CANCELLATION':
             try:
                 from simulator_execution import require_cancellation_acceptance

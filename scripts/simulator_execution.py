@@ -11,6 +11,7 @@ from pathlib import Path
 import time
 import threading
 import queue
+from enum import Enum
 import xml.etree.ElementTree as ET
 from perceived_object_grasp_plan import compose_pose,inverse_pose,quaternion_from_rpy,rotate_vector
 
@@ -79,6 +80,82 @@ class Separation:
         if not support_contact and bottom>self.floor+.0001:self.expired=True
 
 
+class GraspRetentionLoss(RuntimeError):
+    """Physical grasp contract violation, distinct from transport/planning failures."""
+    def __init__(self, missing_contacts, translation_error_m, rotation_error_rad):
+        super().__init__('measured grasp retention lost: contact/slip')
+        self.details=dict(missing_contacts=sorted(missing_contacts),
+            translation_error_m=translation_error_m,rotation_error_rad=rotation_error_rad)
+        self.sample=None
+
+
+class RecoveryState(str, Enum):
+    CANCEL_AND_STOP='CANCEL_AND_STOP'
+    FAILURE_RECONCILE='FAILURE_RECONCILE'
+    QUALIFY_RETREAT='QUALIFY_RETREAT'
+    BLOCKED='RECOVERY_BLOCKED'
+
+
+class RetentionRecovery:
+    """Terminal recovery boundary; no motion or retry can be authorized here.
+
+    A continuation needs a qualified contact-exit policy and a new capture/
+    resolution epoch. Historical summary records are evidence, never plan inputs.
+    """
+    def __init__(self, cycle, summary, failure, *, during_action):
+        self.state=RecoveryState.CANCEL_AND_STOP
+        self.during_action=during_action
+        # Revoke execution before cancellation or any fallible scene operation.
+        cycle.clear()
+        cycle.update(full_cycle_prevalidated=False,invalidated_by='GRASP_RETENTION_LOSS')
+        summary['full_cycle_prevalidated']=False
+        self.evidence=dict(state=self.state.value,transitions=[self.state.value],
+            reason='GRASP_RETENTION_LOSS',details=copy.deepcopy(failure.details),
+            rejected_sample=copy.deepcopy(failure.sample),requires_owned_cancel=during_action,
+            invalidated=['candidate','grasp_transform','trajectories','motion_start_state',
+                         'observation','resolution'],retry_count=0,retry_limit=1,
+            previous_attempt={key:copy.deepcopy(summary.get(key)) for key in (
+                'selected_object_id','selected_grasp_index','selected_extraction_intent',
+                'resolution_sha256','observation_sha256','execution_attempt')})
+        summary['grasp_recovery']=self.evidence
+
+    def _transition(self, expected, target):
+        if self.state!=expected:raise RuntimeError('RECOVERY_STATE_ORDER: '+self.state.value)
+        self.state=target;self.evidence['state']=target.value
+        self.evidence['transitions'].append(target.value)
+
+    def confirm_stop(self, sample, cancellation_confirmed):
+        if self.during_action and not cancellation_confirmed:
+            raise RuntimeError('CANCELLATION_UNCONFIRMED: recovery requires owned goal terminal and stop')
+        if not sample:raise RuntimeError('RECOVERY_STOP_UNCONFIRMED')
+        failed=self.evidence['rejected_sample']
+        if failed and (any(sample.get(k)!=failed.get(k) for k in ('run_id','pid')) or
+                       any(sample[k]<=failed[k] for k in ('iteration','sim_ns','wall_ns'))):
+            raise RuntimeError('RECOVERY_STOP_PRECEDES_LOSS')
+        self._transition(RecoveryState.CANCEL_AND_STOP,RecoveryState.FAILURE_RECONCILE)
+        self.evidence['stopped_sample']={k:sample[k] for k in ('iteration','sim_ns','wall_ns')}
+
+    def reconciled(self, evidence):
+        if evidence['attached_ids'] or not evidence['acm_restored'] or not evidence['measured_geometry_matches']:
+            raise RuntimeError('RECOVERY_RECONCILIATION_UNCONFIRMED')
+        self._transition(RecoveryState.FAILURE_RECONCILE,RecoveryState.QUALIFY_RETREAT)
+        self.evidence['reconciliation']=copy.deepcopy(evidence)
+
+    def qualify_retreat(self, valid, physical_contacts):
+        if self.state!=RecoveryState.QUALIFY_RETREAT:raise RuntimeError('RECOVERY_STATE_ORDER: '+self.state.value)
+        self.evidence['retreat_qualification']=dict(current_state_valid=bool(valid),
+            physical_robot_contacts=copy.deepcopy(physical_contacts),qualified=False,
+            reason='No qualified generic withdrawal policy from a detached contact state')
+        code=('RECOVERY_START_STATE_IN_CONTACT' if physical_contacts else
+              'RECOVERY_CURRENT_STATE_INVALID' if not valid else 'RECOVERY_RETREAT_POLICY_UNQUALIFIED')
+        self.block(code)
+
+    def block(self, code, detail=None):
+        if self.state==RecoveryState.BLOCKED:return
+        self._transition(self.state,RecoveryState.BLOCKED)
+        self.evidence.update(failure_code=code,failure_detail=detail)
+
+
 class HeldObject:
     def __init__(self,tool,obj,fingers,required,closure,open_position):
         self.required=set(required)
@@ -87,8 +164,9 @@ class HeldObject:
         self.relative=compose_pose(inverse_pose(tool),obj)
     def check(self,tool,obj,fingers):
         actual=compose_pose(inverse_pose(tool),obj)
-        if (not self.required.issubset(fingers) or math.dist(actual[:3],self.relative[:3])>.002 or angle(actual,self.relative)>.01):
-            raise RuntimeError('measured grasp retention lost: contact/slip')
+        translation=math.dist(actual[:3],self.relative[:3]);rotation=angle(actual,self.relative)
+        if (not self.required.issubset(fingers) or translation>.002 or rotation>.01):
+            raise GraspRetentionLoss(self.required-set(fingers),translation,rotation)
 
 
 def cancel_owned(cancel,terminal,stopped,revoke,reconcile):
@@ -554,6 +632,7 @@ class ContactGuard:
     def check(self,s):
         try:self._check(s)
         except Exception as exc:
+            if isinstance(exc,GraspRetentionLoss):exc.sample=copy.deepcopy(s)
             self._pile_rejection(s,exc)
             raise
 
