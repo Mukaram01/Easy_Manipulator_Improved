@@ -141,6 +141,79 @@ def test_missing_contact_never_passes_on_validity_alone():
     assert len(validity) == 80
 
 
+def closure_fixture(contact_links_at):
+    from dataclasses import replace
+    kwargs, trace, goals, validity = fixture()
+    kwargs['contract'].update(simulator_closure_reserve=True, allowed_touch_links=['left_tip', 'right_tip'])
+    kwargs['initial_scene'].allowed_collision_matrix.entry_names=['left_tip','right_tip','obstacle']
+    def state_validity(state):
+        position=state.joint_state.position[-1]
+        validity.append(position)
+        links=contact_links_at(round(position / .01005))
+        pairs=[NS(contact_body_1='observed-box', contact_body_2=link,
+                  body_type_1=1, body_type_2=0, depth=.00001) for link in links]
+        return NS(valid=not pairs, contacts=pairs)
+    kwargs['operations']=replace(kwargs['operations'], state_validity=state_validity)
+    return kwargs, trace, goals, validity
+
+
+def test_simulator_closure_waits_for_opposing_contacts_then_checks_one_reserve_step():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, validity=closure_fixture(
+        lambda i:['left_tip'] if i==1 else ['left_tip','right_tip'])
+    result=preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    assert validity==pytest.approx([.01005,.0201,.03015])
+    close=next(goal for name,goal,_,_ in goals if name=='PREPLAN_CLOSE_GRIPPER')
+    assert close['gripper_finger1_joint']==pytest.approx(.03015)
+    metadata=next(s for s in result.stages if s['stage']=='PREPLAN_CLOSE_GRIPPER')
+    assert metadata['first_opposing_position_rad']==pytest.approx(.0201)
+    assert metadata['commanded_position_rad']==pytest.approx(.03015)
+    assert metadata['position_reserve_rad']==pytest.approx(.01005)
+    assert metadata['required_contact_links']==['left_tip','right_tip']
+    assert metadata['planned_contact_links']==['left_tip','right_tip']
+
+
+@pytest.mark.parametrize('reserve_links,reason', [
+    (['left_tip','right_tip','forearm'], 'non-contact link'),
+    (['left_tip'], 'opposing'),
+    ([], 'opposing'),
+])
+def test_simulator_closure_rejects_forbidden_or_lost_contacts_at_reserve(reserve_links,reason):
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, trace, goals, validity=closure_fixture(
+        lambda i:['left_tip','right_tip'] if i==1 else reserve_links)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code=='PREPLAN_CLOSE_GRIPPER_FAILED'
+    assert reason in result.reason.lower()
+    assert validity==pytest.approx([.01005,.0201])
+    assert all(name!='PREPLAN_CLOSE_GRIPPER' for name,_,_,_ in goals)
+    assert 'ATTACH' not in trace
+
+
+def test_simulator_closure_rejects_opposing_contact_at_limit_without_reserve():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, trace, _, validity=closure_fixture(
+        lambda i:['left_tip','right_tip'] if i==80 else ['left_tip'])
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code=='PREPLAN_CLOSE_GRIPPER_FAILED'
+    assert 'reserve' in result.reason
+    assert len(validity)==80 and validity[-1]==pytest.approx(.804)
+    assert 'ATTACH' not in trace
+
+
+def test_default_closure_still_stops_at_first_single_allowed_contact():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, validity=fixture()
+    result=preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    assert validity==pytest.approx([.01005,.0201])
+    assert next(goal for name,goal,_,_ in goals if name=='PREPLAN_CLOSE_GRIPPER')=={'gripper_finger1_joint':.0201}
+    assert 'position_reserve_rad' not in next(s for s in result.stages if s['stage']=='PREPLAN_CLOSE_GRIPPER')
+
+
 def test_destination_containment_fails_before_open_detach_or_success():
     from full_cycle_preplanner import preplan_full_cycle
     kwargs, trace, _, _ = fixture()
@@ -159,11 +232,12 @@ def test_preplanner_operations_have_no_execution_capability():
     assert {f.name for f in fields(PreplanOperations)} == {
         'plan_segment', 'fk', 'state_validity', 'updated_state', 'pose_message',
         'translated_pose', 'target_contact_matrix', 'verify_selected_contacts',
-        'private_attachment', 'object_pose_after_motion', 'place_detachment_diff', 'stage'}
+        'private_attachment', 'object_pose_after_motion', 'place_detachment_diff', 'stage',
+        'extraction_candidates'}
 
 
 @pytest.mark.parametrize('change,reason', [
-    ('expired', 'observation expired'), ('deadline', 'budget exhausted'),
+    ('expired', 'observation expired'), ('deadline', 'slice exhausted'),
     ('identity', 'candidate object'), ('strategy', 'unsupported'),
     ('retreat', 'retreat distance'),
 ])
@@ -185,6 +259,19 @@ def test_invalid_preconditions_never_reach_planning(change, reason):
     result = preplan_full_cycle(**kwargs)
     assert not result.success
     assert reason in result.reason
+    assert goals == []
+
+
+def test_candidate_slice_exhaustion_is_retryable_but_not_global_search_stop():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, _ = fixture()
+    kwargs["contract"]["search_deadline"] = time.monotonic() + 30.0
+    kwargs["deadline"] = time.monotonic() - 0.001
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code == "CANDIDATE_SLICE_EXHAUSTED"
+    assert result.checks[-1]["failure_kind"] == "budget"
+    assert runtime.preplan_retryable_failure(result)
     assert goals == []
 
 
@@ -374,3 +461,485 @@ def test_authored_resolver_keeps_policy_and_descent_rejection_evidence(policy, r
     assert failure['failure_kind'] == 'collision'
     assert failure['colliding_links'] == ['generic_tool_link']
     assert failure['collision_objects'] == ['generic_container']
+
+
+def test_authored_resolve_discovers_all_candidates_before_retrying_timeouts():
+    """A stochastic timeout cannot monopolize the unresolved candidate search."""
+    from dataclasses import replace
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+    from full_cycle_preplanner import MotionFeasibilityFailure
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    intent = valid_intent('AUTO')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    base_contract = kwargs['contract']
+    plan = kwargs['operations'].plan_segment
+
+    def transient_timeout(view, name, goal, group=None, straight=False):
+        if (name == 'PREPLAN_APPROACH' and
+                str(base_contract.get('_candidate_search_pass', '')).startswith('discovery:')):
+            raise MotionFeasibilityFailure(
+                'MoveIt action failed: status=6, code=-6', moveit_code=-6)
+        return plan(view, name, goal, group, straight)
+
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=transient_timeout)
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    # AUTO is strategy-phased: all eight top candidates get one cheap discovery
+    # window, then the strongest top candidate is retried before side/pinch
+    # discovery is allowed to spend budget.
+    discovery = [a for a in summary['candidate_attempts']
+                 if a['search_pass'].startswith('discovery:')]
+    retries = [a for a in summary['candidate_attempts']
+               if a['search_pass'].startswith('retry:')]
+    assert len(discovery) == 8
+    assert all(a['planning_attempts'] == 1 and a['segment_planning_time'] == .75
+               for a in discovery)
+    assert retries and retries[0]['candidate_id'] == 'top_2f::000'
+    assert retries[0]['planning_attempts'] == 3
+    assert cycle['candidate'].candidate_id == 'top_2f::000'
+    search = summary['candidate_search']
+    assert search['mode'] == 'strategy_phased_progress_beam'
+    assert search['strategy_phases'][0] == 'top_2f'
+    assert search['phases'][0]['discovered_candidates'] == 8
+    assert search['phases'][0]['retryable_candidates'] == 8
+    assert search['retry_beam_width'] == 3
+    assert search['retry_pass_used'] is True
+
+
+def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
+    """A later candidate that reached lift is retried before shallow timeouts."""
+    from types import SimpleNamespace
+    import full_cycle_preplanner
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    intent = valid_intent('AUTO')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    counts = {}
+
+    def fake_preplan_full_cycle(*, observation, candidate, **unused):
+        cid = candidate.candidate_id
+        counts[cid] = counts.get(cid, 0) + 1
+        if counts[cid] == 1:
+            if cid == 'top_2f::003':
+                checks = [
+                    {'code':'PREPLAN_APPROACH','status':'PASS'},
+                    {'code':'PREPLAN_GRASP','status':'PASS'},
+                    {'code':'PREPLAN_CLOSE_GRIPPER','status':'PASS'},
+                    {'code':'ATTACH','status':'PASS'},
+                    {'code':'PREPLAN_LIFT','status':'FAIL','failed_stage':'PREPLAN_LIFT',
+                     'failure_kind':'planning','moveit_code':-6},
+                ]
+                code, reason = 'PREPLAN_LIFT_FAILED', 'timed out after physical grasp'
+            else:
+                checks = [
+                    {'code':'PREPLAN_APPROACH','status':'FAIL','failed_stage':'PREPLAN_APPROACH',
+                     'failure_kind':'planning','moveit_code':-6},
+                ]
+                code, reason = 'PREPLAN_APPROACH_FAILED', 'pregrasp timed out'
+            return SimpleNamespace(extraction_attempts=[],
+                success=False, candidate_id=cid, reason_code=code, reason=reason,
+                checks=checks, stages=[], cycle=None)
+        cycle = {
+            'object_id': observation['id'], 'candidate': copy.deepcopy(candidate),
+            'steps':[{'metadata':{}}], 'full_cycle_prevalidated':True}
+        return SimpleNamespace(extraction_attempts=[],
+            success=True, candidate_id=cid, reason_code=None, reason=None,
+            checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
+            stages=[], cycle=cycle)
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle', fake_preplan_full_cycle)
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    retries = [a for a in summary['candidate_attempts']
+               if a['search_pass'].startswith('retry:')]
+    assert len(retries) == 1
+    assert retries[0]['candidate_id'] == 'top_2f::003'
+    assert cycle['candidate'].candidate_id == 'top_2f::003'
+    search = summary['candidate_search']
+    assert search['mode'] == 'strategy_phased_progress_beam'
+    assert search['phases'][0]['retry_priority'][0]['candidate_id'] == 'top_2f::003'
+    assert search['phases'][0]['retry_priority'][0]['progress_passes'] == 4
+
+
+def test_retry_reuses_discovery_proven_approach_ik_branch(monkeypatch):
+    """Deep discovery must not throw away an already-proven approach branch."""
+    from types import SimpleNamespace
+    import full_cycle_preplanner
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(
+        kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate')
+    kwargs.pop('destination')
+    intent = valid_intent('AUTO')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+
+    binding = {
+        'schema': 'workcell_approach_ik/v1',
+        'robot_model_sha256': 'fixture',
+        'planning_group': 'arm',
+        'tool_link': 'tool',
+        'frame_id': 'world',
+        'target_pose': [0., 0., 0., 0., 0., 0., 1.],
+        'joint_positions': {'x': 0.1},
+    }
+    calls = {}
+
+    def fake_preplan_full_cycle(*, observation, candidate, contract, **unused):
+        key = candidate.candidate_id
+        calls[key] = calls.get(key, 0) + 1
+        if calls[key] == 1:
+            if key == 'top_2f::003':
+                checks = [
+                    {'code':'PREPLAN_APPROACH','status':'PASS'},
+                    {'code':'PREPLAN_GRASP','status':'PASS'},
+                    {'code':'PREPLAN_CLOSE_GRIPPER','status':'PASS'},
+                    {'code':'ATTACH','status':'PASS'},
+                    {'code':'PREPLAN_LIFT','status':'PASS'},
+                    {'code':'PREPLAN_TRANSFER','status':'FAIL',
+                     'failed_stage':'PREPLAN_TRANSFER',
+                     'failure_kind':'budget'},
+                ]
+                stages = [
+                    {'stage':'PREPLAN_APPROACH','success':True,
+                     'moveit_code':1,'approach_ik':copy.deepcopy(binding)},
+                    {'stage':'PREPLAN_GRASP','success':True,'moveit_code':1},
+                    {'stage':'PREPLAN_CLOSE_GRIPPER','success':True,'moveit_code':1},
+                    {'stage':'PREPLAN_LIFT','success':True,'moveit_code':1},
+                    {'stage':'PREPLAN_TRANSFER','success':False,
+                     'reason_code':'CANDIDATE_SLICE_EXHAUSTED'},
+                ]
+                return SimpleNamespace(extraction_attempts=[],
+                    success=False, candidate_id=key,
+                    reason_code='CANDIDATE_SLICE_EXHAUSTED',
+                    reason='candidate wall-clock slice exhausted',
+                    checks=checks, stages=stages, cycle=None)
+            return SimpleNamespace(extraction_attempts=[],
+                success=False, candidate_id=key,
+                reason_code='PREPLAN_APPROACH_FAILED', reason='blocked',
+                checks=[{'code':'PREPLAN_APPROACH','status':'FAIL',
+                         'failed_stage':'PREPLAN_APPROACH',
+                         'failure_kind':'planning','moveit_code':-2}],
+                stages=[{'stage':'PREPLAN_APPROACH','success':False}],
+                cycle=None)
+
+        assert key == 'top_2f::003'
+        assert contract.get('approach_ik') == binding
+        cycle = {
+            'object_id': observation['id'],
+            'candidate': copy.deepcopy(candidate),
+            'steps': [
+                {'metadata': {'stage':'PREPLAN_APPROACH',
+                              'approach_ik':copy.deepcopy(binding)}}
+            ],
+            'full_cycle_prevalidated': True,
+        }
+        return SimpleNamespace(extraction_attempts=[],
+            success=True, candidate_id=key, reason_code=None, reason=None,
+            checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
+            stages=[], cycle=cycle)
+
+    monkeypatch.setattr(
+        full_cycle_preplanner, 'preplan_full_cycle', fake_preplan_full_cycle)
+
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    assert cycle['candidate'].candidate_id == 'top_2f::003'
+    retries = [
+        item for item in summary['candidate_attempts']
+        if item['search_pass'].startswith('retry:')
+    ]
+    assert len(retries) == 1
+    assert retries[0]['candidate_id'] == 'top_2f::003'
+
+
+def test_preferred_strategy_retries_before_fallback_discovery(monkeypatch):
+    """PREFERRED must spend its retry beam before evaluating fallback strategy candidates."""
+    from types import SimpleNamespace
+    import full_cycle_preplanner
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    intent = valid_intent('PREFERRED')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    calls = []
+
+    def fake_preplan_full_cycle(*, observation, candidate, **unused):
+        calls.append(candidate.strategy_ref)
+        if candidate.strategy_ref == 'top_2f':
+            return SimpleNamespace(extraction_attempts=[],
+                success=False, candidate_id=candidate.candidate_id,
+                reason_code='PREPLAN_APPROACH_FAILED', reason='timeout',
+                checks=[{'code':'PREPLAN_APPROACH','status':'FAIL',
+                         'failed_stage':'PREPLAN_APPROACH',
+                         'failure_kind':'planning','moveit_code':-6}],
+                stages=[], cycle=None)
+        cycle = {
+            'object_id': observation['id'], 'candidate': copy.deepcopy(candidate),
+            'steps':[{'metadata':{}}], 'full_cycle_prevalidated':True}
+        return SimpleNamespace(extraction_attempts=[],
+            success=True, candidate_id=candidate.candidate_id,
+            reason_code=None, reason=None,
+            checks=[{'code':'CANDIDATE_READY','status':'PASS'}],
+            stages=[], cycle=cycle)
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle', fake_preplan_full_cycle)
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(
+        intent=intent, environment=env, cell=cell(), targets=[observation],
+        summary=summary, planning_time=3.0, **kwargs)
+
+    search = summary['candidate_search']
+    assert search['strategy_phases'][:2] == ['top_2f', 'side_grip_basic']
+    assert search['phases'][0]['discovered_candidates'] == 8
+    assert len(search['phases'][0]['retries']) == 3
+    # Only after three bounded retries of the preferred top strategy may the
+    # fallback side strategy be evaluated, where this fixture succeeds.
+    assert calls[:11] == ['top_2f'] * 11
+    assert calls[11] == 'side_grip_basic'
+    assert cycle['candidate'].strategy_ref == 'side_grip_basic'
+
+
+def test_authored_destination_orientation_is_planned_with_actual_grasp_transform():
+    from full_cycle_preplanner import preplan_full_cycle
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from tests.test_task_intent_resolver import valid_intent
+    kwargs, trace, goals, _ = fixture()
+    q = runtime._PLANNER.quaternion_from_rpy([0.,0.,.23])
+    kwargs['observation']['pose'][3:] = q
+    obj = kwargs['initial_scene'].world.collision_objects[0]
+    obj.pose.orientation.x,obj.pose.orientation.y,obj.pose.orientation.z,obj.pose.orientation.w = q
+    kwargs['candidate'] = generate_strategy_candidates('top_2f',kwargs['observation'],{'approach_distance_m':.12})[3]
+    kwargs['contract']['task_intent'] = valid_intent('AUTO')
+    result = preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    placed = result.cycle['steps'][-1]['after'].world.collision_objects[-1]
+    achieved = runtime.pose_values(placed.pose)
+    assert achieved[:3] == pytest.approx(kwargs['destination']['pose_xyz'])
+    assert abs(achieved[-1]) == pytest.approx(1.)
+    assert achieved[3:6] == pytest.approx([0.,0.,0.],abs=1e-9)
+    assert [g[0] for g in goals] == [s for s in EXPECTED if s.startswith('PREPLAN_')]
+    assert result.cycle['steps'][4]['stage'] == 'PREPLAN_LIFT'
+
+
+def test_preplanner_uses_bound_resolution_freshness_reference(monkeypatch):
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, _, _ = fixture()
+    captured = kwargs['observation']['timestamp']
+    kwargs['contract']['max_age_seconds'] = 5.0
+    kwargs['contract']['observation_reference_time'] = captured + 1.0
+    monkeypatch.setattr(time, 'time', lambda: captured + 1000.0)
+    result = preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+
+
+def test_transfer_seed_is_forwarded_only_to_fresh_transfer_planning():
+    from dataclasses import replace
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, _, _=fixture()
+    seed={'schema':'workcell_transfer_ik_seed/v1','joint_positions':{'arm':.5}}
+    kwargs['contract']['transfer_ik_seed']=copy.deepcopy(seed)
+    original=kwargs['operations'].plan_segment
+    calls=[]
+    def segment(view,name,goal,group=None,straight=False,**options):
+        calls.append((name,copy.deepcopy(options)))
+        return original(view,name,goal,group,straight)
+    kwargs['operations']=replace(kwargs['operations'],plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert next(options for name,options in calls if name=='PREPLAN_TRANSFER')=={'ik_seed':seed}
+    assert all(not options for name,options in calls if name!='PREPLAN_TRANSFER')
+    assert kwargs['contract']['transfer_ik_seed']==seed
+
+
+def extraction_fixture(fail_stage='PREPLAN_LIFT', fail_all=False):
+    from dataclasses import replace
+    kwargs, trace, goals, validity = fixture()
+    base=kwargs['operations']; seen=[]; active=[None]
+    variants=[dict(schema='workcell_extraction_intent/v1',variant_id=name,
+        object_id=kwargs['observation']['id'],candidate_id=kwargs['candidate'].candidate_id,
+        offset_xyz_m=[x,0.,kwargs['contract']['retreat_distance_m']])
+        for name,x in [('vertical',0.),('away',.002)]]
+    def segment(view,name,goal,group=None,straight=False,**options):
+        if name=='PREPLAN_LIFT':
+            active[0]=options['extraction_intent']['variant_id']
+            seen.append((active[0],copy.deepcopy(view)))
+        if name==fail_stage and (fail_all or active[0]=='vertical'):
+            raise RuntimeError('variant collision')
+        return base.plan_segment(view,name,goal,group,straight)
+    kwargs['operations']=replace(base,plan_segment=segment,
+        extraction_candidates=lambda view,observation,candidate,retreat:copy.deepcopy(variants))
+    return kwargs,seen,variants
+
+
+@pytest.mark.parametrize('failed_stage',['PREPLAN_LIFT','PREPLAN_TRANSFER','PREPLAN_HOME'])
+def test_extraction_variants_require_entire_suffix_and_restore_checkpoint(failed_stage):
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,seen,variants=extraction_fixture(failed_stage)
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert [x[0] for x in seen]==['vertical','away']
+    assert seen[0][1]==seen[1][1]
+    assert result.cycle['extraction_intent']==variants[1]
+    assert [x['stage'] for x in result.cycle['steps']]==EXPECTED
+    assert all(c['status']=='PASS' for c in result.checks)
+    assert result.extraction_attempts[0]['failed_stage']==failed_stage
+    assert result.extraction_attempts[1]['success'] is True
+
+
+def test_all_extraction_variants_fail_with_explicit_reason():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,seen,_=extraction_fixture(fail_all=True)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.cycle is None
+    assert result.reason_code=='NO_VALID_EXTRACTION'
+    assert len(result.extraction_attempts)==2
+
+
+def test_bound_extraction_revalidation_never_substitutes_variant():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,seen,variants=extraction_fixture()
+    kwargs['contract']['extraction_intent']=copy.deepcopy(variants[0])
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code=='NO_VALID_EXTRACTION'
+    assert [x[0] for x in seen]==['vertical']
+    kwargs['contract']['extraction_intent']['offset_xyz_m'][0]=.001
+    seen.clear();result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code=='EXTRACTION_INTENT_CHANGED'
+    assert not seen
+
+
+def test_unbound_transfer_seed_cannot_cross_extraction_variants():
+    from full_cycle_preplanner import preplan_full_cycle
+    from dataclasses import replace
+    kwargs,_,_=extraction_fixture('PREPLAN_TRANSFER')
+    base=kwargs['operations']; received=[]
+    def segment(*args,**options):
+        if args[1]=='PREPLAN_TRANSFER':received.append(options.get('ik_seed'))
+        return base.plan_segment(*args,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    kwargs['contract']['transfer_ik_seed']={'unbound':'seed'}
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert received==[None,None]
+
+
+def test_extraction_exhaustion_preserves_later_phase_failure():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,_,_=extraction_fixture('PREPLAN_TRANSFER',fail_all=True)
+    result=preplan_full_cycle(**kwargs)
+    assert result.reason_code=='PREPLAN_TRANSFER_FAILED'
+    assert len(result.extraction_attempts)==2
+
+
+def test_extraction_budget_exhaustion_does_not_start_another_variant():
+    from full_cycle_preplanner import preplan_full_cycle,CandidateBudgetExhausted
+    from dataclasses import replace
+    kwargs,_,_=extraction_fixture();base=kwargs['operations'];seen=[]
+    def segment(*args,**options):
+        if args[1]=='PREPLAN_LIFT':
+            seen.append(options['extraction_intent']['variant_id'])
+            raise CandidateBudgetExhausted('shared slice exhausted')
+        return base.plan_segment(*args,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert result.reason_code=='CANDIDATE_SLICE_EXHAUSTED'
+    assert seen==['vertical']
+
+
+def test_bound_transfer_seed_is_forwarded_only_with_matching_extraction():
+    from full_cycle_preplanner import preplan_full_cycle
+    from dataclasses import replace
+    kwargs,_,variants=extraction_fixture();base=kwargs['operations'];received=[]
+    kwargs['contract'].update(extraction_intent=copy.deepcopy(variants[1]),transfer_ik_seed={'bound':'seed'})
+    def segment(*args,**options):
+        if args[1]=='PREPLAN_TRANSFER':received.append(options.pop('ik_seed',None))
+        return base.plan_segment(*args,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert received==[{'bound':'seed'}]
+
+
+def test_selected_extraction_has_explicit_feasibility_check_without_extra_motion():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,_,variants=extraction_fixture()
+    result=preplan_full_cycle(**kwargs)
+    evidence=next(c for c in result.checks if c['code']=='INITIAL_PILE_EXTRACTION')
+    assert evidence['status']=='PASS'
+    assert evidence['extraction_intent']==variants[1]
+    assert [s['stage'] for s in result.cycle['steps']]==EXPECTED
+
+
+@pytest.mark.parametrize('offset',[[.003,0.,.15],[float('nan'),0.,.15],[0.,0.,.14]])
+def test_invalid_extraction_offset_fails_before_lift(offset):
+    from full_cycle_preplanner import preplan_full_cycle
+    from dataclasses import replace
+    kwargs,seen,variants=extraction_fixture()
+    variants[0]['offset_xyz_m']=offset
+    kwargs['operations']=replace(kwargs['operations'],extraction_candidates=lambda *args:variants)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code=='EXTRACTION_INTENT_INVALID'
+    assert not seen
+
+
+@pytest.mark.parametrize('all_fail',[False,True])
+def test_real_extraction_failure_preserves_details_and_safe_variant_fallback(all_fail):
+    from dataclasses import replace
+    from full_cycle_preplanner import preplan_full_cycle
+    from pile_extraction import ExtractionFailure
+    kwargs,seen,variants=extraction_fixture(fail_stage=None)
+    base=kwargs['operations']; attempted=[]
+    def segment(view,name,goal,group=None,straight=False,**options):
+        if name=='PREPLAN_LIFT':
+            variant=options['extraction_intent']['variant_id'];attempted.append(variant)
+            if all_fail or variant=='vertical':
+                raise ExtractionFailure('EXTRACTION_CLEARANCE_INSUFFICIENT',
+                                        neighbor='fixture-neighbor',separation_m=.000002)
+        return base.plan_segment(view,name,goal,group,straight,**options)
+    kwargs['operations']=replace(base,plan_segment=segment)
+    result=preplan_full_cycle(**kwargs)
+    assert attempted==['vertical','away']
+    rejected=result.extraction_attempts[0]
+    assert rejected['failed_stage']=='PREPLAN_LIFT'
+    assert rejected['failure_kind']=='extraction'
+    assert rejected['extraction_reason_code']=='EXTRACTION_CLEARANCE_INSUFFICIENT'
+    assert rejected['neighbor']=='fixture-neighbor'
+    assert rejected['separation_m']==.000002
+    assert 'TypeError' not in (result.reason or '')
+    if all_fail:
+        assert not result.success and result.cycle is None
+        assert result.reason_code=='NO_VALID_EXTRACTION'
+        assert result.checks[-1]['failure_kind']=='extraction'
+        assert result.checks[-1]['extraction_reason_code']=='EXTRACTION_CLEARANCE_INSUFFICIENT'
+    else:
+        assert result.success,result.reason
+        assert result.cycle['extraction_intent']==variants[1]
+        assert [step['stage'] for step in result.cycle['steps']]==EXPECTED
+        assert all(check['status']=='PASS' for check in result.checks)

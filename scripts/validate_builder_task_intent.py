@@ -98,8 +98,14 @@ def validate_payload(payload, scene_package=None, grasp_dir=None):
             except Exception as exc:
                 diagnostics.append({'code': 'R19_DESTINATION_INVALID', 'message': str(exc)})
             safety = normalized.get('safety', {})
-            if safety.get('real_hardware_enabled') is True or safety.get('require_fake_hardware') is False:
-                diagnostics.append({'code': 'SAFETY_LOCK_REQUIRED', 'message': 'Task authoring requires fake hardware and the real robot lock.'})
+            backend = safety.get('execution_backend', 'fake')
+            locked = (backend == 'fake' and safety.get('real_hardware_enabled') is not True
+                      and safety.get('require_fake_hardware') is not False)
+            if backend == 'simulator':
+                locked = (safety.get('real_hardware_enabled') is False
+                          and safety.get('require_fake_hardware') is False)
+            if not locked:
+                diagnostics.append({'code': 'SAFETY_LOCK_REQUIRED', 'message': 'Task requires a consistent fake/simulator backend and the real robot lock; simulator identity is verified at runtime.'})
             strategy_ref = normalized.get('pick', {}).get('grasp', {}).get('strategy_ref')
             catalog_dir = grasp_dir or (SCRIPT_DIR.parent / 'catalog' / 'grasp_strategies')
             if strategy_ref and not (catalog_dir / f'{strategy_ref}.yaml').is_file():

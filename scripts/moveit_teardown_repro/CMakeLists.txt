@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(workcell_tem_teardown_repro)
+set(CMAKE_CXX_STANDARD 17)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
+add_executable(workcell_tem_teardown_repro main.cpp)
+ament_target_dependencies(workcell_tem_teardown_repro rclcpp moveit_ros_planning)

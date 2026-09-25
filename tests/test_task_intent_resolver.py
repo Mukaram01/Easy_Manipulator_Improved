@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 
 import copy
 import importlib
@@ -220,6 +221,30 @@ def test_exact_grasp_failure_blocks_without_substitution():
     assert result["grasp_resolution"]["fallback"]["used"] is False
 
 
+def test_search_budget_exhaustion_stops_without_fake_later_attempts():
+    resolver = resolver_module()
+    intent = valid_intent("AUTO", "AUTO")
+    calls = []
+
+    def evaluator(request):
+        calls.append(request["candidate"].candidate_id)
+        return {
+            "success": False,
+            "reason_code": "SEARCH_BUDGET_EXHAUSTED",
+            "reason": "candidate search budget exhausted",
+            "checks": [{"code": "SEARCH_BUDGET", "status": "FAIL"}],
+            "stop_search": True,
+        }
+
+    result = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), evaluator, now=100.0)
+    assert result["readiness_status"] == "BLOCKED"
+    assert result["readiness"]["primary_code"] == "SEARCH_BUDGET_EXHAUSTED"
+    assert result["readiness"]["reason"] == "candidate search budget exhausted"
+    assert len(calls) == 1
+    assert len(result["grasp_resolution"]["attempts"]) == 1
+
+
 def test_exact_place_outside_region_blocks_without_clamp_or_fallback():
     resolver = resolver_module()
     intent = valid_intent("EXACT", "EXACT")
@@ -279,6 +304,27 @@ def test_observation_filtering_is_deterministic():
     assert seen[0] == "epd::bottle-2"
 
 
+def test_missing_confidence_pile_targets_prioritize_exposed_top_surface():
+    resolver = resolver_module()
+    intent = valid_intent()
+    intent["pick"]["selection"]["object_filter"]["min_confidence"] = None
+    low = dict(observations()[0], id="runtime::part_00", confidence=None,
+               pose=[0.4, -0.1, 0.10, 0.0, 0.0, 0.0, 1.0])
+    high = dict(observations()[0], id="runtime::part_09", confidence=None,
+                pose=[0.4, -0.1, 0.40, 0.0, 0.0, 0.0, 1.0])
+    seen = []
+
+    def evaluator(request):
+        seen.append(request["observation"]["id"])
+        return pass_cycle(request)
+
+    result = resolver.resolve_task_intent(
+        intent, environment(), cell(), [low, high], evaluator, now=100.0)
+    assert result["readiness_status"] == "READY"
+    assert result["grasp_resolution"]["selected_object_id"] == "runtime::part_09"
+    assert seen == ["runtime::part_09"]
+
+
 def test_yaml_json_resolution_artifacts_are_semantically_equal(tmp_path):
     resolver = resolver_module()
     result = resolver.resolve_task_intent(
@@ -289,3 +335,188 @@ def test_yaml_json_resolution_artifacts_are_semantically_equal(tmp_path):
     import json
     json_doc = json.loads(Path(paths["json"]).read_text())
     assert yaml_doc == json_doc == result
+
+
+def test_resolution_binds_successful_ik_branch_after_rejected_candidate():
+    import pytest
+    resolver = resolver_module()
+    branch = {'schema': 'workcell_approach_ik/v1', 'joint_positions': {'joint': -2.43}}
+    seen = []
+    def evaluate(request):
+        seen.append(copy.deepcopy(request))
+        if len(seen) == 1:
+            return {'success': False, 'reason_code': 'PREPLAN_GRASP_FAILED', 'checks': []}
+        return dict(pass_cycle(request), approach_ik=copy.deepcopy(branch))
+    result = resolver.resolve_task_intent(valid_intent(), environment(), cell(), observations(), evaluate, now=100.)
+    assert result['grasp_resolution']['approach_ik'] == branch
+    def revalidate(request):
+        assert request['approach_ik'] == branch
+        assert request['candidate'].candidate_id == result['grasp_resolution']['selected_candidate_id']
+        return dict(pass_cycle(request), approach_ik=copy.deepcopy(branch))
+    checked = resolver.resolve_task_intent(valid_intent(), environment(), cell(), observations(), revalidate, now=100., resolved=result)
+    assert checked['resolution_sha256'] == result['resolution_sha256']
+    damaged = copy.deepcopy(result); damaged['grasp_resolution']['approach_ik']['joint_positions']['joint'] += 1
+    with pytest.raises(ValueError, match='CORRUPT'):
+        resolver.consume_resolution(damaged, valid_intent(), environment(), cell())
+
+
+def test_resolution_roundtrips_transfer_ik_seed_as_digest_bound_deep_copy():
+    import pytest
+    resolver = resolver_module()
+    seed = {'joint_positions': {'shoulder': -1.4, 'elbow': -2.1}}
+    expected = copy.deepcopy(seed)
+    def evaluate(request):
+        return dict(pass_cycle(request), transfer_ik_seed=seed)
+    result = resolver.resolve_task_intent(
+        valid_intent(), environment(), cell(), observations(), evaluate, now=100.)
+    assert result['grasp_resolution']['transfer_ik_seed'] == expected
+    seed['joint_positions']['elbow'] = 0.
+    assert result['grasp_resolution']['transfer_ik_seed'] == expected
+    checked_requests = []
+    def revalidate(request):
+        assert request['transfer_ik_seed'] == expected
+        checked_requests.append(request['candidate'].candidate_id)
+        request['transfer_ik_seed']['joint_positions']['shoulder'] = 0.
+        return pass_cycle(request)
+    checked = resolver.resolve_task_intent(
+        valid_intent(), environment(), cell(), observations(), revalidate, now=100., resolved=result)
+    assert checked_requests == [result['grasp_resolution']['selected_candidate_id']]
+    assert checked['grasp_resolution']['transfer_ik_seed'] == expected
+    assert result['grasp_resolution']['transfer_ik_seed'] == expected
+    assert checked['resolution_sha256'] == result['resolution_sha256']
+    damaged = copy.deepcopy(result)
+    damaged['grasp_resolution']['transfer_ik_seed']['joint_positions']['elbow'] += 1.
+    with pytest.raises(ValueError, match='CORRUPT'):
+        resolver.consume_resolution(damaged, valid_intent(), environment(), cell())
+
+
+def test_preferred_fallback_uses_selected_strategy_catalog_geometry():
+    resolver = resolver_module()
+    intent = valid_intent("PREFERRED", "AUTO")
+
+    def evaluator(request):
+        grasp = request["intent"]["pick"]["grasp"]
+        if request["strategy_ref"] == "top_2f":
+            return {
+                "success": False,
+                "reason_code": "GRASP_COLLISION",
+                "reason": "preferred top grasp collides",
+                "checks": [{"code": "collision_free", "status": "FAIL"}],
+            }
+        assert request["strategy_ref"] == "side_grip_basic"
+        assert grasp["strategy_ref"] == "side_grip_basic"
+        assert grasp["approach"] == {"axis": "x_plus", "distance_m": 0.08}
+        assert grasp["orientation"]["mode"] == "horizontal"
+        assert request["candidate"].effective["approach_distance_m"] == 0.08
+        return pass_cycle(request)
+
+    result = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), evaluator, now=100.0)
+    assert result["readiness_status"] == "WARNING"
+    assert result["grasp_resolution"]["selected_strategy_ref"] == "side_grip_basic"
+    effective = result["grasp_resolution"]["effective_grasp"]
+    assert effective["approach"] == {"axis": "x_plus", "distance_m": 0.08}
+    assert effective["orientation"]["mode"] == "horizontal"
+    assert effective["lift"] == {"axis": "z_up", "distance_m": 0.08}
+
+
+def test_resolved_preferred_fallback_replays_same_effective_grasp():
+    resolver = resolver_module()
+    intent = valid_intent("PREFERRED", "AUTO")
+
+    def first(request):
+        if request["strategy_ref"] == "top_2f":
+            return {"success": False, "reason_code": "BLOCKED",
+                    "reason": "preferred blocked", "checks": []}
+        return pass_cycle(request)
+
+    resolved = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), first, now=100.0)
+    assert resolved["grasp_resolution"]["selected_strategy_ref"] == "side_grip_basic"
+
+    def replay(request):
+        grasp = request["intent"]["pick"]["grasp"]
+        assert request["strategy_ref"] == "side_grip_basic"
+        assert grasp == resolved["grasp_resolution"]["effective_grasp"]
+        assert grasp["approach"]["axis"] == "x_plus"
+        assert grasp["orientation"]["mode"] == "horizontal"
+        return pass_cycle(request)
+
+    checked = resolver.resolve_task_intent(
+        intent, environment(), cell(), observations(), replay, now=100.0, resolved=resolved)
+    assert checked["resolution_sha256"] == resolved["resolution_sha256"]
+
+
+def test_support_resting_objects_remain_eligible_at_pick_zone_floor():
+    resolver = resolver_module()
+    intent = valid_intent()
+    intent["pick"]["selection"]["object_filter"]["min_confidence"] = None
+    intent["pick"]["selection"]["zone_ref"] = "pick_zone_main"
+    env = environment()
+    env["task_zones"][0] = {
+        "id": "pick_zone_main", "frame": "world",
+        "pose_xyz": [0.4, -0.2, 0.3], "pose_rpy": [0., 0., 0.],
+        "dimensions": [0.35, 0.30, 0.60],
+    }
+    objects = []
+    for index, z in enumerate((0.012499, 0.0375)):
+        objects.append({
+            "id": f"runtime::part_{index:02d}", "class_id": "bottle",
+            "confidence": None, "timestamp": 99.0, "frame_id": "world",
+            "shape": "BOX", "pose": [0.4 + index*.03, -0.2, z, 0., 0., 0., 1.],
+            "dimensions": [0.025, 0.025, 0.025],
+        })
+    selected = resolver.select_observations(intent, env, objects, 100.0)
+    # Existing height-first selection orders the elevated part before its support.
+    assert [item["id"] for item in selected] == ["runtime::part_01", "runtime::part_00"]
+
+
+def test_selected_extraction_is_digest_bound_and_revalidated_as_deep_copy():
+    import copy
+    resolver=resolver_module();seen=[]
+    extraction={'schema':'workcell_extraction_intent/v1','variant_id':'away',
+                'object_id':observations()[0]['id'],'candidate_id':'top_2f::000',
+                'offset_xyz_m':[.002,0.,.1]}
+    def evaluate(request):
+        seen.append(copy.deepcopy(request))
+        return {**pass_cycle(request),'extraction_intent':copy.deepcopy(extraction),
+                'extraction_attempts':[{'variant_id':'vertical','success':False},
+                                       {'variant_id':'away','success':True}]}
+    resolved=resolver.resolve_task_intent(valid_intent(),environment(),cell(),observations(),evaluate,now=100.)
+    assert resolved['grasp_resolution']['extraction_intent']==extraction
+    assert len(resolved['grasp_resolution']['attempts'][0]['extraction_attempts'])==2
+    resolver.resolve_task_intent(valid_intent(),environment(),cell(),observations(),evaluate,now=100.,resolved=resolved)
+    assert seen[-1]['extraction_intent']==extraction
+    changed=copy.deepcopy(resolved);changed['grasp_resolution']['extraction_intent']['offset_xyz_m'][0]=0.
+    assert resolver.resolution_hash(changed)!=resolved['resolution_sha256']
+
+
+@pytest.mark.parametrize('policy',['AUTO','PREFERRED','EXACT'])
+@pytest.mark.parametrize('fallback',['object','grasp'])
+def test_nonextractable_candidate_continues_only_with_permitted_substitution(policy,fallback):
+    import copy
+    resolver=resolver_module();items=observations();items.append(copy.deepcopy(items[0]));items[1]['id']='other-box';items[1]['confidence']=.8
+    calls=[]
+    def evaluate(request):
+        calls.append((request['observation']['id'],request['candidate'].candidate_id))
+        success=(request['observation']['id']==items[1]['id'] if fallback=='object'
+                 else request['candidate'].candidate_id=='top_2f::001')
+        return pass_cycle(request) if success else {'success':False,'checks':[],
+            'reason_code':'NO_VALID_EXTRACTION','reason':'bounded extraction variants exhausted'}
+    result=resolver.resolve_task_intent(valid_intent(policy),environment(),cell(),items,evaluate,now=100.)
+    assert result['readiness_status']==('BLOCKED' if policy=='EXACT' else 'READY')
+    if policy=='EXACT':assert len(calls)==1
+    else:
+        selected=result['grasp_resolution']
+        assert (selected['selected_object_id']==items[1]['id'] if fallback=='object'
+                else selected['selected_candidate_id']=='top_2f::001')
+
+
+def test_all_objects_without_extraction_remain_blocked():
+    resolver=resolver_module()
+    result=resolver.resolve_task_intent(valid_intent(),environment(),cell(),observations(),
+        lambda request:dict(success=False,checks=[],reason_code='NO_VALID_EXTRACTION',
+                            reason='bounded extraction variants exhausted'),now=100.)
+    assert result['readiness_status']=='BLOCKED'
+    assert result['readiness']['primary_code']=='NO_VALID_EXTRACTION'
+    assert result['grasp_resolution']['selected_object_id'] is None

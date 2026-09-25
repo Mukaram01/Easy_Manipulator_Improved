@@ -1,0 +1,17 @@
+/**:
+  ros__parameters:
+    robot_description: '<robot name="teardown"><link name="base"/><link name="tool"/><joint name="probe_joint" type="revolute"><parent link="base"/><child link="tool"/><axis xyz="0 0 1"/><limit lower="-1" upper="1" velocity="1" effort="1"/></joint></robot>'
+    robot_description_semantic: '<robot name="teardown"><group name="probe_arm"><joint name="probe_joint"/></group></robot>'
+    planning_pipelines: [ompl]
+    default_planning_pipeline: ompl
+    ompl:
+      planning_plugin: ompl_interface/OMPLPlanner
+      request_adapters: ''
+    allow_trajectory_execution: false
+    moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+    moveit_simple_controller_manager:
+      controller_names: [probe_arm]
+      probe_arm:
+        type: FollowJointTrajectory
+        action_ns: follow_joint_trajectory
+        joints: [probe_joint]

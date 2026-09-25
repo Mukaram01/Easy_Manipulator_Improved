@@ -4,9 +4,24 @@
 #include <string>
 
 namespace workcell {
-// Engineering tolerance for initial object/support contact ONLY. Never padding
+// Engineering tolerance for initial object/support or pile contact ONLY. Never padding
 // or a global FCL tolerance. The bound is inclusive and is not runtime-inflatable.
 inline constexpr double support_contact_tolerance_m = 1e-4;
+// Shared by both initial-pile separation adapters and the execution ABI.
+// Pair order is immaterial; body identity/type, finite geometry and the existing
+// inclusive depth bound remain mandatory. No directional relaxation is added.
+struct PileContact {
+  std::string object, neighbor;
+  bool operator()(const collision_detection::Contact& c) const {
+    using namespace collision_detection;
+    const bool forward = c.body_name_1 == object && c.body_type_1 == BodyTypes::ROBOT_ATTACHED &&
+                         c.body_name_2 == neighbor && c.body_type_2 == BodyTypes::WORLD_OBJECT;
+    const bool reverse = c.body_name_2 == object && c.body_type_2 == BodyTypes::ROBOT_ATTACHED &&
+                         c.body_name_1 == neighbor && c.body_type_1 == BodyTypes::WORLD_OBJECT;
+    return (forward || reverse) && std::isfinite(c.depth) && c.depth >= 0. &&
+      c.depth <= support_contact_tolerance_m && c.pos.allFinite() && c.normal.allFinite();
+  }
+};
 struct SupportContact {
   std::string object, support;
   double floor_z;

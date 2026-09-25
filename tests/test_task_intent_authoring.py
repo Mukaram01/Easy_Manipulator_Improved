@@ -110,3 +110,17 @@ def test_tool_identity_outside_environment_geometry_wrapper_is_preserved(tmp_pat
     report = load_authoring(root)
     assert report['strategies'] == ['top_2f', 'side_grip_basic', 'finger_pinch_basic']
     assert report['status'] == 'PASS'
+
+
+def test_explicit_simulator_authoring_keeps_real_lock(tmp_path):
+    root = scene(tmp_path)
+    intent = valid_intent('AUTO', 'AUTO')
+    intent['safety'].update(execution_backend='simulator', require_fake_hardware=False, real_hardware_enabled=False)
+    path = root / 'config/workcell_builder_task_intent.yaml'
+    path.write_text(yaml.safe_dump(intent))
+    assert validate(path, root)['status'] == 'PASS'
+    for change in ({'real_hardware_enabled':True}, {'require_fake_hardware':True}, {'execution_backend':'unknown'}):
+        bad = __import__('copy').deepcopy(intent)
+        bad['safety'].update(change)
+        path.write_text(yaml.safe_dump(bad))
+        assert validate(path, root)['status'] == 'FAIL'

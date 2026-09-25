@@ -35,6 +35,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
+find_package(joint_trajectory_controller REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(moveit_visual_tools REQUIRED)
@@ -46,11 +47,46 @@ find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
 
+option(WORKCELL_BUILD_COMMISSIONING_CAPABILITY "Build simulator-only reviewed MoveIt 2.5.9/2.5.10 cancellation correction" OFF)
+if(WORKCELL_BUILD_COMMISSIONING_CAPABILITY)
+  find_package(moveit_ros_move_group REQUIRED)
+  if(NOT moveit_ros_move_group_VERSION VERSION_EQUAL "2.5.9" AND
+     NOT moveit_ros_move_group_VERSION VERSION_EQUAL "2.5.10")
+    message(FATAL_ERROR
+      "Simulator commissioning supports exactly MoveIt 2.5.9 or 2.5.10; "
+      "found ${moveit_ros_move_group_VERSION}. Review upstream cancellation/TEM/controller sources before extending this set.")
+  endif()
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/workcell_commission_moveit_version.txt"
+    "${moveit_ros_move_group_VERSION}\n")
+  find_package(rclcpp_action REQUIRED)
+  find_package(action_msgs REQUIRED)
+  find_package(control_msgs REQUIRED)
+  add_library(workcell_commission_execute SHARED src_commission_execute_capability.cpp)
+  target_compile_definitions(workcell_commission_execute PRIVATE
+    WORKCELL_MOVEIT_VERSION="${moveit_ros_move_group_VERSION}")
+  ament_target_dependencies(workcell_commission_execute rclcpp rclcpp_action moveit_ros_move_group moveit_ros_planning_interface pluginlib control_msgs action_msgs)
+  pluginlib_export_plugin_description_file(moveit_ros_move_group execute_trajectory_plugins.xml)
+  install(TARGETS workcell_commission_execute LIBRARY DESTINATION lib)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(workcell_execute_action_test test/execute_trajectory_action_test.cpp)
+  target_include_directories(workcell_execute_action_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  ament_target_dependencies(workcell_execute_action_test rclcpp rclcpp_action moveit_msgs action_msgs control_msgs)
+endif()
+
 add_library(workcell_support_contact SHARED src_support_contact_adapter.cpp)
-ament_target_dependencies(workcell_support_contact moveit_core moveit_ros_planning pluginlib)
+ament_target_dependencies(workcell_support_contact moveit_core moveit_ros_planning pluginlib joint_trajectory_controller)
 target_link_libraries(workcell_support_contact yaml-cpp)
+target_compile_options(workcell_support_contact PRIVATE -frounding-math -ffp-contract=off)
 pluginlib_export_plugin_description_file(moveit_core support_contact_plugins.xml)
 install(TARGETS workcell_support_contact LIBRARY DESTINATION lib)
+
+# Optional simulator adapter; the ordinary fake backend has no Gazebo dependency.
+find_package(ignition-gazebo6 QUIET)
+if(ignition-gazebo6_FOUND)
+  add_library(workcell_simulator_measurements SHARED src_simulator_measurements.cpp)
+  target_link_libraries(workcell_simulator_measurements ignition-gazebo6::ignition-gazebo6 yaml-cpp)
+  install(TARGETS workcell_simulator_measurements LIBRARY DESTINATION lib)
+endif()
 
 find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)
 find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
@@ -316,10 +352,17 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
+  if(ignition-gazebo6_FOUND)
+    ament_add_gtest(workcell_simulator_physics_poses_test test/simulator_physics_poses_test.cpp)
+    target_include_directories(workcell_simulator_physics_poses_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(workcell_simulator_physics_poses_test ignition-gazebo6::ignition-gazebo6)
+  endif()
+
   ament_add_gtest(workcell_support_contact_test test/support_contact_policy_test.cpp)
   target_include_directories(workcell_support_contact_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  ament_target_dependencies(workcell_support_contact_test moveit_core moveit_ros_planning pluginlib)
+  ament_target_dependencies(workcell_support_contact_test moveit_core moveit_ros_planning pluginlib joint_trajectory_controller)
   target_link_libraries(workcell_support_contact_test yaml-cpp)
+  target_compile_options(workcell_support_contact_test PRIVATE -frounding-math -ffp-contract=off)
 
   ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
   ament_add_gtest(workcell_directory_inspection_test test/workcell_directory_inspection_test.cpp)
@@ -795,6 +838,7 @@ if(BUILD_TESTING)
   endif()
 
   set(workcell_builder_registered_cpp_tests
+    simulator_physics_poses_test.cpp
     link_deletion_test.cpp
     workcell_directory_inspection_test.cpp
     scene_select_paths_test.cpp
@@ -837,6 +881,7 @@ if(BUILD_TESTING)
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
     support_contact_policy_test.cpp
+    execute_trajectory_action_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test
     test/studio_log_issue_tracker_test.cpp)
@@ -905,8 +950,12 @@ install(PROGRAMS
   ../../scripts/physical_destination.py
   ../../scripts/runtime_pick_inputs.py
   ../../scripts/full_cycle_preplanner.py
+  ../../scripts/pile_extraction.py
   ../../scripts/grasp_strategy_candidates.py
   ../../scripts/perceived_object_grasp_execute.py
+  ../../scripts/simulator_backend.py
+  ../../scripts/simulator_observations.py
+  ../../scripts/simulator_execution.py
   ../../scripts/run_p8b_replay_planning_scene_smoke.sh
   DESTINATION lib/${PROJECT_NAME})
 

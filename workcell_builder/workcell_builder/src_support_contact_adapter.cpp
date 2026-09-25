@@ -1,13 +1,523 @@
 #include "support_contact_policy.hpp"
+#include "controller_interval_certificate.hpp"
 #include <moveit/planning_request_adapter/planning_request_adapter.h>
 #include <moveit/robot_state/conversions.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
+#include <moveit/robot_state/cartesian_interpolator.h>
+#include <moveit/trajectory_processing/iterative_time_parameterization.h>
+#include <moveit/kinematic_constraints/kinematic_constraint.h>
 #include <geometric_shapes/shapes.h>
+#include <fcl/fcl.h>
 #include <pluginlib/class_list_macros.hpp>
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
+#include <rclcpp/serialization.hpp>
+#include <joint_trajectory_controller/trajectory.hpp>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <memory>
+#include <set>
+#include <sstream>
+#include <stdexcept>
 
 namespace workcell {
+// Audit the emitted controller spline, not a different interpolation between
+// collision-free waypoints. No sampled RobotState or contact permission escapes.
+template<class Valid>
+static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& trajectory,
+                                      const planning_scene::PlanningScene& scene, Valid valid) {
+  const auto certificate=controller_certificate::certify(trajectory,scene);
+  RCLCPP_INFO(rclcpp::get_logger("workcell.controller_certificate"),
+    "result=%d reason=%s inspected=%zu certified=%zu subdivided=%zu depth=%u interval=[%ld,%ld] seconds=%.6f",
+    static_cast<int>(certificate.result),certificate.reason.c_str(),certificate.inspected,certificate.certified,
+    certificate.subdivided,certificate.deepest,certificate.failure_begin_ns,certificate.failure_end_ns,certificate.wall_seconds);
+  if(certificate.result!=ControllerCertificate::CERTIFIED_CLEAR) return false;
+  constexpr std::size_t max_samples=120001;
+  constexpr int64_t max_duration_ns=120000000000LL;
+  if (trajectory.getWayPointCount()<2 || trajectory.getWayPointCount()>max_samples)
+    throw std::runtime_error("CONTROLLER_TRAJECTORY_POINT_COUNT_INVALID");
+  double duration=0.;
+  for (std::size_t i=0;i<trajectory.getWayPointCount();++i) {
+    const double delta=trajectory.getWayPointDurationFromPrevious(i);
+    if (!std::isfinite(delta) || (i==0 ? delta!=0. : delta<=0.))
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_TIMING_INVALID");
+    duration+=delta;
+    if (!std::isfinite(duration) || duration>120.)
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_DURATION_EXCEEDED");
+  }
+  moveit_msgs::msg::RobotTrajectory message;
+  trajectory.getRobotTrajectoryMsg(message);
+  const auto& joint=message.joint_trajectory;
+  const auto size=joint.joint_names.size();
+  if (!size || !message.multi_dof_joint_trajectory.points.empty() ||
+      std::set<std::string>(joint.joint_names.begin(),joint.joint_names.end()).size()!=size)
+    throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINTS_INVALID");
+  const auto& known=trajectory.getRobotModel()->getVariableNames();
+  for (const auto& name:joint.joint_names)
+    if (std::find(known.begin(),known.end(),name)==known.end())
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINT_UNKNOWN");
+  auto time_ns=[](const auto& p) {
+    return int64_t(p.time_from_start.sec)*1000000000LL+p.time_from_start.nanosec;
+  };
+  for (std::size_t i=0;i<joint.points.size();++i) {
+    const auto& p=joint.points[i];
+    auto finite=[size](const auto& values,bool required) {
+      return ((!required && values.empty()) || values.size()==size) &&
+        std::all_of(values.begin(),values.end(),[](double x){return std::isfinite(x);});
+    };
+    if (!finite(p.positions,true) || !finite(p.velocities,false) || !finite(p.accelerations,false) ||
+        (i==0 ? time_ns(p)!=0 : time_ns(p)<=time_ns(joint.points[i-1])) ||
+        time_ns(p)>max_duration_ns)
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_FIELDS_INVALID");
+  }
+  moveit::core::RobotState state(trajectory.getFirstWayPoint());
+  state.update();
+  if (!state.satisfiesBounds() || !valid(state,false)) return false;
+  std::size_t samples=1;
+  joint_trajectory_controller::Trajectory interpolation;
+  for (std::size_t i=1;i<joint.points.size();++i) {
+    const auto& a=joint.points[i-1]; const auto& b=joint.points[i];
+    const int64_t begin=time_ns(a),end=time_ns(b),span=end-begin;
+    std::size_t divisions=static_cast<std::size_t>((span+999999)/1000000);
+    // Bernstein derivative hull bounds joint travel in normalized segment time.
+    // This only bounds sampling density; positions always come from installed JTC.
+    const double seconds=double(span)*1e-9;
+    const bool velocities=!a.velocities.empty() && !b.velocities.empty();
+    const bool accelerations=velocities && !a.accelerations.empty() && !b.accelerations.empty();
+    for (std::size_t j=0;j<size;++j) {
+      std::vector<double> controls;
+      if (accelerations) {
+        controls={a.positions[j],a.positions[j]+a.velocities[j]*seconds/5.,
+          a.positions[j]+2.*a.velocities[j]*seconds/5.+a.accelerations[j]*seconds*seconds/20.,
+          b.positions[j]-2.*b.velocities[j]*seconds/5.+b.accelerations[j]*seconds*seconds/20.,
+          b.positions[j]-b.velocities[j]*seconds/5.,b.positions[j]};
+      } else if (velocities) {
+        controls={a.positions[j],a.positions[j]+a.velocities[j]*seconds/3.,
+          b.positions[j]-b.velocities[j]*seconds/3.,b.positions[j]};
+      } else controls={a.positions[j],b.positions[j]};
+      if (!std::all_of(controls.begin(),controls.end(),[](double x){return std::isfinite(x);}))
+        throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINT_TRAVEL_INVALID");
+      double bound=0.;
+      for (std::size_t k=1;k<controls.size();++k)
+        bound=std::max(bound,std::abs(controls[k]-controls[k-1])*double(controls.size()-1));
+      if (!std::isfinite(bound) || bound/.001>double(max_samples))
+        throw std::runtime_error("CONTROLLER_TRAJECTORY_JOINT_TRAVEL_EXCEEDED");
+      divisions=std::max(divisions,static_cast<std::size_t>(std::ceil(bound/.001)));
+    }
+    if (divisions>max_samples-samples || divisions>static_cast<std::size_t>(span))
+      throw std::runtime_error("CONTROLLER_TRAJECTORY_SAMPLE_LIMIT");
+    for (std::size_t k=1;k<=divisions;++k) {
+      const int64_t stamp=begin+span*int64_t(k)/int64_t(divisions);
+      trajectory_msgs::msg::JointTrajectoryPoint sample;
+      interpolation.interpolate_between_points(rclcpp::Time(begin),a,rclcpp::Time(end),b,
+                                                rclcpp::Time(stamp),sample);
+      auto finite=[size](const auto& values,bool required) {
+        return ((!required && values.empty()) || values.size()==size) &&
+          std::all_of(values.begin(),values.end(),[](double x){return std::isfinite(x);});
+      };
+      if (!finite(sample.positions,true) || !finite(sample.velocities,false) ||
+          !finite(sample.accelerations,false))
+        throw std::runtime_error("CONTROLLER_INTERPOLATION_INVALID");
+      for (std::size_t j=0;j<size;++j)
+        state.setVariablePosition(joint.joint_names[j],sample.positions[j]); // updates mimics
+      state.update();
+      if (!state.satisfiesBounds() || !valid(state,k==divisions)) return false;
+      ++samples;
+    }
+  }
+  return true;
+}
+
+// Opt-in evidence at the innermost adapter boundary; never changes a request.
+class PlanningEvidence : public planning_request_adapter::PlanningRequestAdapter {
+public:
+  void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
+  std::string getDescription() const override { return "Workcell effective planning evidence"; }
+  template<class Message> static void save(const std::string& path, const Message& msg) {
+    rclcpp::SerializedMessage bytes;
+    rclcpp::Serialization<Message>().serialize_message(&msg, &bytes);
+    std::ofstream out(path, std::ios::binary);
+    out.exceptions(std::ios::badbit | std::ios::failbit);
+    const auto& buffer=bytes.get_rcl_serialized_message();
+    out.write(reinterpret_cast<const char*>(buffer.buffer), buffer.buffer_length);
+  }
+  bool adaptAndPlan(const PlannerFn& planner, const planning_scene::PlanningSceneConstPtr& scene,
+      const planning_interface::MotionPlanRequest& req, planning_interface::MotionPlanResponse& res,
+      std::vector<std::size_t>&) const override {
+    const char* directory=std::getenv("WORKCELL_PLANNING_TRACE_DIR");
+    if (!directory || !*directory) return planner(scene,req,res);
+    static std::atomic<unsigned long> sequence{0};
+    std::filesystem::create_directories(directory);
+    const auto stamp=std::chrono::system_clock::now().time_since_epoch();
+    const auto prefix=std::string(directory)+"/"+std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(stamp).count())+"_"+std::to_string(sequence++);
+    save(prefix+".request.cdr",req);
+    moveit_msgs::msg::PlanningScene effective;
+    scene->getPlanningSceneMsg(effective);
+    save(prefix+".scene.cdr",effective);
+    std::ofstream acm(prefix+".acm.txt");
+    scene->getAllowedCollisionMatrix().print(acm);
+    const auto begin=std::chrono::steady_clock::now();
+    const bool ok=planner(scene,req,res);
+    std::ofstream result(prefix+".result.txt");
+    result << "success " << ok << "\nerror " << res.error_code_.val
+           << "\nplanning_time " << res.planning_time_ << "\nwall_time "
+           << std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count() << '\n';
+    return ok;
+  }
+};
+
+class StraightCartesianPath : public planning_request_adapter::PlanningRequestAdapter {
+public:
+  void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
+  std::string getDescription() const override {
+    return "Workcell straight Cartesian interpolation in the effective private planning scene";
+  }
+
+  static Eigen::Isometry3d parsePose(const YAML::Node& node) {
+    if (!node || !node.IsSequence() || node.size()!=7)
+      throw std::runtime_error("CARTESIAN_PATH_POSE_INVALID");
+    for (std::size_t i=0;i<7;++i)
+      if (!std::isfinite(node[i].as<double>()))
+        throw std::runtime_error("CARTESIAN_PATH_POSE_NONFINITE");
+    Eigen::Quaterniond q(node[6].as<double>(),node[3].as<double>(),
+                         node[4].as<double>(),node[5].as<double>());
+    if (q.norm()<1e-12) throw std::runtime_error("CARTESIAN_PATH_QUATERNION_INVALID");
+    q.normalize();
+    Eigen::Isometry3d result=Eigen::Isometry3d::Identity();
+    result.linear()=q.toRotationMatrix();
+    result.translation()=Eigen::Vector3d(
+      node[0].as<double>(),node[1].as<double>(),node[2].as<double>());
+    return result;
+  }
+
+  bool adaptAndPlan(const PlannerFn& planner,
+      const planning_scene::PlanningSceneConstPtr& scene,
+      const planning_interface::MotionPlanRequest& req,
+      planning_interface::MotionPlanResponse& res,
+      std::vector<std::size_t>&) const override {
+    const std::string prefix="workcell_cartesian_path:";
+    bool found_metadata=false;
+    std::string metadata_text;
+    for (const auto& constraint:req.trajectory_constraints.constraints) {
+      if (constraint.name.compare(0,prefix.size(),prefix)==0) {
+        if (found_metadata) {
+          res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN;
+          res.trajectory_.reset();
+          return false;
+        }
+        metadata_text=constraint.name.substr(prefix.size());
+        found_metadata=true;
+      }
+    }
+    if (!found_metadata) {
+      try {
+        if (!planner(scene,req,res)) return false;
+        kinematic_constraints::KinematicConstraintSet constraints(scene->getRobotModel());
+        constraints.add(req.path_constraints,scene->getTransforms());
+        if (!res.trajectory_ || res.error_code_.val!=moveit_msgs::msg::MoveItErrorCodes::SUCCESS ||
+            !auditControllerTrajectory(*res.trajectory_,*scene,[&](const auto& state,bool) {
+              return scene->isStateValid(state,constraints,"");
+            }))
+          throw std::runtime_error("CONTROLLER_INTERPOLATED_STATE_INVALID");
+        return true;
+      } catch (const std::exception& e) {
+        RCLCPP_WARN(rclcpp::get_logger("workcell.cartesian_path"),"%s",e.what());
+      } catch (...) {
+        RCLCPP_WARN(rclcpp::get_logger("workcell.cartesian_path"),"CONTROLLER_AUDIT_UNKNOWN_EXCEPTION");
+      }
+      // Throwing adapters can be skipped by MoveIt; this failure must be returned.
+      res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN;
+      res.trajectory_.reset(); return false;
+    }
+
+    const auto begin=std::chrono::steady_clock::now();
+    auto fail=[&](const char* why) {
+      RCLCPP_WARN(rclcpp::get_logger("workcell.cartesian_path"),"%s",why);
+      res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN;
+      res.trajectory_.reset();
+      res.planning_time_=std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-begin).count();
+      return false;
+    };
+
+    try {
+      const auto data=YAML::Load(metadata_text);
+      if (!data["schema"] || data["schema"].as<std::string>()!="workcell_cartesian_path/v1")
+        return fail("CARTESIAN_PATH_SCHEMA_INVALID");
+      const auto link_name=data["tool_link"].as<std::string>();
+      const double step=data["max_step_m"].as<double>();
+      if (!std::isfinite(step) || step<=0. || step>.01)
+        return fail("CARTESIAN_PATH_STEP_INVALID");
+
+      moveit::core::RobotState start(scene->getRobotModel());
+      start=scene->getCurrentState();
+      moveit::core::robotStateMsgToRobotState(req.start_state,start);
+      start.update();
+
+      const auto* jmg=start.getJointModelGroup(req.group_name);
+      const auto* link=start.getLinkModel(link_name);
+      if (!jmg || !link) return fail("CARTESIAN_PATH_BINDING_INVALID");
+
+      const Eigen::Isometry3d expected_start=parsePose(data["start_pose"]);
+      const Eigen::Isometry3d goal=parsePose(data["goal_pose"]);
+      const Eigen::Isometry3d actual_start=start.getGlobalLinkTransform(link);
+      const double start_translation_error=
+        (actual_start.translation()-expected_start.translation()).norm();
+      const double start_angle_error=Eigen::AngleAxisd(
+        actual_start.linear()*expected_start.linear().transpose()).angle();
+      if (start_translation_error>1e-5 || start_angle_error>1e-5)
+        return fail("CARTESIAN_PATH_START_CHANGED");
+
+      auto kset=std::make_shared<kinematic_constraints::KinematicConstraintSet>(
+        scene->getRobotModel());
+      kset->add(req.path_constraints,scene->getTransforms());
+
+      const bool allow_initial_separation =
+        data["allow_initial_attached_world_separation"] &&
+        data["allow_initial_attached_world_separation"].as<bool>();
+      std::set<std::string> requested_initial_neighbors;
+      if (data["initial_separation_object_ids"]) {
+        if (!data["initial_separation_object_ids"].IsSequence())
+          return fail("CARTESIAN_PATH_INITIAL_SEPARATION_IDS_INVALID");
+        for (const auto& item:data["initial_separation_object_ids"]) {
+          const auto id=item.as<std::string>();
+          if (id.empty())
+            return fail("CARTESIAN_PATH_INITIAL_SEPARATION_ID_EMPTY");
+          requested_initial_neighbors.insert(id);
+        }
+      }
+      if (allow_initial_separation && requested_initial_neighbors.empty())
+        return fail("CARTESIAN_PATH_INITIAL_SEPARATION_IDS_MISSING");
+      planning_scene::PlanningScenePtr separation_scene;
+      std::string carried_id;
+      Eigen::Isometry3d carried_origin=Eigen::Isometry3d::Identity();
+      std::set<std::string> certified_initial_neighbors;
+
+      if (allow_initial_separation) {
+        std::vector<const moveit::core::AttachedBody*> attached;
+        start.getAttachedBodies(attached);
+        if (attached.size()!=1)
+          return fail("CARTESIAN_PATH_INITIAL_SEPARATION_REQUIRES_ONE_ATTACHMENT");
+        carried_id=attached.front()->getName();
+        carried_origin=attached.front()->getGlobalPose();
+
+        collision_detection::CollisionRequest collision_request;
+        collision_request.contacts=true;
+        collision_request.max_contacts=256;
+        collision_request.max_contacts_per_pair=64;
+        collision_request.group_name=req.group_name;
+        collision_detection::CollisionResult collision_result;
+        scene->checkCollision(collision_request,collision_result,start);
+
+        if (collision_result.collision) {
+          if (collision_result.contacts.empty() ||
+              collision_result.contact_count>=collision_request.max_contacts)
+            return fail("CARTESIAN_PATH_INITIAL_COLLISION_EVIDENCE_INCOMPLETE");
+
+          for (const auto& pair_contacts:collision_result.contacts) {
+            for (const auto& contact:pair_contacts.second) {
+              const bool forward=
+                contact.body_name_1==carried_id &&
+                contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
+              const bool reverse=
+                contact.body_name_2==carried_id &&
+                contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
+              if (!forward && !reverse)
+                return fail("CARTESIAN_PATH_INITIAL_COLLISION_NOT_CARRIED_WORLD_CONTACT");
+              const auto neighbor=forward ? contact.body_name_2 : contact.body_name_1;
+              if (!requested_initial_neighbors.count(neighbor))
+                return fail("CARTESIAN_PATH_INITIAL_COLLISION_NOT_MEASURED_PILE_CONTACT");
+              if (!PileContact{carried_id,neighbor}(contact))
+                return fail("CARTESIAN_PATH_INITIAL_CONTACT_OUTSIDE_NUMERICAL_TOLERANCE");
+              certified_initial_neighbors.insert(neighbor);
+            }
+          }
+
+          if (certified_initial_neighbors.empty())
+            return fail("CARTESIAN_PATH_INITIAL_COLLISION_UNCERTIFIED");
+
+          separation_scene=scene->diff();
+          separation_scene->decoupleParent();
+          for (const auto& neighbor:certified_initial_neighbors) {
+            collision_detection::DecideContactFn predicate=PileContact{carried_id,neighbor};
+            separation_scene->getAllowedCollisionMatrixNonConst().setEntry(
+              carried_id,neighbor,predicate);
+          }
+
+          std::ostringstream names;
+          std::size_t index=0;
+          for (const auto& neighbor:certified_initial_neighbors) {
+            if (index++) names << ",";
+            names << neighbor;
+          }
+          RCLCPP_INFO(
+            rclcpp::get_logger("workcell.cartesian_path"),
+            "CARTESIAN_PATH_INITIAL_SEPARATION carried=%s neighbors=[%s] tolerance=%.6f",
+            carried_id.c_str(),names.str().c_str(),support_contact_tolerance_m);
+        }
+      }
+
+      auto separation_motion_valid=[
+        &carried_id,&carried_origin](const moveit::core::RobotState& state) {
+        if (carried_id.empty()) return true;
+        const auto* carried=state.getAttachedBody(carried_id);
+        if (!carried) return false;
+        const auto motion=
+          carried->getGlobalPose().translation()-carried_origin.translation();
+        const double angle=Eigen::AngleAxisd(
+          carried->getGlobalPose().linear()*carried_origin.linear().transpose()).angle();
+        return motion.head<2>().norm()<=.0025 &&
+          motion.z()>=-1e-9 && motion.z()<=.01 &&
+          angle<=.01;
+      };
+
+      std::size_t collision_rejections=0;
+      std::size_t constraint_rejections=0;
+      moveit::core::GroupStateValidityCallbackFn valid=[
+        scene,separation_scene,kset,separation_motion_valid,
+        &collision_rejections,&constraint_rejections](
+          moveit::core::RobotState* state,
+          const moveit::core::JointModelGroup* group,
+          const double* solution) {
+        state->setJointGroupPositions(group,solution);
+        state->update();
+
+        const bool strict_collision_free=
+          !scene->isStateColliding(*state,group->getName());
+        bool collision_free=strict_collision_free;
+        if (!collision_free && separation_scene && separation_motion_valid(*state))
+          collision_free=!separation_scene->isStateColliding(*state,group->getName());
+        if (!collision_free) {
+          ++collision_rejections;
+          return false;
+        }
+        if (!kset->empty() && !kset->decide(*state).satisfied) {
+          ++constraint_rejections;
+          return false;
+        }
+        return true;
+      };
+
+      const moveit::core::RobotState original_start(start);
+      EigenSTL::vector_Isometry3d waypoints{goal};
+      std::vector<moveit::core::RobotStatePtr> states;
+      const double fraction=moveit::core::CartesianInterpolator::computeCartesianPath(
+        &start,jmg,states,link,waypoints,true,
+        moveit::core::MaxEEFStep(step),
+        moveit::core::JumpThreshold(0.0),valid);
+      if (!std::isfinite(fraction) || fraction<1.0-1e-9) {
+        RCLCPP_WARN(
+          rclcpp::get_logger("workcell.cartesian_path"),
+          "CARTESIAN_PATH_INCOMPLETE fraction=%.9f collision_rejections=%zu constraint_rejections=%zu",
+          fraction,collision_rejections,constraint_rejections);
+        return fail("CARTESIAN_PATH_INCOMPLETE");
+      }
+
+      auto trajectory=std::make_shared<robot_trajectory::RobotTrajectory>(
+        scene->getRobotModel(),req.group_name);
+      trajectory->addSuffixWayPoint(original_start,0.0);
+      for (const auto& state:states) {
+        if (!state) return fail("CARTESIAN_PATH_STATE_MISSING");
+        if (trajectory->getLastWayPoint().distance(*state)>1e-12)
+          trajectory->addSuffixWayPoint(*state,0.0);
+      }
+      if (trajectory->getWayPointCount()<2)
+        return fail("CARTESIAN_PATH_EMPTY");
+
+      trajectory_processing::IterativeParabolicTimeParameterization time_parameterization;
+      const double velocity=(req.max_velocity_scaling_factor>0. &&
+                             req.max_velocity_scaling_factor<=1.)
+                              ? req.max_velocity_scaling_factor : 0.2;
+      const double acceleration=(req.max_acceleration_scaling_factor>0. &&
+                                 req.max_acceleration_scaling_factor<=1.)
+                                  ? req.max_acceleration_scaling_factor : 0.2;
+      if (!time_parameterization.computeTimeStamps(
+            *trajectory,velocity,acceleration))
+        return fail("CARTESIAN_PATH_TIMING_FAILED");
+
+      // Final fail-closed validation over every emitted state. Certified
+      // carried-object/world numerical contacts may exist only at the beginning
+      // of a lift, must disappear within 10 mm of monotonic vertical separation,
+      // and may never reappear. Every unrelated pair remains strict throughout.
+      bool separated=!separation_scene;
+      double last_height=-1e-12;
+      for (std::size_t i=0;i<trajectory->getWayPointCount();++i) {
+        const auto& state=trajectory->getWayPoint(i);
+        if (!carried_id.empty()) {
+          const auto* carried=state.getAttachedBody(carried_id);
+          if (!carried)
+            return fail("CARTESIAN_PATH_EMITTED_ATTACHMENT_MISSING");
+          const auto motion=
+            carried->getGlobalPose().translation()-carried_origin.translation();
+          if (motion.z()<last_height-1e-9)
+            return fail("CARTESIAN_PATH_INITIAL_SEPARATION_REVERSED");
+          last_height=motion.z();
+        }
+
+        const bool strict_collision_free=
+          !scene->isStateColliding(state,req.group_name);
+        if (strict_collision_free) {
+          separated=true;
+        } else {
+          if (separated || !separation_scene ||
+              !separation_motion_valid(state) ||
+              separation_scene->isStateColliding(state,req.group_name))
+            return fail("CARTESIAN_PATH_EMITTED_COLLISION");
+        }
+
+        if (!kset->empty() && !kset->decide(state).satisfied)
+          return fail("CARTESIAN_PATH_EMITTED_CONSTRAINT_FAILURE");
+      }
+      if (separation_scene && !separated)
+        return fail("CARTESIAN_PATH_INITIAL_CONTACT_NOT_SEPARATED");
+
+      // The emitted controller spline is an independent chronological stream.
+      // Its initial exceptions expire once and never reset between segments.
+      bool spline_separated=!separation_scene;
+      double spline_last_height=-1e-12;
+      if (!auditControllerTrajectory(*trajectory,*(separation_scene?separation_scene:scene),[&](const auto& state,bool) {
+        if (!carried_id.empty()) {
+          const auto* carried=state.getAttachedBody(carried_id);
+          if (!carried) return false;
+          const double height=carried->getGlobalPose().translation().z()-carried_origin.translation().z();
+          if (height<spline_last_height-1e-9) return false;
+          spline_last_height=height;
+        }
+        const bool strict=!scene->isStateColliding(state,"");
+        if (strict) spline_separated=true;
+        else if (spline_separated || !separation_scene || !separation_motion_valid(state) ||
+                 separation_scene->isStateColliding(state,"")) return false;
+        return scene->isStateFeasible(state) && (kset->empty() || kset->decide(state).satisfied);
+      })) return fail("CARTESIAN_PATH_CONTROLLER_INTERPOLATION_INVALID");
+      if (separation_scene && !spline_separated)
+        return fail("CARTESIAN_PATH_CONTROLLER_CONTACT_NOT_SEPARATED");
+
+      res.trajectory_=trajectory;
+      res.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+      res.planning_time_=std::chrono::duration<double>(
+        std::chrono::steady_clock::now()-begin).count();
+      RCLCPP_INFO(
+        rclcpp::get_logger("workcell.cartesian_path"),
+        "CARTESIAN_PATH_PASS points=%zu step=%.4f collision_rejections=%zu constraint_rejections=%zu",
+        trajectory->getWayPointCount(),step,collision_rejections,constraint_rejections);
+      return true;
+    } catch (const std::exception& e) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("workcell.cartesian_path"),
+        "CARTESIAN_PATH_REJECTED: %s",e.what());
+      return fail("CARTESIAN_PATH_REJECTED");
+    } catch (...) {
+      return fail("CARTESIAN_PATH_REJECTED_UNKNOWN_EXCEPTION");
+    }
+  }
+};
+
 class InitialSupportContact : public planning_request_adapter::PlanningRequestAdapter {
 public:
   void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
@@ -57,8 +567,90 @@ public:
       if (std::abs(bottom-policy.floor_z)>support_contact_tolerance_m)
         return fail("SUPPORT_CONTACT_OUTSIDE_TOLERANCE");
       auto local=scene->diff(); local->decoupleParent();
-      collision_detection::DecideContactFn predicate=[policy](collision_detection::Contact& c) { return policy(c); };
+      collision_detection::DecideContactFn predicate=policy;
       local->getAllowedCollisionMatrixNonConst().setEntry(policy.object,policy.support,predicate);
+
+      // If this lift was bound to measured piled-object contacts, certify those
+      // exact object IDs after the stricter support-floor exception has been
+      // installed. This composes the two policies: support contact remains
+      // floor/normal certified, while only measured shallow pile neighbors may
+      // coexist during the first <=10 mm of vertical separation.
+      std::set<std::string> requested_neighbors;
+      const std::string cartesian_prefix="workcell_cartesian_path:";
+      for (const auto& constraint:req.trajectory_constraints.constraints) {
+        if (constraint.name.compare(0,cartesian_prefix.size(),cartesian_prefix)!=0)
+          continue;
+        const auto metadata=YAML::Load(constraint.name.substr(cartesian_prefix.size()));
+        const bool allow=metadata["allow_initial_attached_world_separation"] &&
+          metadata["allow_initial_attached_world_separation"].as<bool>();
+        if (!allow) continue;
+        if (!metadata["initial_separation_object_ids"] ||
+            !metadata["initial_separation_object_ids"].IsSequence())
+          return fail("SUPPORT_CONTACT_INITIAL_SEPARATION_IDS_INVALID");
+        for (const auto& item:metadata["initial_separation_object_ids"]) {
+          const auto id=item.as<std::string>();
+          if (id.empty() || id==policy.object || id==policy.support)
+            return fail("SUPPORT_CONTACT_INITIAL_SEPARATION_ID_INVALID");
+          requested_neighbors.insert(id);
+        }
+      }
+
+      if (!requested_neighbors.empty()) {
+        collision_detection::CollisionRequest collision_request;
+        collision_request.contacts=true;
+        collision_request.max_contacts=256;
+        collision_request.max_contacts_per_pair=64;
+        collision_request.group_name=req.group_name;
+        collision_detection::CollisionResult collision_result;
+        local->checkCollision(collision_request,collision_result,start);
+
+        std::set<std::string> certified_neighbors;
+        if (collision_result.collision) {
+          if (collision_result.contacts.empty() ||
+              collision_result.contact_count>=collision_request.max_contacts)
+            return fail("SUPPORT_CONTACT_INITIAL_SEPARATION_EVIDENCE_INCOMPLETE");
+          for (const auto& pair_contacts:collision_result.contacts) {
+            for (const auto& contact:pair_contacts.second) {
+              const bool forward=
+                contact.body_name_1==policy.object &&
+                contact.body_type_1==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_2==collision_detection::BodyTypes::WORLD_OBJECT;
+              const bool reverse=
+                contact.body_name_2==policy.object &&
+                contact.body_type_2==collision_detection::BodyTypes::ROBOT_ATTACHED &&
+                contact.body_type_1==collision_detection::BodyTypes::WORLD_OBJECT;
+              if (!forward && !reverse)
+                return fail("SUPPORT_CONTACT_INITIAL_COLLISION_NOT_CARRIED_WORLD_CONTACT");
+              const auto neighbor=forward ? contact.body_name_2 : contact.body_name_1;
+              if (!requested_neighbors.count(neighbor))
+                return fail("SUPPORT_CONTACT_INITIAL_COLLISION_NOT_MEASURED_PILE_CONTACT");
+              if (!PileContact{policy.object,neighbor}(contact))
+                return fail("SUPPORT_CONTACT_INITIAL_PILE_CONTACT_OUTSIDE_TOLERANCE");
+              certified_neighbors.insert(neighbor);
+            }
+          }
+        }
+
+        for (const auto& neighbor:certified_neighbors) {
+          collision_detection::DecideContactFn pile_predicate=PileContact{policy.object,neighbor};
+          local->getAllowedCollisionMatrixNonConst().setEntry(
+            policy.object,neighbor,pile_predicate);
+        }
+
+        if (!certified_neighbors.empty()) {
+          std::ostringstream names;
+          std::size_t index=0;
+          for (const auto& neighbor:certified_neighbors) {
+            if (index++) names << ",";
+            names << neighbor;
+          }
+          RCLCPP_INFO(
+            rclcpp::get_logger("workcell.support_contact"),
+            "SUPPORT_CONTACT_INITIAL_PILE_SEPARATION object=%s neighbors=[%s] tolerance=%.6f",
+            policy.object.c_str(),names.str().c_str(),support_contact_tolerance_m);
+        }
+      }
+
       auto clean=req; clean.path_constraints.name.clear();
       if (!local->isStateValid(start,clean.path_constraints,"")) return fail("SUPPORT_CONTACT_INVALID_START");
       // All FCL contacts for this pair are evaluated by the conditional callback;
@@ -101,6 +693,12 @@ public:
         }
       }
       if (!separated) return fail("SUPPORT_CONTACT_NOT_SEPARATED");
+      // Retain the original geometric/waypoint audit above, then independently
+      // replay actual controller interpolation under the same irreversible policy.
+      separated=false; last_height=0.;
+      if (!auditControllerTrajectory(trajectory,*local,valid))
+        return fail("SUPPORT_CONTACT_CONTROLLER_INTERPOLATION_INVALID");
+      if (!separated) return fail("SUPPORT_CONTACT_CONTROLLER_NOT_SEPARATED");
       // No fabricated adapter-added indexes. Humble's pipeline independently
       // checks the original scene and permits solely invalid start index 0.
       // We have qualified that start more strictly above and every later state
@@ -114,4 +712,130 @@ public:
   }
 };
 }
+PLUGINLIB_EXPORT_CLASS(workcell::StraightCartesianPath, planning_request_adapter::PlanningRequestAdapter)
 PLUGINLIB_EXPORT_CLASS(workcell::InitialSupportContact, planning_request_adapter::PlanningRequestAdapter)
+PLUGINLIB_EXPORT_CLASS(workcell::PlanningEvidence, planning_request_adapter::PlanningRequestAdapter)
+
+// ABI for the simulator execution owner: exactly the planner's per-contact
+// predicate, with the caller's measured identities and geometry. No ACM writes.
+extern "C" bool workcell_support_contact_valid(const char* object,const char* support,
+ const char* first,const char* second,double floor,const double* point) {
+  collision_detection::Contact c;
+  c.body_name_1=first;c.body_name_2=second;
+  c.body_type_1=c.body_name_1==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.body_type_2=c.body_name_2==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.pos=Eigen::Vector3d(point[0],point[1],point[2]);
+  c.normal=Eigen::Vector3d(point[3],point[4],point[5]);c.depth=point[6];
+  return workcell::SupportContact{object,support,floor}(c);
+}
+
+
+// Runtime MoveIt contacts retain exact names and the same pile predicate used
+// above. The caller must first require carried/world body types in its response.
+extern "C" bool workcell_pile_contact_valid(const char* object,const char* neighbor,
+ const char* first,const char* second,const double* point) {
+  if (!object || !neighbor || !first || !second || !point ||
+      !*object || !*neighbor || std::string(object)==neighbor) return false;
+  collision_detection::Contact c;
+  c.body_name_1=first; c.body_name_2=second;
+  c.body_type_1=c.body_name_1==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.body_type_2=c.body_name_2==object ? collision_detection::BodyTypes::ROBOT_ATTACHED : collision_detection::BodyTypes::WORLD_OBJECT;
+  c.pos=Eigen::Map<const Eigen::Vector3d>(point);
+  c.normal=Eigen::Map<const Eigen::Vector3d>(point+3); c.depth=point[6];
+  return workcell::PileContact{object,neighbor}(c);
+}
+
+namespace {
+bool measuredBoxPose(const double* size,const double* pose,Eigen::Isometry3d& transform) {
+  if (!size || !pose) return false;
+  for (std::size_t i=0;i<3;++i)
+    if (!std::isfinite(size[i]) || size[i]<=0.) return false;
+  for (std::size_t i=0;i<7;++i) if (!std::isfinite(pose[i])) return false;
+  Eigen::Quaterniond orientation(pose[6],pose[3],pose[4],pose[5]);
+  if (std::abs(orientation.squaredNorm()-1.)>1e-6) return false;
+  transform=Eigen::Isometry3d::Identity();
+  transform.translation()=Eigen::Map<const Eigen::Vector3d>(pose);
+  transform.linear()=orientation.normalized().toRotationMatrix();
+  return transform.matrix().allFinite();
+}
+
+// This checks telemetry association against a known BOX surface, not collision
+// between shapes. Pair penetration and separation are exclusively FCL results.
+bool measuredPointOnBox(const Eigen::Vector3d& point,const double* size,
+                        const Eigen::Isometry3d& transform) {
+  const Eigen::Vector3d local=transform.inverse()*point;
+  const Eigen::Vector3d face_distance=local.cwiseAbs()-Eigen::Map<const Eigen::Vector3d>(size)*.5;
+  const double surface_distance=face_distance.maxCoeff()<=0. ?
+    -face_distance.maxCoeff() : face_distance.cwiseMax(0.).norm();
+  return std::isfinite(surface_distance) && surface_distance<=workcell::support_contact_tolerance_m;
+}
+}
+
+// BOX-only measured pair query through the same FCL library used by MoveIt.
+// Poses are xyz+xyzw. Output: maximum penetration, separation, normal xyz,
+// point xyz. A colliding result reports the deepest actual FCL contact; a
+// separated result reports the FCL nearest-point midpoint and their direction.
+// Every supplied physical point must agree with BOTH measured surfaces within
+// the unchanged 0.1 mm bound. Empty points cannot certify contact, but geometry
+// evidence is retained so callers can prove a previously certified pair cleared.
+// Invalid input/unsupported geometry yields NaNs. No exception crosses the ABI.
+extern "C" bool workcell_measured_pile_contact(
+ const double* target_size3,const double* target_pose7,
+ const double* neighbor_size3,const double* neighbor_pose7,
+ const double* physical_points3n,std::size_t n,double* evidence8) {
+  if (!evidence8) return false;
+  std::fill(evidence8,evidence8+8,std::numeric_limits<double>::quiet_NaN());
+  try {
+    Eigen::Isometry3d target_pose,neighbor_pose;
+    if (!measuredBoxPose(target_size3,target_pose7,target_pose) ||
+        !measuredBoxPose(neighbor_size3,neighbor_pose7,neighbor_pose) || n>256 ||
+        (n && !physical_points3n)) return false;
+    const fcl::Boxd target(target_size3[0],target_size3[1],target_size3[2]);
+    const fcl::Boxd neighbor(neighbor_size3[0],neighbor_size3[1],neighbor_size3[2]);
+    const fcl::CollisionRequestd request(64,true);
+    fcl::CollisionResultd result;
+    fcl::collide(&target,target_pose,&neighbor,neighbor_pose,request,result);
+    bool geometry_valid=false;
+    if (result.isCollision()) {
+      std::vector<fcl::Contactd> contacts;
+      result.getContacts(contacts);
+      if (contacts.empty() || contacts.size()>=request.num_max_contacts) return false;
+      double max_depth=-1.;
+      for (const auto& c:contacts) {
+        if (!std::isfinite(c.penetration_depth) || c.penetration_depth<0. ||
+            !c.pos.allFinite() || !c.normal.allFinite()) return false;
+        if (c.penetration_depth>max_depth) {
+          max_depth=c.penetration_depth;
+          evidence8[0]=max_depth; evidence8[1]=0.;
+          Eigen::Map<Eigen::Vector3d>(evidence8+2)=c.normal;
+          Eigen::Map<Eigen::Vector3d>(evidence8+5)=c.pos;
+        }
+      }
+      geometry_valid=max_depth<=workcell::support_contact_tolerance_m;
+    } else {
+      fcl::DistanceRequestd distance_request;
+      distance_request.enable_nearest_points=true;
+      fcl::DistanceResultd distance_result;
+      fcl::distance(&target,target_pose,&neighbor,neighbor_pose,distance_request,distance_result);
+      const double separation=distance_result.min_distance;
+      const Eigen::Vector3d delta=distance_result.nearest_points[1]-distance_result.nearest_points[0];
+      if (!std::isfinite(separation) || separation<=0. || !delta.allFinite() ||
+          delta.norm()<=0. || !distance_result.nearest_points[0].allFinite()) return false;
+      evidence8[0]=0.; evidence8[1]=separation;
+      Eigen::Map<Eigen::Vector3d>(evidence8+2)=delta.normalized();
+      Eigen::Map<Eigen::Vector3d>(evidence8+5)=
+        (distance_result.nearest_points[0]+distance_result.nearest_points[1])*.5;
+      geometry_valid=separation<=workcell::support_contact_tolerance_m;
+    }
+    if (!geometry_valid || !n) return false;
+    for (std::size_t i=0;i<n;++i) {
+      const Eigen::Vector3d point=Eigen::Map<const Eigen::Vector3d>(physical_points3n+3*i);
+      if (!point.allFinite() || !measuredPointOnBox(point,target_size3,target_pose) ||
+          !measuredPointOnBox(point,neighbor_size3,neighbor_pose)) return false;
+    }
+    return true;
+  } catch (...) {
+    std::fill(evidence8,evidence8+8,std::numeric_limits<double>::quiet_NaN());
+    return false;
+  }
+}
