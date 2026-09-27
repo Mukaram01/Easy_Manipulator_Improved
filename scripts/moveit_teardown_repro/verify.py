@@ -49,7 +49,7 @@ def main():
         prefix=args.output/f'{index+1:02d}'
         process=subprocess.Popen(command,stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,start_new_session=True,cwd=args.output,
-            env=dict(os.environ,ROS_DOMAIN_ID='193',ROS_LOCALHOST_ONLY='1'))
+            env=dict(os.environ,ROS_DOMAIN_ID=os.environ.get('ROS_DOMAIN_ID','193'),ROS_LOCALHOST_ONLY='1'))
         output=b'';ready=False;timed_out=False;loaded=[];loaded_binary=None
         try:
             selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
