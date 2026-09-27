@@ -76,3 +76,34 @@ exits, new bridge cores or surviving owned processes. The baseline directory
 preserves the original PID 81044 abort and documents its evidence normalization;
 two later bounded baseline runs that did not reproduce the race are retained
 separately. The installed executable and library remained unchanged.
+
+### Restoration and distinct shutdown exception (2026-09-27)
+
+No compatible preserved logging-lifetime baseline was found in the local
+workspaces/project artifacts; `/home/ubuntu` is absent. The earlier 20 native
+non-reproductions remain preserved. A bounded five-cycle probe changing only
+RMW selection to CycloneDDS also exited normally. Neither observation qualifies
+the required installed-baseline logging-lifetime SIGABRT.
+
+A separate patched diagnostic passed 20 native cycles but failed Memcheck cycle
+5: the lazy bridge callback queried subscriptions after its node context became
+invalid. The resulting `RCLError` caused SIGABRT, with zero Memcheck errors.
+This is a distinct defect, **not** the required historical lifetime baseline.
+The baseline verifier now rejects this unrelated exception/unclassified abort
+and requires the preserved allocator symptom; that signature remains necessary,
+not sufficient to establish the original cause without its lifetime evidence.
+
+The independently reviewed executable patch now handles only
+`RCL_RET_NODE_INVALID` when that node's own context is already invalid, then
+performs the existing joined shutdown. All other errors still propagate. Three
+synthetic C++ policy cases exercise the actual invalid-context graph query and
+the two required rethrow cases. Synthetic tests are not baseline reproduction.
+The corrected executable, SHA256
+`156514f96ff73f3109224d711542b6c1f00cf2e5a69e4e8f1b1dea64214cf601`,
+then passed 20 native and five Memcheck diagnostic cycles with zero memory
+errors, forced kills, owned survivors or core changes. These results remain
+**NON-QUALIFYING** because the required baseline is absent.
+All fresh bridge evidence, including the failed cycle and new non-qualifying
+checks, is under `/home/user/workcell_ws/diagnostics/stage-a1-20260927/bridge`.
+No bridge admission provenance or qualified setup file is published while the
+required baseline remains absent.

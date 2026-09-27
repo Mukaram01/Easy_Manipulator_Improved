@@ -37,3 +37,12 @@ def test_bridge_source_guard_rejects_extra_changes_even_in_index(tmp_path,staged
     if staged:git('add','header.hpp')
     with pytest.raises(RuntimeError,match='beyond the reviewed patch'):
         MODULE.apply_reviewed_patch(source,patch)
+
+
+def test_unrelated_shutdown_exception_cannot_count_as_lifetime_baseline():
+    spec=importlib.util.spec_from_file_location('bridge_verify',SCRIPT.parent/'bridge_shutdown_repro/verify.py')
+    verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(verifier)
+    assert not verifier.baseline_lifetime_abort([0,-6],"terminate called after throwing an instance of 'rclcpp::exceptions::RCLError'")
+    assert not verifier.baseline_lifetime_abort([0,-6],'unclassified abort')
+    assert verifier.baseline_lifetime_abort([0,-6],'free(): corrupted unsorted chunks\n')
+    assert not verifier.baseline_lifetime_abort([0,0],'free(): corrupted unsorted chunks\n')

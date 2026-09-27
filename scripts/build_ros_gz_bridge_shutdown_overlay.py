@@ -73,6 +73,9 @@ def main():
     evidence=root/'evidence'/datetime.datetime.now(datetime.timezone.utc).strftime('run-%Y%m%d-%H%M%S')
     evidence.mkdir(parents=True)
     (evidence/'source.patch').write_bytes(diff)
+    with (evidence/'shutdown-context-test.log').open('w') as log:
+        run([build/'shutdown_context_test'], stdout=log, stderr=subprocess.STDOUT,
+            env=dict(os.environ, ROS_DOMAIN_ID='198', ROS_LOCALHOST_ONLY='1'))
     common=['/usr/bin/python3',proof/'verify.py','--publisher',build/'bridge_traffic','--library',library]
     if args.baseline_results:
         prior=json.loads(args.baseline_results.read_text())
@@ -82,6 +85,14 @@ def main():
                 not any(row.get('passed') and row.get('returncodes')==[0,-6]
                         for row in prior.get('results',[]))):
             raise RuntimeError('prior baseline proof does not match current installed binaries')
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('bridge_proof',proof/'verify.py')
+        verifier=importlib.util.module_from_spec(spec);spec.loader.exec_module(verifier)
+        if not any(row.get('passed') and verifier.baseline_lifetime_abort(
+                row.get('returncodes'),
+                (args.baseline_results.parent/f"{row['cycle']:02}-bridge.log").read_text())
+                for row in prior.get('results', [])):
+            raise RuntimeError('prior baseline lacks the preserved shutdown-corruption signature')
         shutil.copytree(args.baseline_results.resolve().parent,evidence/'baseline')
     else:
         run([*common,'--binary',baseline,'--cycles','20','--expect-abort','--output',evidence/'baseline'])
@@ -104,6 +115,9 @@ def main():
         reproduction=dict(baseline_returncode=baseline_proof['results'][-1]['returncodes'][1],
                           native=results('native'),memcheck=results('memcheck')),
         build_script_sha256=sha(__file__),proof_script_sha256=sha(proof/'verify.py'),
+        shutdown_context_test=dict(source_sha256=sha(proof/'shutdown_context_test.cpp'),
+            log_path=str(evidence/'shutdown-context-test.log'),
+            log_sha256=sha(evidence/'shutdown-context-test.log')),
         publisher_source_sha256=sha(proof/'publisher.cpp'),configuration_sha256=sha(proof/'bridges.yaml'))
     manifest_path.write_text(json.dumps(manifest,indent=2)+'\n')
     (root/'setup.bash').write_text('export ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY='+shlex.quote(str(root))+'\n')

@@ -31,6 +31,16 @@ def cores():
             for p in Path('/var/crash').glob('*parameter_bridge*.crash')}
 
 
+def baseline_lifetime_abort(returncodes, log):
+    """Reject unrelated aborts; retain the recorded allocator symptom as required.
+
+    This signature is necessary, not a substitute for inspecting the preserved
+    lifetime trace. A context-invalid RCLError is a different defect.
+    """
+    return (returncodes == [0, -signal.SIGABRT] and
+            'free(): corrupted unsorted chunks' in log and 'RCLError' not in log)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary',type=Path,required=True)
@@ -99,7 +109,9 @@ def main():
                 and row.get('mapped_executable') and (args.valgrind or row.get('loaded_executable')==str(binary))
                 and not row.get('forced_kill') and not row['remaining_processes'] and 'exception' not in row)
             if args.expect_abort:
-                row['passed']=bool(healthy and row.get('returncodes')==[0,-signal.SIGABRT])
+                row['baseline_lifetime_signature']=baseline_lifetime_abort(
+                    row.get('returncodes'),(args.output/f'{index:02}-bridge.log').read_text())
+                row['passed']=bool(healthy and row['baseline_lifetime_signature'])
             else:
                 row['passed']=bool(healthy and row.get('returncodes')==[0,0]
                     and row.get('memcheck_errors')==0 and not row.get('core_inventory_changed'))

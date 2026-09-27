@@ -8,3 +8,8 @@ target_link_libraries(parameter_bridge PRIVATE ros_gz_bridge::ros_gz_bridge)
 add_executable(bridge_traffic publisher.cpp)
 target_link_libraries(bridge_traffic PRIVATE ignition-transport11::core ignition-msgs8::core)
 install(TARGETS parameter_bridge DESTINATION lib/ros_gz_bridge)
+# Synthetic regression for the reviewed exception policy, not baseline proof.
+add_executable(shutdown_context_test shutdown_context_test.cpp)
+target_compile_definitions(shutdown_context_test PRIVATE BRIDGE_MAIN="${BRIDGE_SOURCE}/src/parameter_bridge.cpp")
+target_include_directories(shutdown_context_test PRIVATE "${BRIDGE_SOURCE}/src")
+target_link_libraries(shutdown_context_test PRIVATE ros_gz_bridge::ros_gz_bridge)
