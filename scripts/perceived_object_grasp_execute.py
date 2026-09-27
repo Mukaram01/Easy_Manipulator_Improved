@@ -1963,6 +1963,75 @@ def main():
             raise RuntimeError('retreat distance must be finite and positive')
         deadline = time.monotonic()+args.timeout
         from full_cycle_preplanner import PreplanOperations
+        capture_model = None
+        if args.backend == 'simulator':
+            from grasp_capture import CaptureModel
+            from simulator_execution import Measurements
+            # Passive acquisition is also required by plan-only qualification.
+            measurements = Measurements(node,args.simulator_receipt,
+                Path(args.summary_output).with_suffix('.measurements.jsonl'))
+            until=time.monotonic()+5
+            while measurements.latest is None and time.monotonic()<until:
+                rclpy.spin_once(node,timeout_sec=.05)
+            capture_model = CaptureModel(params[2].string_value, contract['allowed_touch_links'])
+            srdf = call(params_client,GetParameters.Request(names=['robot_description_semantic'])).values[0].string_value
+            if not srdf.strip():raise RuntimeError('missing SRDF qualification evidence')
+            root=Path(args.summary_output).parent
+            (root/'qualification.urdf').write_text(params[2].string_value)
+            (root/'qualification.srdf').write_text(srdf)
+            summary['qualification_model'] = dict(urdf_sha256=capture_model.sha256,
+                srdf_sha256=sha256(srdf.encode()).hexdigest(), meshes=capture_model.meshes)
+        def qualify_grasp(*, scene, observation, candidate, planned_open, planned_closed):
+            from grasp_capture import qualify_capture, confirm_capture
+            sample=copy.deepcopy(measurements.fresh())
+            joints={name:values[0] for name,values in measurements.joints(sample).items()}
+            measured=dict(kind='MEASURED',wall_ns=sample['wall_ns'],iteration=sample['iteration'],
+                sim_ns=sample['sim_ns'],joints=joints,physics_sample=sample,
+                link_poses={name:measurements.frame(sample,name) for name in contract['allowed_touch_links']})
+            actual_pose=measurements.object_pose(sample,observation['object_id'])
+            measured['target_pose']=actual_pose
+            if (math.dist(actual_pose[:3],observation['pose'][:3])>.00025 or
+                min(math.dist(actual_pose[3:],observation['pose'][3:]),
+                    math.dist(actual_pose[3:],[-v for v in observation['pose'][3:]]))>.00025):
+                return dict(accepted=False,reason='target geometry changed since bound observation')
+            scene_bytes=json.dumps(message_to_ordereddict(scene),sort_keys=True).encode()
+            binding=dict(scene_sha256=sha256(scene_bytes).hexdigest(),
+                observation_sha256=summary['observation_sha256'],robot_model_sha256=capture_model.sha256,
+                srdf_sha256=summary['qualification_model']['srdf_sha256'],
+                receipt_sha256=summary['backend_identity']['receipt_sha256'],
+                candidate_id=candidate.candidate_id,target_id=observation['id'])
+            target_geometry=collision_object_dict(next(o for o in scene.world.collision_objects if o.id==observation['id']))
+            if not target_geometry or target_geometry['shape']!='BOX':
+                return dict(accepted=False,reason='unsupported target collision geometry; BOX required')
+            result=qualify_capture(model=capture_model,target=dict(observation,shape=target_geometry['shape']),
+                candidate_pose=list(candidate.grasp_pose),measured=measured,
+                planned_open=dict(zip(planned_open.joint_state.name,planned_open.joint_state.position)),
+                planned_closed=dict(zip(planned_closed.joint_state.name,planned_closed.joint_state.position)),
+                binding=binding,now_ns=time.time_ns(),config=contract.get('geometric_qualification'))
+            # Finish against a new passive sample and current model parameters;
+            # never re-stamp the measurement used by the geometry calculation.
+            current_models=call(params_client,GetParameters.Request(
+                names=['robot_description','robot_description_semantic'])).values
+            model_binding=dict(binding,
+                robot_model_sha256=sha256(current_models[0].string_value.encode()).hexdigest(),
+                srdf_sha256=sha256(current_models[1].string_value.encode()).hexdigest())
+            latest=copy.deepcopy(measurements.fresh())
+            current=dict(kind='MEASURED',wall_ns=latest['wall_ns'],iteration=latest['iteration'],
+                sim_ns=latest['sim_ns'],physics_sample=latest,
+                joints={name:values[0] for name,values in measurements.joints(latest).items()},
+                link_poses={name:measurements.frame(latest,name) for name in contract['allowed_touch_links']},
+                target_pose=measurements.object_pose(latest,observation['object_id']))
+            result=confirm_capture(result,current,model_binding,time.time_ns())
+            root=Path(args.summary_output).parent/'grasp-qualification';root.mkdir(exist_ok=True)
+            index=len(summary.setdefault('grasp_qualification_evidence',[]))
+            path=root/f'{index:04d}.json'
+            result.update(target=copy.deepcopy(observation),candidate_pose=list(candidate.grasp_pose),
+                planned_scene=message_to_ordereddict(scene),qualified_wall_ns=time.time_ns())
+            path.write_text(json.dumps(result,indent=2)+'\n')
+            summary['grasp_qualification_evidence'].append(dict(path=str(path),
+                sha256=sha256(path.read_bytes()).hexdigest(),binding=binding,accepted=result['accepted']))
+            # Full reusable fixtures stay on disk; the resolver retains all margins.
+            return {key:value for key,value in result.items() if key not in ('planned_scene','measured')}
         def extraction_candidates(view, observation, candidate, lift_distance):
             from pile_extraction import extraction_intents
             neighbors = [item for obj in view.world.collision_objects
@@ -1976,7 +2045,8 @@ def main():
             target_contact_matrix=target_contact_matrix, verify_selected_contacts=verify_selected_contacts,
             private_attachment=private_attachment, object_pose_after_motion=object_pose_after_motion,
             place_detachment_diff=place_detachment_diff, stage=stage,
-            extraction_candidates=extraction_candidates if authored else None)
+            extraction_candidates=extraction_candidates if authored else None,
+            qualify_grasp=qualify_grasp if capture_model is not None else None)
         if authored:
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,
@@ -2014,10 +2084,12 @@ def main():
             # at the motion boundary before starting the telemetry consumer.
             current_params=call(params_client,GetParameters.Request(names=[
                 'execution_backend','use_fake_hardware','allow_trajectory_execution','use_sim_time','robot_description',
-                'simulator_commissioning','capabilities','disable_capabilities'])).values
+                'simulator_commissioning','capabilities','disable_capabilities','robot_description_semantic'])).values
             if (current_params[0].string_value!='simulator' or current_params[1].bool_value or
                     not current_params[2].bool_value or current_params[4].string_value!=params[2].string_value):
                 raise RuntimeError('simulator configuration changed before motion')
+            if sha256(current_params[8].string_value.encode()).hexdigest()!=summary['qualification_model']['srdf_sha256']:
+                raise RuntimeError('SRDF changed after geometric qualification')
             motion_controllers=call(node.create_client(ListControllers,'/controller_manager/list_controllers'),ListControllers.Request()).controller
             summary['motion_backend_identity']=live_identity(args.simulator_receipt,current_params[4].string_value,
                 call(hardware_client,ListHardwareComponents.Request()).component,
@@ -2032,9 +2104,6 @@ def main():
             if args.simulator_commission=='full-cycle':
                 summary['commissioning_prerequisites']=require_trial_evidence(
                     args.commission_evidence,summary['commissioning_capability'])
-            measurements=Measurements(node,args.simulator_receipt,Path(args.summary_output).with_suffix('.measurements.jsonl'))
-            until=time.monotonic()+5
-            while measurements.latest is None and time.monotonic()<until:rclpy.spin_once(node,timeout_sec=.05)
             support=next((s['metadata']['initial_support_contact'] for s in cycle['steps'] if s.get('metadata',{}).get('initial_support_contact')),None)
             selected=next(o for o in objects if o['id']==selected_id)
             contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,contract['tool_link'])

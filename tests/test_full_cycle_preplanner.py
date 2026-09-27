@@ -159,8 +159,12 @@ def closure_fixture(contact_links_at):
 
 def test_simulator_closure_waits_for_opposing_contacts_then_checks_one_reserve_step():
     from full_cycle_preplanner import preplan_full_cycle
+    from dataclasses import replace
+    from test_grasp_capture import case
+    qualify,data=case()
     kwargs, _, goals, validity=closure_fixture(
         lambda i:['left_tip'] if i==1 else ['left_tip','right_tip'])
+    kwargs['operations']=replace(kwargs['operations'],qualify_grasp=lambda **kw:qualify(**data))
     result=preplan_full_cycle(**kwargs)
     assert result.success, result.reason
     assert validity==pytest.approx([.01005,.0201,.03015])
@@ -233,7 +237,7 @@ def test_preplanner_operations_have_no_execution_capability():
         'plan_segment', 'fk', 'state_validity', 'updated_state', 'pose_message',
         'translated_pose', 'target_contact_matrix', 'verify_selected_contacts',
         'private_attachment', 'object_pose_after_motion', 'place_detachment_diff', 'stage',
-        'extraction_candidates'}
+        'extraction_candidates', 'qualify_grasp'}
 
 
 @pytest.mark.parametrize('change,reason', [
@@ -943,3 +947,24 @@ def test_real_extraction_failure_preserves_details_and_safe_variant_fallback(all
         assert result.cycle['extraction_intent']==variants[1]
         assert [step['stage'] for step in result.cycle['steps']]==EXPECTED
         assert all(check['status']=='PASS' for check in result.checks)
+
+
+def test_simulator_contact_membership_cannot_authorize_attachment_without_geometry():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,trace,_,_=closure_fixture(lambda i:['left_tip','right_tip'])
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code=='GRASP_GEOMETRY_FAILED'
+    assert 'ATTACH' not in trace
+
+
+def test_simulator_geometric_rejection_prevents_attachment_and_reports_margins():
+    from dataclasses import replace
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,trace,_,_=closure_fixture(lambda i:['left_tip','right_tip'])
+    kwargs['operations']=replace(kwargs['operations'],qualify_grasp=lambda **kw:dict(
+        accepted=False,reason='synthetic edge contact: radius 0.00001 m',samples=[]))
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert 'ATTACH' not in trace
+    assert '0.00001' in result.reason

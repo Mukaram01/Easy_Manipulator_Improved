@@ -949,6 +949,7 @@ install(PROGRAMS
   ../../scripts/perceived_object_grasp_plan.py
   ../../scripts/physical_destination.py
   ../../scripts/runtime_pick_inputs.py
+  ../../scripts/grasp_capture.py
   ../../scripts/full_cycle_preplanner.py
   ../../scripts/pile_extraction.py
   ../../scripts/grasp_strategy_candidates.py

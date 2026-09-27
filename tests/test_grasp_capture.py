@@ -1,0 +1,176 @@
+"""Synthetic fixtures, never historical or physical grasp evidence."""
+import copy
+import sys
+from pathlib import Path
+import numpy as np
+import pytest
+sys.path.insert(0,str(Path(__file__).parents[1]/'scripts'))
+
+
+def case():
+    from grasp_capture import CaptureModel, qualify_capture
+    urdf='''<robot name="synthetic"><link name="world"/><link name="left"><collision><geometry><box size="0.004 0.04 0.04"/></geometry></collision></link><link name="right"><collision><geometry><box size="0.004 0.04 0.04"/></geometry></collision></link><joint name="close" type="prismatic"><parent link="world"/><child link="left"/><origin xyz="-0.04 0 0"/><axis xyz="1 0 0"/></joint><joint name="follower" type="prismatic"><parent link="world"/><child link="right"/><origin xyz="0.04 0 0"/><axis xyz="-1 0 0"/><mimic joint="close"/></joint></robot>'''
+    model=CaptureModel(urdf, ['left','right'])
+    binding=dict(scene_sha256='a'*64,observation_sha256='b'*64,robot_model_sha256=model.sha256,
+                 srdf_sha256='c'*64,receipt_sha256='d'*64,candidate_id='synthetic::001',target_id='synthetic-box')
+    data=dict(model=model,target=dict(id='synthetic-box',shape='BOX',frame_id='world',pose=[0,0,0,0,0,0,1],dimensions=[.02,.03,.03]),
+              candidate_pose=[0,0,0,0,0,2**-.5,2**-.5],
+              measured=dict(kind='MEASURED',wall_ns=1_000_000_000,
+                            target_pose=[0,0,0,0,0,0,1],link_poses={'left':[-.04,0,0,0,0,0,1],'right':[.04,0,0,0,0,0,1]},joints={'close':0.,'follower':0.}),
+              planned_open={'close':0.,'follower':0.},planned_closed={'close':.0285,'follower':.0285},
+              binding=binding,now_ns=1_000_000_000)
+    return qualify_capture,data
+
+
+def test_bilateral_patch_has_depth_aperture_and_edge_margins():
+    qualify,data=case();result=qualify(**data)
+    assert result['accepted'], result
+    assert result['claim']=='GEOMETRIC_ONLY'
+    assert result['robustness']=='SAMPLED_NOT_CONTINUOUS_PROOF'
+    assert len(result['samples'])>=13
+    assert result['minimum_patch_radius_m']>=.001
+    assert result['measured']['joints']=={'close':0.,'follower':0.}
+    assert result['planned']['kind']=='PLANNED'
+
+@pytest.mark.parametrize('change,reason',[
+    ('unilateral','mimic'),('edge','patch'),('depth','contact'),('aperture','aperture'),
+    ('frame','frame'),('scale','contact'),('mimic','mimic'),('stale','stale'),('missing','evidence'),
+    ('uncertainty','contact'),('nan','finite'),
+])
+def test_unsupported_or_marginal_capture_rejected(change,reason):
+    qualify,data=case()
+    if change=='unilateral':data['planned_closed']['follower']=0.
+    if change=='edge':data['target']['pose'][1]=.0349
+    if change=='depth':data['target']['pose'][2]=.05
+    if change=='aperture':data['planned_open']=dict(data['planned_closed'])
+    if change=='frame':data['target']['frame_id']='camera'
+    if change=='scale':data['target']['dimensions']=[20.,30.,30.]
+    if change=='mimic':
+        data['measured']['joints']['follower']=.03
+        data['measured']['link_poses']['right'][0]-=.03
+    if change=='stale':data['now_ns']+=250_000_001
+    if change=='missing':data['binding'].pop('scene_sha256')
+    if change=='uncertainty':data['planned_closed']={'close':.02801,'follower':.02801}
+    if change=='nan':data['planned_closed']['close']=float('nan')
+    result=qualify(**data)
+    assert not result['accepted'], result
+    assert reason in result['reason'].lower(),result
+
+
+def test_raw_measured_mimic_discrepancy_is_retained_and_used():
+    qualify,data=case();data['measured']['joints']['follower']=.0001;data['measured']['link_poses']['right'][0]-=.0001
+    result=qualify(**data)
+    assert result['accepted'],result
+    assert result['measured']['joints']['follower']==.0001
+    assert result['planned']['raw_mimic_residuals']['follower']==pytest.approx(.0001)
+    assert result['planned']['evaluated_closed_joints']['follower']==pytest.approx(.0286)
+
+
+def test_unknown_collision_shape_rejected():
+    from grasp_capture import CaptureModel
+    with pytest.raises(ValueError,match='unsupported'):
+        CaptureModel('<robot><link name="world"><collision><geometry><cylinder radius="1" length="1"/></geometry></collision></link></robot>',['world','missing'])
+
+
+def test_valid_pad_cannot_hide_deeply_penetrating_second_collision():
+    from grasp_capture import CaptureModel
+    import xml.etree.ElementTree as ET
+    qualify,data=case();robot=copy.deepcopy(data['model'].robot)
+    robot.find("link[@name='left']").append(ET.fromstring('''<collision><origin xyz="0.009 0 0"/><geometry><box size="0.016 0.01 0.01"/></geometry></collision>'''))
+    data['model']=CaptureModel(ET.tostring(robot,encoding='unicode'),['left','right'])
+    data['binding']['robot_model_sha256']=data['model'].sha256
+    result=qualify(**data)
+    assert not result['accepted']
+    assert 'penetration' in result['reason']
+
+
+def test_joint_sampling_includes_independent_tool_joints_with_explicit_units():
+    qualify,data=case();result=qualify(**data)
+    assert result['accepted'],result
+    labels={s['sample'] for s in result['samples']}
+    assert {'joint_close_-1','joint_close_1','joint_follower_-1','joint_follower_1'}<=labels
+
+
+def test_mimic_chain_preserves_upstream_measured_discrepancy():
+    from grasp_capture import CaptureModel
+    import xml.etree.ElementTree as ET
+    qualify,data=case();robot=copy.deepcopy(data['model'].robot)
+    robot.append(ET.fromstring('<link name="intermediate"/>'))
+    robot.append(ET.fromstring('<joint name="middle" type="prismatic"><parent link="world"/><child link="intermediate"/><axis xyz="1 0 0"/><mimic joint="close"/></joint>'))
+    robot.find("joint[@name='follower']/mimic").set('joint','middle')
+    data['model']=CaptureModel(ET.tostring(robot,encoding='unicode'),['left','right'])
+    data['binding']['robot_model_sha256']=data['model'].sha256
+    data['measured']['joints'].update(middle=.001,follower=.001)
+    data['measured']['link_poses']['right'][0]-=.001
+    data['planned_open']['middle']=0.;data['planned_closed']['middle']=.0285
+    data['config']={'mimic_tolerance_m':.002}
+    result=qualify(**data)
+    assert not result['accepted']
+    assert result['planned']['evaluated_closed_joints']['follower']==pytest.approx(.0295)
+
+
+def test_unknown_target_shape_never_silently_becomes_a_box():
+    qualify,data=case();data['target']['shape']='SPHERE'
+    result=qualify(**data)
+    assert not result['accepted'] and 'shape' in result['reason']
+
+
+def test_measured_link_frame_disagreement_is_not_hidden_by_joint_fk():
+    qualify,data=case()
+    data['measured']['link_poses']['left'][0]+=.01
+    result=qualify(**data)
+    assert not result['accepted'] and 'measured frame' in result['reason']
+
+
+def test_missing_measured_link_pose_is_insufficient_evidence():
+    qualify,data=case();data['measured'].pop('link_poses')
+    result=qualify(**data)
+    assert not result['accepted']
+
+
+@pytest.mark.parametrize('change',['stale','model','state'])
+def test_completed_calculation_requires_fresh_unchanged_evidence(change):
+    from grasp_capture import confirm_capture
+    qualify,data=case();result=qualify(**data)
+    current=copy.deepcopy(data['measured']);hashes=dict(data['binding']);now=data['now_ns']
+    if change=='stale':now+=250_000_001
+    if change=='model':hashes['srdf_sha256']='f'*64
+    if change=='state':current['joints']['close']+=.001
+    confirmed=confirm_capture(result,current,hashes,now)
+    assert not confirmed['accepted']
+
+
+def test_stl_scale_and_hash_are_collision_evidence(tmp_path):
+    import struct
+    from grasp_capture import CaptureModel
+    mesh=tmp_path/'synthetic_mm.stl'
+    mesh.write_bytes(b'synthetic'.ljust(80,b'\0')+struct.pack('<I',1)+struct.pack('<12fH',1,0,0,0,0,0,0,10,0,0,0,10,0))
+    urdf=f'''<robot><link name="world"/><link name="a"><collision><geometry><mesh filename="{mesh}" scale="0.001 0.001 0.001"/></geometry></collision></link><link name="b"><collision><geometry><box size="0.01 0.01 0.01"/></geometry></collision></link><joint name="a_fixed" type="fixed"><parent link="world"/><child link="a"/></joint><joint name="b_fixed" type="fixed"><parent link="world"/><child link="b"/></joint></robot>'''
+    model=CaptureModel(urdf,['a','b'])
+    assert model.facets['a'].max(axis=(0,1)).tolist()==pytest.approx([0,.01,.01])
+    assert model.meshes[0]['scale']==[.001,.001,.001]
+    assert len(model.meshes[0]['sha256'])==64
+
+
+@pytest.mark.parametrize('config',[[],False,{'unknown':1},{'patch_radius_m':float('nan')}])
+def test_malformed_configuration_never_silently_uses_defaults(config):
+    qualify,data=case();data['config']=config
+    assert not qualify(**data)['accepted']
+
+
+@pytest.mark.parametrize('kind',['unilateral','incompatible_depth'])
+def test_link_membership_cannot_replace_actual_common_contact_region(kind):
+    from grasp_capture import CaptureModel
+    import xml.etree.ElementTree as ET
+    qualify,data=case();robot=copy.deepcopy(data['model'].robot)
+    if kind=='unilateral':
+        collision=robot.find("link[@name='right']/collision")
+        collision.insert(0,ET.fromstring('<origin xyz="0.03 0 0"/>'))
+    else:
+        for name,z in [('left',.026),('right',-.026)]:
+            robot.find(f"link[@name='{name}']/collision").insert(0,ET.fromstring(f'<origin xyz="0 0 {z}"/>'))
+    data['model']=CaptureModel(ET.tostring(robot,encoding='unicode'),['left','right'])
+    data['binding']['robot_model_sha256']=data['model'].sha256
+    result=qualify(**data)
+    assert not result['accepted']
+    assert ('contact' if kind=='unilateral' else 'edge/depth mismatch') in result['reason']

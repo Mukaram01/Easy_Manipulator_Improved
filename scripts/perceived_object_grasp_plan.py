@@ -77,6 +77,7 @@ def load_grasp_contract(scene_package):
         "tcp_offset_z_m": float(tcp_xyz[2]),
         "tcp_pose": list(tcp_xyz) + quaternion_from_rpy(tcp_rpy),
         "allowed_touch_links": list(dict.fromkeys(links)),
+        "geometric_qualification": end_effector.get("geometric_qualification"),
         "tool_link": cell["robot"]["tool_link"],
         "grasp_frame": end_effector["grasp_frame"],
         "planning_group": cell["robot"]["planning_group"],

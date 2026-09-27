@@ -501,3 +501,58 @@ this grasp. The runner requires this binding for all three physical grasp gates.
 Collision, penetration, slip, freshness, extraction, rotation and duration limits
 remain unchanged. Retention qualification and pose precision are independent
 requirements; neither substitutes for the other.
+
+### Pre-attachment geometric qualification (2026-09-27)
+
+The simulator's authoritative full-cycle preplanner now calls `grasp_capture`
+**before** creating its private rigid attachment, both during Resolve and
+resolved-candidate revalidation. The closure reserve remains a position command;
+its contact-link membership is no longer sufficient for geometric eligibility.
+Ordinary fake-hardware planning keeps its existing behavior. AUTO, PREFERRED
+and EXACT continue through the existing resolver, including EXACT no-fallback.
+
+Inputs are the live world-rooted URDF, SRDF identity, actual tool collision
+BOXes/binary-STL triangles with scales/origins/hashes, the target BOX in world
+metres, fresh independently measured joint/link poses, and separately labelled
+PLANNED open/closed states. Raw measured mimic discrepancies are retained and
+propagated through mimic dependencies into predicted geometry. Contradictory
+measured link poses, unsupported geometry/frames, changed mesh contents or
+missing evidence reject the candidate. Live model parameters and a fresh,
+unchanged passive measurement are checked again when calculation finishes.
+Original acquisition timestamps are retained; the 250 ms limit is unchanged.
+The numerical equality check at completion is conservative (1e-9 SI units);
+its usability with live physics jitter remains unqualified.
+
+Two distinct fingertip regions must face opposite faces of the same target.
+Actual facets are clipped to the allowed contact-depth slab. A disk must fit
+inside both facet footprints and the target face interior. Whole-mesh projection
+overlap cannot certify capture. A separate conservative half-space check rejects
+any deeper fingertip protrusion hidden by a qualifying facet. Open aperture,
+opposition, depth, patch radius and edge margins are recorded. This single-facet
+rule can reject physically useful curved or finely tessellated contact regions;
+unsupported configurations fail closed.
+
+Policy defaults are configurable through the grasp contract's
+`geometric_qualification` mapping, loaded from
+`cell_definition.yaml:end_effector.geometric_qualification`. Values and units
+are declared in `grasp_capture.DEFAULTS` and written into each fixture. The
+1 mm interior radius is four times the 0.25 mm translation sample; the 1 mm
+penetration cap is a geometric limit, not a compliance model. Target rotation
+samples are ±0.5 degrees, face opposition is limited to 15 degrees, and open
+clearance is 1 mm. Tool-joint samples use 0.001 rad or 0.05 mm; measured mimic
+limits use 0.02 rad or 0.1 mm. These are commissioning policy values, not
+holding-force guarantees or values fitted to a particular object.
+
+Robustness is **SAMPLED_NOT_CONTINUOUS_PROOF**: nominal plus independent positive
+and negative translations, rotations and moving tool-joint perturbations.
+Passing those samples does not prove every combination of perturbations.
+The claim remains **GEOMETRIC_ONLY**. Live opposing contacts, current-grasp
+retention, collision, slip, release, cancellation and cleanup gates all remain
+mandatory. Qualification fixtures preserve candidate/scene/model identities,
+raw physical samples, planned states, mesh hashes, per-sample margins and
+numeric rejection geometry under each executor's `grasp-qualification/`.
+
+The 2026-09-27 offline regressions use explicitly synthetic fixtures. The
+unavailable historical pre-lift state is still **INSUFFICIENT EVIDENCE**; the
+preserved iteration-104485 post-failure fixture is not a substitute. Fresh
+plan-only and six-gate commissioning remain blocked until bridge admission.

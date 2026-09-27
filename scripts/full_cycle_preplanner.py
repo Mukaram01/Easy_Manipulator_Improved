@@ -53,6 +53,7 @@ class PreplanOperations:
     place_detachment_diff: Callable
     stage: Callable
     extraction_candidates: Callable | None = None
+    qualify_grasp: Callable | None = None
 
 
 @dataclass
@@ -293,6 +294,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     first_opposing = 0.804*i/80
         if close is None:
             raise RuntimeError('no allowed fingertip contact in closing range')
+        grasp_open_state = copy.deepcopy(view.robot_state)
         motion('PREPLAN_CLOSE_GRIPPER', {'gripper_finger1_joint': close}, group='gripper')
         if reserve:
             # A position reserve is not a force measurement. Execution must
@@ -303,6 +305,19 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                 position_reserve_rad=close-first_opposing,
                 required_contact_links=sorted(required_contacts),
                 planned_contact_links=sorted(planned_contacts))
+        if reserve:
+            stage('GRASP_GEOMETRY')
+            if operations.qualify_grasp is None:
+                raise RuntimeError('missing pre-attachment geometric qualification evidence')
+            qualification = operations.qualify_grasp(
+                scene=view, observation=observation, candidate=candidate,
+                planned_open=grasp_open_state, planned_closed=view.robot_state)
+            checks.append(dict(code='GRASP_GEOMETRY',
+                               status='PASS' if qualification.get('accepted') is True else 'FAIL',
+                               qualification=copy.deepcopy(qualification)))
+            steps[-1]['metadata']['geometric_qualification'] = copy.deepcopy(qualification)
+            if qualification.get('accepted') is not True:
+                raise RuntimeError(qualification.get('reason', 'incomplete geometric qualification'))
         tool_at_grasp = operations.fk(view.robot_state, contract['tool_link'])
         frame_at_grasp = operations.fk(view.robot_state, contract['grasp_frame'])
         stage('ATTACH')
