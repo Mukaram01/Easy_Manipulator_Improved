@@ -107,3 +107,23 @@ expanded unload/mapping proof: `evidence/baseline-lifecycle-gdb.log`.
 The second full Stage-A attempt is preserved at `~/workcell_ws/stage-a1-finish-20260923-104525`.
 These independent regressions qualify dependency cleanup; Stage-A physical
 gates still require their own live acceptance evidence.
+
+### Restoration on 2026-09-27
+
+The old MoveGroup installation resolved into its build tree. Its retained CMake
+cache and build command showed symlink installation enabled; no current global
+colcon defaults file was found. The builder now isolates colcon defaults and
+explicitly sets `AMENT_CMAKE_SYMLINK_INSTALL=OFF`. TEM-only provenance stays in
+the evidence directory. Final provenance and its discovery link are published
+atomically only after both proofs; resolved binaries must be inside installation.
+
+The clean overlay at
+`/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927` passed both
+baseline SIGSEGV proofs and both 20-cycle patched sequences. Its existing
+runtime admission check accepts TEM SHA256
+`39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc` and MoveGroup
+SHA256 `e79a53216e74c270702f12f881226bf07ad879b5fea723afd91e0c57e0fe1fe1`.
+`evidence/run-20260927/artifact-mapping-audit.json` verifies all 42 process
+executable/library mappings, devices/inodes, owned cleanup, pinned patches and
+preservation of the old overlay. This completes MoveIt dependency qualification,
+not the Stage-A1 simulator milestone.

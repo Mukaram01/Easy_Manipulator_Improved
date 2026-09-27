@@ -7,7 +7,21 @@ Workcell Studio is the internal configurable robotic-cell platform for defining,
 
 Sorting is only one scenario template in Workcell Studio, alongside other templates such as inspection routing, reject handling, and palletizing.
 
-## Current milestone — R2.0d/e authoring/runtime parity closed
+## Current simulator milestone — Stage-A1 remains blocked (2026-09-27)
+
+MoveIt dependency restoration is fully qualified in a clean ordinary-copy
+installation (both baseline proofs and 20 patched cycles for TEM and MoveGroup).
+Generic sampled geometric grasp qualification is integrated before private
+attachment and covered by focused offline regressions and independent review.
+Bridge baseline logging-lifetime evidence is still missing, so fresh candidate
+qualification and the six simulator gates have not run. Stage-A1 and broader
+Stage A are **NOT REACHED**; real hardware, recovery and repeated picking remain
+locked/out of scope. See [commissioning](EXECUTE_TRAJECTORY_COMMISSIONING.md),
+[MoveIt evidence](MOVEIT_HUMBLE_TEARDOWN_OVERLAY.md), and
+[bridge evidence](ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY.md). Historical findings below
+remain intact; the missing original pre-lift geometry is not reconstructed.
+
+## Established milestone — R2.0d/e authoring/runtime parity closed
 
 As of 2026-09-17, the saved TaskIntent v2 → shared resolver → physical destination
 contract is verified through Generate, Validate, Product View and MoveIt
