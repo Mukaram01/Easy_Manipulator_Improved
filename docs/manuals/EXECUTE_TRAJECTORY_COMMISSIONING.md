@@ -287,16 +287,19 @@ the bin. The strict existing approach-branch binding remains unchanged.
 
 ### Simulator closure position reserve
 
-Simulator planning requires both exact allowed fingertip contacts, then checks
-one additional existing closure-search step (0.804 / 80 = 0.01005 rad). Every
+Simulator planning requires both exact allowed fingertip contacts. It refines
+the first observed contact bracket with at most ten bisection queries, then
+checks one full closure-search step (0.804 / 80 = 0.01005 rad) beyond the
+verified contact endpoint. This removes coarse search overshoot while retaining
+the entire position reserve. Every
 examined contact must still involve only the target and allowed fingertips;
 the final step must retain both contacts and remain within the existing joint
 range. If the reserve does not fit or introduces a forbidden contact, the
 candidate fails. Fake-hardware closure keeps its existing policy.
 
 This is a bounded position command, not force control or proof of retention.
-The commanded and first-opposing-contact positions are recorded in close-stage
-metadata. Live opposing contacts, slip, freshness, pile geometry, lift and
+The commanded position, observed contact bracket and refinement count are
+recorded in close-stage metadata. Live opposing contacts, slip, freshness, pile geometry, lift and
 release still have to pass unchanged. The motivating run
 `~/workcell_ws/stage-a1-finish-20260923-115152` stopped safely at lift when one
 near-tangent fingertip contact disappeared; its physical gate remains failed.

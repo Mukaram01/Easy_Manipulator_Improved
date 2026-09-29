@@ -167,7 +167,7 @@ def closure_fixture(contact_links_at):
     def state_validity(state):
         position=state.joint_state.position[-1]
         validity.append(position)
-        links=contact_links_at(round(position / .01005))
+        links=contact_links_at(position)
         pairs=[NS(contact_body_1='observed-box', contact_body_2=link,
                   body_type_1=1, body_type_2=0, depth=.00001) for link in links]
         return NS(valid=not pairs, contacts=pairs)
@@ -175,22 +175,33 @@ def closure_fixture(contact_links_at):
     return kwargs, trace, goals, validity
 
 
-def test_simulator_closure_waits_for_opposing_contacts_then_checks_one_reserve_step():
+def test_simulator_closure_refines_opposing_contact_then_checks_full_reserve():
     from full_cycle_preplanner import preplan_full_cycle
     from dataclasses import replace
     from test_grasp_capture import case
     qualify,data=case()
     kwargs, _, goals, validity=closure_fixture(
-        lambda i:['left_tip'] if i==1 else ['left_tip','right_tip'])
-    kwargs['operations']=replace(kwargs['operations'],qualify_grasp=lambda **kw:qualify(**data))
+        lambda q:['left_tip','right_tip'] if q>=.012 else ['left_tip'] if q>=.008 else [])
+    qualified=[]
+    def qualify_planned_closure(**kw):
+        qualified.append(kw['planned_closed'].joint_state.position[-1])
+        return qualify(**data)
+    kwargs['operations']=replace(kwargs['operations'],qualify_grasp=qualify_planned_closure)
     result=preplan_full_cycle(**kwargs)
     assert result.success, result.reason
-    assert validity==pytest.approx([.01005,.0201,.03015])
+    assert validity[:2]==pytest.approx([.01005,.0201])
+    assert len(validity)==13  # Two coarse samples, ten refinements, endpoint.
     close=next(goal for name,goal,_,_ in goals if name=='PREPLAN_CLOSE_GRIPPER')
-    assert close['gripper_finger1_joint']==pytest.approx(.03015)
     metadata=next(s for s in result.stages if s['stage']=='PREPLAN_CLOSE_GRIPPER')
-    assert metadata['first_opposing_position_rad']==pytest.approx(.0201)
-    assert metadata['commanded_position_rad']==pytest.approx(.03015)
+    lower,upper=metadata['first_opposing_bracket_rad']
+    assert lower<.012<=upper
+    assert upper-lower==pytest.approx(.01005/1024)
+    assert metadata['contact_refinement_iterations']==10
+    assert metadata['first_opposing_position_rad']==upper
+    assert close['gripper_finger1_joint']==pytest.approx(upper+.01005)
+    assert metadata['commanded_position_rad']==close['gripper_finger1_joint']
+    assert validity[-1]==close['gripper_finger1_joint']
+    assert qualified==[close['gripper_finger1_joint']]
     assert metadata['position_reserve_rad']==pytest.approx(.01005)
     assert metadata['required_contact_links']==['left_tip','right_tip']
     assert metadata['planned_contact_links']==['left_tip','right_tip']
@@ -204,12 +215,14 @@ def test_simulator_closure_waits_for_opposing_contacts_then_checks_one_reserve_s
 def test_simulator_closure_rejects_forbidden_or_lost_contacts_at_reserve(reserve_links,reason):
     from full_cycle_preplanner import preplan_full_cycle
     kwargs, trace, goals, validity=closure_fixture(
-        lambda i:['left_tip','right_tip'] if i==1 else reserve_links)
+        lambda q:reserve_links if q>.012 else ['left_tip','right_tip'] if q>=.007 else [])
     result=preplan_full_cycle(**kwargs)
     assert not result.success
     assert result.reason_code=='PREPLAN_CLOSE_GRIPPER_FAILED'
     assert reason in result.reason.lower()
-    assert validity==pytest.approx([.01005,.0201])
+    assert validity[:2]==pytest.approx([.01005,0.])
+    assert len(validity)==13
+    assert .01705<=validity[-1]<=.01705+.01005/1024
     assert all(name!='PREPLAN_CLOSE_GRIPPER' for name,_,_,_ in goals)
     assert 'ATTACH' not in trace
 
@@ -217,12 +230,57 @@ def test_simulator_closure_rejects_forbidden_or_lost_contacts_at_reserve(reserve
 def test_simulator_closure_rejects_opposing_contact_at_limit_without_reserve():
     from full_cycle_preplanner import preplan_full_cycle
     kwargs, trace, _, validity=closure_fixture(
-        lambda i:['left_tip','right_tip'] if i==80 else ['left_tip'])
+        lambda q:['left_tip','right_tip'] if q>=.804 else ['left_tip'])
     result=preplan_full_cycle(**kwargs)
     assert not result.success
     assert result.reason_code=='PREPLAN_CLOSE_GRIPPER_FAILED'
     assert 'reserve' in result.reason
-    assert len(validity)==80 and validity[-1]==pytest.approx(.804)
+    assert len(validity)==90 and validity[79]==pytest.approx(.804)
+    assert 'ATTACH' not in trace
+
+
+@pytest.mark.parametrize('forbidden_position', [0., .015075])
+def test_simulator_closure_rejects_forbidden_contact_during_refinement(forbidden_position):
+    from full_cycle_preplanner import preplan_full_cycle
+    def contacts(q):
+        if q==pytest.approx(forbidden_position):
+            return ['left_tip','right_tip','forearm']
+        threshold=.007 if forbidden_position==0. else .012
+        return ['left_tip','right_tip'] if q>=threshold else ['left_tip']
+    kwargs, trace, goals, validity=closure_fixture(contacts)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code=='PREPLAN_CLOSE_GRIPPER_FAILED'
+    assert 'non-contact link' in result.reason
+    assert validity[-1]==pytest.approx(forbidden_position)
+    assert result.checks[-1]['failure_kind']=='collision'
+    assert all(name!='PREPLAN_CLOSE_GRIPPER' for name,_,_,_ in goals)
+    assert 'ATTACH' not in trace
+
+
+@pytest.mark.parametrize('global_expired,reason_code', [
+    (False, 'CANDIDATE_SLICE_EXHAUSTED'), (True, 'SEARCH_BUDGET_EXHAUSTED')])
+def test_simulator_contact_refinement_checks_deadlines_after_each_query(
+        monkeypatch, global_expired, reason_code):
+    from dataclasses import replace
+    import full_cycle_preplanner
+    kwargs, trace, goals, validity=closure_fixture(
+        lambda q:['left_tip','right_tip'] if q>=.012 else ['left_tip'])
+    clock=[1000.]
+    monkeypatch.setattr(full_cycle_preplanner, 'time', NS(monotonic=lambda:clock[0],time=time.time))
+    kwargs['deadline']=1003.
+    kwargs['contract']['search_deadline']=1003. if global_expired else 1004.
+    original=kwargs['operations'].state_validity
+    def delayed_query(state):
+        response=original(state)
+        clock[0]+=1.
+        return response
+    kwargs['operations']=replace(kwargs['operations'],state_validity=delayed_query)
+    result=full_cycle_preplanner.preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code==reason_code
+    assert validity==pytest.approx([.01005,.0201,.015075])
+    assert all(name!='PREPLAN_CLOSE_GRIPPER' for name,_,_,_ in goals)
     assert 'ATTACH' not in trace
 
 

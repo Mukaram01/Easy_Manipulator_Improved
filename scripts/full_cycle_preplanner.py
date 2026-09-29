@@ -269,33 +269,62 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         first_opposing = None
         if reserve and len(required_contacts) < 2:
             raise RuntimeError('simulator closure requires opposing fingertip links')
-        for i in range(1, 81):
-            trial = operations.updated_state(view.robot_state, {'gripper_finger1_joint': 0.804*i/80})
+
+        def closure_contacts(position):
+            if reserve and time.monotonic() >= deadline:
+                raise budget_failure()
+            trial = operations.updated_state(view.robot_state, {'gripper_finger1_joint': position})
             response = operations.state_validity(trial)
             if response.contacts:
                 try:
                     operations.verify_selected_contacts(response.contacts, observation['id'], contract['allowed_touch_links'])
                 except RuntimeError as exc:
                     raise MotionFeasibilityFailure(str(exc), contacts=response.contacts) from exc
-                if not reserve:
-                    close = 0.804*i/80
-                    break
+            if reserve and time.monotonic() >= deadline:
+                raise budget_failure()
+            return response
+
+        def target_contact_links(response):
+            return {
+                c.contact_body_2 if c.contact_body_1 == observation['id'] else c.contact_body_1
+                for c in response.contacts
+                if observation['id'] in (c.contact_body_1, c.contact_body_2)
+            }
+
+        closure_step = 0.804/80
+        for i in range(1, 81):
+            position = 0.804*i/80
+            response = closure_contacts(position)
+            if response.contacts and not reserve:
+                close = position
+                break
             if reserve:
-                planned_contacts = {
-                    c.contact_body_2 if c.contact_body_1 == observation['id'] else c.contact_body_1
-                    for c in response.contacts
-                    if observation['id'] in (c.contact_body_1, c.contact_body_2)
-                }
+                planned_contacts = target_contact_links(response)
                 opposing = required_contacts.issubset(planned_contacts)
-                if first_opposing is not None:
-                    if not opposing:
-                        raise RuntimeError('opposing fingertip contact lost at closure reserve endpoint')
-                    close = 0.804*i/80
-                    break
                 if opposing:
-                    if i == 80:
+                    # Refine the first observed contact bracket before adding
+                    # the unchanged reserve. The coarse sample can already
+                    # overshoot contact by an entire closure step.
+                    lower, upper = 0.804*(i-1)/80, position
+                    refinement_iterations = 0
+                    if i == 1 and required_contacts.issubset(
+                            target_contact_links(closure_contacts(lower))):
+                        upper = lower
+                    while lower < upper and refinement_iterations < 10:
+                        middle = (lower+upper)/2
+                        if required_contacts.issubset(target_contact_links(closure_contacts(middle))):
+                            upper = middle
+                        else:
+                            lower = middle
+                        refinement_iterations += 1
+                    first_opposing = upper
+                    close = first_opposing+closure_step
+                    if close > 0.804:
                         raise RuntimeError('no closure reserve remains within gripper range')
-                    first_opposing = 0.804*i/80
+                    planned_contacts = target_contact_links(closure_contacts(close))
+                    if not required_contacts.issubset(planned_contacts):
+                        raise RuntimeError('opposing fingertip contact lost at closure reserve endpoint')
+                    break
         if close is None:
             raise RuntimeError('no allowed fingertip contact in closing range')
         grasp_open_state = copy.deepcopy(view.robot_state)
@@ -305,6 +334,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             # still establish and continuously retain actual opposing contact.
             steps[-1]['metadata'].update(
                 first_opposing_position_rad=first_opposing,
+                first_opposing_bracket_rad=[lower, upper],
+                contact_refinement_iterations=refinement_iterations,
                 commanded_position_rad=close,
                 position_reserve_rad=close-first_opposing,
                 required_contact_links=sorted(required_contacts),
