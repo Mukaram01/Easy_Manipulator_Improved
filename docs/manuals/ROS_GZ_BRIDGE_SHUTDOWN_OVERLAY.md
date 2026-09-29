@@ -148,7 +148,13 @@ Valgrind overrides are rejected. The legacy method remains available.
 The reviewed executable then passed **20/20 native and 5/5 Memcheck cycles**,
 each with at least 300 received messages, normal exits, zero Memcheck errors,
 no forced cleanup, owned survivors or core changes. This is not a leak-free
-heap claim. The existing shutdown-context policy executable also passed.
+heap claim. A separate full leak check returned 99 with 15 leak contexts;
+336 definitely lost bytes and 293 indirectly lost bytes came from loader
+bookkeeping and static component registration, matching the earlier September 27
+quantities. No invalid-access report appeared. These unresolved dependency
+allocations are recorded in the [diagnostic report](../../evidence/stage_a1/bridge_closeout_20260929/leak-diagnostic.md);
+its failed result is preserved separately from the five default Memcheck gates.
+The existing shutdown-context policy executable also passed.
 The builder published the exact qualified artifact at
 `/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927`.
 Its executable SHA256 remains

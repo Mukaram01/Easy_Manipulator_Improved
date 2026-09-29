@@ -23,7 +23,8 @@
     "passed": 5,
     "errors": 0,
     "results_path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/evidence/run-20260929-212818-088111/memcheck/results.json",
-    "results_sha256": "f076c351a5c1d9ec7937221fe8c49a2f3aaea0dd0f2860f8c00d73db6d0e7d50"
+    "results_sha256": "f076c351a5c1d9ec7937221fe8c49a2f3aaea0dd0f2860f8c00d73db6d0e7d50",
+    "scope": "Default Memcheck memory-access error/lifecycle gate; not full leak checking"
   },
   "qualification": {
     "method": "observed-shutdown-order/v1",
@@ -172,12 +173,28 @@
     "baseline-core-backtrace.txt": "aad2600c9a7e87550529b7de6dd1fe45dc8205da0c7279290aef20f8b797f814",
     "memcheck-results.json": "f076c351a5c1d9ec7937221fe8c49a2f3aaea0dd0f2860f8c00d73db6d0e7d50",
     "mechanism-review.md": "08e8ac5764770f06ba89b842764cb25b928b828e5b92e994ca18f6322766f59e",
-    "native-results.json": "bc842fc1bd26aa82b496ab5583a22ce3b80459cc9b1f17f4cefae4d5ff0707b0"
+    "native-results.json": "bc842fc1bd26aa82b496ab5583a22ce3b80459cc9b1f17f4cefae4d5ff0707b0",
+    "leak-diagnostic.md": "97d6149d97b265c388fc3d4a463add152291df827ba845eb797b59ca3634a555"
   },
   "copy_normalization": {
     "baseline-core-backtrace.txt": {
       "change": "Trailing whitespace stripped in repository copy only; raw original preserved in the evidence root.",
       "original_sha256": "be774eef73ed6705a23a6f0566532edaf68f33f15011c3fbade7c9f649641b01"
     }
+  },
+  "additional_leak_diagnostic": {
+    "gating": false,
+    "returncode": 99,
+    "error_contexts": 15,
+    "definitely_lost_bytes": 336,
+    "indirectly_lost_bytes": 293,
+    "possibly_lost_bytes": 3834672,
+    "still_reachable_bytes": 7285320,
+    "same_lost_totals_in_september_27_runs": true,
+    "invalid_access_reports": 0,
+    "interpretation": "Unresolved dependency allocations at process exit; loader bookkeeping and static component registration. Possible/reachable allocation ownership not assessed. No leak-free claim.",
+    "raw_root": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/leak-diagnostic",
+    "report_sha256": "97d6149d97b265c388fc3d4a463add152291df827ba845eb797b59ca3634a555",
+    "findings_sha256": "361580cd8289d79edceade48d8767bb93db333d9f53e98a61301642cdeb122b9"
   }
 }

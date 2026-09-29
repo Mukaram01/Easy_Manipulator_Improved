@@ -127,3 +127,39 @@ SHA256 `e79a53216e74c270702f12f881226bf07ad879b5fea723afd91e0c57e0fe1fe1`.
 executable/library mappings, devices/inodes, owned cleanup, pinned patches and
 preservation of the old overlay. This completes MoveIt dependency qualification,
 not the Stage-A1 simulator milestone.
+
+### Additional FastDDS checks on 2026-09-29
+
+The same qualified installation passed **20/20 TEM and 20/20 MoveGroup**
+lifecycle checks with `rmw_fastrtps_cpp` after sourcing the qualified bridge
+overlay. Every cycle reached readiness and exited 0 after owned SIGINT, with no
+timeout, changed core inventory or owned process survivor. The original
+September 27 baseline proofs, patched proofs and published provenance remain
+byte-for-byte unchanged; these checks required no rebuild or republication.
+
+Both qualified MoveIt artifacts are ordinary installed files. All 40 new
+process maps match their executable/library paths, devices and inodes. FastDDS
+was mapped in every cycle, the old MoveIt overlay was absent, and the audit
+checked the mapped identities of 180 distinct shared libraries. The existing
+MoveIt and bridge runtime admission checks both passed before the cycles.
+
+The verified source order, starting in a clean shell, is:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/local_setup.bash
+source /home/user/workcell_ws/install/local_setup.bash
+source /home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_LOCALHOST_ONLY=1
+```
+
+Use the workspace's `local_setup.bash`: its current `setup.bash` chains the old
+`moveit_teardown_overlay` installation, whose qualification receipt is absent.
+The additional tests used isolated domain 197 and the existing minimal TEM and
+one-joint MoveGroup configurations. They do not establish Stage-A1 simulator
+gate completion or authorize hardware motion.
+
+The bounded [evidence bundle](../../evidence/stage_a1/moveit_closeout_20260929/README.md)
+contains both cycle results and hashes of the complete workstation audit at
+`/home/user/workcell_ws/diagnostics/moveit-closeout-20260929`.
