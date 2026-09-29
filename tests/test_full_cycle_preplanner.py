@@ -536,6 +536,94 @@ def test_authored_resolve_discovers_all_candidates_before_retrying_timeouts():
     assert search['retry_pass_used'] is True
 
 
+@pytest.mark.parametrize('retry_budget,search_budget,ready,reason_code', [
+    (20.0, 1000.0, False, 'CANDIDATE_SLICE_EXHAUSTED'),
+    (120.0, 1000.0, True, None),
+    (120.0, 23.0, False, 'SEARCH_BUDGET_EXHAUSTED'),
+])
+def test_authored_retry_budget_covers_certificate_time_but_keeps_global_deadline(
+        monkeypatch, retry_budget, search_budget, ready, reason_code):
+    """A slow, valid approach must leave time for the remaining real cycle checks."""
+    from dataclasses import replace
+    import full_cycle_preplanner
+    from full_cycle_preplanner import MotionFeasibilityFailure
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+
+    kwargs, _, goals, validity = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    initial_scene = copy.deepcopy(kwargs['initial_scene'])
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    clock = [1000.0]
+    fake_time = NS(monotonic=lambda: clock[0], time=time.time)
+    monkeypatch.setattr(runtime, 'time', fake_time)
+    monkeypatch.setattr(full_cycle_preplanner, 'time', fake_time)
+    kwargs['deadline'] = clock[0] + search_budget
+    base_contract = kwargs['contract']
+    plan = kwargs['operations'].plan_segment
+
+    def slow_certified_approach(view, name, goal, group=None, straight=False):
+        if name == 'PREPLAN_APPROACH':
+            if base_contract['_candidate_search_pass'].startswith('discovery:'):
+                raise MotionFeasibilityFailure('discovery planning timed out', moveit_code=-6)
+            # Only the MoveIt boundary and elapsed clock are simulated. The
+            # shared preplanner still checks deadlines, contact, attachment,
+            # placement containment, detachment, retreat and home itself.
+            clock[0] += 24.0
+        return plan(view, name, goal, group, straight)
+
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=slow_certified_approach)
+    summary = {'candidate_attempts': []}
+
+    def resolve():
+        return runtime.plan_authored_cycle(
+            intent=valid_intent('AUTO'), environment=env, cell=cell(),
+            targets=[observation], summary=summary,
+            retry_candidate_budget=retry_budget, **kwargs)
+
+    if ready:
+        cycle = resolve()
+        assert cycle['candidate'].candidate_id == 'top_2f::000'
+        assert cycle['full_cycle_prevalidated']
+        assert [step['stage'] for step in cycle['steps']] == EXPECTED
+        assert len(goals) == 9
+        assert validity == pytest.approx([.01005, .0201])
+        assert cycle['steps'][-1]['after'].robot_state == initial_scene.robot_state
+        assert cycle['steps'][-1]['after'].allowed_collision_matrix == initial_scene.allowed_collision_matrix
+    else:
+        with pytest.raises(RuntimeError):
+            resolve()
+        assert validity == []
+        assert all(goal[0] == 'PREPLAN_APPROACH' for goal in goals)
+
+    attempts = summary['candidate_attempts']
+    assert [(attempt['search_pass'], attempt['candidate_id']) for attempt in attempts[:8]] == [
+        ('discovery:top_2f', f'top_2f::{index:03d}') for index in range(8)]
+    assert all(attempt['candidate_wall_budget'] == .75 for attempt in attempts[:8])
+    retry = attempts[8]
+    assert retry['search_pass'] == 'retry:top_2f'
+    assert retry['candidate_id'] == 'top_2f::000'
+    assert retry['candidate_wall_budget'] == retry_budget
+    assert retry['candidate_wall_seconds'] == 24.0
+    assert retry['reason_code'] == reason_code
+    assert retry['stages'][0]['stage'] == 'PREPLAN_APPROACH'
+    assert retry['stages'][0]['success']
+    if ready:
+        assert len(attempts) == 9
+        assert len(retry['stages']) == 9
+        assert any(check['code'] == 'DESTINATION_CONTAINMENT' and check['status'] == 'PASS'
+                   for check in retry['checks'])
+    else:
+        assert retry['stages'][-1]['stage'] == 'PREPLAN_GRASP'
+        assert not retry['stages'][-1]['success']
+        if reason_code == 'SEARCH_BUDGET_EXHAUSTED':
+            assert len(attempts) == 9
+            assert summary['task_intent_resolution']['readiness']['primary_code'] == reason_code
+    assert kwargs['initial_scene'] == initial_scene
+
+
 def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
     """A later candidate that reached lift is retried before shallow timeouts."""
     from types import SimpleNamespace

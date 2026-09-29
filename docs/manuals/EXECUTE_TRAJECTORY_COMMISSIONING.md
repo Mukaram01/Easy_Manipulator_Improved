@@ -202,6 +202,10 @@ continuous certification follows the planner's own time limit. A timed-out owned
 planning goal must reach a terminal action state before another candidate can
 start. If it does not, the session fails and shuts down. Physical execution keeps
 its existing action deadlines.
+Simulator retries receive up to 120 seconds within the global search budget:
+an observed 24.2-second approach certificate alone exhausted the previous
+20-second whole-cycle retry allowance. Discovery and the three-candidate ranked
+retry beam are unchanged. Fake-hardware retries keep their 20-second bound.
 
 The qualified bridge executable is built and proven using
 [the bridge shutdown overlay instructions](ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY.md).
