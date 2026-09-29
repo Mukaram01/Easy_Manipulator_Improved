@@ -634,6 +634,17 @@ def read_bridge_overlay(manifest_path,patch_path):
         if (data['baseline']['package']!='ros-humble-ros-gz-bridge' or
             not data['baseline']['version'].startswith('0.244.26-')):
             raise ValueError('unreviewed installed bridge baseline')
+        # Installed entrypoints use symlinks to this source; their sys.path only
+        # includes the install directory, so bind the helper to this resolved source.
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('bridge_shutdown_qualification',
+            Path(__file__).resolve().parent/'bridge_shutdown_repro/qualification.py')
+        qualification=importlib.util.module_from_spec(spec);spec.loader.exec_module(qualification)
+        method=qualification.method(data)
+        if method in (qualification.LIFETIME_METHOD,qualification.OBSERVED_METHOD):
+            validate=qualification.validate_observed if method==qualification.OBSERVED_METHOD else qualification.validate_lifetime
+            validate(data)
+            return dict(data,manifest_path=str(path.resolve()),manifest_sha256=digest(path.read_bytes()))
         proof=data['reproduction']
         if proof['baseline_returncode']!=-6:raise ValueError('bridge abort baseline proof missing')
         for name,minimum in (('native',20),('memcheck',1)):

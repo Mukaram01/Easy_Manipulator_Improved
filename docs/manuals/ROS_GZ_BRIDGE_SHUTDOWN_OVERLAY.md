@@ -1,5 +1,11 @@
 # Humble bridge shutdown overlay
 
+The current workstation is qualified by `observed-shutdown-order/v1` (2026-09-29).
+The historical SIGABRT archive remains unavailable. The new admission is based
+on a separately identified, naturally observed shutdown-order defect and the
+exact correction, followed by fresh native and Memcheck qualification. See the
+current evidence below; do not relabel it as historical SIGABRT reproduction.
+
 `ros-humble-ros-gz-bridge` 0.244.26 can return from `parameter_bridge` while
 rclcpp's deferred signal thread is still shutting down logging. Main then runs
 spdlog's static destructor concurrently with `rcl_logging_external_shutdown`.
@@ -40,7 +46,7 @@ before one SIGINT per owned process. It records actual executable/library maps,
 exit codes, core-inventory changes and surviving process-group members. There
 is no Fortress instance or robot motion.
 
-Qualification requires evidence that the installed baseline reproduced SIGABRT, followed by
+The legacy qualification path requires evidence that the installed baseline reproduced SIGABRT, followed by
 20 consecutive patched native shutdowns and five patched Memcheck shutdowns
 with zero reported memory errors. Any abnormal patched exit, forced cleanup,
 new bridge core or surviving owned process fails the build. The manifest is
@@ -105,5 +111,68 @@ errors, forced kills, owned survivors or core changes. These results remain
 **NON-QUALIFYING** because the required baseline is absent.
 All fresh bridge evidence, including the failed cycle and new non-qualifying
 checks, is under `/home/user/workcell_ws/diagnostics/stage-a1-20260927/bridge`.
-No bridge admission provenance or qualified setup file is published while the
-required baseline remains absent.
+At that checkpoint, no bridge admission provenance or qualified setup file was
+published because the required baseline was absent.
+
+### Current observed-order qualification (2026-09-29)
+
+The bounded historical search did not recover PID 81044 maps or
+`valgrind-81563.log`. Historical comparison therefore remains category C.
+Local ROS package upgrades cannot establish the identities of that missing
+workstation's processes.
+
+A new observation of the actual installed executable received 300 messages
+and naturally faulted with SIGSEGV during shutdown. Its core identifies main
+in `__run_exit_handlers`, destroying Fast DDS participants and writers, while
+the deferred signal thread was still using DDS during `rcl_logging_fini`.
+This demonstrates the current missing shutdown order. It does not establish
+the historical spdlog use-after-free. The raw unknown exit status and failed
+diagnostic row remain unchanged; the independently inspected core attributes
+the fatal outcome. The earlier debugger-terminated attempt is not admitted.
+
+Five observations of the exact patched executable show logging access finish,
+the same deferred handler return, main's `uninstall()` return, process exit,
+then registry destruction. Pinned source and installed disassembly establish
+the join in `uninstall()`. Automatic GDB breakpoints affect scheduling; no
+inferior writes, injected faults, scheduler locking or artificial delays were
+used. Synthetic tests validate admission only.
+
+The observed method binds these records, source/dependency identities and an
+independent review. It requires a current attributable baseline ordering
+violation, five clean patched observations, and fresh 20 native plus five
+Memcheck cycles after review. The patched gates reject abnormal exits, missing
+traffic, identity changes, lifecycle violations, forced cleanup, surviving
+owned processes, new cores and Memcheck errors. Ambient preload/audit and
+Valgrind overrides are rejected. The legacy method remains available.
+
+The reviewed executable then passed **20/20 native and 5/5 Memcheck cycles**,
+each with at least 300 received messages, normal exits, zero Memcheck errors,
+no forced cleanup, owned survivors or core changes. This is not a leak-free
+heap claim. The existing shutdown-context policy executable also passed.
+The builder published the exact qualified artifact at
+`/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927`.
+Its executable SHA256 remains
+`156514f96ff73f3109224d711542b6c1f00cf2e5a69e4e8f1b1dea64214cf601`.
+
+Bounded reviewable evidence is in
+[`evidence/stage_a1/bridge_closeout_20260929`](../../evidence/stage_a1/bridge_closeout_20260929).
+Full sources, raw observations and the preserved core remain under
+`/home/user/workcell_ws/diagnostics/bridge-closeout-20260929`.
+The admitted native/Memcheck records are under the overlay's
+`evidence/run-20260929-212818-088111`.
+
+To rerun the qualification using these still-matching reviewed inputs:
+
+```bash
+source /opt/ros/humble/setup.bash
+export ROS_LOCALHOST_ONLY=1 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+/usr/bin/python3 scripts/build_ros_gz_bridge_shutdown_overlay.py \
+  --output /home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927 \
+  --qualification-method observed-shutdown-order/v1 \
+  --lifetime-evidence /home/user/workcell_ws/diagnostics/bridge-closeout-20260929/observed-evidence.json \
+  --mechanism-review /home/user/workcell_ws/diagnostics/bridge-closeout-20260929/mechanism-review.json \
+  --valgrind /usr/bin/valgrind
+```
+
+Changed evidence, implementation, executable or libraries requires a matching
+review and fresh qualification. Publication never follows partial results.

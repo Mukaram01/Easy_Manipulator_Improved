@@ -6,9 +6,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
 import shutil
 import subprocess
+import time
+
+from bridge_shutdown_repro.qualification import (LEGACY_METHOD, LIFETIME_METHOD, OBSERVED_METHOD,
+    identity, invalidate_publication, publish, validate_lifetime, validate_observed)
 
 SOURCE_REPOSITORY='https://github.com/ros2-gbp/ros_ign-release.git'
 SOURCE_COMMIT='90cdc5361059a6f949bc004658e7363df33bcffe'
@@ -39,18 +42,45 @@ def apply_reviewed_patch(source,patch):
     return diff
 
 
-def main():
+def argument_parser():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,default=Path('/home/ubuntu/workcell_ws/ros_gz_bridge_shutdown_overlay'))
     parser.add_argument('--valgrind',type=Path,default=shutil.which('valgrind'))
     parser.add_argument('--valgrind-lib',type=Path)
     parser.add_argument('--baseline-results',type=Path,
                         help='reuse preserved canonical baseline SIGABRT proof for these exact binaries')
-    args=parser.parse_args()
+    parser.add_argument('--qualification-method',choices=(LEGACY_METHOD,LIFETIME_METHOD,OBSERVED_METHOD),default=LEGACY_METHOD)
+    parser.add_argument('--lifetime-evidence',type=Path,help='source-bound lifetime or natural shutdown-order evidence record')
+    parser.add_argument('--mechanism-review',type=Path,help='independent review record bound to the exact evidence and implementation')
+    return parser
+
+
+def validate_arguments(parser,args):
+    if args.qualification_method in (LIFETIME_METHOD,OBSERVED_METHOD):
+        for variable in ('LD_PRELOAD','LD_AUDIT','VALGRIND_LIB','VALGRIND_OPTS'):
+            if os.environ.get(variable):
+                parser.error('alternative qualification rejects ambient '+variable)
+        if not args.lifetime_evidence or not args.mechanism_review:
+            parser.error('alternative qualification requires --lifetime-evidence and --mechanism-review')
+        if args.baseline_results:
+            parser.error('installed crash results cannot stand in for separately bound alternative evidence')
+        if args.valgrind_lib or not args.valgrind or args.valgrind.resolve()!=Path('/usr/bin/valgrind').resolve():
+            parser.error('alternative qualification requires /usr/bin/valgrind without an alternate library')
+    elif args.lifetime_evidence or args.mechanism_review:
+        parser.error('alternative records require an explicit alternative --qualification-method')
     if not args.valgrind or not args.valgrind.is_file():parser.error('provide installed or locally extracted --valgrind')
+
+
+def main():
+    parser=argument_parser();args=parser.parse_args();validate_arguments(parser,args)
     if args.valgrind_lib:os.environ['VALGRIND_LIB']=str(args.valgrind_lib.resolve())
     repo=Path(__file__).resolve().parents[1];root=args.output.resolve();root.mkdir(parents=True,exist_ok=True)
-    manifest_path=root/'provenance.json';manifest_path.unlink(missing_ok=True)
+    manifest_path=root/'provenance.json'
+    evidence=root/'evidence'/datetime.datetime.now(datetime.timezone.utc).strftime('run-%Y%m%d-%H%M%S-%f')
+    evidence.mkdir(parents=True,exist_ok=False)
+    for name in ('provenance.json','setup.bash'):
+        if (root/name).is_file():shutil.copy2(root/name,evidence/('previous-'+name))
+    invalidate_publication(root)
     package='ros-humble-ros-gz-bridge';version=output(['dpkg-query','-W','-f=${Version}',package])
     if not version.startswith('0.244.26-1'):raise RuntimeError('installed bridge version differs from pinned source')
     source=root/'src/ros_gz_bridge';source.parent.mkdir(exist_ok=True)
@@ -70,14 +100,11 @@ def main():
     run(['cmake','--build',build,'--parallel','2']);run(['cmake','--install',build])
     binary=install/'lib/ros_gz_bridge/parameter_bridge';library=Path('/opt/ros/humble/lib/libros_gz_bridge.so').resolve()
     baseline=Path('/opt/ros/humble/lib/ros_gz_bridge/parameter_bridge').resolve()
-    evidence=root/'evidence'/datetime.datetime.now(datetime.timezone.utc).strftime('run-%Y%m%d-%H%M%S')
-    evidence.mkdir(parents=True)
     (evidence/'source.patch').write_bytes(diff)
-    with (evidence/'shutdown-context-test.log').open('w') as log:
-        run([build/'shutdown_context_test'], stdout=log, stderr=subprocess.STDOUT,
-            env=dict(os.environ, ROS_DOMAIN_ID='198', ROS_LOCALHOST_ONLY='1'))
     common=['/usr/bin/python3',proof/'verify.py','--publisher',build/'bridge_traffic','--library',library]
-    if args.baseline_results:
+    if args.qualification_method in (LIFETIME_METHOD,OBSERVED_METHOD):
+        pass  # The separate source-bound record is checked before any runtime cycles.
+    elif args.baseline_results:
         prior=json.loads(args.baseline_results.read_text())
         if (not prior.get('expected_abort') or not prior.get('all_success') or
                 prior.get('binary')!=str(baseline) or prior.get('binary_sha256')!=sha(baseline) or
@@ -96,31 +123,45 @@ def main():
         shutil.copytree(args.baseline_results.resolve().parent,evidence/'baseline')
     else:
         run([*common,'--binary',baseline,'--cycles','20','--expect-abort','--output',evidence/'baseline'])
-    run([*common,'--binary',binary,'--cycles','20','--output',evidence/'native'])
-    run([*common,'--binary',binary,'--cycles','5','--valgrind',args.valgrind,'--output',evidence/'memcheck'])
-    def results(name):
-        path=evidence/name/'results.json';record=json.loads(path.read_text())
-        if not record['all_success']:raise RuntimeError(name+' proof failed')
-        return dict(cycles=record['completed'],passed=record['passed'],errors=record['errors'],
-                    results_path=str(path),results_sha256=sha(path))
-    baseline_proof=json.loads((evidence/'baseline/results.json').read_text())
     manifest=dict(schema='workcell_ros_gz_bridge_shutdown/v1',
         source=dict(repository=SOURCE_REPOSITORY,commit=SOURCE_COMMIT,tag=SOURCE_TAG,version='0.244.26',
                     upstream_commit=UPSTREAM_COMMIT,pristine_main_sha256=SOURCE_MAIN_SHA256,
                     patched_main_sha256=sha(source/'src/parameter_bridge.cpp'),installed_header_sha256=sha(installed_header)),
         patch=dict(path=str(patch),sha256=sha(patch)),
         executable=dict(path=str(binary.resolve()),sha256=sha(binary)),library=dict(path=str(library),sha256=sha(library)),
-        baseline=dict(package=package,version=version,executable=str(baseline),sha256=sha(baseline),
-                      results_path=str(evidence/'baseline/results.json'),results_sha256=sha(evidence/'baseline/results.json')),
-        reproduction=dict(baseline_returncode=baseline_proof['results'][-1]['returncodes'][1],
-                          native=results('native'),memcheck=results('memcheck')),
+        baseline=dict(package=package,version=version,executable=str(baseline),sha256=sha(baseline)),
+        reproduction={},qualification=dict(method=args.qualification_method),
+        runtime_environment={key:os.environ.get(key,'') for key in
+            ('RMW_IMPLEMENTATION','ROS_LOCALHOST_ONLY','LD_PRELOAD','LD_AUDIT','VALGRIND_LIB','VALGRIND_OPTS')},
         build_script_sha256=sha(__file__),proof_script_sha256=sha(proof/'verify.py'),
         shutdown_context_test=dict(source_sha256=sha(proof/'shutdown_context_test.cpp'),
             log_path=str(evidence/'shutdown-context-test.log'),
-            log_sha256=sha(evidence/'shutdown-context-test.log')),
+            log_sha256=None),
         publisher_source_sha256=sha(proof/'publisher.cpp'),configuration_sha256=sha(proof/'bridges.yaml'))
-    manifest_path.write_text(json.dumps(manifest,indent=2)+'\n')
-    (root/'setup.bash').write_text('export ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY='+shlex.quote(str(root))+'\n')
+    if args.qualification_method in (LIFETIME_METHOD,OBSERVED_METHOD):
+        lifetime=json.loads(args.lifetime_evidence.read_text())
+        manifest['qualification'].update(evidence=identity(args.lifetime_evidence),
+            review=identity(args.mechanism_review),runtime_dependencies=lifetime['runtime']['dependencies'])
+        validate_alternative=validate_observed if args.qualification_method==OBSERVED_METHOD else validate_lifetime
+        validate_alternative(manifest,include_runtime=False)
+    else:
+        baseline_path=evidence/'baseline/results.json'
+        baseline_proof=json.loads(baseline_path.read_text())
+        manifest['baseline'].update(results_path=str(baseline_path),results_sha256=sha(baseline_path))
+        manifest['reproduction']['baseline_returncode']=baseline_proof['results'][-1]['returncodes'][1]
+    with (evidence/'shutdown-context-test.log').open('w') as log:
+        run([build/'shutdown_context_test'], stdout=log, stderr=subprocess.STDOUT,
+            env=dict(os.environ, ROS_DOMAIN_ID='198', ROS_LOCALHOST_ONLY='1'))
+    manifest['shutdown_context_test']['log_sha256']=sha(evidence/'shutdown-context-test.log')
+    manifest['runtime_started_ns']=time.time_ns()
+    run([*common,'--binary',binary,'--cycles','20','--output',evidence/'native'])
+    run([*common,'--binary',binary,'--cycles','5','--valgrind',args.valgrind,'--output',evidence/'memcheck'])
+    for name in ('native','memcheck'):
+        path=evidence/name/'results.json';record=json.loads(path.read_text())
+        manifest['reproduction'][name]=dict(cycles=record['completed'],passed=record['passed'],errors=record['errors'],
+            results_path=str(path),results_sha256=sha(path),
+            artifacts=[identity(p) for p in sorted(path.parent.iterdir()) if p.name!='results.json'])
+    publish(root,manifest,patch)
     print('Qualified bridge shutdown overlay: '+str(manifest_path))
 
 
