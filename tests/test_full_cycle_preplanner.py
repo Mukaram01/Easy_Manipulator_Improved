@@ -682,6 +682,125 @@ def test_authored_retry_budget_covers_certificate_time_but_keeps_global_deadline
     assert kwargs['initial_scene'] == initial_scene
 
 
+def timed_authored_fixture(monkeypatch, policy):
+    """Real resolver/cycle transitions with a slow simulated MoveIt boundary."""
+    from dataclasses import replace
+    import full_cycle_preplanner
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+    kwargs, _, goals, validity=fixture()
+    observation=dict(kwargs.pop('observation'),confidence=.9,class_id='bottle',shape='BOX')
+    kwargs.pop('candidate');kwargs.pop('destination')
+    env=environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2]=.2
+    env['task_zones'][1]['dimensions'][2]=.2
+    clock=[1000.]
+    fake_time=NS(monotonic=lambda:clock[0],time=time.time)
+    monkeypatch.setattr(runtime,'time',fake_time)
+    monkeypatch.setattr(full_cycle_preplanner,'time',fake_time)
+    contract=kwargs['contract']
+    contract.update(robot_model_sha256='fixture',planning_group='arm')
+    plan=kwargs['operations'].plan_segment
+    settings=[]
+    def timed_plan(view,name,goal,group=None,straight=False,**bindings):
+        settings.append((contract['_candidate_search_pass'],
+                         contract['_candidate_planning_attempts'],contract['_candidate_planning_time']))
+        clock[0]+=24. if name=='PREPLAN_APPROACH' else 1.
+        step=plan(view,name,goal,group,straight)
+        positions=dict(zip(step['after'].robot_state.joint_state.name,
+                           step['after'].robot_state.joint_state.position))
+        for stage,key,option,binder in (
+                ('PREPLAN_APPROACH','approach_ik','ik_binding',runtime.approach_ik_binding),
+                ('PREPLAN_TRANSFER','transfer_ik_seed','ik_seed',runtime.transfer_ik_seed)):
+            if name==stage:
+                binding=binder(goal,contract,positions)
+                if option in bindings:
+                    assert bindings[option]==binding
+                step['metadata'][key]=binding
+        return step
+    kwargs['operations']=replace(kwargs['operations'],plan_segment=timed_plan)
+    kwargs.update(intent=valid_intent(policy),environment=env,cell=cell(),targets=[observation],
+                  summary={'candidate_attempts':[]},retry_candidate_budget=120.)
+    return kwargs,clock,goals,validity,settings
+
+
+@pytest.mark.parametrize('policy,discovery_budget,search_budget,ready,attempt_count', [
+    ('AUTO',None,1000.,True,9),
+    ('AUTO',60.,1000.,True,1),
+    ('AUTO',60.,23.,False,1),
+    ('EXACT',None,1000.,False,1),
+    ('EXACT',60.,1000.,True,1),
+])
+def test_discovery_wall_budget_allows_certification_without_changing_planner_or_policy(
+        monkeypatch,policy,discovery_budget,search_budget,ready,attempt_count):
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,policy)
+    initial=copy.deepcopy(kwargs['initial_scene'])
+    kwargs['deadline']=clock[0]+search_budget
+    if discovery_budget is not None:
+        kwargs['discovery_candidate_budget']=discovery_budget
+    if ready:
+        cycle=runtime.plan_authored_cycle(**kwargs)
+        assert cycle['candidate'].candidate_id=='top_2f::000'
+        assert cycle['full_cycle_prevalidated']
+        assert [step['stage'] for step in cycle['steps']]==EXPECTED
+        assert validity==pytest.approx([.01005,.0201])
+        assert cycle['steps'][-1]['after'].robot_state==initial.robot_state
+        assert cycle['steps'][-1]['after'].allowed_collision_matrix==initial.allowed_collision_matrix
+        assert any(check['code']=='DESTINATION_CONTAINMENT' and check['status']=='PASS'
+                   for check in kwargs['summary']['candidate_attempts'][-1]['checks'])
+    else:
+        with pytest.raises(RuntimeError):
+            runtime.plan_authored_cycle(**kwargs)
+        expected='SEARCH_BUDGET_EXHAUSTED' if search_budget==23. else 'CANDIDATE_SLICE_EXHAUSTED'
+        assert kwargs['summary']['task_intent_resolution']['readiness']['primary_code']==expected
+        assert validity==[]
+        assert [goal[0] for goal in goals]==['PREPLAN_APPROACH']
+    attempts=kwargs['summary']['candidate_attempts']
+    assert len(attempts)==attempt_count
+    discovery=[item for item in attempts if item['search_pass'].startswith('discovery:')]
+    assert [item['candidate_id'] for item in discovery]==[
+        f'top_2f::{index:03d}' for index in range(len(discovery))]
+    assert all(item['candidate_wall_budget']==(discovery_budget or .75) for item in discovery)
+    assert all(attempts==1 and planning_time==.75 for phase,attempts,planning_time in settings
+               if phase.startswith('discovery:'))
+    assert kwargs['summary']['candidate_search']['retry_beam_width']==3
+    if discovery_budget is None and policy=='AUTO':
+        assert attempts[-1]['search_pass']=='retry:top_2f'
+        assert all(item['reason_code']=='CANDIDATE_SLICE_EXHAUSTED' for item in discovery)
+    else:
+        assert not kwargs['summary']['candidate_search']['retry_pass_used']
+    assert kwargs['initial_scene']==initial
+
+
+@pytest.mark.parametrize('discovery_budget',[.75,60.])
+def test_resolved_revalidation_uses_global_budget_and_same_bound_candidate(
+        monkeypatch,discovery_budget):
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,'AUTO')
+    kwargs.update(deadline=clock[0]+1000.,discovery_candidate_budget=60.)
+    selected=runtime.plan_authored_cycle(**kwargs)
+    resolved=copy.deepcopy(kwargs['summary']['task_intent_resolution'])
+    goals.clear();validity.clear();settings.clear()
+    kwargs.update(deadline=clock[0]+1000.,discovery_candidate_budget=discovery_budget,
+                  resolved=resolved,summary={'candidate_attempts':[]})
+    revalidated=runtime.plan_authored_cycle(**kwargs)
+    assert revalidated['candidate']==selected['candidate']
+    assert [step['stage'] for step in revalidated['steps']]==EXPECTED
+    assert len(goals)==9 and validity==pytest.approx([.01005,.0201])
+    assert settings==[('revalidate',3,3.)]*9
+    attempt,=kwargs['summary']['candidate_attempts']
+    assert attempt['candidate_wall_budget'] is None
+    assert attempt['candidate_wall_seconds']==32.
+    assert kwargs['summary']['candidate_search']['mode']=='resolved_revalidation'
+    assert kwargs['summary']['resolution_sha256']==resolved['resolution_sha256']
+
+
+@pytest.mark.parametrize('budget',[0.,-1.,float('inf'),float('nan')])
+def test_discovery_wall_budget_rejects_invalid_values(monkeypatch,budget):
+    kwargs,_,goals,_,_=timed_authored_fixture(monkeypatch,'AUTO')
+    with pytest.raises(ValueError,match='discovery budget must be finite and positive'):
+        runtime.plan_authored_cycle(discovery_candidate_budget=budget,**kwargs)
+    assert goals==[]
+
+
 def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
     """A later candidate that reached lift is retried before shallow timeouts."""
     from types import SimpleNamespace

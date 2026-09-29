@@ -605,7 +605,8 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
 
 def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         contract, operations, deadline, summary, resolved=None,
-                        planning_time=3.0, retry_candidate_budget=20.0):
+                        planning_time=3.0, retry_candidate_budget=20.0,
+                        discovery_candidate_budget=0.75):
     """Resolve with fair discovery, then spend retries only on stochastic failures.
 
     A fresh resolve gives every candidate one bounded planning window before any
@@ -617,6 +618,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     from full_cycle_preplanner import preplan_full_cycle
     if not math.isfinite(retry_candidate_budget) or retry_candidate_budget<=0:
         raise ValueError('candidate retry budget must be finite and positive')
+    if not math.isfinite(discovery_candidate_budget) or discovery_candidate_budget<=0:
+        raise ValueError('candidate discovery budget must be finite and positive')
     cycles = {}
     resolution_reference_time = time.time()
     evaluation_cache = {}
@@ -625,8 +628,9 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     # The resolver is intentionally phased by strategy. A PREFERRED strategy
     # gets a bounded chance before fallback discovery. The global deadline
     # still caps discovery and the progress-ranked retry beam, including the
-    # larger allowance needed by simulator continuous collision certification.
-    discovery_candidate_budget = 0.75
+    # larger allowances needed by simulator continuous collision certification.
+    # The discovery planner still gets one attempt of at most 0.75 seconds;
+    # its wall allowance also covers certification and subsequent cycle stages.
     retry_beam_width = 3
 
     def request_key(request):
@@ -2096,7 +2100,8 @@ def main():
                 cell=document, targets=eligible, contract=contract, operations=operations,
                 deadline=deadline, summary=summary, resolved=expected_resolution,
                 planning_time=args.segment_planning_time,
-                retry_candidate_budget=120. if args.backend=='simulator' else 20.)
+                retry_candidate_budget=120. if args.backend=='simulator' else 20.,
+                discovery_candidate_budget=60. if args.backend=='simulator' else .75)
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')

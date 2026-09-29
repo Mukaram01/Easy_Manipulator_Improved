@@ -202,10 +202,17 @@ continuous certification follows the planner's own time limit. A timed-out owned
 planning goal must reach a terminal action state before another candidate can
 start. If it does not, the session fails and shuts down. Physical execution keeps
 its existing action deadlines.
+Simulator discovery has a 60-second candidate slice within the global search
+budget, checked between calls; an in-flight request retains the action watchdog
+and settlement allowance above. It still uses one planner attempt with a 0.75-second planner
+limit; the larger wall allowance includes mandatory continuous certification.
+Observed successful approaches took 3.7–44.3 seconds, so the old 0.75-second
+whole-candidate allowance always stopped those candidates before grasp checks.
 Simulator retries receive up to 120 seconds within the global search budget:
 an observed 24.2-second approach certificate alone exhausted the previous
-20-second whole-cycle retry allowance. Discovery and the three-candidate ranked
-retry beam are unchanged. Fake-hardware retries keep their 20-second bound.
+20-second whole-cycle retry allowance. Candidate order and the three-candidate
+ranked retry beam are unchanged. Fake-hardware discovery keeps its 0.75-second wall
+bound and retries keep their 20-second bound.
 
 The qualified bridge executable is built and proven using
 [the bridge shutdown overlay instructions](ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY.md).
