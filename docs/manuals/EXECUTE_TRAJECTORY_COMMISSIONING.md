@@ -542,6 +542,10 @@ The numerical equality check at completion is conservative (1e-9 SI units);
 its usability with live physics jitter remains unqualified.
 
 Two distinct fingertip regions must face opposite faces of the same target.
+The closing direction comes from the URDF's relative fingertip motion between
+the planned open and closed states, recomputed for each joint perturbation.
+It does not assume that a mounted tool closes along grasp-frame Y. Each sample
+records the physical direction and its angle to the selected target face.
 Actual facets are clipped to the allowed contact-depth slab. A disk must fit
 inside both facet footprints and the target face interior. Whole-mesh projection
 overlap cannot certify capture. A separate conservative half-space check rejects

@@ -32,6 +32,46 @@ def test_bilateral_patch_has_depth_aperture_and_edge_margins():
     assert result['measured']['joints']=={'close':0.,'follower':0.}
     assert result['planned']['kind']=='PLANNED'
 
+
+def test_rotated_tool_mount_uses_physical_closure_instead_of_candidate_y():
+    """The TCP axes need not coincide with the mounted finger-closing axis."""
+    import math
+    import xml.etree.ElementTree as ET
+    from grasp_capture import CaptureModel
+    qualify,data=case();robot=copy.deepcopy(data['model'].robot)
+    robot.append(ET.fromstring('<link name="mounted_tool"/>'))
+    robot.append(ET.fromstring(
+        '<joint name="mount" type="fixed"><parent link="world"/>'
+        '<child link="mounted_tool"/><origin xyz="0.12 0.21 0.3" '
+        f'rpy="0 0 {math.pi/4}"/></joint>'))
+    for name in ('close','follower'):
+        robot.find(f"joint[@name='{name}']/parent").set('link','mounted_tool')
+    data['model']=CaptureModel(ET.tostring(robot,encoding='unicode'),['left','right'])
+    data['binding']['robot_model_sha256']=data['model'].sha256
+    rotation=[0.,0.,math.sin(math.pi/8),math.cos(math.pi/8)]
+    data['target']['pose']=[.12,.21,.3]+rotation
+    data['measured']['target_pose']=list(data['target']['pose'])
+    for name,sign in [('left',-1),('right',1)]:
+        offset=sign*.04/math.sqrt(2)
+        data['measured']['link_poses'][name]=[.12+offset,.21+offset,.3]+rotation
+    data['candidate_pose']=[.12,.21,.3,0.,0.,0.,1.]
+    result=qualify(**data)
+    assert result['accepted'],result['reason']
+    axis=result['samples'][0]['closing_axis']
+    assert axis['method']=='relative_fingertip_fk_open_to_closed'
+    assert axis['direction_world']==pytest.approx([2**-.5,2**-.5,0.])
+    assert axis['direction_target']==pytest.approx([1.,0.,0.],abs=1e-12)
+    assert axis['relative_motion_m']==pytest.approx(.057)
+    assert axis['face_axis']==0
+    assert axis['face_angle_rad']==pytest.approx(0.,abs=1e-7)
+
+
+def test_no_relative_fingertip_motion_cannot_supply_a_closing_axis():
+    qualify,data=case();data['planned_open']=dict(data['planned_closed'])
+    result=qualify(**data)
+    assert not result['accepted']
+    assert 'no relative fingertip closing motion' in result['reason']
+
 @pytest.mark.parametrize('change,reason',[
     ('unilateral','mimic'),('edge','patch'),('depth','contact'),('aperture','aperture'),
     ('frame','frame'),('scale','contact'),('mimic','mimic'),('stale','stale'),('missing','evidence'),
@@ -89,6 +129,9 @@ def test_joint_sampling_includes_independent_tool_joints_with_explicit_units():
     assert result['accepted'],result
     labels={s['sample'] for s in result['samples']}
     assert {'joint_close_-1','joint_close_1','joint_follower_-1','joint_follower_1'}<=labels
+    rows={s['sample']:s for s in result['samples']}
+    assert rows['joint_close_-1']['closing_axis']['relative_motion_m']==pytest.approx(.05695)
+    assert rows['joint_close_1']['closing_axis']['relative_motion_m']==pytest.approx(.05705)
 
 
 def test_mimic_chain_preserves_upstream_measured_discrepancy():

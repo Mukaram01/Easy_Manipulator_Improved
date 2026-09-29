@@ -125,6 +125,25 @@ class CaptureModel:
         return {name:facets@(inverse@fk[name])[:3,:3].T+(inverse@fk[name])[:3,3]
                 for name,facets in self.facets.items()}
 
+    def closing_axis(self, opened, closed, target_pose):
+        # A mounted tool need not close along any particular TCP axis. Relative
+        # fingertip motion removes shared translation and uses the same raw
+        # URDF FK/mimic residuals as the collision facets. This selects faces;
+        # the actual opposing facets, aperture and depth must still qualify.
+        left,right=self.links
+        open_fk=self.fk(opened);closed_fk=self.fk(closed)
+        before=open_fk[right][:3,3]-open_fk[left][:3,3]
+        after=closed_fk[right][:3,3]-closed_fk[left][:3,3]
+        motion=before-after;distance=float(np.linalg.norm(motion))
+        if not math.isfinite(distance) or distance<=1e-12:
+            raise ValueError('unsupported aperture: no relative fingertip closing motion')
+        world=motion/distance;target=transform(target_pose)[:3,:3].T@world
+        axis=int(np.argmax(abs(target)))
+        return dict(method='relative_fingertip_fk_open_to_closed',links=list(self.links),
+                    open_separation_world_m=before.tolist(),closed_separation_world_m=after.tolist(),
+                    relative_motion_m=distance,direction_world=world.tolist(),direction_target=target.tolist(),
+                    face_axis=axis,face_angle_rad=float(math.acos(np.clip(abs(target[axis]),-1,1))))
+
 
 def clip(poly, normal, offset):
     """Clip a convex polygon to dot(normal,p)<=offset in 2D or 3D."""
@@ -172,10 +191,10 @@ def patches(triangles, axis, sign, half, config):
     return rows
 
 
-def sample_capture(closed, opened, target_pose, candidate_pose, dimensions, config):
+def sample_capture(closed, opened, closing_direction, dimensions, config):
     half=numbers(dimensions,3)/2
     if min(half)<=0:raise ValueError('nonpositive target scale')
-    closing=transform(target_pose)[:3,:3].T@transform(candidate_pose)[:3,1]
+    closing=numbers(closing_direction,3)
     axis=int(np.argmax(abs(closing)))
     if abs(closing[axis])<math.cos(config['opposition_angle_rad']):
         raise ValueError('unsupported closing-axis opposition to target faces')
@@ -288,7 +307,7 @@ def qualify_capture(*,model,target,candidate_pose,measured,planned_open,planned_
             for name in mimic_joints:apply_residual(name,state,set(),done)
         result['planned']=dict(kind='PLANNED',open_joints=planned_open,closed_joints=planned_closed,
                                raw_mimic_residuals=residuals,evaluated_open_joints=opened,evaluated_closed_joints=closed)
-        pose=list(target['pose']);transform(pose);model.fk(opened);model.fk(closed)
+        pose=list(target['pose']);transform(pose);transform(candidate_pose);model.fk(opened);model.fk(closed)
         variants=[('nominal',pose,closed)]
         for dim in range(3):
             for sign in (-1,1):
@@ -314,11 +333,13 @@ def qualify_capture(*,model,target,candidate_pose,measured,planned_open,planned_
                 variants.append((f'joint_{name}_{sign}',pose,perturbed))
         for label,p,q in variants:
             closed_facets=model.triangles(q,p);open_facets=model.triangles(opened,p)
+            axis_evidence={}
             try:
-                margins=sample_capture(closed_facets,open_facets,p,candidate_pose,target['dimensions'],cfg)
-                result['samples'].append(dict(sample=label,accepted=True,**margins))
+                axis_evidence=model.closing_axis(opened,q,p)
+                margins=sample_capture(closed_facets,open_facets,axis_evidence['direction_target'],target['dimensions'],cfg)
+                result['samples'].append(dict(sample=label,accepted=True,closing_axis=axis_evidence,**margins))
             except ValueError as exc:
-                result['samples'].append(dict(sample=label,accepted=False,reason=str(exc),
+                result['samples'].append(dict(sample=label,accepted=False,reason=str(exc),closing_axis=axis_evidence,
                     closed_bounds_in_target_m={name:[facets.reshape(-1,3).min(axis=0).tolist(),
                         facets.reshape(-1,3).max(axis=0).tolist()] for name,facets in closed_facets.items()},
                     target_dimensions_m=list(target['dimensions'])))
