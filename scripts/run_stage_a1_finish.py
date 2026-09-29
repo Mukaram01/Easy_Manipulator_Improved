@@ -13,6 +13,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -399,10 +400,10 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
             raise RuntimeError("full physical cycle final acceptance is incomplete")
 
 
-def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None):
+def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None,search_timeout=300.):
     cmd=[sys.executable,str(repo/"scripts/perceived_object_grasp_execute.py"),
          "--scene-package",str(scene),"--backend","simulator","--simulator-receipt",str(receipt),
-         "--detections",str(observations),"--timeout","300","--segment-planning-time",str(planning_time),
+         "--detections",str(observations),"--timeout",str(search_timeout),"--segment-planning-time",str(planning_time),
          "--summary-output",str(summary)]
     if resolve:cmd.append("--resolve-task")
     if gate is not None:
@@ -459,8 +460,9 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         report["moveit_overlay"]=verify_session_moveit(domain,env["IGN_PARTITION"],args.moveit_overlay_identity)
         report["bridge_overlay"]=verify_session_bridge(domain,env["IGN_PARTITION"],args.bridge_overlay_identity)
         resolve_summary=session/"resolve/summary.json"
-        run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,resolve=True),
-            env=env,cwd=repo,log=session/"resolve/executor.log",timeout=420)
+        run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,
+                resolve=True,search_timeout=args.search_timeout),
+            env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120)
         resolved=json.loads(resolve_summary.read_text());assert_plan(resolved,require_resolved=True)
 
         # The search may be long. Re-measure the same geometry and renew only
@@ -468,8 +470,9 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         refresh_observations("revalidate")
         generate_scene(scene)
         plan_summary=session/"revalidate/summary.json"
-        run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time),
-            env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=420)
+        run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time,
+                search_timeout=args.search_timeout),
+            env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120)
         planned=json.loads(plan_summary.read_text());assert_plan(planned,require_resolved=True)
         report.update(selected_object_id=planned.get("selected_object_id"),
             selected_grasp_index=planned.get("selected_grasp_index"),
@@ -486,8 +489,9 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             records=[json.loads(prior[name].read_text()) for name in required]
             evidence=session/"commission-evidence.json";evidence.write_text(json.dumps(records,indent=2)+"\n")
         gate_summary=session/f"{gate}/summary.json"
-        run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,gate=gate,evidence=evidence),
-            env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=600)
+        run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
+                gate=gate,evidence=evidence,search_timeout=args.search_timeout),
+            env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+300)
         result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity)
         report.update(status="PASS",result=result["result"],selected_object_id=result.get("selected_object_id"),
                       selected_grasp_index=result.get("selected_grasp_index"))
@@ -515,6 +519,8 @@ def main(argv=None):
     parser.add_argument("--partition-prefix",default="stage_a1_finish")
     parser.add_argument("--class-id",default="part")
     parser.add_argument("--segment-planning-time",type=float,default=3.0)
+    parser.add_argument("--search-timeout",type=float,default=300.,
+        help="Bounded candidate search time in seconds, including continuous collision certification")
     parser.add_argument("--through",choices=GATES,default="full-cycle")
     args=parser.parse_args(argv)
 
@@ -522,8 +528,11 @@ def main(argv=None):
     args.output=args.output.resolve()
     if args.output.exists():parser.error("choose a new output directory")
     if not 0<args.segment_planning_time<=10:parser.error("segment planning time must be in (0,10]")
+    if not math.isfinite(args.search_timeout) or args.search_timeout<=0:
+        parser.error("search timeout must be finite and positive")
     args.output.mkdir(parents=True)
-    overall={"status":"BLOCKED","gates":{},"preflight":None}
+    overall={"status":"BLOCKED","gates":{},"preflight":None,
+             "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time}
     try:
         source_world=discover_source_world(args.source_world,workspace)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity

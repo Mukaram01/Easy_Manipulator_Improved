@@ -191,6 +191,13 @@ python3 scripts/run_stage_a1_finish.py \
   --through full-cycle
 ```
 
+`--search-timeout` sets the finite wall-clock candidate-search budget, including
+continuous collision certification (default 300 seconds). Slow workstations can
+use a larger explicit bound, for example `--search-timeout 900`. The report records
+that budget; candidate ordering, per-segment planning limits, motion deadlines
+and physical acceptance guards are unchanged. Exhausting the budget still blocks
+acceptance and is reported separately from a proved infeasible grasp.
+
 The qualified bridge executable is built and proven using
 [the bridge shutdown overlay instructions](ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY.md).
 The runner checks its source, patch, proof and binary hashes before launch and

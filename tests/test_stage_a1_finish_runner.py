@@ -93,6 +93,25 @@ def test_executor_full_cycle_requires_explicit_evidence(tmp_path):
     assert cmd[cmd.index("--commission-evidence")+1]==str(tmp_path/"evidence.json")
 
 
+def test_executor_search_budget_is_explicit_and_keeps_default():
+    paths=[Path('/repo'),Path('/scene'),Path('/receipt'),Path('/parts'),Path('/summary')]
+    default=MODULE.executor_command(*paths,3.,resolve=True)
+    extended=MODULE.executor_command(*paths,3.,resolve=True,search_timeout=900.)
+    assert float(default[default.index('--timeout')+1])==300.
+    assert float(extended[extended.index('--timeout')+1])==900.
+    assert extended[extended.index('--segment-planning-time')+1]=='3.0'
+    assert '--start' not in extended
+
+
+@pytest.mark.parametrize('budget',['0','-1','nan','inf'])
+def test_runner_rejects_unbounded_or_nonpositive_search_budget(tmp_path,budget):
+    output=tmp_path/'evidence'
+    with pytest.raises(SystemExit) as exc:
+        MODULE.main(['--output',str(output),'--search-timeout',budget])
+    assert exc.value.code==2
+    assert not output.exists()
+
+
 def test_source_world_discovery_accepts_only_frozen_git_blob(tmp_path,monkeypatch):
     world=tmp_path/"world.sdf";world.write_text("<sdf/>")
     repo=Path(__file__).parents[1]
@@ -247,7 +266,7 @@ def test_session_bridge_mismatch_blocks_resolve_and_records_cleanup(tmp_path,mon
     from types import SimpleNamespace
     import simulator_backend
     args=SimpleNamespace(output=tmp_path,base_domain=201,partition_prefix='test',
-        class_id='part',segment_planning_time=3.,moveit_overlay_identity=('tem','move-group'),
+        class_id='part',segment_planning_time=3.,search_timeout=300.,moveit_overlay_identity=('tem','move-group'),
         bridge_overlay_identity=('qualified-exe','qualified-library'))
     monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,path,class_id:path)
     monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
@@ -276,7 +295,7 @@ def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypa
     from types import SimpleNamespace
     import subprocess,sys
     args=SimpleNamespace(output=tmp_path,base_domain=201,partition_prefix='test',
-                         class_id='part',segment_planning_time=3.,moveit_overlay_identity=('test-tem','test-exe'),
+                         class_id='part',segment_planning_time=3.,search_timeout=300.,moveit_overlay_identity=('test-tem','test-exe'),
                          bridge_overlay_identity=('test-bridge-exe','test-bridge-lib'))
     monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,path,class_id:path)
     monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
