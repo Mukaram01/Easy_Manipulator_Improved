@@ -2038,10 +2038,6 @@ def main():
                 link_poses={name:measurements.frame(sample,name) for name in contract['allowed_touch_links']})
             actual_pose=measurements.object_pose(sample,observation['object_id'])
             measured['target_pose']=actual_pose
-            if (math.dist(actual_pose[:3],observation['pose'][:3])>.00025 or
-                min(math.dist(actual_pose[3:],observation['pose'][3:]),
-                    math.dist(actual_pose[3:],[-v for v in observation['pose'][3:]]))>.00025):
-                return dict(accepted=False,reason='target geometry changed since bound observation')
             scene_bytes=json.dumps(message_to_ordereddict(scene),sort_keys=True).encode()
             binding=dict(scene_sha256=sha256(scene_bytes).hexdigest(),
                 observation_sha256=summary['observation_sha256'],robot_model_sha256=capture_model.sha256,

@@ -38,6 +38,19 @@ def transform(pose):
     return t
 
 
+def target_observation_agreement(measured_pose, observation_pose):
+    """Recheck the established observation-admission limits, not capture proof."""
+    transform(measured_pose);transform(observation_pose)
+    measured=numbers(measured_pose,7);observed=numbers(observation_pose,7)
+    translation=float(np.linalg.norm(measured[:3]-observed[:3]))
+    quaternion_distance=float(min(np.linalg.norm(measured[3:]-observed[3:]),
+                                  np.linalg.norm(measured[3:]+observed[3:])))
+    return dict(reference='bound_observation',translation_m=translation,
+                quaternion_distance=quaternion_distance,
+                translation_limit_m=.00025,quaternion_distance_limit=.00025,
+                accepted=translation<=.00025 and quaternion_distance<=.00025)
+
+
 def origin(element):
     t=np.eye(4)
     if element is not None:
@@ -271,6 +284,14 @@ def qualify_capture(*,model,target,candidate_pose,measured,planned_open,planned_
         if measured.get('kind')!='MEASURED' or not isinstance(measured.get('wall_ns'),int):
             raise ValueError('missing measured evidence')
         if not 0<=now_ns-measured['wall_ns']<=250_000_000:raise ValueError('stale measured evidence (>250 ms)')
+        # Facets are evaluated at the immutable bound observation, not at a
+        # substitute simulator pose. Admission at entry and completion uses
+        # the same original reference; sampled robustness is not a drift proof.
+        result['target_reference_pose']=list(target['pose'])
+        result['measurement_target_agreement']=target_observation_agreement(
+            measured['target_pose'],result['target_reference_pose'])
+        if not result['measurement_target_agreement']['accepted']:
+            raise ValueError('target geometry changed since bound observation')
         raw=measured['joints'];measured_fk=model.fk(raw)
         frame_errors={}
         for name in model.links:
@@ -352,11 +373,15 @@ def qualify_capture(*,model,target,candidate_pose,measured,planned_open,planned_
 
 
 def confirm_capture(result, current, binding, now_ns):
-    """Bind a completed calculation to fresh unchanged passive evidence.
+    """Confirm fresh evidence for the unchanged geometric calculation inputs.
 
-    The original sample is never re-stamped. 1e-9 is numeric equality tolerance
-    in SI units, not extra permitted physical motion or a retention limit.
+    Joints/frames retain numeric equality because they supply FK and mimic
+    evidence. The target must still agree with the original observation used
+    for the facets. This admission limit does not prove continuous robustness.
+    The original sample is never re-stamped or replaced by the completion one.
     """
+    result['completion_measurement']=current
+    result['completion_checked_wall_ns']=now_ns
     try:
         if not result.get('accepted'):return result
         if current.get('kind')!='MEASURED' or not 0<=now_ns-current['wall_ns']<=250_000_000:
@@ -373,9 +398,10 @@ def confirm_capture(result, current, binding, now_ns):
         for name,pose in previous['link_poses'].items():
             if not np.allclose(transform(current['link_poses'][name]),transform(pose),atol=1e-9,rtol=0):
                 raise ValueError('measured frame changed during qualification: '+name)
-        if not np.allclose(transform(current['target_pose']),transform(previous['target_pose']),atol=1e-9,rtol=0):
-            raise ValueError('measured target changed during qualification')
-        result['completion_measurement']=current
+        result['completion_target_agreement']=target_observation_agreement(
+            current['target_pose'],result['target_reference_pose'])
+        if not result['completion_target_agreement']['accepted']:
+            raise ValueError('target geometry changed since bound observation')
         result['confirmed_wall_ns']=now_ns
     except (ValueError,KeyError,TypeError) as exc:
         result.update(accepted=False,reason=str(exc))

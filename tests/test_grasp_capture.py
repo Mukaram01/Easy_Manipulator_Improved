@@ -92,6 +92,8 @@ def test_unsupported_or_marginal_capture_rejected(change,reason):
     if change=='missing':data['binding'].pop('scene_sha256')
     if change=='uncertainty':data['planned_closed']={'close':.02801,'follower':.02801}
     if change=='nan':data['planned_closed']['close']=float('nan')
+    if change in ('edge','depth'):
+        data['measured']['target_pose']=list(data['target']['pose'])
     result=qualify(**data)
     assert not result['accepted'], result
     assert reason in result['reason'].lower(),result
@@ -171,7 +173,7 @@ def test_missing_measured_link_pose_is_insufficient_evidence():
     assert not result['accepted']
 
 
-@pytest.mark.parametrize('change',['stale','model','state'])
+@pytest.mark.parametrize('change',['stale','model','state','frame','joint_set'])
 def test_completed_calculation_requires_fresh_unchanged_evidence(change):
     from grasp_capture import confirm_capture
     qualify,data=case();result=qualify(**data)
@@ -179,8 +181,100 @@ def test_completed_calculation_requires_fresh_unchanged_evidence(change):
     if change=='stale':now+=250_000_001
     if change=='model':hashes['srdf_sha256']='f'*64
     if change=='state':current['joints']['close']+=.001
+    if change=='frame':current['link_poses']['left'][0]+=.000001
+    if change=='joint_set':current['joints'].pop('close')
     confirmed=confirm_capture(result,current,hashes,now)
     assert not confirmed['accepted']
+    assert confirmed['completion_measurement']==current
+    assert confirmed['completion_checked_wall_ns']==now
+    assert confirmed['measured']==data['measured']
+
+
+def test_completion_rechecks_original_target_admission_without_restamping_geometry():
+    from grasp_capture import confirm_capture
+    qualify,data=case();result=qualify(**data)
+    original=copy.deepcopy(result['measured']);samples=copy.deepcopy(result['samples'])
+    current=copy.deepcopy(data['measured'])
+    current['wall_ns']+=7_000_000_000
+    current['target_pose'][0]+=.00000001  # Above numeric equality, within admission.
+    confirmed=confirm_capture(result,current,data['binding'],current['wall_ns'])
+    assert confirmed['accepted'],confirmed['reason']
+    assert confirmed['measured']==original
+    assert confirmed['samples']==samples
+    assert confirmed['target_reference_pose']==data['target']['pose']
+    assert confirmed['completion_measurement']==current
+    assert confirmed['confirmed_wall_ns']==current['wall_ns']
+    assert confirmed['completion_target_agreement']['reference']=='bound_observation'
+    assert confirmed['completion_target_agreement']['translation_m']==pytest.approx(.00000001)
+    assert confirmed['robustness']=='SAMPLED_NOT_CONTINUOUS_PROOF'
+
+
+@pytest.mark.parametrize('phase',['entry','completion'])
+@pytest.mark.parametrize('change',['translation','rotation'])
+def test_target_admission_rejects_outside_original_translation_or_rotation_limit(phase,change):
+    from grasp_capture import confirm_capture
+    qualify,data=case()
+    changed=copy.deepcopy(data['measured'])
+    if change=='translation':changed['target_pose'][0]=.000250001
+    else:changed['target_pose'][3:]=[0.,0.,float(np.sin(.0005)),float(np.cos(.0005))]
+    if phase=='entry':
+        data['measured']=changed
+        result=qualify(**data)
+        agreement=result['measurement_target_agreement']
+    else:
+        result=confirm_capture(qualify(**data),changed,data['binding'],data['now_ns'])
+        agreement=result['completion_target_agreement']
+        assert result['completion_measurement']==changed
+    assert not result['accepted']
+    assert 'target geometry changed since bound observation' in result['reason']
+    assert not agreement['accepted']
+    assert agreement['translation_limit_m']==.00025
+    assert agreement['quaternion_distance_limit']==.00025
+
+
+def test_completion_target_gate_cannot_accumulate_drift_between_measurements():
+    from grasp_capture import confirm_capture
+    qualify,data=case()
+    data['measured']['target_pose'][0]=.0002
+    result=qualify(**data)
+    assert result['accepted'],result['reason']
+    current=copy.deepcopy(data['measured']);current['target_pose'][0]=.0004
+    assert current['target_pose'][0]-data['measured']['target_pose'][0]<.00025
+    result=confirm_capture(result,current,data['binding'],data['now_ns'])
+    assert not result['accepted']
+    assert result['completion_target_agreement']['translation_m']==pytest.approx(.0004)
+    assert result['target_reference_pose'][0]==0.
+    assert result['measured']['target_pose'][0]==.0002
+
+
+def test_target_admission_accepts_quaternion_double_cover_at_entry_and_completion():
+    from grasp_capture import confirm_capture
+    qualify,data=case();data['measured']['target_pose'][3:]=[0.,0.,0.,-1.]
+    result=qualify(**data)
+    assert result['accepted'],result['reason']
+    current=copy.deepcopy(data['measured']);current['target_pose'][3:]=[0.,0.,0.,1.]
+    result=confirm_capture(result,current,data['binding'],data['now_ns'])
+    assert result['accepted'],result['reason']
+    assert result['measurement_target_agreement']['quaternion_distance']==0.
+    assert result['completion_target_agreement']['quaternion_distance']==0.
+
+
+@pytest.mark.parametrize('phase',['entry','completion'])
+@pytest.mark.parametrize('change',['nan','infinite','nonunit','missing'])
+def test_target_admission_rejects_malformed_measurements_at_entry_and_completion(phase,change):
+    from grasp_capture import confirm_capture
+    qualify,data=case();changed=copy.deepcopy(data['measured'])
+    if change=='nan':changed['target_pose'][0]=float('nan')
+    if change=='infinite':changed['target_pose'][1]=float('inf')
+    if change=='nonunit':changed['target_pose'][6]=2.
+    if change=='missing':changed.pop('target_pose')
+    if phase=='entry':
+        data['measured']=changed
+        result=qualify(**data)
+    else:
+        result=confirm_capture(qualify(**data),changed,data['binding'],data['now_ns'])
+        assert result['completion_measurement'] is changed
+    assert not result['accepted']
 
 
 def test_stl_scale_and_hash_are_collision_evidence(tmp_path):

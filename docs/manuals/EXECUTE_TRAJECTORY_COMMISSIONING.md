@@ -545,11 +545,23 @@ metres, fresh independently measured joint/link poses, and separately labelled
 PLANNED open/closed states. Raw measured mimic discrepancies are retained and
 propagated through mimic dependencies into predicted geometry. Contradictory
 measured link poses, unsupported geometry/frames, changed mesh contents or
-missing evidence reject the candidate. Live model parameters and a fresh,
-unchanged passive measurement are checked again when calculation finishes.
-Original acquisition timestamps are retained; the 250 ms limit is unchanged.
-The numerical equality check at completion is conservative (1e-9 SI units);
-its usability with live physics jitter remains unqualified.
+missing evidence reject the candidate. Live model parameters and a fresh passive
+measurement are checked again when calculation finishes. Measured joints and tool
+frames, which supply FK and mimic evidence, must remain numerically equal within
+1e-9 SI units. Original acquisition timestamps are retained; the 250 ms freshness
+limit applies to each measurement when checked.
+
+Target facets are evaluated at the immutable bound observation pose. Both the
+initial and completion target measurements must agree with that same pose within
+the existing 0.25 mm translation and 0.00025 sign-invariant quaternion-distance
+limits. The reference never moves with successive measurements. This replaces
+the earlier 1e-9 equality requirement between passive target measurements: two
+live candidates passed all 21 geometry samples but failed that completion check,
+even though the passive target pose is not an input to the facet calculation.
+Both measurements and completed observation-agreement checks are retained, including
+rejections. This admission rule does not certify exact latest-target geometry or
+continuous robustness within the admitted pose range; physical retention still
+requires the later contact gates.
 
 Two distinct fingertip regions must face opposite faces of the same target.
 The closing direction comes from the URDF's relative fingertip motion between
