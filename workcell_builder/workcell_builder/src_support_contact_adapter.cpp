@@ -25,6 +25,16 @@
 #include <stdexcept>
 
 namespace workcell {
+template<class Message>
+static void savePlanningMessage(const std::string& path, const Message& msg) {
+  rclcpp::SerializedMessage bytes;
+  rclcpp::Serialization<Message>().serialize_message(&msg, &bytes);
+  std::ofstream out(path, std::ios::binary);
+  out.exceptions(std::ios::badbit | std::ios::failbit);
+  const auto& buffer=bytes.get_rcl_serialized_message();
+  out.write(reinterpret_cast<const char*>(buffer.buffer), buffer.buffer_length);
+}
+
 // Audit the emitted controller spline, not a different interpolation between
 // collision-free waypoints. No sampled RobotState or contact permission escapes.
 template<class Valid>
@@ -35,6 +45,28 @@ static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& t
     "result=%d reason=%s inspected=%zu certified=%zu subdivided=%zu depth=%u interval=[%ld,%ld] seconds=%.6f",
     static_cast<int>(certificate.result),certificate.reason.c_str(),certificate.inspected,certificate.certified,
     certificate.subdivided,certificate.deepest,certificate.failure_begin_ns,certificate.failure_end_ns,certificate.wall_seconds);
+  // Keep the exact emitted spline and frozen scene before a rejected response
+  // is cleared. The existing opt-in trace can then reproduce an inconclusive
+  // interval offline without replaying any controller action.
+  const char* directory=std::getenv("WORKCELL_PLANNING_TRACE_DIR");
+  if(directory && *directory) {
+    static std::atomic<unsigned long> sequence{0};
+    std::filesystem::create_directories(directory);
+    const auto stamp=std::chrono::system_clock::now().time_since_epoch();
+    const auto prefix=std::string(directory)+"/certificate_"+
+      std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(stamp).count())+"_"+std::to_string(sequence++);
+    moveit_msgs::msg::RobotTrajectory emitted;
+    trajectory.getRobotTrajectoryMsg(emitted);
+    moveit_msgs::msg::PlanningScene frozen;
+    scene.getPlanningSceneMsg(frozen);
+    savePlanningMessage(prefix+".trajectory.cdr",emitted);
+    savePlanningMessage(prefix+".scene.cdr",frozen);
+    std::ofstream result(prefix+".result.txt");
+    result.exceptions(std::ios::badbit | std::ios::failbit);
+    result << "result " << static_cast<int>(certificate.result) << "\nreason " << certificate.reason
+           << "\ninterval " << certificate.failure_begin_ns << ' ' << certificate.failure_end_ns
+           << "\ninspected " << certificate.inspected << "\nseconds " << certificate.wall_seconds << '\n';
+  }
   if(certificate.result!=ControllerCertificate::CERTIFIED_CLEAR) return false;
   constexpr std::size_t max_samples=120001;
   constexpr int64_t max_duration_ns=120000000000LL;
@@ -138,12 +170,7 @@ public:
   void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
   std::string getDescription() const override { return "Workcell effective planning evidence"; }
   template<class Message> static void save(const std::string& path, const Message& msg) {
-    rclcpp::SerializedMessage bytes;
-    rclcpp::Serialization<Message>().serialize_message(&msg, &bytes);
-    std::ofstream out(path, std::ios::binary);
-    out.exceptions(std::ios::badbit | std::ios::failbit);
-    const auto& buffer=bytes.get_rcl_serialized_message();
-    out.write(reinterpret_cast<const char*>(buffer.buffer), buffer.buffer_length);
+    savePlanningMessage(path,msg);
   }
   bool adaptAndPlan(const PlannerFn& planner, const planning_scene::PlanningSceneConstPtr& scene,
       const planning_interface::MotionPlanRequest& req, planning_interface::MotionPlanResponse& res,

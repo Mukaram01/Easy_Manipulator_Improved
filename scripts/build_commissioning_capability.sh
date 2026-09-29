@@ -76,6 +76,7 @@ for target,source in support_links.items():
 sources=[repo/'workcell_builder/workcell_builder'/name for name in (
  'commission_execute_server.hpp','controller_terminal_audit.hpp','src_commission_execute_capability.cpp',
  'execute_trajectory_plugins.xml','src_support_contact_adapter.cpp','support_contact_policy.hpp',
+ 'controller_interval_certificate.hpp','detached_contact_certificate.hpp',
  'support_contact_plugins.xml','CMakeLists.txt')]
 library=build/'libworkcell_commission_execute.so'
 version_file=build/'workcell_commission_moveit_version.txt'

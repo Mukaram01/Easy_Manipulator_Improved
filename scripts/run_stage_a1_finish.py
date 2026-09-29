@@ -275,6 +275,8 @@ def build_commissioning(repo:Path,workspace:Path,output:Path,env:dict)->dict:
     if not library.is_file() or sha256(library)!=manifest.get("sha256"):
         raise RuntimeError("commissioning library does not match its build manifest")
     test_env=dict(env,ROS_DOMAIN_ID="200",ROS_LOCALHOST_ONLY="1",ROS2CLI_DISABLE_DAEMON="1")
+    # Unit fixtures must not enter the optional live planning evidence directory.
+    test_env.pop("WORKCELL_PLANNING_TRACE_DIR",None)
     run([workspace/"build/workcell_builder/workcell_execute_action_test"],env=test_env,cwd=repo,
         log=output/"commissioning-action-tests.log",timeout=120)
     run([workspace/"build/workcell_builder/workcell_support_contact_test"],env=test_env,cwd=repo,

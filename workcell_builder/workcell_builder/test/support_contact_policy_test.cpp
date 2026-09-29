@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <array>
+#include <cfenv>
 #include "support_contact_policy.hpp"
 
 using workcell::SupportContact;
@@ -589,6 +590,60 @@ TEST(CartesianAdapter, OrdinaryQuinticOvershootCollisionRejectsClearWaypoints) {
   EXPECT_FALSE(response.trajectory_);
 }
 
+TEST(CartesianAdapter, RejectedCertificateTracePreservesExactInputWithoutPromotingResult) {
+  SupportFixture fixture(0.);prepareOrdinaryRequest(fixture,.075);
+  auto trajectory=ordinaryQuintic(fixture);
+  moveit_msgs::msg::RobotTrajectory expected_trajectory;trajectory->getRobotTrajectoryMsg(expected_trajectory);
+  moveit_msgs::msg::PlanningScene expected_scene;fixture.scene->getPlanningSceneMsg(expected_scene);
+  char name[]="/tmp/workcell-certificate-trace-XXXXXX";
+  const char* directory=mkdtemp(name);ASSERT_NE(directory,nullptr);
+  struct RestoreTrace {
+    std::string directory,prior;
+    bool had_prior;
+    ~RestoreTrace() {
+      if(had_prior) setenv("WORKCELL_PLANNING_TRACE_DIR",prior.c_str(),1);
+      else unsetenv("WORKCELL_PLANNING_TRACE_DIR");
+      std::filesystem::remove_all(directory);
+    }
+  } restore{directory,std::getenv("WORKCELL_PLANNING_TRACE_DIR")?std::getenv("WORKCELL_PLANNING_TRACE_DIR"):"",
+            std::getenv("WORKCELL_PLANNING_TRACE_DIR")!=nullptr};
+  ASSERT_EQ(setenv("WORKCELL_PLANNING_TRACE_DIR",directory,1),0);
+  workcell::StraightCartesianPath adapter;
+  planning_interface::MotionPlanResponse response;std::vector<std::size_t> indexes;
+  auto plan=[&](const auto&,const auto&,auto& out) {
+    out.trajectory_=trajectory;out.error_code_.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;return true;
+  };
+  EXPECT_FALSE(adapter.adaptAndPlan(plan,fixture.scene,fixture.request,response,indexes));
+  EXPECT_FALSE(response.trajectory_);
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN);
+  std::filesystem::path trajectory_path,scene_path,result_path;std::size_t files=0;
+  for(const auto& entry:std::filesystem::directory_iterator(directory)) {
+    ++files;const auto filename=entry.path().filename().string();
+    if(filename.find(".trajectory.cdr")!=std::string::npos) trajectory_path=entry.path();
+    else if(filename.find(".scene.cdr")!=std::string::npos) scene_path=entry.path();
+    else if(filename.find(".result.txt")!=std::string::npos) result_path=entry.path();
+  }
+  ASSERT_EQ(files,3U);ASSERT_FALSE(trajectory_path.empty());ASSERT_FALSE(scene_path.empty());ASSERT_FALSE(result_path.empty());
+  auto deserialize=[](const std::filesystem::path& path,auto& message) {
+    std::ifstream input(path,std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>()};
+    rclcpp::SerializedMessage serialized(bytes.size());auto& raw=serialized.get_rcl_serialized_message();
+    std::memcpy(raw.buffer,bytes.data(),bytes.size());raw.buffer_length=bytes.size();
+    rclcpp::Serialization<std::decay_t<decltype(message)>>().deserialize_message(&serialized,&message);
+  };
+  moveit_msgs::msg::RobotTrajectory recorded_trajectory;deserialize(trajectory_path,recorded_trajectory);
+  moveit_msgs::msg::PlanningScene recorded_scene;deserialize(scene_path,recorded_scene);
+  EXPECT_EQ(recorded_trajectory,expected_trajectory);
+  EXPECT_EQ(recorded_scene.robot_state,expected_scene.robot_state);
+  EXPECT_EQ(recorded_scene.world,expected_scene.world);
+  EXPECT_EQ(recorded_scene.allowed_collision_matrix,expected_scene.allowed_collision_matrix);
+  std::ifstream result(result_path);const std::string text{std::istreambuf_iterator<char>(result),std::istreambuf_iterator<char>()};
+  EXPECT_NE(text.find("result 1\nreason FCL_COLLISION\n"),std::string::npos);
+  unsetenv("WORKCELL_PLANNING_TRACE_DIR");
+  EXPECT_FALSE(adapter.adaptAndPlan(plan,fixture.scene,fixture.request,response,indexes));
+  EXPECT_EQ(std::distance(std::filesystem::directory_iterator(directory),std::filesystem::directory_iterator()),3);
+}
+
 TEST(CartesianAdapter, OrdinaryClearQuinticRetainsSuccessfulPlannerResult) {
   SupportFixture fixture(0.); prepareOrdinaryRequest(fixture,.15);
   auto planned=ordinaryQuintic(fixture);
@@ -780,6 +835,88 @@ TEST(ControllerCertificate, OddNanosecondSubdivisionEnclosesPolynomial) {
     auto range=hull(t<=500000?children.first:children.second)+Interval(-error,error);
     EXPECT_GE(point.positions[0],range.lower());EXPECT_LE(point.positions[0],range.upper());
   }
+}
+TEST(ControllerCertificate, ProjectionEnclosesBoxAndRestoresCallerRoundingOnException) {
+  using namespace workcell::controller_certificate;
+  const int original_mode=std::fegetround();
+  ASSERT_NE(original_mode,-1);
+  struct RestoreRounding {
+    int mode;
+    ~RestoreRounding() { std::fesetround(mode); }
+  } restore{original_mode};
+  auto pose=Eigen::Isometry3d::Identity();
+  pose.linear()<<0.,-1.,0., 1.,0.,0., 0.,0.,1.;
+  pose.translation()=Eigen::Vector3d(.25,-.5,1.);
+  GeometryBody box{"box",collision_detection::BodyTypes::WORLD_OBJECT,
+    {shapes::ShapeConstPtr(new shapes::Box(2.,4.,6.))},{pose},{}};
+  auto invalid=box;
+  auto malformed=std::make_shared<shapes::Box>(2.,4.,6.);
+  malformed->size[1]=-4.;invalid.shapes={malformed};
+  const Eigen::Vector3d axis(1.,2.,-1.);
+  for(int mode:{FE_TONEAREST,FE_DOWNWARD,FE_UPWARD,FE_TOWARDZERO}) {
+    SCOPED_TRACE(mode);
+    ASSERT_EQ(std::fesetround(mode),0);
+    const auto range=projection(box,axis);
+    EXPECT_EQ(std::fegetround(),mode);
+    // Exact binary inputs: projected center -1.75, half-width 7.
+    EXPECT_EQ(range.lower(),-8.75);
+    EXPECT_EQ(range.upper(),5.25);
+    ASSERT_EQ(std::fesetround(mode),0);
+    EXPECT_THROW(projection(invalid,axis),std::runtime_error);
+    EXPECT_EQ(std::fegetround(),mode);
+  }
+}
+TEST(ControllerCertificate, ShapeCachePreservesExactRadiusAndRejectsMalformedGeometry) {
+  using namespace workcell::controller_certificate;
+  ShapeValidationCache cache;
+  const shapes::ShapeConstPtr sphere(new shapes::Sphere(2.));
+  EXPECT_EQ(cache.radius(sphere),std::nextafter(2.,INFINITY));
+  EXPECT_EQ(cache.radius(sphere),radius(*sphere));
+  auto mesh=std::make_shared<shapes::Mesh>(3,1);
+  const double vertices[]={0.,0.,0.,3.,0.,0.,0.,4.,0.};
+  std::copy(std::begin(vertices),std::end(vertices),mesh->vertices);
+  mesh->triangles[0]=0;mesh->triangles[1]=1;mesh->triangles[2]=2;
+  EXPECT_EQ(cache.radius(mesh),std::nextafter(4.,INFINITY));
+  EXPECT_EQ(cache.radius(mesh),radius(*mesh));
+  auto invalid_box=std::make_shared<shapes::Box>(1.,1.,1.);
+  invalid_box->size[0]=-1.;
+  EXPECT_THROW(cache.radius(invalid_box),std::runtime_error);
+  auto invalid_mesh=std::make_shared<shapes::Mesh>(3,1);
+  std::copy(std::begin(vertices),std::end(vertices),invalid_mesh->vertices);
+  invalid_mesh->triangles[0]=0;invalid_mesh->triangles[1]=1;invalid_mesh->triangles[2]=3;
+  EXPECT_THROW(cache.radius(invalid_mesh),std::runtime_error);
+  EXPECT_THROW(cache.radius(invalid_mesh),std::runtime_error);
+}
+TEST(ControllerCertificate, ShapeCacheDoesNotSurviveItsCertificate) {
+  using namespace workcell::controller_certificate;
+  auto sphere=std::make_shared<shapes::Sphere>(2.);
+  {ShapeValidationCache cache;EXPECT_EQ(cache.radius(sphere),std::nextafter(2.,INFINITY));}
+  // Changes between frozen scenes must never inherit a prior certificate's bound.
+  sphere->radius=4.;
+  ShapeValidationCache next;
+  EXPECT_EQ(next.radius(sphere),std::nextafter(4.,INFINITY));
+}
+TEST(ControllerCertificate, ShapeCacheKeepsCurrentPosesAndDisplacementBounds) {
+  using namespace workcell::controller_certificate;
+  SupportFixture f(0.);ShapeValidationCache cache;
+  auto state=f.scene->getCurrentState();state.update();
+  const auto first=geometryBodies(*f.scene,state,&cache);
+  state.setVariablePosition("lift",.1);state.update();
+  const auto cached=geometryBodies(*f.scene,state,&cache),uncached=geometryBodies(*f.scene,state);
+  ASSERT_EQ(cached.size(),uncached.size());
+  bool moved=false;
+  for(const auto& body:cached) for(std::size_t i=0;i<body.second.poses.size();++i) {
+    EXPECT_EQ(body.second.poses[i].matrix(),uncached.at(body.first).poses[i].matrix());
+    moved=moved||body.second.poses[i].matrix()!=first.at(body.first).poses[i].matrix();
+  }
+  EXPECT_TRUE(moved);
+  Polynomials p;std::map<std::string,double> errors;
+  for(const auto& name:f.scene->getRobotModel()->getVariableNames()) {
+    p[name]={Interval(state.getVariablePosition(name))};errors[name]=0.;
+  }
+  EXPECT_EQ(bodyDisplacements(*f.scene,state,p,errors,&cache),bodyDisplacements(*f.scene,state,p,errors));
+  state.setVariablePosition("lift",std::numeric_limits<double>::quiet_NaN());state.update();
+  EXPECT_THROW(geometryBodies(*f.scene,state,&cache),std::runtime_error);
 }
 TEST(ControllerCertificate, KnownClearRealStageAApproach) {
   const char* directory=std::getenv("WORKCELL_STAGE_A_CERTIFICATE_FIXTURE");

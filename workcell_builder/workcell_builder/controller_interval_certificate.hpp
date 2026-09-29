@@ -144,6 +144,31 @@ inline double radius(const shapes::Shape& shape) {
   if(!std::isfinite(r)||r<=0.) throw std::runtime_error("INVALID_GEOMETRY_RADIUS");
   return std::nextafter(r,std::numeric_limits<double>::infinity());
 }
+inline double validatedRadius(const shapes::Shape& shape) {
+  const double result=radius(shape);
+  if(shape.type==shapes::MESH) {
+    const auto& mesh=static_cast<const shapes::Mesh&>(shape);
+    for(unsigned k=0;k<mesh.triangle_count*3;++k)
+      if(mesh.triangles[k]>=mesh.vertex_count) throw std::runtime_error("MESH_INDEX_INVALID");
+  }
+  return result;
+}
+// A frozen certificate shares immutable shape geometry across all intervals.
+// Keep ownership with each pointer key, and discard these bounds after that
+// certificate. Poses, body identities, padding and scale are never cached.
+class ShapeValidationCache {
+ public:
+  double radius(const shapes::ShapeConstPtr& shape) {
+    if(!shape) throw std::runtime_error("COLLISION_GEOMETRY_NONFINITE");
+    const auto found=entries_.find(shape.get());
+    if(found!=entries_.end()) return found->second.second;
+    const double result=validatedRadius(*shape);
+    entries_.emplace(shape.get(),std::make_pair(shape,result));
+    return result;
+  }
+ private:
+  std::map<const shapes::Shape*,std::pair<shapes::ShapeConstPtr,double>> entries_;
+};
 // Every ancestor contributes. The downstream radius includes fixed offsets,
 // collision origin, actual shape radius, and the full prismatic position hull.
 // Mimic polynomials have already been expanded with their multiplier/offset.
@@ -176,8 +201,12 @@ inline double displacement(const moveit::core::LinkModel* link,double shape_radi
   finite(travel);return travel.upper();
 }
 inline std::map<std::string,double> bodyDisplacements(const planning_scene::PlanningScene& scene,
-    const moveit::core::RobotState& anchor,const Polynomials& p,const std::map<std::string,double>& errors={}) {
+    const moveit::core::RobotState& anchor,const Polynomials& p,const std::map<std::string,double>& errors={},
+    ShapeValidationCache* shape_cache=nullptr) {
   std::map<std::string,double> result;
+  const auto shape_radius=[&](const shapes::ShapeConstPtr& shape) {
+    return shape_cache?shape_cache->radius(shape):radius(*shape);
+  };
   const auto& env=scene.getCollisionEnv();
   for(const auto* link:scene.getRobotModel()->getLinkModelsWithCollisionGeometry()) {
     double reach=0.;
@@ -186,14 +215,14 @@ inline std::map<std::string,double> bodyDisplacements(const planning_scene::Plan
     // The current Stage A model uses neither; unknown inflation fails closed.
     if(padding!=0.||scale!=1.) throw std::runtime_error("PADDED_GEOMETRY_BOUND_UNSUPPORTED");
     for(std::size_t k=0;k<link->getShapes().size();++k)
-      reach=std::max(reach,(Interval(normUpper(link->getCollisionOriginTransforms()[k].translation()))+radius(*link->getShapes()[k])).upper());
+      reach=std::max(reach,(Interval(normUpper(link->getCollisionOriginTransforms()[k].translation()))+shape_radius(link->getShapes()[k])).upper());
     result[link->getName()]=displacement(link,reach,p,anchor,errors);
   }
   std::vector<const moveit::core::AttachedBody*> bodies;anchor.getAttachedBodies(bodies);
   for(const auto* body:bodies) {
     double reach=0.;
     for(std::size_t k=0;k<body->getShapes().size();++k)
-      reach=std::max(reach,(Interval(normUpper(body->getPose().translation()))+normUpper(body->getShapePoses()[k].translation())+radius(*body->getShapes()[k])).upper());
+      reach=std::max(reach,(Interval(normUpper(body->getPose().translation()))+normUpper(body->getShapePoses()[k].translation())+shape_radius(body->getShapes()[k])).upper());
     result[body->getName()]=displacement(body->getAttachedLink(),reach,p,anchor,errors);
   }
   return result;
@@ -206,18 +235,15 @@ struct GeometryBody {
   std::set<std::string> touch_links;
 };
 using GeometryBodies=std::map<std::string,GeometryBody>;
-inline GeometryBodies geometryBodies(const planning_scene::PlanningScene& scene,const moveit::core::RobotState& state) {
+inline GeometryBodies geometryBodies(const planning_scene::PlanningScene& scene,const moveit::core::RobotState& state,
+    ShapeValidationCache* shape_cache=nullptr) {
   GeometryBodies bodies;
   auto add=[&](GeometryBody body) {
     if(body.shapes.empty()||body.shapes.size()!=body.poses.size()) throw std::runtime_error("COLLISION_GEOMETRY_INCOMPLETE");
     for(std::size_t i=0;i<body.shapes.size();++i) {
       if(!body.shapes[i]||!body.poses[i].matrix().allFinite()) throw std::runtime_error("COLLISION_GEOMETRY_NONFINITE");
-      radius(*body.shapes[i]); // validates finite, bounded supported geometry
-      if(body.shapes[i]->type==shapes::MESH) {
-        const auto& mesh=static_cast<const shapes::Mesh&>(*body.shapes[i]);
-        for(unsigned k=0;k<mesh.triangle_count*3;++k)
-          if(mesh.triangles[k]>=mesh.vertex_count) throw std::runtime_error("MESH_INDEX_INVALID");
-      }
+      if(shape_cache) shape_cache->radius(body.shapes[i]);
+      else validatedRadius(*body.shapes[i]);
     }
     if(!bodies.emplace(body.name,std::move(body)).second) throw std::runtime_error("COLLISION_BODY_ID_AMBIGUOUS");
   };
@@ -249,22 +275,26 @@ inline bool requiredPair(const GeometryBody& a,const GeometryBody& b,
   return true;
 }
 inline Interval projection(const GeometryBody& body,const Eigen::Vector3d& axis) {
+  // One rounding guard covers interval-only arithmetic and restores the caller
+  // on return or exception. FK/FCL computations remain outside this scope.
+  using LocalInterval=boost::numeric::interval_lib::unprotect<Interval>::type;
+  Interval::traits_type::rounding rounding_guard;
   double low=INFINITY,high=-INFINITY;
   for(std::size_t k=0;k<body.shapes.size();++k) {
     const auto& transform=body.poses[k];const auto& shape=*body.shapes[k];
-    Interval center(0.);Interval direction[3]={Interval(0.),Interval(0.),Interval(0.)};
+    LocalInterval center(0.);LocalInterval direction[3]={LocalInterval(0.),LocalInterval(0.),LocalInterval(0.)};
     for(unsigned i=0;i<3;++i) {
-      center+=Interval(axis[i])*transform.translation()[i];
-      for(unsigned j=0;j<3;++j) direction[j]+=Interval(axis[i])*transform.linear()(i,j);
+      center+=LocalInterval(axis[i])*transform.translation()[i];
+      for(unsigned j=0;j<3;++j) direction[j]+=LocalInterval(axis[i])*transform.linear()(i,j);
     }
-    Interval extent(0.);Interval projected(0.);
+    LocalInterval extent(0.);LocalInterval projected(0.);
     if(shape.type==shapes::MESH) {
       const auto& mesh=static_cast<const shapes::Mesh&>(shape);double lo=INFINITY,hi=-INFINITY;
       for(unsigned i=0;i<mesh.vertex_count;++i) {
-        Interval value(0.);for(unsigned j=0;j<3;++j) value+=direction[j]*mesh.vertices[3*i+j];
+        LocalInterval value(0.);for(unsigned j=0;j<3;++j) value+=direction[j]*mesh.vertices[3*i+j];
         finite(value);lo=std::min(lo,value.lower());hi=std::max(hi,value.upper());
       }
-      projected=center+Interval(lo,hi);
+      projected=center+LocalInterval(lo,hi);
     } else {
       if(shape.type==shapes::BOX) {
         const auto& box=static_cast<const shapes::Box&>(shape);
@@ -283,11 +313,11 @@ inline Interval projection(const GeometryBody& body,const Eigen::Vector3d& axis)
         if(!std::isfinite(r)||!std::isfinite(length)||r<=0.||length<=0.) throw std::runtime_error("CYLINDER_SIZE_INVALID");
         extent=boost::numeric::sqrt(boost::numeric::square(direction[0])+boost::numeric::square(direction[1]))*r+boost::numeric::abs(direction[2])*length/2.;
       } else throw std::runtime_error("SHAPE_PROJECTION_UNSUPPORTED");
-      finite(extent);projected=center+Interval(-extent.upper(),extent.upper());
+      finite(extent);projected=center+LocalInterval(-extent.upper(),extent.upper());
     }
     finite(projected);low=std::min(low,projected.lower());high=std::max(high,projected.upper());
   }
-  return Interval(low,high);
+  return LocalInterval(low,high);
 }
 // FCL/GJK distance can overestimate true clearance by more than its termination
 // tolerance. Its nearest points supply only a candidate axis. Projection of ALL
@@ -419,7 +449,8 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         throw std::runtime_error("TRAJECTORY_TIMING_INVALID");
     }
     auto first=trajectory.getFirstWayPoint();first.update();
-    geometryBodies(scene,first); // fail before FCL on malformed or unsupported geometry
+    ShapeValidationCache shape_cache;
+    geometryBodies(scene,first,&shape_cache); // fail before FCL on malformed or unsupported geometry
     if(detached) {
       for(const auto& name:scene.getRobotModel()->getVariableNames())
         if(first.getVariablePosition(name)!=scene.getCurrentState().getVariablePosition(name))
@@ -508,7 +539,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
             }
           } else if(scene.isStateColliding(state,"")) {report.result=ControllerCertificate::COLLISION;report.reason="FCL_COLLISION";return false;}
         }
-        const auto movement=bodyDisplacements(scene,anchor,controls,errors);
+        const auto movement=bodyDisplacements(scene,anchor,controls,errors,&shape_cache);
         auto acm=scene.getAllowedCollisionMatrix();
         const auto start=evaluate(lo);
         bool detached_proven=true;
@@ -540,7 +571,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
               errors,hi-lo,boundary_monotone))
             acm.setEntry(pair.object,pair.world,true); // distance query only; separate analytic proof above
         }
-        const auto geometry=geometryBodies(scene,anchor);
+        const auto geometry=geometryBodies(scene,anchor,&shape_cache);
         std::map<std::string,std::array<Interval,3>> coordinate_projections;
         for(const auto& body:geometry)
           coordinate_projections[body.first]={projection(body.second,Eigen::Vector3d::UnitX()),
