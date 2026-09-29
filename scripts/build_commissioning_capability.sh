@@ -17,7 +17,12 @@ print(Path(active_moveit_overlay()['library']['path']).parents[1])
 PYPREFIX
 )
 moveit_group_prefix=$(python3 -c 'from ament_index_python.packages import get_package_prefix; print(get_package_prefix("moveit_ros_move_group"))')
+# Interval collision certification must fit the bounded planning search. Keep
+# optimization and debug symbols, but preserve assertions (no NDEBUG). The
+# support target retains its directed-rounding and disabled FP-contraction flags.
 cmake -S "$repo/workcell_builder/workcell_builder" -B "$build" \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -g" \
   -Dmoveit_ros_move_group_DIR="$moveit_group_prefix/share/moveit_ros_move_group/cmake" \
   -Dmoveit_ros_planning_DIR="$moveit_prefix/share/moveit_ros_planning/cmake" \
   -DWORKCELL_BUILD_COMMISSIONING_CAPABILITY=ON \

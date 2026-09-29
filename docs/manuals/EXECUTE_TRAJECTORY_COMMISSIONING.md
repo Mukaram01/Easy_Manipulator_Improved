@@ -54,8 +54,10 @@ ROS_DOMAIN_ID=191 ~/workcell_ws/build/workcell_builder/workcell_execute_action_t
 ```
 
 `WORKCELL_BUILD_COMMISSIONING_CAPABILITY` defaults OFF. When enabled, CMake
-accepts only reviewed MoveIt **2.5.9 or 2.5.10**. The script builds only the capability, its action
-test and the existing measurement target, then registers the local plugin via
+accepts only reviewed MoveIt **2.5.9 or 2.5.10**. The script builds the capability,
+support adapter, their tests and the existing measurement target with `-O2 -g`
+and assertions enabled. The support targets retain directed rounding and disabled
+floating-point contraction. It then registers the local plugin via
 scoped overlay symlinks. It never installs to `/opt`. It writes a manifest
 binding source hashes to the resulting library hash in the existing install
 prefix. The client verifies that manifest against the current source, library,
