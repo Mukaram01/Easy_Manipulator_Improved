@@ -672,6 +672,85 @@ def test_transfer_seed_rechecks_fresh_target_without_replacing_current_start_or_
     assert view==original and seed['joint_positions']=={'arm':-2.4}
 
 
+@pytest.mark.parametrize('backend,wait', [('simulator',60.),('fake',12.)])
+def test_plan_only_wait_includes_simulator_continuous_certificate(backend,wait):
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    context['args'].backend=backend
+    original=context['action'];seen=[]
+    def plan(client,goal,timeout):
+        seen.append(timeout)
+        assert goal.planning_options.plan_only
+        return original(client,goal,timeout)
+    context['action']=plan
+    context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+    assert seen==[wait]
+
+
+@pytest.mark.parametrize('terminal', [None,4,5,6])
+def test_interrupted_plan_requires_owned_terminal_before_search_continues(terminal):
+    from full_cycle_preplanner import PlanningLifecycleFailure
+    uuid=[1]*16
+    cancel=SimpleNamespace(done=lambda:True,result=lambda:SimpleNamespace(return_code=0,
+        goals_canceling=[SimpleNamespace(goal_id=SimpleNamespace(uuid=uuid))]))
+    result=SimpleNamespace(status=terminal,result=SimpleNamespace(error_code=SimpleNamespace(val=1)))
+    future=SimpleNamespace(done=lambda:terminal is not None,result=lambda:result)
+    handle=SimpleNamespace(cancel_goal_async=lambda:cancel)
+    waits=[];summary={}
+    def spin(item,timeout):waits.append((item,timeout))
+    if terminal is None:
+        with pytest.raises(PlanningLifecycleFailure,match='PLAN_ONLY_GOAL_NOT_TERMINAL'):
+            MODULE.finish_interrupted_plan(handle,future,uuid,spin,summary)
+    else:
+        MODULE.finish_interrupted_plan(handle,future,uuid,spin,summary)
+    assert waits==[(cancel,5.),(future,5.)]
+    evidence=summary['interrupted_planning_goals'][0]
+    assert evidence['goal_uuid']==bytes(uuid).hex()
+    assert evidence['terminal_status']==terminal
+
+
+def test_unknown_plan_acceptance_stops_search_and_cancels_late_acceptance():
+    import ast
+    from full_cycle_preplanner import PlanningLifecycleFailure
+    tree=ast.parse(SCRIPT.read_text())
+    main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    callbacks=[];cancelled=[]
+    sent=SimpleNamespace(done=lambda:False,add_done_callback=callbacks.append)
+    client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
+    context=dict(vars(MODULE),execute_client=object(),plan_client=client,controlled_cancel=False,
+        controller_audit=None,node=object(),summary={},
+        rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
+    with pytest.raises(PlanningLifecycleFailure,match='PLAN_ONLY_ACCEPTANCE_UNKNOWN'):
+        context['action'](client,object(),60.)
+    assert context['summary']['planning_acceptance_unknown'] is True
+    handle=SimpleNamespace(accepted=True,cancel_goal_async=lambda:cancelled.append(True))
+    callbacks[0](SimpleNamespace(result=lambda:handle))
+    assert cancelled==[True]
+
+
+def test_accepted_plan_without_result_future_stops_search():
+    import ast
+    from full_cycle_preplanner import PlanningLifecycleFailure
+    tree=ast.parse(SCRIPT.read_text())
+    main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    cancelled=[]
+    def result():raise RuntimeError('GetResult transport failed')
+    handle=SimpleNamespace(accepted=True,goal_id=SimpleNamespace(uuid=[2]*16),get_result_async=result,
+        cancel_goal_async=lambda:cancelled.append(True))
+    sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
+    client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
+    context=dict(vars(MODULE),execute_client=object(),plan_client=client,controlled_cancel=False,
+        controller_audit=None,node=object(),summary={},
+        rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
+    with pytest.raises(PlanningLifecycleFailure,match='PLAN_ONLY_GOAL_NOT_TERMINAL'):
+        context['action'](client,object(),60.)
+    assert cancelled==[True]
+    assert context['summary']['planning_result_request_error']=='GetResult transport failed'
+
+
 @pytest.mark.parametrize('position',[-2.3,-2.4+2*MODULE.math.pi,float('nan'),float('inf'),None])
 def test_transfer_seed_rejects_changed_or_missing_fresh_branch_before_planning(position):
     from moveit_msgs.msg import RobotState,MoveItErrorCodes

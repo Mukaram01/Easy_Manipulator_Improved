@@ -197,6 +197,11 @@ use a larger explicit bound, for example `--search-timeout 900`. The report reco
 that budget; candidate ordering, per-segment planning limits, motion deadlines
 and physical acceptance guards are unchanged. Exhausting the budget still blocks
 acceptance and is reported separately from a proved infeasible grasp.
+An in-flight simulator PLAN_ONLY request has a 60-second result watchdog because
+continuous certification follows the planner's own time limit. A timed-out owned
+planning goal must reach a terminal action state before another candidate can
+start. If it does not, the session fails and shuts down. Physical execution keeps
+its existing action deadlines.
 
 The qualified bridge executable is built and proven using
 [the bridge shutdown overlay instructions](ROS_GZ_BRIDGE_SHUTDOWN_OVERLAY.md).

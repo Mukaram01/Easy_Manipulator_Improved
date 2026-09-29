@@ -76,6 +76,10 @@ class CandidateBudgetExhausted(RuntimeError):
     """One candidate used its fair-share discovery/retry wall-clock slice."""
 
 
+class PlanningLifecycleFailure(RuntimeError):
+    """An unsettled planning goal forbids further candidate or variant planning."""
+
+
 class MotionFeasibilityFailure(RuntimeError):
     """Serializable rejection evidence from the existing collision/planning API."""
 
@@ -423,6 +427,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                              extraction_attempts=copy.deepcopy(extraction_attempts))
                 return PreplanResult(True, candidate.candidate_id, None, None, checks, stages, cycle,
                                      extraction_attempts)
+            except PlanningLifecycleFailure:
+                raise
             except Exception as exc:
                 code = (getattr(exc, 'reason_code', None) or
                         ('SEARCH_BUDGET_EXHAUSTED' if isinstance(exc, SearchBudgetExhausted) else
@@ -443,6 +449,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                 for attempt in extraction_attempts):
             last_error.reason_code = 'NO_VALID_EXTRACTION'
         raise last_error
+    except PlanningLifecycleFailure:
+        raise
     except Exception as exc:
         if isinstance(exc, SearchBudgetExhausted):
             reason_code = 'SEARCH_BUDGET_EXHAUSTED'

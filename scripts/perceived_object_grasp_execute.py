@@ -373,6 +373,30 @@ class MoveItActionFailure(RuntimeError):
         self.code = code
 
 
+def finish_interrupted_plan(handle, future, owned_uuid, spin, summary):
+    """Do not search another candidate while its predecessor is still planning."""
+    from full_cycle_preplanner import PlanningLifecycleFailure
+    record={'goal_uuid':bytes(owned_uuid).hex(),'terminal_status':None}
+    summary.setdefault('interrupted_planning_goals',[]).append(record)
+    try:
+        cancel=handle.cancel_goal_async()
+        spin(cancel,5.)
+        response=cancel.result() if cancel.done() else None
+        record['cancel_accepted']=bool(response and response.return_code==0 and any(
+            list(info.goal_id.uuid)==list(owned_uuid) for info in response.goals_canceling))
+    except Exception as exc:
+        record['cancel_error']=str(exc)
+    try:
+        if future is not None:spin(future,5.)
+        response=future.result() if future is not None and future.done() else None
+        if response is not None:
+            record.update(terminal_status=response.status,moveit_code=response.result.error_code.val)
+    except Exception as exc:
+        record['terminal_error']=str(exc)
+    if record['terminal_status'] not in (4,5,6):
+        raise PlanningLifecycleFailure('PLAN_ONLY_GOAL_NOT_TERMINAL: stop search and restart the owned session')
+
+
 def retryable_plan_failure(code):
     """Retry only stochastic plan-only outcomes without changing scene or goal."""
     # MoveItErrorCodes: INVALID_MOTION_PLAN=-2, TIMED_OUT=-6.
@@ -1168,12 +1192,23 @@ def main():
         if not sent.done():
             # A late accepted goal must not keep running after the caller fails.
             sent.add_done_callback(lambda f: f.result().cancel_goal_async() if f.result() and f.result().accepted else None)
+            if client is plan_client:
+                from full_cycle_preplanner import PlanningLifecycleFailure
+                summary['planning_acceptance_unknown']=True
+                raise PlanningLifecycleFailure('PLAN_ONLY_ACCEPTANCE_UNKNOWN: stop search and restart the owned session')
             raise RuntimeError('action acceptance timed out')
         handle = sent.result()
         if not handle or not handle.accepted:
             raise RuntimeError('action goal rejected')
-        future = handle.get_result_async()
         owned_uuid=list(handle.goal_id.uuid)
+        try:
+            future = handle.get_result_async()
+        except Exception as exc:
+            if client is plan_client:
+                summary['planning_result_request_error']=str(exc)
+                finish_interrupted_plan(handle,None,owned_uuid,
+                    lambda pending,seconds:rclpy.spin_until_future_complete(node,pending,timeout_sec=seconds),summary)
+            raise
         motion_trial=None
         if client is execute_client:
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
@@ -1219,6 +1254,10 @@ def main():
                 # into contact motion when cancellation was not demonstrated.
                 raise RuntimeError('CANCELLATION_TRIAL_ENDED_BEFORE_CANCEL')
         except BaseException as exc:
+            if client is plan_client:
+                finish_interrupted_plan(handle,future,owned_uuid,
+                    lambda pending,seconds:rclpy.spin_until_future_complete(node,pending,timeout_sec=seconds),summary)
+                raise
             if isinstance(exc,GraspRetentionLoss):begin_recovery(exc,during_action=True)
             if measurements:
                 from simulator_execution import cancel_owned,cancel_response_matches
@@ -1798,7 +1837,12 @@ def main():
         # start state, scene or execution action. All collision checks remain active.
         for attempt in range(planning_attempts):
             try:
-                result = action(plan_client, goal_msg, 12)
+                # The simulator adapter certifies the complete controller path
+                # after OMPL returns. Measured certificates take up to 41 s;
+                # retain a bounded completion allowance for the in-flight goal.
+                # Candidate/global budgets are checked between planning calls.
+                result = action(plan_client, goal_msg,
+                    60. if getattr(args,'backend','fake')=='simulator' else 12.)
                 break
             except MoveItActionFailure as exc:
                 if time.monotonic() >= wall_deadline:

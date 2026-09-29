@@ -131,6 +131,24 @@ def test_failure_at_any_transition_stops_without_a_cycle(stage):
     assert result.stages[-1]['stage'] == stage and not result.stages[-1]['success']
 
 
+def test_planning_lifecycle_failure_at_approach_escapes_without_later_planning():
+    from dataclasses import replace
+    from full_cycle_preplanner import PlanningLifecycleFailure, preplan_full_cycle
+    kwargs, trace, goals, validity = fixture()
+    failure = PlanningLifecycleFailure('planning goal has no confirmed terminal state')
+    calls = []
+    def segment(*args, **options):
+        calls.append(args[1])
+        raise failure
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=segment)
+    with pytest.raises(PlanningLifecycleFailure) as caught:
+        preplan_full_cycle(**kwargs)
+    assert caught.value is failure
+    assert calls == ['PREPLAN_APPROACH']
+    assert trace == ['GENERATE_GRASPS', 'PREPLAN_APPROACH']
+    assert goals == [] and validity == []
+
+
 def test_missing_contact_never_passes_on_validity_alone():
     from full_cycle_preplanner import preplan_full_cycle
     kwargs, _, _, validity = fixture(contacts=False)
@@ -875,6 +893,29 @@ def test_extraction_budget_exhaustion_does_not_start_another_variant():
     result=preplan_full_cycle(**kwargs)
     assert result.reason_code=='CANDIDATE_SLICE_EXHAUSTED'
     assert seen==['vertical']
+
+
+def test_planning_lifecycle_failure_at_lift_escapes_without_another_variant():
+    from dataclasses import replace
+    from full_cycle_preplanner import PlanningLifecycleFailure, preplan_full_cycle
+    kwargs, _, _ = extraction_fixture(fail_stage=None)
+    base = kwargs['operations']
+    failure = PlanningLifecycleFailure('planning goal has no confirmed terminal state')
+    calls, variants = [], []
+    initial = copy.deepcopy(kwargs['initial_scene'])
+    def segment(*args, **options):
+        calls.append(args[1])
+        if args[1] == 'PREPLAN_LIFT':
+            variants.append(options['extraction_intent']['variant_id'])
+            raise failure
+        return base.plan_segment(*args, **options)
+    kwargs['operations'] = replace(base, plan_segment=segment)
+    with pytest.raises(PlanningLifecycleFailure) as caught:
+        preplan_full_cycle(**kwargs)
+    assert caught.value is failure
+    assert calls == ['PREPLAN_APPROACH', 'PREPLAN_GRASP', 'PREPLAN_CLOSE_GRIPPER', 'PREPLAN_LIFT']
+    assert variants == ['vertical']
+    assert kwargs['initial_scene'] == initial
 
 
 def test_bound_transfer_seed_is_forwarded_only_with_matching_extraction():
