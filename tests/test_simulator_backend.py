@@ -499,3 +499,95 @@ def test_moveit_admission_checks_real_active_proof_contents(tmp_path):
         manifest.write_text(json.dumps(data))
         with pytest.raises(RuntimeError,match='MOVEIT_OVERLAY'):
             read_moveit_overlay(manifest,patch,patch.parent/'moveit_humble_capability_teardown.patch')
+
+
+def simulator_shutdown_process(tmp_path, mode):
+    """Exercise serve's real signals/reaping; replace only external Gazebo startup."""
+    import json
+    import subprocess
+    child=tmp_path/'child.py'
+    child.write_text('''import signal,sys,time
+from pathlib import Path
+root=Path(sys.argv[1]);mode=sys.argv[2]
+def stop(signum,frame):
+    with (root/'interrupts').open('a') as stream:stream.write('SIGINT\\n')
+    if mode=='ignore':return
+    time.sleep(.5)
+    (root/'finished').write_text('terminal')
+    raise SystemExit(0)
+signal.signal(signal.SIGINT,stop)
+(root/'ready').write_text('ready')
+while True:time.sleep(.05)
+''')
+    wrapper=tmp_path/'wrapper.py'
+    wrapper.write_text('''import sys,time
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import simulator_backend as backend
+root=Path(sys.argv[2]);mode=sys.argv[3]
+Original=backend.subprocess.Popen
+class Child(Original):
+    def wait(self,timeout=None):
+        if mode=='ignore' and timeout==10:timeout=.15
+        return super().wait(timeout=timeout)
+backend.subprocess.Popen=lambda *a,**kw:Child([sys.executable,str(root/'child.py'),str(root),mode])
+def stats(*a,**kw):
+    deadline=time.monotonic()+3
+    while not (root/'ready').exists():
+        if time.monotonic()>deadline:raise RuntimeError('child did not become ready')
+        time.sleep(.01)
+    return 'iterations: 2'
+backend.run_ign=stats
+backend.create_model=lambda *a:dict(attempts=[{}],recovered_by_scene_readback=False)
+try:raise SystemExit(backend.serve(root))
+except KeyboardInterrupt:pass
+''')
+    (tmp_path/'spec.json').write_text(json.dumps(dict(world='unit',model='unit')))
+    return subprocess.Popen([sys.executable,str(wrapper),str(Path(__file__).parents[1]/'scripts'),str(tmp_path),mode],
+                            stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+
+
+def wait_shutdown_file(path, process):
+    import time
+    deadline=time.monotonic()+4
+    while not path.exists():
+        assert process.poll() is None,process.communicate()
+        assert time.monotonic()<deadline,str(path)
+        time.sleep(.01)
+
+
+def test_simulator_repeated_stop_cannot_interrupt_child_reaping(tmp_path):
+    """A second launch signal must not leave a live simulator behind exit zero."""
+    import os
+    import signal
+    import time
+    process=simulator_shutdown_process(tmp_path,'normal')
+    try:
+        wait_shutdown_file(tmp_path/'receipt.json',process)
+        process.send_signal(signal.SIGINT)
+        wait_shutdown_file(tmp_path/'interrupts',process)
+        process.send_signal(signal.SIGTERM)
+        time.sleep(.1)
+        assert process.poll() is None,'wrapper returned before its child reached terminal'
+        assert process.wait(timeout=3)==0,process.communicate()
+        assert (tmp_path/'finished').read_text()=='terminal'
+        assert (tmp_path/'interrupts').read_text().splitlines()==['SIGINT']
+    finally:
+        try:os.killpg(process.pid,signal.SIGKILL)
+        except ProcessLookupError:pass
+        process.communicate(timeout=3)
+
+
+def test_simulator_internal_forced_kill_is_a_failure(tmp_path):
+    import os
+    import signal
+    process=simulator_shutdown_process(tmp_path,'ignore')
+    try:
+        wait_shutdown_file(tmp_path/'receipt.json',process)
+        process.send_signal(signal.SIGINT)
+        assert process.wait(timeout=3)!=0,'forced simulator termination was reported as clean'
+        assert not (tmp_path/'finished').exists()
+    finally:
+        try:os.killpg(process.pid,signal.SIGKILL)
+        except ProcessLookupError:pass
+        process.communicate(timeout=3)

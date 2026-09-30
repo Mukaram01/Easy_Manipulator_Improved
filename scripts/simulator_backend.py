@@ -413,9 +413,22 @@ def live_identity(receipt, description, components, controllers, interfaces, nod
 def serve(output):
     out=Path(output);spec=json.loads((out/'spec.json').read_text())
     server=subprocess.Popen(['ruby','/usr/bin/ign','gazebo','-s','-r',str(out/'world.sdf'),'-v','3'])
+    stopping=False
+    def request_stop():
+        nonlocal stopping
+        if stopping:return
+        stopping=True
+        if server.poll() is None:
+            try:server.send_signal(signal.SIGINT)
+            except ProcessLookupError:pass
     def stop(signum,frame):
-        if server.poll() is None:server.send_signal(signal.SIGINT)
+        # launch can escalate to SIGTERM while finally is reaping Gazebo.
+        # Only the first signal interrupts normal work; subsequent signals
+        # must not abandon that owned child or forward duplicate SIGINTs.
+        if stopping:return
+        request_stop()
         raise KeyboardInterrupt()
+    previous_handlers={sig:signal.getsignal(sig) for sig in (signal.SIGTERM,signal.SIGINT)}
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     try:
         deadline=time.monotonic()+40
@@ -436,11 +449,19 @@ def serve(output):
         (out/'receipt.json').write_text(json.dumps(record,indent=2))
         print('Simulator receipt:',out/'receipt.json',flush=True)
         return server.wait()
+    except KeyboardInterrupt:
+        if not stopping:raise
     finally:
-        if server.poll() is None:
-            server.send_signal(signal.SIGINT)
-            try:server.wait(timeout=10)
-            except subprocess.TimeoutExpired:server.kill();server.wait()
+        try:
+            if server.poll() is None:
+                request_stop()
+                try:server.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    server.kill();server.wait()
+                    raise RuntimeError('SIMULATOR_SHUTDOWN_FAILED: owned Gazebo required SIGKILL')
+        finally:
+            for sig,handler in previous_handlers.items():signal.signal(sig,handler)
+    return server.returncode
 
 
 if __name__=='__main__':

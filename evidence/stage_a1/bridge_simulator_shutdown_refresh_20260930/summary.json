@@ -1,0 +1,139 @@
+{
+  "schema": "workcell_ros_gz_bridge_shutdown/v1",
+  "qualification": {
+    "method": "observed-shutdown-order/v1",
+    "evidence": {
+      "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/observed-evidence.json",
+      "sha256": "225007d8f0d290bfee86a11da8b7278db1b96140dd3f71fc85c4ead9f87cdfbf"
+    },
+    "review": {
+      "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260930-simulator-admission/mechanism-review.json",
+      "sha256": "02538688735befd6994dc069a1a9f1e2aad0403fde19c05cf32160cf652a4e19"
+    },
+    "runtime_dependencies": [
+      {
+        "path": "/opt/ros/humble/lib/libfastcdr.so.1.0.29",
+        "sha256": "ae755da75d58c90c2db06398beff0b08b382e19c72ac223a9a57cb782d9a5575"
+      },
+      {
+        "path": "/opt/ros/humble/lib/libfastrtps.so.2.6.12",
+        "sha256": "148cd881ab04a1ffeb27c15ebd5f7a08d4e3fe02d203582e812d3464a9c17b09"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcl.so",
+        "sha256": "43f86a53ec1a6c75e7330b216253d8497cdee1fc1674fdd678166c804cf1921c"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcl_logging_interface.so",
+        "sha256": "e671d1f9f84da3abcdce0390f923b08121e5da546980c23b5ef7a49025cc7341"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcl_logging_spdlog.so",
+        "sha256": "ead77d2b8a383d1ce310136f44ef9a8551fe9b966353a900e8ecd88f04d098cb"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librclcpp.so",
+        "sha256": "cd2a15b5df569fd66e7c9d0c336bff58d92b39932a701a670b6e02611b4f4119"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcutils.so",
+        "sha256": "0ffe97d7ca8b02edb2259a25992f135df6005b0bda4f20e327401a93411b0bed"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw.so",
+        "sha256": "758059e7ab478777dd806b426b01eeaf1e5b77ebffa32a28bf977937aeffa24c"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common.so",
+        "sha256": "d5a8c2f711016a747a08e9ed95fec95d1d6a35e209be840cdc20737b391314b8"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common__rosidl_typesupport_cpp.so",
+        "sha256": "f8758c2a984acc9eed0b2be601759bf71832e470c1d0dba485b188587bc21c45"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common__rosidl_typesupport_fastrtps_cpp.so",
+        "sha256": "616cd956b335f8a3e905e46abaf4597184bb7374ca98590c07202d745c98256b"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common__rosidl_typesupport_introspection_cpp.so",
+        "sha256": "0441e90db69b4924a5d294dd862e6fa6794e93fe5ed23d942e6e20ce690dd433"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_fastrtps_cpp.so",
+        "sha256": "94edab1842a8421f4fb072878698cdc303f7893dbd53f0a5d79273210faa1cae"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_fastrtps_shared_cpp.so",
+        "sha256": "d514f3473ca3f2c543ae7f3e33eb1fbed00195a040d5cc36b713c45d725505fb"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_implementation.so",
+        "sha256": "10da394c1ba2fea1e16eaaf2193be3cfcc2c266ca77829147fd13fa4ae9a3c91"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "sha256": "b2cf6c33b74d2f22543b7a469a75b538911e690f769d0b238843a49465b83793"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libignition-math6.so.6.16.0",
+        "sha256": "546a5a2f0e985cab9d8ab49ade5dbcd1816dea10faa0209993438db339623d1b"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libignition-msgs8.so.8.7.1",
+        "sha256": "4f12759fe4120e8e3cdbb86634cc6d94dd6a241b011c242e960d27ba18b1c37d"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libignition-transport11.so.11.4.2",
+        "sha256": "514f13b738c3d1a21e52c02a6175622a2e638f987eefee1a8213b409aa06a4b2"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libspdlog.so.1.9.2",
+        "sha256": "1de96ba8296808433bf3ad601f2410c179a3e422a05ad012b49e4ad364f72bc0"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30",
+        "sha256": "ff0825e113603c3866680d5d52216bc6d8eedf3a59f52a0aef67ff01994db128"
+      }
+    ]
+  },
+  "executable": {
+    "path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+    "sha256": "156514f96ff73f3109224d711542b6c1f00cf2e5a69e4e8f1b1dea64214cf601"
+  },
+  "library": {
+    "path": "/opt/ros/humble/lib/libros_gz_bridge.so",
+    "sha256": "7806fe789ceba89ba203a3e055dae7e6a7e8e67a65931c2b877d596055200be3"
+  },
+  "runtime_environment": {
+    "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+    "ROS_LOCALHOST_ONLY": "1",
+    "LD_PRELOAD": "",
+    "LD_AUDIT": "",
+    "VALGRIND_LIB": "",
+    "VALGRIND_OPTS": ""
+  },
+  "runtime_started_ns": 1790806694543178604,
+  "manifest": {
+    "path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/provenance.json",
+    "sha256": "0b720eb6a96d55d082d282358d6243073646911b9e554c92ba8170cd0e8d2847"
+  },
+  "reason": "The simulator process-owner fix changed the bound admission file. The independent reviewer checked only serve() changed, retained the prior causal review, and refreshed exact bindings before new native and Memcheck runs.",
+  "limitations": "No new historical SIGABRT claim; observed-shutdown-order/v1 causal evidence reused unchanged. Default Memcheck zero-error qualification does not supersede the separate recorded full-leak diagnostic.",
+  "reproduction": {
+    "native": {
+      "cycles": 20,
+      "passed": 20,
+      "errors": 0,
+      "results_path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/evidence/run-20260930-221809-221700/native/results.json",
+      "results_sha256": "663710972e315341b20805409734428882882c432c902ccfecd1fdfba6c15ca1"
+    },
+    "memcheck": {
+      "cycles": 5,
+      "passed": 5,
+      "errors": 0,
+      "results_path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/evidence/run-20260930-221809-221700/memcheck/results.json",
+      "results_sha256": "b6280543c4f3581234593ce4f34451830b0622a7fcee221277990680eb92fc5d"
+    }
+  }
+}

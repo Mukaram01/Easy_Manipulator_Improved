@@ -1,0 +1,270 @@
+{
+  "classification": "UNCLEAN: live Gazebo grandchild remained after launch children exited0",
+  "wrapper_pid": 73922,
+  "gazebo_pid": 73970,
+  "launch_pid": 73904,
+  "owned_signal_sequence": [
+    "SIGINT",
+    "SIGTERM",
+    "SIGKILL"
+  ],
+  "timeline": [
+    {
+      "wall_ns": 1790805403632236810,
+      "processes": [
+        {
+          "pid": 73904,
+          "ppid": 72258,
+          "state": "S"
+        },
+        {
+          "pid": 73918,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73920,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73922,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73924,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73926,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73970,
+          "ppid": 73922,
+          "state": "S"
+        },
+        {
+          "pid": 74242,
+          "ppid": 72258,
+          "state": "R"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805404633248774,
+      "processes": [
+        {
+          "pid": 73904,
+          "ppid": 72258,
+          "state": "S"
+        },
+        {
+          "pid": 73922,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73970,
+          "ppid": 73922,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805405634319499,
+      "processes": [
+        {
+          "pid": 73904,
+          "ppid": 72258,
+          "state": "S"
+        },
+        {
+          "pid": 73922,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73970,
+          "ppid": 73922,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805406635415852,
+      "processes": [
+        {
+          "pid": 73904,
+          "ppid": 72258,
+          "state": "S"
+        },
+        {
+          "pid": 73922,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73970,
+          "ppid": 73922,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805407636595450,
+      "processes": [
+        {
+          "pid": 73904,
+          "ppid": 72258,
+          "state": "S"
+        },
+        {
+          "pid": 73922,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73970,
+          "ppid": 73922,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805408637907045,
+      "processes": [
+        {
+          "pid": 73904,
+          "ppid": 72258,
+          "state": "S"
+        },
+        {
+          "pid": 73922,
+          "ppid": 73904,
+          "state": "S"
+        },
+        {
+          "pid": 73970,
+          "ppid": 73922,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805409638198381,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805410639274054,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805411640327352,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805412641422608,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805413642513004,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805414643220833,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805415644339213,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805416645469119,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805417646568482,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805418647631639,
+      "processes": [
+        {
+          "pid": 73970,
+          "ppid": 1170,
+          "state": "S"
+        }
+      ]
+    },
+    {
+      "wall_ns": 1790805419648662423,
+      "processes": []
+    }
+  ],
+  "source_locations": {
+    "stop_owned": "scripts/run_stage_a1_finish.py:85",
+    "serve_stop": "scripts/simulator_backend.py:416",
+    "serve_finally": "scripts/simulator_backend.py:439",
+    "main_keyboardinterrupt": "scripts/simulator_backend.py:448"
+  },
+  "causal_assessment": "Confirmed reparented Gazebo process persists for10seconds after wrapper and launch disappear. Current code allows second signal to interrupt finally cleanup and main catches KeyboardInterrupt as exit0. SIGKILL recipient inferred from that sole remaining owned server and inherited process group; no per-recipient signal audit exists.",
+  "limitations": "Initial reason Gazebo did not terminate promptly on SIGINT remains under investigation; duplicate signals are not proved to cause that hang."
+}
