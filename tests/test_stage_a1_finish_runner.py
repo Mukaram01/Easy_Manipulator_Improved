@@ -56,7 +56,7 @@ def current_retention_summary():
 def test_gate_results_bind_to_same_current_capability(gate,result):
     sha="current-build"
     summary={"result":result,"full_cycle_prevalidated":True,
-             "commissioning_capability":{"sha256":sha,"moveit_overlay":{"library":{"sha256":"patched-tem"},"move_group":{"executable":{"sha256":"patched-move-group"}}}}}
+             "commissioning_capability":{"sha256":sha,"moveit_overlay":{"library":{"sha256":"patched-tem"},"move_group":{"executable":{"sha256":"patched-move-group"},"capabilities":{"sha256":"patched-capabilities"}}}}}
     if gate=="cancel":
         summary.update(cancellation_confirmed=True,motion_stop_verified=True)
     elif gate=="telemetry":
@@ -73,16 +73,16 @@ def test_gate_results_bind_to_same_current_capability(gate,result):
         summary.update(current_release_summary(gate))
     elif gate=="stationary":
         summary.update(current_retention_summary())
-    MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group"))
+    MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group","patched-capabilities"))
     with pytest.raises(RuntimeError,match="different commissioning"):
-        MODULE.assert_gate(gate,summary,"other-build",("patched-tem","patched-move-group"))
+        MODULE.assert_gate(gate,summary,"other-build",("patched-tem","patched-move-group","patched-capabilities"))
     with pytest.raises(RuntimeError,match="different MoveIt"):
         MODULE.assert_gate(gate,summary,sha,("stale-tem","patched-move-group"))
     with pytest.raises(RuntimeError,match="different MoveIt"):
         MODULE.assert_gate(gate,summary,sha,("patched-tem","stale-move-group"))
     del summary["commissioning_capability"]["moveit_overlay"]
     with pytest.raises(RuntimeError,match="different MoveIt"):
-        MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group"))
+        MODULE.assert_gate(gate,summary,sha,("patched-tem","patched-move-group","patched-capabilities"))
 
 
 def test_executor_full_cycle_requires_explicit_evidence(tmp_path):
@@ -458,7 +458,7 @@ raise SystemExit(child.wait())
 def test_lifting_gates_reject_retention_from_another_attempt(gate,invalid):
     summary=current_retention_summary()
     summary.update(result=MODULE.EXPECTED_RESULTS[gate],full_cycle_prevalidated=True,
-        commissioning_capability={'sha256':'build','moveit_overlay':{'library':{'sha256':'tem'},'move_group':{'executable':{'sha256':'group'}}}},
+        commissioning_capability={'sha256':'build','moveit_overlay':{'library':{'sha256':'tem'},'move_group':{'executable':{'sha256':'group'},'capabilities':{'sha256':'capabilities'}}}},
         verified_lift_clearance_m=.02,release_evidence={'settled':True},full_cycle_execution_success=True,
         full_cycle_physical_acceptance={'final_collision_valid':True,'attached_ids':[]})
     retention=summary['stationary_retention']
@@ -471,7 +471,7 @@ def test_lifting_gates_reject_retention_from_another_attempt(gate,invalid):
     elif invalid=='wrong_duration':retention['start_sim_ns']=1
     elif invalid=='missing_finger':retention['contact_links']=['left']
     with pytest.raises(RuntimeError,match='retention'):
-        MODULE.assert_gate(gate,summary,'build',('tem','group'))
+        MODULE.assert_gate(gate,summary,'build',('tem','group','capabilities'))
 
 
 def current_release_summary(gate):
@@ -507,7 +507,7 @@ def current_release_summary(gate):
 def test_gate_rejects_release_evidence_not_owned_by_current_attempt(gate,result,bad):
     summary=dict(result=result,full_cycle_prevalidated=True,
         commissioning_capability={'sha256':'build','moveit_overlay':{
-            'library':{'sha256':'tem'},'move_group':{'executable':{'sha256':'group'}}}},
+            'library':{'sha256':'tem'},'move_group':{'executable':{'sha256':'group'},'capabilities':{'sha256':'capabilities'}}}},
         verified_lift_clearance_m=.02,full_cycle_execution_success=True,
         full_cycle_physical_acceptance={'final_collision_valid':True,'attached_ids':[]})
     summary.update(current_release_summary(gate))
@@ -526,4 +526,4 @@ def test_gate_rejects_release_evidence_not_owned_by_current_attempt(gate,result,
     elif bad=='missing_source':evidence['separation'].pop('pose_source')
     else:evidence['settled']=False
     with pytest.raises(RuntimeError,match='release'):
-        MODULE.assert_gate(gate,summary,'build',('tem','group'))
+        MODULE.assert_gate(gate,summary,'build',('tem','group','capabilities'))

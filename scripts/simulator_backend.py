@@ -497,6 +497,13 @@ def read_moveit_overlay(manifest_path,patch_path,move_group_patch_path):
             not str(executable).endswith('/lib/moveit_ros_move_group/move_group') or
             digest(executable.read_bytes())!=group['executable']['sha256']):
             raise ValueError('patched MoveGroup executable path/hash mismatch')
+        capabilities=Path(group['capabilities']['path']).resolve()
+        if (str(capabilities).startswith('/opt/') or
+            capabilities.name!='libmoveit_move_group_default_capabilities.so.2.5.10' or
+            digest(capabilities.read_bytes())!=group['capabilities']['sha256']):
+            raise ValueError('patched MoveGroup capabilities path/hash mismatch')
+        from moveit_teardown_repro.publication import validate_active_results
+        validate_active_results(data)
         proof=group['reproduction']
         if proof['baseline_returncode']!=-11 or proof['cycles']<20 or proof['passed']!=proof['cycles']:
             raise ValueError('twenty consecutive clean MoveGroup cycles required')
@@ -524,6 +531,9 @@ def active_moveit_overlay():
     executable=Path(get_package_prefix('moveit_ros_move_group'))/'lib/moveit_ros_move_group/move_group'
     if executable.resolve()!=Path(data['move_group']['executable']['path']).resolve():
         raise RuntimeError('MOVEIT_OVERLAY_REJECTED: package discovery selects unpatched MoveGroup')
+    capabilities=executable.parents[1]/'libmoveit_move_group_default_capabilities.so.2.5.10'
+    if capabilities.resolve()!=Path(data['move_group']['capabilities']['path']).resolve():
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: package discovery selects different capabilities')
     group_baseline=data['move_group']['baseline']
     installed_group=subprocess.check_output(['dpkg-query','-W','-f='+chr(36)+'{Version}',group_baseline['package']],text=True).strip()
     if installed_group!=group_baseline['version']:
@@ -539,7 +549,8 @@ def verify_moveit_overlay_maps(data,maps):
     """Require the verified inode/path to be mapped; a matching version is insufficient."""
     loaded={}
     for field,item,marker in [('library',data['library'],'/libmoveit_trajectory_execution_manager.so'),
-            ('executable',data['move_group']['executable'],'/moveit_ros_move_group/move_group')]:
+            ('executable',data['move_group']['executable'],'/moveit_ros_move_group/move_group'),
+            ('capabilities',data['move_group']['capabilities'],'/libmoveit_move_group_default_capabilities.so')]:
         path=Path(item['path']).resolve();stat=path.stat()
         fields=[line.split() for line in maps.splitlines() if marker in line]
         if (not fields or digest(path.read_bytes())!=item['sha256'] or
@@ -551,7 +562,8 @@ def verify_moveit_overlay_maps(data,maps):
 
 def moveit_overlay_identity(data):
     return (data.get('library',{}).get('sha256'),
-        data.get('move_group',{}).get('executable',{}).get('sha256'))
+        data.get('move_group',{}).get('executable',{}).get('sha256'),
+        data.get('move_group',{}).get('capabilities',{}).get('sha256'))
 
 
 def live_moveit_overlay(domain,partition,expected_identity):

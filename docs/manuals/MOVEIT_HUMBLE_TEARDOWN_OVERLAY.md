@@ -69,13 +69,16 @@ The source is the ROS release package, not a current development branch:
 From this repository on the reviewed Ubuntu/Humble workstation:
 
 ```bash
-scripts/build_moveit_teardown_overlay.sh
+scripts/build_moveit_teardown_overlay.sh ~/workcell_ws/moveit_teardown_overlay_new \
+  /path/to/real.request.cdr /path/to/real.scene.cdr \
+  /path/to/qualification.urdf /path/to/qualification.srdf
 source /opt/ros/humble/setup.bash
-source ~/workcell_ws/moveit_teardown_overlay/install/local_setup.bash
+source ~/workcell_ws/moveit_teardown_overlay_new/install/local_setup.bash
 source ~/workcell_ws/install/local_setup.bash
 ```
 
-An optional first script argument chooses the external overlay directory.
+The arguments select a new external overlay directory and the captured real UR5
+request, scene, URDF and SRDF for active planning shutdown qualification.
 The script pins/checks source, retains baseline and build evidence, applies
 only the tracked patch, and builds only `moveit_ros_planning` and `moveit_ros_move_group` against installed
 Humble with two build jobs. It never changes `/opt` or vendors MoveIt here.
@@ -91,13 +94,21 @@ The installed executable with patched TEM must reproduce -11; the patched
 executable must pass 20 consecutive cycles with no new core, nonzero exit,
 or owned process remaining. `/proc/PID/exe` and mappings identify the binaries.
 
-Only after both proofs does the script publish `provenance.json` and the
+A third regression replays the real UR5 request with production planning
+adapters, verifies the goal is accepted and naturally pending, and sends owned
+SIGINT. Five cycles must complete the production certificate and plan after the
+signal, return 0, and leave no new core or owned survivor. The adapter and probe
+are archived before runtime; mappings bind the actual loaded artifact. No
+planning delay or test barrier is introduced.
+
+Only after all three proofs does the script publish `provenance.json` and the
 package-share symlink `workcell_teardown_overlay.json`. They bind release and
 upstream identities, archive hash, tracked patch hash, installed baseline,
-patched library and executable paths/hashes, build logs and repetition results.
-Runtime checks independently confirm actual MoveGroup executable and TEM
-mappings/inodes before every gate; full-cycle prerequisites require both
-identities to match the current process and commissioning build.
+patched TEM, executable and default-capability library paths/hashes, build logs
+and the idle and active repetition results.
+Runtime checks independently confirm actual MoveGroup executable, TEM and
+default-capability library mappings/inodes before every gate; full-cycle
+prerequisites require all three identities to match the current process and commissioning build.
 
 Local independent proof for each defect: baseline -11, patched **20/20 exit 0**,
 no timeout, changed core inventory or live owned processes. The patched GDB run also exits
@@ -163,3 +174,57 @@ gate completion or authorize hardware motion.
 The bounded [evidence bundle](../../evidence/stage_a1/moveit_closeout_20260929/README.md)
 contains both cycle results and hashes of the complete workstation audit at
 `/home/user/workcell_ws/diagnostics/moveit-closeout-20260929`.
+
+### Active planning shutdown correction on 2026-09-30
+
+A real Stage-A Resolve attempt exposed a separate failure before destructor
+cleanup. Its PLAN_ONLY client stopped while the normal production certificate
+was running. After owned SIGINT invalidated the ROS context, planning completed
+successfully and `goal->succeed()` threw `Asked to publish result for goal that
+does not exist`. The uncaught exception aborted MoveGroup. The preserved launch
+log is `~/workcell_ws/stage-a1-closeout-20260930-hybrid-lift/01-resolve/launch.log`.
+The earlier idle qualification remains evidence for its original scope.
+
+The existing capability patch now makes the goal terminal locally and catches
+terminal publication failure only when the ROS context is invalid and the goal
+is already inactive. Valid-context exceptions and failed local transitions
+remain visible. Feedback is skipped after context shutdown. Returning before
+the terminal transition would be unsafe: the goal-handle destructor attempts a
+terminal publication for an active goal. The callback finishes with local IDLE
+state and releases its preemption flag.
+
+The portable regression compiles the callback tail extracted from the tracked
+patch and tests six context/terminal/feedback paths. Those are unit tests. The
+runtime qualification uses the captured real request and production certificate
+through `scripts/moveit_teardown_repro/verify_active_plan.py`.
+
+The qualified installation is
+`~/workcell_ws/moveit_teardown_overlay_active_plan_20260930`. Its TEM package is
+an ordinary copy of the previously qualified installation with identical TEM
+SHA256 and preserved original build proof. Only MoveGroup is rebuilt from the
+same pinned release plus the extended capability patch. Publication requires
+fresh installed-artifact idle cycles and five real active-plan shutdown cycles.
+The September 27 overlay and original provenance are preserved.
+
+The final host-native qualification passed **TEM20 + idle MoveGroup20 + real
+active-plan5**. Every active cycle completed the same 1,647-interval production
+certificate after the actual rclcpp signal-handler record and exited 0. All
+45 cycles had no timeout, forced cleanup, changed core inventory or owned
+survivor. The artifact audit checked 195 mapped shared libraries. The final
+three-artifact MoveIt admission and refreshed bridge admission both pass.
+
+Current source order:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/local_setup.bash
+source /home/user/workcell_ws/install/local_setup.bash
+source /home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/setup.bash
+```
+
+The new overlay has standard generated colcon hooks and ordinary installed
+binaries. The checked environment contains neither older MoveIt overlay.
+See the [bounded active-shutdown evidence](../../evidence/stage_a1/moveit_active_plan_shutdown_20260930/README.md)
+for hashes, exact proof paths, the real baseline, and preserved rejected
+prequalification attempts. The frozen backend update also has a fresh bridge
+admission review and native/Memcheck qualification recorded separately.

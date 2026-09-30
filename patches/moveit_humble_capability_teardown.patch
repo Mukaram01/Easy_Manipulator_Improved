@@ -1,3 +1,47 @@
+diff --git a/src/default_capabilities/move_action_capability.cpp b/src/default_capabilities/move_action_capability.cpp
+index ec71d95..6c70415 100644
+--- a/src/default_capabilities/move_action_capability.cpp
++++ b/src/default_capabilities/move_action_capability.cpp
+@@ -96,14 +96,31 @@ void MoveGroupMoveAction::executeMoveCallback(const std::shared_ptr<MGActionGoal
+   // @todo: Response messages
+   RCLCPP_INFO_STREAM(LOGGER, getActionResultString(action_res->error_code, planned_trajectory_empty,
+                                                    goal->get_goal()->planning_options.plan_only));
+-  if (action_res->error_code.val == moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
+-    goal->succeed(action_res);
+-  else if (action_res->error_code.val == moveit_msgs::msg::MoveItErrorCodes::PREEMPTED)
+-    goal->canceled(action_res);
+-  else
+-    goal->abort(action_res);
+-
+-  setMoveState(IDLE, goal);
++  try
++  {
++    // Make the local goal terminal even after context shutdown. Returning
++    // without that transition would make ServerGoalHandle's destructor try
++    // to cancel and publish a result through the same invalid action server.
++    if (action_res->error_code.val == moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
++      goal->succeed(action_res);
++    else if (action_res->error_code.val == moveit_msgs::msg::MoveItErrorCodes::PREEMPTED)
++      goal->canceled(action_res);
++    else
++      goal->abort(action_res);
++
++    if (rclcpp::ok(node->get_node_base_interface()->get_context()))
++      setMoveState(IDLE, goal);
++  }
++  catch (const std::runtime_error& error)
++  {
++    // SIGINT can invalidate the server while a planning callback is still
++    // running. Result/feedback publication can then fail after the goal's
++    // terminal transition. Do not hide live-context or transition failures.
++    if (rclcpp::ok(node->get_node_base_interface()->get_context()) || goal->is_active())
++      throw;
++    RCLCPP_DEBUG(LOGGER, "Terminal goal publication interrupted by context shutdown: %s", error.what());
++  }
++  setMoveState(IDLE, nullptr);
+   preempt_requested_ = false;
+ }
+
 diff --git a/src/move_group.cpp b/src/move_group.cpp
 index 44d9818..5784806 100644
 --- a/src/move_group.cpp
@@ -14,16 +58,16 @@ index 44d9818..5784806 100644
      bool allow_trajectory_execution;
 @@ -81,7 +82,7 @@ public:
          std::make_shared<MoveGroupContext>(moveit_cpp, default_planning_pipeline, allow_trajectory_execution, debug);
- 
+
      // start the capabilities
 -    configureCapabilities();
 +    configureCapabilities(capability_loader_lifetime);
    }
- 
+
    ~MoveGroupExe()
 @@ -115,12 +116,16 @@ public:
    }
- 
+
  private:
 -  void configureCapabilities()
 +  void configureCapabilities(
@@ -42,7 +86,7 @@ index 44d9818..5784806 100644
 @@ -205,6 +210,10 @@ int main(int argc, char** argv)
  {
    rclcpp::init(argc, argv);
- 
+
 +  // Main-node callback groups retain weak entity control blocks implemented
 +  // in capability plugins. Unload those plugins only after the node and its
 +  // executors have been destroyed, including during exception unwinding.
@@ -51,11 +95,11 @@ index 44d9818..5784806 100644
    opt.allow_undeclared_parameters(true);
    opt.automatically_declare_parameters_from_overrides(true);
 @@ -293,7 +302,7 @@ int main(int argc, char** argv)
- 
+
      rclcpp::executors::MultiThreadedExecutor executor;
- 
+
 -    move_group::MoveGroupExe mge(moveit_cpp, default_planning_pipeline, debug);
 +    move_group::MoveGroupExe mge(moveit_cpp, default_planning_pipeline, debug, capability_loader_lifetime);
- 
+
      bool monitor_dynamics;
      if (nh->get_parameter("monitor_dynamics", monitor_dynamics) && monitor_dynamics)

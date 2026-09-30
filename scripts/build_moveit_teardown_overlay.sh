@@ -2,8 +2,21 @@
 # Build only the two affected Humble MoveIt packages outside /opt, then
 # prove its real TEM's owned shutdown before publishing a runtime receipt.
 set -eo pipefail
+export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-197}
+export ROS_LOCALHOST_ONLY=1
+export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 repo=$(cd "$(dirname "$0")/.." && pwd)
-overlay=${1:-$(cd "$repo/../.." && pwd)/moveit_teardown_overlay}
+if [ "$#" -ne 5 ]; then
+  echo "Usage: $0 OVERLAY REAL_REQUEST.cdr REAL_SCENE.cdr QUALIFICATION.urdf QUALIFICATION.srdf" >&2
+  echo 'Active shutdown qualification requires a saved real UR5 production planning workload.' >&2
+  exit 2
+fi
+overlay=$1
+real_request=$(realpath "$2")
+real_scene=$(realpath "$3")
+real_urdf=$(realpath "$4")
+real_srdf=$(realpath "$5")
+for input in "$real_request" "$real_scene" "$real_urdf" "$real_srdf"; do test -f "$input"; done
 release_tag=release/humble/moveit_ros_planning/2.5.10-1
 release_commit=c62753946ae3629a8cb745767844f7e69ca51489
 debian_tag=debian/ros-humble-moveit-ros-planning_2.5.10-1_jammy
@@ -15,6 +28,8 @@ overlay=$(cd "$overlay" && pwd)
 evidence="$overlay/evidence/run-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$overlay/evidence"
 mkdir "$evidence"
+export ROS_LOG_DIR="$evidence/ros-logs"
+mkdir "$ROS_LOG_DIR"
 # Isolate colcon defaults and clear cached symlink-install mode explicitly.
 export COLCON_DEFAULTS_FILE="$evidence/colcon-defaults.yaml"
 printf 'build:\n  symlink-install: false\n' > "$COLCON_DEFAULTS_FILE"
@@ -122,7 +137,12 @@ parameters="$repo/scripts/moveit_teardown_repro/move_group_parameters.yaml"
 )
 if ! git -C "$group_source" diff --quiet; then
   git -C "$group_source" diff --binary > "$evidence/current-move-group-source.patch"
-  cmp "$evidence/current-move-group-source.patch" "$group_patch"
+  python3 - "$evidence/current-move-group-source.patch" "$group_patch" <<'PY'
+from pathlib import Path
+import sys
+normalize=lambda p: ['' if line==' ' else line for line in Path(p).read_text().splitlines()]
+assert normalize(sys.argv[1])==normalize(sys.argv[2]),'MoveGroup source differs from reviewed patch'
+PY
 else
   git -C "$group_source" apply --check "$group_patch"
   git -C "$group_source" apply "$group_patch"
@@ -133,6 +153,14 @@ source "$overlay/install/local_setup.bash"
 group_binary="$overlay/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group"
 python3 "$repo/scripts/moveit_teardown_repro/verify.py" --binary "$group_binary" --library "$library" --output "$evidence/move-group-patched" --cycles 20 --move-group-parameters "$parameters"
 ldd "$group_binary" > "$evidence/patched-move-group-ldd.log"
+# Load the production Workcell certificate adapter without an old setup chain.
+source "$repo/../../install/local_setup.bash"
+source "$overlay/install/local_setup.bash"
+python3 "$repo/scripts/moveit_teardown_repro/verify_active_plan.py" \
+  --binary "$group_binary" --library "$library" \
+  --capabilities "$overlay/install/moveit_ros_move_group/lib/libmoveit_move_group_default_capabilities.so.2.5.10" \
+  --request "$real_request" --scene "$real_scene" --urdf "$real_urdf" --srdf "$real_srdf" \
+  --cycles 5 --output "$evidence/active-plan-shutdown"
 python3 - "$repo" "$overlay" "$evidence" "$group_version" <<'PY'
 from pathlib import Path
 import hashlib,json,subprocess,sys,urllib.request
@@ -160,9 +188,13 @@ manifest['move_group']=dict(
   package_source_sha256=hashlib.sha256(subprocess.check_output(['git','archive','HEAD'],cwd=source)).hexdigest()),
  patch=dict(path=str(repo/'patches/moveit_humble_capability_teardown.patch'),sha256=sha(repo/'patches/moveit_humble_capability_teardown.patch')),
  executable=dict(path=str(executable),sha256=sha(executable)),
+ capabilities=dict(path=str(executable.parents[1]/'libmoveit_move_group_default_capabilities.so.2.5.10'),
+  sha256=sha(executable.parents[1]/'libmoveit_move_group_default_capabilities.so.2.5.10')),
  baseline=dict(package='ros-humble-moveit-ros-move-group',version=version,path=str(baseline),sha256=sha(baseline)),
  reproduction=dict(baseline_returncode=-11,cycles=results['completed'],passed=sum(row['passed'] for row in results['results']),results_path=str(evidence/'move-group-patched/results.json')),
  build=dict(command='MAKEFLAGS="-j2 -l2" colcon build --packages-select moveit_ros_move_group --allow-overriding moveit_ros_move_group --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF -DAMENT_CMAKE_SYMLINK_INSTALL=OFF',log=str(evidence/'move-group-build.log')))
+active=evidence/'active-plan-shutdown/results.json'
+manifest['move_group']['active_shutdown']=dict(results_path=str(active),results_sha256=sha(active))
 sys.path.insert(0,str(repo/'scripts/moveit_teardown_repro'))
 from publication import publish
 publish(overlay,manifest)
