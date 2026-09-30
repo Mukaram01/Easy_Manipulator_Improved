@@ -20,11 +20,16 @@ def angle(a,b):
     return 2*math.acos(min(1.,abs(sum(x*y for x,y in zip(a[3:],b[3:])))))
 
 
+class StaleMeasurement(RuntimeError):
+    """Structurally valid telemetry that is too old to use."""
+
+
 def validate_sample(s,receipt,now,previous=None):
     if (s.get('run_id')!=receipt['run_id'] or s.get('pid')!=receipt['pid'] or s.get('error') or
-        not 0<=now-s.get('wall_ns',0)/1e9<=.25 or not s.get('poses') or not s.get('joints') or
+        type(s.get('wall_ns')) is not int or s['wall_ns']<=0 or now<s['wall_ns']/1e9 or
+        not s.get('poses') or not s.get('joints') or
         not s.get('collisions') or not isinstance(s.get('contacts'),list) or
-        not isinstance(s.get('sim_ns'),int) or (previous is not None and s['iteration']!=previous+1)):
+        not isinstance(s.get('sim_ns'),int) or type(s.get('iteration')) is not int or (previous is not None and s['iteration']!=previous+1)):
         raise RuntimeError('SIMULATOR_TELEMETRY_INVALID: stale, missing, contradictory or skipped measurement')
     for p in s['poses'].values():
         if len(p)!=7 or not all(math.isfinite(x) for x in p) or abs(sum(x*x for x in p[3:])-1)>.00001:
@@ -64,6 +69,11 @@ def validate_sample(s,receipt,now,previous=None):
                 if (link is None or not link[0].startswith(name+'::') or
                     link[1]['query_entity']!=entity['query_entity']):
                     raise RuntimeError('authoritative physics model/link identity mismatch')
+    # Check age last: an aged message with another defect must still latch that
+    # defect. A structurally valid rejected pre-motion sample may be replaced
+    # by a later fresh sample, never re-stamped or used for any guard.
+    if now-s['wall_ns']/1e9>.25:
+        raise StaleMeasurement('SIMULATOR_TELEMETRY_INVALID: stale measurement')
 
 
 class Separation:
@@ -331,23 +341,27 @@ class Measurements:
         self.writer=threading.Thread(target=self._write,name='measurement_evidence');self.writer.start()
         self.acquisition=threading.Thread(target=self.executor.spin,name='measurement_acquisition');self.acquisition.start()
     def update(self,msg):
-        received=time.time_ns();started=time.monotonic_ns();s={}
+        received=time.time_ns();started=time.monotonic_ns();s={};sample_error=None
         with self.lock:
             try:
                 s=json.loads(msg.data)
+                if self.latest and s.get('sim_ns',0)<=self.latest['sim_ns']:raise RuntimeError('simulation time stopped/reversed')
                 validate_sample(s,self.receipt,time.time(),self.previous if self.armed else None)
-                if self.latest and s['sim_ns']<=self.latest['sim_ns']:raise RuntimeError('simulation time stopped/reversed')
                 self.previous=s['iteration'];self.latest=s
                 if self.armed:
                     if len(self.pending)>=10000:raise RuntimeError('measurement consumer queue overflow')
                     self.pending.append(s)
+            except StaleMeasurement as exc:
+                sample_error=exc
+                if self.armed and self.error is None:self.error=exc
             except Exception as exc:
+                sample_error=exc
                 if self.error is None:self.error=exc
             self.timing.append(dict(event='receive',iteration=s.get('iteration'),sim_ns=s.get('sim_ns'),
                 source_wall_ns=s.get('wall_ns'),publish_wall_ns=s.get('publish_wall_ns'),
                 source_serialization_ns=s.get('serialization_ns'),receive_wall_ns=received,
                 callback_ns=time.monotonic_ns()-started,queue_depth=len(self.pending),
-                error=str(self.error) if self.error else None))
+                error=str(self.error or sample_error) if self.error or sample_error else None))
     def fresh(self):
         waiting=time.monotonic_ns()
         with self.lock:

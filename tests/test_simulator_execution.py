@@ -410,7 +410,7 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
     sample=dict(iteration=1,sim_ns=100,wall_ns=time.time_ns())
     summary={};events=[]
     context=dict(time=time,node=None,summary=summary,measurements=N(fresh=lambda:sample,joints=lambda s:{'arm':[0.,0.]}),
-        execute_client=client,controlled_cancel=True,controller_audit=None,contract={'home_joint_names':['arm']},
+        execute_client=client,plan_client=object(),controlled_cancel=True,controller_audit=None,contract={'home_joint_names':['arm']},
         rclpy=N(spin_until_future_complete=lambda *args,**kw:None),execution_monitor=lambda:None,
         wait_stopped=lambda:True,apply=lambda diff:events.append('revoke'),PlanningScene=N,baseline=N(),
         measured_reconcile=lambda:events.append('reconcile'))
@@ -799,3 +799,51 @@ def test_release_ready_consumes_pending_physical_separation_before_rejecting(tmp
     ready=guard.release_ready()
     assert ready['iteration']==sample['iteration']
     assert guard.release_candidate['iteration']==sample['iteration']
+
+
+@pytest.mark.parametrize('armed',[False,True])
+def test_age_only_receive_reacquires_only_before_motion_arm(armed,monkeypatch):
+    import json,threading
+    from types import SimpleNamespace as N
+    import simulator_execution as module
+    m=module.Measurements.__new__(module.Measurements)
+    m.lock=threading.RLock();m.receipt=dict(run_id='r',pid=12)
+    m.latest=None;m.pending=[];m.previous=None;m.armed=armed;m.error=None;m.timing=[]
+    monkeypatch.setattr(module.time,'time',lambda:2.)
+    monkeypatch.setattr(module.time,'time_ns',lambda:2_000_000_000)
+    def sample(i,wall):
+        return dict(run_id='r',pid=12,iteration=i,sim_ns=i,wall_ns=wall,
+            poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c'])
+    m.update(N(data=json.dumps(sample(1,1_616_000_000))))
+    assert m.latest is None and m.pending==[] and m.previous is None
+    assert m.timing[0]['error'] and m.timing[0]['source_wall_ns']==1_616_000_000
+    with pytest.raises(RuntimeError):m.fresh()
+    m.update(N(data=json.dumps(sample(2,1_998_000_000))))
+    if armed:
+        with pytest.raises(RuntimeError):m.fresh()
+    else:
+        assert m.error is None
+        assert m.fresh()['iteration']==2
+        assert m.timing[0]['error']
+
+
+@pytest.mark.parametrize('patch',[
+    {'run_id':'wrong'},{'pid':13},{'error':'physics failed'},
+    {'poses':{'p':[0,0,0,0,0,0,0]}},{'sim_ns':0},
+    {'iteration':None},{'iteration':True},{'iteration':2.0},
+])
+def test_stale_prearm_sample_does_not_hide_other_invalidity(patch,monkeypatch):
+    import json,threading
+    from types import SimpleNamespace as N
+    import simulator_execution as module
+    m=module.Measurements.__new__(module.Measurements)
+    m.lock=threading.RLock();m.receipt=dict(run_id='r',pid=12)
+    m.latest=dict(sim_ns=1);m.pending=[];m.previous=1;m.armed=False;m.error=None;m.timing=[]
+    monkeypatch.setattr(module.time,'time',lambda:2.)
+    monkeypatch.setattr(module.time,'time_ns',lambda:2_000_000_000)
+    sample=dict(run_id='r',pid=12,iteration=2,sim_ns=2,wall_ns=1_616_000_000,
+        poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c'])
+    m.update(N(data=json.dumps(dict(sample,**patch))))
+    assert m.error is not None
+    m.update(N(data=json.dumps(dict(sample,iteration=3,sim_ns=3,wall_ns=1_998_000_000))))
+    with pytest.raises(RuntimeError):m.fresh()

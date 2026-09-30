@@ -92,15 +92,28 @@ repeated. The build records the actual installed MoveIt version in
 `commission_execute_build.json`, and the live identity gate checks that recorded
 version before accepting the loaded binary.
 
+Interrupted simulator PLAN_ONLY goals get a five-second cancellation response
+wait and up to 60 seconds to return a terminal result, matching their certificate
+watchdog allowance. MoveGroup's synchronous planning callback can delay handling
+cancellation until certification finishes. Search cannot continue without the
+owned goal's terminal result; elapsed time or cancellation rejection is not proof
+of termination. Motion action deadlines are unchanged.
+
 ## Fresh telemetry
 
 Measurements keep their original acquisition timestamps, simulator receipt,
 iteration and simulation time. Publication, callback receive, consume and write
 timing are recorded separately. A dedicated acquisition executor and bounded
 evidence writer queue prevent action waits and serialization from starving
-acquisition. Overflow, a gap, a stale sample or contradictory identity latches
-failure; no samples are re-stamped and no thresholds are relaxed. Queue limits
-are explicit and overflow is never silently discarded. Stop acceptance still
+acquisition. Once armed, overflow, a gap, a stale sample or contradictory identity
+latches failure permanently. Before the first arm, an otherwise valid sample
+older than 250 ms is rejected and recorded; a later fresh sample may restore
+passive acquisition. Rejected samples never become the current measurement or
+enter the motion queue. Identity, structure and time-order errors still latch
+before arm, including errors carried by an aged sample. `fresh()` and `arm()`
+retain the 250 ms limit, and arm still checks the receipt and publisher identity.
+No samples are re-stamped. Queue limits are explicit and overflow is never
+silently discarded. Stop acceptance still
 requires complete consecutive joint measurements below the existing velocity
 threshold for at least 300 ms of advancing simulation time, with a fresh endpoint.
 

@@ -1036,3 +1036,38 @@ def test_measured_collision_query_stops_virtual_carry_after_physical_separation(
     assert not MODULE.measured_payload_attached_for_collision(guard)
     guard.ownership='FREE_SETTLING';guard.planning_attached=False
     assert not MODULE.measured_payload_attached_for_collision(guard)
+
+
+def test_interrupted_plan_drains_through_its_bounded_certificate_wait():
+    uuid=[3]*16
+    cancel=SimpleNamespace(done=lambda:True,result=lambda:SimpleNamespace(return_code=1,goals_canceling=[]))
+    ready=[False]
+    terminal=SimpleNamespace(status=4,result=SimpleNamespace(error_code=SimpleNamespace(val=1)))
+    future=SimpleNamespace(done=lambda:ready[0],result=lambda:terminal if ready[0] else None)
+    handle=SimpleNamespace(cancel_goal_async=lambda:cancel)
+    waits=[];summary={}
+    def spin(item,timeout):
+        waits.append(timeout)
+        if item is future and timeout>=17.625:ready[0]=True
+    MODULE.finish_interrupted_plan(handle,future,uuid,spin,summary,terminal_timeout=60.)
+    assert waits==[5.,60.]
+    assert summary['interrupted_planning_goals'][0]['terminal_status']==4
+    assert summary['interrupted_planning_goals'][0]['cancel_accepted'] is False
+
+
+def test_plan_only_action_does_not_read_cancellation_motion_measurement():
+    import ast
+    tree=ast.parse(SCRIPT.read_text())
+    main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    result=SimpleNamespace(error_code=SimpleNamespace(val=1))
+    future=SimpleNamespace(done=lambda:True,result=lambda:SimpleNamespace(status=4,result=result))
+    handle=SimpleNamespace(accepted=True,goal_id=SimpleNamespace(uuid=[3]*16),get_result_async=lambda:future)
+    sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
+    client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
+    def unexpected():raise AssertionError('PLAN_ONLY has no cancellation motion start')
+    context=dict(vars(MODULE),execute_client=object(),plan_client=client,controlled_cancel=False,
+        controller_audit=None,node=object(),summary={},measurements=SimpleNamespace(fresh=unexpected),
+        execution_monitor=None,rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
+    assert context['action'](client,object(),60.) is result

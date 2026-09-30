@@ -373,10 +373,10 @@ class MoveItActionFailure(RuntimeError):
         self.code = code
 
 
-def finish_interrupted_plan(handle, future, owned_uuid, spin, summary):
+def finish_interrupted_plan(handle, future, owned_uuid, spin, summary, *, terminal_timeout=5.):
     """Do not search another candidate while its predecessor is still planning."""
     from full_cycle_preplanner import PlanningLifecycleFailure
-    record={'goal_uuid':bytes(owned_uuid).hex(),'terminal_status':None}
+    record={'goal_uuid':bytes(owned_uuid).hex(),'terminal_status':None,'terminal_wait_s':terminal_timeout}
     summary.setdefault('interrupted_planning_goals',[]).append(record)
     try:
         cancel=handle.cancel_goal_async()
@@ -387,7 +387,11 @@ def finish_interrupted_plan(handle, future, owned_uuid, spin, summary):
     except Exception as exc:
         record['cancel_error']=str(exc)
     try:
-        if future is not None:spin(future,5.)
+        # MoveGroup executes PLAN_ONLY in its mutually exclusive action callback.
+        # Cancellation can remain queued until the continuous certificate ends.
+        # Drain the owned result with the same bounded allowance as planning;
+        # neither a rejected cancellation nor elapsed time proves termination.
+        if future is not None:spin(future,terminal_timeout)
         response=future.result() if future is not None and future.done() else None
         if response is not None:
             record.update(terminal_status=response.status,moveit_code=response.result.error_code.val)
@@ -1211,7 +1215,8 @@ def main():
             if client is plan_client:
                 summary['planning_result_request_error']=str(exc)
                 finish_interrupted_plan(handle,None,owned_uuid,
-                    lambda pending,seconds:rclpy.spin_until_future_complete(node,pending,timeout_sec=seconds),summary)
+                    lambda pending,seconds:rclpy.spin_until_future_complete(node,pending,timeout_sec=seconds),summary,
+                    terminal_timeout=timeout)
             raise
         motion_trial=None
         if client is execute_client:
@@ -1228,7 +1233,7 @@ def main():
                 contact_guard.phase='opening'
                 contact_guard.begin_release(summary['owned_execution_goal'],held_before_open)
                 summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
-            cancel_start=measurements.fresh()['sim_ns'] if measurements else 0
+            cancel_start=measurements.fresh()['sim_ns'] if controlled_cancel and measurements else 0
             if controlled_cancel:
                 from simulator_execution import CancellationMotion
                 if not set(contract['home_joint_names']).issubset(goal.trajectory.joint_trajectory.joint_names):
@@ -1260,7 +1265,8 @@ def main():
         except BaseException as exc:
             if client is plan_client:
                 finish_interrupted_plan(handle,future,owned_uuid,
-                    lambda pending,seconds:rclpy.spin_until_future_complete(node,pending,timeout_sec=seconds),summary)
+                    lambda pending,seconds:rclpy.spin_until_future_complete(node,pending,timeout_sec=seconds),summary,
+                    terminal_timeout=timeout)
                 raise
             if isinstance(exc,GraspRetentionLoss):begin_recovery(exc,during_action=True)
             if measurements:
