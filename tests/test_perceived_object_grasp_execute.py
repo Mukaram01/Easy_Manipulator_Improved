@@ -578,7 +578,7 @@ def test_bound_approach_rechecks_ik_without_replacing_fresh_planning_start(chang
     context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
         MoveGroup=MoveGroup,stage=lambda name:None,deadline=time.monotonic()+10,contract=contract,
         args=SimpleNamespace(segment_planning_time=3.),mimics=[('follower','leader',-1.,0.)],initial=initial,
-        ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,
+        ik_joints={},ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,
         joint_constraints=lambda values:Constraints(joint_constraints=[JointConstraint(joint_name=n,position=v,
             tolerance_above=.0001,tolerance_below=.0001,weight=1.) for n,v in values.items()]))
     exec(compile(ast.Module(body=[segment],type_ignores=[]),'<actual-plan-segment>','exec'),context)
@@ -647,7 +647,7 @@ def transfer_segment_fixture():
     context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
         MoveGroup=MoveGroup,stage=lambda name:None,deadline=time.monotonic()+10,contract=contract,
         args=SimpleNamespace(segment_planning_time=3.),mimics=[('follower','leader',-1.,0.)],initial=initial,
-        ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,summary={},
+        ik_joints={},ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,summary={},
         joint_constraints=lambda values:Constraints(joint_constraints=[JointConstraint(joint_name=n,position=v,
             tolerance_above=.0001,tolerance_below=.0001,weight=1.) for n,v in values.items()]))
     exec(compile(ast.Module(body=[segment],type_ignores=[]),'<actual-transfer-segment>','exec'),context)
@@ -1071,3 +1071,75 @@ def test_plan_only_action_does_not_read_cancellation_motion_measurement():
         execution_monitor=None,rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
     assert context['action'](client,object(),60.) is result
+
+
+def test_ik_winding_uses_nearest_equivalent_inside_model_safety_limits():
+    import math, xml.etree.ElementTree as ET
+    # Values captured from the real Stage-A transfer request on 2026-09-30.
+    names=['shoulder_pan_joint','shoulder_lift_joint','elbow_joint','wrist_1_joint']
+    current=dict(zip(names,[5.505437711794195,-1.6436449324806555,2.0106194656440257,-1.9377704026269704]))
+    values=dict(zip(names,[-2.4671832326751395,4.243731006703432,-1.1621885199580988,1.6308453269345686]))
+    joints={name:ET.fromstring(f'<joint name="{name}" type="revolute"><limit lower="{-bound-.15}" upper="{bound+.15}"/><safety_controller soft_lower_limit="{-bound}" soft_upper_limit="{bound}"/></joint>')
+            for name,bound in zip(names,[2*math.pi-.15,2*math.pi-.15,math.pi-.15,2*math.pi-.15])}
+    adjusted=MODULE.nearest_ik_winding(values,current,joints)
+    assert adjusted==pytest.approx(dict(zip(names,[3.8160020745044467,-2.0394543004761543,-1.1621885199580988,-4.652339980245017])))
+    for name in names:
+        assert math.remainder(adjusted[name]-values[name],2*math.pi)==pytest.approx(0.,abs=1e-15)
+    assert values['shoulder_pan_joint']==-2.4671832326751395
+
+
+@pytest.mark.parametrize('kind,lo,hi,value,reference,expected',[
+    ('revolute',-6.3,6.3,-.2,6.2,-.2),  # hard limit permits a turn; soft limit does not
+    ('revolute',-3.,3.,-2.4,1.57,-2.4), # no equivalent turn fits the model
+    ('prismatic',-10.,10.,-.2,6.2,-.2),
+    ('continuous',None,None,-.2,6.2,6.083185307179586),
+])
+def test_ik_winding_preserves_bounds_and_nonrotating_joints(kind,lo,hi,value,reference,expected):
+    import xml.etree.ElementTree as ET
+    bounds='' if lo is None else f'<limit lower="{lo}" upper="{hi}"/><safety_controller soft_lower_limit="{-6.}" soft_upper_limit="{6.}"/>'
+    joint=ET.fromstring(f'<joint name="axis" type="{kind}">{bounds}</joint>')
+    assert MODULE.nearest_ik_winding({'axis':value},{'axis':reference},{'axis':joint})['axis']==pytest.approx(expected)
+
+
+def test_unbound_transfer_maps_ik_turns_without_changing_scene_or_start():
+    import copy, math, xml.etree.ElementTree as ET
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    context['ik_joints']={'arm':ET.fromstring('<joint name="arm" type="revolute"><limit lower="-6.28" upper="6.28"/></joint>')}
+    before=copy.deepcopy(view)
+    context['plan_segment'](view,'PREPLAN_TRANSFER',target)
+    assert goals[0].request.goal_constraints[0].joint_constraints[0].position==pytest.approx(-2.39995+2*math.pi)
+    assert goals[0].request.start_state==before.robot_state
+    assert goals[0].planning_options.planning_scene_diff==before
+    assert goals[0].planning_options.plan_only
+
+
+def test_bound_transfer_preserves_proven_winding_even_when_another_turn_is_nearer():
+    import xml.etree.ElementTree as ET
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    context['ik_joints']={'arm':ET.fromstring('<joint name="arm" type="revolute"><limit lower="-6.28" upper="6.28"/></joint>')}
+    context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+    assert goals[0].request.goal_constraints[0].joint_constraints[0].position==pytest.approx(-2.39995)
+
+
+def test_bound_transfer_accepts_equivalent_ik_turn_without_changing_saved_branch():
+    import math, xml.etree.ElementTree as ET
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    context['ik_joints']={'arm':ET.fromstring('<joint name="arm" type="revolute"><limit lower="-6.28" upper="6.28"/></joint>')}
+    solve=context['call']
+    def wrapped(client,request):
+        response=solve(client,request)
+        response.solution.joint_state.position[0]+=math.tau
+        return response
+    context['call']=wrapped
+    result=context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+    assert goals[0].request.goal_constraints[0].joint_constraints[0].position==pytest.approx(-2.39995)
+    assert result['metadata']['transfer_ik_seed']==seed
+
+
+def test_ik_winding_does_not_change_a_mimic_leader_or_follower():
+    import xml.etree.ElementTree as ET
+    model=ET.fromstring('<robot><joint name="leader" type="continuous"/>'
+        '<joint name="follower" type="continuous"><mimic joint="leader" multiplier="0.5"/></joint></robot>')
+    values={'leader':-.2,'follower':-.1}
+    assert MODULE.nearest_ik_winding(values,{'leader':6.2,'follower':3.1},
+        {j.get('name'):j for j in model.findall('joint')})==values

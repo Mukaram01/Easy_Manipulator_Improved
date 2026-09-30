@@ -1,0 +1,140 @@
+{
+  "scope": "Exact saved transfer source/geometry correction validated with complete offline certificates and actual native PLAN_ONLY. No execution or Stage-A acceptance claimed.",
+  "verified_wall_ns": 1790809378092775849,
+  "status": "PASS",
+  "native": {
+    "variant": "nearest-1",
+    "request_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/nearest.request.cdr",
+    "request_sha256": "363002a1058c8bb13f7e62eaa7db30eadf5b512dbf26c0b3b70bc59e380025eb",
+    "scene_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-active-plan-trace/1790804809823840097_44.scene.cdr",
+    "pid": 86203,
+    "support_adapter": {
+      "path": "/home/user/workcell_ws/build/workcell_builder/libworkcell_support_contact.so",
+      "sha256": "353bc07a056ee62e8e0a061d112ba19b3e10afff54db6d6f2593d1255e46f048"
+    },
+    "support_archive": {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/support-adapter.so",
+      "sha256": "353bc07a056ee62e8e0a061d112ba19b3e10afff54db6d6f2593d1255e46f048"
+    },
+    "moveit_identity": [
+      "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc",
+      "f0c74c14d01ba94564a382503cc8e2e2cb11c7a88899041c2443424800eb5026",
+      "f0f2445968ed04d3739e0840a46a64468c99335b5f6b3353492e88c8eefe6df1"
+    ],
+    "mapped_file_count": 194,
+    "forced_cleanup": false,
+    "status": 4,
+    "moveit_code": 1,
+    "wall_seconds": 29.51667370300129,
+    "planning_time": 0.277853846,
+    "points": 58,
+    "returncode": 0
+  },
+  "native_certificate": {
+    "result": 0,
+    "reason": "ALL_INTERVALS_CERTIFIED",
+    "inspected": 803,
+    "certified": 430,
+    "subdivided": 373,
+    "max_depth": 4,
+    "wall_seconds": 27.830026
+  },
+  "offline_replays": [
+    "RESULT 0 reason=ALL_INTERVALS_CERTIFIED interval=-1,-1 inspected=803 seconds=28.5242",
+    "RESULT 0 reason=ALL_INTERVALS_CERTIFIED interval=-1,-1 inspected=803 seconds=25.9918"
+  ],
+  "header": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/controller_interval_certificate.hpp",
+    "sha256": "f60f4d820b975430c8ae4c29f6f0f67d0041d848a1f65c587e443f360cf9cf2a",
+    "archive_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate-surface-cover-header.hpp"
+  },
+  "independent_review": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/independent-surface-cover-review.json",
+    "sha256": "089ad629a989c8331148dcc51ba925b66c5f27c057bd7764425d968f74ccd16a"
+  },
+  "bound_evidence": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate-surface-cover-replay-results.json",
+      "sha256": "eb4f3b69ebafe49a366c55ba3033eb5f80ff207305e2a31cfe5e2cbdde032f8f"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate-surface-cover-header.hpp",
+      "sha256": "f60f4d820b975430c8ae4c29f6f0f67d0041d848a1f65c587e443f360cf9cf2a"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/finger-green.log",
+      "sha256": "11e8c6f3b6a42fc435d3eaf042eec2a0e1c27276fa0080054b9510ca6745393c"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/independent-surface-cover-review.md",
+      "sha256": "c3768a6370de8815d92efda1b263b4c3db11c17de166dfcbcb05eba09ec7dcac"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/implementation-replay.txt",
+      "sha256": "22cbd20dc97892046f47d1e39a282b6d358e72195e5124d86ad8c65cfb6c1d12"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/bin-triangle-fixture.json",
+      "sha256": "6acb2a816779331d9b3183b39f4c87b3be3bfcf7584022bf4ddb7cef0d458033"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/finger-bin-triangle-fixture.json",
+      "sha256": "b24fd07b8ac5a2a14efbb33d6b1244758d205ffbf91516bc8d8ce1f030075b8b"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/inputs.json",
+      "sha256": "3ea127c5a6cef25cd69e3de55b84d8bd86a303e97d8da49320e6cbf5f02871db"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/results.json",
+      "sha256": "7b6406de4387bdfe695f8d038ba64f8da28ce953645a5e5d4d0eb4cd53db1505"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/probe.py",
+      "sha256": "e38be4084b59b8a40b4dfe762db61505479b18d7664e55bcfa3ac219f67208db"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/nearest-1.maps",
+      "sha256": "35b4206d0b35fd5f875fb7ca922b43555d1e3f1b2b295b1d4a36cb7f986c9acc"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/nearest-1.mapped-artifacts.json",
+      "sha256": "bf76c8b45a2dccd127b5efbd331bb9a8ad493fca35ef9be34c13baf1aa06e0f6"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/nearest-1.log",
+      "sha256": "736ef38bcaebe5cd57670f8c91a2de82af33aee76a5fe12454444ce3753955d4"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/nearest-1.result.cdr",
+      "sha256": "79e8d8c08ec97006f37add2eb61560260ce87f3eeaf3b8ed85c88da36b2e23c7"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/support-adapter.so",
+      "sha256": "353bc07a056ee62e8e0a061d112ba19b3e10afff54db6d6f2593d1255e46f048"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/independent-final-negatives.log",
+      "sha256": "51cf445deca3f85033eb55eea2ebe9c1ec91b3b78e1376e236a649c718345815"
+    }
+  ],
+  "old_failures_preserved": [
+    "plan-results.json",
+    "nearest-retry-results.json",
+    "certificate-replay.log",
+    "certificate-production-replay-results.json",
+    "certificate-fcl-seed-replay-results.json",
+    "certificate-triangle-cover-replay-results.json"
+  ],
+  "limits": [
+    "No controller/hardware/Gazebo process or motion goal was started.",
+    "Native action used the unchanged3s planner budget; full observed result completed within60s.",
+    "Final process log retains existing class_loader warning; MoveGroup still returned0 with no forced cleanup.",
+    "Complete six-gate Stage-A execution remains separate."
+  ],
+  "final_tests": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/support_contact_policy_test.cpp",
+    "sha256": "c96e714e1a6731525c3601fe9c0a250fac39af317caa2f2846fdd121d01d3f9f"
+  },
+  "strict_face_negatives": "632 face-contact assertions <=1e-12; focused independent test PASS (218 ms). Earlier full suite remains 79 PASS / 1 optional historical fixture SKIP."
+}

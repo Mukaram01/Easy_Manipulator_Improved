@@ -42,10 +42,22 @@ Exceptions cannot cause MoveIt to bypass the activated adapter.
   padding/scaling has no implemented radius proof and therefore rejects.
 * FCL distance is **not** assumed to be an exact clearance lower bound. Its
   convergence tolerance does not guarantee that. Candidate separating axes come
-  from coordinate axes and FCL nearest points. Outward projection of every
+  from coordinate axes and FCL nearest points. If those are insufficient for a
+  mesh pair, a bounded 32-step Gilbert/Frank-Wolfe search over the complete
+  transformed vertex sets proposes another axis. That floating-point search
+  supplies no clearance evidence by itself. Outward projection of every
   primitive support or mesh vertex yields an independent lower bound. Clearance
   must strictly exceed relative displacement plus numerical uncertainty.
-  Concave shapes whose convex support projections cannot separate may reject.
+  The interval norm division and strict comparison are unchanged. Exhausting
+  the axis search cannot imply success; concave shapes whose convex support
+  projections cannot separate may still reject.
+* For a BOX or a single mesh against a concave mesh, a failed whole-body projection can
+  fall back to the mesh's complete original triangle cover. Every triangle must
+  independently separate from the full other body; the mesh-wide bound is the minimum
+  of those outward-rounded gaps. This matches FCL's primitive/mesh collision
+  and mesh/mesh collision surfaces and preserves hollow cavities. One unresolved triangle rejects the
+  fallback. The ordinary collision checks, body motion bounds and numerical
+  guard still apply unchanged.
 * Already-proven coordinate-axis pairs are removed only from the private distance
   query. Unresolved pairs must appear in the completed FCL distance map. FCL's
   intentional early stop at an overlap triggers subdivision; an incomplete

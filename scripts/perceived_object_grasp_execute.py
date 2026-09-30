@@ -509,6 +509,41 @@ def ik_scene_matches_live(planned, live):
             == live.robot_state.attached_collision_objects)
 
 
+def nearest_ik_winding(values, reference, joints):
+    """Keep an IK pose while choosing the closest model-permitted joint turns.
+
+    The native planner still checks its loaded bounds and the whole motion.
+    A saved branch supplies the reference when revalidating that branch.
+    Explicit joint-space goals never pass through this IK-only conversion.
+    """
+    result = dict(values)
+    mimic_leaders = {m.get('joint') for j in joints.values() for m in j.findall('mimic')}
+    for name, value in values.items():
+        joint = joints.get(name)
+        if (joint is None or name not in reference or name in mimic_leaders
+                or joint.find('mimic') is not None):
+            continue
+        kind = joint.get('type')
+        if kind not in ('revolute', 'continuous'):
+            continue
+        turns = round((reference[name] - value) / math.tau)
+        if kind == 'revolute':
+            limit = joint.find('limit')
+            lower, upper = float(limit.get('lower')), float(limit.get('upper'))
+            safety = joint.find('safety_controller')
+            if safety is not None:
+                lower = max(lower, float(safety.get('soft_lower_limit', lower)))
+                upper = min(upper, float(safety.get('soft_upper_limit', upper)))
+            first = math.ceil((lower - value) / math.tau)
+            last = math.floor((upper - value) / math.tau)
+            if first > last:
+                # No equivalent fits; preserve the IK response for native rejection.
+                continue
+            turns = max(first, min(last, turns))
+        result[name] = value + turns * math.tau
+    return result
+
+
 def approach_ik_binding(goal, contract, positions):
     """Bind the selected IK branch to model, group, TCP and Cartesian target.
 
@@ -1798,6 +1833,11 @@ def main():
                 from full_cycle_preplanner import MotionFeasibilityFailure
                 raise MotionFeasibilityFailure(f'IK failed: {ik.error_code.val}', moveit_code=ik.error_code.val)
             values = dict(zip(ik.solution.joint_state.name,ik.solution.joint_state.position))
+            winding_reference = (ik_binding or ik_seed or {}).get('joint_positions')
+            if winding_reference is None:
+                winding_reference = dict(zip(view.robot_state.joint_state.name,
+                                             view.robot_state.joint_state.position))
+            values = nearest_ik_winding(values, winding_reference, ik_joints)
             if ik_binding is not None:
                 # A changed collision scene may reject the saved branch. Never
                 # silently substitute a new random branch under a READY handoff.
@@ -1982,8 +2022,9 @@ def main():
         if args.start and not params[1].bool_value:
             raise RuntimeError('fake execution disabled; launch allow_trajectory_execution:=true')
         support_adapters = call(params_client, GetParameters.Request(names=['ompl.request_adapters'])).values[0].string_value
+        ik_joints = {j.attrib['name']: j for j in ET.fromstring(params[2].string_value).findall('joint')}
         mimics = [(j.attrib['name'], m.attrib['joint'], float(m.get('multiplier',1)), float(m.get('offset',0)))
-            for j in ET.fromstring(params[2].string_value).findall('joint') for m in j.findall('mimic')]
+            for j in ik_joints.values() for m in j.findall('mimic')]
         stage('UPDATE_PLANNING_SCENE')
         home = dict(zip(contract['home_joint_names'],contract['home_joint_positions']))
         initial = wait_for_robot_baseline(scene_now, home, mimics, min(10.0, args.timeout))

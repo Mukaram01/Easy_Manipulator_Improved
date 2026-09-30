@@ -321,26 +321,119 @@ inline Interval projection(const GeometryBody& body,const Eigen::Vector3d& axis)
   }
   return LocalInterval(low,high);
 }
+inline double projectedClearanceLowerBound(const Interval& x,const Interval& y,const Eigen::Vector3d& axis) {
+  const Interval gap1=Interval(y.lower())-x.upper(),gap2=Interval(x.lower())-y.upper();
+  Interval norm(0.);for(unsigned j=0;j<3;++j) norm+=boost::numeric::square(Interval(axis[j]));
+  norm=boost::numeric::sqrt(norm);
+  const double gap=std::max(gap1.lower(),gap2.lower());
+  return gap>0.?(Interval(gap)/norm).lower():0.;
+}
+inline double triangleCoverClearanceLowerBound(const GeometryBody& body,const GeometryBody& surface,double needed) {
+  // FCL tests a mesh through its original indexed triangles. Prove that same
+  // surface cover against the full other body, retaining the MINIMUM gap. A
+  // concave mesh's cavity must not become part of its convex support hull.
+  if(body.shapes.size()!=1||surface.shapes.size()!=1||
+      (body.shapes[0]->type!=shapes::BOX&&body.shapes[0]->type!=shapes::MESH)||
+      surface.shapes[0]->type!=shapes::MESH) return 0.;
+  const auto& mesh=static_cast<const shapes::Mesh&>(*surface.shapes[0]);
+  if(!mesh.triangle_count) return 0.;
+  auto triangle=std::make_shared<shapes::Mesh>(3,1);
+  for(unsigned i=0;i<3;++i) triangle->triangles[i]=i;
+  GeometryBody piece{surface.name,surface.type,{triangle},surface.poses,{}};
+  // The full body's three coordinate projections are identical for every
+  // triangle in this call. Reuse exactly those outward-rounded intervals.
+  const std::array<Interval,3> coordinates{projection(body,Eigen::Vector3d::UnitX()),
+    projection(body,Eigen::Vector3d::UnitY()),projection(body,Eigen::Vector3d::UnitZ())};
+  double minimum=INFINITY;
+  for(unsigned t=0;t<mesh.triangle_count;++t) {
+    Eigen::Vector3d vertices[3];
+    for(unsigned i=0;i<3;++i) {
+      const unsigned id=mesh.triangles[3*t+i];
+      if(id>=mesh.vertex_count) throw std::runtime_error("MESH_INDEX_INVALID");
+      for(unsigned j=0;j<3;++j) vertices[i][j]=triangle->vertices[3*i+j]=mesh.vertices[3*id+j];
+    }
+    // These floating-point SAT directions are candidates only. All clearance
+    // evidence comes from unchanged outward projection and interval norm.
+    Eigen::Vector3d edges[3];
+    for(unsigned i=0;i<3;++i) edges[i]=surface.poses[0].linear()*(vertices[(i+1)%3]-vertices[i]);
+    std::vector<Eigen::Vector3d> axes{Eigen::Vector3d::UnitX(),Eigen::Vector3d::UnitY(),Eigen::Vector3d::UnitZ(),edges[0].cross(edges[1])};
+    for(unsigned j=0;j<3;++j) {
+      axes.push_back(body.poses[0].linear().col(j));
+      for(const auto& edge:edges) axes.push_back(edge.cross(body.poses[0].linear().col(j)));
+    }
+    double lower=0.;
+    for(std::size_t i=0;i<axes.size();++i) {
+      const auto& axis=axes[i];
+      if(!axis.allFinite()||!std::isfinite(axis.norm())||axis.norm()<=0.) continue;
+      lower=std::max(lower,projectedClearanceLowerBound(i<3?coordinates[i]:projection(body,axis),projection(piece,axis),axis));
+      if(lower>needed) break;
+    }
+    // An unresolved triangle cannot be omitted from the mesh-wide minimum.
+    if(lower<=0.||(std::isfinite(needed)&&lower<=needed)) return 0.;
+    minimum=std::min(minimum,lower);
+  }
+  return minimum;
+}
 // FCL/GJK distance can overestimate true clearance by more than its termination
 // tolerance. Its nearest points supply only a candidate axis. Projection of ALL
 // geometry vertices/supports gives an independent outward-rounded lower bound.
+inline Eigen::Vector3d meshAxisCandidate(const GeometryBody& a,const GeometryBody& b,const Eigen::Vector3d& witness) {
+  // Bounded Gilbert/Frank-Wolfe search on the vertex-cloud difference. This is
+  // only a heuristic for choosing an axis: no floating-point search result is
+  // a clearance bound. projection() must independently check every vertex.
+  std::array<std::vector<Eigen::Vector3d>,2> points;
+  const GeometryBody* bodies[2]={&a,&b};
+  for(unsigned side=0;side<2;++side) {
+    const auto& body=*bodies[side];
+    for(std::size_t k=0;k<body.shapes.size();++k) {
+      if(body.shapes[k]->type!=shapes::MESH) return Eigen::Vector3d::Zero();
+      const auto& mesh=static_cast<const shapes::Mesh&>(*body.shapes[k]);
+      for(unsigned i=0;i<mesh.vertex_count;++i)
+        points[side].push_back(body.poses[k]*Eigen::Vector3d(mesh.vertices[3*i],mesh.vertices[3*i+1],mesh.vertices[3*i+2]));
+    }
+    if(points[side].empty()) return Eigen::Vector3d::Zero();
+  }
+  // Preserve the distance witness magnitude: this search minimizes a point's
+  // squared norm, so normalizing the initial point changes its convergence.
+  Eigen::Vector3d v=witness,best=Eigen::Vector3d::Zero();double best_gap=0.;
+  for(unsigned iteration=0;iteration<32;++iteration) {
+    const double length=v.norm();if(!v.allFinite()||!std::isfinite(length)||length<=0.) break;
+    const auto x=std::max_element(points[0].begin(),points[0].end(),[&](const auto& p,const auto& q){return p.dot(v)<q.dot(v);});
+    const auto y=std::min_element(points[1].begin(),points[1].end(),[&](const auto& p,const auto& q){return p.dot(v)<q.dot(v);});
+    const Eigen::Vector3d w=*y-*x;const double gap=v.dot(w)/length;
+    if(std::isfinite(gap)&&gap>best_gap) {best_gap=gap;best=v;}
+    const Eigen::Vector3d delta=w-v;const double squared=delta.squaredNorm();
+    if(!std::isfinite(squared)||squared<=0.) break;
+    const double step=std::clamp(-v.dot(delta)/squared,0.,1.);
+    if(!std::isfinite(step)||step<=0.) break;
+    v+=step*delta;
+  }
+  return best;
+}
 inline double clearanceLowerBound(const GeometryBody& a,const GeometryBody& b,
     const collision_detection::DistanceResultsData& distance,double needed=INFINITY,
     const std::map<std::string,std::array<Interval,3>>* coordinate_projections=nullptr) {
   std::vector<Eigen::Vector3d> axes{Eigen::Vector3d::UnitX(),Eigen::Vector3d::UnitY(),Eigen::Vector3d::UnitZ()};
   const Eigen::Vector3d difference=distance.nearest_points[1]-distance.nearest_points[0];
   if(difference.allFinite()&&difference.norm()>0.&&std::isfinite(difference.norm())) axes.push_back(difference.normalized());
-  double lower=0.;
-  for(std::size_t i=0;i<axes.size();++i) {
-    const auto& axis=axes[i];
+  auto checked_axis=[&](const Eigen::Vector3d& axis,std::size_t i) {
     const auto x=coordinate_projections&&i<3?coordinate_projections->at(a.name)[i]:projection(a,axis);
     const auto y=coordinate_projections&&i<3?coordinate_projections->at(b.name)[i]:projection(b,axis);
-    const Interval gap1=Interval(y.lower())-x.upper(),gap2=Interval(x.lower())-y.upper();
-    Interval norm(0.);for(unsigned j=0;j<3;++j) norm+=boost::numeric::square(Interval(axis[j]));
-    norm=boost::numeric::sqrt(norm);
-    const double gap=std::max(gap1.lower(),gap2.lower());
-    if(gap>0.) lower=std::max(lower,(Interval(gap)/norm).lower());
+    return projectedClearanceLowerBound(x,y,axis);
+  };
+  double lower=0.;
+  for(std::size_t i=0;i<axes.size();++i) {
+    lower=std::max(lower,checked_axis(axes[i],i));
     if(lower>needed) return lower;
+  }
+  // Keep the coordinate-only prepass cheap. After a real distance query, an
+  // inadequate nearest-point axis may be replaced by a mesh-hull candidate.
+  if(axes.size()>3) {
+    const Eigen::Vector3d candidate=meshAxisCandidate(a,b,difference);
+    if(candidate.allFinite()&&candidate.norm()>0.&&std::isfinite(candidate.norm()))
+      lower=std::max(lower,checked_axis(candidate,3));
+    if(lower<=needed) lower=std::max(lower,triangleCoverClearanceLowerBound(a,b,needed));
+    if(lower<=needed) lower=std::max(lower,triangleCoverClearanceLowerBound(b,a,needed));
   }
   return lower;
 }

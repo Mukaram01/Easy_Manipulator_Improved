@@ -1409,3 +1409,90 @@ TEST(DetachedContact, ClearanceIsMetricForNonUnitPlaneCoefficients) {
   const double scaled=dc::detachedGap(pair,*f.scene,terminal,{});
   EXPECT_NEAR(scaled,original,1e-11);
 }
+
+TEST(ControllerCertificate, SavedTransferMeshesFindIndependentSeparatingAxis) {
+  using namespace workcell::controller_certificate;
+  struct Case {const char* file;Eigen::Vector3d first,second;double minimum;};
+  const Case cases[]={
+    {"vertices.csv",{.063428225205688499,.023367000452644934,.87858459855173776},
+      {.07126162350026001,.034379453169062033,.88237108010685583},.01},
+    {"later-vertices.csv",{.35763513011852005,.35224646056199305,.61805315429562258},
+      {.35979622525632204,.3416548842380055,.60865818353257017},.003}};
+  for(const auto& example:cases) {
+  SCOPED_TRACE(example.file);
+  std::ifstream input(std::filesystem::path(__FILE__).parent_path()/"evidence/stage_a1_transfer_axes_20260930"/example.file);
+  ASSERT_TRUE(input.good());std::map<std::string,std::vector<Eigen::Vector3d>> vertices;
+  std::string line;
+  while(std::getline(input,line)) {
+    std::replace(line.begin(),line.end(),',',' ');std::istringstream row(line);
+    std::string name;double x,y,z;ASSERT_TRUE(bool(row>>name>>x>>y>>z));
+    vertices[name].emplace_back(x,y,z);
+  }
+  ASSERT_EQ(vertices["forearm_link"].size(),537u);ASSERT_EQ(vertices["wrist_2_link"].size(),355u);
+  auto body=[&](const std::string& name) {
+    const auto& points=vertices.at(name);auto mesh=new shapes::Mesh(points.size(),0);
+    for(std::size_t i=0;i<points.size();++i) for(unsigned j=0;j<3;++j) mesh->vertices[3*i+j]=points[i][j];
+    return GeometryBody{name,collision_detection::BodyTypes::ROBOT_LINK,
+      {shapes::ShapeConstPtr(mesh)},{Eigen::Isometry3d::Identity()}, {}};
+  };
+  const auto a=body("forearm_link"),b=body("wrist_2_link");
+  collision_detection::DistanceResultsData distance;distance.distance=.014034731427425626;
+  distance.nearest_points[0]=example.first;distance.nearest_points[1]=example.second;
+  EXPECT_GT(clearanceLowerBound(a,b,distance,1.7677344936e-9),example.minimum);
+  // An optimistic witness cannot certify identical overlapping geometry.
+  auto overlap=a;overlap.name="overlap";distance.distance=1e100;
+  EXPECT_EQ(clearanceLowerBound(a,overlap,distance,1e-12),0.);
+  }
+}
+
+TEST(ControllerCertificate, SavedTransferBodiesClearEveryConcaveBinTriangle) {
+  using namespace workcell::controller_certificate;
+  for(const char* file:{"bin.fixture.txt","finger-bin.fixture.txt"}) {
+  SCOPED_TRACE(file);
+  std::ifstream input(std::filesystem::path(__FILE__).parent_path()/"evidence/stage_a1_transfer_axes_20260930"/file);
+  ASSERT_TRUE(input.good());std::array<std::vector<Eigen::Vector3d>,2> vertices;
+  std::array<std::vector<std::array<unsigned,3>>,2> triangles;
+  Eigen::Vector3d size=Eigen::Vector3d::Zero();Eigen::Isometry3d body_pose,mesh_pose;
+  collision_detection::DistanceResultsData distance;std::string line;
+  while(std::getline(input,line)) {
+    std::istringstream row(line);std::string kind;row>>kind;
+    if(kind=="box_size") row>>size[0]>>size[1]>>size[2];
+    else if(kind=="box_pose"||kind=="body_pose"||kind=="mesh_pose") {
+      auto& pose=kind=="mesh_pose"?mesh_pose:body_pose;
+      for(unsigned i=0;i<4;++i) for(unsigned j=0;j<4;++j) row>>pose.matrix()(i,j);
+    } else if(kind=="vertex"||kind=="mesh_vertex"||kind=="body_vertex") {
+      Eigen::Vector3d v;row>>v[0]>>v[1]>>v[2];vertices[kind=="body_vertex"?0:1].push_back(v);
+    } else if(kind=="triangle"||kind=="mesh_triangle"||kind=="body_triangle") {
+      std::array<unsigned,3> t;row>>t[0]>>t[1]>>t[2];triangles[kind=="body_triangle"?0:1].push_back(t);
+    } else if(kind=="witness0"||kind=="witness1") {auto& p=distance.nearest_points[kind=="witness0"?0:1];row>>p[0]>>p[1]>>p[2];}
+    else if(kind=="fcl_distance") row>>distance.distance;
+    else FAIL()<<"unknown fixture row: "<<kind;
+    ASSERT_TRUE(bool(row));
+  }
+  ASSERT_EQ(vertices[1].size(),160u);ASSERT_EQ(triangles[1].size(),316u);
+  auto make_mesh=[&](unsigned side) {
+    auto mesh=std::make_shared<shapes::Mesh>(vertices[side].size(),triangles[side].size());
+    for(std::size_t i=0;i<vertices[side].size();++i) for(unsigned j=0;j<3;++j) mesh->vertices[3*i+j]=vertices[side][i][j];
+    for(std::size_t i=0;i<triangles[side].size();++i) for(unsigned j=0;j<3;++j) mesh->triangles[3*i+j]=triangles[side][i][j];
+    return mesh;
+  };
+  const bool primitive=vertices[0].empty();
+  shapes::ShapeConstPtr shape=primitive?shapes::ShapeConstPtr(std::make_shared<shapes::Box>(size[0],size[1],size[2])):make_mesh(0);
+  GeometryBody body{"moving",collision_detection::BodyTypes::ROBOT_ATTACHED,{shape},{body_pose},{}};
+  GeometryBody bin{"bin",collision_detection::BodyTypes::WORLD_OBJECT,{make_mesh(1)},{mesh_pose},{}};
+  EXPECT_GT(clearanceLowerBound(body,bin,distance,.05),.05);
+  EXPECT_GT(clearanceLowerBound(bin,body,distance,.05),.05);
+  // Translate the box interior or a full mesh-face centroid onto each bin
+  // triangle. Every original face must remain an obstacle, including the floor.
+  Eigen::Vector3d local=Eigen::Vector3d::Zero();
+  if(!primitive) {
+    ASSERT_FALSE(triangles[0].empty());const auto& t=triangles[0][0];
+    local=(vertices[0][t[0]]+vertices[0][t[1]]+vertices[0][t[2]])/3.;
+  }
+  for(std::size_t i=0;i<triangles[1].size();++i) {
+    SCOPED_TRACE(i);const auto& t=triangles[1][i];
+    body.poses[0].translation()=mesh_pose*((vertices[1][t[0]]+vertices[1][t[1]]+vertices[1][t[2]])/3.)-body_pose.linear()*local;
+    EXPECT_LE(clearanceLowerBound(body,bin,distance,1e-12),1e-12);
+  }
+  }
+}

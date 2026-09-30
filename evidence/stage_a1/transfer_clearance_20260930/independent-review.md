@@ -1,0 +1,15 @@
+# Independent full-body triangle-cover review
+
+Reviewer: `/root/moveit_evidence`. This reviewer extracted the actual fixtures and diagnostics but did not author production source changes.
+
+The reviewed extension allows one complete BOX or MESH body against the complete triangle cover of one MESH. The body support remains the original outward projection across all its vertices or primitive extent. For a mesh, this covers its complete collision surface conservatively, including every triangle's convex combinations of its vertices. Each surface triangle retains its exact original local vertices, indices and transform. The code validates triangle indices, checks all indexed triangles and takes the minimum bound. Any unresolved triangle rejects this fallback. No accepted bound comes from FCL distance, an approximate search gap, or a subset of triangles.
+
+For all actual body points B and surface M=union(T_i), every plane lower bound l_i applies to distance(B,T_i), and distance(B,M)>=min_i(l_i). The unchanged body-motion and error bound applies to every point in each triangle subset. Subtracting that same bound from the minimum remains conservative for the entire interval. This statement does not require the body mesh itself to be convex: using its full support hull only makes the bound more conservative. The code makes no claim that its candidate-axis set is complete; unresolved geometry still fails closed.
+
+The cached world-coordinate body projections are immutable within one call and describe that same fixed geometry state. Reusing them changes cost, not their outward enclosure. Symmetric dispatch stops only after a bound exceeds the same requested displacement/error threshold. Existing collision, joint-bound, scene-policy, interpolation, timestamp and contact-expiry checks remain unchanged.
+
+The actual fingertip fixture contains1226vertices/2436triangles, and the bin contains160vertices/316triangles. A separate unchanged-projection diagnostic proved every bin triangle against the whole fingertip, with54.5334488mm minimum separation at the observed failing state. The box/bin fixture similarly proved80.0420669mm. These state results establish the local geometry mechanism; full-spline and native planning results remain separate requirements.
+
+No source/soundness blocker found in the frozen change. Earlier failed replay binaries, logs and source archives remain preserved. This review is not a Stage-A acceptance claim.
+
+Final assertion review: the only subsequent test-source edit tightened the clearance request and expected ceiling in each of the 632 bin-face negatives from `1e-8` to `1e-12`, matching the ordinary certificate distance guard. Reconstructing that single prior assertion reproduces the previously reviewed test SHA exactly. The production header and support adapter hashes remain unchanged. I independently reran `ControllerCertificate.SavedTransferBodiesClearEveryConcaveBinTriangle`: PASS, 218 ms. This is a stricter unit regression, not additional runtime qualification.
