@@ -1,0 +1,5 @@
+result 2
+reason PRECISION_OR_DEPTH_LIMIT
+interval 0 1
+inspected 27
+seconds 0.0793771

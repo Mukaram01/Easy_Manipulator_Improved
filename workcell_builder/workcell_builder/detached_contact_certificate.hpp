@@ -37,10 +37,12 @@ inline const DetachedPair* activePair(const std::vector<DetachedPair>& pairs,con
 }
 // Both caps are checked. Reaching a cap is ambiguous, hence never complete.
 inline collision_detection::CollisionResult completeContacts(const planning_scene::PlanningScene& scene,
-    const moveit::core::RobotState& state,std::size_t cap=1000000) {
+    const moveit::core::RobotState& state,std::size_t cap=1000000,
+    const collision_detection::AllowedCollisionMatrix* acm=nullptr) {
   if(!cap) throw std::runtime_error("CONTACT_ENUMERATION_INCOMPLETE");
   collision_detection::CollisionRequest req;req.contacts=true;req.max_contacts=cap;req.max_contacts_per_pair=cap;
-  collision_detection::CollisionResult result;scene.checkCollision(req,result,state);
+  collision_detection::CollisionResult result;
+  if(acm) scene.checkCollision(req,result,state,*acm);else scene.checkCollision(req,result,state);
   std::size_t count=0;
   for(const auto& item:result.contacts) {
     if(item.second.empty()||item.second.size()>=cap) throw std::runtime_error("CONTACT_ENUMERATION_INCOMPLETE");
@@ -154,7 +156,8 @@ inline Interval mimicFactor(const moveit::core::JointModel* joint,const std::str
   while(joint->getMimic()) {factor*=joint->getMimicFactor();joint=joint->getMimic();}
   return joint->getVariableNames().at(0)==independent?factor:Interval(0.);
 }
-inline IMatrix linkDerivative(const moveit::core::LinkModel* link,const Polynomials& p,const std::string& variable) {
+inline IMatrix linkDerivative(const moveit::core::LinkModel* link,const Polynomials& p,const std::string& variable,
+    IMatrix* transform=nullptr) {
   std::vector<const moveit::core::LinkModel*> chain;
   for(auto* cursor=link;cursor;cursor=cursor->getParentLinkModel()) chain.push_back(cursor);
   auto t=identityMatrix(),d=zeroMatrix();
@@ -180,6 +183,7 @@ inline IMatrix linkDerivative(const moveit::core::LinkModel* link,const Polynomi
     } else throw std::runtime_error("DETACHED_JOINT_UNSUPPORTED");
     d=addMatrix(multiply(d,motion),multiply(t,derivative));t=multiply(t,motion);
   }
+  if(transform) *transform=t;
   return d;
 }
 inline Polynomials derivativeControls(const Polynomials& p,int64_t duration_ns) {

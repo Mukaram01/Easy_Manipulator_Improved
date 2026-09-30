@@ -739,6 +739,131 @@ TEST(ControllerCertificate, MovingWorldWithoutBoundRejects) {
   EXPECT_EQ(workcell::controller_certificate::certify(*ordinaryQuintic(f),*f.scene,options).result,
             workcell::ControllerCertificate::UNCERTIFIED);
 }
+
+namespace {
+void prepareYawedPileCertificate(SupportFixture& fixture) {
+  fixture.scene->getWorldNonConst()->removeObject("fixture");
+  Eigen::Isometry3d floor=Eigen::Isometry3d::Identity();
+  floor.linear()=Eigen::AngleAxisd(.23,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  floor.translation().z()=-.05;
+  fixture.scene->getWorldNonConst()->addToObject(
+    "fixture",shapes::ShapeConstPtr(new shapes::Box(1.,1.,.1)),floor);
+  collision_detection::DecideContactFn predicate=workcell::PileContact{"part","fixture"};
+  fixture.scene->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",predicate);
+}
+robot_trajectory::RobotTrajectory pileCertificatePath(
+    const SupportFixture& fixture,const std::vector<double>& heights) {
+  robot_trajectory::RobotTrajectory trajectory(fixture.scene->getRobotModel(),"arm");
+  for(double height:heights) {
+    auto state=fixture.scene->getCurrentState();state.setVariablePosition("lift",height);
+    state.setVariableVelocity("lift",0.);state.setVariableAcceleration("lift",0.);state.update();
+    trajectory.addSuffixWayPoint(state,trajectory.getWayPointCount()?.1:0.);
+  }
+  return trajectory;
+}
+}
+
+TEST(ControllerCertificate, InitialPileYawedBoxZeroSpeedLiftKeepsConditionalPolicy) {
+  SupportFixture fixture(.00005);prepareYawedPileCertificate(fixture);
+  ASSERT_FALSE(fixture.scene->isStateColliding());
+  const auto trajectory=pileCertificatePath(fixture,{0.,.005});
+  const auto report=workcell::controller_certificate::certify(trajectory,*fixture.scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+  collision_detection::DecideContactFn predicate;
+  ASSERT_TRUE(fixture.scene->getAllowedCollisionMatrix().getAllowedCollision("part","fixture",predicate));
+  const auto* policy=predicate.target<workcell::PileContact>();
+  ASSERT_NE(policy,nullptr);EXPECT_EQ(policy->object,"part");EXPECT_EQ(policy->neighbor,"fixture");
+}
+
+TEST(ControllerCertificate, InitialPileSeparationAndRecontactWithinOneSplineRejects) {
+  SupportFixture fixture(.00005);prepareYawedPileCertificate(fixture);
+  auto trajectory=ordinaryQuintic(fixture,.1,.1);
+  auto strict=fixture.scene->diff();strict->decoupleParent();
+  strict->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",false);
+  ASSERT_TRUE(strict->isStateColliding(trajectory->getFirstWayPoint(),""));
+  ASSERT_TRUE(strict->isStateColliding(trajectory->getLastWayPoint(),""));
+  moveit_msgs::msg::RobotTrajectory message;trajectory->getRobotTrajectoryMsg(message);
+  trajectory_msgs::msg::JointTrajectoryPoint sample;
+  joint_trajectory_controller::Trajectory jtc;
+  jtc.interpolate_between_points(rclcpp::Time(0),message.joint_trajectory.points[0],
+    rclcpp::Time(100000000),message.joint_trajectory.points[1],rclcpp::Time(50000000),sample);
+  auto middle=trajectory->getFirstWayPoint();middle.setVariablePosition("lift",sample.positions.at(0));middle.update();
+  ASSERT_FALSE(strict->isStateColliding(middle,""));
+  const auto report=workcell::controller_certificate::certify(*trajectory,*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, InitialPileExpiryPersistsAcrossExactWaypointReversal) {
+  SupportFixture fixture(.00005);prepareYawedPileCertificate(fixture);
+  const auto prefix=pileCertificatePath(fixture,{0.,.005});
+  const auto prefix_report=workcell::controller_certificate::certify(prefix,*fixture.scene);
+  ASSERT_EQ(prefix_report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<prefix_report.reason;
+  const auto reversed=pileCertificatePath(fixture,{0.,.005,0.});
+  const auto report=workcell::controller_certificate::certify(reversed,*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_GE(report.failure_begin_ns,100000000);
+  EXPECT_GT(report.certified,0U);
+}
+
+TEST(ControllerCertificate, InitialPileDepthAboveExistingToleranceRejects) {
+  SupportFixture fixture(.00010001);prepareYawedPileCertificate(fixture);
+  ASSERT_TRUE(fixture.scene->isStateColliding());
+  const auto report=workcell::controller_certificate::certify(
+    pileCertificatePath(fixture,{0.,.005}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.certified,0U);
+}
+
+TEST(ControllerCertificate, InitialPilePermissionCannotHideUnrelatedCollision) {
+  SupportFixture fixture(.00005);prepareYawedPileCertificate(fixture);
+  Eigen::Isometry3d obstacle=Eigen::Isometry3d::Identity();obstacle.translation().z()=.03;
+  fixture.scene->getWorldNonConst()->addToObject(
+    "unrelated",shapes::ShapeConstPtr(new shapes::Box(.005,.005,.005)),obstacle);
+  const auto trajectory=pileCertificatePath(fixture,{0.,.005});
+  ASSERT_FALSE(fixture.scene->isStateColliding(trajectory.getFirstWayPoint(),""));
+  ASSERT_TRUE(fixture.scene->isStateColliding(trajectory.getLastWayPoint(),""));
+  const auto report=workcell::controller_certificate::certify(trajectory,*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, InitialPileZeroTimestampBudgetFailsClosed) {
+  SupportFixture fixture(.00005);prepareYawedPileCertificate(fixture);
+  workcell::ControllerAuditOptions options;options.max_contact_timestamps=0;
+  const auto report=workcell::controller_certificate::certify(
+    pileCertificatePath(fixture,{0.,.005}),*fixture.scene,options);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(report.reason,"CONTACT_TIMESTAMP_LIMIT");
+  EXPECT_EQ(report.contact_timestamps,1U);
+  EXPECT_EQ(report.initial_contacts_expired,0U);
+}
+
+TEST(ControllerCertificate, InitialPileBoxInteriorRequiresFullMotionMargin) {
+  using namespace workcell::controller_certificate;
+  SupportFixture fixture(.00005);prepareYawedPileCertificate(fixture);
+  auto bodies=geometryBodies(*fixture.scene,fixture.scene->getCurrentState());
+  auto& moving=bodies.at("part");const auto& fixed=bodies.at("fixture");
+  // The overlap is 50 micrometres. Its common-point witness must retain
+  // positive clearance to every face after the entire motion enclosure.
+  EXPECT_TRUE(boxContactInterior(moving,fixed,.00001));
+  EXPECT_FALSE(boxContactInterior(moving,fixed,.00003));
+  moving.poses[0].translation().z()+=.000051;
+  EXPECT_FALSE(boxContactInterior(moving,fixed,0.));
+}
+
+TEST(ControllerCertificate, InitialPileBoxGapDoesNotUseContainedIntersectionWidth) {
+  using namespace workcell::controller_certificate;
+  SupportFixture fixture(.00005);prepareYawedPileCertificate(fixture);
+  auto bodies=geometryBodies(*fixture.scene,fixture.scene->getCurrentState());
+  auto& moving=bodies.at("part");const auto& fixed=bodies.at("fixture");
+  moving.shapes[0]=shapes::ShapeConstPtr(new shapes::Box(.00004,.00004,.00004));
+  moving.poses[0]=fixed.poses[0];
+  // A tiny fully contained box intersects only 40 micrometres of each axis,
+  // but needs more than 50 millimetres of translation to leave the solid.
+  EXPECT_LT(boxGap(moving,fixed),-.05);
+  EXPECT_TRUE(boxContactInterior(moving,fixed,.00001));
+  EXPECT_FALSE(boxContactInterior(moving,fixed,.00003));
+}
+
 TEST(ControllerCertificate, IntervalContainsActualInstalledJtcInteriorExtrema) {
   using namespace workcell::controller_certificate;
   trajectory_msgs::msg::JointTrajectoryPoint a,b;
@@ -918,25 +1043,33 @@ TEST(ControllerCertificate, ShapeCacheKeepsCurrentPosesAndDisplacementBounds) {
   state.setVariablePosition("lift",std::numeric_limits<double>::quiet_NaN());state.update();
   EXPECT_THROW(geometryBodies(*f.scene,state,&cache),std::runtime_error);
 }
+namespace {
+std::string readControllerFixture(const std::filesystem::path& directory,const std::string& name) {
+  std::ifstream file(directory/name,std::ios::binary);
+  if(!file) throw std::runtime_error("Missing real Stage A evidence: "+name);
+  return std::string(std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>());
+}
+template<class Message>
+void deserializeControllerFixture(const std::filesystem::path& directory,const std::string& name,Message& message) {
+  auto bytes=readControllerFixture(directory,name);rclcpp::SerializedMessage serialized(bytes.size());
+  auto& raw=serialized.get_rcl_serialized_message();std::memcpy(raw.buffer,bytes.data(),bytes.size());raw.buffer_length=bytes.size();
+  rclcpp::Serialization<Message>().deserialize_message(&serialized,&message);
+}
+moveit::core::RobotModelPtr controllerFixtureModel(const std::filesystem::path& directory) {
+  auto u=urdf::parseURDF(readControllerFixture(directory,"robot.urdf"));
+  auto semantic=std::make_shared<srdf::Model>();
+  if(!u||!semantic->initString(*u,readControllerFixture(directory,"robot.srdf")))
+    throw std::runtime_error("Invalid real Stage A robot descriptions");
+  return std::make_shared<moveit::core::RobotModel>(u,semantic);
+}
+}
 TEST(ControllerCertificate, KnownClearRealStageAApproach) {
   const char* directory=std::getenv("WORKCELL_STAGE_A_CERTIFICATE_FIXTURE");
   if(!directory) GTEST_SKIP()<<"Set the historical scene/trajectory fixture directory for the real Stage A acceptance gate";
-  auto read=[&](const std::string& name) {
-    std::ifstream file(std::string(directory)+"/"+name,std::ios::binary);
-    if(!file) throw std::runtime_error("Missing real Stage A evidence: "+name);
-    return std::string(std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>());
-  };
-  auto u=urdf::parseURDF(read("robot.urdf"));ASSERT_TRUE(u);
-  auto semantic=std::make_shared<srdf::Model>();ASSERT_TRUE(semantic->initString(*u,read("robot.srdf")));
-  auto model=std::make_shared<moveit::core::RobotModel>(u,semantic);
-  auto deserialize=[&](const std::string& name,auto& message) {
-    auto bytes=read(name);rclcpp::SerializedMessage serialized(bytes.size());
-    auto& raw=serialized.get_rcl_serialized_message();std::memcpy(raw.buffer,bytes.data(),bytes.size());raw.buffer_length=bytes.size();
-    rclcpp::Serialization<std::decay_t<decltype(message)>> serializer;serializer.deserialize_message(&serialized,&message);
-  };
-  moveit_msgs::msg::PlanningScene message;deserialize("scene.cdr",message);
+  auto model=controllerFixtureModel(directory);
+  moveit_msgs::msg::PlanningScene message;deserializeControllerFixture(directory,"scene.cdr",message);
   planning_scene::PlanningScene scene(model);scene.setPlanningSceneMsg(message);
-  moveit_msgs::msg::RobotTrajectory emitted;deserialize("trajectory.cdr",emitted);
+  moveit_msgs::msg::RobotTrajectory emitted;deserializeControllerFixture(directory,"trajectory.cdr",emitted);
   ASSERT_EQ(emitted.joint_trajectory.points.size(),101U); // original telemetry-stage approach
   robot_trajectory::RobotTrajectory trajectory(model,"manipulator");
   trajectory.setRobotTrajectoryMsg(scene.getCurrentState(),emitted);
@@ -945,6 +1078,75 @@ TEST(ControllerCertificate, KnownClearRealStageAApproach) {
     <<" certified="<<report.certified<<" subdivided="<<report.subdivided<<" depth="<<report.deepest
     <<" seconds="<<report.wall_seconds<<" failure=["<<report.failure_begin_ns<<","<<report.failure_end_ns<<"]\n";
   EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, RealStageAInitialLiftWithYawedBoxesAndRevoluteArm) {
+  const auto directory=std::filesystem::path(__FILE__).parent_path()/"evidence/stage_a1_initial_lift_20260930";
+  auto model=controllerFixtureModel(directory);
+  moveit_msgs::msg::PlanningScene frozen;deserializeControllerFixture(directory,"scene.cdr",frozen);
+  moveit_msgs::msg::RobotTrajectory emitted;deserializeControllerFixture(directory,"trajectory.cdr",emitted);
+  moveit_msgs::msg::MotionPlanRequest request;deserializeControllerFixture(directory,"request.cdr",request);
+  ASSERT_FALSE(frozen.is_diff);
+  ASSERT_EQ(emitted.joint_trajectory.points.size(),42U);
+  ASSERT_EQ(emitted.joint_trajectory.joint_names.size(),6U);
+  for(const auto& name:emitted.joint_trajectory.joint_names)
+    ASSERT_EQ(model->getJointOfVariable(name)->getType(),moveit::core::JointModel::REVOLUTE);
+  for(double speed:emitted.joint_trajectory.points.front().velocities) ASSERT_DOUBLE_EQ(speed,0.);
+  YAML::Node metadata;unsigned metadata_count=0;
+  for(const auto& constraint:request.trajectory_constraints.constraints) {
+    const std::string prefix="workcell_cartesian_path:";
+    if(constraint.name.rfind(prefix,0)==0) {metadata=YAML::Load(constraint.name.substr(prefix.size()));++metadata_count;}
+  }
+  ASSERT_EQ(metadata_count,1U);
+  ASSERT_EQ(metadata["schema"].as<std::string>(),"workcell_cartesian_path/v1");
+  ASSERT_EQ(metadata["stage"].as<std::string>(),"PREPLAN_LIFT");
+  ASSERT_TRUE(metadata["allow_initial_attached_world_separation"].as<bool>());
+  std::set<std::string> requested;
+  for(const auto& neighbor:metadata["initial_separation_object_ids"]) requested.insert(neighbor.as<std::string>());
+  ASSERT_EQ(requested.size(),2U);
+  planning_scene::PlanningScene scene(model);scene.setPlanningSceneMsg(frozen);
+  robot_trajectory::RobotTrajectory trajectory(model,request.group_name);
+  trajectory.setRobotTrajectoryMsg(scene.getCurrentState(),emitted);
+  auto first=trajectory.getFirstWayPoint();first.update();
+  std::vector<const moveit::core::AttachedBody*> attached;first.getAttachedBodies(attached);
+  ASSERT_EQ(attached.size(),1U);
+  const auto object=attached.front()->getName();
+  ASSERT_GT((attached.front()->getGlobalCollisionBodyTransforms().front().linear()-
+             Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff(),.1);
+  // ROS CDR cannot store DecideContactFn. Restore only pairs named by the
+  // actual request AND established by complete initial typed contact evidence.
+  for(const auto& neighbor:requested) scene.getAllowedCollisionMatrixNonConst().setEntry(object,neighbor,false);
+  collision_detection::CollisionRequest cr;cr.contacts=true;cr.max_contacts=256;cr.max_contacts_per_pair=64;
+  cr.group_name=request.group_name;
+  collision_detection::CollisionResult contacts;scene.checkCollision(cr,contacts,first);
+  ASSERT_TRUE(contacts.collision);ASSERT_FALSE(contacts.contacts.empty());
+  ASSERT_LT(contacts.contact_count,cr.max_contacts);
+  std::set<std::string> actual;std::size_t count=0;
+  for(const auto& pair:contacts.contacts) {
+    ASSERT_FALSE(pair.second.empty());ASSERT_LT(pair.second.size(),cr.max_contacts_per_pair);
+    count+=pair.second.size();
+    for(const auto& contact:pair.second) {
+      const auto neighbor=contact.body_name_1==object?contact.body_name_2:contact.body_name_1;
+      ASSERT_EQ(requested.count(neighbor),1U);
+      ASSERT_TRUE((workcell::PileContact{object,neighbor}(contact)));
+      actual.insert(neighbor);
+    }
+  }
+  ASSERT_EQ(count,contacts.contact_count);ASSERT_EQ(actual,requested);
+  for(const auto& neighbor:actual) {
+    collision_detection::DecideContactFn fn=workcell::PileContact{object,neighbor};
+    scene.getAllowedCollisionMatrixNonConst().setEntry(object,neighbor,fn);
+  }
+  ASSERT_FALSE(scene.isStateColliding(first,""));
+  const auto report=workcell::controller_certificate::certify(trajectory,scene);
+  std::cout<<"REAL_STAGE_A_INITIAL_LIFT result="<<int(report.result)<<" reason="<<report.reason
+    <<" inspected="<<report.inspected<<" certified="<<report.certified<<" subdivided="<<report.subdivided
+    <<" depth="<<report.deepest<<" seconds="<<report.wall_seconds
+    <<" contact_timestamps="<<report.contact_timestamps<<" expired="<<report.initial_contacts_expired
+    <<" failure=["<<report.failure_begin_ns<<","<<report.failure_end_ns<<"]\n";
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_GT(report.contact_timestamps,0U);
+  EXPECT_EQ(report.initial_contacts_expired,actual.size());
 }
 
 #include <geometric_shapes/mesh_operations.h>

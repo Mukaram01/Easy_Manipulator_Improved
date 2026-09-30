@@ -66,23 +66,38 @@ Conditional ACM entries remain the exact typed `SupportContact` or `PileContact`
 predicates; their values and the 0.1 mm contact limit are unchanged. Arbitrary
 conditional callbacks cannot supply an interval permission.
 
-A restricted additional proof handles upright BOX/BOX contact under purely
-vertical prismatic translation. Geometry establishes the face, overlap depth,
-normal and unchanged footprint. Bernstein derivative bounds prove monotonicity.
-Depth/floor checks charge full evaluation and transform uncertainty against the
-existing allowance. A separation-spanning interval must also prove that its
-minimum advance per nanosecond exceeds twice the numerical position error.
-Exact stored-waypoint transitions are checked separately. Otherwise it subdivides
-or returns `UNCERTIFIED`. A previously clear pair requires monotone geometric
-separation and receives no renewed contact allowance.
+The existing `SupportContact` proof handles upright BOX/BOX contact under
+vertical prismatic translation, including its floor, depth and controller
+boundary checks.
 
-Precisely: this proves monotonic continuous nominal segment polynomials and
-monotonic floating JTC outputs at **every representable integer-nanosecond
-controller timestamp**, including segment/terminal transitions. It is an analytic
-bound over all timestamps, not a fixed sampling grid. It is not a physical
-tracking or arbitrary sub-nanosecond error-tube guarantee. Unsupported contact
-shapes, rotations or lateral motion fail closed. This attached-body proof is not
-a detached robot-link/world recovery policy.
+For typed initial `PileContact` pairs, a BOX/BOX proof also supports revolute
+joints and differently oriented neighbours. A common interior point, checked
+against all outward-rounded face inequalities and the full body displacement,
+proves continued contact. Signed full-shape support gaps bound penetration by
+the unchanged 0.1 mm limit; intersection width cannot supply that bound.
+
+Near separation, all 15 separating-axis directions, in both signs, must either
+stay overlapping or have nondecreasing gap. Moving-axis derivatives are included.
+This proves no re-entry of the continuous nominal geometry. Separately, the
+installed JTC evaluator and complete FCL contact enumeration check **every
+integer-nanosecond timestamp** in the bounded crossing intervals (at most 4,096 ns
+per interval and 120,001 attempted timestamp evaluations per certificate).
+Absence of FCL contact also requires strictly positive full-shape geometric
+clearance. Once actual contact expires, any later contact rejects the trajectory.
+The nominal crossing state persists even when a later interval has an interior
+witness. Both states commit only after the whole interval passes.
+
+Strict interval clearance retires the permission permanently. Crossing-mode
+intervals cannot end at a stored waypoint without this clearance; subsequent
+segments must pass the ordinary certificate with their own interpolation and
+FK bounds. All other collisions retain ordinary semantics. Budget exhaustion,
+unsupported geometry and unresolved numerical margins return `UNCERTIFIED`.
+
+Together these checks cover continuous nominal segment polynomials and floating
+JTC outputs at every representable controller timestamp, including exact stored
+waypoints. They do not assert physical tracking or an arbitrary sub-nanosecond
+error-tube guarantee. This attached-body proof is separate from the detached
+robot-link/world recovery policy.
 
 ## Installed controller identity
 

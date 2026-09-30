@@ -19,12 +19,14 @@ enum class ControllerCertificate { CERTIFIED_CLEAR, COLLISION, UNCERTIFIED };
 struct ControllerAuditOptions {
   unsigned max_depth=32;
   std::size_t max_intervals=120001;
+  std::size_t max_contact_timestamps=120001;
   int64_t min_interval_ns=1;
   bool stationary_world=true;
 };
 struct ControllerAuditReport {
   ControllerCertificate result=ControllerCertificate::UNCERTIFIED;
   std::size_t inspected=0, certified=0, subdivided=0;
+  std::size_t contact_timestamps=0, initial_contacts_expired=0;
   unsigned deepest=0;
   int64_t failure_begin_ns=-1, failure_end_ns=-1;
   double wall_seconds=0.;
@@ -415,6 +417,142 @@ inline bool upwardBoxContact(const planning_scene::PlanningScene& scene,
 } } // shared helpers
 #include "detached_contact_certificate.hpp"
 namespace workcell { namespace controller_certificate {
+// Convex BOX proofs for initially permitted attached/world contact. The nominal
+// polynomial and the controller's integer-nanosecond values are separate proof
+// domains; an absolute FK error tube alone cannot prove irreversible separation.
+using IVector=std::array<Interval,3>;
+inline IVector cross(const IVector& a,const IVector& b) {
+  return {a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]};
+}
+inline IVector sum(const IVector& a,const IVector& b) {return {a[0]+b[0],a[1]+b[1],a[2]+b[2]};}
+inline IVector column(const IMatrix& a,unsigned j) {return {a[0][j],a[1][j],a[2][j]};}
+inline std::array<IVector,8> boxCorners(const IMatrix& pose,const shapes::Box& box) {
+  std::array<IVector,8> result;
+  for(unsigned k=0;k<8;++k) for(unsigned i=0;i<3;++i) {
+    result[k][i]=pose[i][3];
+    for(unsigned j=0;j<3;++j) result[k][i]+=pose[i][j]*((k&(1<<j)?1.:-1.)*box.size[j]/2.);
+  }
+  return result;
+}
+inline bool singleBox(const GeometryBody& body) {return body.shapes.size()==1&&body.shapes[0]->type==shapes::BOX;}
+// Negative values bound the translation needed to separate the full shapes,
+// rather than the intersection width (which is unsound for containment).
+inline double boxGap(const GeometryBody& moving,const GeometryBody& fixed) {
+  if(!singleBox(moving)||!singleBox(fixed)) return -INFINITY;
+  std::vector<Eigen::Vector3d> axes;
+  const auto& a=moving.poses[0].linear();const auto& b=fixed.poses[0].linear();
+  for(unsigned i=0;i<3;++i) {
+    axes.push_back(a.col((i+1)%3).cross(a.col((i+2)%3)));
+    axes.push_back(b.col((i+1)%3).cross(b.col((i+2)%3)));
+  }
+  for(unsigned i=0;i<3;++i) for(unsigned j=0;j<3;++j) axes.push_back(a.col(i).cross(b.col(j)));
+  double best=-INFINITY;
+  for(const auto& n:axes) {
+    const double length=n.norm();if(!std::isfinite(length)||length==0.) continue;
+    const Eigen::Vector3d axis=n/length;
+    const auto x=projection(moving,axis),y=projection(fixed,axis);
+    Interval norm2(0.);for(unsigned k=0;k<3;++k) norm2+=boost::numeric::square(Interval(axis[k]));
+    const auto norm=boost::numeric::sqrt(norm2);if(norm.lower()<=0.) continue;
+    best=std::max(best,std::max(((Interval(x.lower())-y.upper())/norm).lower(),
+                             ((Interval(y.lower())-x.upper())/norm).lower()));
+  }
+  return best;
+}
+// A common interior point with more clearance to every moving face than the
+// full body displacement cannot leave either convex solid during this interval.
+// Floating polytope intersections only propose a witness. Every face inequality
+// is subsequently checked with outward arithmetic; proposal tolerances confer
+// no collision permission.
+inline bool boxContactInterior(const GeometryBody& moving,const GeometryBody& fixed,double motion) {
+  if(!singleBox(moving)||!singleBox(fixed)) return false;
+  struct Face {IVector normal;Interval offset;double erosion;Eigen::Vector3d n;double d;};
+  std::vector<Face> faces;
+  for(const auto* body:{&moving,&fixed}) {
+    const auto pose=intervalMatrix(body->poses[0]);const auto& box=static_cast<const shapes::Box&>(*body->shapes[0]);
+    for(unsigned i=0;i<3;++i) for(double sign:{-1.,1.}) {
+      auto n=cross(column(pose,(i+1)%3),column(pose,(i+2)%3));
+      Interval determinant(0.);for(unsigned j=0;j<3;++j) determinant+=n[j]*pose[j][i];
+      if(determinant.lower()<=0.) return false;
+      Interval offset=determinant*box.size[i]/2.,norm2(0.);
+      Eigen::Vector3d proposal;
+      for(unsigned j=0;j<3;++j) {
+        n[j]*=sign;offset+=n[j]*pose[j][3];norm2+=boost::numeric::square(n[j]);
+        proposal[j]=boost::numeric::median(n[j]);
+      }
+      const double erosion=body==&moving?(boost::numeric::sqrt(norm2)*motion).upper():0.;
+      faces.push_back({n,offset,erosion,proposal,boost::numeric::median(offset)});
+    }
+  }
+  Eigen::Vector3d centroid=Eigen::Vector3d::Zero();unsigned count=0;
+  for(unsigned i=0;i<faces.size();++i) for(unsigned j=i+1;j<faces.size();++j) for(unsigned k=j+1;k<faces.size();++k) {
+    Eigen::Matrix3d matrix;matrix.row(0)=faces[i].n;matrix.row(1)=faces[j].n;matrix.row(2)=faces[k].n;
+    if(std::abs(matrix.determinant())<1e-12) continue;
+    const Eigen::Vector3d point=matrix.inverse()*Eigen::Vector3d(faces[i].d,faces[j].d,faces[k].d);
+    if(!point.allFinite()) continue;
+    bool inside=true;for(const auto& f:faces) if(f.n.dot(point)>f.d+1e-12) {inside=false;break;}
+    if(inside) {centroid+=point;++count;}
+  }
+  if(!count) return false;
+  centroid/=count;
+  for(const auto& f:faces) {
+    Interval margin=f.offset;
+    for(unsigned i=0;i<3;++i) margin-=f.normal[i]*centroid[i];
+    if(margin.lower()<=f.erosion) return false;
+  }
+  return true;
+}
+// SAT for the continuous nominal BOXes, with consistently labelled axes across
+// subdivisions. Every potentially separating signed gap must be nondecreasing;
+// a gap proved strictly negative throughout cannot cause expiry in that leaf.
+// Include axis derivatives: the attached box may rotate about revolute joints.
+inline bool nominalBoxNoReentry(const planning_scene::PlanningScene& scene,
+    const moveit::core::AttachedBody& body,const GeometryBody& fixed,
+    const Polynomials& p,const Polynomials& speeds) {
+  if(body.getShapes().size()!=1||body.getShapes()[0]->type!=shapes::BOX||!singleBox(fixed)) return false;
+  const auto origin=multiply(intervalMatrix(body.getPose()),intervalMatrix(body.getShapePoses()[0]));
+  IMatrix link;linkDerivative(body.getAttachedLink(),p,"",&link);
+  const auto a=multiply(link,origin),b=intervalMatrix(fixed.poses[0]);
+  auto ad=zeroMatrix();
+  for(const auto* joint:scene.getRobotModel()->getJointModels()) {
+    if(!joint->getVariableCount()||joint->getMimic()) continue;
+    const auto& name=joint->getVariableNames().at(0);const auto speed=hull(speeds.at(name));
+    if(speed.lower()==0.&&speed.upper()==0.) continue;
+    auto d=multiply(linkDerivative(body.getAttachedLink(),p,name),origin);
+    for(auto& row:d) for(auto& value:row) value*=speed;
+    ad=addMatrix(ad,d);
+  }
+  const auto& box=static_cast<const shapes::Box&>(*body.getShapes()[0]);
+  const auto av=boxCorners(a,box),adv=boxCorners(ad,box),bv=boxCorners(b,static_cast<const shapes::Box&>(*fixed.shapes[0]));
+  const IVector zero{Interval(0.),Interval(0.),Interval(0.)};
+  std::vector<std::pair<IVector,IVector>> axes;
+  for(unsigned i=0;i<3;++i) {
+    const unsigned j=(i+1)%3,k=(i+2)%3;
+    axes.push_back({cross(column(b,j),column(b,k)),zero});
+    axes.push_back({cross(column(a,j),column(a,k)),sum(cross(column(ad,j),column(a,k)),cross(column(a,j),column(ad,k)))});
+  }
+  for(unsigned i=0;i<3;++i) for(unsigned j=0;j<3;++j)
+    axes.push_back({cross(column(b,i),column(a,j)),cross(column(b,i),column(ad,j))});
+  for(const auto& axis:axes) {
+    const auto& n=axis.first;const auto& nd=axis.second;Interval norm2(0.);bool exact_zero=true;
+    for(const auto& x:n) {norm2+=boost::numeric::square(x);exact_zero&=x.lower()==0.&&x.upper()==0.;}
+    if(exact_zero) continue;
+    if(norm2.lower()<=0.) return false;
+    for(double sign:{-1.,1.}) {
+      double gap_upper=INFINITY,minimum_speed=INFINITY;
+      for(unsigned i=0;i<8;++i) for(unsigned j=0;j<8;++j) {
+        Interval gap(0.),speed(0.);
+        for(unsigned k=0;k<3;++k) {
+          const auto delta=av[i][k]-bv[j][k];
+          gap+=sign*n[k]*delta;speed+=sign*(nd[k]*delta+n[k]*adv[i][k]);
+        }
+        gap_upper=std::min(gap_upper,gap.upper());minimum_speed=std::min(minimum_speed,speed.lower());
+      }
+      if(!(gap_upper<0.||minimum_speed>=0.)) return false;
+    }
+  }
+  return true;
+}
+
 inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& trajectory,
     const planning_scene::PlanningScene& scene,const ControllerAuditOptions& options={},
     DetachedAudit* detached=nullptr,std::size_t contact_cap=1000000) {
@@ -460,7 +598,10 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
     }
     // Conditional permissions are identifiable policies, not arbitrary sampled
     // predicates. Keep exact pairs and never change the PlanningScene ACM.
-    struct Conditional {std::string object,world;SupportContact support;bool floor=false;};
+    struct Conditional {
+      std::string object,world;SupportContact support;bool floor=false;
+      bool actual_expired=false, nominal_crossing=false, retired=false;
+    };
     std::vector<Conditional> initial;
     std::vector<const moveit::core::AttachedBody*> attached;first.getAttachedBodies(attached);
     for(const auto* body:attached) for(const auto& id:scene.getWorld()->getObjectIds()) {
@@ -468,6 +609,21 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
       if(!scene.getAllowedCollisionMatrix().getAllowedCollision(body->getName(),id,fn)) continue;
       if(const auto* policy=fn.target<SupportContact>()) initial.push_back({body->getName(),id,*policy,true});
       else if(fn.target<PileContact>()) initial.push_back({body->getName(),id,{},false});
+    }
+    auto contact_acm=scene.getAllowedCollisionMatrix();
+    bool has_pile=false;
+    for(const auto& pair:initial) if(!pair.floor) {
+      contact_acm.setEntry(pair.object,pair.world,false);has_pile=true;
+    }
+    if(has_pile) {
+      const auto contacts=completeContacts(scene,first,contact_cap,&contact_acm);
+      for(auto& pair:initial) if(!pair.floor) {
+        const auto found=contacts.contacts.find(pairKey(pair.object,pair.world));
+        if(found==contacts.contacts.end()) {
+          pair.actual_expired=pair.retired=true;
+        } else for(const auto& contact:found->second)
+          if(!PileContact{pair.object,pair.world}(contact)) throw std::runtime_error("INITIAL_PILE_CONTACT_INVALID");
+      }
     }
     joint_trajectory_controller::Trajectory jtc;
     for(std::size_t segment=1;segment<msg.points.size();++segment) {
@@ -520,7 +676,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
           if(controller_start.getVariablePosition(name)!=trajectory.getWayPoint(segment-1).getVariablePosition(name))
             throw std::runtime_error("DETACHED_CONTROLLER_START_DISCONTINUITY");
       }
-      const auto derivatives=detached?derivativeControls(p,end-begin):Polynomials{};
+      const auto derivatives=(detached||has_pile)?derivativeControls(p,end-begin):Polynomials{};
       std::function<bool(int64_t,int64_t,const Polynomials&,const Polynomials&,unsigned)> visit;
       visit=[&](int64_t lo,int64_t hi,const Polynomials& controls,const Polynomials& speeds,unsigned depth) {
         report.failure_begin_ns=lo;report.failure_end_ns=hi;
@@ -560,7 +716,49 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
             pair.transitions.push_back({pair.state,lo,hi,gap});
           }
         }
-        for(const auto& pair:initial) {
+        const auto geometry=geometryBodies(scene,anchor,&shape_cache);
+        auto proposed_initial=initial;
+        bool initial_proven=true, enumerate_crossing=false;
+        for(auto& pair:proposed_initial) {
+          if(!pair.floor) {
+            acm.setEntry(pair.object,pair.world,false);
+            const auto& moving=geometry.at(pair.object);const auto& fixed=geometry.at(pair.world);
+            const double travel=movement.at(pair.object);
+            const double gap=boxGap(moving,fixed);
+            // A strict interval encloses both nominal and actual geometry. Once
+            // retired, the ordinary collision certificate must prove every
+            // subsequent interval, including both sides of stored waypoints.
+            if(gap>(Interval(travel)+1e-12).upper()) {
+              pair.retired=pair.actual_expired=true;
+              acm.setEntry(pair.object,pair.world,true);continue;
+            }
+            if(pair.retired) continue;
+            const bool depth_bounded=(Interval(gap)-travel).lower()>=-support_contact_tolerance_m;
+            const auto nominal_clear=[&]() {return nominalBoxNoReentry(scene,
+              *anchor.getAttachedBody(pair.object),fixed,controls,speeds);};
+            if(depth_bounded&&!pair.actual_expired&&boxContactInterior(moving,fixed,travel)&&
+                (!pair.nominal_crossing||(hi!=end&&nominal_clear()))) {
+              acm.setEntry(pair.object,pair.world,true);continue;
+            }
+            // Prefer subdivision while an interior witness survives the numeric
+            // error floor. Exhaustive work is reserved for the crossing region,
+            // rather than consuming its bounded budget on ordinary contact.
+            Polynomials constant;
+            for(const auto& item:controls) constant[item.first]={Interval(anchor.getVariablePosition(item.first))};
+            const double error_floor=bodyDisplacements(scene,anchor,constant,errors,&shape_cache).at(pair.object);
+            const bool can_refine=hi-lo>options.min_interval_ns&&
+              ((!pair.actual_expired&&boxContactInterior(moving,fixed,error_floor))||
+               gap>(Interval(error_floor)+1e-12).upper());
+            // No crossing-mode handoff at a stored waypoint: the final leaf
+            // must instead have strict clearance covering its nominal limit,
+            // stored endpoint and FK/evaluation bounds. The next segment is
+            // checked with its own bounds by the retired-pair ordinary proof.
+            if(depth_bounded&&!can_refine&&hi!=end&&hi-lo<=4096&&nominal_clear()) {
+              pair.nominal_crossing=true;enumerate_crossing=true;
+              acm.setEntry(pair.object,pair.world,true);continue;
+            }
+            initial_proven=false;continue;
+          }
           bool boundary_monotone=true;
           if(hi==end) {
             const auto prior=evaluate(end-1),terminal=evaluate(end);
@@ -571,7 +769,40 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
               errors,hi-lo,boundary_monotone))
             acm.setEntry(pair.object,pair.world,true); // distance query only; separate analytic proof above
         }
-        const auto geometry=geometryBodies(scene,anchor,&shape_cache);
+        if(initial_proven&&enumerate_crossing) {
+          // Every integer timestamp is checked, without a stride. The budget
+          // counts attempted work even if another pair later rejects this leaf.
+          // Expiry flags themselves commit only with the complete interval.
+          for(int64_t t=lo;t<=hi;++t) {
+            if(++report.contact_timestamps>options.max_contact_timestamps) {
+              report.reason="CONTACT_TIMESTAMP_LIMIT";return false;
+            }
+            const auto state=evaluate(t);
+            if(!state.satisfiesBounds()) {report.reason="JOINT_LIMIT";return false;}
+            const auto contacts=completeContacts(scene,state,contact_cap,&contact_acm);
+            for(const auto& item:contacts.contacts) {
+              auto pair=std::find_if(proposed_initial.begin(),proposed_initial.end(),[&](const auto& candidate) {
+                return !candidate.floor&&pairKey(candidate.object,candidate.world)==item.first;
+              });
+              if(pair==proposed_initial.end()||pair->actual_expired) {
+                report.result=ControllerCertificate::COLLISION;report.reason="INITIAL_CONTACT_NEW_OR_EXPIRED";return false;
+              }
+              for(const auto& contact:item.second) if(!PileContact{pair->object,pair->world}(contact)) {
+                report.result=ControllerCertificate::COLLISION;report.reason="INITIAL_CONTACT_DEPTH_OR_IDENTITY";return false;
+              }
+            }
+            const auto bodies=geometryBodies(scene,state,&shape_cache);
+            for(auto& pair:proposed_initial) if(!pair.floor&&!pair.retired&&pair.nominal_crossing) {
+              if(!contacts.contacts.count(pairKey(pair.object,pair.world))) {
+                // FCL absence alone cannot establish separation at its numeric
+                // termination boundary. Require full-shape positive clearance.
+                if(boxGap(bodies.at(pair.object),bodies.at(pair.world))<=0.) {initial_proven=false;break;}
+                pair.actual_expired=true;
+              }
+            }
+            if(!initial_proven) break;
+          }
+        }
         std::map<std::string,std::array<Interval,3>> coordinate_projections;
         for(const auto& body:geometry)
           coordinate_projections[body.first]={projection(body.second,Eigen::Vector3d::UnitX()),
@@ -592,7 +823,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         collision_detection::DistanceResult world,self;
         scene.getCollisionEnv()->distanceRobot(req,world,anchor);
         scene.getCollisionEnvUnpadded()->distanceSelf(req,self,anchor);
-        bool clear=detached_proven&&!world.collision&&!self.collision;
+        bool clear=detached_proven&&initial_proven&&!world.collision&&!self.collision;
         for(auto a=geometry.begin();a!=geometry.end();++a) for(auto b=std::next(a);b!=geometry.end();++b) {
           if(!requiredPair(a->second,b->second,acm)) continue;
           const bool robot_world=a->second.type==collision_detection::BodyTypes::WORLD_OBJECT||b->second.type==collision_detection::BodyTypes::WORLD_OBJECT;
@@ -618,7 +849,12 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
           const auto range=hull(item.second)+Interval(-errors.at(item.first),errors.at(item.first));const auto& bounds=scene.getRobotModel()->getVariableBounds(item.first);
           if(bounds.position_bounded_&&(range.lower()<bounds.min_position_||range.upper()>bounds.max_position_)) clear=false;
         }
-        if(clear) {if(detached) detached->pairs=std::move(proposed);++report.certified;return true;}
+        if(clear) {
+          if(detached) detached->pairs=std::move(proposed);
+          for(std::size_t i=0;i<initial.size();++i)
+            if(!initial[i].actual_expired&&proposed_initial[i].actual_expired) ++report.initial_contacts_expired;
+          initial=std::move(proposed_initial);++report.certified;return true;
+        }
         if(depth>=options.max_depth||hi-lo<=options.min_interval_ns||mid==lo||mid==hi) {
           report.reason=detached_proven?"PRECISION_OR_DEPTH_LIMIT":"DETACHED_MONOTONICITY_UNCERTIFIED";return false;
         }
