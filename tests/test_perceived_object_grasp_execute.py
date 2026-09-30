@@ -672,7 +672,7 @@ def test_transfer_seed_rechecks_fresh_target_without_replacing_current_start_or_
     assert view==original and seed['joint_positions']=={'arm':-2.4}
 
 
-@pytest.mark.parametrize('backend,wait', [('simulator',60.),('fake',12.)])
+@pytest.mark.parametrize('backend,wait', [('simulator',120.),('fake',12.)])
 def test_plan_only_wait_includes_simulator_continuous_certificate(backend,wait):
     context,view,target,seed,requests,goals=transfer_segment_fixture()
     context['args'].backend=backend
@@ -684,6 +684,79 @@ def test_plan_only_wait_includes_simulator_continuous_certificate(backend,wait):
     context['action']=plan
     context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
     assert seen==[wait]
+
+
+@pytest.mark.parametrize('completion_seconds', [77.4096,130.,250.])
+def test_simulator_plan_only_observed_slow_certificate_and_bounded_drain(monkeypatch,completion_seconds):
+    """Virtual-clock unit test of real segment/action code, not runtime proof.
+
+    The actual 2026-10-01 revalidation transfer completed successfully after
+    77.4096 seconds. A longer wait must still reject timeout/nonterminal goals.
+    """
+    import ast,copy
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    from full_cycle_preplanner import PlanningLifecycleFailure
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    initial=copy.deepcopy(view)
+    clock=[1000.]
+    context['time']=SimpleNamespace(monotonic=lambda:clock[0])
+    context['deadline']=1900.
+    context['contract']['_candidate_wall_deadline']=1120.
+    context['args'].backend='simulator'
+    result=[None]
+    ready=lambda:clock[0]>=1000.+completion_seconds
+    response=lambda:SimpleNamespace(status=4,result=result[0]) if ready() else None
+    future=SimpleNamespace(done=ready,result=response)
+    cancel=SimpleNamespace(done=lambda:True,
+        result=lambda:SimpleNamespace(return_code=1,goals_canceling=[]))
+    cancellations=[]
+    def request_cancel():
+        cancellations.append(clock[0])
+        return cancel
+    handle=SimpleNamespace(accepted=True,goal_id=SimpleNamespace(uuid=[4]*16),
+        get_result_async=lambda:future,cancel_goal_async=request_cancel)
+    sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
+    fixture_plan=context['action']
+    def send(goal):
+        result[0]=fixture_plan(None,goal,None)
+        return sent
+    client=SimpleNamespace(wait_for_server=lambda **kwargs:True,send_goal_async=send)
+    waits=[]
+    def spin(node,pending,timeout_sec):
+        assert 0.<timeout_sec<=120.
+        if pending is future:
+            waits.append(timeout_sec)
+            clock[0]+=min(timeout_sec,max(0.,1000.+completion_seconds-clock[0]))
+    context.update(plan_client=client,execute_client=object(),controlled_cancel=False,
+        controller_audit=None,node=object(),measurements=None,execution_monitor=None,
+        rclpy=SimpleNamespace(spin_until_future_complete=spin))
+    main=next(n for n in ast.parse(SCRIPT.read_text()).body
+              if isinstance(n,ast.FunctionDef) and n.name=='main')
+    action=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    exec(compile(ast.Module(body=[action],type_ignores=[]),'<actual-slow-plan-action>','exec'),context)
+    if completion_seconds<120.:
+        planned=context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+        assert planned['metadata']['success'] and planned['metadata']['moveit_code']==1
+        assert waits==[120.] and cancellations==[]
+        assert 'interrupted_planning_goals' not in context['summary']
+        assert clock[0]==pytest.approx(1000.+completion_seconds)
+    else:
+        error=RuntimeError if completion_seconds<240. else PlanningLifecycleFailure
+        message='action result timed out' if completion_seconds<240. else 'PLAN_ONLY_GOAL_NOT_TERMINAL'
+        with pytest.raises(error,match=message):
+            context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+        assert waits==[120.,120.] and cancellations==[1120.]
+        record,=context['summary']['interrupted_planning_goals']
+        assert record['terminal_wait_s']==120. and record['cancel_accepted'] is False
+        assert record['terminal_status']==(4 if completion_seconds<240. else None)
+        assert clock[0]<=1240.
+    assert len(goals)==1 and len(requests)==1
+    assert goals[0].planning_options.plan_only
+    assert goals[0].planning_options.planning_scene_diff==initial
+    assert goals[0].request.start_state==initial.robot_state
+    assert goals[0].request.allowed_planning_time==3.
+    assert context['deadline']==1900. and context['contract']['_candidate_wall_deadline']==1120.
+    assert view==initial
 
 
 @pytest.mark.parametrize('terminal', [None,4,5,6])

@@ -1905,11 +1905,13 @@ def main():
         for attempt in range(planning_attempts):
             try:
                 # The simulator adapter certifies the complete controller path
-                # after OMPL returns. Measured certificates take up to 41 s;
-                # retain a bounded completion allowance for the in-flight goal.
+                # after OMPL returns. A measured revalidation certificate took
+                # 76.4 s under simulator load, after subsecond OMPL planning.
+                # Allow up to one full simulator retry slice for that owned
+                # plan-only result; execution keeps its separate motion limit.
                 # Candidate/global budgets are checked between planning calls.
                 result = action(plan_client, goal_msg,
-                    60. if getattr(args,'backend','fake')=='simulator' else 12.)
+                    120. if getattr(args,'backend','fake')=='simulator' else 12.)
                 break
             except MoveItActionFailure as exc:
                 if time.monotonic() >= wall_deadline:

@@ -1,0 +1,226 @@
+{
+  "head": "0c0c866246ef8b644158571bffab0ae6bcc155d5",
+  "resolve": {
+    "result": "PLAN_ONLY",
+    "full_cycle_prevalidated": true,
+    "selected_object_id": "runtime::part_06",
+    "candidate_search": {
+      "discovery_candidate_wall_budget": 60.0,
+      "discovery_planning_attempts": 1,
+      "discovery_planning_time": 0.75,
+      "extraction_variants_evaluated": 9,
+      "fresh_target_objects": 10,
+      "full_planning_time": 3.0,
+      "grasps_considered": 10,
+      "mode": "strategy_phased_progress_beam",
+      "objects_considered": 3,
+      "phases": [
+        {
+          "discovered_candidates": 10,
+          "discovery_code": "STRATEGY_PHASE_COMPLETE",
+          "discovery_status": "BLOCKED",
+          "discovery_stop_reason": "RETRY_BUDGET_RESERVED",
+          "phase_index": 0,
+          "remaining_wall_seconds": 403.85707824400015,
+          "retries": [
+            {
+              "candidate_id": "finger_pinch_basic::001",
+              "failed_stage": null,
+              "object_id": "runtime::part_06",
+              "progress_passes": 14,
+              "result_code": "COMPLETE_CYCLE_RESOLVED",
+              "result_status": "READY",
+              "strategy_ref": "finger_pinch_basic"
+            }
+          ],
+          "retry_priority": [
+            {
+              "candidate_id": "finger_pinch_basic::001",
+              "failed_stage": "PREPLAN_TRANSFER",
+              "object_id": "runtime::part_06",
+              "progress_passes": 7,
+              "strategy_ref": "finger_pinch_basic"
+            },
+            {
+              "candidate_id": "finger_pinch_basic::003",
+              "failed_stage": "PREPLAN_TRANSFER",
+              "object_id": "runtime::part_07",
+              "progress_passes": 7,
+              "strategy_ref": "finger_pinch_basic"
+            },
+            {
+              "candidate_id": "finger_pinch_basic::003",
+              "failed_stage": "PREPLAN_LIFT",
+              "object_id": "runtime::part_06",
+              "progress_passes": 5,
+              "strategy_ref": "finger_pinch_basic"
+            }
+          ],
+          "retry_reserved_wall_seconds": 360.0,
+          "retryable_candidates": 3,
+          "strategy_ref": "finger_pinch_basic"
+        }
+      ],
+      "retry_attempted": [
+        {
+          "candidate_id": "finger_pinch_basic::001",
+          "failed_stage": null,
+          "object_id": "runtime::part_06",
+          "progress_passes": 14,
+          "result_code": "COMPLETE_CYCLE_RESOLVED",
+          "result_status": "READY",
+          "strategy_ref": "finger_pinch_basic"
+        }
+      ],
+      "retry_beam_width": 3,
+      "retry_candidate_wall_budget": 120.0,
+      "retry_pass_used": true,
+      "selected_extraction": {
+        "candidate_id": "finger_pinch_basic::001",
+        "object_id": "runtime::part_06",
+        "offset_xyz_m": [
+          -0.0019254273725999656,
+          0.0005410447604799377,
+          0.1
+        ],
+        "schema": "workcell_extraction_intent/v1",
+        "variant_id": "geometry_away_1"
+      },
+      "strategy_phases": [
+        "finger_pinch_basic",
+        "top_2f",
+        "side_grip_basic"
+      ]
+    },
+    "successful_retry_wall_seconds": 98.65274664199387
+  },
+  "revalidation": {
+    "result": "FAIL",
+    "failure": "PREPLAN_TRANSFER_FAILED: action result timed out",
+    "interrupted_planning_goals": [
+      {
+        "cancel_accepted": false,
+        "goal_uuid": "f7d1c83bbdce4406bd11e510cb385645",
+        "moveit_code": 1,
+        "terminal_status": 4,
+        "terminal_wait_s": 60.0
+      }
+    ],
+    "transfer_action_seconds": 77.4096,
+    "transfer_certificate_seconds": 76.364285,
+    "transfer_intervals": 1894
+  },
+  "shutdown": {
+    "started": true,
+    "clean": true,
+    "returncode": 0,
+    "escalation": null,
+    "remaining_owned_processes": false,
+    "root_alive_before_cleanup": true,
+    "cleanup_log_offset": 78365,
+    "sent_signals": [
+      "SIGINT"
+    ],
+    "children": [
+      {
+        "name": "workcell_studio_planning_scene_node.py-6",
+        "pid": 93080,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": true,
+        "expected": true
+      },
+      {
+        "name": "spawner-7",
+        "pid": 93187,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": true,
+        "expected": true
+      },
+      {
+        "name": "spawner-8",
+        "pid": 93225,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": true,
+        "expected": true
+      },
+      {
+        "name": "spawner-9",
+        "pid": 93288,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": true,
+        "expected": true
+      },
+      {
+        "name": "spawner-10",
+        "pid": 93335,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": true,
+        "expected": true
+      },
+      {
+        "name": "parameter_bridge-4",
+        "pid": 93076,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": false,
+        "expected": true
+      },
+      {
+        "name": "static_transform_publisher-2",
+        "pid": 93072,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": false,
+        "expected": true
+      },
+      {
+        "name": "robot_state_publisher-1",
+        "pid": 93070,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": false,
+        "expected": true
+      },
+      {
+        "name": "move_group-5",
+        "pid": 93078,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": false,
+        "expected": true
+      },
+      {
+        "name": "python3-3",
+        "pid": 93074,
+        "returncode": 0,
+        "signal": null,
+        "before_cleanup": false,
+        "expected": true
+      }
+    ],
+    "crash_evidence": []
+  },
+  "inputs": [
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-retry-reservation/01-resolve/resolve/summary.json",
+      "sha256": "9e2cfc1d3d60e7f35438f5a721957e128660f91c49a9dd03946a264e1a5b6e42"
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-retry-reservation/01-resolve/revalidate/summary.json",
+      "sha256": "d87e86491eaa9811257b63b1d98c30bea267d813673b2ebb1e7f8580a4c0b8ba"
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-retry-reservation/01-resolve/session-report.json",
+      "sha256": "cba46619d2b78bf2235b122c2950f5a10a1d29d5743099ef07f01a979ded516c"
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-retry-reservation/01-resolve/launch.log",
+      "sha256": "954d95fc8577840bed19f1fb96873096c6903b27d099a9d9113c2aeddaf70865"
+    }
+  ]
+}
