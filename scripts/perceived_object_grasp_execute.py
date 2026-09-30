@@ -645,11 +645,13 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
 def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         contract, operations, deadline, summary, resolved=None,
                         planning_time=3.0, retry_candidate_budget=20.0,
-                        discovery_candidate_budget=0.75):
+                        discovery_candidate_budget=0.75, reserve_retry_budget=False):
     """Resolve with fair discovery, then spend retries only on stochastic failures.
 
-    A fresh resolve gives every candidate one bounded planning window before any
-    candidate receives an identical retry. Revalidation of an already-resolved
+    A fresh resolve normally gives every candidate one bounded planning window
+    before any candidate receives an identical retry. Expensive simulator
+    discovery can reserve time for the existing retry beam once a retryable
+    candidate is known. Revalidation of an already-resolved
     handoff keeps the historical full planning budget because it checks exactly
     one bound candidate and is not a search.
     """
@@ -833,6 +835,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         for phase_index, strategy in enumerate(strategy_phases):
             phase_retryable = set()
             phase_discovered = []
+            discovery_cutoff = {}
 
             def discover(request, strategy=strategy):
                 key = request_key(request)
@@ -843,6 +846,19 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                     return phase_boundary(strategy)
                 if cached is not None:
                     return copy.deepcopy(cached)
+                if reserve_retry_budget and grasp_policy != 'EXACT' and phase_retryable:
+                    remaining = deadline - time.monotonic()
+                    reserve = retry_beam_width * retry_candidate_budget
+                    # Keep discovery order, but stop starting another fair
+                    # slice when it would consume the existing retry beam's
+                    # allowance. An in-flight plan must still drain normally;
+                    # this boundary does not extend any deadline or watchdog.
+                    if 0. < remaining <= discovery_candidate_budget + reserve:
+                        discovery_cutoff.update(
+                            discovery_stop_reason='RETRY_BUDGET_RESERVED',
+                            remaining_wall_seconds=remaining,
+                            retry_reserved_wall_seconds=reserve)
+                        return phase_boundary(strategy)
                 if key not in discovery_order:
                     discovery_order[key] = len(discovery_order)
                 outcome = evaluate_once(
@@ -869,6 +885,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 'retry_priority': [],
                 'retries': [],
             }
+            phase_record.update(discovery_cutoff)
             phase_evidence.append(phase_record)
 
             if resolution['readiness_status'] in ('READY', 'WARNING'):
@@ -2144,7 +2161,8 @@ def main():
                 deadline=deadline, summary=summary, resolved=expected_resolution,
                 planning_time=args.segment_planning_time,
                 retry_candidate_budget=120. if args.backend=='simulator' else 20.,
-                discovery_candidate_budget=60. if args.backend=='simulator' else .75)
+                discovery_candidate_budget=60. if args.backend=='simulator' else .75,
+                reserve_retry_budget=args.backend=='simulator')
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')

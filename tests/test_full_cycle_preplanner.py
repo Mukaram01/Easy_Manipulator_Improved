@@ -801,6 +801,177 @@ def test_discovery_wall_budget_rejects_invalid_values(monkeypatch,budget):
     assert goals==[]
 
 
+def test_retry_reservation_preserves_exact_first_candidate(monkeypatch):
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,'EXACT')
+    kwargs.update(deadline=clock[0]+1000.,discovery_candidate_budget=.75,
+                  reserve_retry_budget=True)
+    with pytest.raises(RuntimeError):
+        runtime.plan_authored_cycle(**kwargs)
+    attempt,=kwargs['summary']['candidate_attempts']
+    assert attempt['candidate_id']=='top_2f::000'
+    assert attempt['search_pass']=='discovery:top_2f'
+    assert attempt['reason_code']=='CANDIDATE_SLICE_EXHAUSTED'
+    assert kwargs['summary']['candidate_search']['retry_pass_used'] is False
+    assert settings==[('discovery:top_2f',1,.75)]
+    assert [goal[0] for goal in goals]==['PREPLAN_APPROACH']
+    assert validity==[]
+
+
+def test_retry_reservation_leaves_time_for_deepest_candidate_and_complete_cycle(monkeypatch):
+    """Unit replay of observed discovery costs; no runtime qualification claim.
+
+    Durations are the first 12 attempts in the 2026-09-30 transfer-clearance
+    Resolve summary. Its first object's candidates 001/003 reached transfer
+    and lift with 7/5 passed checks, but all 900 seconds went to discovery.
+    """
+    import full_cycle_preplanner
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,'PREFERRED')
+    grasp=kwargs['intent']['pick']['grasp']
+    grasp['strategy_ref']='finger_pinch_basic'
+    grasp['approach']['axis']='tool_z'
+    grasp['orientation']['mode']='tool_aligned'
+    original=kwargs['targets'][0]
+    kwargs['targets']=[original]+[
+        dict(copy.deepcopy(original),id=f'observed-box-{index}') for index in range(1,4)]
+    kwargs.update(deadline=1900.,discovery_candidate_budget=60.,reserve_retry_budget=True)
+    initial=copy.deepcopy(kwargs['initial_scene'])
+    durations=[22.235,79.809,10.465,60.848,9.320,98.731,
+               10.207,68.800,9.738,53.203,10.688,46.107]
+    discovered=[]
+    saved={}
+    real_preplan=full_cycle_preplanner.preplan_full_cycle
+
+    def observed_discovery_then_real_retry(**arguments):
+        candidate=arguments['candidate']
+        phase=kwargs['contract']['_candidate_search_pass']
+        if phase.startswith('retry:'):
+            assert phase=='retry:finger_pinch_basic'
+            assert arguments['observation']['id']==original['id']
+            assert candidate.candidate_id=='finger_pinch_basic::001'
+            assert arguments['contract']['approach_ik']==saved[candidate.candidate_id]
+            assert arguments['deadline']==pytest.approx(clock[0]+120.)
+            assert arguments['contract']['search_deadline']==1900.
+            assert kwargs['contract']['_candidate_planning_attempts']==3
+            assert kwargs['contract']['_candidate_planning_time']==3.
+            return real_preplan(**arguments)
+        index=len(discovered)
+        discovered.append((arguments['observation']['id'],candidate.candidate_id))
+        assert phase=='discovery:finger_pinch_basic'
+        assert arguments['deadline']==pytest.approx(min(1900.,clock[0]+60.))
+        assert kwargs['contract']['_candidate_planning_attempts']==1
+        assert kwargs['contract']['_candidate_planning_time']==.75
+        clock[0]+=durations[index] if index<len(durations) else 60.
+        retryable=index in (1,3)
+        stages=[]
+        checks=[]
+        failed='PREPLAN_TRANSFER' if index==1 else 'PREPLAN_LIFT'
+        if retryable:
+            target=arguments['operations'].pose_message(candidate.approach_pose)
+            binding=runtime.approach_ik_binding(target,kwargs['contract'],
+                dict(zip(kwargs['contract']['home_joint_names'],candidate.approach_pose)))
+            saved[candidate.candidate_id]=copy.deepcopy(binding)
+            stages=[dict(stage='PREPLAN_APPROACH',success=True,approach_ik=binding)]
+            checks=[dict(code=name,status='PASS') for name in (
+                'GENERATE_GRASPS','PREPLAN_APPROACH','PREPLAN_GRASP',
+                'PREPLAN_CLOSE_GRIPPER','GRASP_GEOMETRY','ATTACH','PREPLAN_LIFT')[:7 if index==1 else 5]]
+        code='CANDIDATE_SLICE_EXHAUSTED' if retryable else 'PREPLAN_GRASP_FAILED'
+        checks.append(dict(code=failed,status='FAIL',failed_stage=failed,
+                           failure_kind='budget' if retryable else 'collision'))
+        return NS(success=False,candidate_id=candidate.candidate_id,reason_code=code,
+                  reason='recorded discovery outcome',checks=checks,stages=stages,
+                  extraction_attempts=[],cycle=None)
+
+    monkeypatch.setattr(full_cycle_preplanner,'preplan_full_cycle',observed_discovery_then_real_retry)
+    cycle=runtime.plan_authored_cycle(**kwargs)
+    assert discovered==[(target['id'],f'finger_pinch_basic::{index:03d}')
+                       for target in kwargs['targets'][:3] for index in range(4)]
+    assert sum(durations)==pytest.approx(480.151)
+    attempts=kwargs['summary']['candidate_attempts']
+    assert len(attempts)==13
+    assert all(a['candidate_wall_budget']==60. and a['planning_attempts']==1
+               and a['segment_planning_time']==.75 for a in attempts[:12])
+    retry=attempts[-1]
+    assert (retry['object_id'],retry['candidate_id'])==discovered[1]
+    assert retry['candidate_wall_budget']==120. and retry['planning_attempts']==3
+    assert retry['segment_planning_time']==3. and retry['candidate_wall_seconds']==32.
+    assert clock[0]<1900. and kwargs['deadline']==1900.
+    assert kwargs['summary']['candidate_search']['retry_pass_used'] is True
+    phase=kwargs['summary']['candidate_search']['phases'][0]
+    assert phase['discovered_candidates']==12 and phase['retryable_candidates']==2
+    assert phase['discovery_stop_reason']=='RETRY_BUDGET_RESERVED'
+    assert phase['remaining_wall_seconds']==pytest.approx(900.-sum(durations))
+    assert phase['retry_reserved_wall_seconds']==360.
+    assert phase['retry_priority'][0]['progress_passes']==7
+    assert len(kwargs['summary']['candidate_search']['phases'])==1
+    assert settings==[('retry:finger_pinch_basic',3,3.)]*9
+    assert cycle['full_cycle_prevalidated']
+    assert [step['stage'] for step in cycle['steps']]==EXPECTED
+    assert any(check['code']=='DESTINATION_CONTAINMENT' and check['status']=='PASS'
+               for check in retry['checks'])
+    assert validity==pytest.approx([.01005,.0201])
+    assert cycle['steps'][-1]['after'].robot_state==initial.robot_state
+    assert cycle['steps'][-1]['after'].allowed_collision_matrix==initial.allowed_collision_matrix
+    assert kwargs['initial_scene']==initial
+
+
+def test_retry_reservation_without_retryable_candidate_keeps_discovery_order(monkeypatch):
+    import full_cycle_preplanner
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,'PREFERRED')
+    kwargs.update(deadline=clock[0]+300.,discovery_candidate_budget=60.,reserve_retry_budget=True)
+    calls=[]
+    real_preplan=full_cycle_preplanner.preplan_full_cycle
+    def deterministic_failures_then_complete(**arguments):
+        candidate=arguments['candidate']
+        calls.append(candidate.candidate_id)
+        if candidate.candidate_id=='top_2f::007':
+            return real_preplan(**arguments)
+        clock[0]+=1.
+        return NS(success=False,candidate_id=candidate.candidate_id,
+                  reason_code='PREPLAN_APPROACH_FAILED',reason='IK failed',
+                  checks=[dict(code='PREPLAN_APPROACH',status='FAIL',
+                               failure_kind='planning',moveit_code=-31)],
+                  stages=[],extraction_attempts=[],cycle=None)
+    monkeypatch.setattr(full_cycle_preplanner,'preplan_full_cycle',deterministic_failures_then_complete)
+    cycle=runtime.plan_authored_cycle(**kwargs)
+    assert calls==[f'top_2f::{index:03d}' for index in range(8)]
+    assert cycle['candidate'].candidate_id=='top_2f::007'
+    assert [step['stage'] for step in cycle['steps']]==EXPECTED
+    assert kwargs['summary']['candidate_search']['retry_pass_used'] is False
+    assert 'discovery_stop_reason' not in kwargs['summary']['candidate_search']['phases'][0]
+    assert settings==[('discovery:top_2f',1,.75)]*9
+
+
+def test_retry_reservation_does_not_rename_true_global_expiry(monkeypatch):
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,'AUTO')
+    kwargs.update(deadline=clock[0]+23.,discovery_candidate_budget=60.,reserve_retry_budget=True)
+    with pytest.raises(RuntimeError):
+        runtime.plan_authored_cycle(**kwargs)
+    attempt,=kwargs['summary']['candidate_attempts']
+    assert attempt['reason_code']=='SEARCH_BUDGET_EXHAUSTED'
+    assert kwargs['summary']['task_intent_resolution']['readiness']['primary_code']=='SEARCH_BUDGET_EXHAUSTED'
+    assert kwargs['summary']['candidate_search']['retry_pass_used'] is False
+    assert 'discovery_stop_reason' not in kwargs['summary']['candidate_search']['phases'][0]
+    assert [goal[0] for goal in goals]==['PREPLAN_APPROACH']
+
+
+def test_retry_reservation_leaves_resolved_revalidation_unchanged(monkeypatch):
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,'AUTO')
+    kwargs.update(deadline=clock[0]+1000.,discovery_candidate_budget=60.)
+    selected=runtime.plan_authored_cycle(**kwargs)
+    resolved=copy.deepcopy(kwargs['summary']['task_intent_resolution'])
+    goals.clear();validity.clear();settings.clear()
+    kwargs.update(deadline=clock[0]+100.,discovery_candidate_budget=.75,
+                  reserve_retry_budget=True,resolved=resolved,summary={'candidate_attempts':[]})
+    cycle=runtime.plan_authored_cycle(**kwargs)
+    assert cycle['candidate']==selected['candidate']
+    assert [step['stage'] for step in cycle['steps']]==EXPECTED
+    assert settings==[('revalidate',3,3.)]*9
+    attempt,=kwargs['summary']['candidate_attempts']
+    assert attempt['candidate_wall_budget'] is None
+    assert kwargs['summary']['candidate_search']['mode']=='resolved_revalidation'
+    assert kwargs['summary']['resolution_sha256']==resolved['resolution_sha256']
+
+
 def test_authored_retry_prioritizes_deepest_discovery_progress(monkeypatch):
     """A later candidate that reached lift is retried before shallow timeouts."""
     from types import SimpleNamespace

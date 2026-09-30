@@ -1,0 +1,428 @@
+{
+  "repo_head": "ebdb0f08dba6426591663744e035f6f41a2eeb14",
+  "scope": "Observed pre-fix Resolve timing and retry starvation. No physical execution or Stage-A acceptance.",
+  "failure": "SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted",
+  "candidate_search": {
+    "discovery_candidate_wall_budget": 60.0,
+    "discovery_planning_attempts": 1,
+    "discovery_planning_time": 0.75,
+    "extraction_variants_evaluated": 5,
+    "fresh_target_objects": 10,
+    "full_planning_time": 3.0,
+    "grasps_considered": 37,
+    "mode": "strategy_phased_progress_beam",
+    "objects_considered": 10,
+    "phases": [
+      {
+        "discovered_candidates": 37,
+        "discovery_code": "SEARCH_BUDGET_EXHAUSTED",
+        "discovery_status": "BLOCKED",
+        "phase_index": 0,
+        "retries": [],
+        "retry_priority": [],
+        "retryable_candidates": 3,
+        "strategy_ref": "finger_pinch_basic"
+      }
+    ],
+    "retry_attempted": [],
+    "retry_beam_width": 3,
+    "retry_candidate_wall_budget": 120.0,
+    "retry_pass_used": false,
+    "selected_extraction": null,
+    "strategy_phases": [
+      "finger_pinch_basic",
+      "top_2f",
+      "side_grip_basic"
+    ]
+  },
+  "attempts": [
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 22.235381980004604,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 79.80940939199354,
+      "passed_checks": 7
+    },
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 10.465203211002517,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 60.84808924900426,
+      "passed_checks": 5
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 9.320430511994346,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "NO_VALID_EXTRACTION",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 98.73075353599415,
+      "passed_checks": 5
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 10.207212503002665,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 68.80008851300227,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_01",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 9.738257711003826,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_01",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 53.20309139999881,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_01",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 10.687666063997312,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_01",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 46.10668061099568,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_08",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.0565747680011555,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_08",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.0590758430043934,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_08",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.050444617998437,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_08",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.0583435299995472,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_02",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 20.986365483004192,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_02",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 60.14972547200159,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_02",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 10.68717050399573,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_02",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 64.51164525900094,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_09",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.0527968750029686,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_09",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.0555525489980937,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_09",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.0526197389990557,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_09",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 1.0492700800023158,
+      "passed_checks": 0
+    },
+    {
+      "object_id": "runtime::part_03",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 9.517014648998156,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_03",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 47.99195339399739,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_03",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 17.228005930999643,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_03",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 27.20922006299952,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_05",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 21.126710767995974,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_05",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 19.264409409996006,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_05",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 10.05582237100316,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_05",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 31.220083778003755,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_00",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 23.31635201100289,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_00",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 10.849792537999747,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_00",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 20.332559438000317,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_00",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 10.139659520995338,
+      "passed_checks": 1
+    },
+    {
+      "object_id": "runtime::part_04",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "reason_code": "SEARCH_BUDGET_EXHAUSTED",
+      "candidate_wall_budget": 60.0,
+      "candidate_wall_seconds": 9.416474672005279,
+      "passed_checks": 1
+    }
+  ],
+  "interrupted_planning_goals": [
+    {
+      "cancel_accepted": false,
+      "goal_uuid": "1fcaf1499e764be38438cb87de693461",
+      "moveit_code": 1,
+      "terminal_status": 4,
+      "terminal_wait_s": 60.0
+    },
+    {
+      "cancel_accepted": false,
+      "goal_uuid": "5d63695f384b4b51a0aed16226d54267",
+      "moveit_code": -2,
+      "terminal_status": 6,
+      "terminal_wait_s": 60.0
+    },
+    {
+      "cancel_accepted": false,
+      "goal_uuid": "9723eec7acec4ffba865cbfc84c65154",
+      "moveit_code": 1,
+      "terminal_status": 4,
+      "terminal_wait_s": 60.0
+    }
+  ],
+  "shutdown": {
+    "clean": true,
+    "returncode": 0,
+    "escalation": null,
+    "remaining_owned_processes": false,
+    "sent_signals": [
+      "SIGINT"
+    ],
+    "crash_evidence": []
+  },
+  "evidence": [
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-transfer-clearance/01-resolve/resolve/summary.json",
+      "sha256": "0d797744b1d23683fa55e862ce33f6756f531b31d235a0adddc0673cfe9a23e8"
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-transfer-clearance/01-resolve/session-report.json",
+      "sha256": "bfef3671c3b689a6051e2d1ea660768cd1d4aa98f33f83fc7d6b6e9930c56e38"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/transfer-clearance/source-freeze.json",
+      "sha256": "4daad195ba88cf610590de027ce7cb5298f4f1b4027e11757629ab2518d9fe3f"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/transfer-clearance/diagnostic-outcome.json",
+      "sha256": "5bd3f56402e1aa72b88912f884b9701edcc2ae2cd2d5b7a284adc4a6c720da93"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/transfer-clearance/trace-provenance.json",
+      "sha256": "65a213f9f7a98a32db0c573aa55a043186a44c0ff28f8267565b17389920955f"
+    }
+  ]
+}
