@@ -132,7 +132,10 @@ def test_v1_migration_preserves_top2f_and_records_catalog_materialization():
     assert migrated["pick"]["grasp"]["policy"] == "EXACT"
     assert migrated["pick"]["grasp"]["strategy_ref"] == "top_2f"
     assert migrated["provenance"]["migration"]["materialized_from_catalog"]
-    assert migrated["place"]["target"]["region_ref"] == "default_ddef test_v1_missing_place_clearance_uses_current_v2_default_and_explicit_value_survives():
+    assert migrated["place"]["target"]["region_ref"] == "default_drop_zone"
+
+
+def test_v1_missing_place_clearance_uses_current_v2_default_and_explicit_value_survives():
     import yaml
     env = yaml.safe_load(
         (Path(__file__).parents[1] / "scenes/ur5_2f_test/environment.yaml").read_text()
@@ -175,9 +178,6 @@ def test_v1_migration_preserves_top2f_and_records_catalog_materialization():
     explicit["place"]["place_clearance_m"] = 0.05
     migrated_explicit = migrate_v1(explicit, env)
     assert migrated_explicit["place"]["placement"]["clearance_m"] == pytest.approx(0.05)
-
-
-rop_zone"
 
 
 def test_v1_non_z_up_retreat_axis_survives_migration():
