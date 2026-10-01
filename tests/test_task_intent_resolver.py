@@ -520,3 +520,42 @@ def test_all_objects_without_extraction_remain_blocked():
     assert result['readiness_status']=='BLOCKED'
     assert result['readiness']['primary_code']=='NO_VALID_EXTRACTION'
     assert result['grasp_resolution']['selected_object_id'] is None
+
+
+@pytest.mark.parametrize('stop',[False,True])
+def test_deferred_phase_control_is_not_a_candidate_failure(stop):
+    resolver=resolver_module();calls=[]
+    check={'code':'PREPLAN_HOME','status':'FAIL','reason_code':'CANDIDATE_SLICE_EXHAUSTED'}
+    def evaluate(request):
+        calls.append(request['candidate'].candidate_id)
+        if len(calls)==1:
+            return dict(success=False,checks=[check],reason_code='CANDIDATE_SLICE_EXHAUSTED',
+                        reason='candidate exhausted its bounded slice')
+        if len(calls)==2:
+            return dict(deferred=True,stop_search=stop,checks=[],
+                        reason_code='STRATEGY_PHASE_COMPLETE',reason='internal control')
+        return pass_cycle(request)
+    result=resolver.resolve_task_intent(valid_intent(),environment(),cell(),observations(),evaluate,now=100.)
+    attempts=result['grasp_resolution']['attempts']
+    assert len(attempts)==(1 if stop else 2)
+    assert all(a['candidate_id']!='top_2f::001' for a in attempts)
+    if stop:
+        assert result['readiness_status']=='BLOCKED'
+        assert result['readiness']==dict(primary_code='CANDIDATE_SLICE_EXHAUSTED',
+            reason='candidate exhausted its bounded slice',checks=[check])
+    else:
+        assert result['readiness_status']=='READY'
+        assert result['grasp_resolution']['selected_candidate_id']=='top_2f::002'
+
+
+def test_exact_never_substitutes_after_deferred_control():
+    resolver=resolver_module();calls=[]
+    def evaluate(request):
+        calls.append(request['candidate'].candidate_id)
+        return dict(deferred=True,stop_search=False)
+    result=resolver.resolve_task_intent(valid_intent('EXACT'),environment(),cell(),observations(),evaluate,now=100.)
+    assert calls==['top_2f::000']
+    assert result['readiness_status']=='BLOCKED'
+    assert result['readiness']['primary_code']=='NO_FEASIBLE_CYCLE'
+    assert result['grasp_resolution']['attempts']==[]
+    assert result['grasp_resolution']['selected_object_id'] is None

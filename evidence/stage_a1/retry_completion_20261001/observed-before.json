@@ -1,0 +1,746 @@
+{
+  "head": "2f5cc298d7c8fd5ceafd341d69c6c2125cb260d4",
+  "result": "FAIL",
+  "failure": "STRATEGY_PHASE_COMPLETE: Bounded discovery for side_grip_basic is complete; retry before fallback.",
+  "execution_attempted": false,
+  "interrupted_planning_goals": [],
+  "candidate_search": {
+    "discovery_candidate_wall_budget": 60.0,
+    "discovery_planning_attempts": 1,
+    "discovery_planning_time": 0.75,
+    "extraction_variants_evaluated": 13,
+    "fresh_target_objects": 10,
+    "full_planning_time": 3.0,
+    "grasps_considered": 9,
+    "mode": "strategy_phased_progress_beam",
+    "objects_considered": 3,
+    "phases": [
+      {
+        "discovered_candidates": 9,
+        "discovery_code": "STRATEGY_PHASE_COMPLETE",
+        "discovery_status": "BLOCKED",
+        "discovery_stop_reason": "RETRY_BUDGET_RESERVED",
+        "phase_index": 0,
+        "remaining_wall_seconds": 390.75408982600493,
+        "retries": [
+          {
+            "candidate_id": "finger_pinch_basic::003",
+            "failed_stage": "PREPLAN_HOME",
+            "object_id": "runtime::part_06",
+            "progress_passes": 13,
+            "result_code": "STRATEGY_PHASE_COMPLETE",
+            "result_status": "BLOCKED",
+            "strategy_ref": "finger_pinch_basic"
+          },
+          {
+            "candidate_id": "finger_pinch_basic::001",
+            "failed_stage": "PREPLAN_PLACE",
+            "object_id": "runtime::part_07",
+            "progress_passes": 8,
+            "result_code": "STRATEGY_PHASE_COMPLETE",
+            "result_status": "BLOCKED",
+            "strategy_ref": "finger_pinch_basic"
+          },
+          {
+            "candidate_id": "finger_pinch_basic::003",
+            "failed_stage": "PREPLAN_PLACE",
+            "object_id": "runtime::part_07",
+            "progress_passes": 8,
+            "result_code": "STRATEGY_PHASE_COMPLETE",
+            "result_status": "BLOCKED",
+            "strategy_ref": "finger_pinch_basic"
+          }
+        ],
+        "retry_priority": [
+          {
+            "candidate_id": "finger_pinch_basic::003",
+            "failed_stage": "PREPLAN_TRANSFER",
+            "object_id": "runtime::part_06",
+            "progress_passes": 7,
+            "strategy_ref": "finger_pinch_basic"
+          },
+          {
+            "candidate_id": "finger_pinch_basic::001",
+            "failed_stage": "PREPLAN_TRANSFER",
+            "object_id": "runtime::part_07",
+            "progress_passes": 7,
+            "strategy_ref": "finger_pinch_basic"
+          },
+          {
+            "candidate_id": "finger_pinch_basic::003",
+            "failed_stage": "PREPLAN_TRANSFER",
+            "object_id": "runtime::part_07",
+            "progress_passes": 7,
+            "strategy_ref": "finger_pinch_basic"
+          },
+          {
+            "candidate_id": "finger_pinch_basic::001",
+            "failed_stage": "PREPLAN_LIFT",
+            "object_id": "runtime::part_06",
+            "progress_passes": 5,
+            "strategy_ref": "finger_pinch_basic"
+          }
+        ],
+        "retry_reserved_wall_seconds": 360.0,
+        "retryable_candidates": 4,
+        "strategy_ref": "finger_pinch_basic"
+      },
+      {
+        "discovered_candidates": 0,
+        "discovery_code": "STRATEGY_PHASE_COMPLETE",
+        "discovery_status": "BLOCKED",
+        "phase_index": 1,
+        "retries": [],
+        "retry_priority": [],
+        "retryable_candidates": 0,
+        "strategy_ref": "top_2f"
+      },
+      {
+        "discovered_candidates": 0,
+        "discovery_code": "STRATEGY_PHASE_COMPLETE",
+        "discovery_status": "BLOCKED",
+        "phase_index": 2,
+        "retries": [],
+        "retry_priority": [],
+        "retryable_candidates": 0,
+        "strategy_ref": "side_grip_basic"
+      }
+    ],
+    "retry_attempted": [
+      {
+        "candidate_id": "finger_pinch_basic::003",
+        "failed_stage": "PREPLAN_HOME",
+        "object_id": "runtime::part_06",
+        "progress_passes": 13,
+        "result_code": "STRATEGY_PHASE_COMPLETE",
+        "result_status": "BLOCKED",
+        "strategy_ref": "finger_pinch_basic"
+      },
+      {
+        "candidate_id": "finger_pinch_basic::001",
+        "failed_stage": "PREPLAN_PLACE",
+        "object_id": "runtime::part_07",
+        "progress_passes": 8,
+        "result_code": "STRATEGY_PHASE_COMPLETE",
+        "result_status": "BLOCKED",
+        "strategy_ref": "finger_pinch_basic"
+      },
+      {
+        "candidate_id": "finger_pinch_basic::003",
+        "failed_stage": "PREPLAN_PLACE",
+        "object_id": "runtime::part_07",
+        "progress_passes": 8,
+        "result_code": "STRATEGY_PHASE_COMPLETE",
+        "result_status": "BLOCKED",
+        "strategy_ref": "finger_pinch_basic"
+      }
+    ],
+    "retry_beam_width": 3,
+    "retry_candidate_wall_budget": 120.0,
+    "retry_pass_used": true,
+    "selected_extraction": null,
+    "strategy_phases": [
+      "finger_pinch_basic",
+      "top_2f",
+      "side_grip_basic"
+    ]
+  },
+  "attempts": [
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 53.800530548003735,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.226040043,
+          "points": 58
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": false,
+          "moveit_code": -2,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_GRASP",
+          "reason": "MoveIt action failed: status=6, code=-2",
+          "reason_code": "PREPLAN_GRASP_FAILED",
+          "failed_stage": "PREPLAN_GRASP",
+          "failure_kind": "collision"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 61.47554329299601,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.299394267,
+          "points": 58
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.335024422,
+          "points": 38
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.057414979000000005,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_LIFT",
+          "success": false,
+          "moveit_code": null,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_LIFT",
+          "reason": "candidate wall-clock slice exhausted",
+          "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+          "failed_stage": "PREPLAN_LIFT",
+          "failure_kind": "budget"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 44.887810692998755,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.219567882,
+          "points": 61
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": false,
+          "moveit_code": -2,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_GRASP",
+          "reason": "MoveIt action failed: status=6, code=-2",
+          "reason_code": "PREPLAN_GRASP_FAILED",
+          "failed_stage": "PREPLAN_GRASP",
+          "failure_kind": "collision"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 78.30936109100003,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.231629974,
+          "points": 69
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.142006816,
+          "points": 38
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.05596943,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 48.957470318,
+          "points": 42
+        },
+        {
+          "stage": "PREPLAN_TRANSFER",
+          "success": false,
+          "moveit_code": null,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_TRANSFER",
+          "reason": "candidate wall-clock slice exhausted",
+          "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+          "failed_stage": "PREPLAN_TRANSFER",
+          "failure_kind": "budget"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 8.891053452003689,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.152255468,
+          "points": 44
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": false,
+          "moveit_code": -2,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_GRASP",
+          "reason": "MoveIt action failed: status=6, code=-2",
+          "reason_code": "PREPLAN_GRASP_FAILED",
+          "failed_stage": "PREPLAN_GRASP",
+          "failure_kind": "collision"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 97.25005165699986,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.226218631,
+          "points": 68
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.145731485,
+          "points": 38
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.036554908,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 65.78933949,
+          "points": 42
+        },
+        {
+          "stage": "PREPLAN_TRANSFER",
+          "success": false,
+          "moveit_code": null,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_TRANSFER",
+          "reason": "candidate wall-clock slice exhausted",
+          "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+          "failed_stage": "PREPLAN_TRANSFER",
+          "failure_kind": "budget"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 9.711373261001427,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.120562189,
+          "points": 44
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": false,
+          "moveit_code": -2,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_GRASP",
+          "reason": "MoveIt action failed: status=6, code=-2",
+          "reason_code": "PREPLAN_GRASP_FAILED",
+          "failed_stage": "PREPLAN_GRASP",
+          "failure_kind": "collision"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 94.79209329900186,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.18196254,
+          "points": 68
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.142446112,
+          "points": 38
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.052269803000000004,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 66.010199197,
+          "points": 42
+        },
+        {
+          "stage": "PREPLAN_TRANSFER",
+          "success": false,
+          "moveit_code": null,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_TRANSFER",
+          "reason": "candidate wall-clock slice exhausted",
+          "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+          "failed_stage": "PREPLAN_TRANSFER",
+          "failure_kind": "budget"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_01",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "candidate_wall_seconds": 58.86510778599768,
+      "candidate_wall_budget": 60.0,
+      "reason_code": "PREPLAN_GRASP_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.33070843299999997,
+          "points": 68
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": false,
+          "moveit_code": -2,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_GRASP",
+          "reason": "MoveIt action failed: status=6, code=-2",
+          "reason_code": "PREPLAN_GRASP_FAILED",
+          "failed_stage": "PREPLAN_GRASP",
+          "failure_kind": "collision"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_06",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "retry:finger_pinch_basic",
+      "candidate_wall_seconds": 120.90675171899784,
+      "candidate_wall_budget": 120.0,
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.19337814,
+          "points": 69
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.138801022,
+          "points": 38
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.05207128,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 49.812239303,
+          "points": 42
+        },
+        {
+          "stage": "PREPLAN_TRANSFER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.23396063900000003,
+          "points": 68
+        },
+        {
+          "stage": "PREPLAN_PLACE",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.223202281,
+          "points": 12
+        },
+        {
+          "stage": "PREPLAN_OPEN_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.09112527000000001,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_RETREAT",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.865273589,
+          "points": 41
+        },
+        {
+          "stage": "PREPLAN_HOME",
+          "success": false,
+          "moveit_code": null,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_HOME",
+          "reason": "candidate wall-clock slice exhausted",
+          "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+          "failed_stage": "PREPLAN_HOME",
+          "failure_kind": "budget"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "retry:finger_pinch_basic",
+      "candidate_wall_seconds": 124.59155849100352,
+      "candidate_wall_budget": 120.0,
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.180275222,
+          "points": 68
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.206575968,
+          "points": 37
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.045989272,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 69.196499946,
+          "points": 42
+        },
+        {
+          "stage": "PREPLAN_TRANSFER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.286901798,
+          "points": 46
+        },
+        {
+          "stage": "PREPLAN_PLACE",
+          "success": false,
+          "moveit_code": null,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_PLACE",
+          "reason": "candidate wall-clock slice exhausted",
+          "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+          "failed_stage": "PREPLAN_PLACE",
+          "failure_kind": "budget"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::part_07",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "retry:finger_pinch_basic",
+      "candidate_wall_seconds": 131.5474014670035,
+      "candidate_wall_budget": 120.0,
+      "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.21591327999999999,
+          "points": 68
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.141303748,
+          "points": 37
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.066546783,
+          "points": 20
+        },
+        {
+          "stage": "PREPLAN_LIFT",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 67.449357529,
+          "points": 42
+        },
+        {
+          "stage": "PREPLAN_TRANSFER",
+          "success": true,
+          "moveit_code": 1,
+          "planning_time": 0.397948129,
+          "points": 63
+        },
+        {
+          "stage": "PREPLAN_PLACE",
+          "success": false,
+          "moveit_code": null,
+          "planning_time": null,
+          "points": null
+        }
+      ],
+      "failures": [
+        {
+          "code": "PREPLAN_PLACE",
+          "reason": "candidate wall-clock slice exhausted",
+          "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+          "failed_stage": "PREPLAN_PLACE",
+          "failure_kind": "budget"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-plan-watchdog/02-cancel/resolve/summary.json",
+      "sha256": "4e612e1f81b29832a5da8c2992c1a73f60406158bbb2f63decb1d5d4f7306401"
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-plan-watchdog/02-cancel/launch.log",
+      "sha256": "bed2160d3301d27195603bb00cb559440fab216a0bc18f9ef56d0f90f40d70a4"
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-plan-watchdog/02-cancel/session-report.json",
+      "sha256": "a63cdcff20f5151946ae52a56239ac4e5cd9aeeb115d4dcb3d8527f8b5b03990"
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20261001-plan-watchdog/01-resolve/session-report.json",
+      "sha256": "d1b17d2dc5210e47d2a62d5c6768c464b7a1c224023153dcec10261361c8c2c6"
+    }
+  ]
+}

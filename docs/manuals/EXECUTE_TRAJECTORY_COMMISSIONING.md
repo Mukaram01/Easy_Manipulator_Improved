@@ -210,9 +210,10 @@ use a larger explicit bound, for example `--search-timeout 900`. The report reco
 that budget; candidate ordering, per-segment planning limits, motion deadlines
 and physical acceptance guards are unchanged. Exhausting the budget still blocks
 acceptance and is reported separately from a proved infeasible grasp.
-An in-flight simulator PLAN_ONLY request has a 60-second result watchdog because
-continuous certification follows the planner's own time limit. A timed-out owned
-planning goal must reach a terminal action state before another candidate can
+An in-flight simulator PLAN_ONLY request has a 120-second result watchdog because
+continuous certification follows the planner's own time limit. A measured
+revalidation transfer certified successfully in 76.4 seconds under simulator load.
+A timed-out owned planning goal must reach a terminal action state before another candidate can
 start. If it does not, the session fails and shuts down. Physical execution keeps
 its existing action deadlines.
 Simulator discovery has a 60-second candidate slice within the global search
@@ -221,10 +222,14 @@ and settlement allowance above. It still uses one planner attempt with a 0.75-se
 limit; the larger wall allowance includes mandatory continuous certification.
 Observed successful approaches took 3.7–44.3 seconds, so the old 0.75-second
 whole-candidate allowance always stopped those candidates before grasp checks.
-Simulator retries receive up to 120 seconds within the global search budget:
-an observed 24.2-second approach certificate alone exhausted the previous
-20-second whole-cycle retry allowance. Candidate order and the three-candidate
-ranked retry beam are unchanged. Fake-hardware discovery keeps its 0.75-second wall
+Simulator retries use a 180-second candidate slice, checked between calls within
+the global search budget.
+Observed retries needed 120.9 seconds through retreat and 124.6–131.5 seconds
+through transfer, exhausting the previous 120-second allowance before the
+remaining stages could start. Once discovery finds a retryable candidate, it
+reserves the three-candidate retry beam's allowance before starting another
+discovery slice. Candidate order and the ranked retry beam are unchanged.
+Fake-hardware discovery keeps its 0.75-second wall
 bound and retries keep their 20-second bound.
 
 The qualified bridge executable is built and proven using

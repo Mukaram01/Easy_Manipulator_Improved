@@ -344,6 +344,13 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                         "strategy_ref": strategy, "observation": copy.deepcopy(observation),
                         "candidate": candidate, "destination": copy.deepcopy(destination),
                     })
+                    # A phased evaluator may defer this candidate without
+                    # testing it. Keep control flow out of feasibility evidence.
+                    if evaluation.get("deferred") is True:
+                        if evaluation.get("stop_search") or grasp["policy"] == "EXACT":
+                            return _readiness(result, "BLOCKED", last_failure["reason_code"],
+                                              last_failure["reason"])
+                        continue
                     checks = copy.deepcopy(evaluation.get("checks", []))
                     success = evaluation.get("success") is True and not any(
                         check.get("status") in ("FAIL", "BLOCKED") for check in checks)

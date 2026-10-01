@@ -820,14 +820,15 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
         resolution = None
         stop_all = False
 
-        def phase_boundary(strategy):
+        def phase_boundary(strategy, *, stop_search=True):
             return {
+                'deferred': True,
                 'success': False,
                 'checks': [],
                 'reason_code': 'STRATEGY_PHASE_COMPLETE',
                 'reason': f'Bounded discovery for {strategy} is complete; retry before fallback.',
                 'retryable': False,
-                'stop_search': True,
+                'stop_search': stop_search,
                 'progress_passes': 0,
                 'failed_stage': None,
             }
@@ -843,7 +844,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 if request['strategy_ref'] != strategy:
                     if cached is not None:
                         return copy.deepcopy(cached)
-                    return phase_boundary(strategy)
+                    return phase_boundary(strategy, stop_search=(
+                        strategy_phases.index(request['strategy_ref']) > phase_index))
                 if cached is not None:
                     return copy.deepcopy(cached)
                 if reserve_retry_budget and grasp_policy != 'EXACT' and phase_retryable:
@@ -934,10 +936,16 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                                 cached.get('approach_ik') is not None):
                             outcome['approach_ik'] = copy.deepcopy(cached['approach_ik'])
                         evaluation_cache[key] = copy.deepcopy(outcome)
-                        return outcome
+                        # This resolver call owns one selected retry. Preserve
+                        # its failure before traversing other cached candidates.
+                        returned = copy.deepcopy(outcome)
+                        if not returned.get('success'):
+                            returned['stop_search'] = True
+                        return returned
                     if cached is not None:
                         return copy.deepcopy(cached)
-                    return phase_boundary(strategy)
+                    return phase_boundary(strategy, stop_search=(
+                        strategy_phases.index(request['strategy_ref']) >= phase_index))
 
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, retry,
@@ -1907,8 +1915,8 @@ def main():
                 # The simulator adapter certifies the complete controller path
                 # after OMPL returns. A measured revalidation certificate took
                 # 76.4 s under simulator load, after subsecond OMPL planning.
-                # Allow up to one full simulator retry slice for that owned
-                # plan-only result; execution keeps its separate motion limit.
+                # Allow a bounded 120 s for that owned plan-only result;
+                # execution keeps its separate motion limit.
                 # Candidate/global budgets are checked between planning calls.
                 result = action(plan_client, goal_msg,
                     120. if getattr(args,'backend','fake')=='simulator' else 12.)
@@ -2162,7 +2170,7 @@ def main():
                 cell=document, targets=eligible, contract=contract, operations=operations,
                 deadline=deadline, summary=summary, resolved=expected_resolution,
                 planning_time=args.segment_planning_time,
-                retry_candidate_budget=120. if args.backend=='simulator' else 20.,
+                retry_candidate_budget=180. if args.backend=='simulator' else 20.,
                 discovery_candidate_budget=60. if args.backend=='simulator' else .75,
                 reserve_retry_budget=args.backend=='simulator')
             destination = summary['task_intent_resolution']['place_resolution']['destination']
