@@ -23,6 +23,31 @@ def test_gate_sequence_requalifies_cancellation_before_motion_acceptance():
     assert MODULE.GATES==("resolve","cancel","telemetry","stationary","contact-release","full-cycle")
 
 
+@pytest.mark.parametrize('returncode,output,isolated',[
+    (0,'',True),
+    (0,'/foreign_node\n',False),
+    (2,'discovery failed\n',False),
+])
+def test_domain_probe_never_spawns_daemon_and_keeps_isolation_guard(
+        monkeypatch,tmp_path,returncode,output,isolated):
+    env={'ROS_DOMAIN_ID':'226','ROS2CLI_DISABLE_DAEMON':'1'}
+    calls=[]
+    def probe(command,**kwargs):
+        calls.append((command,kwargs))
+        return MODULE.subprocess.CompletedProcess(command,returncode,stdout=output)
+    monkeypatch.setattr(MODULE.subprocess,'run',probe)
+    if isolated:
+        MODULE.assert_domain_free(env,tmp_path)
+    else:
+        with pytest.raises(RuntimeError,match='ROS domain 226 is not isolated'):
+            MODULE.assert_domain_free(env,tmp_path)
+    command,kwargs=calls.pop()
+    assert calls==[]
+    assert command==['ros2','node','list','--no-daemon']
+    assert kwargs['env'] is env and kwargs['cwd']==tmp_path
+    assert kwargs['timeout']==10
+
+
 def test_plan_gate_requires_complete_nine_stage_plan():
     summary={"result":"PLAN_ONLY","full_cycle_prevalidated":True,"execution_attempted":False,
         "task_intent_resolution":{"readiness_status":"READY"},

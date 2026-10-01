@@ -1,0 +1,69 @@
+{
+  "scope": "Native localhost probe with explicit --no-daemon. Tests preserve occupied/error domain rejection; no Stage-A acceptance claim.",
+  "started_wall_ns": 1790814660884976438,
+  "finished_wall_ns": 1790814662537300755,
+  "domain": 226,
+  "partition": "closeout_domain_probe_20261001",
+  "root_probe_pid": 99519,
+  "returncode": 0,
+  "captured_processes": [
+    {
+      "pid": 99519,
+      "ppid": 99518,
+      "start_ticks": 5713075,
+      "state": "S",
+      "argv": [
+        "/usr/bin/python3",
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20261001-domain-probe/native_probe.py"
+      ],
+      "domain": "226",
+      "partition": "closeout_domain_probe_20261001"
+    },
+    {
+      "pid": 99520,
+      "ppid": 99519,
+      "start_ticks": 5713082,
+      "state": "R",
+      "argv": [
+        "/usr/bin/python3",
+        "/opt/ros/humble/bin/ros2",
+        "node",
+        "list",
+        "--no-daemon"
+      ],
+      "domain": "226",
+      "partition": "closeout_domain_probe_20261001"
+    }
+  ],
+  "remaining_owned_or_domain_processes": [],
+  "preexisting_domain_processes": [],
+  "source": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scripts/run_stage_a1_finish.py",
+    "sha256": "3b78ce16fb77aa3db541c03632a1ceae11ed087a5153176960461816876fcfd8"
+  },
+  "test_source": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/tests/test_stage_a1_finish_runner.py",
+    "sha256": "2b33948498df4059807ba9ea0422893b974005bc22aa5e24e8a360407ecde668"
+  },
+  "installed_cli": [
+    {
+      "path": "/opt/ros/humble/lib/python3.10/site-packages/ros2node/verb/list.py",
+      "sha256": "f4e32dafb893e0c8744228cb0ccea5b5cf2f3c0413fb8d493f37786fe910b7bc"
+    },
+    {
+      "path": "/opt/ros/humble/lib/python3.10/site-packages/ros2cli/node/strategy.py",
+      "sha256": "7eb32f9b6e98839f50f6000da7337a56da1749ede0121ade4d8e4c5ec978b6c9"
+    },
+    {
+      "path": "/opt/ros/humble/lib/python3.10/site-packages/ros2cli/node/direct.py",
+      "sha256": "b150b0ab450a607f372af385c957bd3a2bb6ed5f4422c7e9b2e69fff8a5fac1f"
+    }
+  ],
+  "observed_before": "ROS CLI daemon97828/start_ticks5591534/domain208 spawned under the Stage-A domain probe and survived launch teardown. It was later absent; no explicit cleanup command was sent by this thread and the exit cause is unproven.",
+  "tests": "RED3 failures before fix; GREEN108 passed in3.86s",
+  "independent_review": "Root reviewed production one-flag change, occupied/error/empty domain tests and native receipt.",
+  "full_receipt": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20261001-domain-probe/native-probe.json",
+    "sha256": "b4fcd50ba707130fc4d1c09c7c19644d31d0442848ba7b66098a06bc6eb30650"
+  }
+}

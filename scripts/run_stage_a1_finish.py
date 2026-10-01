@@ -165,7 +165,7 @@ def wait_file(path,process,timeout,log=None):
 
 
 def assert_domain_free(env,cwd):
-    probe=subprocess.run(["ros2","node","list"],cwd=cwd,env=env,stdout=subprocess.PIPE,
+    probe=subprocess.run(["ros2","node","list","--no-daemon"],cwd=cwd,env=env,stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,text=True,timeout=10,check=False)
     nodes=[line.strip() for line in probe.stdout.splitlines() if line.strip().startswith("/")]
     if probe.returncode or nodes:
