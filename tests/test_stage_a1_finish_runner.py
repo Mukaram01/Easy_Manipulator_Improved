@@ -556,27 +556,75 @@ def test_gate_rejects_release_evidence_not_owned_by_current_attempt(gate,result,
 
 def test_cleanup_rejects_launch_escalation_even_when_child_exits_zero(tmp_path,monkeypatch):
     """Actual parent-GDB diagnostic log escaped the forced-cleanup gate."""
-    from types import SimpleNamespace
-    log=tmp_path/'launch.log';log.write_text('')
-    forced="[ERROR] [gdb-2]: process[gdb-2] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'\n"
-    def interrupt(sig):
-        log.write_text(forced+"[INFO] [gdb-2]: process has finished cleanly [pid 456]\n")
-    process=SimpleNamespace(pid=123,poll=lambda:None,send_signal=interrupt,wait=lambda timeout:0)
-    monkeypatch.setattr(MODULE,'group_alive',lambda pid:False)
-    report=MODULE.stop_owned(process,log)
+    import subprocess,sys
+    ready=tmp_path/'ready';log=tmp_path/'launch.log'
+    forced="[ERROR] [gdb-2]: process[gdb-2] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'"
+    code=f"""import signal,time,pathlib
+def stop(*args):
+ print({forced!r},flush=True)
+ print('[INFO] [gdb-2]: process has finished cleanly [pid 456]',flush=True)
+ exit(0)
+signal.signal(signal.SIGINT,stop)
+pathlib.Path({str(ready)!r}).touch()
+time.sleep(30)
+"""
+    with log.open('w') as stream:
+        process=subprocess.Popen([sys.executable,'-c',code],stdout=stream,start_new_session=True)
+        MODULE.wait_file(ready,process,5);report=MODULE.stop_owned(process,log)
     assert report['returncode']==0 and report['remaining_owned_processes'] is False
+    assert report['ownership_errors']==[]
     assert report['clean'] is False
-    assert report['launch_escalation_evidence']==[forced.rstrip()]
+    assert report['launch_escalation_evidence']==[forced]
 
 
 def test_cleanup_rejects_runner_sigterm_escalation(tmp_path,monkeypatch):
-    from types import SimpleNamespace
-    process=SimpleNamespace(pid=123,poll=lambda:None,send_signal=lambda sig:None,wait=lambda timeout:0)
-    alive=iter([True,True,False,False,False]);times=iter([0.,11.,11.])
-    monkeypatch.setattr(MODULE,'group_alive',lambda pid:next(alive))
-    monkeypatch.setattr(MODULE.time,'monotonic',lambda:next(times))
-    monkeypatch.setattr(MODULE.os,'killpg',lambda pid,sig:None)
+    import subprocess,sys,time
+    ready=tmp_path/'ready'
+    code=f"import signal,time,pathlib; signal.signal(signal.SIGINT,signal.SIG_IGN); signal.signal(signal.SIGTERM,lambda *a:exit(0)); pathlib.Path({str(ready)!r}).touch(); time.sleep(30)"
+    process=subprocess.Popen([sys.executable,'-c',code],start_new_session=True)
+    MODULE.wait_file(ready,process,5);real_clock=time.monotonic
+    monkeypatch.setattr(MODULE.time,'monotonic',lambda:real_clock()*100.)
     report=MODULE.stop_owned(process)
-    assert report['escalation']=='SIGTERM'
+    assert report['returncode']==0 and report['escalation']=='SIGTERM'
     assert report['remaining_owned_processes'] is False
-    assert report['clean'] is False
+    assert report['ownership_errors']==[] and report['clean'] is False
+
+
+def test_missing_supervisor_is_not_recorded_as_signalled(monkeypatch):
+    from types import SimpleNamespace
+    process=SimpleNamespace(pid=999999999,poll=lambda:None,wait=lambda timeout:0)
+    report=MODULE.stop_owned(process)
+    assert report['sent_signals']==[] and report['clean'] is False
+
+
+@pytest.mark.parametrize('forward', [False,True])
+def test_cleanup_tracks_owned_child_in_another_process_group(tmp_path,monkeypatch,forward):
+    """A simulator child may outlive its supervisor in a separate group."""
+    import os,signal,subprocess,sys,time
+    ready=tmp_path/'ready';child_ready=tmp_path/'child-ready';log=tmp_path/'launch.log'
+    child=f"import signal,time,pathlib; signal.signal(signal.SIGINT,lambda *a:exit(0)); pathlib.Path({str(child_ready)!r}).touch(); time.sleep(30)"
+    parent=f"""import signal,subprocess,sys,time,pathlib
+child=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True)
+def stop(*args):
+ if {forward!r}:child.send_signal(signal.SIGINT)
+ exit(0)
+signal.signal(signal.SIGINT,stop)
+pathlib.Path({str(ready)!r}).write_text(str(child.pid))
+time.sleep(30)
+"""
+    with log.open('w') as stream:
+        process=subprocess.Popen([sys.executable,'-c',parent],stdout=stream,stderr=stream,start_new_session=True)
+        MODULE.wait_file(ready,process,5);MODULE.wait_file(child_ready,process,5)
+        child_pid=int(ready.read_text());child_fd=os.pidfd_open(child_pid);real_clock=time.monotonic
+        monkeypatch.setattr(MODULE.time,'monotonic',lambda:real_clock()*100.)
+        try:
+            report=MODULE.stop_owned(process,log)
+            assert report['clean'] is forward
+            assert report['remaining_owned_processes'] is False
+            assert child_pid in [p['pid'] for p in report['owned_processes_before_cleanup']]
+        finally:
+            try:signal.pidfd_send_signal(child_fd,signal.SIGINT)
+            except ProcessLookupError:pass
+            finally:os.close(child_fd)
+            if process.poll() is None:process.send_signal(signal.SIGINT)
+            process.wait(timeout=3)

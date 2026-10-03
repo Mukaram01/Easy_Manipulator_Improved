@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 import shutil
 import signal
+import select
 import subprocess
 import sys
 import time
@@ -82,6 +83,46 @@ def launch_child_exits(log,*,cleanup_offset=None,sent_signals=()):
     return children
 
 
+def owned_handles(pid):
+    """Bind live ancestry before cleanup can orphan a native simulator child."""
+    handles={};identities=[];errors=[];root=None
+    def exited(fd):return bool(select.select([fd],[],[],0)[0])
+    try:
+        root=os.pidfd_open(pid)
+        fields=Path(f"/proc/{pid}/stat").read_text().rsplit(")",1)[1].split()
+        if exited(root):return {},[],['supervisor exited before ownership capture']
+        if int(fields[1])!=os.getpid():return {},[],['supervisor is not a child of this caller']
+        handles[pid]=root;root=None;identities.append(dict(pid=pid,start_ticks=fields[19]))
+        pending=[pid]
+        while pending:
+            parent=pending.pop();parent_fd=handles[parent]
+            for path in Path('/proc').iterdir():
+                if not path.name.isdigit() or int(path.name) in handles:continue
+                fd=None
+                try:
+                    before=(path/'stat').read_text().rsplit(')',1)[1].split()
+                    if before[0]=='Z' or int(before[1])!=parent:continue
+                    fd=os.pidfd_open(int(path.name))
+                    after=(path/'stat').read_text().rsplit(')',1)[1].split()
+                    # The parent handle must still name the live parent *after*
+                    # the child's identity and current PPID have been read.
+                    if exited(parent_fd):
+                        errors.append('parent exited during ownership capture');break
+                    if after[0]=='Z' or after[19]!=before[19] or int(after[1])!=parent:continue
+                    child=int(path.name);handles[child]=fd;fd=None;pending.append(child)
+                    identities.append(dict(pid=child,start_ticks=after[19]))
+                except (FileNotFoundError,ProcessLookupError):continue
+                except OSError as exc:errors.append(str(exc))
+                finally:
+                    if fd is not None:os.close(fd)
+            if exited(parent_fd):errors.append('parent exited during ownership capture')
+    except (FileNotFoundError,ProcessLookupError):errors.append('supervisor missing before ownership capture')
+    except OSError as exc:errors.append(str(exc))
+    finally:
+        if root is not None:os.close(root)
+    return handles,identities,errors
+
+
 def stop_owned(process,log=None):
     if process is None:return {"started":False,"clean":True,"escalation":None}
     # Snapshot before signalling: a previously dead launch/long-lived child is
@@ -89,46 +130,59 @@ def stop_owned(process,log=None):
     cleanup_offset=Path(log).stat().st_size if log is not None else 0
     alive_before=process.poll() is None
     escalation=None;sent_signals=[]
-    def send(sig,*,supervisor_only=False):
-        try:
-            if supervisor_only:process.send_signal(sig)
-            else:os.killpg(process.pid,sig)
-        except ProcessLookupError:return
-        sent_signals.append(sig)
-    # ROS launch owns child signalling/reaping. Interrupt its supervisor once;
-    # broadcasting first makes launch send a second SIGINT and can race its
-    # asyncio child watcher into losing a fast child's real exit status.
-    if alive_before:send(signal.SIGINT,supervisor_only=True)
-    deadline=time.monotonic()+10
-    while group_alive(process.pid) and time.monotonic()<deadline:time.sleep(.1)
-    if group_alive(process.pid):
-        escalation="SIGTERM";send(signal.SIGTERM);deadline=time.monotonic()+5
-        while group_alive(process.pid) and time.monotonic()<deadline:time.sleep(.1)
-    if group_alive(process.pid):
-        escalation="SIGKILL";send(signal.SIGKILL);deadline=time.monotonic()+3
-        while group_alive(process.pid) and time.monotonic()<deadline:time.sleep(.05)
-    try:rc=process.wait(timeout=3)
-    except subprocess.TimeoutExpired:rc=None
-    children=launch_child_exits(log,cleanup_offset=cleanup_offset,sent_signals=sent_signals)
-    crash_evidence=[];launch_escalation_evidence=[]
-    if log is not None:
-        lines=Path(log).read_text(errors="replace").splitlines()
-        crash_evidence=[line for line in lines
-            if re.search(r"segmentation fault|core dumped|\bSIGSEGV\b|\bSIGABRT\b",line,re.IGNORECASE)]
-        # ROS launch may force a nested child to terminate while the supervisor
-        # and child eventually return zero. That is still forced cleanup.
-        launch_escalation_evidence=[line for line in lines
-            if re.search(r"failed to terminate.*escalating to ['\"]?SIG(?:TERM|KILL)",line)]
-    remaining=group_alive(process.pid)
-    root_expected=alive_before and bool(sent_signals) and (rc==0 or
-        (rc in (-signal.SIGINT,-signal.SIGTERM) and -rc in sent_signals))
-    return {"started":True,"clean":not remaining and root_expected and not crash_evidence
-            and escalation is None and not launch_escalation_evidence and all(child["expected"] for child in children),
-            "returncode":rc,"escalation":escalation,"remaining_owned_processes":remaining,
-            "root_alive_before_cleanup":alive_before,"cleanup_log_offset":cleanup_offset,
-            "sent_signals":[signal.Signals(item).name for item in sent_signals],
-            "children":children,"crash_evidence":crash_evidence,
-            "launch_escalation_evidence":launch_escalation_evidence}
+    pidfds,owned,ownership_errors=owned_handles(process.pid) if alive_before else ({},[],[])
+    try:
+        def running_owned():
+            return [pid for pid,fd in pidfds.items() if not select.select([fd],[],[],0)[0]]
+        def alive():return bool(running_owned())
+        def send(sig,*,supervisor_only=False):
+            targets=[process.pid] if supervisor_only else running_owned()
+            delivered=False
+            for pid in targets:
+                if pid not in pidfds:continue
+                try:signal.pidfd_send_signal(pidfds[pid],sig);delivered=True
+                except ProcessLookupError:pass
+            if delivered:sent_signals.append(sig)
+        # ROS launch owns child signalling/reaping. Interrupt its supervisor once;
+        # broadcasting first makes launch send a second SIGINT and can race its
+        # asyncio child watcher into losing a fast child's real exit status.
+        if alive_before:send(signal.SIGINT,supervisor_only=True)
+        deadline=time.monotonic()+10
+        while alive() and time.monotonic()<deadline:time.sleep(.1)
+        if alive():
+            escalation="SIGTERM";send(signal.SIGTERM);deadline=time.monotonic()+5
+            while alive() and time.monotonic()<deadline:time.sleep(.1)
+        if alive():
+            escalation="SIGKILL";send(signal.SIGKILL);deadline=time.monotonic()+3
+            while alive() and time.monotonic()<deadline:time.sleep(.05)
+        try:rc=process.wait(timeout=3)
+        except subprocess.TimeoutExpired:rc=None
+        children=launch_child_exits(log,cleanup_offset=cleanup_offset,sent_signals=sent_signals)
+        crash_evidence=[];launch_escalation_evidence=[]
+        if log is not None:
+            lines=Path(log).read_text(errors="replace").splitlines()
+            crash_evidence=[line for line in lines
+                if re.search(r"segmentation fault|core dumped|\bSIGSEGV\b|\bSIGABRT\b",line,re.IGNORECASE)]
+            # ROS launch may force a nested child to terminate while the supervisor
+            # and child eventually return zero. That is still forced cleanup.
+            launch_escalation_evidence=[line for line in lines
+                if re.search(r"failed to terminate.*escalating to ['\"]?SIG(?:TERM|KILL)",line)]
+        survivors=running_owned();remaining=alive()
+        root_expected=alive_before and bool(sent_signals) and (rc==0 or
+            (rc in (-signal.SIGINT,-signal.SIGTERM) and -rc in sent_signals))
+        report={"started":True,"clean":not ownership_errors and not remaining and root_expected and not crash_evidence
+                and escalation is None and not launch_escalation_evidence and all(child["expected"] for child in children),
+                "returncode":rc,"escalation":escalation,"remaining_owned_processes":remaining,
+                "root_alive_before_cleanup":alive_before,"cleanup_log_offset":cleanup_offset,
+                "sent_signals":[signal.Signals(item).name for item in sent_signals],
+                "children":children,"crash_evidence":crash_evidence,
+                "launch_escalation_evidence":launch_escalation_evidence,
+                "owned_processes_before_cleanup":owned,"surviving_owned_processes":survivors,
+                "ownership_errors":ownership_errors}
+        return report
+
+    finally:
+        for fd in pidfds.values():os.close(fd)
 
 
 def run(command,*,env,cwd,log,timeout,check=True):
