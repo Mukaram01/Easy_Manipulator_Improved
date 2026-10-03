@@ -110,19 +110,25 @@ def stop_owned(process,log=None):
     try:rc=process.wait(timeout=3)
     except subprocess.TimeoutExpired:rc=None
     children=launch_child_exits(log,cleanup_offset=cleanup_offset,sent_signals=sent_signals)
-    crash_evidence=[]
+    crash_evidence=[];launch_escalation_evidence=[]
     if log is not None:
-        crash_evidence=[line for line in Path(log).read_text(errors="replace").splitlines()
+        lines=Path(log).read_text(errors="replace").splitlines()
+        crash_evidence=[line for line in lines
             if re.search(r"segmentation fault|core dumped|\bSIGSEGV\b|\bSIGABRT\b",line,re.IGNORECASE)]
+        # ROS launch may force a nested child to terminate while the supervisor
+        # and child eventually return zero. That is still forced cleanup.
+        launch_escalation_evidence=[line for line in lines
+            if re.search(r"failed to terminate.*escalating to ['\"]?SIG(?:TERM|KILL)",line)]
     remaining=group_alive(process.pid)
     root_expected=alive_before and bool(sent_signals) and (rc==0 or
         (rc in (-signal.SIGINT,-signal.SIGTERM) and -rc in sent_signals))
     return {"started":True,"clean":not remaining and root_expected and not crash_evidence
-            and escalation!="SIGKILL" and all(child["expected"] for child in children),
+            and escalation is None and not launch_escalation_evidence and all(child["expected"] for child in children),
             "returncode":rc,"escalation":escalation,"remaining_owned_processes":remaining,
             "root_alive_before_cleanup":alive_before,"cleanup_log_offset":cleanup_offset,
             "sent_signals":[signal.Signals(item).name for item in sent_signals],
-            "children":children,"crash_evidence":crash_evidence}
+            "children":children,"crash_evidence":crash_evidence,
+            "launch_escalation_evidence":launch_escalation_evidence}
 
 
 def run(command,*,env,cwd,log,timeout,check=True):

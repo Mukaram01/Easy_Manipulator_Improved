@@ -552,3 +552,31 @@ def test_gate_rejects_release_evidence_not_owned_by_current_attempt(gate,result,
     else:evidence['settled']=False
     with pytest.raises(RuntimeError,match='release'):
         MODULE.assert_gate(gate,summary,'build',('tem','group','capabilities'))
+
+
+def test_cleanup_rejects_launch_escalation_even_when_child_exits_zero(tmp_path,monkeypatch):
+    """Actual parent-GDB diagnostic log escaped the forced-cleanup gate."""
+    from types import SimpleNamespace
+    log=tmp_path/'launch.log';log.write_text('')
+    forced="[ERROR] [gdb-2]: process[gdb-2] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'\n"
+    def interrupt(sig):
+        log.write_text(forced+"[INFO] [gdb-2]: process has finished cleanly [pid 456]\n")
+    process=SimpleNamespace(pid=123,poll=lambda:None,send_signal=interrupt,wait=lambda timeout:0)
+    monkeypatch.setattr(MODULE,'group_alive',lambda pid:False)
+    report=MODULE.stop_owned(process,log)
+    assert report['returncode']==0 and report['remaining_owned_processes'] is False
+    assert report['clean'] is False
+    assert report['launch_escalation_evidence']==[forced.rstrip()]
+
+
+def test_cleanup_rejects_runner_sigterm_escalation(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    process=SimpleNamespace(pid=123,poll=lambda:None,send_signal=lambda sig:None,wait=lambda timeout:0)
+    alive=iter([True,True,False,False,False]);times=iter([0.,11.,11.])
+    monkeypatch.setattr(MODULE,'group_alive',lambda pid:next(alive))
+    monkeypatch.setattr(MODULE.time,'monotonic',lambda:next(times))
+    monkeypatch.setattr(MODULE.os,'killpg',lambda pid,sig:None)
+    report=MODULE.stop_owned(process)
+    assert report['escalation']=='SIGTERM'
+    assert report['remaining_owned_processes'] is False
+    assert report['clean'] is False
