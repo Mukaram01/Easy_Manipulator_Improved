@@ -20,6 +20,40 @@ def angle(a,b):
     return 2*math.acos(min(1.,abs(sum(x*y for x,y in zip(a[3:],b[3:])))))
 
 
+def box_motion_bound(pose,reference,size):
+    """Bound displacement of every point of a rigid BOX by its eight corners.
+
+    The displacement is affine in body coordinates and its norm is convex,
+    so its maximum over the box occurs at a vertex. Include a conservative
+    floating-point allowance for normalization, rotation and subtraction.
+    """
+    values=(*pose,*reference,*size)
+    if len(pose)!=7 or len(reference)!=7 or len(size)!=3 or not all(math.isfinite(v) for v in values) or min(size)<=0:
+        raise RuntimeError('invalid BOX motion geometry')
+    def quaternion(p):
+        # Match the measured-pose domain even for direct geometry checks.
+        if abs(sum(v*v for v in p[3:])-1.)>.00001:
+            raise RuntimeError('invalid BOX motion orientation')
+        norm=math.hypot(*p[3:])
+        return [v/norm for v in p[3:]]
+    q=quaternion(pose);r=quaternion(reference)
+    translation=[a-b for a,b in zip(pose[:3],reference[:3])]
+    maximum=0.
+    for x in (-size[0]/2,size[0]/2):
+        for y in (-size[1]/2,size[1]/2):
+            for z in (-size[2]/2,size[2]/2):
+                a=rotate_vector(q,[x,y,z]);b=rotate_vector(r,[x,y,z])
+                maximum=max(maximum,math.hypot(*(math.fsum((t,u,-v)) for t,u,v in zip(translation,a,b))))
+    # CPython 3.10 binary64 / nearest-even: with u=2**-53 and
+    # M=max(1,abs(inputs)), near-unit normalization, both Hamilton-product
+    # rotations, translation, fsum (including double rounding) and hypot
+    # have combined forward error <128*u*M. Corner norm <=M;
+    # 256*ulp(M)>=256*u*M. nextafter covers the final addition rounding.
+    # https://docs.python.org/3.10/library/math.html (hypot and fsum).
+    rounding=256*math.ulp(max(1.,*(abs(v) for v in values)))
+    return math.nextafter(maximum+rounding,math.inf)
+
+
 class StaleMeasurement(RuntimeError):
     """Structurally valid telemetry that is too old to use."""
 
@@ -618,8 +652,7 @@ class ContactGuard:
             neighbor=entry['neighbor']
             if neighbor not in active:continue
             pose=self.m.object_pose(s,self.pile_objects[neighbor]['name'])
-            radius=math.sqrt(sum(x*x for x in self.pile_objects[neighbor]['size']))/2
-            if math.dist(pose[:3],entry['neighbor_pose'][:3])+radius*angle(pose,entry['neighbor_pose'])>.0001:
+            if box_motion_bound(pose,entry['neighbor_pose'],self.pile_objects[neighbor]['size'])>.0001:
                 raise RuntimeError('certified pile neighbor geometry moved '+neighbor)
             valid,geometry=self.pile_geometry(s,neighbor,contacts.get(neighbor,{}).get('points',[]))
             if neighbor in contacts:
