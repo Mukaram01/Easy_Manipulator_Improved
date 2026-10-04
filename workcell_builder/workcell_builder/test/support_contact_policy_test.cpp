@@ -725,6 +725,73 @@ TEST(ControllerCertificate, LargeMotionWithLargeClearanceCertifies) {
   EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
   EXPECT_EQ(report.inspected,1U);
 }
+
+TEST(CartesianAdapter, ShutdownDuringPlanningCannotContinueCertification) {
+  // The captured failure left PLAN_ONLY active through both result waits and
+  // then through launch's shutdown grace. Exercise that same adapter boundary
+  // with a valid path: shutdown is a lifecycle failure, never path clearance.
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  auto context=std::make_shared<rclcpp::Context>();context->init(0,nullptr);
+  auto node=std::make_shared<rclcpp::Node>("audit_shutdown_regression",
+      rclcpp::NodeOptions().context(context));
+  workcell::StraightCartesianPath adapter;adapter.initialize(node,"");
+  planning_interface::MotionPlanResponse response;std::vector<std::size_t> indexes;
+  unsigned calls=0;
+  const bool success=adapter.adaptAndPlan([&](const auto&,const auto&,auto& out) {
+    ++calls;out.trajectory_=ordinaryQuintic(f,1.,.4);out.error_code_.val=1;
+    context->shutdown("owned planning context stopped");return true;
+  },f.scene,f.request,response,indexes);
+  EXPECT_EQ(calls,1U);
+  EXPECT_FALSE(success);
+  EXPECT_FALSE(response.trajectory_);
+  EXPECT_NE(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::SUCCESS);
+}
+TEST(CartesianAdapter, NestedAdaptersShareExpiredAttempt) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  workcell::InitialSupportContact outer;workcell::StraightCartesianPath inner;
+  planning_interface::MotionPlanResponse response;std::vector<std::size_t> indexes;
+  response.trajectory_=ordinaryQuintic(f,1.,.4);response.error_code_.val=1;
+  unsigned calls=0;
+  // Exercise the actual steady-clock deadline without a 120 s unit-test sleep.
+  workcell::PlanningAttempt expired(nullptr,
+      workcell::PlanningAttempt::Clock::now()-std::chrono::seconds(120));
+  EXPECT_FALSE(outer.adaptAndPlan([&](const auto& scene,const auto& request,auto& out) {
+    return inner.adaptAndPlan([&](const auto&,const auto&,auto&) {
+      ++calls;return true;
+    },scene,request,out,indexes);
+  },f.scene,f.request,response,indexes));
+  EXPECT_EQ(calls,0U);EXPECT_FALSE(response.trajectory_);
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::TIMED_OUT);
+}
+TEST(CartesianAdapter, NestedAdapterCannotReturnSuccessAfterOwnerShutdown) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  auto context=std::make_shared<rclcpp::Context>();context->init(0,nullptr);
+  auto node=std::make_shared<rclcpp::Node>("nested_audit_shutdown_regression",
+      rclcpp::NodeOptions().context(context));
+  workcell::InitialSupportContact outer;outer.initialize(node,"");
+  workcell::StraightCartesianPath inner;inner.initialize(node,"");
+  planning_interface::MotionPlanResponse response;std::vector<std::size_t> indexes;
+  EXPECT_FALSE(outer.adaptAndPlan([&](const auto& scene,const auto& request,auto& out) {
+    return inner.adaptAndPlan([&](const auto&,const auto&,auto& planned) {
+      planned.trajectory_=ordinaryQuintic(f,1.,.4);planned.error_code_.val=1;
+      context->shutdown("owned nested planning context stopped");return true;
+    },scene,request,out,indexes);
+  },f.scene,f.request,response,indexes));
+  EXPECT_FALSE(response.trajectory_);
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::FAILURE);
+}
+TEST(ControllerCertificate, InterruptionDuringIntervalTraversalCannotCertify) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  workcell::ControllerAuditOptions options;unsigned checks=0;
+  options.checkpoint=[&] {
+    if(++checks==10) throw std::runtime_error("OWNED_AUDIT_INTERRUPTED");
+  };
+  const auto report=workcell::controller_certificate::certify(*ordinaryQuintic(f,1.,.4),*f.scene,options);
+  EXPECT_EQ(checks,10U);EXPECT_GT(report.inspected,0U);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(report.reason,"OWNED_AUDIT_INTERRUPTED");
+}
+
 TEST(ControllerCertificate, PrecisionLimitCannotBecomeSuccess) {
   SupportFixture f(0.);prepareOrdinaryRequest(f,.0275000000005);
   workcell::ControllerAuditOptions options;options.max_depth=0;

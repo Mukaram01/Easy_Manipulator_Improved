@@ -25,6 +25,57 @@
 #include <stdexcept>
 
 namespace workcell {
+// One allowance covers the complete synchronous adapter chain, including the
+// planner and both audits. Nested adapters must not restart the 120 s watchdog.
+// The action's existing terminal drain can then observe failure after timeout.
+class PlanningInterrupted : public std::runtime_error {
+public:
+  explicit PlanningInterrupted(const char* reason, int32_t code)
+    : std::runtime_error(reason), code(code) {}
+  int32_t code;
+};
+class PlanningAttempt {
+public:
+  using Clock=std::chrono::steady_clock;
+  explicit PlanningAttempt(rclcpp::Context::SharedPtr context,
+                           Clock::time_point started=Clock::now())
+    : previous_(active_), context_(previous_?previous_->context_:std::move(context)),
+      deadline_(previous_?previous_->deadline_:started+std::chrono::seconds(120)) {
+    active_=this;
+  }
+  ~PlanningAttempt() { active_=previous_; }
+  PlanningAttempt(const PlanningAttempt&)=delete;
+  PlanningAttempt& operator=(const PlanningAttempt&)=delete;
+  static void checkpoint() {
+    if (!active_) return; // Standalone geometric audits have no ROS owner.
+    if (active_->context_ && !active_->context_->is_valid())
+      throw PlanningInterrupted("PLANNING_CONTEXT_SHUTDOWN",moveit_msgs::msg::MoveItErrorCodes::FAILURE);
+    if (Clock::now()>=active_->deadline_)
+      throw PlanningInterrupted("PLANNING_DEADLINE_EXCEEDED",moveit_msgs::msg::MoveItErrorCodes::TIMED_OUT);
+  }
+private:
+  inline static thread_local PlanningAttempt* active_=nullptr;
+  PlanningAttempt* previous_;
+  rclcpp::Context::SharedPtr context_;
+  Clock::time_point deadline_;
+};
+template<class Plan>
+static bool boundedPlanning(const rclcpp::Context::SharedPtr& context,
+                            planning_interface::MotionPlanResponse& res, Plan plan) {
+  PlanningAttempt attempt(context);
+  try {
+    PlanningAttempt::checkpoint();
+    const bool success=plan();
+    PlanningAttempt::checkpoint();
+    return success;
+  } catch (const PlanningInterrupted& e) {
+    RCLCPP_WARN(rclcpp::get_logger("workcell.planning_lifecycle"),"%s",e.what());
+    res.error_code_.val=e.code;
+    res.trajectory_.reset();
+    return false; // Throwing out of an adapter lets MoveIt skip that adapter.
+  }
+}
+
 template<class Message>
 static void savePlanningMessage(const std::string& path, const Message& msg) {
   rclcpp::SerializedMessage bytes;
@@ -40,7 +91,8 @@ static void savePlanningMessage(const std::string& path, const Message& msg) {
 template<class Valid>
 static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& trajectory,
                                       const planning_scene::PlanningScene& scene, Valid valid) {
-  const auto certificate=controller_certificate::certify(trajectory,scene);
+  ControllerAuditOptions options;options.checkpoint=PlanningAttempt::checkpoint;
+  const auto certificate=controller_certificate::certify(trajectory,scene,options);
   RCLCPP_INFO(rclcpp::get_logger("workcell.controller_certificate"),
     "result=%d reason=%s inspected=%zu certified=%zu subdivided=%zu depth=%u interval=[%ld,%ld] seconds=%.6f contact_timestamps=%zu initial_contacts_expired=%zu",
     static_cast<int>(certificate.result),certificate.reason.c_str(),certificate.inspected,certificate.certified,
@@ -115,6 +167,7 @@ static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& t
   std::size_t samples=1;
   joint_trajectory_controller::Trajectory interpolation;
   for (std::size_t i=1;i<joint.points.size();++i) {
+    PlanningAttempt::checkpoint();
     const auto& a=joint.points[i-1]; const auto& b=joint.points[i];
     const int64_t begin=time_ns(a),end=time_ns(b),span=end-begin;
     std::size_t divisions=static_cast<std::size_t>((span+999999)/1000000);
@@ -146,6 +199,7 @@ static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& t
     if (divisions>max_samples-samples || divisions>static_cast<std::size_t>(span))
       throw std::runtime_error("CONTROLLER_TRAJECTORY_SAMPLE_LIMIT");
     for (std::size_t k=1;k<=divisions;++k) {
+      PlanningAttempt::checkpoint();
       const int64_t stamp=begin+span*int64_t(k)/int64_t(divisions);
       trajectory_msgs::msg::JointTrajectoryPoint sample;
       interpolation.interpolate_between_points(rclcpp::Time(begin),a,rclcpp::Time(end),b,
@@ -202,7 +256,9 @@ public:
 
 class StraightCartesianPath : public planning_request_adapter::PlanningRequestAdapter {
 public:
-  void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
+  void initialize(const rclcpp::Node::SharedPtr& node, const std::string&) override {
+    context_=node->get_node_base_interface()->get_context();
+  }
   std::string getDescription() const override {
     return "Workcell straight Cartesian interpolation in the effective private planning scene";
   }
@@ -224,11 +280,18 @@ public:
     return result;
   }
 
-  bool adaptAndPlan(const PlannerFn& planner,
+  bool adaptAndPlan(const PlannerFn& planner, const planning_scene::PlanningSceneConstPtr& scene,
+      const planning_interface::MotionPlanRequest& req, planning_interface::MotionPlanResponse& res,
+      std::vector<std::size_t>& added) const override {
+    return boundedPlanning(context_,res,[&] { return plan(planner,scene,req,res,added); });
+  }
+private:
+  rclcpp::Context::SharedPtr context_;
+  bool plan(const PlannerFn& planner,
       const planning_scene::PlanningSceneConstPtr& scene,
       const planning_interface::MotionPlanRequest& req,
       planning_interface::MotionPlanResponse& res,
-      std::vector<std::size_t>&) const override {
+      std::vector<std::size_t>&) const {
     const std::string prefix="workcell_cartesian_path:";
     bool found_metadata=false;
     std::string metadata_text;
@@ -245,7 +308,9 @@ public:
     }
     if (!found_metadata) {
       try {
+        PlanningAttempt::checkpoint();
         if (!planner(scene,req,res)) return false;
+        PlanningAttempt::checkpoint();
         kinematic_constraints::KinematicConstraintSet constraints(scene->getRobotModel());
         constraints.add(req.path_constraints,scene->getTransforms());
         if (!res.trajectory_ || res.error_code_.val!=moveit_msgs::msg::MoveItErrorCodes::SUCCESS ||
@@ -415,6 +480,7 @@ public:
           moveit::core::RobotState* state,
           const moveit::core::JointModelGroup* group,
           const double* solution) {
+        PlanningAttempt::checkpoint();
         state->setJointGroupPositions(group,solution);
         state->update();
 
@@ -453,6 +519,7 @@ public:
         scene->getRobotModel(),req.group_name);
       trajectory->addSuffixWayPoint(original_start,0.0);
       for (const auto& state:states) {
+        PlanningAttempt::checkpoint();
         if (!state) return fail("CARTESIAN_PATH_STATE_MISSING");
         if (trajectory->getLastWayPoint().distance(*state)>1e-12)
           trajectory->addSuffixWayPoint(*state,0.0);
@@ -478,6 +545,7 @@ public:
       bool separated=!separation_scene;
       double last_height=-1e-12;
       for (std::size_t i=0;i<trajectory->getWayPointCount();++i) {
+        PlanningAttempt::checkpoint();
         const auto& state=trajectory->getWayPoint(i);
         if (!carried_id.empty()) {
           const auto* carried=state.getAttachedBody(carried_id);
@@ -550,11 +618,20 @@ public:
 
 class InitialSupportContact : public planning_request_adapter::PlanningRequestAdapter {
 public:
-  void initialize(const rclcpp::Node::SharedPtr&, const std::string&) override {}
+  void initialize(const rclcpp::Node::SharedPtr& node, const std::string&) override {
+    context_=node->get_node_base_interface()->get_context();
+  }
   std::string getDescription() const override { return "Initial object/support numerical contact (<=0.1 mm)"; }
   bool adaptAndPlan(const PlannerFn& planner, const planning_scene::PlanningSceneConstPtr& scene,
       const planning_interface::MotionPlanRequest& req, planning_interface::MotionPlanResponse& res,
-      std::vector<std::size_t>&) const override {
+      std::vector<std::size_t>& added) const override {
+    return boundedPlanning(context_,res,[&] { return plan(planner,scene,req,res,added); });
+  }
+private:
+  rclcpp::Context::SharedPtr context_;
+  bool plan(const PlannerFn& planner, const planning_scene::PlanningSceneConstPtr& scene,
+      const planning_interface::MotionPlanRequest& req, planning_interface::MotionPlanResponse& res,
+      std::vector<std::size_t>&) const {
     const std::string prefix="workcell_initial_support_contact:";
     if (req.path_constraints.name.compare(0,prefix.size(),prefix)!=0) return planner(scene,req,res);
     // MoveIt's adapter wrapper SKIPS throwing adapters. Activated policy must
@@ -694,6 +771,7 @@ public:
       bool separated=false;
       double last_height=0.;
       auto valid=[&](const moveit::core::RobotState& state, bool require_strict) {
+        PlanningAttempt::checkpoint();
         const auto* carried=state.getAttachedBody(policy.object);
         if (!carried || !state.satisfiesBounds()) return false;
         const auto motion=carried->getGlobalPose().translation()-origin.translation();

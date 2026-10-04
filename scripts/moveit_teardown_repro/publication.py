@@ -1,6 +1,7 @@
 """Final publication of the already proved, fully installed MoveIt overlay."""
 import hashlib
 import json
+import math
 from pathlib import Path
 
 
@@ -11,7 +12,7 @@ def validate_active_results(manifest):
     if hashlib.sha256(path.read_bytes()).hexdigest()!=proof['results_sha256']:
         raise ValueError('active planning shutdown evidence hash changed')
     results=json.loads(path.read_text())
-    if (results.get('method')!='real_saved_ur5_plan_owned_sigint/v1' or
+    if (results.get('method')!='real_saved_ur5_plan_owned_sigint/v2' or
         not results.get('passed') or results.get('cycles',0)<5 or
         results.get('completed')!=results.get('cycles') or
         len(results.get('results',[]))!=results.get('completed')):
@@ -33,8 +34,12 @@ def validate_active_results(manifest):
             if any(results['inputs'][name].get(k)!=item.get(k) for k in ('path','sha256')):
                 raise ValueError('active planning shutdown used different '+name)
     for row in results['results']:
+        elapsed=row.get('shutdown_seconds')
+        completed=(row.get('production_certificate_after_signal') and row.get('plan_result_after_signal'))
+        interrupted=(row.get('interrupted_after_signal') and not row.get('plan_result_after_signal'))
         if (not all(row.get(key) for key in ('passed','accepted','owned_sigint','pending_at_signal',
-                'signal_handler_observed','production_certificate_after_signal','plan_result_after_signal')) or
+                'signal_handler_observed')) or not (completed or interrupted) or
+            type(elapsed) not in (int,float) or not math.isfinite(elapsed) or not 0<=elapsed<=5 or
             row.get('returncode')!=0 or row.get('forced_cleanup') or row.get('timed_out') or
             row.get('remaining_processes') or row.get('core_inventory_changed')):
             raise ValueError('active planning shutdown cycle failed')

@@ -22,6 +22,8 @@ struct ControllerAuditOptions {
   std::size_t max_contact_timestamps=120001;
   int64_t min_interval_ns=1;
   bool stationary_world=true;
+  // Optional owner interruption check; exceptions fail certification closed.
+  std::function<void()> checkpoint;
 };
 struct ControllerAuditReport {
   ControllerCertificate result=ControllerCertificate::UNCERTIFIED;
@@ -651,7 +653,9 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
     DetachedAudit* detached=nullptr,std::size_t contact_cap=1000000) {
   ControllerAuditReport report;const auto started=std::chrono::steady_clock::now();
   auto finish=[&]() {report.wall_seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();return report;};
+  const auto checkpoint=[&] { if(options.checkpoint) options.checkpoint(); };
   try {
+    checkpoint();
     if(!options.stationary_world) throw std::runtime_error("MOVING_WORLD_WITHOUT_BOUND");
     if(!dynamic_cast<const collision_detection::CollisionEnvFCL*>(scene.getCollisionEnv().get())||
        !dynamic_cast<const collision_detection::CollisionEnvFCL*>(scene.getCollisionEnvUnpadded().get()))
@@ -660,6 +664,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
        trajectory.getWayPointCount()>120001) throw std::runtime_error("TRAJECTORY_MODEL_OR_COUNT_INVALID");
     double total=0.;
     for(std::size_t i=0;i<trajectory.getWayPointCount();++i) {
+      checkpoint();
       const double dt=trajectory.getWayPointDurationFromPrevious(i);total+=dt;
       if(!std::isfinite(dt)||(i?dt<=0.:dt!=0.)||!std::isfinite(total)||total>120.)
         throw std::runtime_error("TRAJECTORY_TIMING_INVALID");
@@ -671,6 +676,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
       throw std::runtime_error("TRAJECTORY_JOINTS_INVALID");
     auto stamp=[](const auto& point){return int64_t(point.time_from_start.sec)*1000000000LL+point.time_from_start.nanosec;};
     for(std::size_t i=0;i<msg.points.size();++i) {
+      checkpoint();
       const auto& point=msg.points[i];
       for(const auto* values:{&point.positions,&point.velocities,&point.accelerations})
         if((values==&point.positions||!values->empty())&&(values->size()!=msg.joint_names.size()||
@@ -720,6 +726,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
     }
     joint_trajectory_controller::Trajectory jtc;
     for(std::size_t segment=1;segment<msg.points.size();++segment) {
+      checkpoint();
       const auto& a=msg.points[segment-1];const auto& b=msg.points[segment];
       const int64_t begin=stamp(a),end=stamp(b);
       Polynomials p;std::map<std::string,double> errors;
@@ -747,6 +754,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
       };
       for(const auto* joint:scene.getRobotModel()->getJointModels()) if(joint->getVariableCount()) expand(joint,0);
       auto evaluate=[&](int64_t time) {
+        checkpoint();
         trajectory_msgs::msg::JointTrajectoryPoint sample;
         jtc.interpolate_between_points(rclcpp::Time(begin),a,rclcpp::Time(end),b,rclcpp::Time(time),sample);
         // sample() selects the next segment's start or the stored final point
@@ -772,6 +780,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
       const auto derivatives=(detached||has_pile)?derivativeControls(p,end-begin):Polynomials{};
       std::function<bool(int64_t,int64_t,const Polynomials&,const Polynomials&,unsigned)> visit;
       visit=[&](int64_t lo,int64_t hi,const Polynomials& controls,const Polynomials& speeds,unsigned depth) {
+        checkpoint();
         report.failure_begin_ns=lo;report.failure_end_ns=hi;
         if(++report.inspected>options.max_intervals) {report.reason="INTERVAL_LIMIT";return false;}
         report.deepest=std::max(report.deepest,depth);
@@ -779,6 +788,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         const auto anchor=evaluate(mid);
         // Midpoint is a collision witness, never a clearance certificate.
         for(int64_t t:{lo,mid,hi}) {
+          checkpoint();
           auto state=t==mid?anchor:evaluate(t);
           if(!state.satisfiesBounds()) {report.reason="JOINT_LIMIT";return false;}
           if(detached) {
@@ -867,6 +877,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
           // counts attempted work even if another pair later rejects this leaf.
           // Expiry flags themselves commit only with the complete interval.
           for(int64_t t=lo;t<=hi;++t) {
+            checkpoint();
             if(++report.contact_timestamps>options.max_contact_timestamps) {
               report.reason="CONTACT_TIMESTAMP_LIMIT";return false;
             }
@@ -905,6 +916,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         // it does not alter scene policy or omit an unresolved pair.
         collision_detection::DistanceResultsData no_axis;
         for(auto a=geometry.begin();a!=geometry.end();++a) for(auto b=std::next(a);b!=geometry.end();++b) {
+          checkpoint();
           if(!requiredPair(a->second,b->second,acm)) continue;
           Interval relative(1e-12);
           for(const auto* body:{&a->second,&b->second})
@@ -914,10 +926,14 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         }
         collision_detection::DistanceRequest req;req.type=collision_detection::DistanceRequestType::SINGLE;req.acm=&acm;req.enable_nearest_points=true;
         collision_detection::DistanceResult world,self;
+        checkpoint();
         scene.getCollisionEnv()->distanceRobot(req,world,anchor);
+        checkpoint();
         scene.getCollisionEnvUnpadded()->distanceSelf(req,self,anchor);
+        checkpoint();
         bool clear=detached_proven&&initial_proven&&!world.collision&&!self.collision;
         for(auto a=geometry.begin();a!=geometry.end();++a) for(auto b=std::next(a);b!=geometry.end();++b) {
+          checkpoint();
           if(!requiredPair(a->second,b->second,acm)) continue;
           const bool robot_world=a->second.type==collision_detection::BodyTypes::WORLD_OBJECT||b->second.type==collision_detection::BodyTypes::WORLD_OBJECT;
           // FCL legitimately stops a distance traversal at its first overlap.
@@ -972,6 +988,7 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         report.result=ControllerCertificate::COLLISION;report.reason="DETACHED_FINAL_STATE_COLLISION";return finish();
       }
     }
+    checkpoint();
     report.result=ControllerCertificate::CERTIFIED_CLEAR;report.reason="ALL_INTERVALS_CERTIFIED";
     report.failure_begin_ns=report.failure_end_ns=-1;
   } catch(const std::exception& e) {report.result=ControllerCertificate::UNCERTIFIED;report.reason=e.what();}

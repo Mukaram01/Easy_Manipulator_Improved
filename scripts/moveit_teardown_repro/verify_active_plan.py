@@ -30,7 +30,9 @@ def shutdown_completion(text):
     return dict(signal_handler_observed=marker in text,
         production_certificate_after_signal=('[workcell.controller_certificate]' in after_signal and
             'result=0 reason=ALL_INTERVALS_CERTIFIED' in after_signal),
-        plan_result_after_signal='Motion plan was computed successfully.' in after_signal)
+        plan_result_after_signal='Motion plan was computed successfully.' in after_signal,
+        interrupted_after_signal=('reason=PLANNING_CONTEXT_SHUTDOWN' in after_signal and
+            '[workcell.planning_lifecycle]: PLANNING_CONTEXT_SHUTDOWN' in after_signal))
 
 
 def main():
@@ -128,21 +130,24 @@ def main():
             if result.done():raise RuntimeError('plan completed during mapping capture; no active-shutdown evidence')
             row.update(pending_at_signal=True,signal_monotonic=time.monotonic())
             os.killpg(process.pid,signal.SIGINT);row['owned_sigint']=True
-            try:process.wait(timeout=60)
+            try:process.wait(timeout=5)
             except subprocess.TimeoutExpired:row['timed_out']=True;raise
             log.flush();text=(directory/'move-group.log').read_text()
-            row.update(returncode=process.returncode,remaining_processes=group_members(process.pid),
+            row.update(shutdown_seconds=time.monotonic()-row['signal_monotonic'],
+                returncode=process.returncode,remaining_processes=group_members(process.pid),
                 core_inventory_changed=core_inventory(directory)!=before,
                 **shutdown_completion(text))
             row['passed']=(process.returncode==0 and not row['remaining_processes'] and not row['core_inventory_changed']
-                           and row['signal_handler_observed'] and row['production_certificate_after_signal'] and row['plan_result_after_signal'])
+                           and row['shutdown_seconds']<=5 and row['signal_handler_observed'] and
+                           ((row['production_certificate_after_signal'] and row['plan_result_after_signal']) or
+                            (row['interrupted_after_signal'] and not row['plan_result_after_signal'])))
         except Exception as exc:row['error']=str(exc)
         finally:
             if process.poll() is None:
                 row['forced_cleanup']=True;os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=10)
             client.destroy();node.destroy_node();rclpy.shutdown();log.close()
         rows.append(row)
-        report=dict(method='real_saved_ur5_plan_owned_sigint/v1',cycles=args.cycles,completed=len(rows),
+        report=dict(method='real_saved_ur5_plan_owned_sigint/v2',cycles=args.cycles,completed=len(rows),
             passed=all(r['passed'] for r in rows),inputs=inputs,results=rows,
             runtime_paths={name:str(path) for name,path in runtime_paths.items()},
             scope='Actual saved UR5 plan-only request and production certificate; no timing barriers, execution goals or hardware drivers',

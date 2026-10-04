@@ -34,10 +34,11 @@ def add_active_proof(tmp_path,manifest):
         path.write_bytes(SCRIPT.with_name('verify_active_plan.py').read_bytes() if name=='verifier' else ('unit fixture '+name).encode())
         inputs[name]=dict(path=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
     row=dict(passed=True,accepted=True,owned_sigint=True,pending_at_signal=True,
+        shutdown_seconds=.2,interrupted_after_signal=False,
         signal_handler_observed=True,production_certificate_after_signal=True,plan_result_after_signal=True,returncode=0,
         remaining_processes=[],core_inventory_changed=False,mapped_artifacts=dict(artifacts,support_adapter=inputs['support_adapter']))
     proof=tmp_path/'active-results.json'
-    proof.write_text(json.dumps(dict(method='real_saved_ur5_plan_owned_sigint/v1',passed=True,
+    proof.write_text(json.dumps(dict(method='real_saved_ur5_plan_owned_sigint/v2',passed=True,
         cycles=5,completed=5,results=[dict(row) for _ in range(5)],inputs=inputs,
         runtime_paths={'support_adapter':inputs['support_adapter']['path']})))
     manifest['move_group']['active_shutdown']=dict(results_path=str(proof),
@@ -113,3 +114,27 @@ def test_publication_rejects_unreviewed_active_probe(tmp_path):
     manifest['move_group']['active_shutdown']['results_sha256']=hashlib.sha256(proof.read_bytes()).hexdigest()
     with pytest.raises(RuntimeError,match='active planning shutdown'):
         publish()(tmp_path,manifest)
+
+
+def revise_active_proof(manifest, change):
+    proof=Path(manifest['move_group']['active_shutdown']['results_path'])
+    data=json.loads(proof.read_text());change(data)
+    proof.write_text(json.dumps(data))
+    manifest['move_group']['active_shutdown']['results_sha256']=hashlib.sha256(proof.read_bytes()).hexdigest()
+
+
+def test_publication_rejects_shutdown_outside_launch_grace(tmp_path):
+    manifest=complete_receipt(tmp_path)
+    revise_active_proof(manifest,lambda data:data['results'][0].update(shutdown_seconds=5.001))
+    with pytest.raises(RuntimeError,match='active planning shutdown'):
+        publish()(tmp_path,manifest)
+
+
+def test_publication_accepts_certification_interrupted_by_owned_shutdown(tmp_path):
+    manifest=complete_receipt(tmp_path)
+    def interrupt(data):
+        for row in data['results']:
+            row.update(production_certificate_after_signal=False,plan_result_after_signal=False,
+                       interrupted_after_signal=True,shutdown_seconds=.2)
+    revise_active_proof(manifest,interrupt)
+    publish()(tmp_path,manifest)

@@ -93,8 +93,11 @@ repeated. The build records the actual installed MoveIt version in
 version before accepting the loaded binary.
 
 Interrupted simulator PLAN_ONLY goals get a five-second cancellation response
-wait and up to 60 seconds to return a terminal result, matching their certificate
-watchdog allowance. MoveGroup's synchronous planning callback can delay handling
+wait and up to 120 seconds to return a terminal result, matching their result
+watchdog allowance. The native adapter chain shares one 120-second steady-clock
+deadline starting before planning; certification and controller sampling check
+that deadline and the owning ROS context. Interruption clears the trajectory
+and returns failure. MoveGroup's synchronous planning callback can delay handling
 cancellation until certification finishes. Search cannot continue without the
 owned goal's terminal result; elapsed time or cancellation rejection is not proof
 of termination. Motion action deadlines are unchanged.

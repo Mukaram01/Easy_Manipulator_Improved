@@ -73,8 +73,22 @@ def test_active_observation_uses_actual_signal_handler_record(monkeypatch):
     success='[workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED\nMotion plan was computed successfully.\n'
     marker='[rclcpp]: signal_handler(SIGINT/SIGTERM)\n'
     assert module.shutdown_completion(marker+success)==dict(signal_handler_observed=True,
-        production_certificate_after_signal=True,plan_result_after_signal=True)
+        production_certificate_after_signal=True,plan_result_after_signal=True,interrupted_after_signal=False)
     for text in (success,success+marker):
         result=module.shutdown_completion(text)
         assert not result['production_certificate_after_signal']
         assert not result['plan_result_after_signal']
+
+
+def test_active_shutdown_requires_certificate_and_owner_interruption(monkeypatch):
+    import importlib.util
+    script=REPO/'scripts/moveit_teardown_repro/verify_active_plan.py'
+    monkeypatch.syspath_prepend(str(script.parent))
+    spec=importlib.util.spec_from_file_location('active_interrupt_probe',script)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    marker='[rclcpp]: signal_handler(SIGINT/SIGTERM)\n'
+    certificate='[workcell.controller_certificate]: result=2 reason=PLANNING_CONTEXT_SHUTDOWN\n'
+    owner='[workcell.planning_lifecycle]: PLANNING_CONTEXT_SHUTDOWN\n'
+    assert module.shutdown_completion(marker+certificate+owner)['interrupted_after_signal']
+    for text in (certificate+owner,marker+certificate,marker+owner,certificate+owner+marker):
+        assert not module.shutdown_completion(text)['interrupted_after_signal']
