@@ -453,3 +453,84 @@ def test_support_binding_preserves_pitched_orientation_at_euler_singularities(tm
     emitted=[float(v) for v in ET.fromstring(xml).findtext("world/model[@name='pick_support']/pose").split()]
     actual=quaternion(*emitted[3:])
     assert min(sum((a-b)**2 for a,b in zip(actual,expected)),sum((a+b)**2 for a,b in zip(actual,expected)))**.5 < 1e-12
+
+
+
+# Verifier/model conversion units only. These samples never count as physical evidence.
+@pytest.mark.parametrize('ratio',[1.,-1.])
+def test_native_description_preserves_authored_mimic_relation(tmp_path,monkeypatch,ratio):
+    import simulator_backend as backend
+    import xml.etree.ElementTree as ET
+    (tmp_path/'robot.urdf').write_text(f'<robot><joint name="driver" type="revolute"/><joint name="follower" type="revolute"><mimic joint="driver" multiplier="{ratio}"/></joint></robot>')
+    converted='<sdf><model><joint name="driver"><axis/></joint><joint name="follower"><axis/></joint></model></sdf>'
+    monkeypatch.setattr(backend.subprocess,'run',lambda *args,**kw:NS(stdout=converted,stderr=''))
+    relations=backend.native_simulator_description(tmp_path)
+    root=ET.parse(tmp_path/'robot.sdf').getroot();mimic=root.find("model/joint[@name='follower']/axis/mimic")
+    assert relations==[dict(follower='follower',driver='driver',multiplier=ratio)]
+    assert mimic.get('joint')=='driver' and float(mimic.findtext('multiplier'))==ratio
+    assert mimic.findtext('offset')=='0' and mimic.findtext('reference')=='0'
+
+@pytest.mark.parametrize('driver,ratio,offset',[('missing',1.,0.),('driver',.5,0.),('driver',1.,.01),('driver',float('nan'),0.)])
+def test_native_description_rejects_unsupported_relations_before_publication(tmp_path,monkeypatch,driver,ratio,offset):
+    import simulator_backend as backend
+    (tmp_path/'robot.urdf').write_text(f'<robot><joint name="driver" type="revolute"/><joint name="follower" type="revolute"><mimic joint="{driver}" multiplier="{ratio}" offset="{offset}"/></joint></robot>')
+    converted='<sdf><model><joint name="driver"><axis/></joint><joint name="follower"><axis/></joint></model></sdf>'
+    monkeypatch.setattr(backend.subprocess,'run',lambda *args,**kw:NS(stdout=converted,stderr=''))
+    with pytest.raises(ValueError,match='authored flat'):backend.native_simulator_description(tmp_path)
+    assert not (tmp_path/'robot.sdf').exists()
+
+
+def test_native_create_uses_bound_sdf_without_changing_spawn_ownership(tmp_path,monkeypatch):
+    import simulator_backend as backend
+    calls=[]
+    monkeypatch.setattr(backend,'run_ign',lambda args,*a,**kw:calls.append(args) or 'data: true')
+    monkeypatch.setattr(backend,'wait_world_model',lambda *a,**kw:dict(found=True))
+    result=backend.create_model(tmp_path,dict(world='world',model='robot',native_physics={'bound':True}))
+    assert 'robot.sdf' in calls[0][-1] and 'robot.urdf' not in calls[0][-1]
+    assert len(result['attempts'])==1 and result['attempts'][0]['readback']['found'] is True
+
+@pytest.mark.parametrize('changed',['upstream_source','control_build'])
+def test_native_contract_rejects_changed_build_inputs(tmp_path,monkeypatch,changed):
+    import json
+    import simulator_backend as backend
+    import build_simulator_physics_overlay as builder
+    proof=Path(backend.__file__).parent/'simulator_physics_repro'
+    (tmp_path/'lib').mkdir()
+    artifacts={}
+    for name in builder.LIBRARIES:
+        p=tmp_path/'lib'/name;p.write_bytes(b'verifier fixture, not a runtime library')
+        artifacts[name]=dict(path=str(p),sha256=backend.digest(p.read_bytes()))
+    sources={name:dict(url=url,archive_sha256=sha,patch_sha256=backend.digest((proof/builder.PATCHES[name]).read_bytes())) for name,(url,sha) in builder.SOURCES.items()}
+    data=dict(schema='workcell_simulator_physics_build/v1',build_script_sha256=backend.digest(Path(builder.__file__).read_bytes()),sources=sources,artifacts=artifacts,control_build_sha256=backend.digest((proof/'control.CMakeLists.txt').read_bytes()))
+    if changed=='upstream_source':data['sources']['physics']['archive_sha256']='0'*64
+    else:data['control_build_sha256']='0'*64
+    (tmp_path/'artifacts.json').write_text(json.dumps(data))
+    monkeypatch.setenv('WORKCELL_SIMULATOR_PHYSICS_ROOT',str(tmp_path))
+    with pytest.raises(RuntimeError,match='SIMULATOR_IDENTITY_REJECTED'):backend.simulator_physics_contract()
+
+
+def test_native_builder_rejects_existing_build_cache_before_mutation(tmp_path):
+    import subprocess
+    import build_simulator_physics_overlay as builder
+    output=tmp_path/'output';cache=output/'build/bullet/CMakeCache.txt'
+    cache.parent.mkdir(parents=True);cache.write_text('USE_DOUBLE_PRECISION:BOOL=ON\n')
+    invalid=tmp_path/'invalid-source';invalid.write_bytes(b'invalid pinned source')
+    result=subprocess.run([sys.executable,'-B',builder.__file__,'--output',str(output),'--physics-source',str(invalid)],capture_output=True,text=True,timeout=10)
+    assert result.returncode!=0 and 'new or empty output directory' in result.stderr
+    assert cache.read_text()=='USE_DOUBLE_PRECISION:BOOL=ON\n'
+    assert not (output/'build.log').exists()
+
+
+def test_selected_native_physics_rejects_live_stock_receipt(tmp_path,monkeypatch):
+    import json
+    import simulator_backend as backend
+    control=tmp_path/'stock-control.so';control.write_bytes(b'unit fixture')
+    data=dict(domain='226',partition='unit-partition',pid=123,start_ticks=456,
+              control_plugin_library=str(control),control_plugin_sha256=backend.digest(control.read_bytes()))
+    for name,key in [('world.sdf','world_sha256'),('controllers.yaml','controllers_sha256'),('robot.urdf','description_sha256')]:
+        p=tmp_path/name;p.write_bytes(b'unit fixture');data[key]=backend.digest(p.read_bytes())
+    receipt=tmp_path/'receipt.json';receipt.write_text(json.dumps(data))
+    monkeypatch.setenv('ROS_DOMAIN_ID',data['domain']);monkeypatch.setenv('IGN_PARTITION',data['partition'])
+    monkeypatch.setattr(backend,'process_info',lambda pid:dict(start_ticks=456,command='gazebo -s -r '+str(tmp_path/'world.sdf'),libraries=str(control)+'\nlibignition-gazebo6',environ={'ROS_DOMAIN_ID':data['domain'],'IGN_PARTITION':data['partition']}))
+    monkeypatch.setattr(backend,'simulator_physics_contract',lambda:dict(selected_native=True))
+    with pytest.raises(RuntimeError,match='SIMULATOR_IDENTITY_REJECTED'):backend.verify_receipt_process(receipt)
