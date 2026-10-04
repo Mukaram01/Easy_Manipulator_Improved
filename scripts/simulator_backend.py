@@ -113,8 +113,11 @@ def native_simulator_description(output):
         if mimic is None:continue
         driver=root.find(f"joint[@name='{mimic.get('joint')}']")
         multiplier=float(mimic.get('multiplier','1'));offset=float(mimic.get('offset','0'))
+        # URDF continuous and revolute joints both convert to SDF revolute axes.
+        kind=lambda value:'revolute' if value=='continuous' else value
         if (driver is None or driver.find('mimic') is not None or
-                joint.get('type') not in ('revolute','prismatic') or driver.get('type')!=joint.get('type') or
+                kind(joint.get('type')) not in ('revolute','prismatic') or
+                kind(driver.get('type'))!=kind(joint.get('type')) or
                 multiplier not in (-1.,1.) or offset!=0.):
             raise ValueError('native simulator requires authored flat single-axis +/-1 mimic relations')
         axis=model.find(f"joint[@name='{joint.get('name')}']/axis")

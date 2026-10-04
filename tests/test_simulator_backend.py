@@ -594,10 +594,11 @@ def test_simulator_internal_forced_kill_is_a_failure(tmp_path):
 
 # Verifier/model conversion units only. These samples never count as physical evidence.
 @pytest.mark.parametrize('ratio',[1.,-1.])
-def test_native_description_preserves_authored_mimic_relation(tmp_path,monkeypatch,ratio):
+@pytest.mark.parametrize('joint_type',['revolute','continuous'])
+def test_native_description_preserves_authored_mimic_relation(tmp_path,monkeypatch,ratio,joint_type):
     import simulator_backend as backend
     import xml.etree.ElementTree as ET
-    (tmp_path/'robot.urdf').write_text(f'<robot><joint name="driver" type="revolute"/><joint name="follower" type="revolute"><mimic joint="driver" multiplier="{ratio}"/></joint></robot>')
+    (tmp_path/'robot.urdf').write_text(f'<robot><joint name="driver" type="revolute"/><joint name="follower" type="{joint_type}"><mimic joint="driver" multiplier="{ratio}"/></joint></robot>')
     converted='<sdf><model><joint name="driver"><axis/></joint><joint name="follower"><axis/></joint></model></sdf>'
     monkeypatch.setattr(backend.subprocess,'run',lambda *args,**kw:NS(stdout=converted,stderr=''))
     relations=backend.native_simulator_description(tmp_path)
