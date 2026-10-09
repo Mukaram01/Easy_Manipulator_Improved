@@ -1,0 +1,54 @@
+{
+  "purpose": "independent ground-truth validation only",
+  "scene_sample_limitation": "dimensions from scene/info; poses from timestamped dynamic_pose/info bracketing capture",
+  "settling_position_delta_m": 0.0,
+  "settling_orientation_delta_rad": 4.2146848510894035e-08,
+  "epd_detection_count": 5,
+  "valid_observation_count": 4,
+  "raycast_visible_pixel_counts": {
+    "part_00": 359,
+    "part_01": 361,
+    "part_02": 364,
+    "part_03": 357,
+    "part_04": 336,
+    "part_05": 366,
+    "part_06": 390,
+    "part_07": 389,
+    "part_08": 378,
+    "part_09": 377
+  },
+  "visible_box_count": 10,
+  "fully_occluded_box_count": 0,
+  "matched_box_count": 4,
+  "cube_depth_pixels_compared": 3677,
+  "interior_depth_pixels_compared": 2832,
+  "interior_depth_p95_abs_error_m": 1.4917541034109582e-07,
+  "cube_depth_median_abs_error_m": 8.74717316357021e-08,
+  "cube_depth_p95_abs_error_m": 0.01207399881751676,
+  "observations": [
+    {
+      "object_id": "epd_36940000000_1",
+      "nearest_box": "part_05",
+      "surface_error_m": 6.428345190736401e-06,
+      "volume_centre_distance_m": 0.012526428914036405
+    },
+    {
+      "object_id": "epd_36940000000_2",
+      "nearest_box": "part_01",
+      "surface_error_m": 2.7805425787402402e-05,
+      "volume_centre_distance_m": 0.01249607588634016
+    },
+    {
+      "object_id": "epd_36940000000_3",
+      "nearest_box": "part_02",
+      "surface_error_m": 1.030466085208577e-05,
+      "volume_centre_distance_m": 0.012521598925027003
+    },
+    {
+      "object_id": "epd_36940000000_4",
+      "nearest_box": "part_07",
+      "surface_error_m": 3.074690534187602e-06,
+      "volume_centre_distance_m": 0.012526168228219881
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "camera_definition_source": "live_generate_world_sdf",
+  "camera_is_static": true,
+  "camera_pose_source": "live_scene_info",
+  "camera_world_pose": [
+    0.4,
+    -0.217,
+    0.614,
+    0.0,
+    0.7071067811865475,
+    0.0,
+    0.7071067811865476
+  ],
+  "clock_domain": "gazebo_simulation",
+  "depth_encoding": "32FC1",
+  "depth_stamp_ns": 36940000000,
+  "depth_units": "metres",
+  "epd_detections_ge_0_80": 5,
+  "frame_id": "stage_a_camera_optical_frame",
+  "height": 512,
+  "inference_api": "external EPD Ort::P3OrtBase",
+  "info_stamp_ns": 36940000000,
+  "intrinsics": [
+    443.5061702581152,
+    443.5061702581152,
+    256.0,
+    256.0
+  ],
+  "rejected_geometry_count": 1,
+  "rgb_stamp_ns": 36940000000,
+  "robot_motion_called": false,
+  "ros_bridge_started": false,
+  "valid_observations": 4,
+  "width": 512
+}

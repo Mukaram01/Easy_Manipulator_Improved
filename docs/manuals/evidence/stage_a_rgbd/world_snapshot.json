@@ -1,0 +1,104 @@
+{
+  "camera_id": "stage_a_camera",
+  "frame_id": "world",
+  "objects": [
+    {
+      "attributes": {
+        "mask_pixels": 433,
+        "position_semantics": "visible_surface_centroid",
+        "valid_depth_pixels": 355
+      },
+      "centroid": [
+        0.4306240199212458,
+        -0.19934221294233706,
+        0.02499345297880573
+      ],
+      "confidence": 0.903289258480072,
+      "label": "cube",
+      "object_id": "epd_36940000000_1"
+    },
+    {
+      "attributes": {
+        "mask_pixels": 458,
+        "position_semantics": "visible_surface_centroid",
+        "valid_depth_pixels": 367
+      },
+      "centroid": [
+        0.3996524554742654,
+        -0.2492869160600839,
+        0.024972179281614104
+      ],
+      "confidence": 0.8956862688064575,
+      "label": "cube",
+      "object_id": "epd_36940000000_2"
+    },
+    {
+      "attributes": {
+        "mask_pixels": 405,
+        "position_semantics": "visible_surface_centroid",
+        "valid_depth_pixels": 352
+      },
+      "centroid": [
+        0.43113042868525653,
+        -0.24945471386154267,
+        0.024989668389612918
+      ],
+      "confidence": 0.8790956139564514,
+      "label": "cube",
+      "object_id": "epd_36940000000_3"
+    },
+    {
+      "attributes": {
+        "mask_pixels": 418,
+        "position_semantics": "visible_surface_centroid",
+        "valid_depth_pixels": 375
+      },
+      "centroid": [
+        0.41590794567205025,
+        -0.22491501436010003,
+        0.04999687433242794
+      ],
+      "confidence": 0.8209894895553589,
+      "label": "cube",
+      "object_id": "epd_36940000000_4"
+    }
+  ],
+  "scene_id": "ur5_2f_test",
+  "schema_version": "workcell_perception_snapshot/v1",
+  "source": {
+    "camera_definition_source": "live_generate_world_sdf",
+    "camera_is_static": true,
+    "camera_pose_source": "live_scene_info",
+    "camera_world_pose": [
+      0.4,
+      -0.217,
+      0.614,
+      0.0,
+      0.7071067811865475,
+      0.0,
+      0.7071067811865476
+    ],
+    "clock_domain": "gazebo_simulation",
+    "depth_encoding": "32FC1",
+    "depth_stamp_ns": 36940000000,
+    "depth_units": "metres",
+    "epd_detections_ge_0_80": 5,
+    "frame_id": "stage_a_camera_optical_frame",
+    "height": 512,
+    "inference_api": "external EPD Ort::P3OrtBase",
+    "info_stamp_ns": 36940000000,
+    "intrinsics": [
+      443.5061702581152,
+      443.5061702581152,
+      256.0,
+      256.0
+    ],
+    "rejected_geometry_count": 1,
+    "rgb_stamp_ns": 36940000000,
+    "robot_motion_called": false,
+    "ros_bridge_started": false,
+    "valid_observations": 4,
+    "width": 512
+  },
+  "timestamp": 36940000000
+}
