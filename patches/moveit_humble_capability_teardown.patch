@@ -1,0 +1,61 @@
+diff --git a/src/move_group.cpp b/src/move_group.cpp
+index 44d9818..5784806 100644
+--- a/src/move_group.cpp
++++ b/src/move_group.cpp
+@@ -71,7 +71,8 @@ static const char* DEFAULT_CAPABILITIES[] = {
+ class MoveGroupExe
+ {
+ public:
+-  MoveGroupExe(const moveit_cpp::MoveItCppPtr& moveit_cpp, const std::string& default_planning_pipeline, bool debug)
++  MoveGroupExe(const moveit_cpp::MoveItCppPtr& moveit_cpp, const std::string& default_planning_pipeline, bool debug,
++               std::shared_ptr<pluginlib::ClassLoader<MoveGroupCapability>>& capability_loader_lifetime)
+   {
+     // if the user wants to be able to disable execution of paths, they can just set this ROS param to false
+     bool allow_trajectory_execution;
+@@ -81,7 +82,7 @@ public:
+         std::make_shared<MoveGroupContext>(moveit_cpp, default_planning_pipeline, allow_trajectory_execution, debug);
+ 
+     // start the capabilities
+-    configureCapabilities();
++    configureCapabilities(capability_loader_lifetime);
+   }
+ 
+   ~MoveGroupExe()
+@@ -115,12 +116,16 @@ public:
+   }
+ 
+ private:
+-  void configureCapabilities()
++  void configureCapabilities(
++      std::shared_ptr<pluginlib::ClassLoader<MoveGroupCapability>>& capability_loader_lifetime)
+   {
+     try
+     {
+       capability_plugin_loader_ = std::make_shared<pluginlib::ClassLoader<MoveGroupCapability>>(
+           "moveit_ros_move_group", "move_group::MoveGroupCapability");
++      // Retain the loader before initializing any capability, including when
++      // initialization throws. The main node outlives this MoveGroupExe.
++      capability_loader_lifetime = capability_plugin_loader_;
+     }
+     catch (pluginlib::PluginlibException& ex)
+     {
+@@ -205,6 +210,10 @@ int main(int argc, char** argv)
+ {
+   rclcpp::init(argc, argv);
+ 
++  // Main-node callback groups retain weak entity control blocks implemented
++  // in capability plugins. Unload those plugins only after the node and its
++  // executors have been destroyed, including during exception unwinding.
++  std::shared_ptr<pluginlib::ClassLoader<move_group::MoveGroupCapability>> capability_loader_lifetime;
+   rclcpp::NodeOptions opt;
+   opt.allow_undeclared_parameters(true);
+   opt.automatically_declare_parameters_from_overrides(true);
+@@ -293,7 +302,7 @@ int main(int argc, char** argv)
+ 
+     rclcpp::executors::MultiThreadedExecutor executor;
+ 
+-    move_group::MoveGroupExe mge(moveit_cpp, default_planning_pipeline, debug);
++    move_group::MoveGroupExe mge(moveit_cpp, default_planning_pipeline, debug, capability_loader_lifetime);
+ 
+     bool monitor_dynamics;
+     if (nh->get_parameter("monitor_dynamics", monitor_dynamics) && monitor_dynamics)

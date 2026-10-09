@@ -110,8 +110,12 @@ frame. The resolver transforms it through the R1.9 target-local chain to world.
 Task intent contains no target or region dimensions.
 
 - **AUTO:** strategy and local pose may be absent; choose any valid candidate.
-- **PREFERRED:** try the requested strategy/local pose first; any fallback is
-  persisted with a reason and produces `WARNING`.
+- **PREFERRED:** try the requested strategy/local pose first using its authored
+  constraints. If the requested grasp strategy fails, an alternate strategy is
+  evaluated with that alternate strategy's reviewed catalog geometry
+  (approach axis/distance, orientation, TCP offset and lift distance); the
+  substitution and first preferred-strategy blocker are persisted and produce
+  `WARNING`.
 - **EXACT:** requested strategy/constraints/local pose are consumed unchanged;
   any invalidity is `BLOCKED`, with no fallback.
 

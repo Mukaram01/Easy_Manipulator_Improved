@@ -1,0 +1,41 @@
+{
+  "source_root": "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-150823/05-contact-release",
+  "old_failure": {
+    "iteration": 61853,
+    "error": "pile contact recontact after separation: runtime::part_00,runtime::part_03,runtime::part_04"
+  },
+  "old_checked": 425,
+  "new_checked": 426,
+  "new_failure": null,
+  "measured_separation": {
+    "iteration": 61711,
+    "sim_ns": 61711000000,
+    "wall_ns": 1790172961962030623,
+    "run_id": "3680cbb8c1364d849df11062391293a1",
+    "target": "runtime::part_06",
+    "gripper_position_rad": 0.584210166890909,
+    "relative_translation_m": 0.00010128077247436768,
+    "required_finger_contacts_absent": true,
+    "pose_source": {
+      "method": "physics_link_frame_data_at_offset",
+      "frame": "world",
+      "read_only": true,
+      "gazebo_version": "6.18.0",
+      "query_iteration": 61711,
+      "query_sim_ns": 61711000000
+    }
+  },
+  "physical_state": "RELEASING",
+  "owned_open_terminal_observed": false,
+  "expired_pairs": [
+    "runtime::part_00",
+    "runtime::part_01",
+    "runtime::part_03",
+    "runtime::part_04"
+  ],
+  "source_hashes": {
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-150823/05-contact-release/contact-release/summary.json": "14fda50ef81075d03e8b5972c955cf9cb04d1647c1cde54c6b494665210ea425",
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-150823/05-contact-release/runtime/receipt.json": "bc156e2c8ec935793663fd1d3aa572780b5f179144e268907f6d72c4a56b624f",
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-150823/05-contact-release/contact-release/summary.measurements.jsonl": "04f416cf26ba945cb5135b6421ff29975df2b1a500459f5a0f7d07454ae09e34"
+  }
+}

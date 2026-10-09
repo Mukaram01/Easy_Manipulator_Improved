@@ -1,0 +1,71 @@
+{
+  "kind": "HISTORICAL_DIAGNOSTIC_ONLY",
+  "iteration": 104485,
+  "run_id": "4f31e734e14e4e9391c9bf65d7630245",
+  "leader": "gripper_finger1_joint",
+  "candidate_delta_rad": -0.01,
+  "candidate_duration_s": 1.0,
+  "dynamic_objects": 10,
+  "robot_joint_count": 12,
+  "attachment_count": 0,
+  "baseline_acm_restored": true,
+  "physical_robot_contacts": [
+    {
+      "a": "a0::part_07::link::collision",
+      "b": "a0::workcell_robot::gripper_finger1_finger_tip_link::gripper_finger1_finger_tip_link_collision",
+      "points": [
+        [
+          0.42596349608817324,
+          -0.2397028411066496,
+          0.03117085499733614
+        ],
+        [
+          0.4259634966494493,
+          -0.23970284119591256,
+          0.031171486445445463
+        ],
+        [
+          0.425963870000646,
+          -0.23970284119817997,
+          0.031171757701048457
+        ],
+        [
+          0.4259639112364657,
+          -0.23970287405787044,
+          0.03117192952870134
+        ],
+        [
+          0.4259638674119274,
+          -0.23970289995448918,
+          0.031171751429371418
+        ],
+        [
+          0.425963870000646,
+          -0.23970284119817997,
+          0.031171757701048457
+        ],
+        [
+          0.4259639216279931,
+          -0.23970284122350316,
+          0.031171972745292927
+        ],
+        [
+          0.4259639112202874,
+          -0.23970290689732696,
+          0.031171929358310414
+        ],
+        [
+          0.42596387000634534,
+          -0.2397029003656557,
+          0.03117175769272352
+        ]
+      ]
+    }
+  ],
+  "inputs_sha256": {
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609/05-contact-release/contact-release/summary.json": "838810a7e6f56786aa648e96dd4b462f956348c96caeb701633c70f8ba647a6e",
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609/05-contact-release/contact-release/planning_scene_before.json": "f15df3baedc1a4b3e5f8924c8db680e9204b48fd2fc6e642f9790cc76952b37c",
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609/05-contact-release/runtime/robot.urdf": "2750c4ee7ae0cc8a66a014b8bc08eb524b60cb4e6038130bd180bbea683483f7",
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609/05-contact-release/runtime/receipt.json": "a358c4025409c09f7d1bcdff5ccd6a63fd29a6f1647f514d25384ab3d2445ca2"
+  }
+}

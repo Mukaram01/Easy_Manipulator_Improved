@@ -1,0 +1,138 @@
+{
+  "classification": "D: measured opposing-fingertip contact loss during selected candidate lift",
+  "source_root": "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609",
+  "candidate": {
+    "object": "runtime::part_07",
+    "grasp": 7
+  },
+  "retention_duration_sim_ns": 1101000000,
+  "failure": "measured grasp retention lost: contact/slip",
+  "failed_stage": "EXECUTE_LIFT",
+  "previous": {
+    "iteration": 104155,
+    "sim_ns": 104155000000,
+    "wall_ns": 1790176510284642628,
+    "pose_source": {
+      "method": "physics_link_frame_data_at_offset",
+      "frame": "world",
+      "read_only": true,
+      "gazebo_version": "6.18.0",
+      "query_iteration": 104155,
+      "query_sim_ns": 104155000000
+    },
+    "fingertips": [
+      "gripper_finger1_finger_tip_link",
+      "gripper_finger2_finger_tip_link"
+    ],
+    "held_check_passed": true,
+    "held_error": null,
+    "relative_translation_m": 3.486062576350728e-06,
+    "relative_rotation_rad": 8.183437715617463e-07,
+    "object_z_m": 0.03750005829201228,
+    "tool_z_m": 0.19000611568616887
+  },
+  "first_violation": {
+    "iteration": 104156,
+    "sim_ns": 104156000000,
+    "wall_ns": 1790176510287038552,
+    "pose_source": {
+      "frame": "world",
+      "gazebo_version": "6.18.0",
+      "method": "physics_link_frame_data_at_offset",
+      "query_iteration": 104156,
+      "query_sim_ns": 104156000000,
+      "read_only": true
+    },
+    "fingertips": [
+      "gripper_finger2_finger_tip_link"
+    ],
+    "held_check_passed": false,
+    "held_error": "measured grasp retention lost: contact/slip",
+    "relative_translation_m": 3.955885859912616e-06,
+    "relative_rotation_rad": 8.539288510021277e-07,
+    "object_z_m": 0.03750005837003156,
+    "tool_z_m": 0.1900065855619213
+  },
+  "open_action_attempted": false,
+  "cancellation_confirmed": true,
+  "reconciliation": {
+    "acm_restored": true,
+    "attached_ids": [],
+    "held": false,
+    "measured_geometry_matches": true,
+    "pose": [
+      0.41557451184061317,
+      -0.2254004057237521,
+      0.03749989631163789,
+      7.89462744005129e-07,
+      -3.792248584719921e-06,
+      -0.07850558036122049,
+      0.9969136742151467
+    ],
+    "run_id": "4f31e734e14e4e9391c9bf65d7630245",
+    "sim_ns": 104503000000,
+    "target": "runtime::part_07"
+  },
+  "sessions": [
+    {
+      "gate": "resolve",
+      "status": "PASS",
+      "selected_object_id": "runtime::part_07",
+      "selected_grasp_index": 3,
+      "shutdown_clean": true,
+      "child_exits": 10,
+      "children_all_zero": true,
+      "no_remaining_owned_processes": true,
+      "crash_evidence": []
+    },
+    {
+      "gate": "cancel",
+      "status": "PASS",
+      "selected_object_id": "runtime::part_06",
+      "selected_grasp_index": 3,
+      "shutdown_clean": true,
+      "child_exits": 10,
+      "children_all_zero": true,
+      "no_remaining_owned_processes": true,
+      "crash_evidence": []
+    },
+    {
+      "gate": "telemetry",
+      "status": "PASS",
+      "selected_object_id": "runtime::part_07",
+      "selected_grasp_index": 3,
+      "shutdown_clean": true,
+      "child_exits": 10,
+      "children_all_zero": true,
+      "no_remaining_owned_processes": true,
+      "crash_evidence": []
+    },
+    {
+      "gate": "stationary",
+      "status": "PASS",
+      "selected_object_id": "runtime::part_07",
+      "selected_grasp_index": 3,
+      "shutdown_clean": true,
+      "child_exits": 10,
+      "children_all_zero": true,
+      "no_remaining_owned_processes": true,
+      "crash_evidence": []
+    },
+    {
+      "gate": "contact-release",
+      "status": "BLOCKED",
+      "selected_object_id": "runtime::part_07",
+      "selected_grasp_index": 7,
+      "shutdown_clean": true,
+      "child_exits": 10,
+      "children_all_zero": true,
+      "no_remaining_owned_processes": true,
+      "crash_evidence": []
+    }
+  ],
+  "source_sha256": {
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609/05-contact-release/contact-release/summary.json": "838810a7e6f56786aa648e96dd4b462f956348c96caeb701633c70f8ba647a6e",
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609/05-contact-release/runtime/receipt.json": "a358c4025409c09f7d1bcdff5ccd6a63fd29a6f1647f514d25384ab3d2445ca2",
+    "/home/ubuntu/workcell_ws/stage-a1-finish-20260923-160609/05-contact-release/contact-release/summary.measurements.jsonl": "d463ac7becbfcafe8d23c8664b55131d01481d0be26d8880948718e7a3a2fb6e"
+  }
+}

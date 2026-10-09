@@ -154,3 +154,18 @@ def test_reachable_object_policy_is_explicit_and_keeps_freshness():
     assert not inputs.filter_targets(objects, task, cell, 110, geometry)[0]
     with pytest.raises(ValueError, match='selection_policy'):
         inputs.task_request(dict(task, selection_policy='typo'), cell)
+
+
+def test_zone_boundary_accepts_micrometre_physics_settling_jitter():
+    # A 25 mm part resting on the z=0 support can arrive from Fortress with its
+    # centre a micrometre below the exact half-height. It is still on the
+    # authored boundary and must not disappear from task selection.
+    region = dict(pose_xyz=[0., 0., .3], pose_rpy=[0., 0., 0.],
+                  dimensions=[.35, .30, .60])
+    obj = dict(pose=[0., 0., .012499, 0., 0., 0., 1.],
+               dimensions=[.025, .025, .025])
+    assert inputs.contained(obj, region, geometry)
+
+    # This is a numeric tolerance, not zone padding.
+    obj['pose'][2] = .01247
+    assert not inputs.contained(obj, region, geometry)

@@ -1,0 +1,13 @@
+diff --git a/src/parameter_bridge.cpp b/src/parameter_bridge.cpp
+index e03e89d..1c39d6e 100644
+--- a/src/parameter_bridge.cpp
++++ b/src/parameter_bridge.cpp
+@@ -171,6 +171,8 @@ int main(int argc, char * argv[])
+ 
+   // ROS 2 spinner
+   rclcpp::spin(bridge_node);
++  // Join deferred signal shutdown before process-global logging destruction.
++  rclcpp::shutdown();
+ 
+   return 0;
+ }

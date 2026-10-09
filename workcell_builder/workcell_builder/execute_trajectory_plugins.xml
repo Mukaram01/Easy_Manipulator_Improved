@@ -1,0 +1,5 @@
+<library path="workcell_commission_execute">
+ <class name="workcell/CommissionExecuteTrajectory" type="workcell::CommissionExecuteTrajectory" base_class_type="move_group::MoveGroupCapability">
+  <description>MoveIt 2.5.9 ExecuteTrajectory cancellation correction, explicit simulator commissioning only.</description>
+ </class>
+</library>

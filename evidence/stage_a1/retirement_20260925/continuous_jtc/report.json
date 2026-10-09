@@ -1,0 +1,140 @@
+{
+  "base_head": "9a32e5e3d6008f1c7f5becc4d74be68a0b6dfaf2",
+  "source_sha256": {
+    "workcell_builder/workcell_builder/controller_interval_certificate.hpp": "616b17297e36cb4c09b1526a364e52f2c5ab32d516d7172561d96fcb6212b7d9",
+    "workcell_builder/workcell_builder/src_support_contact_adapter.cpp": "b4225d5164e448b74f0666fdfc3167eeb6455e4f04f5134852b3b12ac5473f18",
+    "workcell_builder/workcell_builder/support_contact_policy.hpp": "9aea8200765836c0d37569cbf9ffd2fc840b4f4b3c47111fcfd9c7865391d42a",
+    "workcell_builder/workcell_builder/test/support_contact_policy_test.cpp": "551817b8862d0413bfcbbcf6590bee0d646587dd5294e3734d6e80ffe52d61b7",
+    "workcell_builder/workcell_builder/CMakeLists.txt": "a538ad768c055aaf6b6269afaf02b9d648f8a07759fc8385e2c29f3de006ee78"
+  },
+  "cpp": {
+    "passed": 40,
+    "skipped": 0,
+    "log": "cpp-final.txt"
+  },
+  "python": {
+    "passed": 342,
+    "seconds": 9.71,
+    "log": "python-final.txt"
+  },
+  "real_stage_a": {
+    "points": 101,
+    "inspected": 936,
+    "certified": 518,
+    "subdivided": 418,
+    "maximum_depth": 3,
+    "seconds": 17.7559,
+    "result": "CERTIFIED_CLEAR"
+  },
+  "saved_counterexample": {
+    "before_accepted": true,
+    "midpoint_position_m": 6.25e-08,
+    "midpoint_collision": true,
+    "after_accepted": false,
+    "result": "COLLISION"
+  },
+  "clear_control": "CERTIFIED_CLEAR",
+  "review": {
+    "sample_only_success": false,
+    "conservative_supported_joint_bounds": true,
+    "self_both_bodies": true,
+    "fail_closed": true,
+    "installed_jtc_semantics": true,
+    "outstanding_findings": []
+  },
+  "installed_jtc": {
+    "debian_version": "2.54.0-1jammy.20260908.124006",
+    "library_sha256": "331b5dacbb3a358854c5b08e429acc7a33806bf21555b07b11cf7797886d5b44",
+    "reference_source_sha256": "7a315f55734c03c63e976794d4b00a55e42c8eddaaf986abacebfe748b66f41b"
+  },
+  "physical": "NOT RUN",
+  "recovery_authority_R": false,
+  "withdrawal": {
+    "status": "BLOCKED",
+    "historical_iteration": 104485,
+    "attachment_count": 0,
+    "baseline_acm_unchanged": true,
+    "all_robot_self_and_world_geometry_checked": true,
+    "contact_query_maximum": 1000000,
+    "contact_query_maximum_per_pair": 1000000,
+    "initial_pair_count": 1,
+    "initial_contact_count": 4,
+    "contact_query_truncated": false,
+    "initial_contacts": [
+      {
+        "robot_link": "gripper_finger1_finger_tip_link",
+        "world_object": "runtime::part_07",
+        "body_types": [
+          "ROBOT_LINK",
+          "WORLD_OBJECT"
+        ],
+        "count": 4,
+        "max_depth_m": 5.8070583773010374e-08
+      }
+    ],
+    "candidate": {
+      "leader": "gripper_finger1_joint",
+      "group": "gripper",
+      "delta_rad": -0.01,
+      "duration_s": 1.0,
+      "purpose": "offline diagnostic only, not an admitted trajectory",
+      "affected_links": [
+        "gripper_finger1_inner_knuckle_link",
+        "gripper_finger1_finger_tip_link",
+        "gripper_finger1_knuckle_link",
+        "gripper_finger1_finger_link",
+        "gripper_finger2_inner_knuckle_link",
+        "gripper_finger2_finger_tip_link",
+        "gripper_finger2_knuckle_link",
+        "gripper_finger2_finger_link"
+      ],
+      "max_link_origin_translation_m": 0.0005714976187327965,
+      "complete_scene_endpoint_collision": false,
+      "continuous_audit": "COLLISION",
+      "inspected_intervals": 1,
+      "certified_intervals": 0,
+      "maximum_depth": 0,
+      "failing_interval_ns": [
+        0,
+        1000000000
+      ],
+      "early_jtc_depth_witness": {
+        "time_ns": 5000000,
+        "joint_delta_rad": -1.2406437543965865e-08,
+        "max_depth_m": 6.455671899634459e-08
+      },
+      "qualified": false
+    },
+    "first_blocker": "No conservative per-pair monotonic separation/irreversible expiry proof for the initial detached fingertip mesh / target BOX contact; actual JTC/FCL depth evidence increases under the unchanged policy.",
+    "R": "NOT ISSUED",
+    "simulation_recovery": "NOT RUN",
+    "clear_for_observation_planning": false,
+    "diagnostic_test_passed": true,
+    "note": "A passed diagnostic test confirms rejection, not recovery acceptance. Numerical FCL depth variation is not evidence of physical deeper penetration."
+  },
+  "head": "30515090e5d5b28e5fc8bba035fdf93d05fa503b",
+  "pushed": true,
+  "pr": {
+    "number": 3174,
+    "state": "OPEN",
+    "draft": true,
+    "merged": false
+  },
+  "prior_diagnostics_preserved": {
+    "finger1_direct_mesh_depth_m": 5.80487155363e-08,
+    "finger2_target_gap_m": 7.22295055582e-07,
+    "eight_rigid_translations": "unqualified; not proof no other candidate exists",
+    "closing_delta_rad": 0.01,
+    "closing_retained_contact": true,
+    "opening_endpoint_two_tip_only_min_clearance_m": 0.000563170578536,
+    "source_directory": "/home/ubuntu/workcell_ws/stage-a1-withdrawal-qualification-20260924"
+  },
+  "evidence_sha256": {
+    "cpp-final.txt": "81888fcfdb1885dc65de61fea7abbc5dfd36b85a44c0adf9bb8bdeba51f8caa2",
+    "python-final.txt": "adb74a384761f6cd4e5840692658b6f7f71e6525f614a46933d60035727c057d",
+    "saved-probe.txt": "bb350d26269e9e89af7b67202d6bb47e26799ace3e7c0e743de1db5052f2ce82",
+    "withdrawal.txt": "a2f2434c73c076fadfd466f2f33b4a3179f72a019365d8d0c48f48002c440be0",
+    "withdrawal_probe.cpp": "5dd6007f34d26eb391eb389f9bd706c27f4f8b25bf855a1252a61e6855bbe8ae",
+    "prepare_withdrawal.py": "ab15d021abb060bab7ddd04f109b9b6ae49a6f3cead01f469823384b1fcd1c3c"
+  }
+}

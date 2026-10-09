@@ -3,6 +3,12 @@ import copy
 import math
 from urllib.parse import quote
 
+# Fortress resting-contact poses can numerically straddle an authored zone face
+# by a few micrometres even when the physical box is supported exactly on it.
+# Keep boundary inclusion deterministic without turning this into geometric
+# padding: anything farther than 10 µm outside remains rejected.
+CONTAINMENT_EPSILON_M = 1e-5
+
 
 def vector(value, size, name):
     if (not isinstance(value, (list, tuple)) or len(value) != size or
@@ -96,7 +102,7 @@ def contained(obj, region, geometry):
     region_pose = region['pose_xyz'] + geometry.quaternion_from_rpy(region.get('pose_rpy', [0, 0, 0]))
     local = geometry.compose_pose(geometry.inverse_pose(region_pose), obj['pose'])
     extents = geometry.oriented_box_extents(dict(target_pose=local, target_dimensions=obj['dimensions']))
-    return all(abs(p) + e / 2 <= d / 2 + 1e-9
+    return all(abs(p) + e / 2 <= d / 2 + CONTAINMENT_EPSILON_M
                for p, e, d in zip(local[:3], extents, region['dimensions']))
 
 

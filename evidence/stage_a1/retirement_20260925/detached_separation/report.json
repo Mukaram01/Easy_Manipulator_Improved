@@ -1,0 +1,120 @@
+{
+  "head": "076f4e552bbbcd2cb04a8229557e61be7e4f42af",
+  "base_head": "30515090e5d5b28e5fc8bba035fdf93d05fa503b",
+  "result": "UNCERTIFIED",
+  "first_remaining_blocker": "DETACHED_CONTROLLER_START_DISCONTINUITY",
+  "tests": {
+    "cpp": {
+      "tests": 64,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "python": {
+      "tests": 342,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "historical_diagnostic_not_acceptance": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "historical_audit": {
+    "result": "2",
+    "reason": "DETACHED_CONTROLLER_START_DISCONTINUITY",
+    "inspected": "0",
+    "certified": "0",
+    "subdivided": "0",
+    "depth": "0",
+    "failure_begin": "-1",
+    "failure_end": "-1",
+    "seconds": "0.010015379"
+  },
+  "initial_pair_count": 1,
+  "initial_pairs": [
+    {
+      "robot_link": "gripper_finger1_finger_tip_link",
+      "world_object": "runtime::part_07",
+      "state": "ACTIVE_INITIAL_CONTACT",
+      "epoch": "historical-stopped-104485-diagnostic",
+      "maximum_fcl_depth_m": 5.8070583773010374e-08,
+      "fixed_axis": [
+        -0.15652657455413485,
+        -0.987673747478431,
+        -5.113488208774098e-07
+      ],
+      "world_support": 0.17007358009154258,
+      "initial_projection_gap": -3.81722680360963e-05,
+      "expiry": null
+    }
+  ],
+  "start_discontinuities": [
+    "START_DISCONTINUITY variable=gripper_finger2_inner_knuckle_joint measured=0.55269734136575255 controller=0.55269734141968274 delta=5.3930193644191604e-11",
+    "START_DISCONTINUITY variable=gripper_finger2_finger_tip_joint measured=-0.55269734136579263 controller=-0.55269734141968274 delta=-5.3890114593002636e-11",
+    "START_DISCONTINUITY variable=gripper_finger2_joint measured=0.55269734136811732 controller=0.55269734141968274 delta=5.1565418601740021e-11"
+  ],
+  "historical_moving_links": [
+    "MOVING link=gripper_finger1_inner_knuckle_link translation=0 angle=0.010000000000000012",
+    "MOVING link=gripper_finger1_finger_tip_link translation=0.00057149761873279646 angle=2.777060664953317e-17",
+    "MOVING link=gripper_finger1_knuckle_link translation=0 angle=0.010000000000000012",
+    "MOVING link=gripper_finger1_finger_link translation=0.00031749867703127814 angle=0.010000000000000012",
+    "MOVING link=gripper_finger2_inner_knuckle_link translation=0 angle=0.0099999999460698014",
+    "MOVING link=gripper_finger2_finger_tip_link translation=0.00057149761565072205 angle=4.0079036346251317e-14",
+    "MOVING link=gripper_finger2_knuckle_link translation=0 angle=0.0099999999484345833",
+    "MOVING link=gripper_finger2_finger_link translation=0.00031749867539408521 angle=0.0099999999484345833"
+  ],
+  "historical_endpoint": {
+    "collision": false,
+    "contacts": 0,
+    "executed": false
+  },
+  "continuous_real_stage_a": "REAL_STAGE_A result=0 reason=ALL_INTERVALS_CERTIFIED inspected=936 certified=518 subdivided=418 depth=3 seconds=19.9227 failure=[-1,-1]",
+  "review": {
+    "uniform_full_prismatic_reach": "reproduced failing test then corrected and passed",
+    "metric_clearance": "reproduced failing test then corrected and passed",
+    "transactional_expiry_rollback": "passed",
+    "stored_waypoint_backwards_switch": "passed",
+    "mimic_start_discontinuity": "reproduced incorrect acceptance then corrected and passed"
+  },
+  "safety": {
+    "authority_R": "NOT_ISSUED",
+    "authority_A": "REVOKED",
+    "acm": "UNCHANGED",
+    "attachment": "NONE",
+    "contact_bound_m": 0.0001,
+    "simulation_recovery": "NOT_RUN",
+    "physical": "NOT_RUN",
+    "clear_for_observation_planning": false,
+    "pr_draft": true
+  },
+  "source_sha256": {
+    "workcell_builder/workcell_builder/controller_interval_certificate.hpp": "277fb4ec61b889db1dfb95bfc211e10dabbbe7514fb3ad1d90de42945ac1b008",
+    "workcell_builder/workcell_builder/detached_contact_certificate.hpp": "20302d24966ab65bf4437eb99c2729ba5f374ef3b4ff6fcd6575a126689d78e3",
+    "workcell_builder/workcell_builder/test/support_contact_policy_test.cpp": "c2a7839725444420a20c59fa20ade04861ea43c448bc38dce31bff9cff46f142",
+    "workcell_builder/workcell_builder/test/evidence/detached_opening_probe.cpp": "ab788422b9b3f14e083879ddc975254609b40fa391d394a796b883f96bbd169c",
+    "workcell_builder/workcell_builder/test/evidence/run_detached_opening_probe.py": "0b79198ed2a3d10f22605df58d55af5a80c4bb6560771e5a85e07698231ad3e0"
+  },
+  "fixture_sha256": {
+    "robot.srdf": "7e6725eb7cfb35ad933babc5fb023374a081fe11a1a5807b5c11f7b03ab584f8",
+    "scene.json": "a55b50918d8b0a00d128d96c10c42ab2f959ff6282c1c83a976abeb0479d4fb5",
+    "robot.urdf": "2750c4ee7ae0cc8a66a014b8bc08eb524b60cb4e6038130bd180bbea683483f7",
+    "provenance.json": "4b10f183628dad8d02db8127893c761c37210c3431a23f1b93ff7ddf7a5077c0",
+    "scene.cdr": "df65c40471b13ae30980c3e994af632f39ed6a1c7b53e96a823817a3a4fbaa7c",
+    "leader.txt": "67917f45ac7e6811a33b3e9750983dd1218830b68cb9a0a257f795f9522f1ed2"
+  },
+  "evidence_sha256": {
+    "cpp-final.txt": "bb496af383ed1c9201d982578a6f7a9bf4511f3a8381e308cd563a808c5fafc8",
+    "cpp-final.xml": "ec0c5ee7b9bf4c362bf5012323da599b81ac15a1f0b7fd45755bcd5f40e46616",
+    "python-final.txt": "d4a9397a74c26dac88fc13c79137991e6533d50deea16b96d2aa3a6b1bf9ae6f",
+    "python-final.xml": "e692446c60f1a5147e190d008407eabcb3177b69d3190cbf64aea5f1225e22ab",
+    "historical.txt": "1549f9cd0f41bb490eaf60631247b7f48833fcc9629f64332a92595aef6dd625",
+    "historical.xml": "f6b76b68098ecc3c437cafc28a7a994872307ee6a3526ed41e617b0c223d69fb",
+    "build-final.txt": "7d3b8636ee9af0da2773fa32e5cbc586dac9b5ce5ebb7e0505c0704275078e04",
+    "review-red.txt": "404ce0a1960cf8022c6744ddb3969692f2e155ff34d4318443f48bd84ae11f93",
+    "gripper_finger1_finger_tip_link.geometry.txt": "78e58241c9915a2e6527fbf7afd265dcd36b311a20705604b4087b8b6d708f51"
+  }
+}

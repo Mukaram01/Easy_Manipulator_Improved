@@ -213,6 +213,12 @@ class PerceptionSourceAdapter:
         if self.mode != "live":
             return None
         snap = payload if payload.get("schema_version") == SCHEMA else build_snapshot_from_epd_payload(payload, self.camera_id, self.camera_frame, self.default_zone_hint, self.min_confidence, self.scene_id)
+        source = snap.get("source")
+        if isinstance(source, dict) and source.get("clock_domain") == "gazebo_simulation":
+            # Frozen RGB-D captures have no qualified live simulation-clock connection.
+            self.clear("simulation clock snapshot requires explicit replay; live freshness is unqualified")
+            self.state = "FAILED"
+            return None
         errors = validate_snapshot(snap, scene_id=self.scene_id, camera_id=self.camera_id, previous_timestamp=self.last_timestamp_value)
         if errors:
             self.state, self.reason = "FAILED", "; ".join(errors)
