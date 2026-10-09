@@ -126,3 +126,24 @@ def test_no_motion_or_epd_processing_added_to_connector():
     text = SCRIPT.read_text(encoding='utf-8')
     forbidden = ['move_group', 'FollowJointTrajectory', 'create_client', 'create_service', 'send_goal', 'robot_motion']
     assert not any(token in text for token in forbidden)
+
+
+def test_frozen_rgbd_simulation_snapshot_cannot_become_live_ready():
+    snapshot = json.loads((ROOT / 'docs/manuals/evidence/stage_a_rgbd/world_snapshot.json').read_text())
+    adapter = mod.PerceptionSourceAdapter({'mode': 'live', 'scene_id': snapshot['scene_id'],
+                                          'camera_id': snapshot['camera_id']})
+    assert adapter.accept_live_payload(_snap(scene=snapshot['scene_id'], camera=snapshot['camera_id'])) is not None
+    assert adapter.accept_live_payload(snapshot) is None
+    assert adapter.status()['state'] == 'FAILED'
+    assert 'simulation clock' in adapter.status()['reason']
+    assert adapter.last_snapshot is None
+
+
+def test_frozen_rgbd_simulation_snapshot_remains_available_for_explicit_replay():
+    path = ROOT / 'docs/manuals/evidence/stage_a_rgbd/world_snapshot.json'
+    adapter = mod.PerceptionSourceAdapter({'mode': 'replay', 'replay': {'path': str(path)}})
+    snapshot = adapter.next_replay_snapshot()
+    assert snapshot['frame_id'] == 'world'
+    assert snapshot['source']['clock_domain'] == 'gazebo_simulation'
+    assert all(obj['attributes']['position_semantics'] == 'visible_surface_centroid'
+               and 'pose' not in obj and 'dimensions_xyz' not in obj for obj in snapshot['objects'])

@@ -36,6 +36,9 @@ robot/controller goals. EPD remains external and owns inference/deprojection.
   simulation stamp in nanoseconds, with `source.clock_domain` explicit. CPU
   inference yields a **frozen snapshot**, not a current live ROS observation.
   Do not relabel simulation stamps as wall time or feed them to execution.
+  The Workcell Studio source adapter rejects these simulation-clock snapshots
+  in live mode and clears its previous observation; explicit replay preserves
+  the original frames, timestamps and surface-centroid semantics.
 - Acquisition requires exact RGB/depth/calibration timestamp equality and age
   ≤1 s against the same simulator clock, rejects future stamps, frame mismatch,
   missing calibration, nonzero distortion, incorrect image layouts and invalid

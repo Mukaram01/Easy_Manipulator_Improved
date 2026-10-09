@@ -16,7 +16,8 @@ The dirty Stage-A1 checkout and external EPD source were not edited.
 | H: disabled behavior | PASS — byte-identical disabled world and focused existing simulator-backend regressions |
 | I: no execution | PASS — physics world has no robot; capture calls only read-only transport APIs; no ROS bridge, ROS execution client or controller launch |
 | ROS bridge commissioning | BLOCKED — existing shutdown-overlay qualification gates were not bypassed or rerun |
-| Full Workcell Builder colcon build / GUI / task execution | NOT RUN — this slice built its optional C++ adapter only; no task or execution milestone claimed |
+| Full Workcell Builder colcon build | PASS — Humble workstation, RelWithDebInfo, default WebEngine, commissioning OFF; isolated build/install completed in 9 min 14 s |
+| GUI / task execution | NOT RUN — no task or execution milestone claimed |
 
 Measured nearest-box **surface** errors: **0.0031, 0.0064, 0.0103 and 0.0278 mm**.
 These ideal-simulation errors do not establish real-camera precision. Distance
@@ -55,3 +56,49 @@ Exact acceptance commands, dependency requirements, quality policy, clock
 semantics and next step: [manual](../../STAGE_A_RGBD_PERCEPTION.md).
 Rollback: revert this feature commit; the canonical SDF and all existing bridge
 qualification, task-resolution, preplanning and execution gates are unchanged.
+
+## PR verification follow-up
+
+The live Workcell Studio adapter previously accepted this frozen simulation-clock
+snapshot as READY based on arrival time. A regression test reproduced that defect.
+The adapter now rejects simulation-clock snapshots in live mode and clears its
+cached observation; explicit replay preserves frames, stamps and surface semantics.
+The existing collision consumer blocks every captured observation because observed
+dimensions are absent. No collision object or execution request is created.
+
+After the correction: **125 focused Python tests**, **five relevant Builder CTests**
+and the optional C++ geometry CTest pass. Installed RGB-D helpers load successfully.
+The full Builder build uses the workstation's existing Humble dependency underlays
+read-only; it does not qualify their commissioning binaries. Existing compiler
+warnings remain; the Web3D dependency check repaired its isolated npm dependencies
+using the existing build path before completing successfully.
+
+The PR's integration patch also applies to copies of the current Stage-A1 files,
+including uncommitted Builder CMake changes. **82 current Stage-A1 simulator-backend
+tests pass** against that temporary compatibility copy. Original Stage-A1 HEAD,
+status and tracked diff remain unchanged. Physical grasp-retention integration was
+not executed and remains subject to the existing commissioning gates.
+
+A fresh Ogre run again produced five EPD detections and four normalized 3D
+observations. Independent validation correctly rejected that capture because its
+bracketing poses were still moving. The earlier settled raw capture was revalidated
+successfully with the existing validator; the new run does not replace its accuracy
+evidence. Both captures pass the normalized contract, fail live-mode ingestion,
+and remain blocked for collision insertion. No robot or ROS bridge was launched.
+
+Local verification logs and temporary compatibility copy: `/tmp/pr3175_verify`.
+These temporary paths are not durable storage. ROS bridge qualification, an
+EPD-owned live connection and independently observed collision geometry remain
+blocking prerequisites for live perception-to-grasp acceptance.
+
+The read-only `simulator_backend.active_bridge_overlay()` admission check returned
+`BRIDGE_OVERLAY_REJECTED: bridge patch differs from reviewed repository patch`.
+No shutdown investigation or qualification run was attempted. Reconcile the
+existing qualified overlay with the reviewed PR patch through the existing
+qualification process, then rerun this admission check from the isolated checkout:
+
+```bash
+source /opt/ros/humble/setup.bash
+# Source the existing qualified bridge overlay's setup.bash first.
+PYTHONPATH=scripts python3 -c 'from simulator_backend import active_bridge_overlay; active_bridge_overlay()'
+```
