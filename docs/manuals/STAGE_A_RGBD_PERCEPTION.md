@@ -128,3 +128,12 @@ for this slice** pending existing source/receipt/qualification gates. No bridge
 was started and no qualification code changed. The next product step is an
 EPD-owned live perception connection through those gates, then independently
 observed collision dimensions before PlanningScene/grasp planning.
+
+## Optional Stage-A2 declared-workpiece reconstruction
+
+The surface-only default above is unchanged. With explicit `--workpiece-profile`,
+measured segmented points can support a conservative collision box for the
+known cube. Declared dimensions are identified separately from measurements;
+partial geometry remains BLOCKED. See `evidence/stage_a2_geometry/README.md` for
+current results, limits and exact offline plan-only commands. This does not
+commission the bridge or establish physical execution readiness.

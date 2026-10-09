@@ -47,7 +47,7 @@ int main(int argc,char ** argv) try {
   if(labels.empty() || !fs::is_regular_file(argv[1])) throw std::runtime_error("model/labels unavailable");
   std::mutex mutex; std::condition_variable changed;
   ignition::msgs::Image rgb,depth; ignition::msgs::CameraInfo info;
-  int64_t now=0; bool frozen=false;
+  int64_t now=0, acquisition_clock=0; bool frozen=false;
   ignition::transport::Node node;
   std::function<void(const ignition::msgs::Image &)> on_rgb=[&](const auto & msg) {
     std::lock_guard<std::mutex> lock(mutex);if(frozen) return;rgb=msg;changed.notify_all();};
@@ -85,7 +85,7 @@ int main(int argc,char ** argv) try {
       }
       throw std::runtime_error("BLOCKED: no fresh synchronized valid RGB/depth/calibration and simulation clock within 30s");
     }
-    frozen=true;
+    acquisition_clock=now;frozen=true;
   }
   node.Unsubscribe("/stage_a/camera/image");node.Unsubscribe("/stage_a/camera/depth_image");
   node.Unsubscribe("/stage_a/camera/camera_info");
@@ -109,6 +109,7 @@ int main(int argc,char ** argv) try {
   evidence["rgb_stamp_ns"]=Json::Int64(ns(rgb.header().stamp()));
   evidence["depth_stamp_ns"]=Json::Int64(ns(depth.header().stamp()));
   evidence["info_stamp_ns"]=Json::Int64(ns(info.header().stamp()));
+  evidence["acquisition_clock_ns"]=Json::Int64(acquisition_clock);
   evidence["depth_encoding"]="32FC1";evidence["depth_units"]="metres";
   evidence["width"]=512;evidence["height"]=512;evidence["frame_id"]=optical;
   evidence["intrinsics"]=array({fx,fy,cx,cy});
@@ -170,6 +171,11 @@ int main(int argc,char ** argv) try {
     item["attributes"]["position_semantics"]="visible_surface_centroid";
     item["attributes"]["valid_depth_pixels"]=Json::UInt64(object.valid_depth_pixel_count);
     item["attributes"]["mask_pixels"]=cv::countNonZero(mask);
+    // Retain EPD's actual filtered metric surface, not reconstructed hidden geometry.
+    item["attributes"]["surface_points_optical"]=Json::Value(Json::arrayValue);
+    for(const auto & point:object.segmented_pcl)
+      item["attributes"]["surface_points_optical"].append(array({point.x,point.y,point.z}));
+    item["attributes"]["pixel_pitch_m"]=object.centroid.z/std::min(fx,fy);
     snapshot["objects"].append(item);
   }
   evidence["epd_detections_ge_0_80"]=confident;

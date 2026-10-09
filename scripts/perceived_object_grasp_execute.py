@@ -1885,8 +1885,8 @@ def main():
         summary['observation_input']=dict(path=str(Path(args.detections).resolve()),
             sha256=summary['observation_sha256'],loaded_wall_ns=time.time_ns())
         if args.replay:
-            snapshot = inputs.replay_snapshot(snapshot, time.time())
-        objects = inputs.normalize(snapshot, time.time(), _PLANNER)
+            snapshot = inputs.replay_snapshot(snapshot, time.time(), execution_requested=args.start)
+        objects = inputs.normalize(snapshot, time.time(), _PLANNER, execution_requested=args.start)
         stage('FILTER_TARGETS')
         if authored:
             from task_intent_resolver import select_observations, scene_resolution

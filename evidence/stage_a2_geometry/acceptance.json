@@ -1,0 +1,619 @@
+{
+  "baseline": "8603cbda4a917df31405d734b29494ae910a572c",
+  "capture": {
+    "acquisition_clock_ns": 24058000000,
+    "camera_definition_source": "live_generate_world_sdf",
+    "camera_is_static": true,
+    "camera_pose_source": "live_scene_info",
+    "camera_world_pose": [
+      0.4,
+      -0.217,
+      0.614,
+      0.0,
+      0.7071067811865475,
+      0.0,
+      0.7071067811865476
+    ],
+    "clock_domain": "gazebo_simulation",
+    "depth_encoding": "32FC1",
+    "depth_stamp_ns": 24056000000,
+    "depth_units": "metres",
+    "epd_detections_ge_0_80": 5,
+    "frame_id": "stage_a_camera_optical_frame",
+    "height": 512,
+    "inference_api": "external EPD Ort::P3OrtBase",
+    "info_stamp_ns": 24056000000,
+    "intrinsics": [
+      443.5061702581152,
+      443.5061702581152,
+      256.0,
+      256.0
+    ],
+    "rejected_geometry_count": 1,
+    "rgb_stamp_ns": 24056000000,
+    "robot_motion_called": false,
+    "ros_bridge_started": false,
+    "valid_observations": 4,
+    "width": 512
+  },
+  "geometry_rejected_objects": [
+    {
+      "object_id": "epd_24056000000_1",
+      "reason": "BLOCKED: incomplete or inconsistent face extents; expose all four cube edges"
+    }
+  ],
+  "objects": [
+    {
+      "centroid": [
+        0.4306240199212458,
+        -0.19934221294233706,
+        0.02499345297880573
+      ],
+      "confidence": 0.9000171422958374,
+      "label": "cube",
+      "object_id": "epd_24056000000_2",
+      "pose": {
+        "frame_id": "world",
+        "position": [
+          0.4306913270290211,
+          -0.19937672134028084,
+          0.012499834537506076
+        ],
+        "orientation_xyzw": [
+          -7.891423122875259e-26,
+          -9.098889050845403e-26,
+          -0.755454017110973,
+          0.6552016697406179
+        ]
+      },
+      "dimensions_xyz": [
+        0.04061595964549772,
+        0.04061595964549772,
+        0.04061595964549772
+      ],
+      "shape": "box",
+      "geometry_provenance": {
+        "profile_id": "stage_a_cube_25mm",
+        "dimension_source": "declared_workpiece_profile",
+        "declared_dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "dimension_tolerance_m": 0.00025,
+        "position_source": "measured_face_centre_minus_measured_normal_half_declared_height",
+        "face_centre_world": [
+          0.4306913270290211,
+          -0.19937672134028084,
+          0.024999834537506076
+        ],
+        "face_normal_world": [
+          0.0,
+          2.4088531782891597e-25,
+          1.0
+        ],
+        "face_support_points": 353,
+        "face_support_fraction": 0.9943661971830986,
+        "face_hull_area_m2": 0.0005987855196945226,
+        "plane_max_residual_m": 1.7347234762873813e-17,
+        "centre_uncertainty_m": 0.0027811368770964493,
+        "orientation_uncertainty_rad": 0.22689280275926424,
+        "orientation_equivalence": "cube face rotations modulo 90 degrees",
+        "collision_padding_m": 0.0078079798227488565,
+        "collision_dimensions_source": "conservative_pose_envelope",
+        "profile_sha256": "f477feb2e5a39d85a3dd2ae1a47c8bfb06489f4a6e3e51d395e83fb9b1bd8a81"
+      }
+    },
+    {
+      "centroid": [
+        0.43113042868525653,
+        -0.24945471386154267,
+        0.024989668389612918
+      ],
+      "confidence": 0.8828846216201782,
+      "label": "cube",
+      "object_id": "epd_24056000000_3",
+      "pose": {
+        "frame_id": "world",
+        "position": [
+          0.4311041377160239,
+          -0.24941481202591376,
+          0.012499552552182562
+        ],
+        "orientation_xyzw": [
+          3.430580535918579e-05,
+          -9.110158743156946e-06,
+          -0.5547001984010698,
+          0.8320502921301876
+        ]
+      },
+      "dimensions_xyz": [
+        0.04039971084576309,
+        0.04039971084576309,
+        0.04039971084576309
+      ],
+      "shape": "box",
+      "geometry_provenance": {
+        "profile_id": "stage_a_cube_25mm",
+        "dimension_source": "declared_workpiece_profile",
+        "declared_dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "dimension_tolerance_m": 0.00025,
+        "position_source": "measured_face_centre_minus_measured_normal_half_declared_height",
+        "face_centre_world": [
+          0.4311034724773418,
+          -0.24941539929462647,
+          0.02499955252068548
+        ],
+        "face_normal_world": [
+          -5.321909456528992e-05,
+          -4.6981497017155056e-05,
+          0.9999999974802333
+        ],
+        "face_support_points": 350,
+        "face_support_fraction": 0.9943181818181818,
+        "face_hull_area_m2": 0.00060583767043215,
+        "plane_max_residual_m": 9.826225708445134e-05,
+        "centre_uncertainty_m": 0.0028794162008620103,
+        "orientation_uncertainty_rad": 0.2173003288889404,
+        "orientation_equivalence": "cube face rotations modulo 90 degrees",
+        "collision_padding_m": 0.007699855422881545,
+        "collision_dimensions_source": "conservative_pose_envelope",
+        "profile_sha256": "f477feb2e5a39d85a3dd2ae1a47c8bfb06489f4a6e3e51d395e83fb9b1bd8a81"
+      }
+    },
+    {
+      "centroid": [
+        0.41587916586976603,
+        -0.22489396378999338,
+        0.04999688230042765
+      ],
+      "confidence": 0.8161109089851379,
+      "label": "cube",
+      "object_id": "epd_24056000000_4",
+      "pose": {
+        "frame_id": "world",
+        "position": [
+          0.4158373276915,
+          -0.22484533248481142,
+          0.0374998426953202
+        ],
+        "orientation_xyzw": [
+          -1.7048241347963976e-06,
+          5.74642509067286e-07,
+          -0.7947066774670282,
+          0.6069936546505905
+        ]
+      },
+      "dimensions_xyz": [
+        0.03888755918406791,
+        0.03888755918406791,
+        0.03888755918406791
+      ],
+      "shape": "box",
+      "geometry_provenance": {
+        "profile_id": "stage_a_cube_25mm",
+        "dimension_source": "declared_workpiece_profile",
+        "declared_dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "dimension_tolerance_m": 0.00025,
+        "position_source": "measured_face_centre_minus_measured_normal_half_declared_height",
+        "face_centre_world": [
+          0.415837370282487,
+          -0.2248453180311816,
+          0.049999842695239285
+        ],
+        "face_normal_world": [
+          3.407278961051965e-06,
+          1.156290386008832e-06,
+          0.9999999999935267
+        ],
+        "face_support_points": 375,
+        "face_support_fraction": 0.9973404255319149,
+        "face_hull_area_m2": 0.0005886546225557323,
+        "plane_max_residual_m": 5.629660727588549e-08,
+        "centre_uncertainty_m": 0.0026684397060030432,
+        "orientation_uncertainty_rad": 0.19199072144795828,
+        "orientation_equivalence": "cube face rotations modulo 90 degrees",
+        "collision_padding_m": 0.006943779592033955,
+        "collision_dimensions_source": "conservative_pose_envelope",
+        "profile_sha256": "f477feb2e5a39d85a3dd2ae1a47c8bfb06489f4a6e3e51d395e83fb9b1bd8a81"
+      }
+    }
+  ],
+  "independent_validation": {
+    "purpose": "independent ground-truth validation only",
+    "scene_sample_limitation": "dimensions from scene/info; poses from timestamped dynamic_pose/info bracketing capture",
+    "settling_position_delta_m": 0.0,
+    "settling_orientation_delta_rad": 4.2146848510894035e-08,
+    "epd_detection_count": 5,
+    "valid_observation_count": 3,
+    "raycast_visible_pixel_counts": {
+      "part_00": 359,
+      "part_01": 361,
+      "part_02": 364,
+      "part_03": 357,
+      "part_04": 336,
+      "part_05": 366,
+      "part_06": 390,
+      "part_07": 389,
+      "part_08": 378,
+      "part_09": 377
+    },
+    "visible_box_count": 10,
+    "fully_occluded_box_count": 0,
+    "matched_box_count": 3,
+    "cube_depth_pixels_compared": 3677,
+    "interior_depth_pixels_compared": 2832,
+    "interior_depth_p95_abs_error_m": 1.4917541034109582e-07,
+    "cube_depth_median_abs_error_m": 8.74717316357021e-08,
+    "cube_depth_p95_abs_error_m": 0.012073998817510654,
+    "observations": [
+      {
+        "object_id": "epd_24056000000_2",
+        "nearest_box": "part_05",
+        "surface_error_m": 6.428345190736401e-06,
+        "volume_centre_distance_m": 0.012526428914036405,
+        "estimated_centre_error_m": 0.0009308133106274831,
+        "orientation_error_rad_mod_cube_symmetry": 0.008102676382748707,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      },
+      {
+        "object_id": "epd_24056000000_3",
+        "nearest_box": "part_02",
+        "surface_error_m": 1.03046608520823e-05,
+        "volume_centre_distance_m": 0.012521598925027001,
+        "estimated_centre_error_m": 0.0008982091143504529,
+        "orientation_error_rad_mod_cube_symmetry": 0.005092716413231525,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      },
+      {
+        "object_id": "epd_24056000000_4",
+        "nearest_box": "part_07",
+        "surface_error_m": 3.0667328312708464e-06,
+        "volume_centre_distance_m": 0.01252547918766602,
+        "estimated_centre_error_m": 0.0008448437524105379,
+        "orientation_error_rad_mod_cube_symmetry": 0.00768355445975563,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      }
+    ]
+  },
+  "planning": {
+    "result": "FAIL",
+    "execution_action_goals": [],
+    "shutdown_clean": true,
+    "trajectory_execution_enabled": false,
+    "orchestration_failure": "launch/planning deadline exceeded",
+    "remaining_owned_process_groups": [],
+    "candidate_attempts": [
+      {
+        "candidate_id": "top_2f::000",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 22.05278911901405,
+        "checks": [
+          {
+            "candidate_id": "top_2f::000",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "action result timed out",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::000",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "action result timed out",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::001",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 10.019094148010481,
+        "checks": [
+          {
+            "candidate_id": "top_2f::001",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "service timeout: /compute_ik",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::001",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "service timeout: /compute_ik",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::002",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 7.6810563310282305,
+        "checks": [
+          {
+            "candidate_id": "top_2f::002",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::002",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::003",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 4.671942993008997,
+        "checks": [
+          {
+            "candidate_id": "top_2f::003",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::003",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::004",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 19.133000767993508,
+        "checks": [
+          {
+            "candidate_id": "top_2f::004",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "action result timed out",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::004",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "action result timed out",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::005",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 22.033183163002832,
+        "checks": [
+          {
+            "candidate_id": "top_2f::005",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "action result timed out",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::005",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "planning",
+            "reason": "action result timed out",
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::006",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 17.709011399012525,
+        "checks": [
+          {
+            "candidate_id": "top_2f::006",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::006",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::007",
+        "candidate_wall_budget": 0.75,
+        "candidate_wall_seconds": 4.074136095994618,
+        "checks": [
+          {
+            "candidate_id": "top_2f::007",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 1,
+        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+        "search_pass": "discovery:top_2f",
+        "segment_planning_time": 0.75,
+        "stages": [
+          {
+            "candidate_id": "top_2f::007",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate wall-clock slice exhausted",
+            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::002",
+        "candidate_wall_budget": 20.0,
+        "candidate_wall_seconds": 6.056346127006691,
+        "checks": [
+          {
+            "candidate_id": "top_2f::002",
+            "code": "PREPLAN_APPROACH",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate search budget exhausted",
+            "reason_code": "SEARCH_BUDGET_EXHAUSTED",
+            "status": "FAIL"
+          }
+        ],
+        "extraction_attempts": [],
+        "object_id": "runtime::epd_24056000000_4",
+        "planning_attempts": 3,
+        "reason_code": "SEARCH_BUDGET_EXHAUSTED",
+        "search_pass": "retry:top_2f",
+        "segment_planning_time": 3.0,
+        "stages": [
+          {
+            "candidate_id": "top_2f::002",
+            "failed_stage": "PREPLAN_APPROACH",
+            "failure_kind": "budget",
+            "reason": "candidate search budget exhausted",
+            "reason_code": "SEARCH_BUDGET_EXHAUSTED",
+            "stage": "PREPLAN_APPROACH",
+            "success": false
+          }
+        ]
+      }
+    ]
+  },
+  "planning_scene_inserted_ids": [
+    "runtime::epd_24056000000_2",
+    "runtime::epd_24056000000_3",
+    "runtime::epd_24056000000_4"
+  ],
+  "authored_selection_rejections": {
+    "runtime::epd_24056000000_2": "outside_authored_selection",
+    "runtime::epd_24056000000_3": "outside_authored_selection"
+  },
+  "execution_attempted": false,
+  "verification": {
+    "focused_python_tests": "158 PASS",
+    "rgbd_capture_build": "PASS",
+    "rgbd_geometry_ctest": "1 PASS",
+    "disposable_scene_build": "PASS",
+    "full_cycle_feasibility": "BLOCKED: approach action/IK timeouts and search deadline",
+    "bridge_commissioning": "BLOCKED: existing baseline SIGABRT prerequisite unavailable; not investigated",
+    "scene_completeness": "NOT PROVEN: 10 independently visible cubes, only 3 accepted representations"
+  }
+}
