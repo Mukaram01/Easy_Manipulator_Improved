@@ -7,6 +7,15 @@ Workcell Studio is the internal configurable robotic-cell platform for defining,
 
 Sorting is only one scenario template in Workcell Studio, alongside other templates such as inspection routing, reject handling, and palletizing.
 
+## Isolated Stage-A RGB-D perception evidence — 2026-10-09
+
+Optional Fortress RGB-D capture through external EPD produced five actual cube
+masks and four finite normalized visible-surface observations; one merged mask
+was rejected. Optical/world transforms and independent settled-pile measurements
+are recorded in [the acceptance evidence](evidence/stage_a_rgbd/README.md).
+No robot or ROS bridge was started. Bridge commissioning remains gated for this
+slice; Stage A, grasping and live execution are not declared complete.
+
 ## Current milestone — R2.0d/e authoring/runtime parity closed
 
 As of 2026-09-17, the saved TaskIntent v2 → shared resolver → physical destination

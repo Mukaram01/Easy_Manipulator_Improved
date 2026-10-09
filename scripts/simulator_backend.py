@@ -220,10 +220,13 @@ def bind_support_geometry(xml, manifest_path):
         raise ValueError('support geometry binding rejected: '+str(exc)) from exc
 
 
-def prepare(xml, controllers, world_path, publisher, output, *, collision_manifest_path=None):
+def prepare(xml, controllers, world_path, publisher, output, *, collision_manifest_path=None, rgbd_camera_pose=None):
     import yaml
     output=Path(output);output.mkdir(parents=True,exist_ok=False)
     world_xml,support_binding=bind_support_geometry(Path(world_path).read_text(),collision_manifest_path)
+    if rgbd_camera_pose is not None:
+        from stage_a_rgbd_world import rgbd_world
+        world_xml=rgbd_world(world_xml,rgbd_camera_pose)
     world=ET.fromstring(world_xml).find('world')
     if world is None:raise ValueError('one explicit simulator world required')
     plugins=world.findall('.//plugin')

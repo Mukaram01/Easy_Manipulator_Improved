@@ -953,6 +953,8 @@ install(PROGRAMS
   ../../scripts/pile_extraction.py
   ../../scripts/grasp_strategy_candidates.py
   ../../scripts/perceived_object_grasp_execute.py
+  ../../scripts/stage_a_rgbd_world.py
+  ../../scripts/stage_a_rgbd_snapshot.py
   ../../scripts/simulator_backend.py
   ../../scripts/simulator_observations.py
   ../../scripts/simulator_execution.py
