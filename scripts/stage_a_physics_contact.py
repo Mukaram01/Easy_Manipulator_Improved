@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Evaluate isolated Fortress contact state, never replace EPD planning geometry.
 
-Exact rational arithmetic encloses all BOX corners for a horizontal PLANE.
-The enclosure is conditional on reported ECM state, not a qualified enclosure
-of DART's internal state. No caller-supplied scalar can grant backend authority.
+Exact rational arithmetic encloses all BOX corners against horizontal support.
+ECM and live-owner readbacks have separate authority scopes. Neither bypasses
+unqualified detector numerics. No caller scalar can grant backend authority.
 """
 import argparse
 import hashlib
@@ -73,6 +73,114 @@ def enclose_box_plane(pair):
         decision='BLOCKED_EXCESSIVE_PENETRATION' if penetration>.0001 else 'BLOCKED_BACKEND_STATE_ERROR',
         reason='DART state to cached ECM pose conversion/notification error not qualified; '
                'even shallow conditional geometry cannot authorize contact')
+
+
+def enclose_owner_geometry(owner, observer, session, step):
+    """Enclose actual stored DART affine BOX geometry, without detector authority.
+
+    IEEE binary readback is verified by hexadecimal doubles. Rational arithmetic
+    adds zero arithmetic error; final JSON endpoints are rounded outwards.
+    ODE's matrix -> quaternion -> detector rotation conversion is NOT covered.
+    """
+    require(owner.get('complete') is True and observer.get('complete') is True,
+            'incomplete backend inventory')
+    require(owner.get('session')==observer.get('run_id')==session and
+            owner.get('world')==observer.get('world') and
+            owner.get('frame_id')==observer.get('frame_id')=='world', 'owner scene/frame identity')
+    require(type(step) is int and step>0 and owner.get('step')==observer.get('step')==step and
+            owner.get('dart_frames')==step and owner.get('pre_step_dart_frames')==step-1 and
+            observer.get('contact_request_step')==step and
+            owner.get('geometry_state_phase')=='post_ForwardStep_position_integration', 'stale physics step')
+    require(owner.get('dt_ns')==observer.get('dt_ns') and type(owner.get('dt_ns')) is int and
+            owner['dt_ns']>0 and owner.get('stamp_ns')==observer.get('stamp_ns')==step*owner['dt_ns'],
+            'physics time mismatch; only fixed-dt campaign supported')
+    shapes=owner.get('shapes',[]);ids=[v.get('collision_id') for v in shapes]
+    physics=[v.get('physics_shape_id') for v in shapes];nodes=[v.get('shape_node_identity') for v in shapes]
+    requested=observer.get('diagnostic_requested_ids',[]);inventory=observer.get('diagnostic_collision_ids',[])
+    require(bool(ids) and all(type(v) is int and v>0 for v in ids+physics) and
+            len(ids)==len(set(ids))==len(set(physics))==len(set(nodes)) and all(nodes) and
+            len(requested)==len(set(requested)) and len(inventory)==len(set(inventory)) and
+            set(ids)==set(inventory)==set(requested),'non-bijective collision inventory')
+    by_id={v['collision_id']:v for v in shapes}
+    support_id=observer.get('support_collision_id');support=by_id.get(support_id)
+    require(support is not None and support.get('mobile') is False and
+            support.get('collision_name')==observer.get('support_collision_name'),'wrong support mapping')
+    pairs=observer.get('pairs',[]);cubes=[v.get('collision_id') for v in pairs]
+    require(bool(cubes) and len(cubes)==len(set(cubes)) and
+            set(cubes)=={v['collision_id'] for v in shapes if v.get('mobile') is True},
+            'partial or ambiguous dynamic inventory')
+    node_ids={v['shape_node_identity']:v['collision_id'] for v in shapes}
+    contacts=owner.get('contacts',[]);seen=set()
+    require(bool(contacts),'missing contact data')
+    for c in contacts:
+        a,b=c.get('collision1'),c.get('collision2')
+        require(a!=b and a in by_id and b in by_id and
+                node_ids.get(c.get('node1'))==a and node_ids.get(c.get('node2'))==b,
+                'incorrect contact ShapeNode mapping')
+        vector(c.get('position_m'),3);vector(c.get('normal'),3)
+        require(type(c.get('depth_m')) in (int,float) and math.isfinite(c['depth_m']), 'missing contact depth')
+        seen.add(frozenset((a,b)))
+    require(all(frozenset((c,support_id)) in seen for c in cubes),'missing cube/support contact')
+
+    def exact(values, hexes):
+        vals=vector(values,len(values))
+        require(isinstance(hexes,list) and len(hexes)==len(vals), 'missing exact binary geometry')
+        require(all(isinstance(h,str) and math.isfinite(float.fromhex(h)) and
+                    F(float.fromhex(h))==v for h,v in zip(hexes,vals)), 'unqualified numeric conversion')
+        return vals
+
+    def geometry(shape,key):
+        require(shape.get('shape_type')=='BoxShape', 'unsupported backend shape')
+        dims=exact(shape.get('dimensions_m',[]),shape.get('dimensions_hex'))
+        require(len(dims)==3 and all(v>0 for v in dims), 'invalid backend BOX')
+        mat=shape.get(key,[]);hexes=shape.get(key+'_hex',[])
+        require(len(mat)==len(hexes)==4 and all(len(row)==4 for row in mat), 'incomplete transform')
+        matrix=[exact(row,h) for row,h in zip(mat,hexes)]
+        require(matrix[3]==[0,0,0,1], 'invalid affine transform')
+        return dims,matrix
+
+    # This finite campaign supports only a complete BOX collision inventory.
+    for shape in shapes:
+        require(type(shape.get('mobile')) is bool, 'missing skeleton mobility')
+        for key in ('pre_step_world_transform','world_transform'):
+            geometry(shape,key)
+    results=[]
+    for observed in pairs:
+        cube=by_id[observed['collision_id']]
+        require(cube.get('collision_name')==observed.get('collision_name') and
+                cube.get('dimensions_m')==observed.get('dimensions_m'), 'cube geometry provenance mismatch')
+        result=dict(collision_id=cube['collision_id'],support_collision_id=support_id,
+                    shape_node_identity=cube['shape_node_identity'],support_node_identity=support['shape_node_identity'])
+        for phase,key in [('contact_evaluation_input','pre_step_world_transform'),('post_step','world_transform')]:
+            sd,st=geometry(support,key);cd,ct=geometry(cube,key)
+            require([row[:3] for row in st[:3]]==[[1,0,0],[0,1,0],[0,0,1]],
+                    'unsupported constructed support rotation')
+            top=st[2][3]+sd[2]/2
+            require(sd==[F(2100)]*3 and top==0 and st[0][3]==st[1][3]==0,
+                    'constructed support differs from qualified two-cube campaign')
+            pair=dict(shape='BOX',support_shape='PLANE',collision_id=cube['collision_id'],
+                support_collision_id=support_id,dimensions_m=cube['dimensions_m'],
+                centre_world=[float(ct[j][3]) for j in range(3)],
+                axes_world=[[float(v) for v in row[:3]] for row in ct[:3]],
+                support_normal_world=[0.,0.,1.],support_point_world=[0.,0.,0.])
+            points,_=corners(pair)
+            require(all(st[j][3]-sd[j]/2<=p[j]<=st[j][3]+sd[j]/2 for p in points for j in (0,1)),
+                    'BOX exceeds finite support footprint')
+            gap=min(p[2]-top for p in points);penetration=max(F(0),-gap)
+            require(penetration<=F(1,10000), 'whole-shape penetration exceeds unchanged 0.1 mm limit')
+            lo,hi=outward(gap,False),outward(gap,True)
+            result[phase]=dict(evaluated_corner_count=8,minimum_gap_interval_m=[lo,hi],
+                stored_dart_penetration_upper_m=outward(penetration,True),
+                exact_arithmetic_error_m=0,output_enclosure_width_m=outward(F(hi)-F(lo),True),
+                support_top_interval_m=[outward(top,False),outward(top,True)],
+                support_dimensions_m=support['dimensions_m'])
+        results.append(result)
+    return dict(scope='instrumented_runtime_stored_DART_affine_geometry_only',step=step,
+        stamp_ns=owner['stamp_ns'],session=session,stored_geometry_decision='PASS',pairs=results,
+        contact_authority=False,physical_penetration_upper_m=None,backend_conversion_error_bound_m=None,
+        decision='BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR',
+        outstanding_proof='bound DART matrix-to-quaternion and ODE detector transform conversion; '
+            'exact stored ShapeNode geometry does not attest the detector representation')
 
 
 def projection_bounds(pair,source):

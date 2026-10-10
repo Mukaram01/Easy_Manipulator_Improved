@@ -1,0 +1,152 @@
+--- upstream/Physics.cc
++++ reference/Physics.cc
+@@ -155 +155 @@
+-class ignition::gazebo::systems::PhysicsPrivate
++class ignition::gazebo::systems::WorkcellReferencePhysicsPrivate
+@@ -699 +699 @@
+-Physics::Physics() : System(), dataPtr(std::make_unique<PhysicsPrivate>())
++WorkcellReferencePhysics::WorkcellReferencePhysics() : System(), dataPtr(std::make_unique<WorkcellReferencePhysicsPrivate>())
+@@ -704 +704 @@
+-void Physics::Configure(const Entity &_entity,
++void WorkcellReferencePhysics::Configure(const Entity &_entity,
+@@ -800 +800 @@
+-      PhysicsPrivate::MinimumFeatureList>::From(plugin);
++      WorkcellReferencePhysicsPrivate::MinimumFeatureList>::From(plugin);
+@@ -811 +811 @@
+-        PhysicsPrivate::MinimumFeatureList>::MissingFeatureNames(plugin);
++        WorkcellReferencePhysicsPrivate::MinimumFeatureList>::MissingFeatureNames(plugin);
+@@ -835 +835 @@
+-Physics::~Physics() = default;
++WorkcellReferencePhysics::~WorkcellReferencePhysics() = default;
+@@ -838 +838 @@
+-void Physics::Update(const UpdateInfo &_info, EntityComponentManager &_ecm)
++void WorkcellReferencePhysics::Update(const UpdateInfo &_info, EntityComponentManager &_ecm)
+@@ -840 +840 @@
+-  IGN_PROFILE("Physics::Update");
++  IGN_PROFILE("WorkcellReferencePhysics::Update");
+@@ -871 +871 @@
+-void PhysicsPrivate::CreatePhysicsEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::CreatePhysicsEntities(const EntityComponentManager &_ecm)
+@@ -887 +887 @@
+-void PhysicsPrivate::CreateWorldEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::CreateWorldEntities(const EntityComponentManager &_ecm)
+@@ -968 +968 @@
+-void PhysicsPrivate::CreateModelEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::CreateModelEntities(const EntityComponentManager &_ecm)
+@@ -1103 +1103 @@
+-void PhysicsPrivate::CreateLinkEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::CreateLinkEntities(const EntityComponentManager &_ecm)
+@@ -1182 +1182 @@
+-void PhysicsPrivate::CreateCollisionEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::CreateCollisionEntities(const EntityComponentManager &_ecm)
+@@ -1430 +1430 @@
+-void PhysicsPrivate::CreateJointEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::CreateJointEntities(const EntityComponentManager &_ecm)
+@@ -1653 +1653 @@
+-void PhysicsPrivate::CreateBatteryEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::CreateBatteryEntities(const EntityComponentManager &_ecm)
+@@ -1666 +1666 @@
+-void PhysicsPrivate::RemovePhysicsEntities(const EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::RemovePhysicsEntities(const EntityComponentManager &_ecm)
+@@ -1764 +1764 @@
+-void PhysicsPrivate::UpdatePhysics(EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::UpdatePhysics(EntityComponentManager &_ecm)
+@@ -1766 +1766 @@
+-  IGN_PROFILE("PhysicsPrivate::UpdatePhysics");
++  IGN_PROFILE("WorkcellReferencePhysicsPrivate::UpdatePhysics");
+@@ -2430 +2430 @@
+-ignition::physics::ForwardStep::Output PhysicsPrivate::Step(
++ignition::physics::ForwardStep::Output WorkcellReferencePhysicsPrivate::Step(
+@@ -2433 +2433 @@
+-  IGN_PROFILE("PhysicsPrivate::Step");
++  IGN_PROFILE("WorkcellReferencePhysicsPrivate::Step");
+@@ -2449 +2449 @@
+-math::Pose3d PhysicsPrivate::RelativePose(const Entity &_from,
++math::Pose3d WorkcellReferencePhysicsPrivate::RelativePose(const Entity &_from,
+@@ -2485 +2485 @@
+-std::map<Entity, physics::FrameData3d> PhysicsPrivate::ChangedLinks(
++std::map<Entity, physics::FrameData3d> WorkcellReferencePhysicsPrivate::ChangedLinks(
+@@ -2576 +2576 @@
+-void PhysicsPrivate::UpdateModelPose(const Entity _model,
++void WorkcellReferencePhysicsPrivate::UpdateModelPose(const Entity _model,
+@@ -2691 +2691 @@
+-bool PhysicsPrivate::GetFrameDataRelativeToWorld(const Entity _entity,
++bool WorkcellReferencePhysicsPrivate::GetFrameDataRelativeToWorld(const Entity _entity,
+@@ -2711 +2711 @@
+-void PhysicsPrivate::UpdateSim(EntityComponentManager &_ecm,
++void WorkcellReferencePhysicsPrivate::UpdateSim(EntityComponentManager &_ecm,
+@@ -2714 +2714 @@
+-  IGN_PROFILE("PhysicsPrivate::UpdateSim");
++  IGN_PROFILE("WorkcellReferencePhysicsPrivate::UpdateSim");
+@@ -3242 +3242 @@
+-void PhysicsPrivate::UpdateCollisions(EntityComponentManager &_ecm)
++void WorkcellReferencePhysicsPrivate::UpdateCollisions(EntityComponentManager &_ecm)
+@@ -3244 +3244 @@
+-  IGN_PROFILE("PhysicsPrivate::UpdateCollisions");
++  IGN_PROFILE("WorkcellReferencePhysicsPrivate::UpdateCollisions");
+@@ -3299,0 +3300,2 @@
++  std::unordered_map<const WorldShapeType::ContactPoint *, const WorldShapeType::ExtraContactData *> reportExtras;
++
+@@ -3302,0 +3305 @@
++    reportExtras.emplace(&contact, contactComposite.Query<WorldShapeType::ExtraContactData>());
+@@ -3354,0 +3358,13 @@
++            const auto extra = reportExtras.at(contact);
++            if (extra)
++            {
++              // Reporting normal acts on the reported first body (2 -> 1).
++              const auto first = this->entityCollisionMap.GetByPhysicsId(
++                  contact->collision1->EntityID());
++              const double sign = first == _collEntity1 ? 1.0 : -1.0;
++              auto *normal = contactMsg->add_normal();
++              normal->set_x(sign * extra->normal.x());
++              normal->set_y(sign * extra->normal.y());
++              normal->set_z(sign * extra->normal.z());
++              contactMsg->add_depth(extra->depth);
++            }
+@@ -3370 +3386 @@
+-physics::FrameData3d PhysicsPrivate::LinkFrameDataAtOffset(
++physics::FrameData3d WorkcellReferencePhysicsPrivate::LinkFrameDataAtOffset(
+@@ -3380 +3396 @@
+-void PhysicsPrivate::EnableContactSurfaceCustomization(const Entity &_world)
++void WorkcellReferencePhysicsPrivate::EnableContactSurfaceCustomization(const Entity &_world)
+@@ -3397 +3413 @@
+-  const auto callbackID = "sim::systems::Physics";
++  const auto callbackID = "sim::systems::WorkcellReferencePhysics";
+@@ -3449 +3465 @@
+-void PhysicsPrivate::DisableContactSurfaceCustomization(const Entity &_world)
++void WorkcellReferencePhysicsPrivate::DisableContactSurfaceCustomization(const Entity &_world)
+@@ -3470 +3486 @@
+-IGNITION_ADD_PLUGIN(Physics,
++IGNITION_ADD_PLUGIN(WorkcellReferencePhysics,
+@@ -3472,4 +3488,4 @@
+-                    Physics::ISystemConfigure,
+-                    Physics::ISystemUpdate)
+-
+-IGNITION_ADD_PLUGIN_ALIAS(Physics, "gz::sim::systems::Physics")
++                    WorkcellReferencePhysics::ISystemConfigure,
++                    WorkcellReferencePhysics::ISystemUpdate)
++
++IGNITION_ADD_PLUGIN_ALIAS(WorkcellReferencePhysics, "gz::sim::systems::WorkcellReferencePhysics")
+@@ -3478 +3494 @@
+-IGNITION_ADD_PLUGIN_ALIAS(Physics, "ignition::gazebo::systems::Physics")
++IGNITION_ADD_PLUGIN_ALIAS(WorkcellReferencePhysics, "ignition::gazebo::systems::WorkcellReferencePhysics")
+--- upstream/Physics.hh
++++ reference/Physics.hh
+@@ -63 +63 @@
+-  class PhysicsPrivate;
++  class WorkcellReferencePhysicsPrivate;
+@@ -73 +73 @@
+-  ///    name="ignition::gazebo::systems::Physics">
++  ///    name="ignition::gazebo::systems::WorkcellReferencePhysics">
+@@ -80 +80 @@
+-  class Physics:
++  class WorkcellReferencePhysics:
+@@ -86 +86 @@
+-    public: explicit Physics();
++    public: explicit WorkcellReferencePhysics();
+@@ -89 +89 @@
+-    public: ~Physics() override;
++    public: ~WorkcellReferencePhysics() override;
+@@ -102 +102 @@
+-    private: std::unique_ptr<PhysicsPrivate> dataPtr;
++    private: std::unique_ptr<WorkcellReferencePhysicsPrivate> dataPtr;

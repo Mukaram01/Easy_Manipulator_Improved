@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One bounded stock/owner comparison. No ROS, bridge, EPD or MoveIt launch."""
+"""One bounded stock/reference/owner comparison. No ROS, bridge, EPD or MoveIt launch."""
 import argparse
 import hashlib
 import json
@@ -87,6 +87,45 @@ def compare_contact_traces(stock,instrumented,session,schedule):
     return result
 
 
+def compare_reference_owner(reference,owners,session,schedule):
+    result={'decision':'BLOCKED_OWNER_STEP','numeric_tolerance':0,'steps':[]}
+    if sorted(o.get('step',-1) for o in owners)!=schedule:return result
+    def fields(record):
+        out={}
+        for c in record['diagnostic_contacts']:
+            points,normals,depths=c['position_m'],c['normal'],c['depth_m']
+            if not points or len(points)!=len(normals) or len(points)!=len(depths):raise ValueError('missing full fields')
+            key=(c['collision1'],c['collision2'])
+            if key in out:raise ValueError('duplicate pair')
+            out[key]=sorted((tuple(p),tuple(n),d) for p,n,d in zip(points,normals,depths))
+        return out
+    if compare_contact_traces(reference,reference,session,schedule)['decision']!='PASS_FINITE_CONTACT_COMPARISON':
+        result['decision']='BLOCKED_REFERENCE_FIELDS';return result
+    for r,o in zip(sorted(reference,key=lambda r:r['step']),sorted(owners,key=lambda o:o['step'])):
+        if (o.get('complete') is not True or o.get('session')!=session or o.get('world')!=r['world'] or
+            o.get('frame_id')!='world' or any(o.get(k)!=r.get(k) for k in ('step','stamp_ns','dt_ns')) or o.get('dart_frames')!=r['step']):return result
+        shapes=o.get('shapes',[]);ids=[p.get('collision_id') for p in shapes]
+        physics=[p.get('physics_shape_id') for p in shapes];pointers=[p.get('shape_node_identity') for p in shapes]
+        if (len(ids)!=len(set(ids)) or set(ids)!=set(r['diagnostic_collision_ids']) or
+            len(physics)!=len(set(physics)) or any(type(i) is not int or i<=0 for i in physics) or
+            len(pointers)!=len(set(pointers)) or any(not p for p in pointers) or
+            {p['collision_id'] for p in shapes if p.get('mobile')}!={p['collision_id'] for p in r['pairs']}):
+            result['decision']='BLOCKED_OWNER_INVENTORY';return result
+        actual={}
+        try:
+            for c in o['contacts']:
+                a,b=c['collision1'],c['collision2'];p,n,d=c['position_m'],c['normal'],c['depth_m']
+                if a==b or a not in ids or b not in ids or len(p)!=3 or len(n)!=3:raise ValueError('invalid contact mapping')
+                if any(type(v) not in (int,float) or not math.isfinite(v) for v in p+n+[d]):raise ValueError('nonfinite')
+                actual.setdefault((a,b),[]).append((tuple(p),tuple(n),d))
+                actual.setdefault((b,a),[]).append((tuple(p),tuple(-v for v in n),d))
+            actual={k:sorted(v) for k,v in actual.items()}
+            if not actual or actual!=fields(r):raise ValueError('reference owner mismatch')
+        except (ValueError,KeyError,TypeError):
+            result['decision']='BLOCKED_REFERENCE_OWNER_CONTACT_FIELDS';return result
+        result['steps'].append({'step':r['step'],'contact_count':len(o['contacts'])})
+    result['decision']='PASS_FINITE_REFERENCE_OWNER';return result
+
 def read_trace(path):
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
@@ -95,6 +134,9 @@ def run(args,kind,session):
     tree=ET.parse(args.world);world=tree.getroot().find('world')
     physics=[p for p in world.findall('plugin') if p.get('name') in ('ignition::gazebo::systems::Physics','gz::sim::systems::Physics')]
     if len(physics)!=1:raise ValueError('exactly one original Physics System required')
+    if kind=='reference':
+        physics[0].set('filename',str(args.reference.resolve()))
+        physics[0].set('name','ignition::gazebo::systems::WorkcellReferencePhysics')
     if kind=='instrumented':
         physics[0].set('filename',str(args.owner.resolve()))
         physics[0].set('name','ignition::gazebo::systems::WorkcellOwnerPhysics')
@@ -125,7 +167,7 @@ def run(args,kind,session):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    for name in ('world','owner','observer','output'):parser.add_argument('--'+name,type=Path,required=True)
+    for name in ('world','reference','owner','observer','output'):parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--steps',type=int,default=2000)
     parser.add_argument('--sample-steps',type=int,nargs='+',default=[100,250,500,1000,1500,2000])
     args=parser.parse_args()
@@ -133,21 +175,38 @@ def main():
     if args.sample_steps!=sorted(set(args.sample_steps)) or not args.sample_steps or not 1<=args.sample_steps[0]<=args.sample_steps[-1]<=args.steps:parser.error('ordered unique sample steps inside runtime required')
     args.output.mkdir(exist_ok=False);session=str(uuid.uuid4())
     result={'session':session,'steps':args.steps,'original_world_sha256':sha(args.world),'execution_goals':0,'moveit_started':False,'instrumented_runtime_only':True}
-    for kind in ('stock','instrumented'):result[kind]=run(args,kind,session)
+    for kind in ('stock','reference','instrumented'):result[kind]=run(args,kind,session)
     stock=read_trace(args.output/'stock/ecm.jsonl');instrumented=read_trace(args.output/'instrumented/ecm.jsonl')
+    reference=read_trace(args.output/'reference/ecm.jsonl')
     owners=read_trace(args.output/'instrumented/owner.jsonl')
-    result['contact_comparison']=compare_contact_traces(stock,instrumented,session,args.sample_steps)
-    result['owner_exact_step_complete']=(sorted(o.get('step',-1) for o in owners)==args.sample_steps and
-        all(o.get('complete') is True and o.get('session')==session and o.get('dart_frames')==o.get('step') and
-            any(o.get('stamp_ns')==r['stamp_ns'] and o.get('step')==r['step'] for r in stock) for o in owners))
-    result['physics_configuration_equal']=all(result['stock'][k]==result['instrumented'][k] for k in ('physics_xml','gravity'))
-    result['runtime_equivalence']=result['contact_comparison']['decision']
-    if not result['owner_exact_step_complete']:result['runtime_equivalence']='BLOCKED_OWNER_READBACK_INCOMPLETE'
-    if not result['physics_configuration_equal']:result['runtime_equivalence']='BLOCKED_PHYSICS_CONFIGURATION'
+    result['stock_owner_observable_fields']=compare_contact_traces(stock,instrumented,session,args.sample_steps)
+    result['stock_reference_observable_fields']=compare_contact_traces(stock,reference,session,args.sample_steps)
+    result['reference_owner_full_fields']=compare_reference_owner(reference,owners,session,args.sample_steps)
+    result['physics_configuration_equal']=all(result['stock'][k]==result[kind][k] for kind in ('reference','instrumented') for k in ('physics_xml','gravity'))
+    backends=[{Path(p).name:h for p,h in result[kind]['loaded_libraries'].items() if '/engine-plugins/' in p} for kind in ('stock','reference','instrumented')]
+    result['backend_libraries_equal']=bool(backends[0]) and backends[0]==backends[1]==backends[2]
+    result['single_intended_physics_owner']=all(str(path.resolve()) in result[kind]['loaded_libraries'] and
+        not any('gazebo6-physics-system' in p for p in result[kind]['loaded_libraries'])
+        for kind,path in (('reference',args.reference),('instrumented',args.owner)))
+    result['runtime_equivalence']='PASS_FINITE_THREE_WAY'
+    if not all(result[k]['positions_counts_pairs_equal'] for k in ('stock_owner_observable_fields','stock_reference_observable_fields')):
+        result['runtime_equivalence']='BLOCKED_STOCK_OBSERVABLE_FIELDS'
+    if result['reference_owner_full_fields']['decision']!='PASS_FINITE_REFERENCE_OWNER':result['runtime_equivalence']='BLOCKED_REFERENCE_OWNER'
+    if not all(result[k] for k in ('physics_configuration_equal','backend_libraries_equal','single_intended_physics_owner')):
+        result['runtime_equivalence']='BLOCKED_RUNTIME_PROVENANCE'
     result['comparison_scope']='one identical-world finite-step run per binary; no stock-backend geometry attestation or universal equivalence claim'
+    if result['runtime_equivalence']=='PASS_FINITE_THREE_WAY':
+        import sys
+        sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
+        from stage_a_physics_contact import enclose_owner_geometry
+        try:
+            result['geometry']=[enclose_owner_geometry(o,r,session,r['step'])
+                for o,r in zip(sorted(owners,key=lambda r:r['step']),sorted(instrumented,key=lambda r:r['step']))]
+        except (ValueError,KeyError,TypeError,OverflowError) as exc:
+            result['geometry']={'decision':'BLOCKED_INCOMPLETE_GEOMETRY','reason':str(exc),'contact_authority':False}
     (args.output/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))
     # A finite comparison never grants physical-contact or planning authority.
-    raise SystemExit(0 if result['runtime_equivalence']=='PASS_FINITE_CONTACT_COMPARISON' else 2)
+    raise SystemExit(0 if result['runtime_equivalence']=='PASS_FINITE_THREE_WAY' else 2)
 
 if __name__=='__main__':main()

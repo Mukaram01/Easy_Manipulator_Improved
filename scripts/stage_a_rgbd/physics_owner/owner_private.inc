@@ -19,6 +19,14 @@ public: std::set<const workcell::Node*> OwnerNodes() {
   }
   return nodes;
 }
+public: void OwnerBeforeStep(const UpdateInfo &info) {
+  if(!owner.recordSteps.count(info.iterations))return;
+  owner.preStepTransforms.clear();
+  auto world=OwnerWorld();if(!world)return;
+  const auto nodes=OwnerNodes();owner.preStepFrames=world->getSimFrames();
+  for(const auto &[id,b]:owner.bindings.entries)
+    if(nodes.count(b.node))owner.preStepTransforms.emplace(id,b.node->getWorldTransform());
+}
 public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ecm) {
   if(owner.output.empty()||!owner.recordSteps.count(info.iterations))return;
   Json::Value r;
@@ -37,7 +45,9 @@ public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ec
   bool complete=world && owner.bindings.Complete(ids,nodes) && !owner.session.empty() && ecmIds.size()==ids.size();
   for(auto id:ecmIds)if(!ids.count(id))complete=false;
   r["complete"]=complete;r["shapes"]=Json::Value(Json::arrayValue);
-  if(world){r["dart_frames"]=world->getSimFrames();r["dart_time_s"]=world->getTime();}
+  r["frame_id"]="world";r["pre_step_dart_frames"]=owner.preStepFrames;
+  r["geometry_state_phase"]="post_ForwardStep_position_integration";
+  if(world){r["world"]=world->getName();r["dart_frames"]=world->getSimFrames();r["dart_time_s"]=world->getTime();}
   if(complete)for(const auto &[entity,binding]:owner.bindings.entries) {
     const auto node=binding.node;Json::Value shape;
     shape["collision_id"]=Json::UInt64(entity);shape["physics_shape_id"]=Json::UInt64(binding.physicsId);
@@ -49,9 +59,16 @@ public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ec
     shape["shape_type"]=node->getShape()->getType();
     if(const auto box=dynamic_cast<const dart::dynamics::BoxShape*>(node->getShape().get())) {
       Json::Value dims(Json::arrayValue);for(int i=0;i<3;++i)dims.append(box->getSize()[i]);shape["dimensions_m"]=dims;
+      Json::Value hex(Json::arrayValue);for(int i=0;i<3;++i)hex.append(workcell::Hex(box->getSize()[i]));shape["dimensions_hex"]=hex;
     }
     shape["local_transform"]=workcell::Matrix(node->getRelativeTransform());
     shape["world_transform"]=workcell::Matrix(node->getWorldTransform());
+    shape["world_transform_hex"]=workcell::MatrixHex(node->getWorldTransform());
+    if(owner.preStepTransforms.count(entity)){
+      shape["pre_step_world_transform"]=workcell::Matrix(owner.preStepTransforms.at(entity));
+      shape["pre_step_world_transform_hex"]=workcell::MatrixHex(owner.preStepTransforms.at(entity));
+    }
+    else complete=false;
     shape["body_world_transform"]=workcell::Matrix(node->getBodyNodePtr()->getWorldTransform());
     shape["ecm_world_transform"]=workcell::Matrix(math::eigen3::convert(worldPose(entity,ecm)));
     r["shapes"].append(shape);

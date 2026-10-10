@@ -1,5 +1,7 @@
 # Matched-step stock contact collection — 2026-10-10
 
+Latest follow-up: [reporting reference and whole-shape readback](../reference_comparison/README.md).
+
 Baseline `fa3d27ea0c189ff1ff43d14681a86bac56b6aeeb`, clean isolated PR worktree.
 **Contact occurrence/positions/counts PASS for six finite samples. Full contact
 comparison and runtime qualification remain BLOCKED: stock normals/depths are

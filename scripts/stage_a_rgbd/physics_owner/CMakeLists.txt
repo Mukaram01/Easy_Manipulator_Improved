@@ -21,3 +21,11 @@ target_link_libraries(workcell_owner_physics PRIVATE ignition-gazebo6::ignition-
 enable_testing()
 add_executable(owner_bindings_test bindings_test.cpp)
 add_test(NAME owner_bindings COMMAND owner_bindings_test)
+
+execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/prepare.py
+  ${CMAKE_CURRENT_BINARY_DIR}/reference --reference COMMAND_ERROR_IS_FATAL ANY)
+add_library(workcell_reference_physics SHARED ${CMAKE_CURRENT_BINARY_DIR}/reference/Physics.cc)
+target_compile_options(workcell_reference_physics PRIVATE -O0 -g0 -fvisibility=hidden)
+target_link_libraries(workcell_reference_physics PRIVATE ignition-gazebo6::ignition-gazebo6
+  ignition-physics5::ignition-physics5 ignition-common4::ignition-common4
+  ignition-common4::profiler ignition-plugin1::register)

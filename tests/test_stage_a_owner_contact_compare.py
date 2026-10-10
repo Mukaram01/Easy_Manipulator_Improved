@@ -100,3 +100,36 @@ def test_different_run_collision_inventories_are_rejected():
     a=record();b=copy.deepcopy(a)
     b['diagnostic_collision_ids'].append(99);b['diagnostic_requested_ids'].append(99)
     assert compare([a],[b])['decision']=='BLOCKED_COLLISION_INVENTORY_MISMATCH'
+
+
+def reference_and_owner():
+    ref=record()
+    for c in ref['diagnostic_contacts']:
+        c['normal']=[[0.,0.,1. if c['collision1']!=7 else -1.] for _ in c['position_m']]
+        c['depth_m']=[1e-8 for _ in c['position_m']]
+    own=dict(complete=True,session='session',world='a0',frame_id='world',step=100,
+        stamp_ns=100000000,dt_ns=1000000,dart_frames=100,
+        shapes=[dict(collision_id=i,physics_shape_id=i+100,shape_node_identity=str(i),mobile=i!=7) for i in [7,23,27]],contacts=[])
+    for c in ref['diagnostic_contacts']:
+        if c['collision1']==7:continue
+        for p,n,d in zip(c['position_m'],c['normal'],c['depth_m']):
+            own['contacts'].append(dict(collision1=c['collision1'],collision2=7,position_m=p,normal=n,depth_m=d))
+    return ref,own
+
+
+def test_reference_and_direct_owner_fields_match_after_normal_orientation():
+    ref,own=reference_and_owner()
+    assert hasattr(module,'compare_reference_owner'),'reference-owner verifier missing'
+    assert module.compare_reference_owner([ref],[own],'session',[100])['decision']=='PASS_FINITE_REFERENCE_OWNER'
+
+
+def test_reference_owner_depth_difference_fails_without_tolerance():
+    ref,own=reference_and_owner();own['contacts'][0]['depth_m']+=1e-20
+    assert hasattr(module,'compare_reference_owner'),'reference-owner verifier missing'
+    assert module.compare_reference_owner([ref],[own],'session',[100])['decision']=='BLOCKED_REFERENCE_OWNER_CONTACT_FIELDS'
+
+
+def test_reference_owner_mapping_mismatch_rejects():
+    ref,own=reference_and_owner();own['shapes'][0]['collision_id']=99
+    assert hasattr(module,'compare_reference_owner'),'reference-owner verifier missing'
+    assert module.compare_reference_owner([ref],[own],'session',[100])['decision']=='BLOCKED_OWNER_INVENTORY'
