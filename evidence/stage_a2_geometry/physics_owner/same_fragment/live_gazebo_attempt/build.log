@@ -1,0 +1,17 @@
+Consolidate compiler generated dependencies of target stage_a_gazebo_fragment_capture
+[ 50%] Building CXX object CMakeFiles/stage_a_gazebo_fragment_capture.dir/gazebo_fragment_capture.cpp.o
+In file included from /usr/include/OGRE-Next/OgrePrerequisites.h:30,
+                 from /usr/include/OGRE-Next/Compositor/OgreCompositorCommon.h:32,
+                 from /usr/include/OGRE-Next/Compositor/OgreCompositorNode.h:33,
+                 from /usr/include/OGRE-Next/Compositor/OgreCompositorShadowNode.h:34,
+                 from /usr/include/ignition/rendering6/gz/rendering/ogre2/Ogre2Scene.hh:36,
+                 from /usr/include/ignition/rendering6/ignition/rendering/ogre2/Ogre2Scene.hh:18,
+                 from /home/user/workcell_ws_stage_a2/scripts/stage_a_rgbd/fragment_mrt.hh:7,
+                 from /home/user/workcell_ws_stage_a2/scripts/stage_a_rgbd/gazebo_fragment_capture.cpp:2:
+/usr/include/OGRE-Next/OgrePlatform.h:323:102: note: ‘#pragma message: Ogre can't tell whether this is a debug build. If it is, please add _DEBUG to the preprocessor definitions. Otherwise, you can set OGRE_IGNORE_UNKNOWN_DEBUG to suppress this warning. Ogre will assume this is not a debug build by default. To add _DEBUG with g++, invoke g++ with the argument -D_DEBUG. To add it in CMake, include set( CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG=1 -D_DEBUG=1" ) at the top of your CMakeLists.txt file. IDEs usually provide the possibility to add preprocessor definitions in the build settings. You can also manually set OGRE_DEBUG_MODE to either 1 or 0 instead of adding _DEBUG.’
+  323 |     "settings. You can also manually set OGRE_DEBUG_MODE to either 1 or 0 instead of adding _DEBUG." )
+      |                                                                                                      ^
+[100%] Linking CXX executable stage_a_gazebo_fragment_capture
+[100%] Built target stage_a_gazebo_fragment_capture
+Consolidate compiler generated dependencies of target stage_a_fragment_mrt
+[100%] Built target stage_a_fragment_mrt

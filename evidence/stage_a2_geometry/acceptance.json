@@ -1,0 +1,712 @@
+{
+  "baseline": "8603cbda4a917df31405d734b29494ae910a572c",
+  "capture": {
+    "acquisition_clock_ns": 24058000000,
+    "camera_definition_source": "live_generate_world_sdf",
+    "camera_is_static": true,
+    "camera_pose_source": "live_scene_info",
+    "camera_world_pose": [
+      0.4,
+      -0.217,
+      0.614,
+      0.0,
+      0.7071067811865475,
+      0.0,
+      0.7071067811865476
+    ],
+    "clock_domain": "gazebo_simulation",
+    "depth_encoding": "32FC1",
+    "depth_stamp_ns": 24056000000,
+    "depth_units": "metres",
+    "epd_detections_ge_0_80": 5,
+    "frame_id": "stage_a_camera_optical_frame",
+    "height": 512,
+    "inference_api": "external EPD Ort::P3OrtBase",
+    "info_stamp_ns": 24056000000,
+    "intrinsics": [
+      443.5061702581152,
+      443.5061702581152,
+      256.0,
+      256.0
+    ],
+    "rejected_geometry_count": 1,
+    "rgb_stamp_ns": 24056000000,
+    "robot_motion_called": false,
+    "ros_bridge_started": false,
+    "valid_observations": 4,
+    "width": 512
+  },
+  "geometry_rejected_objects": [
+    {
+      "object_id": "epd_24056000000_1",
+      "reason": "BLOCKED: incomplete or inconsistent face extents; expose all four cube edges"
+    }
+  ],
+  "objects": [
+    {
+      "centroid": [
+        0.4306240199212458,
+        -0.19934221294233706,
+        0.02499345297880573
+      ],
+      "confidence": 0.9000171422958374,
+      "label": "cube",
+      "object_id": "epd_24056000000_2",
+      "pose": {
+        "frame_id": "world",
+        "position": [
+          0.4306913270290211,
+          -0.19937672134028084,
+          0.012499834537506076
+        ],
+        "orientation_xyzw": [
+          -7.891423122875259e-26,
+          -9.098889050845403e-26,
+          -0.755454017110973,
+          0.6552016697406179
+        ]
+      },
+      "dimensions_xyz": [
+        0.04061595964549772,
+        0.04061595964549772,
+        0.04061595964549772
+      ],
+      "shape": "box",
+      "geometry_provenance": {
+        "profile_id": "stage_a_cube_25mm",
+        "dimension_source": "declared_workpiece_profile",
+        "declared_dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "dimension_tolerance_m": 0.00025,
+        "position_source": "measured_face_centre_minus_measured_normal_half_declared_height",
+        "face_centre_world": [
+          0.4306913270290211,
+          -0.19937672134028084,
+          0.024999834537506076
+        ],
+        "face_normal_world": [
+          0.0,
+          2.4088531782891597e-25,
+          1.0
+        ],
+        "face_support_points": 353,
+        "face_support_fraction": 0.9943661971830986,
+        "face_hull_area_m2": 0.0005987855196945226,
+        "plane_max_residual_m": 1.7347234762873813e-17,
+        "centre_uncertainty_m": 0.0027811368770964493,
+        "orientation_uncertainty_rad": 0.22689280275926424,
+        "orientation_equivalence": "cube face rotations modulo 90 degrees",
+        "collision_padding_m": 0.0078079798227488565,
+        "collision_dimensions_source": "conservative_pose_envelope",
+        "profile_sha256": "f477feb2e5a39d85a3dd2ae1a47c8bfb06489f4a6e3e51d395e83fb9b1bd8a81"
+      }
+    },
+    {
+      "centroid": [
+        0.43113042868525653,
+        -0.24945471386154267,
+        0.024989668389612918
+      ],
+      "confidence": 0.8828846216201782,
+      "label": "cube",
+      "object_id": "epd_24056000000_3",
+      "pose": {
+        "frame_id": "world",
+        "position": [
+          0.4311041377160239,
+          -0.24941481202591376,
+          0.012499552552182562
+        ],
+        "orientation_xyzw": [
+          3.430580535918579e-05,
+          -9.110158743156946e-06,
+          -0.5547001984010698,
+          0.8320502921301876
+        ]
+      },
+      "dimensions_xyz": [
+        0.04039971084576309,
+        0.04039971084576309,
+        0.04039971084576309
+      ],
+      "shape": "box",
+      "geometry_provenance": {
+        "profile_id": "stage_a_cube_25mm",
+        "dimension_source": "declared_workpiece_profile",
+        "declared_dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "dimension_tolerance_m": 0.00025,
+        "position_source": "measured_face_centre_minus_measured_normal_half_declared_height",
+        "face_centre_world": [
+          0.4311034724773418,
+          -0.24941539929462647,
+          0.02499955252068548
+        ],
+        "face_normal_world": [
+          -5.321909456528992e-05,
+          -4.6981497017155056e-05,
+          0.9999999974802333
+        ],
+        "face_support_points": 350,
+        "face_support_fraction": 0.9943181818181818,
+        "face_hull_area_m2": 0.00060583767043215,
+        "plane_max_residual_m": 9.826225708445134e-05,
+        "centre_uncertainty_m": 0.0028794162008620103,
+        "orientation_uncertainty_rad": 0.2173003288889404,
+        "orientation_equivalence": "cube face rotations modulo 90 degrees",
+        "collision_padding_m": 0.007699855422881545,
+        "collision_dimensions_source": "conservative_pose_envelope",
+        "profile_sha256": "f477feb2e5a39d85a3dd2ae1a47c8bfb06489f4a6e3e51d395e83fb9b1bd8a81"
+      }
+    },
+    {
+      "centroid": [
+        0.41587916586976603,
+        -0.22489396378999338,
+        0.04999688230042765
+      ],
+      "confidence": 0.8161109089851379,
+      "label": "cube",
+      "object_id": "epd_24056000000_4",
+      "pose": {
+        "frame_id": "world",
+        "position": [
+          0.4158373276915,
+          -0.22484533248481142,
+          0.0374998426953202
+        ],
+        "orientation_xyzw": [
+          -1.7048241347963976e-06,
+          5.74642509067286e-07,
+          -0.7947066774670282,
+          0.6069936546505905
+        ]
+      },
+      "dimensions_xyz": [
+        0.03888755918406791,
+        0.03888755918406791,
+        0.03888755918406791
+      ],
+      "shape": "box",
+      "geometry_provenance": {
+        "profile_id": "stage_a_cube_25mm",
+        "dimension_source": "declared_workpiece_profile",
+        "declared_dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "dimension_tolerance_m": 0.00025,
+        "position_source": "measured_face_centre_minus_measured_normal_half_declared_height",
+        "face_centre_world": [
+          0.415837370282487,
+          -0.2248453180311816,
+          0.049999842695239285
+        ],
+        "face_normal_world": [
+          3.407278961051965e-06,
+          1.156290386008832e-06,
+          0.9999999999935267
+        ],
+        "face_support_points": 375,
+        "face_support_fraction": 0.9973404255319149,
+        "face_hull_area_m2": 0.0005886546225557323,
+        "plane_max_residual_m": 5.629660727588549e-08,
+        "centre_uncertainty_m": 0.0026684397060030432,
+        "orientation_uncertainty_rad": 0.19199072144795828,
+        "orientation_equivalence": "cube face rotations modulo 90 degrees",
+        "collision_padding_m": 0.006943779592033955,
+        "collision_dimensions_source": "conservative_pose_envelope",
+        "profile_sha256": "f477feb2e5a39d85a3dd2ae1a47c8bfb06489f4a6e3e51d395e83fb9b1bd8a81"
+      }
+    }
+  ],
+  "independent_validation": {
+    "purpose": "independent ground-truth validation only",
+    "scene_sample_limitation": "dimensions from scene/info; poses from timestamped dynamic_pose/info bracketing capture",
+    "settling_position_delta_m": 0.0,
+    "settling_orientation_delta_rad": 4.2146848510894035e-08,
+    "epd_detection_count": 5,
+    "valid_observation_count": 3,
+    "raycast_visible_pixel_counts": {
+      "part_00": 359,
+      "part_01": 361,
+      "part_02": 364,
+      "part_03": 357,
+      "part_04": 336,
+      "part_05": 366,
+      "part_06": 390,
+      "part_07": 389,
+      "part_08": 378,
+      "part_09": 377
+    },
+    "visible_box_count": 10,
+    "fully_occluded_box_count": 0,
+    "matched_box_count": 3,
+    "cube_depth_pixels_compared": 3677,
+    "interior_depth_pixels_compared": 2832,
+    "interior_depth_p95_abs_error_m": 1.4917541034109582e-07,
+    "cube_depth_median_abs_error_m": 8.74717316357021e-08,
+    "cube_depth_p95_abs_error_m": 0.012073998817510654,
+    "observations": [
+      {
+        "object_id": "epd_24056000000_2",
+        "nearest_box": "part_05",
+        "surface_error_m": 6.428345190736401e-06,
+        "volume_centre_distance_m": 0.012526428914036405,
+        "estimated_centre_error_m": 0.0009308133106274831,
+        "orientation_error_rad_mod_cube_symmetry": 0.008102676382748707,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      },
+      {
+        "object_id": "epd_24056000000_3",
+        "nearest_box": "part_02",
+        "surface_error_m": 1.03046608520823e-05,
+        "volume_centre_distance_m": 0.012521598925027001,
+        "estimated_centre_error_m": 0.0008982091143504529,
+        "orientation_error_rad_mod_cube_symmetry": 0.005092716413231525,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      },
+      {
+        "object_id": "epd_24056000000_4",
+        "nearest_box": "part_07",
+        "surface_error_m": 3.0667328312708464e-06,
+        "volume_centre_distance_m": 0.01252547918766602,
+        "estimated_centre_error_m": 0.0008448437524105379,
+        "orientation_error_rad_mod_cube_symmetry": 0.00768355445975563,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      }
+    ]
+  },
+  "planning": {
+    "result": "FAIL",
+    "runtime_seconds": 324.3778757350228,
+    "failure": "ACTION_TIMEOUT: action result timed out",
+    "orchestration_failure": "executor did not prove an unchanged, complete plan-only cycle",
+    "execution_action_goals": [],
+    "shutdown_clean": true,
+    "trajectory_execution_enabled": false,
+    "remaining_owned_process_groups": [],
+    "execution_attempted": false,
+    "full_cycle_prevalidated": false,
+    "milestone_result": "BLOCKED",
+    "closing_diagnosis": "closing_diagnosis.json",
+    "source_commit": "211e708303f90fd09f601dcf7628fa965ee487cc",
+    "source_dirty": true,
+    "executor_hashes": {
+      "perceived_object_grasp_execute.py": "eaf9fee9644062efb094f713573d0ece105d162c1f9873fcef9154c2b0dcfac1",
+      "perceived_object_grasp_plan.py": "f3b9a592201660f75b5beaaa27501cd7e1c41002109337085f555813df522660",
+      "runtime_pick_inputs.py": "f4bdb673570acae75d0ae053b3f6c04929f739f4f0b10d20a79f1128869cc12d",
+      "task_intent_resolver.py": "40d3f0deb205e3d9f6de11f49df6293bd480c9c9da4aeb10b327482e3332135a",
+      "task_intent_v2.py": "e9fd8a1f41fed44767925f01c38b6d28b033e5872fe7c20ee5fa1364fcbf73e7",
+      "full_cycle_preplanner.py": "991cd5afdb3a28029d42ed099b3b43c6f20f39771bcf9aa0c61085ce69ee949e",
+      "physical_destination.py": "7bce6368b287b932f92013deb72053733813fc8f50fa375cb9803d433c42a18b",
+      "grasp_strategy_candidates.py": "94a71747cbe7a3ed10da4b34e91bca13c277a643a86ba3f3813992d01a33377c"
+    },
+    "scene_hashes": {
+      "environment.yaml": "e3ea1f594b4df72fa55e1bf62ca92df1fcb5d75c470a2cab18b9ea3e2534bc21",
+      "cell_definition.yaml": "7b3939af22b90b8cefb90629820d5dd9c14819f3a4c06fe95503a6aa8d47898b",
+      "config/moveit_collision_objects.yaml": "deeeff4678c2472bba1b28c9f812bf2b3cdee1074763b6fd80693b5796f9a78a"
+    },
+    "cancellation_accepted": false,
+    "cancellation_confirmed": false,
+    "candidate_attempts": [
+      {
+        "candidate_id": "top_2f::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::001",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::002",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "NO_VALID_EXTRACTION",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_GRASP",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_CLOSE_GRIPPER",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "ATTACH",
+            "success": false,
+            "reason_code": "NO_VALID_EXTRACTION",
+            "failure_kind": "extraction",
+            "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'runtime::epd_24056000000_2', 'depth_m': 0.013634280420216933, 'gap_m': 0.0, 'normal': [0.2631174064220265, 0.9647638210638384, -2.0120615342666195e-06]}"
+          }
+        ],
+        "extraction_rejection": {
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "runtime::epd_24056000000_2",
+          "depth_m": 0.013634280420216933,
+          "gap_m": 0.0
+        }
+      },
+      {
+        "candidate_id": "top_2f::003",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::004",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::005",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::006",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::007",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::001",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::003",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "side_grip_basic::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:side_grip_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -31,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "IK failed: -31"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::001",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::002",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::003",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "NO_VALID_EXTRACTION",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_GRASP",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_CLOSE_GRIPPER",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "ATTACH",
+            "success": false,
+            "reason_code": "NO_VALID_EXTRACTION",
+            "failure_kind": "extraction",
+            "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'runtime::epd_24056000000_2', 'depth_m': 0.013634280420216933, 'gap_m': 0.0, 'normal': [0.2631174064220265, 0.9647638210638384, -2.0120615342666195e-06]}"
+          }
+        ],
+        "extraction_rejection": {
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "runtime::epd_24056000000_2",
+          "depth_m": 0.013634280420216933,
+          "gap_m": 0.0
+        }
+      },
+      {
+        "candidate_id": "finger_pinch_basic::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:finger_pinch_basic",
+        "reason_code": "NO_VALID_EXTRACTION",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_GRASP",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_CLOSE_GRIPPER",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "ATTACH",
+            "success": false,
+            "reason_code": "NO_VALID_EXTRACTION",
+            "failure_kind": "extraction",
+            "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'runtime::epd_24056000000_2', 'depth_m': 0.013634280420216933, 'gap_m': 0.0, 'normal': [0.2631174064220265, 0.9647638210638384, -2.0120615342666195e-06]}"
+          }
+        ],
+        "extraction_rejection": {
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "runtime::epd_24056000000_2",
+          "depth_m": 0.013634280420216933,
+          "gap_m": 0.0
+        }
+      },
+      {
+        "candidate_id": "finger_pinch_basic::001",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::002",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:finger_pinch_basic",
+        "reason_code": "ACTION_TIMEOUT",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "reason_code": "ACTION_TIMEOUT",
+            "failure_kind": "transport",
+            "reason": "action result timed out"
+          }
+        ]
+      }
+    ]
+  },
+  "planning_scene_inserted_ids": [
+    "runtime::epd_24056000000_2",
+    "runtime::epd_24056000000_3",
+    "runtime::epd_24056000000_4"
+  ],
+  "authored_selection_rejections": {
+    "runtime::epd_24056000000_2": "outside_authored_selection",
+    "runtime::epd_24056000000_3": "outside_authored_selection"
+  },
+  "execution_attempted": false,
+  "verification": {
+    "focused_python_tests": "158 PASS",
+    "rgbd_capture_build": "PASS",
+    "rgbd_geometry_ctest": "1 PASS",
+    "disposable_scene_build": "PASS",
+    "full_cycle_feasibility": "BLOCKED: approach action/IK timeouts and search deadline",
+    "bridge_commissioning": "BLOCKED: existing baseline SIGABRT prerequisite unavailable; not investigated",
+    "scene_completeness": "NOT PROVEN: 10 independently visible cubes, only 3 accepted representations",
+    "closing_certificate_native_build": "PASS",
+    "closing_certificate_native_tests": "67 PASS; 1 historical external fixture SKIPPED"
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "exit_code": 0,
+  "preprocessing": {
+    "input_order": "RGB",
+    "epd_order": "BGR",
+    "source_size": [
+      256,
+      256
+    ],
+    "epd_size": [
+      512,
+      512
+    ],
+    "resize": "INTER_LINEAR",
+    "scale": 2,
+    "padding": 0,
+    "pixel_centres": "u512=2*u256+0.5",
+    "external_epd": {
+      "resize": [
+        512,
+        512
+      ],
+      "interpolation": "INTER_LINEAR",
+      "channel_conversion": "BGR2RGB",
+      "tensor": "CHW_float32_RGB_div255",
+      "full_image_masks": true,
+      "roi": "clipped_integer_bbox_512"
+    },
+    "inverse_mask": "union_2x2_samples_no_ID_trimming",
+    "mask_threshold": 0.5,
+    "confidence_threshold": 0.8
+  },
+  "loaded_library_sha256": {
+    "/home/user/epd_ros2_ws/build/jsoncpp_vendor/jsoncpp_install/lib/libjsoncpp.so.1.9.5": "08709094bfa42ff0727f83bcda1fcf752c46fb331d104f55c9e1b33d446e0924",
+    "/home/user/epd_ros2_ws/install/epd_onnxruntime_vendor/opt/epd_onnxruntime_vendor/lib/libonnxruntime.so.1.16.3": "ce3752ba35018ee6d8127ff4cba955b68b9c8b8b0fed8798a8f2e5c4c5a35fa5",
+    "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2": "41daf7836f7fce21a40ca63a00c5caf21b05a35a76ccc075d86f1716212cdf01",
+    "/usr/lib/x86_64-linux-gnu/libc.so.6": "b2cf6c33b74d2f22543b7a469a75b538911e690f769d0b238843a49465b83793",
+    "/usr/lib/x86_64-linux-gnu/libdl.so.2": "3eaaa4aefd9c28f3867c96a427c3cbec9191cb61c4c9d0a2cb4a765d66064499",
+    "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1": "fc9d43b2f6c20e53b009238f767c5b949d202389e20de9e202ea684b4ba3729a",
+    "/usr/lib/x86_64-linux-gnu/libm.so.6": "3dd5511ae94785c9f921429b0f2b2f7aabb461b6f0e6de6dfdbef15f24bdfee6",
+    "/usr/lib/x86_64-linux-gnu/libopencv_calib3d.so.4.5.4d": "f7a8250b648fefb5970894e340be0eac2e19280b322a9d94f2c94f3ba26eec21",
+    "/usr/lib/x86_64-linux-gnu/libopencv_core.so.4.5.4d": "8baa4de03806e0a11697ae8ee67a4c220027bdf5fc52909a0929b87ade477b3e",
+    "/usr/lib/x86_64-linux-gnu/libopencv_dnn.so.4.5.4d": "5994fd14c486b6aa4ffef55a77f83401c8f3e86931dd2e9242f0234c6fa3cf3e",
+    "/usr/lib/x86_64-linux-gnu/libopencv_features2d.so.4.5.4d": "b17669770b098308d36e3a40103097cceed7c320259aea34c585ae4a25b2b82c",
+    "/usr/lib/x86_64-linux-gnu/libopencv_flann.so.4.5.4d": "20f3b3c87d6c07840ec3820a56e10d34aadc6713eb7eb8b9e3ad4f4679cf9e88",
+    "/usr/lib/x86_64-linux-gnu/libopencv_imgproc.so.4.5.4d": "33dba9de2768f305276768cd85644c5a863a00083f3af2947d35af845cc69223",
+    "/usr/lib/x86_64-linux-gnu/libopencv_tracking.so.4.5.4d": "35c2315fa26bcf16698f9112bdce1cd96f0a3690b39f52c9a81450f3b4f1ea81",
+    "/usr/lib/x86_64-linux-gnu/libopencv_video.so.4.5.4d": "40b7686bcb67db9f8ccad3a5ba8eb91110246aa08fe1723fed6b0dd0577ccceb",
+    "/usr/lib/x86_64-linux-gnu/libprotobuf.so.23.0.4": "4698f37e13553d965c752239367336d048d803453a236cdbb04b683cbe42b590",
+    "/usr/lib/x86_64-linux-gnu/libpthread.so.0": "fbed9505adacada2abb37c6b43be2df6de81e742712c6025694ba48de62c7e78",
+    "/usr/lib/x86_64-linux-gnu/librt.so.1": "5f20d34fb3bb4d84b4edeb6ca11fa5b48c705207253741619acab7cc758185fb",
+    "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30": "ff0825e113603c3866680d5d52216bc6d8eedf3a59f52a0aef67ff01994db128",
+    "/usr/lib/x86_64-linux-gnu/libtbb.so.2": "b87fa093b87cea647c2872fd436182aca1ca686ee7938396023b375d30b681e9",
+    "/usr/lib/x86_64-linux-gnu/libtbbmalloc.so.2.5": "e2cf387671007fe6753c3b99b6b5b0716916b03aea8ccbc4101831ad69836a57",
+    "/usr/lib/x86_64-linux-gnu/libz.so.1.2.11": "64c206f0146cc58bbddc4f22054436f4ff278f5a554aa3ce6921ddf7e9133370"
+  },
+  "detections": [
+    {
+      "bbox": [
+        210,
+        219,
+        311,
+        301
+      ],
+      "class_index": 1,
+      "confidence": 0.9839037656784058,
+      "label": "cube",
+      "mask_file": "mask_0.f32",
+      "mask_sha256": "c9b8b482c895d52374fed06b0182e47e4939fc5db808165dcdadfc923ff000ca",
+      "mapped_mask_file": "mask_0.f32.original.bool8",
+      "association": "REJECTED",
+      "reason": "BLOCKED: physics contact: mixed, missing or ambiguous mask ID"
+    },
+    {
+      "bbox": [
+        286,
+        281,
+        315,
+        307
+      ],
+      "class_index": 1,
+      "confidence": 0.18522736430168152,
+      "label": "cube",
+      "mask_file": "mask_1.f32",
+      "mask_sha256": "61cab642abd47233afabeb52a02f89e28527f5468ec8ed5c4f8d02c05b9683a8",
+      "mapped_mask_file": "mask_1.f32.original.bool8",
+      "association": "REJECTED",
+      "reason": "below original confidence threshold or invalid confidence"
+    },
+    {
+      "bbox": [
+        295,
+        226,
+        310,
+        235
+      ],
+      "class_index": 1,
+      "confidence": 0.16725830733776093,
+      "label": "cube",
+      "mask_file": "mask_2.f32",
+      "mask_sha256": "99ab21f80d4849bb9741fce8ee48bc849854555345c0c89b21ae1c9d9eef461d",
+      "mapped_mask_file": "mask_2.f32.original.bool8",
+      "association": "REJECTED",
+      "reason": "below original confidence threshold or invalid confidence"
+    },
+    {
+      "bbox": [
+        295,
+        234,
+        313,
+        282
+      ],
+      "class_index": 1,
+      "confidence": 0.11943060159683228,
+      "label": "cube",
+      "mask_file": "mask_3.f32",
+      "mask_sha256": "ee73c319227f78a2ec4e1c69887f504b3e86fe5e7f342d62f8fefd4b355416bc",
+      "mapped_mask_file": "mask_3.f32.original.bool8",
+      "association": "REJECTED",
+      "reason": "below original confidence threshold or invalid confidence"
+    },
+    {
+      "bbox": [
+        209,
+        216,
+        316,
+        252
+      ],
+      "class_index": 1,
+      "confidence": 0.10092402249574661,
+      "label": "cube",
+      "mask_file": "mask_4.f32",
+      "mask_sha256": "4bdb193c3ed692709ce5434bd399c06d8b564898a8425cb052872743684392c7",
+      "mapped_mask_file": "mask_4.f32.original.bool8",
+      "association": "REJECTED",
+      "reason": "below original confidence threshold or invalid confidence"
+    },
+    {
+      "bbox": [
+        223,
+        214,
+        279,
+        218
+      ],
+      "class_index": 1,
+      "confidence": 0.07138382643461227,
+      "label": "cube",
+      "mask_file": "mask_5.f32",
+      "mask_sha256": "6e6915d17534a4189bdca840eac2547df20ec288eb583ba296c2f6a33b7a4af8",
+      "mapped_mask_file": "mask_5.f32.original.bool8",
+      "association": "REJECTED",
+      "reason": "below original confidence threshold or invalid confidence"
+    }
+  ],
+  "accepted": 0,
+  "timing_authority": "BLOCKED",
+  "physical_penetration": "BLOCKED",
+  "contact_authority": false,
+  "extraction_authority": "BLOCKED",
+  "execution_goals": 0,
+  "rgbd_localization": "NOT_CLAIMED_NO_DEPTH_OR_CALIBRATION",
+  "decision": "BLOCKED_NO_QUALIFIED_EPD_ASSOCIATION",
+  "inference_seconds": 3.429853999,
+  "genuine_detection_count": 6
+}

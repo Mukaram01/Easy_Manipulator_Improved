@@ -1,0 +1,44 @@
+
+Dynamic section at offset 0xce1e0 contains 41 entries:
+  Tag        Type                         Name/Value
+ 0x0000000000000001 (NEEDED)             Shared library: [libignition-gazebo6-rendering.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libignition-gazebo6.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libignition-msgs8.so.8]
+ 0x0000000000000001 (NEEDED)             Shared library: [libsdformat12.so.12]
+ 0x0000000000000001 (NEEDED)             Shared library: [libprotobuf.so.23]
+ 0x0000000000000001 (NEEDED)             Shared library: [libignition-common4.so.4]
+ 0x0000000000000001 (NEEDED)             Shared library: [libignition-math6.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libjsoncpp.so.25]
+ 0x0000000000000001 (NEEDED)             Shared library: [libignition-rendering6-ogre2.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libOgreNextMain.so.2.2.5]
+ 0x0000000000000001 (NEEDED)             Shared library: [libGL.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x000000000000000c (INIT)               0x29000
+ 0x000000000000000d (FINI)               0x92160
+ 0x0000000000000019 (INIT_ARRAY)         0xcdb88
+ 0x000000000000001b (INIT_ARRAYSZ)       16 (bytes)
+ 0x000000000000001a (FINI_ARRAY)         0xcdb98
+ 0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)
+ 0x000000006ffffef5 (GNU_HASH)           0x3b0
+ 0x0000000000000005 (STRTAB)             0x8030
+ 0x0000000000000006 (SYMTAB)             0x1958
+ 0x000000000000000a (STRSZ)              104850 (bytes)
+ 0x000000000000000b (SYMENT)             24 (bytes)
+ 0x0000000000000015 (DEBUG)              0x0
+ 0x0000000000000003 (PLTGOT)             0xcf4b0
+ 0x0000000000000002 (PLTRELSZ)           7848 (bytes)
+ 0x0000000000000014 (PLTREL)             RELA
+ 0x0000000000000017 (JMPREL)             0x26ce8
+ 0x0000000000000007 (RELA)               0x22398
+ 0x0000000000000008 (RELASZ)             18768 (bytes)
+ 0x0000000000000009 (RELAENT)            24 (bytes)
+ 0x000000000000001e (FLAGS)              BIND_NOW
+ 0x000000006ffffffb (FLAGS_1)            Flags: NOW PIE
+ 0x000000006ffffffe (VERNEED)            0x22258
+ 0x000000006fffffff (VERNEEDNUM)         4
+ 0x000000006ffffff0 (VERSYM)             0x219c2
+ 0x000000006ffffff9 (RELACOUNT)          504
+ 0x0000000000000000 (NULL)               0x0

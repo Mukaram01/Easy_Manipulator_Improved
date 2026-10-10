@@ -1,0 +1,17 @@
+{
+  "reader": "onnx 1.17.0; metadata inspection only, no inference",
+  "input_name": "images",
+  "input_type": "float32",
+  "input_shape": [
+    1,
+    3,
+    512,
+    512
+  ],
+  "outputs": [
+    "boxes",
+    "labels",
+    "scores",
+    "masks"
+  ]
+}

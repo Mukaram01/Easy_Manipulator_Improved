@@ -1,0 +1,868 @@
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000068b10 <dxSafeNormalize4(double*)@@Base>:
+   68b10:	f3 0f 1e fa          	endbr64
+   68b14:	48 83 ec 18          	sub    $0x18,%rsp
+   68b18:	48 85 ff             	test   %rdi,%rdi
+   68b1b:	0f 84 9a 00 00 00    	je     68bbb <dxSafeNormalize4(double*)@@Base+0xab>
+   68b21:	f2 0f 10 1f          	movsd  (%rdi),%xmm3
+   68b25:	f2 0f 10 57 08       	movsd  0x8(%rdi),%xmm2
+   68b2a:	31 c0                	xor    %eax,%eax
+   68b2c:	f2 0f 10 4f 10       	movsd  0x10(%rdi),%xmm1
+   68b31:	f2 0f 10 6f 18       	movsd  0x18(%rdi),%xmm5
+   68b36:	66 0f 28 c3          	movapd %xmm3,%xmm0
+   68b3a:	66 0f 28 e2          	movapd %xmm2,%xmm4
+   68b3e:	f2 0f 59 e2          	mulsd  %xmm2,%xmm4
+   68b42:	f2 0f 59 c3          	mulsd  %xmm3,%xmm0
+   68b46:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   68b4a:	66 0f 28 e1          	movapd %xmm1,%xmm4
+   68b4e:	f2 0f 59 e1          	mulsd  %xmm1,%xmm4
+   68b52:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   68b56:	66 0f 28 e5          	movapd %xmm5,%xmm4
+   68b5a:	f2 0f 59 e5          	mulsd  %xmm5,%xmm4
+   68b5e:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   68b62:	66 0f ef e4          	pxor   %xmm4,%xmm4
+   68b66:	66 0f 2f c4          	comisd %xmm4,%xmm0
+   68b6a:	77 0c                	ja     68b78 <dxSafeNormalize4(double*)@@Base+0x68>
+   68b6c:	48 83 c4 18          	add    $0x18,%rsp
+   68b70:	c3                   	ret
+   68b71:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+   68b78:	66 0f 2e e0          	ucomisd %xmm0,%xmm4
+   68b7c:	77 57                	ja     68bd5 <dxSafeNormalize4(double*)@@Base+0xc5>
+   68b7e:	f2 0f 51 c0          	sqrtsd %xmm0,%xmm0
+   68b82:	f2 0f 10 25 56 97 08 	movsd  0x89756(%rip),%xmm4        # f22e0 <typeinfo name for dxBox@@Base+0x55>
+   68b89:	00
+   68b8a:	b8 01 00 00 00       	mov    $0x1,%eax
+   68b8f:	f2 0f 5e e0          	divsd  %xmm0,%xmm4
+   68b93:	f2 0f 59 dc          	mulsd  %xmm4,%xmm3
+   68b97:	f2 0f 59 d4          	mulsd  %xmm4,%xmm2
+   68b9b:	f2 0f 59 cc          	mulsd  %xmm4,%xmm1
+   68b9f:	f2 0f 59 e5          	mulsd  %xmm5,%xmm4
+   68ba3:	f2 0f 11 1f          	movsd  %xmm3,(%rdi)
+   68ba7:	f2 0f 11 57 08       	movsd  %xmm2,0x8(%rdi)
+   68bac:	f2 0f 11 4f 10       	movsd  %xmm1,0x10(%rdi)
+   68bb1:	f2 0f 11 67 18       	movsd  %xmm4,0x18(%rdi)
+   68bb6:	48 83 c4 18          	add    $0x18,%rsp
+   68bba:	c3                   	ret
+   68bbb:	48 8d 15 d6 f6 08 00 	lea    0x8f6d6(%rip),%rdx        # f8298 <typeinfo name for dxBody@@Base+0x240>
+   68bc2:	48 8d 35 63 94 08 00 	lea    0x89463(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   68bc9:	bf 02 00 00 00       	mov    $0x2,%edi
+   68bce:	31 c0                	xor    %eax,%eax
+   68bd0:	e8 3b 2b fe ff       	call   4b710 <dDebug@@Base>
+   68bd5:	48 89 7c 24 08       	mov    %rdi,0x8(%rsp)
+   68bda:	e8 81 7a fc ff       	call   30660 <sqrt@plt>
+   68bdf:	48 8b 7c 24 08       	mov    0x8(%rsp),%rdi
+   68be4:	f2 0f 10 1f          	movsd  (%rdi),%xmm3
+   68be8:	f2 0f 10 57 08       	movsd  0x8(%rdi),%xmm2
+   68bed:	f2 0f 10 4f 10       	movsd  0x10(%rdi),%xmm1
+   68bf2:	f2 0f 10 6f 18       	movsd  0x18(%rdi),%xmm5
+   68bf7:	eb 89                	jmp    68b82 <dxSafeNormalize4(double*)@@Base+0x72>
+   68bf9:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+00000000000710f0 <dRfromQ@@Base>:
+   710f0:	f3 0f 1e fa          	endbr64
+   710f4:	48 85 f6             	test   %rsi,%rsi
+   710f7:	0f 84 47 01 00 00    	je     71244 <dRfromQ@@Base+0x154>
+   710fd:	48 85 ff             	test   %rdi,%rdi
+   71100:	0f 84 3e 01 00 00    	je     71244 <dRfromQ@@Base+0x154>
+   71106:	f2 0f 10 46 10       	movsd  0x10(%rsi),%xmm0
+   7110b:	f2 0f 10 15 cd 11 08 	movsd  0x811cd(%rip),%xmm2        # f22e0 <typeinfo name for dxBox@@Base+0x55>
+   71112:	00
+   71113:	f2 0f 10 66 08       	movsd  0x8(%rsi),%xmm4
+   71118:	66 0f 28 c8          	movapd %xmm0,%xmm1
+   7111c:	f2 0f 58 c8          	addsd  %xmm0,%xmm1
+   71120:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   71124:	f2 0f 10 46 18       	movsd  0x18(%rsi),%xmm0
+   71129:	66 0f 28 d8          	movapd %xmm0,%xmm3
+   7112d:	f2 0f 58 d8          	addsd  %xmm0,%xmm3
+   71131:	f2 0f 59 d8          	mulsd  %xmm0,%xmm3
+   71135:	66 0f 28 c2          	movapd %xmm2,%xmm0
+   71139:	f2 0f 5c c1          	subsd  %xmm1,%xmm0
+   7113d:	f2 0f 5c c3          	subsd  %xmm3,%xmm0
+   71141:	f2 0f 11 07          	movsd  %xmm0,(%rdi)
+   71145:	f2 0f 10 46 08       	movsd  0x8(%rsi),%xmm0
+   7114a:	f2 0f 10 2e          	movsd  (%rsi),%xmm5
+   7114e:	f2 0f 59 46 10       	mulsd  0x10(%rsi),%xmm0
+   71153:	f2 0f 59 6e 18       	mulsd  0x18(%rsi),%xmm5
+   71158:	f2 0f 5c c5          	subsd  %xmm5,%xmm0
+   7115c:	f2 0f 58 c0          	addsd  %xmm0,%xmm0
+   71160:	f2 0f 11 47 08       	movsd  %xmm0,0x8(%rdi)
+   71165:	f2 0f 10 46 08       	movsd  0x8(%rsi),%xmm0
+   7116a:	f2 0f 10 2e          	movsd  (%rsi),%xmm5
+   7116e:	f2 0f 59 46 18       	mulsd  0x18(%rsi),%xmm0
+   71173:	f2 0f 59 6e 10       	mulsd  0x10(%rsi),%xmm5
+   71178:	48 c7 47 18 00 00 00 	movq   $0x0,0x18(%rdi)
+   7117f:	00
+   71180:	f2 0f 58 c5          	addsd  %xmm5,%xmm0
+   71184:	f2 0f 58 c0          	addsd  %xmm0,%xmm0
+   71188:	f2 0f 11 47 10       	movsd  %xmm0,0x10(%rdi)
+   7118d:	f2 0f 10 46 08       	movsd  0x8(%rsi),%xmm0
+   71192:	f2 0f 10 2e          	movsd  (%rsi),%xmm5
+   71196:	f2 0f 59 46 10       	mulsd  0x10(%rsi),%xmm0
+   7119b:	f2 0f 59 6e 18       	mulsd  0x18(%rsi),%xmm5
+   711a0:	f2 0f 58 c5          	addsd  %xmm5,%xmm0
+   711a4:	f2 0f 58 c0          	addsd  %xmm0,%xmm0
+   711a8:	f2 0f 11 47 20       	movsd  %xmm0,0x20(%rdi)
+   711ad:	66 0f 28 c4          	movapd %xmm4,%xmm0
+   711b1:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   711b5:	f2 0f 59 c4          	mulsd  %xmm4,%xmm0
+   711b9:	f2 0f 5c d0          	subsd  %xmm0,%xmm2
+   711bd:	66 0f 28 c2          	movapd %xmm2,%xmm0
+   711c1:	f2 0f 5c d1          	subsd  %xmm1,%xmm2
+   711c5:	f2 0f 5c c3          	subsd  %xmm3,%xmm0
+   711c9:	f2 0f 11 47 28       	movsd  %xmm0,0x28(%rdi)
+   711ce:	f2 0f 10 46 10       	movsd  0x10(%rsi),%xmm0
+   711d3:	f2 0f 10 1e          	movsd  (%rsi),%xmm3
+   711d7:	f2 0f 59 46 18       	mulsd  0x18(%rsi),%xmm0
+   711dc:	f2 0f 59 5e 08       	mulsd  0x8(%rsi),%xmm3
+   711e1:	48 c7 47 38 00 00 00 	movq   $0x0,0x38(%rdi)
+   711e8:	00
+   711e9:	f2 0f 5c c3          	subsd  %xmm3,%xmm0
+   711ed:	f2 0f 58 c0          	addsd  %xmm0,%xmm0
+   711f1:	f2 0f 11 47 30       	movsd  %xmm0,0x30(%rdi)
+   711f6:	f2 0f 10 46 08       	movsd  0x8(%rsi),%xmm0
+   711fb:	f2 0f 10 1e          	movsd  (%rsi),%xmm3
+   711ff:	f2 0f 59 46 18       	mulsd  0x18(%rsi),%xmm0
+   71204:	f2 0f 59 5e 10       	mulsd  0x10(%rsi),%xmm3
+   71209:	f2 0f 5c c3          	subsd  %xmm3,%xmm0
+   7120d:	f2 0f 58 c0          	addsd  %xmm0,%xmm0
+   71211:	f2 0f 11 47 40       	movsd  %xmm0,0x40(%rdi)
+   71216:	f2 0f 10 46 10       	movsd  0x10(%rsi),%xmm0
+   7121b:	f2 0f 10 1e          	movsd  (%rsi),%xmm3
+   7121f:	f2 0f 59 46 18       	mulsd  0x18(%rsi),%xmm0
+   71224:	f2 0f 59 5e 08       	mulsd  0x8(%rsi),%xmm3
+   71229:	48 c7 47 58 00 00 00 	movq   $0x0,0x58(%rdi)
+   71230:	00
+   71231:	f2 0f 11 57 50       	movsd  %xmm2,0x50(%rdi)
+   71236:	f2 0f 58 c3          	addsd  %xmm3,%xmm0
+   7123a:	f2 0f 58 c0          	addsd  %xmm0,%xmm0
+   7123e:	f2 0f 11 47 48       	movsd  %xmm0,0x48(%rdi)
+   71243:	c3                   	ret
+   71244:	50                   	push   %rax
+   71245:	48 8d 15 5a 83 08 00 	lea    0x8835a(%rip),%rdx        # f95a6 <typeinfo name for dxRay@@Base+0x428>
+   7124c:	48 8d 35 d9 0d 08 00 	lea    0x80dd9(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   71253:	31 c0                	xor    %eax,%eax
+   71255:	bf 02 00 00 00       	mov    $0x2,%edi
+   7125a:	e8 b1 a4 fd ff       	call   4b710 <dDebug@@Base>
+   7125f:	90                   	nop
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000063840 <dBodySetQuaternion@@Base>:
+   63840:	f3 0f 1e fa          	endbr64
+   63844:	41 54                	push   %r12
+   63846:	55                   	push   %rbp
+   63847:	48 83 ec 08          	sub    $0x8,%rsp
+   6384b:	48 85 ff             	test   %rdi,%rdi
+   6384e:	0f 84 8c 00 00 00    	je     638e0 <dBodySetQuaternion@@Base+0xa0>
+   63854:	48 85 f6             	test   %rsi,%rsi
+   63857:	0f 84 83 00 00 00    	je     638e0 <dBodySetQuaternion@@Base+0xa0>
+   6385d:	f2 0f 10 06          	movsd  (%rsi),%xmm0
+   63861:	4c 8d a7 b8 01 00 00 	lea    0x1b8(%rdi),%r12
+   63868:	48 89 fd             	mov    %rdi,%rbp
+   6386b:	f2 0f 11 87 b8 01 00 	movsd  %xmm0,0x1b8(%rdi)
+   63872:	00
+   63873:	f2 0f 10 46 08       	movsd  0x8(%rsi),%xmm0
+   63878:	f2 0f 11 87 c0 01 00 	movsd  %xmm0,0x1c0(%rdi)
+   6387f:	00
+   63880:	f2 0f 10 46 10       	movsd  0x10(%rsi),%xmm0
+   63885:	f2 0f 11 87 c8 01 00 	movsd  %xmm0,0x1c8(%rdi)
+   6388c:	00
+   6388d:	f2 0f 10 46 18       	movsd  0x18(%rsi),%xmm0
+   63892:	f2 0f 11 87 d0 01 00 	movsd  %xmm0,0x1d0(%rdi)
+   63899:	00
+   6389a:	4c 89 e7             	mov    %r12,%rdi
+   6389d:	e8 6e 52 00 00       	call   68b10 <dxSafeNormalize4(double*)@@Base>
+   638a2:	84 c0                	test   %al,%al
+   638a4:	74 54                	je     638fa <dBodySetQuaternion@@Base+0xba>
+   638a6:	48 8d bd 58 01 00 00 	lea    0x158(%rbp),%rdi
+   638ad:	4c 89 e6             	mov    %r12,%rsi
+   638b0:	e8 3b d8 00 00       	call   710f0 <dRfromQ@@Base>
+   638b5:	48 8b 6d 40          	mov    0x40(%rbp),%rbp
+   638b9:	48 85 ed             	test   %rbp,%rbp
+   638bc:	74 1a                	je     638d8 <dBodySetQuaternion@@Base+0x98>
+   638be:	66 90                	xchg   %ax,%ax
+   638c0:	48 89 ef             	mov    %rbp,%rdi
+   638c3:	e8 28 df fd ff       	call   417f0 <dGeomMoved@@Base>
+   638c8:	48 89 ef             	mov    %rbp,%rdi
+   638cb:	e8 d0 8b fd ff       	call   3c4a0 <dGeomGetBodyNext@@Base>
+   638d0:	48 89 c5             	mov    %rax,%rbp
+   638d3:	48 85 c0             	test   %rax,%rax
+   638d6:	75 e8                	jne    638c0 <dBodySetQuaternion@@Base+0x80>
+   638d8:	48 83 c4 08          	add    $0x8,%rsp
+   638dc:	5d                   	pop    %rbp
+   638dd:	41 5c                	pop    %r12
+   638df:	c3                   	ret
+   638e0:	48 8d 15 d5 34 09 00 	lea    0x934d5(%rip),%rdx        # f6dbc <typeinfo name for dxWorld@@Base+0x124>
+   638e7:	48 8d 35 3e e7 08 00 	lea    0x8e73e(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   638ee:	bf 02 00 00 00       	mov    $0x2,%edi
+   638f3:	31 c0                	xor    %eax,%eax
+   638f5:	e8 16 7e fe ff       	call   4b710 <dDebug@@Base>
+   638fa:	e8 b1 f7 ff ff       	call   630b0 <dObStack::next(unsigned long)@@Base+0x140>
+   638ff:	90                   	nop
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000063700 <dBodySetPosition@@Base>:
+   63700:	f3 0f 1e fa          	endbr64
+   63704:	55                   	push   %rbp
+   63705:	48 85 ff             	test   %rdi,%rdi
+   63708:	74 40                	je     6374a <dBodySetPosition@@Base+0x4a>
+   6370a:	48 8b 6f 40          	mov    0x40(%rdi),%rbp
+   6370e:	f2 0f 11 87 38 01 00 	movsd  %xmm0,0x138(%rdi)
+   63715:	00
+   63716:	f2 0f 11 8f 40 01 00 	movsd  %xmm1,0x140(%rdi)
+   6371d:	00
+   6371e:	f2 0f 11 97 48 01 00 	movsd  %xmm2,0x148(%rdi)
+   63725:	00
+   63726:	48 85 ed             	test   %rbp,%rbp
+   63729:	74 1d                	je     63748 <dBodySetPosition@@Base+0x48>
+   6372b:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
+   63730:	48 89 ef             	mov    %rbp,%rdi
+   63733:	e8 b8 e0 fd ff       	call   417f0 <dGeomMoved@@Base>
+   63738:	48 89 ef             	mov    %rbp,%rdi
+   6373b:	e8 60 8d fd ff       	call   3c4a0 <dGeomGetBodyNext@@Base>
+   63740:	48 89 c5             	mov    %rax,%rbp
+   63743:	48 85 c0             	test   %rax,%rax
+   63746:	75 e8                	jne    63730 <dBodySetPosition@@Base+0x30>
+   63748:	5d                   	pop    %rbp
+   63749:	c3                   	ret
+   6374a:	48 8d 15 49 36 09 00 	lea    0x93649(%rip),%rdx        # f6d9a <typeinfo name for dxWorld@@Base+0x102>
+   63751:	48 8d 35 d4 e8 08 00 	lea    0x8e8d4(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   63758:	bf 02 00 00 00       	mov    $0x2,%edi
+   6375d:	31 c0                	xor    %eax,%eax
+   6375f:	e8 ac 7f fe ff       	call   4b710 <dDebug@@Base>
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000003be50 <dxGeom::computePosr()@@Base>:
+   3be50:	f3 0f 1e fa          	endbr64
+   3be54:	48 83 ec 08          	sub    $0x8,%rsp
+   3be58:	48 8b 47 30          	mov    0x30(%rdi),%rax
+   3be5c:	48 85 c0             	test   %rax,%rax
+   3be5f:	0f 84 64 02 00 00    	je     3c0c9 <dxGeom::computePosr()@@Base+0x279>
+   3be65:	48 8b 57 18          	mov    0x18(%rdi),%rdx
+   3be69:	48 85 d2             	test   %rdx,%rdx
+   3be6c:	0f 84 7c 02 00 00    	je     3c0ee <dxGeom::computePosr()@@Base+0x29e>
+   3be72:	f2 0f 10 00          	movsd  (%rax),%xmm0
+   3be76:	f2 0f 10 60 08       	movsd  0x8(%rax),%xmm4
+   3be7b:	f2 0f 10 92 58 01 00 	movsd  0x158(%rdx),%xmm2
+   3be82:	00
+   3be83:	f2 0f 10 8a 60 01 00 	movsd  0x160(%rdx),%xmm1
+   3be8a:	00
+   3be8b:	f2 0f 10 58 10       	movsd  0x10(%rax),%xmm3
+   3be90:	f2 0f 10 aa 80 01 00 	movsd  0x180(%rdx),%xmm5
+   3be97:	00
+   3be98:	f2 0f 59 cc          	mulsd  %xmm4,%xmm1
+   3be9c:	48 8b 4f 28          	mov    0x28(%rdi),%rcx
+   3bea0:	f2 0f 59 d0          	mulsd  %xmm0,%xmm2
+   3bea4:	f2 0f 59 ec          	mulsd  %xmm4,%xmm5
+   3bea8:	f2 0f 59 a2 a0 01 00 	mulsd  0x1a0(%rdx),%xmm4
+   3beaf:	00
+   3beb0:	f2 0f 58 d1          	addsd  %xmm1,%xmm2
+   3beb4:	f2 0f 10 8a 68 01 00 	movsd  0x168(%rdx),%xmm1
+   3bebb:	00
+   3bebc:	f2 0f 59 cb          	mulsd  %xmm3,%xmm1
+   3bec0:	f2 0f 58 d1          	addsd  %xmm1,%xmm2
+   3bec4:	f2 0f 10 8a 78 01 00 	movsd  0x178(%rdx),%xmm1
+   3becb:	00
+   3becc:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   3bed0:	f2 0f 59 82 98 01 00 	mulsd  0x198(%rdx),%xmm0
+   3bed7:	00
+   3bed8:	f2 0f 58 cd          	addsd  %xmm5,%xmm1
+   3bedc:	f2 0f 10 aa 88 01 00 	movsd  0x188(%rdx),%xmm5
+   3bee3:	00
+   3bee4:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   3bee8:	f2 0f 59 eb          	mulsd  %xmm3,%xmm5
+   3beec:	f2 0f 59 9a a8 01 00 	mulsd  0x1a8(%rdx),%xmm3
+   3bef3:	00
+   3bef4:	f2 0f 11 11          	movsd  %xmm2,(%rcx)
+   3bef8:	f2 0f 58 cd          	addsd  %xmm5,%xmm1
+   3befc:	f2 0f 58 c3          	addsd  %xmm3,%xmm0
+   3bf00:	f2 0f 11 49 08       	movsd  %xmm1,0x8(%rcx)
+   3bf05:	f2 0f 11 41 10       	movsd  %xmm0,0x10(%rcx)
+   3bf0a:	f2 0f 58 92 38 01 00 	addsd  0x138(%rdx),%xmm2
+   3bf11:	00
+   3bf12:	f2 0f 58 8a 40 01 00 	addsd  0x140(%rdx),%xmm1
+   3bf19:	00
+   3bf1a:	f2 0f 58 82 48 01 00 	addsd  0x148(%rdx),%xmm0
+   3bf21:	00
+   3bf22:	f2 0f 11 11          	movsd  %xmm2,(%rcx)
+   3bf26:	f2 0f 11 49 08       	movsd  %xmm1,0x8(%rcx)
+   3bf2b:	f2 0f 11 41 10       	movsd  %xmm0,0x10(%rcx)
+   3bf30:	f2 0f 10 48 28       	movsd  0x28(%rax),%xmm1
+   3bf35:	f2 0f 10 50 48       	movsd  0x48(%rax),%xmm2
+   3bf3a:	f2 0f 10 82 58 01 00 	movsd  0x158(%rdx),%xmm0
+   3bf41:	00
+   3bf42:	f2 0f 10 a2 60 01 00 	movsd  0x160(%rdx),%xmm4
+   3bf49:	00
+   3bf4a:	f2 0f 10 9a 68 01 00 	movsd  0x168(%rdx),%xmm3
+   3bf51:	00
+   3bf52:	f2 0f 10 68 50       	movsd  0x50(%rax),%xmm5
+   3bf57:	f2 0f 59 d4          	mulsd  %xmm4,%xmm2
+   3bf5b:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   3bf5f:	f2 0f 59 ec          	mulsd  %xmm4,%xmm5
+   3bf63:	f2 0f 58 ca          	addsd  %xmm2,%xmm1
+   3bf67:	f2 0f 10 50 68       	movsd  0x68(%rax),%xmm2
+   3bf6c:	f2 0f 59 d3          	mulsd  %xmm3,%xmm2
+   3bf70:	f2 0f 58 d1          	addsd  %xmm1,%xmm2
+   3bf74:	f2 0f 10 48 30       	movsd  0x30(%rax),%xmm1
+   3bf79:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   3bf7d:	f2 0f 59 40 20       	mulsd  0x20(%rax),%xmm0
+   3bf82:	f2 0f 58 cd          	addsd  %xmm5,%xmm1
+   3bf86:	f2 0f 10 68 70       	movsd  0x70(%rax),%xmm5
+   3bf8b:	f2 0f 59 60 40       	mulsd  0x40(%rax),%xmm4
+   3bf90:	f2 0f 59 eb          	mulsd  %xmm3,%xmm5
+   3bf94:	f2 0f 59 58 60       	mulsd  0x60(%rax),%xmm3
+   3bf99:	f2 0f 11 51 28       	movsd  %xmm2,0x28(%rcx)
+   3bf9e:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   3bfa2:	f2 0f 58 cd          	addsd  %xmm5,%xmm1
+   3bfa6:	f2 0f 58 c3          	addsd  %xmm3,%xmm0
+   3bfaa:	f2 0f 11 49 30       	movsd  %xmm1,0x30(%rcx)
+   3bfaf:	f2 0f 11 41 20       	movsd  %xmm0,0x20(%rcx)
+   3bfb4:	f2 0f 10 48 28       	movsd  0x28(%rax),%xmm1
+   3bfb9:	f2 0f 10 50 48       	movsd  0x48(%rax),%xmm2
+   3bfbe:	f2 0f 10 82 78 01 00 	movsd  0x178(%rdx),%xmm0
+   3bfc5:	00
+   3bfc6:	f2 0f 10 a2 80 01 00 	movsd  0x180(%rdx),%xmm4
+   3bfcd:	00
+   3bfce:	f2 0f 10 9a 88 01 00 	movsd  0x188(%rdx),%xmm3
+   3bfd5:	00
+   3bfd6:	f2 0f 10 68 50       	movsd  0x50(%rax),%xmm5
+   3bfdb:	f2 0f 59 d4          	mulsd  %xmm4,%xmm2
+   3bfdf:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   3bfe3:	f2 0f 59 ec          	mulsd  %xmm4,%xmm5
+   3bfe7:	f2 0f 59 60 40       	mulsd  0x40(%rax),%xmm4
+   3bfec:	f2 0f 58 ca          	addsd  %xmm2,%xmm1
+   3bff0:	f2 0f 10 50 68       	movsd  0x68(%rax),%xmm2
+   3bff5:	f2 0f 59 d3          	mulsd  %xmm3,%xmm2
+   3bff9:	f2 0f 58 d1          	addsd  %xmm1,%xmm2
+   3bffd:	f2 0f 10 48 30       	movsd  0x30(%rax),%xmm1
+   3c002:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   3c006:	f2 0f 59 40 20       	mulsd  0x20(%rax),%xmm0
+   3c00b:	f2 0f 58 cd          	addsd  %xmm5,%xmm1
+   3c00f:	f2 0f 10 68 70       	movsd  0x70(%rax),%xmm5
+   3c014:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   3c018:	f2 0f 59 eb          	mulsd  %xmm3,%xmm5
+   3c01c:	f2 0f 59 58 60       	mulsd  0x60(%rax),%xmm3
+   3c021:	f2 0f 11 51 48       	movsd  %xmm2,0x48(%rcx)
+   3c026:	f2 0f 58 cd          	addsd  %xmm5,%xmm1
+   3c02a:	f2 0f 58 c3          	addsd  %xmm3,%xmm0
+   3c02e:	f2 0f 11 49 50       	movsd  %xmm1,0x50(%rcx)
+   3c033:	f2 0f 11 41 40       	movsd  %xmm0,0x40(%rcx)
+   3c038:	f2 0f 10 48 28       	movsd  0x28(%rax),%xmm1
+   3c03d:	f2 0f 10 50 48       	movsd  0x48(%rax),%xmm2
+   3c042:	f2 0f 10 82 98 01 00 	movsd  0x198(%rdx),%xmm0
+   3c049:	00
+   3c04a:	f2 0f 10 aa a0 01 00 	movsd  0x1a0(%rdx),%xmm5
+   3c051:	00
+   3c052:	f2 0f 10 a2 a8 01 00 	movsd  0x1a8(%rdx),%xmm4
+   3c059:	00
+   3c05a:	f2 0f 10 58 68       	movsd  0x68(%rax),%xmm3
+   3c05f:	f2 0f 59 d5          	mulsd  %xmm5,%xmm2
+   3c063:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   3c067:	f2 0f 59 dc          	mulsd  %xmm4,%xmm3
+   3c06b:	f2 0f 58 ca          	addsd  %xmm2,%xmm1
+   3c06f:	f2 0f 10 50 50       	movsd  0x50(%rax),%xmm2
+   3c074:	f2 0f 59 d5          	mulsd  %xmm5,%xmm2
+   3c078:	f2 0f 58 d9          	addsd  %xmm1,%xmm3
+   3c07c:	f2 0f 10 48 30       	movsd  0x30(%rax),%xmm1
+   3c081:	f2 0f 59 68 40       	mulsd  0x40(%rax),%xmm5
+   3c086:	f2 0f 59 c8          	mulsd  %xmm0,%xmm1
+   3c08a:	f2 0f 59 40 20       	mulsd  0x20(%rax),%xmm0
+   3c08f:	f2 0f 58 ca          	addsd  %xmm2,%xmm1
+   3c093:	f2 0f 10 50 70       	movsd  0x70(%rax),%xmm2
+   3c098:	f2 0f 59 d4          	mulsd  %xmm4,%xmm2
+   3c09c:	f2 0f 59 60 60       	mulsd  0x60(%rax),%xmm4
+   3c0a1:	f2 0f 58 d1          	addsd  %xmm1,%xmm2
+   3c0a5:	66 0f 28 c8          	movapd %xmm0,%xmm1
+   3c0a9:	66 0f 28 c5          	movapd %xmm5,%xmm0
+   3c0ad:	f2 0f 58 c1          	addsd  %xmm1,%xmm0
+   3c0b1:	f2 0f 58 c4          	addsd  %xmm4,%xmm0
+   3c0b5:	f2 0f 11 41 60       	movsd  %xmm0,0x60(%rcx)
+   3c0ba:	f2 0f 11 59 68       	movsd  %xmm3,0x68(%rcx)
+   3c0bf:	f2 0f 11 51 70       	movsd  %xmm2,0x70(%rcx)
+   3c0c4:	48 83 c4 08          	add    $0x8,%rsp
+   3c0c8:	c3                   	ret
+   3c0c9:	41 b8 ca 01 00 00    	mov    $0x1ca,%r8d
+   3c0cf:	48 8d 0d 77 68 0b 00 	lea    0xb6877(%rip),%rcx        # f294d <typeinfo name for dxCapsule@@Base+0x4a5>
+   3c0d6:	48 8d 15 a9 68 0b 00 	lea    0xb68a9(%rip),%rdx        # f2986 <typeinfo name for dxCapsule@@Base+0x4de>
+   3c0dd:	bf 01 00 00 00       	mov    $0x1,%edi
+   3c0e2:	48 8d 35 57 6d 0b 00 	lea    0xb6d57(%rip),%rsi        # f2e40 <typeinfo name for dxCapsule@@Base+0x998>
+   3c0e9:	e8 22 f6 00 00       	call   4b710 <dDebug@@Base>
+   3c0ee:	41 b8 cb 01 00 00    	mov    $0x1cb,%r8d
+   3c0f4:	48 8d 0d 52 68 0b 00 	lea    0xb6852(%rip),%rcx        # f294d <typeinfo name for dxCapsule@@Base+0x4a5>
+   3c0fb:	31 c0                	xor    %eax,%eax
+   3c0fd:	bf                   	.byte 0xbf
+   3c0fe:	01 00                	add    %eax,(%rax)
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000031510 <dxBox::dxBox(dxSpace*, double, double, double)@@Base>:
+   31510:	f3 0f 1e fa          	endbr64
+   31514:	41 54                	push   %r12
+   31516:	ba 01 00 00 00       	mov    $0x1,%edx
+   3151b:	55                   	push   %rbp
+   3151c:	48 89 fd             	mov    %rdi,%rbp
+   3151f:	48 83 ec 28          	sub    $0x28,%rsp
+   31523:	f2 0f 11 44 24 08    	movsd  %xmm0,0x8(%rsp)
+   31529:	f2 0f 11 4c 24 18    	movsd  %xmm1,0x18(%rsp)
+   3152f:	f2 0f 11 54 24 10    	movsd  %xmm2,0x10(%rsp)
+   31535:	e8 b6 a0 00 00       	call   3b5f0 <dxGeom::dxGeom(dxSpace*, int)@@Base>
+   3153a:	48 8b 05 17 b9 0e 00 	mov    0xeb917(%rip),%rax        # 11ce58 <vtable for dxBox@@Base+0x20e0>
+   31541:	f2 0f 10 5c 24 08    	movsd  0x8(%rsp),%xmm3
+   31547:	66 0f ef c0          	pxor   %xmm0,%xmm0
+   3154b:	48 83 c0 10          	add    $0x10,%rax
+   3154f:	66 0f 2f d8          	comisd %xmm0,%xmm3
+   31553:	48 89 45 00          	mov    %rax,0x0(%rbp)
+   31557:	0f 82 8b 00 00 00    	jb     315e8 <dxBox::dxBox(dxSpace*, double, double, double)@@Base+0xd8>
+   3155d:	f2 0f 10 4c 24 18    	movsd  0x18(%rsp),%xmm1
+   31563:	66 0f 2f c8          	comisd %xmm0,%xmm1
+   31567:	72 7f                	jb     315e8 <dxBox::dxBox(dxSpace*, double, double, double)@@Base+0xd8>
+   31569:	f2 0f 10 54 24 10    	movsd  0x10(%rsp),%xmm2
+   3156f:	66 0f 2f d0          	comisd %xmm0,%xmm2
+   31573:	72 73                	jb     315e8 <dxBox::dxBox(dxSpace*, double, double, double)@@Base+0xd8>
+   31575:	66 0f 2e c8          	ucomisd %xmm0,%xmm1
+   31579:	be 00 00 00 00       	mov    $0x0,%esi
+   3157e:	8b 4d 0c             	mov    0xc(%rbp),%ecx
+   31581:	c7 45 08 01 00 00 00 	movl   $0x1,0x8(%rbp)
+   31588:	f2 0f 11 9d a0 00 00 	movsd  %xmm3,0xa0(%rbp)
+   3158f:	00
+   31590:	f2 0f 11 8d a8 00 00 	movsd  %xmm1,0xa8(%rbp)
+   31597:	00
+   31598:	0f 9b c0             	setnp  %al
+   3159b:	f2 0f 11 95 b0 00 00 	movsd  %xmm2,0xb0(%rbp)
+   315a2:	00
+   315a3:	0f 45 c6             	cmovne %esi,%eax
+   315a6:	66 0f 2e d0          	ucomisd %xmm0,%xmm2
+   315aa:	0f 9b c2             	setnp  %dl
+   315ad:	0f 45 d6             	cmovne %esi,%edx
+   315b0:	08 d0                	or     %dl,%al
+   315b2:	75 0e                	jne    315c2 <dxBox::dxBox(dxSpace*, double, double, double)@@Base+0xb2>
+   315b4:	66 0f 2e d8          	ucomisd %xmm0,%xmm3
+   315b8:	0f 9b c2             	setnp  %dl
+   315bb:	0f 44 c2             	cmove  %edx,%eax
+   315be:	84 c0                	test   %al,%al
+   315c0:	74 16                	je     315d8 <dxBox::dxBox(dxSpace*, double, double, double)@@Base+0xc8>
+   315c2:	89 c8                	mov    %ecx,%eax
+   315c4:	83 c8 20             	or     $0x20,%eax
+   315c7:	89 45 0c             	mov    %eax,0xc(%rbp)
+   315ca:	48 83 c4 28          	add    $0x28,%rsp
+   315ce:	5d                   	pop    %rbp
+   315cf:	41 5c                	pop    %r12
+   315d1:	c3                   	ret
+   315d2:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+   315d8:	89 c8                	mov    %ecx,%eax
+   315da:	83 e0 df             	and    $0xffffffdf,%eax
+   315dd:	89 45 0c             	mov    %eax,0xc(%rbp)
+   315e0:	48 83 c4 28          	add    $0x28,%rsp
+   315e4:	5d                   	pop    %rbp
+   315e5:	41 5c                	pop    %r12
+   315e7:	c3                   	ret
+   315e8:	48 8d 15 37 0a 0c 00 	lea    0xc0a37(%rip),%rdx        # f2026 <Alignment@@Base+0xbe6>
+   315ef:	48 8d 35 36 0a 0c 00 	lea    0xc0a36(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   315f6:	bf 02 00 00 00       	mov    $0x2,%edi
+   315fb:	31 c0                	xor    %eax,%eax
+   315fd:	e8 0e a1 01 00       	call   4b710 <dDebug@@Base>
+   31602:	f3 0f 1e fa          	endbr64
+   31606:	49 89 c4             	mov    %rax,%r12
+   31609:	e9 32 f3 ff ff       	jmp    30940 <operator delete[](void*, unsigned long)@plt+0x10>
+   3160e:	66 90                	xchg   %ax,%ax
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000003b5f0 <dxGeom::dxGeom(dxSpace*, int)@@Base>:
+   3b5f0:	f3 0f 1e fa          	endbr64
+   3b5f4:	41 54                	push   %r12
+   3b5f6:	49 89 f4             	mov    %rsi,%r12
+   3b5f9:	55                   	push   %rbp
+   3b5fa:	48 89 fd             	mov    %rdi,%rbp
+   3b5fd:	48 83 ec 08          	sub    $0x8,%rsp
+   3b601:	48 8b 05 00 18 0e 00 	mov    0xe1800(%rip),%rax        # 11ce08 <vtable for dxGeom@@Base+0x1fc8>
+   3b608:	48 83 c0 10          	add    $0x10,%rax
+   3b60c:	48 89 07             	mov    %rax,(%rdi)
+   3b60f:	48 b8 ff ff ff ff 15 	movabs $0x15ffffffff,%rax
+   3b616:	00 00 00
+   3b619:	48 89 47 08          	mov    %rax,0x8(%rdi)
+   3b61d:	85 d2                	test   %edx,%edx
+   3b61f:	74 4f                	je     3b670 <dxGeom::dxGeom(dxSpace*, int)@@Base+0x80>
+   3b621:	c7 47 0c 1d 00 00 00 	movl   $0x1d,0xc(%rdi)
+   3b628:	31 c0                	xor    %eax,%eax
+   3b62a:	48 c7 47 10 00 00 00 	movq   $0x0,0x10(%rdi)
+   3b631:	00
+   3b632:	48 c7 47 18 00 00 00 	movq   $0x0,0x18(%rdi)
+   3b639:	00
+   3b63a:	48 c7 47 20 00 00 00 	movq   $0x0,0x20(%rdi)
+   3b641:	00
+   3b642:	48 87 05 f7 2e 0e 00 	xchg   %rax,0xe2ef7(%rip)        # 11e540 <vtable for Opcode::VolumeCollider@@Base+0x1d68>
+   3b649:	48 85 c0             	test   %rax,%rax
+   3b64c:	0f 84 be 00 00 00    	je     3b710 <dxGeom::dxGeom(dxSpace*, int)@@Base+0x120>
+   3b652:	48 89 45 28          	mov    %rax,0x28(%rbp)
+   3b656:	66 0f ef c0          	pxor   %xmm0,%xmm0
+   3b65a:	48 8d 78 20          	lea    0x20(%rax),%rdi
+   3b65e:	0f 11 00             	movups %xmm0,(%rax)
+   3b661:	0f 11 40 10          	movups %xmm0,0x10(%rax)
+   3b665:	e8 56 4e 03 00       	call   704c0 <dRSetIdentity@@Base>
+   3b66a:	eb 24                	jmp    3b690 <dxGeom::dxGeom(dxSpace*, int)@@Base+0xa0>
+   3b66c:	0f 1f 40 00          	nopl   0x0(%rax)
+   3b670:	48 c7 47 10 00 00 00 	movq   $0x0,0x10(%rdi)
+   3b677:	00
+   3b678:	48 c7 47 18 00 00 00 	movq   $0x0,0x18(%rdi)
+   3b67f:	00
+   3b680:	48 c7 47 20 00 00 00 	movq   $0x0,0x20(%rdi)
+   3b687:	00
+   3b688:	48 c7 47 28 00 00 00 	movq   $0x0,0x28(%rdi)
+   3b68f:	00
+   3b690:	66 0f ef c0          	pxor   %xmm0,%xmm0
+   3b694:	48 8d 45 60          	lea    0x60(%rbp),%rax
+   3b698:	48 c7 45 30 00 00 00 	movq   $0x0,0x30(%rbp)
+   3b69f:	00
+   3b6a0:	48 c7 45 38 00 00 00 	movq   $0x0,0x38(%rbp)
+   3b6a7:	00
+   3b6a8:	48 c7 45 40 00 00 00 	movq   $0x0,0x40(%rbp)
+   3b6af:	00
+   3b6b0:	48 c7 45 48 00 00 00 	movq   $0x0,0x48(%rbp)
+   3b6b7:	00
+   3b6b8:	48 c7 45 50 00 00 00 	movq   $0x0,0x50(%rbp)
+   3b6bf:	00
+   3b6c0:	48 c7 45 58 00 00 00 	movq   $0x0,0x58(%rbp)
+   3b6c7:	00
+   3b6c8:	0f 11 45 60          	movups %xmm0,0x60(%rbp)
+   3b6cc:	0f 11 40 10          	movups %xmm0,0x10(%rax)
+   3b6d0:	0f 11 40 20          	movups %xmm0,0x20(%rax)
+   3b6d4:	48 c7 85 90 00 00 00 	movq   $0xffffffffffffffff,0x90(%rbp)
+   3b6db:	ff ff ff ff
+   3b6df:	48 c7 85 98 00 00 00 	movq   $0xffffffffffffffff,0x98(%rbp)
+   3b6e6:	ff ff ff ff
+   3b6ea:	4d 85 e4             	test   %r12,%r12
+   3b6ed:	74 19                	je     3b708 <dxGeom::dxGeom(dxSpace*, int)@@Base+0x118>
+   3b6ef:	48 83 c4 08          	add    $0x8,%rsp
+   3b6f3:	48 89 ee             	mov    %rbp,%rsi
+   3b6f6:	4c 89 e7             	mov    %r12,%rdi
+   3b6f9:	5d                   	pop    %rbp
+   3b6fa:	41 5c                	pop    %r12
+   3b6fc:	e9 6f 69 00 00       	jmp    42070 <dSpaceAdd@@Base>
+   3b701:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+   3b708:	48 83 c4 08          	add    $0x8,%rsp
+   3b70c:	5d                   	pop    %rbp
+   3b70d:	41 5c                	pop    %r12
+   3b70f:	c3                   	ret
+   3b710:	bf 80 00 00 00       	mov    $0x80,%edi
+   3b715:	e8 66 6d 02 00       	call   62480 <dAlloc@@Base>
+   3b71a:	e9 33 ff ff ff       	jmp    3b652 <dxGeom::dxGeom(dxSpace*, int)@@Base+0x62>
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000003c540 <dGeomSetBody@@Base>:
+   3c540:	f3 0f 1e fa          	endbr64
+   3c544:	55                   	push   %rbp
+   3c545:	53                   	push   %rbx
+   3c546:	48 83 ec 08          	sub    $0x8,%rsp
+   3c54a:	48 85 ff             	test   %rdi,%rdi
+   3c54d:	0f 84 47 02 00 00    	je     3c79a <dGeomSetBody@@Base+0x25a>
+   3c553:	48 89 fd             	mov    %rdi,%rbp
+   3c556:	48 89 f3             	mov    %rsi,%rbx
+   3c559:	48 85 f6             	test   %rsi,%rsi
+   3c55c:	0f 84 8e 00 00 00    	je     3c5f0 <dGeomSetBody@@Base+0xb0>
+   3c562:	f6 47 0c 08          	testb  $0x8,0xc(%rdi)
+   3c566:	0f 84 48 02 00 00    	je     3c7b4 <dGeomSetBody@@Base+0x274>
+   3c56c:	48 8b 47 58          	mov    0x58(%rdi),%rax
+   3c570:	48 85 c0             	test   %rax,%rax
+   3c573:	74 0e                	je     3c583 <dGeomSetBody@@Base+0x43>
+   3c575:	8b 90 c8 00 00 00    	mov    0xc8(%rax),%edx
+   3c57b:	85 d2                	test   %edx,%edx
+   3c57d:	0f 85 a4 01 00 00    	jne    3c727 <dGeomSetBody@@Base+0x1e7>
+   3c583:	48 8b 45 18          	mov    0x18(%rbp),%rax
+   3c587:	48 85 c0             	test   %rax,%rax
+   3c58a:	0f 84 70 01 00 00    	je     3c700 <dGeomSetBody@@Base+0x1c0>
+   3c590:	48 39 c3             	cmp    %rax,%rbx
+   3c593:	74 4a                	je     3c5df <dGeomSetBody@@Base+0x9f>
+   3c595:	48 8b 7d 30          	mov    0x30(%rbp),%rdi
+   3c599:	48 85 ff             	test   %rdi,%rdi
+   3c59c:	74 1e                	je     3c5bc <dGeomSetBody@@Base+0x7c>
+   3c59e:	31 c0                	xor    %eax,%eax
+   3c5a0:	f0 48 0f b1 3d 97 1f 	lock cmpxchg %rdi,0xe1f97(%rip)        # 11e540 <vtable for Opcode::VolumeCollider@@Base+0x1d68>
+   3c5a7:	0e 00
+   3c5a9:	0f 94 c0             	sete   %al
+   3c5ac:	84 c0                	test   %al,%al
+   3c5ae:	0f 84 a4 00 00 00    	je     3c658 <dGeomSetBody@@Base+0x118>
+   3c5b4:	48 c7 45 30 00 00 00 	movq   $0x0,0x30(%rbp)
+   3c5bb:	00
+   3c5bc:	48 8d 83 38 01 00 00 	lea    0x138(%rbx),%rax
+   3c5c3:	48 89 ef             	mov    %rbp,%rdi
+   3c5c6:	48 89 45 28          	mov    %rax,0x28(%rbp)
+   3c5ca:	e8 71 f1 ff ff       	call   3b740 <dxGeom::bodyRemove()@@Base>
+   3c5cf:	48 8b 43 40          	mov    0x40(%rbx),%rax
+   3c5d3:	48 89 5d 18          	mov    %rbx,0x18(%rbp)
+   3c5d7:	48 89 45 20          	mov    %rax,0x20(%rbp)
+   3c5db:	48 89 6b 40          	mov    %rbp,0x40(%rbx)
+   3c5df:	48 83 c4 08          	add    $0x8,%rsp
+   3c5e3:	48 89 ef             	mov    %rbp,%rdi
+   3c5e6:	5b                   	pop    %rbx
+   3c5e7:	5d                   	pop    %rbp
+   3c5e8:	e9 03 52 00 00       	jmp    417f0 <dGeomMoved@@Base>
+   3c5ed:	0f 1f 00             	nopl   (%rax)
+   3c5f0:	48 8b 47 58          	mov    0x58(%rdi),%rax
+   3c5f4:	48 85 c0             	test   %rax,%rax
+   3c5f7:	74 0e                	je     3c607 <dGeomSetBody@@Base+0xc7>
+   3c5f9:	8b 80 c8 00 00 00    	mov    0xc8(%rax),%eax
+   3c5ff:	85 c0                	test   %eax,%eax
+   3c601:	0f 85 20 01 00 00    	jne    3c727 <dGeomSetBody@@Base+0x1e7>
+   3c607:	48 83 7d 18 00       	cmpq   $0x0,0x18(%rbp)
+   3c60c:	0f 84 0e 01 00 00    	je     3c720 <dGeomSetBody@@Base+0x1e0>
+   3c612:	48 8b 7d 30          	mov    0x30(%rbp),%rdi
+   3c616:	48 85 ff             	test   %rdi,%rdi
+   3c619:	74 55                	je     3c670 <dGeomSetBody@@Base+0x130>
+   3c61b:	f6 45 0c 02          	testb  $0x2,0xc(%rbp)
+   3c61f:	0f 85 3b 01 00 00    	jne    3c760 <dGeomSetBody@@Base+0x220>
+   3c625:	31 c0                	xor    %eax,%eax
+   3c627:	f0 48 0f b1 3d 10 1f 	lock cmpxchg %rdi,0xe1f10(%rip)        # 11e540 <vtable for Opcode::VolumeCollider@@Base+0x1d68>
+   3c62e:	0e 00
+   3c630:	0f 94 c0             	sete   %al
+   3c633:	84 c0                	test   %al,%al
+   3c635:	0f 84 0d 01 00 00    	je     3c748 <dGeomSetBody@@Base+0x208>
+   3c63b:	48 c7 45 30 00 00 00 	movq   $0x0,0x30(%rbp)
+   3c642:	00
+   3c643:	48 83 c4 08          	add    $0x8,%rsp
+   3c647:	48 89 ef             	mov    %rbp,%rdi
+   3c64a:	5b                   	pop    %rbx
+   3c64b:	5d                   	pop    %rbp
+   3c64c:	e9 ef f0 ff ff       	jmp    3b740 <dxGeom::bodyRemove()@@Base>
+   3c651:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+   3c658:	be 80 00 00 00       	mov    $0x80,%esi
+   3c65d:	e8 5e 5e 02 00       	call   624c0 <dFree@@Base>
+   3c662:	e9 4d ff ff ff       	jmp    3c5b4 <dGeomSetBody@@Base+0x74>
+   3c667:	66 0f 1f 84 00 00 00 	nopw   0x0(%rax,%rax,1)
+   3c66e:	00 00
+   3c670:	48 87 3d c9 1e 0e 00 	xchg   %rdi,0xe1ec9(%rip)        # 11e540 <vtable for Opcode::VolumeCollider@@Base+0x1d68>
+   3c677:	48 85 ff             	test   %rdi,%rdi
+   3c67a:	0f 84 08 01 00 00    	je     3c788 <dGeomSetBody@@Base+0x248>
+   3c680:	48 8b 45 18          	mov    0x18(%rbp),%rax
+   3c684:	48 89 7d 28          	mov    %rdi,0x28(%rbp)
+   3c688:	f3 0f 6f 88 38 01 00 	movdqu 0x138(%rax),%xmm1
+   3c68f:	00
+   3c690:	0f 11 0f             	movups %xmm1,(%rdi)
+   3c693:	f3 0f 6f 90 48 01 00 	movdqu 0x148(%rax),%xmm2
+   3c69a:	00
+   3c69b:	0f 11 57 10          	movups %xmm2,0x10(%rdi)
+   3c69f:	48 8b 75 18          	mov    0x18(%rbp),%rsi
+   3c6a3:	48 8b 4d 28          	mov    0x28(%rbp),%rcx
+   3c6a7:	f3 0f 6f 86 58 01 00 	movdqu 0x158(%rsi),%xmm0
+   3c6ae:	00
+   3c6af:	48 8d 41 20          	lea    0x20(%rcx),%rax
+   3c6b3:	0f 11 41 20          	movups %xmm0,0x20(%rcx)
+   3c6b7:	f3 0f 6f 9e 68 01 00 	movdqu 0x168(%rsi),%xmm3
+   3c6be:	00
+   3c6bf:	0f 11 58 10          	movups %xmm3,0x10(%rax)
+   3c6c3:	f3 0f 6f a6 78 01 00 	movdqu 0x178(%rsi),%xmm4
+   3c6ca:	00
+   3c6cb:	0f 11 60 20          	movups %xmm4,0x20(%rax)
+   3c6cf:	f3 0f 6f ae 88 01 00 	movdqu 0x188(%rsi),%xmm5
+   3c6d6:	00
+   3c6d7:	0f 11 68 30          	movups %xmm5,0x30(%rax)
+   3c6db:	f3 0f 6f b6 98 01 00 	movdqu 0x198(%rsi),%xmm6
+   3c6e2:	00
+   3c6e3:	0f 11 70 40          	movups %xmm6,0x40(%rax)
+   3c6e7:	f3 0f 6f be a8 01 00 	movdqu 0x1a8(%rsi),%xmm7
+   3c6ee:	00
+   3c6ef:	0f 11 78 50          	movups %xmm7,0x50(%rax)
+   3c6f3:	e9 4b ff ff ff       	jmp    3c643 <dGeomSetBody@@Base+0x103>
+   3c6f8:	0f 1f 84 00 00 00 00 	nopl   0x0(%rax,%rax,1)
+   3c6ff:	00
+   3c700:	48 8b 7d 28          	mov    0x28(%rbp),%rdi
+   3c704:	f0 48 0f b1 3d 33 1e 	lock cmpxchg %rdi,0xe1e33(%rip)        # 11e540 <vtable for Opcode::VolumeCollider@@Base+0x1d68>
+   3c70b:	0e 00
+   3c70d:	0f 94 c0             	sete   %al
+   3c710:	84 c0                	test   %al,%al
+   3c712:	74 64                	je     3c778 <dGeomSetBody@@Base+0x238>
+   3c714:	48 8b 45 18          	mov    0x18(%rbp),%rax
+   3c718:	e9 73 fe ff ff       	jmp    3c590 <dGeomSetBody@@Base+0x50>
+   3c71d:	0f 1f 00             	nopl   (%rax)
+   3c720:	48 83 c4 08          	add    $0x8,%rsp
+   3c724:	5b                   	pop    %rbx
+   3c725:	5d                   	pop    %rbp
+   3c726:	c3                   	ret
+   3c727:	48 8d 15 ea 62 0b 00 	lea    0xb62ea(%rip),%rdx        # f2a18 <typeinfo name for dxCapsule@@Base+0x570>
+   3c72e:	48 8d 35 db 67 0b 00 	lea    0xb67db(%rip),%rsi        # f2f10 <typeinfo name for dxCapsule@@Base+0xa68>
+   3c735:	bf 02 00 00 00       	mov    $0x2,%edi
+   3c73a:	31 c0                	xor    %eax,%eax
+   3c73c:	e8 cf ef 00 00       	call   4b710 <dDebug@@Base>
+   3c741:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+   3c748:	be 80 00 00 00       	mov    $0x80,%esi
+   3c74d:	e8 6e 5d 02 00       	call   624c0 <dFree@@Base>
+   3c752:	e9 e4 fe ff ff       	jmp    3c63b <dGeomSetBody@@Base+0xfb>
+   3c757:	66 0f 1f 84 00 00 00 	nopw   0x0(%rax,%rax,1)
+   3c75e:	00 00
+   3c760:	48 89 ef             	mov    %rbp,%rdi
+   3c763:	e8 e8 f6 ff ff       	call   3be50 <dxGeom::computePosr()@@Base>
+   3c768:	83 65 0c fd          	andl   $0xfffffffd,0xc(%rbp)
+   3c76c:	48 8b 7d 30          	mov    0x30(%rbp),%rdi
+   3c770:	e9 b0 fe ff ff       	jmp    3c625 <dGeomSetBody@@Base+0xe5>
+   3c775:	0f 1f 00             	nopl   (%rax)
+   3c778:	be 80 00 00 00       	mov    $0x80,%esi
+   3c77d:	e8 3e 5d 02 00       	call   624c0 <dFree@@Base>
+   3c782:	eb 90                	jmp    3c714 <dGeomSetBody@@Base+0x1d4>
+   3c784:	0f 1f 40 00          	nopl   0x0(%rax)
+   3c788:	bf 80 00 00 00       	mov    $0x80,%edi
+   3c78d:	e8 ee 5c 02 00       	call   62480 <dAlloc@@Base>
+   3c792:	48 89 c7             	mov    %rax,%rdi
+   3c795:	e9 e6 fe ff ff       	jmp    3c680 <dGeomSetBody@@Base+0x140>
+   3c79a:	48 8d 15 77 62 0b 00 	lea    0xb6277(%rip),%rdx        # f2a18 <typeinfo name for dxCapsule@@Base+0x570>
+   3c7a1:	48 8d 35 84 58 0b 00 	lea    0xb5884(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   3c7a8:	bf 02 00 00 00       	mov    $0x2,%edi
+   3c7ad:	31 c0                	xor    %eax,%eax
+   3c7af:	e8 5c ef 00 00       	call   4b710 <dDebug@@Base>
+   3c7b4:	48 8d 15 5d 62 0b 00 	lea    0xb625d(%rip),%rdx        # f2a18 <typeinfo name for dxCapsule@@Base+0x570>
+   3c7bb:	48 8d 35 2e 67 0b 00 	lea    0xb672e(%rip),%rsi        # f2ef0 <typeinfo name for dxCapsule@@Base+0xa48>
+   3c7c2:	bf 02 00 00 00       	mov    $0x2,%edi
+   3c7c7:	31 c0                	xor    %eax,%eax
+   3c7c9:	e8 42 ef 00 00       	call   4b710 <dDebug@@Base>
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000003dbd0 <dGeomSetOffsetPosition@@Base>:
+   3dbd0:	f3 0f 1e fa          	endbr64
+   3dbd4:	48 83 ec 28          	sub    $0x28,%rsp
+   3dbd8:	48 85 ff             	test   %rdi,%rdi
+   3dbdb:	0f 84 86 00 00 00    	je     3dc67 <dGeomSetOffsetPosition@@Base+0x97>
+   3dbe1:	f6 47 0c 08          	testb  $0x8,0xc(%rdi)
+   3dbe5:	0f 84 b0 00 00 00    	je     3dc9b <dGeomSetOffsetPosition@@Base+0xcb>
+   3dbeb:	48 83 7f 18 00       	cmpq   $0x0,0x18(%rdi)
+   3dbf0:	0f 84 8b 00 00 00    	je     3dc81 <dGeomSetOffsetPosition@@Base+0xb1>
+   3dbf6:	48 8b 47 58          	mov    0x58(%rdi),%rax
+   3dbfa:	48 85 c0             	test   %rax,%rax
+   3dbfd:	74 0e                	je     3dc0d <dGeomSetOffsetPosition@@Base+0x3d>
+   3dbff:	8b 80 c8 00 00 00    	mov    0xc8(%rax),%eax
+   3dc05:	85 c0                	test   %eax,%eax
+   3dc07:	0f 85 a8 00 00 00    	jne    3dcb5 <dGeomSetOffsetPosition@@Base+0xe5>
+   3dc0d:	48 8b 47 30          	mov    0x30(%rdi),%rax
+   3dc11:	48 85 c0             	test   %rax,%rax
+   3dc14:	74 1a                	je     3dc30 <dGeomSetOffsetPosition@@Base+0x60>
+   3dc16:	f2 0f 11 00          	movsd  %xmm0,(%rax)
+   3dc1a:	f2 0f 11 48 08       	movsd  %xmm1,0x8(%rax)
+   3dc1f:	f2 0f 11 50 10       	movsd  %xmm2,0x10(%rax)
+   3dc24:	48 83 c4 28          	add    $0x28,%rsp
+   3dc28:	e9 c3 3b 00 00       	jmp    417f0 <dGeomMoved@@Base>
+   3dc2d:	0f 1f 00             	nopl   (%rax)
+   3dc30:	48 89 3c 24          	mov    %rdi,(%rsp)
+   3dc34:	f2 0f 11 54 24 18    	movsd  %xmm2,0x18(%rsp)
+   3dc3a:	f2 0f 11 4c 24 10    	movsd  %xmm1,0x10(%rsp)
+   3dc40:	f2 0f 11 44 24 08    	movsd  %xmm0,0x8(%rsp)
+   3dc46:	e8 75 fe ff ff       	call   3dac0 <dGeomCreateOffset(dxGeom*)@@Base>
+   3dc4b:	48 8b 3c 24          	mov    (%rsp),%rdi
+   3dc4f:	f2 0f 10 54 24 18    	movsd  0x18(%rsp),%xmm2
+   3dc55:	f2 0f 10 4c 24 10    	movsd  0x10(%rsp),%xmm1
+   3dc5b:	f2 0f 10 44 24 08    	movsd  0x8(%rsp),%xmm0
+   3dc61:	48 8b 47 30          	mov    0x30(%rdi),%rax
+   3dc65:	eb af                	jmp    3dc16 <dGeomSetOffsetPosition@@Base+0x46>
+   3dc67:	48 8d 15 da 4f 0b 00 	lea    0xb4fda(%rip),%rdx        # f2c48 <typeinfo name for dxCapsule@@Base+0x7a0>
+   3dc6e:	48 8d 35 b7 43 0b 00 	lea    0xb43b7(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   3dc75:	bf 02 00 00 00       	mov    $0x2,%edi
+   3dc7a:	31 c0                	xor    %eax,%eax
+   3dc7c:	e8 8f da 00 00       	call   4b710 <dDebug@@Base>
+   3dc81:	48 8d 15 c0 4f 0b 00 	lea    0xb4fc0(%rip),%rdx        # f2c48 <typeinfo name for dxCapsule@@Base+0x7a0>
+   3dc88:	48 8d 35 f9 52 0b 00 	lea    0xb52f9(%rip),%rsi        # f2f88 <typeinfo name for dxCapsule@@Base+0xae0>
+   3dc8f:	bf 02 00 00 00       	mov    $0x2,%edi
+   3dc94:	31 c0                	xor    %eax,%eax
+   3dc96:	e8 75 da 00 00       	call   4b710 <dDebug@@Base>
+   3dc9b:	48 8d 15 a6 4f 0b 00 	lea    0xb4fa6(%rip),%rdx        # f2c48 <typeinfo name for dxCapsule@@Base+0x7a0>
+   3dca2:	48 8d 35 47 52 0b 00 	lea    0xb5247(%rip),%rsi        # f2ef0 <typeinfo name for dxCapsule@@Base+0xa48>
+   3dca9:	bf 02 00 00 00       	mov    $0x2,%edi
+   3dcae:	31 c0                	xor    %eax,%eax
+   3dcb0:	e8 5b da 00 00       	call   4b710 <dDebug@@Base>
+   3dcb5:	48 8d 15 8c 4f 0b 00 	lea    0xb4f8c(%rip),%rdx        # f2c48 <typeinfo name for dxCapsule@@Base+0x7a0>
+   3dcbc:	48 8d 35 4d 52 0b 00 	lea    0xb524d(%rip),%rsi        # f2f10 <typeinfo name for dxCapsule@@Base+0xa68>
+   3dcc3:	bf 02 00 00 00       	mov    $0x2,%edi
+   3dcc8:	31 c0                	xor    %eax,%eax
+   3dcca:	e8 41 da 00 00       	call   4b710 <dDebug@@Base>
+
+/usr/lib/x86_64-linux-gnu/libode.so.8.0.2:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000003ddf0 <dGeomSetOffsetQuaternion@@Base>:
+   3ddf0:	f3 0f 1e fa          	endbr64
+   3ddf4:	55                   	push   %rbp
+   3ddf5:	48 83 ec 10          	sub    $0x10,%rsp
+   3ddf9:	48 85 ff             	test   %rdi,%rdi
+   3ddfc:	74 6a                	je     3de68 <dGeomSetOffsetQuaternion@@Base+0x78>
+   3ddfe:	48 85 f6             	test   %rsi,%rsi
+   3de01:	74 65                	je     3de68 <dGeomSetOffsetQuaternion@@Base+0x78>
+   3de03:	48 89 fd             	mov    %rdi,%rbp
+   3de06:	f6 47 0c 08          	testb  $0x8,0xc(%rdi)
+   3de0a:	0f 84 8c 00 00 00    	je     3de9c <dGeomSetOffsetQuaternion@@Base+0xac>
+   3de10:	48 83 7f 18 00       	cmpq   $0x0,0x18(%rdi)
+   3de15:	74 6b                	je     3de82 <dGeomSetOffsetQuaternion@@Base+0x92>
+   3de17:	48 8b 47 58          	mov    0x58(%rdi),%rax
+   3de1b:	48 85 c0             	test   %rax,%rax
+   3de1e:	74 0e                	je     3de2e <dGeomSetOffsetQuaternion@@Base+0x3e>
+   3de20:	8b 80 c8 00 00 00    	mov    0xc8(%rax),%eax
+   3de26:	85 c0                	test   %eax,%eax
+   3de28:	0f 85 88 00 00 00    	jne    3deb6 <dGeomSetOffsetQuaternion@@Base+0xc6>
+   3de2e:	48 8b 7d 30          	mov    0x30(%rbp),%rdi
+   3de32:	48 85 ff             	test   %rdi,%rdi
+   3de35:	74 19                	je     3de50 <dGeomSetOffsetQuaternion@@Base+0x60>
+   3de37:	48 83 c7 20          	add    $0x20,%rdi
+   3de3b:	e8 b0 32 03 00       	call   710f0 <dRfromQ@@Base>
+   3de40:	48 83 c4 10          	add    $0x10,%rsp
+   3de44:	48 89 ef             	mov    %rbp,%rdi
+   3de47:	5d                   	pop    %rbp
+   3de48:	e9 a3 39 00 00       	jmp    417f0 <dGeomMoved@@Base>
+   3de4d:	0f 1f 00             	nopl   (%rax)
+   3de50:	48 89 ef             	mov    %rbp,%rdi
+   3de53:	48 89 74 24 08       	mov    %rsi,0x8(%rsp)
+   3de58:	e8 63 fc ff ff       	call   3dac0 <dGeomCreateOffset(dxGeom*)@@Base>
+   3de5d:	48 8b 7d 30          	mov    0x30(%rbp),%rdi
+   3de61:	48 8b 74 24 08       	mov    0x8(%rsp),%rsi
+   3de66:	eb cf                	jmp    3de37 <dGeomSetOffsetQuaternion@@Base+0x47>
+   3de68:	48 8d 15 07 4e 0b 00 	lea    0xb4e07(%rip),%rdx        # f2c76 <typeinfo name for dxCapsule@@Base+0x7ce>
+   3de6f:	48 8d 35 b6 41 0b 00 	lea    0xb41b6(%rip),%rsi        # f202c <Alignment@@Base+0xbec>
+   3de76:	bf 02 00 00 00       	mov    $0x2,%edi
+   3de7b:	31 c0                	xor    %eax,%eax
+   3de7d:	e8 8e d8 00 00       	call   4b710 <dDebug@@Base>
+   3de82:	48 8d 15 ed 4d 0b 00 	lea    0xb4ded(%rip),%rdx        # f2c76 <typeinfo name for dxCapsule@@Base+0x7ce>
+   3de89:	48 8d 35 f8 50 0b 00 	lea    0xb50f8(%rip),%rsi        # f2f88 <typeinfo name for dxCapsule@@Base+0xae0>
+   3de90:	bf 02 00 00 00       	mov    $0x2,%edi
+   3de95:	31 c0                	xor    %eax,%eax
+   3de97:	e8 74 d8 00 00       	call   4b710 <dDebug@@Base>
+   3de9c:	48 8d 15 d3 4d 0b 00 	lea    0xb4dd3(%rip),%rdx        # f2c76 <typeinfo name for dxCapsule@@Base+0x7ce>
+   3dea3:	48 8d 35 46 50 0b 00 	lea    0xb5046(%rip),%rsi        # f2ef0 <typeinfo name for dxCapsule@@Base+0xa48>
+   3deaa:	bf 02 00 00 00       	mov    $0x2,%edi
+   3deaf:	31 c0                	xor    %eax,%eax
+   3deb1:	e8 5a d8 00 00       	call   4b710 <dDebug@@Base>
+   3deb6:	48 8d 15 b9 4d 0b 00 	lea    0xb4db9(%rip),%rdx        # f2c76 <typeinfo name for dxCapsule@@Base+0x7ce>
+   3debd:	48 8d 35 4c 50 0b 00 	lea    0xb504c(%rip),%rsi        # f2f10 <typeinfo name for dxCapsule@@Base+0xa68>
+   3dec4:	bf 02 00 00 00       	mov    $0x2,%edi
+   3dec9:	31 c0                	xor    %eax,%eax
+   3decb:	e8 40 d8 00 00       	call   4b710 <dDebug@@Base>

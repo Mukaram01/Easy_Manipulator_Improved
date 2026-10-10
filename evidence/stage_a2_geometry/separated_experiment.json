@@ -1,0 +1,330 @@
+{
+  "baseline_commit": "892c9b437903f0dc3ec907c775d9558c1651520e",
+  "experiment": {
+    "source_world_sha256": "98bac33b74ca843f1dd252c3d83d97d918959fe57ddacb9c1c3c551bc94b2ac4",
+    "cube_count": 2,
+    "cube_poses_xyzrpy": [
+      [
+        0.35,
+        -0.217,
+        0.0125,
+        0,
+        0,
+        0.15
+      ],
+      [
+        0.45,
+        -0.217,
+        0.0125,
+        0,
+        0,
+        -0.2
+      ]
+    ],
+    "centre_separation_m": 0.1,
+    "minimum_initial_physical_gap_m": 0.06464466094067262,
+    "physical_properties_unchanged": true,
+    "support_and_destination_unchanged": true,
+    "initial_bottom_z": 0.0
+  },
+  "physics": {
+    "cubes": [
+      {
+        "cube": "part_00",
+        "settled_centre_xyz_m": [
+          0.35,
+          -0.217,
+          0.012499420027204847
+        ],
+        "orientation_xyzw": [
+          -2.813731487892619e-18,
+          8.414400058358858e-18,
+          0.07492970727274169,
+          0.9971888181122075
+        ],
+        "lowest_corner_z_m": -5.799727951540101e-07,
+        "highest_corner_z_m": 0.024999420027204847
+      },
+      {
+        "cube": "part_01",
+        "settled_centre_xyz_m": [
+          0.45,
+          -0.217,
+          0.012499420027204847
+        ],
+        "orientation_xyzw": [
+          -1.0851219709596422e-17,
+          5.315316694892682e-18,
+          -0.09983341664682817,
+          0.9950041652780257
+        ],
+        "lowest_corner_z_m": -5.799727951522754e-07,
+        "highest_corner_z_m": 0.024999420027204844
+      }
+    ],
+    "physical_cube_pair": {
+      "depth_m": 0.0,
+      "gap_m": 0.07531233851132763,
+      "normal": [
+        0.9432476459516788,
+        0.009615904173449425,
+        -0.3319509192539518
+      ]
+    },
+    "initial_bottom_z_m": 0.0,
+    "settling_wait_wall_seconds": 30,
+    "contact_note": "Initial bottoms exactly on unchanged plane. Small settled solver contact error is reported, not confused with conservative-envelope overlap.",
+    "independent_x_axis_physical_gap_lower_m": 0.07103818601092574
+  },
+  "capture": {
+    "cube_count": 2,
+    "epd_detections": 2,
+    "valid_surfaces": 2,
+    "collision_ready_objects": 2,
+    "geometry_rejections": [],
+    "rgb_depth_calibration_stamp_ns": 27402000000,
+    "camera_world_pose": [
+      0.4,
+      -0.217,
+      0.614,
+      0.0,
+      0.7071067811865475,
+      0.0,
+      0.7071067811865476
+    ],
+    "intrinsics": [
+      443.5061702581152,
+      443.5061702581152,
+      256.0,
+      256.0
+    ],
+    "live_readiness": "BLOCKED: frozen replay only",
+    "model_sha256": "21362d62d816bd684f2b5c7769d0bcd1cd568af86419788fca9d095c46f2bad2",
+    "labels_sha256": "adeeb37af7c067d456ea0fb2978c9bc4a242bea4d1fbb5a7b53072d486d7e113"
+  },
+  "independent_validation": {
+    "purpose": "independent ground-truth validation only",
+    "scene_sample_limitation": "dimensions from scene/info; poses from timestamped dynamic_pose/info bracketing capture",
+    "settling_position_delta_m": 0.0,
+    "settling_orientation_delta_rad": 2.9802322387695312e-08,
+    "epd_detection_count": 2,
+    "valid_observation_count": 2,
+    "raycast_visible_pixel_counts": {
+      "part_00": 376,
+      "part_01": 376
+    },
+    "visible_box_count": 2,
+    "fully_occluded_box_count": 0,
+    "matched_box_count": 2,
+    "cube_depth_pixels_compared": 752,
+    "interior_depth_pixels_compared": 584,
+    "interior_depth_p95_abs_error_m": 1.2193150167316702e-07,
+    "cube_depth_median_abs_error_m": 1.2193150167316702e-07,
+    "cube_depth_p95_abs_error_m": 0.012354730604007073,
+    "observations": [
+      {
+        "object_id": "epd_27402000000_0",
+        "nearest_box": "part_01",
+        "surface_error_m": 9.29852829107368e-06,
+        "volume_centre_distance_m": 0.01252593854891074,
+        "estimated_centre_error_m": 0.0009467099864648386,
+        "orientation_error_rad_mod_cube_symmetry": 0.0026044895745340013,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      },
+      {
+        "object_id": "epd_27402000000_1",
+        "nearest_box": "part_00",
+        "surface_error_m": 1.1240243881830564e-05,
+        "volume_centre_distance_m": 0.012592475623498559,
+        "estimated_centre_error_m": 0.00121500779075884,
+        "orientation_error_rad_mod_cube_symmetry": 0.008104112755052231,
+        "declared_dimensions_match_truth": true,
+        "collision_envelope_contains_truth": true,
+        "pose_errors_within_bounds": true
+      }
+    ]
+  },
+  "geometry_prerequisites": {
+    "objects": [
+      {
+        "id": "runtime::epd_27402000000_0",
+        "shape": "BOX",
+        "frame_id": "world",
+        "pose": [
+          0.45072149361636904,
+          -0.2163870507809421,
+          0.012499298095703094,
+          -1.9578085563893645e-26,
+          -2.3881423974897912e-26,
+          -0.7733421256706768,
+          0.6339889247164804
+        ],
+        "dimensions": [
+          0.040615989692248965,
+          0.040615989692248965,
+          0.040615989692248965
+        ]
+      },
+      {
+        "id": "runtime::epd_27402000000_1",
+        "shape": "BOX",
+        "frame_id": "world",
+        "pose": [
+          0.3509399631278026,
+          -0.216230121517894,
+          0.01249880948129091,
+          -5.585263281315263e-05,
+          4.0468130576006455e-05,
+          -0.6552017372568454,
+          0.7554539554059039
+        ],
+        "dimensions": [
+          0.04234847888320927,
+          0.04234847888320927,
+          0.04234847888320927
+        ]
+      }
+    ],
+    "static_box_objects": [
+      {
+        "id": "workcell::support_surface_table",
+        "shape": "BOX",
+        "frame_id": "world",
+        "pose": [
+          0.51,
+          0.0022999572753906183,
+          -0.4531188535094261,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "dimensions": [
+          1.2084002380371095,
+          0.8134000854492187,
+          0.9062377070188522
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "a": "runtime::epd_27402000000_0",
+        "b": "runtime::epd_27402000000_1",
+        "depth_m": 0.0,
+        "gap_m": 0.051960498523686706,
+        "normal": [
+          -0.999346298873155,
+          -0.03615185473891478,
+          0.00013537896207319966
+        ]
+      },
+      {
+        "a": "runtime::epd_27402000000_0",
+        "b": "workcell::support_surface_table",
+        "depth_m": 0.007808696750421378,
+        "gap_m": 0.0,
+        "normal": [
+          -5.739718509874451e-42,
+          -6.176160119090079e-26,
+          -1.0
+        ]
+      },
+      {
+        "a": "runtime::epd_27402000000_1",
+        "b": "workcell::support_surface_table",
+        "depth_m": 0.008678594537525508,
+        "gap_m": 0.0,
+        "normal": [
+          -0.0,
+          -0.0,
+          -1.0
+        ]
+      }
+    ],
+    "extraction": [
+      {
+        "object": "runtime::epd_27402000000_0",
+        "result": "BLOCKED",
+        "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'workcell::support_surface_table', 'depth_m': 0.007808696750421378, 'gap_m': 0.0, 'normal': [-5.739718509874451e-42, -6.176160119090079e-26, -1.0]}",
+        "details": {
+          "failure_kind": "extraction",
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "workcell::support_surface_table",
+          "depth_m": 0.007808696750421378,
+          "gap_m": 0.0,
+          "normal": [
+            -5.739718509874451e-42,
+            -6.176160119090079e-26,
+            -1.0
+          ]
+        }
+      },
+      {
+        "object": "runtime::epd_27402000000_1",
+        "result": "BLOCKED",
+        "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'workcell::support_surface_table', 'depth_m': 0.008678594537525508, 'gap_m': 0.0, 'normal': [-0.0, -0.0, -1.0]}",
+        "details": {
+          "failure_kind": "extraction",
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "workcell::support_surface_table",
+          "depth_m": 0.008678594537525508,
+          "gap_m": 0.0,
+          "normal": [
+            -0.0,
+            -0.0,
+            -1.0
+          ]
+        }
+      }
+    ],
+    "independent_x_axis_envelope_gap_lower_m": 0.05192641688814433
+  },
+  "planning": {
+    "full_plan_only_acceptance": "BLOCKED",
+    "complete_runner": "NOT RUN: neither object passes existing extraction prerequisite",
+    "stages": {
+      "approach": "NOT RUN",
+      "descent": "NOT RUN",
+      "closing": "NOT RUN",
+      "extraction": "NOT RUN",
+      "retreat": "NOT RUN",
+      "transfer": "NOT RUN",
+      "placement": "NOT RUN",
+      "release": "NOT RUN",
+      "home": "NOT RUN"
+    },
+    "execution_goals_sent": 0,
+    "robot_or_gripper_started": false,
+    "ros_bridge_started": false
+  },
+  "verification": {
+    "capture_build": "PASS: existing affected capture target",
+    "geometry_ctest": "PASS: 1",
+    "focused_python_tests": "PASS: 38",
+    "protected_checkout_unchanged": true,
+    "canonical_world_unchanged": true,
+    "runtime_directory": "/tmp/workcell_stage_a2_separated",
+    "shutdown": "PASS: capture shell exited 0; owned Gazebo process waited; no bridge or robot launched"
+  },
+  "readiness_boundaries": {
+    "controlled_separated_cube_perception": "PASS",
+    "controlled_full_cycle": "BLOCKED: support envelope overlap",
+    "original_pile": "BLOCKED: previously recorded inter-object overlap",
+    "cube_inventory_coverage": "2/2 independently observed; does not qualify complete scene or live readiness",
+    "bridge_commissioning": "BLOCKED: unchanged qualification prerequisite",
+    "physical_execution": "BLOCKED"
+  },
+  "hashes": {
+    "physical_world.sdf": "1ac9bf3adea8f732607c84c80ab6160bc7f40ab32ab6ce2743f40cf9631f0884",
+    "world.sdf": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+    "capture/rgb.png": "ad42412bef0f8521d821126a75979563908bb6470eced976e23800b95f547680",
+    "capture/depth.f32": "8857fe3f1ea523e61444622379522d6765b8ecf949068deeb440e74244e9e061",
+    "capture/snapshot.json": "b86fef6b54152f178ec40eb56a902e160c8e620b42291c9c2ad477ce7162e45e",
+    "capture/world_snapshot.json": "fed78ade13371aafcb60d692f1d85c334b94eab56c510fc14d17678f1ba40fe2",
+    "plan_only_replay.json": "545c0ed09df6441e36e9ae69f1493e95474051db03488dae423dd04dc9775bc5",
+    "poses_before.json": "fd4aaec13f8601fab2e7cd4884e527be9f8bb3da87b73002d4a376f77fb7d01b",
+    "poses_after.json": "044465ab11e696e1a7bcbe7767a665a0a9587f31ac3eb8e7fa2bb1f8627a52f9"
+  }
+}

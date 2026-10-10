@@ -1,0 +1,41 @@
+{
+  "schema": "workcell_ogre2_draw_feasibility/v1",
+  "baseline": "563bbc2714929cbb8ad46de1c544611add818770",
+  "decision": "BLOCKED",
+  "scope": "supported read-only observer APIs in installed headers; upstream pinned control-flow inspection, not binary execution attestation",
+  "upstream_commit": "0e0c47ed70091e7bdead5fb1ca01e1cae5857ef4",
+  "upstream_base": "https://raw.githubusercontent.com/OGRECave/ogre-next/0e0c47ed70091e7bdead5fb1ca01e1cae5857ef4/",
+  "upstream_tag_source_sha256": {
+    "OgreCompositorPassQuad.cpp": "ce9065861ea673c0914699430bb719513cea007dadee6238ede427e9274f58fb",
+    "OgreGL3PlusRenderSystem.cpp": "0785d82428780b01f91c04eb8b10dd2cb9097d09165955212bbccdacdf06b445",
+    "OgreCommandBuffer.cpp": "c044dc3f09734fe79e927f9da2db6d497296df99502238a2ac16cc7aab5be392",
+    "OgreRenderQueue.cpp": "588bf6277e71f3819b47ff2f50ea8d4ff0979eb42b4bc3472e94f26021167973",
+    "OgreSceneManager.cpp": "7de71923f46552fb1115589c2f2a4e1868bf0e6316d16632c7abe5fa1401ac7a"
+  },
+  "installed_header_sha256": {
+    "OgreRenderSystem.h": "7483ff5cb182d07c4d1a57277c1af385d4c7949ebc42e736d932018b7a53403c",
+    "OgreRenderObjectListener.h": "e6322c84eb0870fba7e85f96faf5e0966cd771d048ceacb50d179e8df352a660",
+    "OgreRenderQueueListener.h": "66ab610211264170af90a974a1e09bece1507abb1eaf48aea1697bfcfed23748",
+    "OgreHlms.h": "fd2d0d000cd6acb9c78fc70b9877f917e4e2ff0a1070030827158c6eb082d1d8",
+    "OgreHlmsListener.h": "24db060e17093106599a2eaa9e6d86ab8f94a02445dcb5c2d588ccf703253cb6",
+    "OgreRenderQueue.h": "ca1931725d236db4d554a8236e4d913ebdb7fcdf5af3635c1590c5df68d82281",
+    "CommandBuffer/OgreCommandBuffer.h": "cdfbde6d76fe14a7986580afacfa253ed1f1fe45c74a7d199a1e4eba2d9c62cc",
+    "Compositor/OgreCompositorWorkspaceListener.h": "3e2346202ea9bbcb43af73ae70783503eaf9b77004bbd3f04fc32b45b8bfc8e2"
+  },
+  "installed_package": "libogre-next-dev\t2.2.5+dfsg3-0ubuntu2",
+  "installed_library_sha256": {
+    "/usr/lib/x86_64-linux-gnu/libOgreNextMain.so.2.2.5": "83fd86bb832a792598bd044b62bc7c94cc513ca6591bf5dd8e999d7ee8e8c388",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6-ogre2.so.6.6.4": "035669da4198c8b0f8e1c74d5f5c57b057be52b874e230db97e1270ba6a00522"
+  },
+  "complete_draw_inventory": false,
+  "new_fixture_runs": 0,
+  "new_builds": 0,
+  "new_tests": 0,
+  "qualified_pixel_count": 0,
+  "excluded_pixel_count": 262144,
+  "total_registration_bound_px": null,
+  "qualified_depth_error_m": null,
+  "contact_authority": false,
+  "execution_goals": 0,
+  "stop_reason": "No reviewed supported read-only observer spans fast command-buffer dispatch and immediate quad draw submission; GL debug callback is message-triggered, not exhaustive per draw."
+}

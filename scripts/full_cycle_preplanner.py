@@ -421,7 +421,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     stages=copy.deepcopy(stages[prefix_stages:]),
                     **getattr(exc, 'details', {})))
                 last_error = exc
-                if isinstance(exc, (SearchBudgetExhausted, CandidateBudgetExhausted)):
+                if (isinstance(exc, (SearchBudgetExhausted, CandidateBudgetExhausted)) or
+                        getattr(exc, 'details', {}).get('failure_kind') == 'transport'):
                     raise
         if operations.extraction_candidates is not None and all(
                 attempt['failed_stage'] in ('PREPLAN_LIFT', 'PREPLAN_EXTRACTION')
@@ -441,6 +442,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         failure.update(getattr(exc, 'details', {}))
         failure.update(candidate_id=candidate.candidate_id, failed_stage=current_stage)
         stages.append(dict(stage=current_stage, success=False, reason=str(exc), reason_code=reason_code, **failure))
-        checks.append(dict(code=check_code, status='FAIL', reason_code=reason_code, reason=str(exc), **failure))
+        checks.append(dict(code=check_code, status='BLOCKED' if failure.get('failure_kind') == 'transport' else 'FAIL',
+                           reason_code=reason_code, reason=str(exc), **failure))
         return PreplanResult(False, candidate.candidate_id, reason_code, str(exc), checks, stages, None,
                              extraction_attempts)

@@ -1,0 +1,22 @@
+schema_version: environment_asset/v1
+asset:
+  id: stage_a_cube_25mm
+  label: Stage-A declared 25 mm cube workpiece
+  family: custom
+  workpiece_shape: cube
+  dimensions:
+    length_m: 0.025
+    width_m: 0.025
+    height_m: 0.025
+  dimension_tolerance_m: 0.00025
+  perception_labels: [cube]
+  frame: world
+  collision_behaviour: dynamic_collision
+  mobility: movable
+  import_source: operator_declared_stage_a_workpiece
+  support_status: experimental
+  runtime_status: replay_only
+  limitations_warnings:
+    - Explicit operator association is required; the EPD label alone does not identify a workpiece.
+    - Dimensions and tolerance are declared model inputs, not RGB-D measurements.
+    - Reconstruction requires a sufficiently visible planar top face and bounded cube-symmetry orientation.

@@ -6,6 +6,42 @@ robot/controller goals. EPD remains external and owns inference/deprojection.
 
 ## Components and limits
 
+### Optional simulation-only dimensional specification
+
+Capture now projects live `/world/<name>/generate_world_sdf` collision definitions
+into `source.simulation_asset_geometry`, excluding dynamic object world poses.
+To qualify dimensions, explicitly supply the authored world, its independently
+pinned SHA256, the uniform workpiece inventory and the existing workpiece profile:
+
+```bash
+python3 scripts/stage_a_rgbd_snapshot.py "$RGBD_RUN/capture/snapshot.json" \
+  --output "$RGBD_RUN/capture/qualified_world_snapshot.json" \
+  --camera-pose 0.4 -0.217 0.614 0 1.5707963267948966 0 \
+  --workpiece-profile catalog/capabilities/environment_assets/asset_stage_a_cube_25mm.yaml \
+  --simulation-world "$RGBD_RUN/world.sdf" \
+  --simulation-world-sha256 "$PINNED_SIMULATION_WORLD_SHA256" \
+  --simulation-workpieces part_00 part_01
+```
+
+This example requires the disposable **two-cube** world; other inventories must
+be explicitly enumerated. Pin the authored hash before launch. Qualification
+compares all loaded model identities/static flags and each workpiece's collision
+BOX/link identity/dimensions with the source and selected profile. Unsupported,
+changed, unknown or duplicate workpieces, missing calibration/transform evidence
+and stale simulation-clock acquisition/query evidence block qualification.
+Old captures without the loaded geometry record cannot be retroactively qualified.
+
+`attributes.simulation_dimension_specification` uses the existing observation
+contract. It is a simulation model specification, **not physical metrology**,
+instance identification, contact authority or hardware authority. Its numeric
+error covers decimal/binary dimension conversion only. It does not bound renderer,
+depth, transform, pose or physics error. The original declared profile tolerance,
+collision envelopes, estimated poses and uncertainty remain unchanged. Replay
+remains execution-prohibited; the optional specification grants no ACM permission.
+Support-conditioned geometry/native certification must remain blocked until a
+separate bounded relative face/table and orientation proof excludes over-depth
+configurations. Defaults do not require or grant this dimensional authority.
+
 - `stage_a_rgbd_world.py` derives the existing SDF, adding one static RGB-D
   sensor only when `--camera-pose` is present. Disabled output is byte-identical.
   `simulator_backend.prepare(..., rgbd_camera_pose=...)` uses the same derivation;
@@ -128,3 +164,31 @@ for this slice** pending existing source/receipt/qualification gates. No bridge
 was started and no qualification code changed. The next product step is an
 EPD-owned live perception connection through those gates, then independently
 observed collision dimensions before PlanningScene/grasp planning.
+
+## Optional Stage-A2 declared-workpiece reconstruction
+
+The surface-only default above is unchanged. With explicit `--workpiece-profile`,
+measured segmented points can support a conservative collision box for the
+known cube. Declared dimensions are identified separately from measurements;
+partial geometry remains BLOCKED. See `evidence/stage_a2_geometry/README.md` for
+current results, limits and exact offline plan-only commands. This does not
+commission the bridge or establish physical execution readiness.
+
+### Optional relative support diagnostic
+
+Add these arguments to the simulation-dimension-qualified snapshot command:
+
+```bash
+  --support-depth "$RGBD_RUN/capture/depth.f32" \
+  --support-id pick_support --support-roi 180 180 330 205
+```
+
+The ROI above belongs to the retained separated-cube capture, not arbitrary
+camera placements. Select and review a clear table ROI for other captures.
+This fits a same-frame table plane and exports nominal physical corner gaps,
+source/ROI/hash/stamp and explicit unknown uncertainty terms in existing
+source/object attributes. Geometry/replay files are retained, but exit **2**
+means support qualification is **BLOCKED**. It never authorizes support contact,
+changes a collision box, or permits execution. Small residuals and float32
+storage resolution are not sensor error bounds. See
+[actual evidence and required error budget](../../evidence/stage_a2_geometry/relative_support_measurement.md).

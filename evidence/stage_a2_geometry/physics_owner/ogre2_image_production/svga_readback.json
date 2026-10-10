@@ -1,0 +1,392 @@
+{
+  "camera_matrices": [
+    {
+      "height": 512,
+      "projection": [
+        [
+          1.7320507764816284,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.7320507764816284,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0080320835113525,
+          -0.040160637348890305
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          0.0
+        ]
+      ],
+      "view": [
+        [
+          0.0,
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          0.0
+        ],
+        [
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          1.0000001192092896,
+          0.0
+        ],
+        [
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "width": 512
+    },
+    {
+      "height": 512,
+      "projection": [
+        [
+          1.7320508075688776,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.7320508075688776,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.008032128514056,
+          -0.040160642570281124
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          0.0
+        ]
+      ],
+      "view": [
+        [
+          0.0,
+          -1.0,
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          -0.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "width": 512
+    },
+    {
+      "height": 512,
+      "projection": [
+        [
+          1.7320508075688776,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.7320508075688776,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.008032128514056,
+          -0.040160642570281124
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          0.0
+        ]
+      ],
+      "view": [
+        [
+          0.0,
+          -1.0,
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          -0.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0,
+          -0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "width": 512
+    }
+  ],
+  "camera_pose": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "contact_authority": false,
+  "decision": "BLOCKED",
+  "depth_camera_created": true,
+  "depth_channels": 1,
+  "depth_format": "FLOAT32",
+  "depth_frames": 3,
+  "depth_height": 512,
+  "depth_width": 512,
+  "engine_name": "ogre2",
+  "execution_goals": 0,
+  "far_m": 5.0,
+  "finite_depth_pixels": 0,
+  "fixture_scope": "two static 25mm visual BOXes at (1,+/-0.05,0), no physics",
+  "height": 512,
+  "hfov_rad": 1.0471975803375244,
+  "image_production": "BLOCKED",
+  "loaded_library_paths": [
+    "/usr/lib/x86_64-linux-gnu/ign-rendering-6/engine-plugins/libignition-rendering6-ogre2.so.6.6.4",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextHlmsPbs.so.2.2.5",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextHlmsUnlit.so.2.2.5",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextMain.so.2.2.5",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextOverlay.so.2.2.5",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextPlanarReflections.so.2.2.5",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6-ogre2.so.6.6.4",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6.so.6.6.4"
+  ],
+  "matching_native_camera_matrices": false,
+  "moveit_started": false,
+  "native_camera_matrices": [
+    {
+      "attached_camera_count": 1,
+      "projection": [
+        [
+          1.7320507764816284,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.7320507764816284,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0080320835113525,
+          -0.040160637348890305
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          0.0
+        ]
+      ],
+      "view": [
+        [
+          0.0,
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          0.0
+        ],
+        [
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          1.0000001192092896,
+          0.0
+        ],
+        [
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "attached_camera_count": 1,
+      "projection": [
+        [
+          1.7320505380630493,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.7320505380630493,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0065670013427734,
+          -0.03611820563673973
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          0.0
+        ]
+      ],
+      "view": [
+        [
+          0.0,
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          0.0
+        ],
+        [
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          1.0000001192092896,
+          0.0
+        ],
+        [
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "attached_camera_count": 1,
+      "projection": [
+        [
+          1.7320507764816284,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.7320507764816284,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0080320835113525,
+          -0.040160637348890305
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          0.0
+        ]
+      ],
+      "view": [
+        [
+          0.0,
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          0.0
+        ],
+        [
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          1.0000001192092896,
+          0.0
+        ],
+        [
+          -1.0000001192092896,
+          -1.1920928955078125e-07,
+          -2.384185791015625e-07,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  ],
+  "near_m": 0.02,
+  "pixel_registration": "BLOCKED_NATIVE_CAMERA_PROJECTION_DIFFERENCE",
+  "reason": "INVALID_RGB_DEPTH_OR_SEGMENTATION",
+  "requested_engine": "ogre2",
+  "rgb_camera_created": true,
+  "rgb_nonblank": false,
+  "schema": "workcell_render_identity_capability/v1",
+  "scope": "static native render fixture; no Gazebo or physical association",
+  "segmentation_camera_created": true,
+  "segmentation_channels": 3,
+  "segmentation_format": "R8G8B8",
+  "segmentation_frames": 3,
+  "segmentation_height": 512,
+  "segmentation_labels": [],
+  "segmentation_width": 512,
+  "shared_render_batches": 3,
+  "width": 512
+}

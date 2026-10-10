@@ -1,0 +1,156 @@
+--- upstream/Physics.cc
++++ owner/Physics.cc
+@@ -145,0 +146 @@
++#include "owner_readback.hh"
+@@ -155 +156 @@
+-class ignition::gazebo::systems::PhysicsPrivate
++class ignition::gazebo::systems::WorkcellOwnerPhysicsPrivate
+@@ -589,0 +591,2 @@
++  public: struct OwnerWorldFeatures : physics::FeatureList<MinimumFeatureList, physics::dartsim::RetrieveWorld>{};
++
+@@ -599 +602 @@
+-          SolverFeatureList>;
++          SolverFeatureList, OwnerWorldFeatures>;
+@@ -695,0 +699 @@
++#include "owner_private.inc"
+@@ -699 +703 @@
+-Physics::Physics() : System(), dataPtr(std::make_unique<PhysicsPrivate>())
++WorkcellOwnerPhysics::WorkcellOwnerPhysics() : System(), dataPtr(std::make_unique<WorkcellOwnerPhysicsPrivate>())
+@@ -704 +708 @@
+-void Physics::Configure(const Entity &_entity,
++void WorkcellOwnerPhysics::Configure(const Entity &_entity,
+@@ -800 +804 @@
+-      PhysicsPrivate::MinimumFeatureList>::From(plugin);
++      WorkcellOwnerPhysicsPrivate::MinimumFeatureList>::From(plugin);
+@@ -805,0 +810,2 @@
++      this->dataPtr->owner.backendPath = pathToLib;
++      this->dataPtr->owner.backendClass = className;
+@@ -811 +817 @@
+-        PhysicsPrivate::MinimumFeatureList>::MissingFeatureNames(plugin);
++        WorkcellOwnerPhysicsPrivate::MinimumFeatureList>::MissingFeatureNames(plugin);
+@@ -831,0 +838 @@
++  this->dataPtr->owner.Configure(_sdf);
+@@ -835 +842 @@
+-Physics::~Physics() = default;
++WorkcellOwnerPhysics::~WorkcellOwnerPhysics() = default;
+@@ -838 +845 @@
+-void Physics::Update(const UpdateInfo &_info, EntityComponentManager &_ecm)
++void WorkcellOwnerPhysics::Update(const UpdateInfo &_info, EntityComponentManager &_ecm)
+@@ -840 +847 @@
+-  IGN_PROFILE("Physics::Update");
++  IGN_PROFILE("WorkcellOwnerPhysics::Update");
+@@ -857,0 +865 @@
++      this->dataPtr->OwnerBeforeStep(_info);
+@@ -866,0 +875 @@
++    if (!_info.paused) this->dataPtr->OwnerRecord(_info, _ecm);
+@@ -871 +880 @@
+-void PhysicsPrivate::CreatePhysicsEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::CreatePhysicsEntities(const EntityComponentManager &_ecm)
+@@ -887 +896 @@
+-void PhysicsPrivate::CreateWorldEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::CreateWorldEntities(const EntityComponentManager &_ecm)
+@@ -968 +977 @@
+-void PhysicsPrivate::CreateModelEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::CreateModelEntities(const EntityComponentManager &_ecm)
+@@ -1103 +1112 @@
+-void PhysicsPrivate::CreateLinkEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::CreateLinkEntities(const EntityComponentManager &_ecm)
+@@ -1182 +1191 @@
+-void PhysicsPrivate::CreateCollisionEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::CreateCollisionEntities(const EntityComponentManager &_ecm)
+@@ -1227,0 +1237 @@
++        const auto ownerBefore = this->OwnerNodes();
+@@ -1400,0 +1411 @@
++        this->owner.bindings.Bind(_entity, collisionPtrPhys->EntityID(), ownerBefore, this->OwnerNodes());
+@@ -1430 +1441 @@
+-void PhysicsPrivate::CreateJointEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::CreateJointEntities(const EntityComponentManager &_ecm)
+@@ -1653 +1664 @@
+-void PhysicsPrivate::CreateBatteryEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::CreateBatteryEntities(const EntityComponentManager &_ecm)
+@@ -1666 +1677 @@
+-void PhysicsPrivate::RemovePhysicsEntities(const EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::RemovePhysicsEntities(const EntityComponentManager &_ecm)
+@@ -1764 +1775 @@
+-void PhysicsPrivate::UpdatePhysics(EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::UpdatePhysics(EntityComponentManager &_ecm)
+@@ -1766 +1777 @@
+-  IGN_PROFILE("PhysicsPrivate::UpdatePhysics");
++  IGN_PROFILE("WorkcellOwnerPhysicsPrivate::UpdatePhysics");
+@@ -2430 +2441 @@
+-ignition::physics::ForwardStep::Output PhysicsPrivate::Step(
++ignition::physics::ForwardStep::Output WorkcellOwnerPhysicsPrivate::Step(
+@@ -2433 +2444 @@
+-  IGN_PROFILE("PhysicsPrivate::Step");
++  IGN_PROFILE("WorkcellOwnerPhysicsPrivate::Step");
+@@ -2449 +2460 @@
+-math::Pose3d PhysicsPrivate::RelativePose(const Entity &_from,
++math::Pose3d WorkcellOwnerPhysicsPrivate::RelativePose(const Entity &_from,
+@@ -2485 +2496 @@
+-std::map<Entity, physics::FrameData3d> PhysicsPrivate::ChangedLinks(
++std::map<Entity, physics::FrameData3d> WorkcellOwnerPhysicsPrivate::ChangedLinks(
+@@ -2576 +2587 @@
+-void PhysicsPrivate::UpdateModelPose(const Entity _model,
++void WorkcellOwnerPhysicsPrivate::UpdateModelPose(const Entity _model,
+@@ -2691 +2702 @@
+-bool PhysicsPrivate::GetFrameDataRelativeToWorld(const Entity _entity,
++bool WorkcellOwnerPhysicsPrivate::GetFrameDataRelativeToWorld(const Entity _entity,
+@@ -2711 +2722 @@
+-void PhysicsPrivate::UpdateSim(EntityComponentManager &_ecm,
++void WorkcellOwnerPhysicsPrivate::UpdateSim(EntityComponentManager &_ecm,
+@@ -2714 +2725 @@
+-  IGN_PROFILE("PhysicsPrivate::UpdateSim");
++  IGN_PROFILE("WorkcellOwnerPhysicsPrivate::UpdateSim");
+@@ -3242 +3253 @@
+-void PhysicsPrivate::UpdateCollisions(EntityComponentManager &_ecm)
++void WorkcellOwnerPhysicsPrivate::UpdateCollisions(EntityComponentManager &_ecm)
+@@ -3244 +3255 @@
+-  IGN_PROFILE("PhysicsPrivate::UpdateCollisions");
++  IGN_PROFILE("WorkcellOwnerPhysicsPrivate::UpdateCollisions");
+@@ -3370 +3381 @@
+-physics::FrameData3d PhysicsPrivate::LinkFrameDataAtOffset(
++physics::FrameData3d WorkcellOwnerPhysicsPrivate::LinkFrameDataAtOffset(
+@@ -3380 +3391 @@
+-void PhysicsPrivate::EnableContactSurfaceCustomization(const Entity &_world)
++void WorkcellOwnerPhysicsPrivate::EnableContactSurfaceCustomization(const Entity &_world)
+@@ -3397 +3408 @@
+-  const auto callbackID = "sim::systems::Physics";
++  const auto callbackID = "sim::systems::WorkcellOwnerPhysics";
+@@ -3449 +3460 @@
+-void PhysicsPrivate::DisableContactSurfaceCustomization(const Entity &_world)
++void WorkcellOwnerPhysicsPrivate::DisableContactSurfaceCustomization(const Entity &_world)
+@@ -3470 +3481 @@
+-IGNITION_ADD_PLUGIN(Physics,
++IGNITION_ADD_PLUGIN(WorkcellOwnerPhysics,
+@@ -3472,4 +3483,4 @@
+-                    Physics::ISystemConfigure,
+-                    Physics::ISystemUpdate)
+-
+-IGNITION_ADD_PLUGIN_ALIAS(Physics, "gz::sim::systems::Physics")
++                    WorkcellOwnerPhysics::ISystemConfigure,
++                    WorkcellOwnerPhysics::ISystemUpdate)
++
++IGNITION_ADD_PLUGIN_ALIAS(WorkcellOwnerPhysics, "gz::sim::systems::WorkcellOwnerPhysics")
+@@ -3478 +3489 @@
+-IGNITION_ADD_PLUGIN_ALIAS(Physics, "ignition::gazebo::systems::Physics")
++IGNITION_ADD_PLUGIN_ALIAS(WorkcellOwnerPhysics, "ignition::gazebo::systems::WorkcellOwnerPhysics")
+--- upstream/Physics.hh
++++ owner/Physics.hh
+@@ -63 +63 @@
+-  class PhysicsPrivate;
++  class WorkcellOwnerPhysicsPrivate;
+@@ -73 +73 @@
+-  ///    name="ignition::gazebo::systems::Physics">
++  ///    name="ignition::gazebo::systems::WorkcellOwnerPhysics">
+@@ -80 +80 @@
+-  class Physics:
++  class WorkcellOwnerPhysics:
+@@ -86 +86 @@
+-    public: explicit Physics();
++    public: explicit WorkcellOwnerPhysics();
+@@ -89 +89 @@
+-    public: ~Physics() override;
++    public: ~WorkcellOwnerPhysics() override;
+@@ -102 +102 @@
+-    private: std::unique_ptr<PhysicsPrivate> dataPtr;
++    private: std::unique_ptr<WorkcellOwnerPhysicsPrivate> dataPtr;

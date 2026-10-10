@@ -1,0 +1,5 @@
+[1;31m[Err] [SystemLoader.cc:103] [0m[1;31mFailed to load system plugin [[0m[1;31m/tmp/stage_a2_owner_build/libworkcell_owner_physics.so[0m[1;31m] : couldn't load library on path [[0m[1;31m/tmp/stage_a2_owner_build/libworkcell_owner_physics.so[0m[1;31m].[0m[1;31m[0m
+[1;31m[Err] [Conversions.cc:1808] [0m[1;31mTried to convert SDF [[0m[1;31mworld[0m[1;31m] into [plugin][0m[1;31m[0m
+libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device.
+libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device.
+timeout: the monitored command dumped core

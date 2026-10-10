@@ -1,0 +1,34 @@
+{
+  "session": "895833ef06284c3f8a6b0cab796de147",
+  "output": "/tmp/stage_a2_gl_context_000b99f7_20261010",
+  "binary": "/tmp/stage_a2_live_fragment_build/stage_a_gazebo_fragment_capture",
+  "owner": "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so",
+  "world": "/tmp/stage_a2_gl_context_000b99f7_20261010/world.sdf",
+  "input_world": "/tmp/workcell_stage_a2_separated/physical_world.sdf",
+  "input_world_sha256": "1ac9bf3adea8f732607c84c80ab6160bc7f40ab32ab6ce2743f40cf9631f0884",
+  "execution_goals": 0,
+  "debugger": "/usr/bin/gdb",
+  "debugger_sha256": "a6222ff0f450ca040e3479c04fdb7d0f1e0cabb099688270e720b7115d933c3d",
+  "owner_qualification_sha256": {
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/pre_run.json": "37fd36af21c0b324dd01f3b8f27ab472f8553574588c6bee9f16fc9cece6b174",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/result.json.gz": "82826751aaadfb9fcdf974cdd5fb1127e4f7a5d1bfdc7358698beec8a3165749",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/exit.json": "1e3f6691f455051e8adb15d961e4bf3c7a17e83dd88b2afdd13315cc288250bb",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/loaded_sha256.json": "db8ea5f65bf4acfdc1eb243a2953efc9a2766f4bf8965421f311e37cc67c8388",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/identity_metadata/result.json": "9050ddff291d9088b9926188fb79942e50dfc9ea23c5917ae000ac4150a2ee09"
+  },
+  "geometry_scope": "unchanged authored separated cubes only; support/bin omitted; no contact claim",
+  "binary_sha256": "722b14763a4161aa4e5bbdfaa5e65511415e5fd50ea67e161c69354d7dbcf847",
+  "owner_sha256": "0f4a2dda8d7bfd67745b03493254a9d91ea66bb36dcb2d78440fbf5809ff072a",
+  "world_sha256": "0472458cb2c088998a0f7b077336cb2a247e546cd9f82f048405d684cc5496c1",
+  "source_sha256": {
+    "scripts/stage_a_rgbd/gazebo_fragment_capture.cpp": "be640fb015c92fc41755a8e4c39f4f0039a7593fd44a59ba83828f78f97b5e5b",
+    "scripts/stage_a_rgbd/fragment_mrt.hh": "b70a619781b13aaa546791b14756300bfccaaa1aca5a79a19ff594ca546d600e",
+    "scripts/stage_a_rgbd/gl_context_witness.hh": "638aeed2734d83525bb8698ca36c927991c9d6709c368fb2464d6dc92308a838",
+    "scripts/stage_a_rgbd/gl_context_check.hh": "4b9035e37cd5dab6e8da55528ee40f0404055f6d91b10a45b5a980173a943df1",
+    "scripts/stage_a_rgbd/inventory_compare.hh": "9b7aa0faa10521808195af76d2976dbe9cdcb028d43d48cb5ca45071c624bd4c",
+    "scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh": "429598724fd48c87ceffb2cce7817dffe7d62eae7a8ddde83b39afad4a745574",
+    "scripts/stage_a_rgbd/renderer_identity.hh": "8d665af6c101a1738dca8d1eb41c431f3164d59fe084d7c193322d178dd101b5",
+    "scripts/stage_a_rgbd/renderer_identity_check.hh": "79a43e9f66ce41196807b46ddef9a81755c10b870edc7ba6e9a152f9408949f0",
+    "scripts/stage_a_gazebo_fragment.py": "8f72ed3c1653581d2c8de8a58c95362e2ff3f3b75f1dfc77fbef368a96298163"
+  }
+}

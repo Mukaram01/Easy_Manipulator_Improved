@@ -7,6 +7,7 @@ Ground truth is never an input to capture, EPD inference or normalized output.
 import argparse
 import json
 import math
+import itertools
 from pathlib import Path
 import sys
 import numpy as np
@@ -103,6 +104,34 @@ def main():
         surface,name,centre = min(choices)
         errors.append({'object_id':obj['object_id'],'nearest_box':name,
                        'surface_error_m':surface,'volume_centre_distance_m':centre})
+        if 'pose' in obj and 'geometry_provenance' in obj.get('attributes', {}):
+            _,truth_centre,truth_rotation,half,_ = next(b for b in boxes if b[0] == name)
+            estimated = np.array(obj['pose']['position'])
+            estimated_rotation = rotation(obj['pose']['orientation_xyzw'])
+            provenance = obj['attributes']['geometry_provenance']
+            centre_error = float(np.linalg.norm(estimated-truth_centre))
+            corners = np.array(list(itertools.product((-1,1),repeat=3))) * half
+            world_corners = corners @ truth_rotation.T + truth_centre
+            local_corners = (world_corners-estimated) @ estimated_rotation
+            envelope_contains = bool(np.all(np.abs(local_corners) <= np.array(obj['dimensions_xyz'])/2))
+            angles = []
+            for order in itertools.permutations(range(3)):
+                for signs in itertools.product((-1,1),repeat=3):
+                    symmetry = np.eye(3)[:,order] @ np.diag(signs)
+                    if np.linalg.det(symmetry) > 0:
+                        relative = estimated_rotation.T @ truth_rotation @ symmetry
+                        angles.append(math.acos(float(np.clip((np.trace(relative)-1)/2,-1,1))))
+            orientation_error = min(angles)
+            dimensions_match = bool(np.all(np.abs(np.array(provenance['declared_dimensions_m'])-2*half)
+                                            <= provenance['dimension_tolerance_m']))
+            bounded = (centre_error <= provenance['centre_uncertainty_m'] and
+                       orientation_error <= provenance['orientation_uncertainty_rad'])
+            errors[-1].update(estimated_centre_error_m=centre_error,
+                orientation_error_rad_mod_cube_symmetry=orientation_error,
+                declared_dimensions_match_truth=dimensions_match,
+                collision_envelope_contains_truth=envelope_contains, pose_errors_within_bounds=bounded)
+            if not envelope_contains or not dimensions_match or not bounded:
+                raise ValueError('reconstructed geometry exceeds declared uncertainty or excludes simulator box: '+name)
     report = {'purpose':'independent ground-truth validation only',
               'scene_sample_limitation':'dimensions from scene/info; poses from timestamped dynamic_pose/info bracketing capture',
               'settling_position_delta_m':settling_delta,

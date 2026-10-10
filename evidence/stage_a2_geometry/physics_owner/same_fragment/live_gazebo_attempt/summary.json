@@ -1,0 +1,53 @@
+{
+  "decision": "BLOCKED_OWNER_PLUGIN_LOAD_BEFORE_MRT_DRAW",
+  "native_runs": 1,
+  "exit_code": -4,
+  "termination_signal": "SIGILL",
+  "executed_binary_sha256": "df95b1e81e5660732b99f30f787540eb9995bc53144a17218aa88eab4f2d4d6c",
+  "owner_library_sha256_preflight_only": "feeb888374b0b6cf8a51eff6854e4ea31abe9a7547146b4860ac935cf9b377e0",
+  "owner_library_loaded": false,
+  "owner_trace_exists": false,
+  "rgb_buffer_exists": false,
+  "id_buffer_exists": false,
+  "pixel_counts": null,
+  "live_renderutil_updates": [
+    {
+      "boundary": "PostUpdate_after_UpdateFromECM_and_Update",
+      "epoch": 1,
+      "renderutil_stamp_ns": 1000000,
+      "stamp_ns": 1000000,
+      "step": 1
+    },
+    {
+      "boundary": "PostUpdate_after_UpdateFromECM_and_Update",
+      "epoch": 2,
+      "renderutil_stamp_ns": 2000000,
+      "stamp_ns": 2000000,
+      "step": 2
+    }
+  ],
+  "visual_collision_draw_binding": "NOT_REACHED",
+  "timing_authority": "BLOCKED",
+  "contact_authority": false,
+  "execution_goals": 0,
+  "gpu_driver_string": "NOT_RECORDED_BEFORE_FAILURE",
+  "software_rendering_requested": true,
+  "focused_python_tests": 72,
+  "live_and_original_fixture_build": "PASS",
+  "failure_reason": "Gazebo SystemLoader could not load the existing owner ELF; no owner step record. Process also terminated with SIGILL after retaining native failure report.",
+  "loader_diagnostic": "ldd -r reports no missing libraries or unresolved symbols; plugin-load cause not established",
+  "next_action": "Repair and validate owner loading with Gazebo SystemLoader in a graphics-free preflight before another rendering experiment.",
+  "artifact_sha256": {
+    "build.log": "16271fa2b5cbfb61383245d3a15e800f9749c1a3b42f0122c6cae4b64a95c18f",
+    "capture.json.gz": "d8579d8548ae80f4919e78fc6edb8ddcd6d1d1c8949d6326501cae9191d26d65",
+    "execution_claim.json": "25bd9e8c4b0cda745ae7c209156cdbf3eb9f8d9e7d10b81447bebc22a6a61ee4",
+    "input_world.sdf.gz": "97cefe9f2c19940ca87e41470407c72d95fbbc463377f0516e7a2f88853b9157",
+    "owner_loader.log": "d1d87767b289774ff9793480eb77bde4d026516c1c5722abf1fabf267d892860",
+    "preflight.json": "712e5269ce6885e4d096b56807edd508a251740cb9dbb6c6a787089f46929281",
+    "pytest.log": "bd91914e56ee2514611952ed7adc62515c4e64b8318159a4c65c1791b11450ec",
+    "result.json.gz": "6ae07d061847a85501d288fadd87de5c025c3fdb50eb52dc7016a52794fe6893",
+    "stderr.log": "8de76103a59cc88859cf88d495cd118750e90b16abef85622f79e91b5a487377",
+    "stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "world.sdf": "b5426c784c87e4da47caa71006d13f4379d709e2c5278e15f0fbf4f38720e529"
+  }
+}
