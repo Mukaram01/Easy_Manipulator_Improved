@@ -279,3 +279,36 @@ A verified support-conditioned physical pose set and typed carried-motion proof
 are missing. No exemption or implementation change was made; 29 focused Python
 and 24 native regressions PASS. Full-cycle acceptance was NOT RUN under the
 required admission stop gate. See the adjacent review JSON for exact evidence.
+# Simulation dimension capability (after support review)
+
+The capture and existing snapshot CLI now support an explicit simulation-only
+dimension specification, with pinned authored-world SHA256, matching live loaded
+collision definitions, fresh capture/query stamps and a uniform profile-associated
+closed-world inventory. No dynamic object pose is copied into that specification.
+See `simulation_dimensions.json` and the optional specification command in
+`docs/manuals/STAGE_A_RGBD_PERCEPTION.md`.
+
+A single fresh capture of the byte-identical separated world produced **2 EPD
+detections, 2 valid surfaces and 2 collision-ready objects**. Both loaded boxes
+qualified as 25 mm; original envelopes/poses/bounds were unchanged. Real
+dimension qualification **PASS**, owned Gazebo shutdown clean, zero execution
+goals and no robot/bridge/MoveIt launch. Raw files: `/tmp/workcell_stage_a2_dimensions`.
+
+The old 25.25 mm-height counterexample is excluded by this specification only.
+Support contact remains **BLOCKED**: a 0.2 mm downward translation still lies
+inside each exported 2.781/2.962 mm centre bound and puts the lowest cube corner
+below -0.1 mm. These are analytical uncertain configurations, not actual
+simulation penetration. There is no qualified relative depth/calibration and
+roll/pitch error budget to exclude them. Dimension specification is not contact
+authority; no native support exception was added.
+
+Admission was rerun on both original and fresh captures: both targets remain
+`EXTRACTION_INITIAL_DEPTH`, at unchanged 7.809/8.679 mm envelope depths. Every
+MoveIt stage and full-cycle acceptance **NOT RUN**, per stop gate. Next engineering
+action: qualify relative top-face/table depth, transform and roll/pitch bounds
+within the approximately 99 micrometre remaining nominal vertical budget, then
+derive the conditioned physical set and extend existing native certification.
+Focused capture/geometry/extraction Python regressions: **60 PASS**. Affected
+capture and geometry-test builds **PASS**; existing `masked_depth_geometry`
+CTest **1 PASS**. Independent scoped code review found no important defect.
+Protected Stage-A1 HEAD/status/tracked-diff fingerprint remains unchanged.

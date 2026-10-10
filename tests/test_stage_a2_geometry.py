@@ -118,3 +118,80 @@ def test_measured_geometry_reaches_existing_collision_contract():
     assert result.collision_object.id == ready['object_id']
     assert list(result.collision_object.primitives[0].dimensions) == ready['dimensions_xyz']
     assert result.collision_object.primitive_poses[0].position.z == pytest.approx(ready['pose']['position'][2])
+
+
+# Simulation dimensions may qualify a model specification, never contact or pose.
+def simulation_dimension_inputs():
+    import hashlib
+    xml = '<sdf version="1.8"><world name="test"><model name="cube"><link name="body"><collision name="shape"><geometry><box><size>0.025 0.025 0.025</size></box></geometry></collision></link></model></world></sdf>'
+    snapshot = {'frame_id':'world', 'timestamp':100, 'objects':[surface()[0]],
+        'source':{'clock_domain':'gazebo_simulation', 'acquisition_clock_ns':100,
+                  'intrinsics':[500.,500.,256.,256.], 'camera_pose_source':'live_scene_info',
+                  'camera_is_static':True,'camera_definition_source':'live_generate_world_sdf',
+                  'rgb_stamp_ns':100,'depth_stamp_ns':100,'info_stamp_ns':100,
+                  'simulation_asset_geometry':{'source':'live_generate_world_sdf',
+                      'world':'test','capture_stamp_ns':100,'query_clock_ns':100,'complete':True,
+                      'models':[{'name':'cube','static':False,'supported':True,
+                                 'link':'body','collision':'shape','dimensions_m':[.025]*3}]}}}
+    return snapshot, xml.encode(), hashlib.sha256(xml.encode()).hexdigest()
+
+
+def test_simulation_dimension_spec_preserves_envelope_and_has_no_contact_authority():
+    import stage_a_rgbd_snapshot as rgbd
+    assert hasattr(rgbd, 'qualify_simulation_dimensions'), 'simulation dimension qualification missing'
+    snapshot, xml, digest = simulation_dimension_inputs()
+    snapshot['objects'] = [rgbd.estimate_cube_geometry(snapshot['objects'][0], PROFILE)]
+    before = copy.deepcopy(snapshot)
+    result = rgbd.qualify_simulation_dimensions(snapshot, PROFILE, xml, digest, ['cube'])
+    assert result['objects'][0]['pose'] == before['objects'][0]['pose']
+    assert result['objects'][0]['dimensions_xyz'] == before['objects'][0]['dimensions_xyz']
+    spec = result['objects'][0]['attributes']['simulation_dimension_specification']
+    assert spec['dimensions_m'] == [.025]*3
+    assert spec['scope'] == 'simulation_only_replay'
+    assert spec['source_world_sha256'] == digest
+    assert spec['contact_authority'] is False
+    assert spec['physical_metrology'] is False
+    assert spec['dimensions_m'][2] + spec['numeric_error_m'] < .02525
+    assert snapshot == before
+
+
+@pytest.mark.parametrize('bad', ['hash','source_geometry','loaded_geometry','unknown_inventory',
+    'profile','real_clock','stale','missing_calibration','missing_loaded','count','unsupported','duplicate',
+    'loaded_stale','wrong_link','unknown_label','missing_inventory','nested_source','changed_matching_geometry',
+    'unknown_static','missing_intrinsics','unknown_transform'])
+def test_simulation_spec_fails_closed(bad):
+    import stage_a_rgbd_snapshot as rgbd
+    assert hasattr(rgbd, 'qualify_simulation_dimensions'), 'simulation dimension qualification missing'
+    snapshot, xml, digest = simulation_dimension_inputs()
+    profile = copy.deepcopy(PROFILE)
+    loaded = snapshot['source']['simulation_asset_geometry']
+    if bad == 'hash': digest = '0'*64
+    if bad == 'source_geometry': xml = xml.replace(b'0.025 0.025 0.025', b'0.025 0.025 0.026')
+    if bad == 'loaded_geometry': loaded['models'][0]['dimensions_m'][2] = .026
+    if bad == 'unknown_inventory': loaded['models'].append(dict(loaded['models'][0], name='unknown'))
+    if bad == 'profile': profile['dimensions']['height_m'] = .026
+    if bad == 'real_clock': snapshot['source']['clock_domain'] = 'ros_wall'
+    if bad == 'stale': snapshot['source']['acquisition_clock_ns'] += 1000000001
+    if bad == 'missing_calibration': snapshot['source'].pop('info_stamp_ns')
+    if bad == 'missing_loaded': snapshot['source'].pop('simulation_asset_geometry')
+    if bad == 'count': snapshot['objects'] *= 2
+    if bad == 'unsupported': loaded['models'][0]['supported'] = False
+    if bad == 'duplicate': loaded['models'] *= 2
+    if bad == 'loaded_stale': loaded['query_clock_ns'] += 1000000001
+    if bad == 'wrong_link': loaded['models'][0]['link'] = 'other'
+    if bad == 'unknown_label': snapshot['objects'][0]['label'] = 'unknown'
+    if bad == 'missing_inventory': loaded['complete'] = False
+    if bad == 'unknown_static': loaded['models'].append({'name':'unknown','static':True})
+    if bad == 'missing_intrinsics': snapshot['source'].pop('intrinsics')
+    if bad == 'unknown_transform': snapshot['source']['camera_is_static'] = False
+    if bad == 'nested_source':
+        import hashlib
+        xml = xml.replace(b'<link name="body">', b'<model name="hidden"/><link name="body">')
+        digest = hashlib.sha256(xml).hexdigest()
+    if bad == 'changed_matching_geometry':
+        import hashlib
+        xml = xml.replace(b'0.025 0.025 0.025', b'0.026 0.026 0.026')
+        loaded['models'][0]['dimensions_m'] = [.026]*3
+        digest = hashlib.sha256(xml).hexdigest()
+    with pytest.raises(ValueError, match='BLOCKED'):
+        rgbd.qualify_simulation_dimensions(snapshot, profile, xml, digest, ['cube'])

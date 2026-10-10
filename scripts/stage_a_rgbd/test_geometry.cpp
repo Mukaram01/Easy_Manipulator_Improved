@@ -1,4 +1,5 @@
 #include "geometry.hpp"
+#include "asset_geometry.hpp"
 #include <cassert>
 #include <limits>
 int main() {
@@ -20,4 +21,17 @@ int main() {
   assert(!fresh(100,101,100,150,60));
   assert(!fresh(100,100,100,200,60));
   assert(!fresh(100,100,100,90,60));
+  tinyxml2::XMLDocument xml;
+  assert(xml.Parse("<world name='test'><model name='cube'><pose>99 98 97 0 0 0</pose>"
+    "<link name='body'><collision name='shape'><geometry><box><size>0.025 0.025 0.025</size>"
+    "</box></geometry></collision></link></model></world>")==tinyxml2::XML_SUCCESS);
+  auto spec=assetGeometry(xml.FirstChildElement(),100);
+  assert(spec["complete"].asBool());
+  assert(spec["models"][0]["supported"].asBool());
+  assert(spec["models"][0]["dimensions_m"][2].asDouble()==.025);
+  assert(!spec["models"][0].isMember("pose"));
+  auto model=xml.FirstChildElement()->FirstChildElement("model");
+  model->InsertEndChild(xml.NewElement("joint"));
+  assert(!assetGeometry(xml.FirstChildElement(),100)["models"][0]["supported"].asBool());
+  assert(!assetGeometry(nullptr,100)["complete"].asBool());
 }

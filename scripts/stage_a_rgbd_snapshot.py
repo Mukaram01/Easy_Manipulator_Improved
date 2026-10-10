@@ -160,6 +160,123 @@ def estimate_cube_geometry(obj, profile):
     return out
 
 
+def qualify_simulation_dimensions(snapshot, profile, authored_world, expected_sha256, model_names):
+    """Bind a uniform simulation-only BOX inventory to an authored specification.
+
+    Loaded collision geometry is read by capture, never object poses. This is
+    model specification authority, NOT metrology, support contact or execution
+    authority. Existing pose bounds and collision envelopes remain untouched.
+    """
+    import hashlib
+    import xml.etree.ElementTree as ET
+
+    def blocked(reason):
+        raise ValueError('BLOCKED: simulation dimensions: ' + reason)
+
+    source = snapshot.get('source', {})
+    stamp = snapshot.get('timestamp')
+    clock = source.get('acquisition_clock_ns')
+    loaded = source.get('simulation_asset_geometry', {})
+    query_clock = loaded.get('query_clock_ns')
+    intrinsics = source.get('intrinsics')
+    if (not isinstance(intrinsics, list) or len(intrinsics) != 4 or
+            not all(type(v) in (int, float) and math.isfinite(v) for v in intrinsics) or
+            min(intrinsics[:2]) <= 0 or source.get('camera_pose_source') != 'live_scene_info' or
+            source.get('camera_is_static') is not True or
+            source.get('camera_definition_source') != 'live_generate_world_sdf'):
+        blocked('qualified calibration and static camera transform required')
+    if (snapshot.get('frame_id') != 'world' or source.get('clock_domain') != 'gazebo_simulation' or
+            type(stamp) is not int or stamp <= 0 or type(clock) is not int or
+            not 0 <= clock-stamp <= 1000000000 or
+            any(source.get(k) != stamp for k in ('rgb_stamp_ns','depth_stamp_ns','info_stamp_ns')) or
+            loaded.get('source') != 'live_generate_world_sdf' or loaded.get('capture_stamp_ns') != stamp or
+            type(query_clock) is not int or type(stamp) is not int or
+            not 0 <= query_clock-stamp <= 1000000000):
+        blocked('fresh synchronized simulation capture and loaded geometry required')
+    digest = hashlib.sha256(authored_world).hexdigest()
+    if digest != expected_sha256:
+        blocked('authored world hash mismatch')
+    if (not model_names or any(not isinstance(n, str) or not n for n in model_names) or
+            len(set(model_names)) != len(model_names)):
+        blocked('explicit unique closed-world workpiece inventory required')
+    try:
+        root = ET.fromstring(authored_world)
+        worlds = root.findall('world')
+        if len(worlds) != 1:
+            blocked('one authored world required')
+        world = worlds[0]
+        if world.get('name') != loaded.get('world') or world.findall('include'):
+            blocked('world identity mismatch or unresolved include')
+        authored, authored_inventory = [], []
+        for model in world.findall('model'):
+            static = model.findtext('static', 'false').strip()
+            if static not in ('true', 'false', '0', '1'):
+                blocked('invalid static declaration')
+            authored_inventory.append((model.get('name'), static in ('true', '1')))
+            if static in ('true', '1'):
+                continue
+            links = model.findall('link')
+            if (len(links) != 1 or model.findall('model') or model.findall('include') or
+                    model.findall('joint') or model.findall('plugin')):
+                blocked('only explicit rigid single-link workpieces supported')
+            collisions = links[0].findall('collision')
+            if len(collisions) != 1:
+                blocked('one collision BOX per workpiece required')
+            shape = collisions[0].find('geometry')
+            if shape is None or len(shape) != 1 or shape[0].tag != 'box':
+                blocked('collision BOX required')
+            dimensions = [float(v) for v in shape.findtext('box/size', '').split()]
+            if len(dimensions) != 3 or not all(math.isfinite(v) and v > 0 for v in dimensions):
+                blocked('finite positive BOX dimensions required')
+            authored.append(dict(name=model.get('name'), static=False, supported=True,
+                link=links[0].get('name'), collision=collisions[0].get('name'), dimensions_m=dimensions))
+        models = loaded.get('models', [])
+        if (loaded.get('complete') is not True or not isinstance(models, list) or
+                any(not isinstance(m, dict) or type(m.get('static')) is not bool for m in models)):
+            blocked('complete loaded inventory required')
+        actual_inventory = [(m.get('name'), m['static']) for m in models]
+        if (any(not isinstance(n, str) or not n for n, _ in actual_inventory+authored_inventory) or
+                len({n for n, _ in actual_inventory}) != len(actual_inventory) or
+                len({n for n, _ in authored_inventory}) != len(authored_inventory) or
+                sorted(actual_inventory) != sorted(authored_inventory)):
+            blocked('loaded world model inventory differs from authored world')
+        dynamic = [m for m in models if not m['static']]
+        names = [m.get('name') for m in dynamic]
+        if (len(names) != len(set(names)) or set(names) != set(model_names) or
+                len(authored) != len(model_names) or {m['name'] for m in authored} != set(model_names)):
+            blocked('unknown, missing or duplicate workpiece')
+        for a in authored:
+            actual = next(m for m in dynamic if m['name'] == a['name'])
+            if any(actual.get(k) != v for k, v in a.items()):
+                blocked('loaded collision geometry differs from authored specification')
+        dimensions = [float(profile['dimensions'][k]) for k in ('length_m','width_m','height_m')]
+        if (not profile.get('id') or profile.get('workpiece_shape') != 'cube' or
+                max(dimensions)-min(dimensions) > 1e-12 or
+                any(a['dimensions_m'] != dimensions for a in authored)):
+            blocked('explicit profile does not match uniform loaded cube inventory')
+        objects = snapshot.get('objects', [])
+        ids = [o.get('object_id') for o in objects]
+        if (len(objects) > len(model_names) or len(ids) != len(set(ids)) or
+                any(not i for i in ids) or
+                any(o.get('label') not in profile.get('perception_labels', []) for o in objects)):
+            blocked('observations do not fit explicitly associated inventory')
+    except (ET.ParseError, KeyError, TypeError, AttributeError, ValueError) as exc:
+        if str(exc).startswith('BLOCKED:'):
+            raise
+        blocked('invalid specification: ' + str(exc))
+    out = copy.deepcopy(snapshot)
+    spec = dict(scope='simulation_only_replay', source_world_sha256=digest,
+        loaded_geometry_source=loaded['source'], world=loaded['world'], capture_stamp_ns=stamp,
+        profile_id=profile['id'], inventory=authored, dimensions_m=dimensions,
+        association='explicit uniform inventory/profile; not simulator instance identification',
+        numeric_error_m=math.nextafter(2*max(math.ulp(v) for v in dimensions), math.inf),
+        numeric_error_scope='dimension decimal/binary conversion only; not pose, depth or physics error',
+        physical_metrology=False, contact_authority=False)
+    for obj in out['objects']:
+        obj.setdefault('attributes', {})['simulation_dimension_specification'] = copy.deepcopy(spec)
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('snapshot', type=Path)
@@ -167,6 +284,9 @@ def main():
     parser.add_argument('--camera-pose', type=float, nargs=6)
     parser.add_argument('--workpiece-profile', type=Path, help='Explicit declared cube profile; offline reconstruction only')
     parser.add_argument('--replay-output', type=Path, help='Existing detected_objects/v1 input for plan-only acceptance')
+    parser.add_argument('--simulation-world', type=Path, help='Optional immutable authored simulation world; no pose authority')
+    parser.add_argument('--simulation-world-sha256', help='Independently pinned authored world SHA256')
+    parser.add_argument('--simulation-workpieces', nargs='+', help='Explicit uniform profile-associated model inventory')
     args = parser.parse_args()
     if args.workpiece_profile and args.camera_pose is None:
         parser.error('BLOCKED: reconstruction requires --camera-pose and optical input for verified extrinsics')
@@ -175,6 +295,9 @@ def main():
         snapshot = transform_snapshot(snapshot, args.camera_pose)
     if args.replay_output and not args.workpiece_profile:
         parser.error('--replay-output requires --workpiece-profile')
+    simulation_args = (args.simulation_world, args.simulation_world_sha256, args.simulation_workpieces)
+    if any(simulation_args) and (not all(simulation_args) or not args.workpiece_profile):
+        parser.error('simulation specification requires world, pinned SHA256, inventory and workpiece profile')
     if args.workpiece_profile:
         import hashlib
         import yaml
@@ -198,6 +321,9 @@ def main():
                 rejected.append({'object_id':obj['object_id'],'reason':str(exc)})
         snapshot['objects'] = accepted
         source['geometry_rejected_objects'] = rejected
+        if args.simulation_world:
+            snapshot = qualify_simulation_dimensions(snapshot, profile_data['asset'],
+                args.simulation_world.read_bytes(), args.simulation_world_sha256, args.simulation_workpieces)
     errors = validate_normalized_snapshot(snapshot, expected_scene_id='ur5_2f_test', expected_camera_id='stage_a_camera')
     if errors:
         raise ValueError('; '.join(errors))

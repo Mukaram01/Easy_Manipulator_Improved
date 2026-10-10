@@ -19,6 +19,7 @@
 #include <mutex>
 #include "ort_cpp_lib/p3_ort_base.hpp"
 #include "geometry.hpp"
+#include "asset_geometry.hpp"
 
 namespace fs=std::filesystem;
 int64_t ns(const ignition::msgs::Time & t) {return t.sec()*1000000000LL+t.nsec();}
@@ -131,6 +132,11 @@ int main(int argc,char ** argv) try {
     tinyxml2::XMLDocument document;
     if(document.Parse(live_sdf.data().c_str())==tinyxml2::XML_SUCCESS) {
       auto sdf=document.FirstChildElement("sdf");auto world=sdf?sdf->FirstChildElement("world"):nullptr;
+      evidence["simulation_asset_geometry"]=stage_a::assetGeometry(world,ns(rgb.header().stamp()));
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        evidence["simulation_asset_geometry"]["query_clock_ns"]=Json::Int64(now);
+      }
       for(auto model=world?world->FirstChildElement("model"):nullptr;model;model=model->NextSiblingElement("model")) {
         if(!model->Attribute("name") || std::string(model->Attribute("name"))!="stage_a_camera") continue;
         auto stat=model->FirstChildElement("static");
