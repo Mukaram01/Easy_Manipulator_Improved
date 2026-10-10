@@ -1,5 +1,6 @@
 #include "identity_inventory.hh"
 #include "../renderer_identity.hh"
+#include "../inventory_ecm_diagnostics.hh"
 #include <sdf/Geometry.hh>
 #include <sdf/Material.hh>
 #include <stdexcept>
@@ -34,6 +35,21 @@ int main() {
   ignition::gazebo::SceneManager manager;
   Json::Value owner;owner["world_entity"]=Json::UInt64(world);owner["identity_inventory"]=inventory;
   check(!workcell::RendererIdentity(manager,owner,"not-live")["complete"].asBool());
+  // Classification must follow actual components/parent, never the visual name.
+  const auto light=ecm.CreateEntity(),lightVisual=ecm.CreateEntity();
+  ecm.CreateComponent(light,c::Light());ecm.CreateComponent(light,c::ParentEntity(world));
+  ecm.CreateComponent(lightVisual,c::Visual());ecm.CreateComponent(lightVisual,c::ParentEntity(light));
+  auto diagnosticInventory=workcell::IdentityInventory(ecm);
+  const auto diagnostics=workcell::InventoryEcmDiagnostics(ecm,diagnosticInventory,diagnosticInventory);
+  bool classified=false;
+  for(const auto &entry:diagnostics)if(entry["entity_id"].asUInt64()==lightVisual) {
+    check(entry["parent_chain"].size()==3);
+    check(entry["parent_chain"][0]["classification"]=="visual_child_of_authoritative_Light_entity_without_Geometry");
+    check(entry["parent_chain"][1]["has_light"].asBool());classified=true;
+  }
+  check(classified);
+  const auto comparison=workcell::CompareInventories(diagnosticInventory,diagnosticInventory);
+  check(comparison["equivalent"].asBool() && !comparison["schema_valid"].asBool() && !comparison["supported_geometry"].asBool());
   // Actual ECM extraction output for reproducible CPU-only inspection.
   std::cout<<inventory<<std::endl;
 }

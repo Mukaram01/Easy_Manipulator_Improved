@@ -1,0 +1,30 @@
+{
+  "session": "95fe950740c04bfead02840ec7c19151",
+  "output": "/tmp/stage_a2_inventory_join_20261010_0e38ee51",
+  "binary": "/tmp/stage_a2_live_fragment_build/stage_a_gazebo_fragment_capture",
+  "owner": "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so",
+  "world": "/tmp/stage_a2_inventory_join_20261010_0e38ee51/world.sdf",
+  "input_world": "/tmp/workcell_stage_a2_separated/physical_world.sdf",
+  "input_world_sha256": "1ac9bf3adea8f732607c84c80ab6160bc7f40ab32ab6ce2743f40cf9631f0884",
+  "execution_goals": 0,
+  "debugger": "/usr/bin/gdb",
+  "debugger_sha256": "a6222ff0f450ca040e3479c04fdb7d0f1e0cabb099688270e720b7115d933c3d",
+  "owner_qualification_sha256": {
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/pre_run.json": "37fd36af21c0b324dd01f3b8f27ab472f8553574588c6bee9f16fc9cece6b174",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/result.json.gz": "82826751aaadfb9fcdf974cdd5fb1127e4f7a5d1bfdc7358698beec8a3165749",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/exit.json": "1e3f6691f455051e8adb15d961e4bf3c7a17e83dd88b2afdd13315cc288250bb",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/loaded_sha256.json": "db8ea5f65bf4acfdc1eb243a2953efc9a2766f4bf8965421f311e37cc67c8388",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/identity_metadata/result.json": "9050ddff291d9088b9926188fb79942e50dfc9ea23c5917ae000ac4150a2ee09"
+  },
+  "geometry_scope": "unchanged authored separated cubes only; support/bin omitted; no contact claim",
+  "binary_sha256": "1dcd68314933e346c1d67b5c09e50fad3a42cb7967ca680c5f1096ee317ffd79",
+  "owner_sha256": "0f4a2dda8d7bfd67745b03493254a9d91ea66bb36dcb2d78440fbf5809ff072a",
+  "world_sha256": "29bfd871e96d4976c815451587f4246454536deaa040e5bfaf3f8d8cf9d250b1",
+  "source_sha256": {
+    "scripts/stage_a_rgbd/gazebo_fragment_capture.cpp": "50c66e8494376127c04881a417d6f4e6d9f768651a251665bae018a94bcc49a7",
+    "scripts/stage_a_rgbd/fragment_mrt.hh": "b70a619781b13aaa546791b14756300bfccaaa1aca5a79a19ff594ca546d600e",
+    "scripts/stage_a_rgbd/inventory_compare.hh": "9b7aa0faa10521808195af76d2976dbe9cdcb028d43d48cb5ca45071c624bd4c",
+    "scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh": "429598724fd48c87ceffb2cce7817dffe7d62eae7a8ddde83b39afad4a745574",
+    "scripts/stage_a_gazebo_fragment.py": "0ef5a630d08bd57147d04a49af5ccde291bb5c6ea4e4383fa082b5638c6e2fee"
+  }
+}

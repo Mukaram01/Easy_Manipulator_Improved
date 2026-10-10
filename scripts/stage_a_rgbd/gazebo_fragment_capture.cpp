@@ -2,6 +2,7 @@
 #include "fragment_mrt.hh"
 #include "renderer_identity.hh"
 #include "physics_owner/identity_inventory.hh"
+#include "inventory_ecm_diagnostics.hh"
 #include <ignition/gazebo/Server.hh>
 #include <ignition/gazebo/ServerConfig.hh>
 #include <ignition/gazebo/System.hh>
@@ -80,8 +81,16 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       LiveMark("physics_configure_and_step_observed_in_valid_owner_trace");
       LiveMark("visual_inventory_join_begin");
       const auto inventory=workcell::IdentityInventory(ecm);
-      record["owner_inventory_equal"]=inventory==owner["identity_inventory"];
+      // Preserve both complete snapshots before validation can reject the frame.
+      record["owner_inventory"]=owner["identity_inventory"];record["render_inventory"]=inventory;
+      record["inventory_ecm_diagnostics"]=workcell::InventoryEcmDiagnostics(ecm,owner["identity_inventory"],inventory);
+      record["inventory_raw_json_equal"]=inventory==owner["identity_inventory"];
+      record["inventory_comparison"]=workcell::CompareInventories(owner["identity_inventory"],inventory);
+      record["owner_inventory_equal"]=record["inventory_comparison"]["equivalent"];
       if(!record["owner_inventory_equal"].asBool())throw std::runtime_error("owner/render ECM inventory changed");
+      if(!record["inventory_comparison"]["schema_valid"].asBool() ||
+         !record["inventory_comparison"]["supported_geometry"].asBool())
+        throw std::runtime_error("unsupported complete inventory; see inventory_comparison/issues");
       // Fingerprint is calculated over retained records by the strict CPU validator.
       auto mapping=workcell::RendererIdentity(render.SceneManager(),owner,"");
       if(!mapping["complete"].asBool())throw std::runtime_error("incomplete live SceneManager map");
