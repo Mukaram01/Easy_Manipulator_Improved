@@ -1,0 +1,30 @@
+{
+  "decision": "BLOCKED",
+  "image_production": "PASS",
+  "scope": "static native fixture; exact recorded-matrix coordinate discrepancy only",
+  "projection_only_registration_upper_px": 3.5238669374079335e-05,
+  "native_intrinsics": [
+    {
+      "fx": 443.4049987792969,
+      "fy": 443.4049987792969,
+      "cx": 256,
+      "cy": 256
+    },
+    {
+      "fx": 443.4049377441406,
+      "fy": 443.4049377441406,
+      "cx": 256,
+      "cy": 256
+    },
+    {
+      "fx": 443.4049987792969,
+      "fy": 443.4049987792969,
+      "cx": 256,
+      "cy": 256
+    }
+  ],
+  "total_registration_bound_px": null,
+  "contact_authority": false,
+  "execution_goals": 0,
+  "outstanding_proof": "acquisition-time native projection provenance, shader/rasterization registration and depth-linearization enclosure; then Gazebo/DART state alignment"
+}

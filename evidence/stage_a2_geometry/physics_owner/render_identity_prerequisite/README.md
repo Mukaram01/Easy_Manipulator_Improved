@@ -107,3 +107,5 @@ No installed-library edits, Stage-A1 edits, bridge bypass, MoveIt or execution.
 **Exact next action:** qualify a disposable Ogre 2 RGB-D plus segmentation
 camera path sharing one witnessed render-scene update, before attempting the
 physical-object-to-genuine-EPD-mask association capture.
+
+Follow-up: [Ogre 2 native image production](../ogre2_image_production/README.md) now passes with Mesa software rendering. Total camera registration remains unqualified; this does not change the historical Ogre 1 capability result or grant contact authority.

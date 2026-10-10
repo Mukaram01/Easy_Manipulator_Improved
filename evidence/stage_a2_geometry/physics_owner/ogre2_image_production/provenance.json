@@ -1,0 +1,34 @@
+{
+  "baseline": "812487801f4955f22f89b0bae8900322aa842cd9",
+  "scope": "static native fixture only; no Gazebo, physics or EPD capture",
+  "probe_elf_sha256": "8a7eec699cf68b67a8f500911f1dcf4ff2e4d8a4ce2194c6f06ce86057200c00",
+  "loaded_libraries_sha256": {
+    "/usr/lib/x86_64-linux-gnu/ign-rendering-6/engine-plugins/libignition-rendering6-ogre2.so.6.6.4": "035669da4198c8b0f8e1c74d5f5c57b057be52b874e230db97e1270ba6a00522",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextHlmsPbs.so.2.2.5": "fb0f9e04257bbe847b14747d8878be2d91e72d4fe97e71a357e1c0d88c5306cc",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextHlmsUnlit.so.2.2.5": "ddf22dd67efa3fd98f9f7d654c2ae52d2ca47c8ac519bff4024f486f4ea0db95",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextMain.so.2.2.5": "83fd86bb832a792598bd044b62bc7c94cc513ca6591bf5dd8e999d7ee8e8c388",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextOverlay.so.2.2.5": "b03bfd81a3abab5b51be4ea5c6112b2b04f47ac8f89823cf657d485c2a7f20bb",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextPlanarReflections.so.2.2.5": "7b0dd4105dddf4b81e354a9cd379987211ac5fe092e7f5b7654d6325facd36cc",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6-ogre2.so.6.6.4": "035669da4198c8b0f8e1c74d5f5c57b057be52b874e230db97e1270ba6a00522",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6.so.6.6.4": "4ae221f1e0c906be560e8b6421b12e3fc34fed16183ea384b8acb719e5363768"
+  },
+  "same_loaded_library_paths": true,
+  "controlled_change": "LIBGL_ALWAYS_SOFTWARE=1 versus unset, same ELF, fixture and arguments",
+  "artifact_sha256": {
+    "depth.f32.gz": "7df487e94a2d970d46c5206d5742be6684379f194f64bf310ab15de13ea31ab4",
+    "labels.png": "d1b8ce557553bdc055169449d88ed9d55e83497dc2d306c37a10f4f8413005a5",
+    "native_readback.json": "fbd4890a6cac91e3f16e4d0d6e6fd65886a2b7dc4f2e96943d491bcbed892170",
+    "registration.json": "7f2954909b8c55848a49005d663c61fee40321db34fd3f9f667f4c26aa3c836c",
+    "rgb.png": "4c3d30a2b45dda66e095490e413648f46b8ac850a08e0f31594178eb99b71695",
+    "software_driver.log": "c57b45c86fce6b4c090198628c40599c033605ba570ae4c0fc62d13803c248db",
+    "svga_driver.log": "7fab8923ffba1a29dbf18bb44dffd9c823f4ac5193979d0366f26ea1f82eab50",
+    "svga_readback.json": "5de8e53f1575305e6c4c49b1c0d6f32f21f060a2daf8ef18bdabfd411d5ce03c"
+  },
+  "source_sha256": {
+    "scripts/stage_a_rgbd/render_identity_probe.cpp": "275e20e04eacc756eb8bc80085d661aeb4c0f24b2706580c06b40d18387779c8",
+    "scripts/stage_a_rgbd/render_triplet.hh": "a10a6ccabdca5b7dc95175fa1585c5b04990f8fe8ce3c889c01253078d77baee",
+    "scripts/stage_a_rgbd/CMakeLists.txt": "75ca5f60e5ec3ce01c311ad0ce14d61dd47121cac03e5168ffa169794e5e3328"
+  },
+  "source_note": "Recorded source hashes are capture-build inputs; final commit only strips whitespace in render_triplet.hh after verification.",
+  "final_header_sha256": "e166aebced0a7b99d44c86aef9bfeba7b1ab1d24440841aba3141d5b763d7283"
+}
