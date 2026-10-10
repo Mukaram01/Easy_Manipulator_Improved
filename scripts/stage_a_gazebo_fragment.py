@@ -13,6 +13,7 @@ import subprocess
 import uuid
 import xml.etree.ElementTree as ET
 import numpy as np
+from stage_a_fragment_camera import OVERLAP,SEPARATED,design,validate_profile
 from stage_a_fragment_identity import identity_scene_fingerprint,validate_live_fragment_capture
 
 
@@ -89,7 +90,7 @@ def disposable_world(source,owner,session,trace):
     return root
 
 
-def prepare(world,binary,owner,output):
+def prepare(world,binary,owner,output,camera_profile=OVERLAP):
     binary=Path(binary).resolve();owner=Path(owner).resolve();world=Path(world).resolve();output=Path(output).resolve()
     # Reuse the already built, tested owner; never silently substitute another ELF.
     root=Path(__file__).resolve().parents[1]
@@ -97,15 +98,17 @@ def prepare(world,binary,owner,output):
     if not shutil.which('gdb'):raise ValueError('bounded crash diagnostics require gdb')
     session=uuid.uuid4().hex
     derived=disposable_world(ET.parse(world).getroot(),owner,session,output/'owner.jsonl')
+    if camera_profile not in (OVERLAP,SEPARATED):raise ValueError('unknown camera profile')
+    camera_design=design(derived) if camera_profile==SEPARATED else None
     output.mkdir() # exclusive: no existing output/capture may be overwritten
     target=output/'world.sdf';ET.ElementTree(derived).write(target,encoding='utf-8',xml_declaration=True)
-    record=dict(session=session,output=str(output),binary=str(binary),owner=str(owner),world=str(target),
+    record=dict(camera_profile=camera_profile,camera_design=camera_design,session=session,output=str(output),binary=str(binary),owner=str(owner),world=str(target),
         input_world=str(world),input_world_sha256=sha(world),execution_goals=0,
         debugger=str(Path(shutil.which('gdb')).resolve()),debugger_sha256=sha(shutil.which('gdb')),
         owner_qualification_sha256=qualification,
         geometry_scope='unchanged authored separated cubes only; support/bin omitted; no contact claim',
         binary_sha256=sha(binary),owner_sha256=sha(owner),world_sha256=sha(target),
-        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/gl_context_witness.hh','scripts/stage_a_rgbd/gl_context_check.hh','scripts/stage_a_rgbd/material_contract.hh','scripts/stage_a_rgbd/material_witness.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_rgbd/renderer_identity.hh','scripts/stage_a_rgbd/renderer_identity_check.hh','scripts/stage_a_gazebo_fragment.py')})
+        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/gl_context_witness.hh','scripts/stage_a_rgbd/gl_context_check.hh','scripts/stage_a_rgbd/material_contract.hh','scripts/stage_a_rgbd/material_witness.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_rgbd/renderer_identity.hh','scripts/stage_a_rgbd/renderer_identity_check.hh','scripts/stage_a_fragment_camera.py','scripts/stage_a_gazebo_fragment.py')})
     (output/'preflight.json').write_text(json.dumps(record,indent=2)+'\n')
     return record
 
@@ -183,7 +186,7 @@ def run(output):
     debugger=output/'debugger.gdb'
     debugger.write_text(debugger_script(output))
     cmd=['timeout','60s',pre['debugger'],'--batch','--return-child-result','-x',str(debugger),'--args',
-        pre['binary'],pre['world'],str(output/'owner.jsonl'),str(output/'capture.json'),pre['session']]
+        pre['binary'],pre['world'],str(output/'owner.jsonl'),str(output/'capture.json'),pre['session'],pre.get('camera_profile',OVERLAP)]
     with (output/'stdout.log').open('wb') as stdout,(output/'stderr.log').open('wb') as stderr:
         try:
             process=subprocess.run(cmd,env=env,stdout=stdout,stderr=stderr,timeout=65,check=False)
@@ -212,10 +215,8 @@ def run(output):
         checked['rgb_sha256']=sha(output/'capture.json.rgb8');checked['id_sha256']=sha(output/'capture.json.ids.u32')
         result.update(validate_live_fragment_capture(owner,checked,rgb,ids))
         if not np.ptp(rgb):raise ValueError('blank RGB')
-        witness=report.get('occlusion_witness',{})
-        if report.get('occlusion_verified') is not True or witness.get('near_id')==witness.get('far_id') or \
-           int(ids[witness['y'],witness['x']])!=witness.get('near_id'):
-            raise ValueError('native occlusion witness missing/incorrect')
+        if report.get('camera_profile')!=pre.get('camera_profile',OVERLAP):raise ValueError('changed preflight camera profile')
+        validate_profile(report,ids)
         result['decision']='PASS_TESTED_LIVE_GAZEBO_IDENTITY_ONLY'
         result['rgb_sha256']=checked['rgb_sha256'];result['id_sha256']=checked['id_sha256']
         result['pixel_counts']={str(int(k)):int(v) for k,v in zip(*np.unique(ids,return_counts=True))}
@@ -240,7 +241,7 @@ def run(output):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--world',type=Path);parser.add_argument('--binary',type=Path);parser.add_argument('--owner',type=Path)
-    parser.add_argument('--run-prepared',action='store_true');args=parser.parse_args()
+    parser.add_argument('--camera-profile',choices=(OVERLAP,SEPARATED),default=OVERLAP);parser.add_argument('--run-prepared',action='store_true');args=parser.parse_args()
     if args.run_prepared:result=run(args.output);print(json.dumps({k:result.get(k) for k in ('decision','exit_code','pixel_counts','failure_reason')}));raise SystemExit(result['exit_code'] or (0 if result['decision'].startswith('PASS_') else 2))
     if not all((args.world,args.binary,args.owner)):parser.error('preflight requires world, binary, owner')
-    print(json.dumps(prepare(args.world,args.binary,args.owner,args.output),indent=2))
+    print(json.dumps(prepare(args.world,args.binary,args.owner,args.output,args.camera_profile),indent=2))

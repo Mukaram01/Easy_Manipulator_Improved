@@ -12,6 +12,7 @@ import subprocess
 import sys
 import numpy as np
 import cv2
+from stage_a_fragment_camera import OVERLAP,validate_profile
 from stage_a_fragment_identity import validate_live_fragment_capture,mask_identity
 
 def sha(data):return hashlib.sha256(data).hexdigest()
@@ -63,6 +64,8 @@ def load_capture(folder):
     rgb=np.frombuffer(raw('capture.json.rgb8'),dtype=np.uint8).reshape(256,256,3)
     ids=np.frombuffer(raw('capture.json.ids.u32'),dtype='<u4').reshape(256,256)
     binding=validate_live_fragment_capture(owner,report,rgb,ids)
+    require(pre.get('camera_profile',OVERLAP)==report.get('camera_profile'),'changed preflight camera profile')
+    validate_profile(report,ids)
     return owner,report,rgb,ids,binding
 
 def associate(owner,report,rgb,ids,detections,masks):
@@ -101,17 +104,17 @@ def run(args):
     rgb_path=args.output/'input.rgb8';rgb_path.write_bytes(rgb.tobytes())
     pre=dict(preprocessing=p,model=str(model),labels=str(labels),model_sha256=pinned['model'],labels_sha256=pinned['labels'],
         binary_sha256=sha(binary.read_bytes()),rgb_sha256=report['rgb_sha256'],id_sha256=report['id_sha256'],
-        session=report['session'],frame=report['frame'],acquisition=report['acquisition'],execution_backend='cpu',timeout_seconds=120)
+        camera_profile=report['camera_profile'],session=report['session'],frame=report['frame'],acquisition=report['acquisition'],execution_backend='cpu',timeout_seconds=120)
     root=Path(__file__).resolve().parents[1]
     epd=Path('/home/user/epd_ros2_ws/src/easy_perception_deployment/easy_perception_deployment')
-    pre['source_sha256']={str(f):sha(f.read_bytes()) for f in [Path(__file__),root/'scripts/stage_a_rgbd/epd_retained.cpp',
+    pre['source_sha256']={str(f):sha(f.read_bytes()) for f in [Path(__file__),root/'scripts/stage_a_rgbd/epd_retained.cpp',root/'scripts/stage_a_fragment_camera.py',
         epd/'src/p3_ort_base.cpp',epd/'src/ort_base.cpp',epd/'include/ort_cpp_lib/p3_ort_base.hpp']}
     pre['prepared_bgr_sha256']=sha(expected_bgr.tobytes());pre['python_opencv_version']=cv2.__version__
     (args.output/'preflight.json').write_text(json.dumps(pre,indent=2)+'\n')
     (args.output/'execution_claim.json').write_text(json.dumps(dict(inference_calls=1,simulator_runs=0)))
     with (args.output/'stdout.log').open('wb') as stdout,(args.output/'stderr.log').open('wb') as stderr:
         proc=subprocess.run(['timeout','120s',str(binary),str(model),str(labels),str(rgb_path),str(args.output)],stdout=stdout,stderr=stderr,env={**os.environ,'EPD_EXECUTION_BACKEND':'cpu'})
-    result=dict(exit_code=proc.returncode,preprocessing=p)
+    result=dict(exit_code=proc.returncode,preprocessing=p,camera_profile=report['camera_profile'])
     if proc.returncode:
         result.update(decision='BLOCKED',reason='external EPD process failed; no retry')
     else:

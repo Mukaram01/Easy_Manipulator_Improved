@@ -37,12 +37,12 @@ void main(){ rgb=vec4(baseColour,1.0);identity=entityId; }
 
 struct LiveCapture final:g::System,g::ISystemPostUpdate {
   g::RenderUtil render;
-  std::string ownerPath,path,session;
+  std::string ownerPath,path,session,profile;
   Json::Value record;
   bool initialized=false,done=false,ok=false;
   unsigned epoch=0;
   std::thread::id renderThread;
-  LiveCapture(std::string owner,std::string output,std::string run):ownerPath(owner),path(output),session(run) {
+  LiveCapture(std::string owner,std::string output,std::string run,std::string cameraProfile):ownerPath(owner),path(output),session(run),profile(cameraProfile) {
     record["session"]=session;record["schema"]="workcell_live_fragment/v1";
     record["contact_authority"]=false;record["execution_goals"]=0;
     record["timing_authority"]="BLOCKED";record["render_owner"]="GazeboRenderUtil";
@@ -187,13 +187,20 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       if(camera->getParentSceneNode()!=sm->getRootSceneNode(Ogre::SCENE_DYNAMIC))throw std::runtime_error("unexpected camera attachment");
       // Optical fixture only: separated original cubes overlap in this oblique view.
       // Authored camera constants do not establish object ownership or planning poses.
-      camera->setPosition(.20,-.217,.04);camera->lookAt(.35,-.217,.0125);
-      record["camera_profile"]="authored_oblique_overlap_fixture";camera->setNearClipDistance(.01);camera->setFarClipDistance(2);
+      if(profile=="separated_workpieces") {
+        camera->setFixedYawAxis(true,Ogre::Vector3::UNIT_Z);
+        camera->setPosition(.40,-.357,.0125);camera->lookAt(.40,-.217,.0125);
+      }else {camera->setPosition(.20,-.217,.04);camera->lookAt(.35,-.217,.0125);}
+      record["camera_profile"]=profile;camera->setNearClipDistance(.01);camera->setFarClipDistance(2);
       camera->setAspectRatio(1);camera->setFOVy(Ogre::Radian(1.0471975511965976));
       record["camera_id"]=Json::UInt64(camera->getId());
+      for(const auto &v:{std::make_pair("position",camera->getPosition()),std::make_pair("direction",camera->getDirection()),std::make_pair("up",camera->getUp())})
+        for(unsigned i=0;i<3;++i)record["camera_configuration"][v.first].append(v.second[i]);
+      record["camera_configuration"]["fovy"]=camera->getFOVy().valueRadians();
+      record["camera_configuration"]["near"]=camera->getNearClipDistance();record["camera_configuration"]["far"]=camera->getFarClipDistance();
       Json::Value acquisition;acquisition["session"]=session;acquisition["world_entity"]=world[0]["id"];
       acquisition["step"]=Json::UInt64(info.iterations);acquisition["stamp_ns"]=Json::Int64(info.simTime.count());
-      acquisition["scene_id"]=scene->Id();acquisition["frame"]=1;acquisition["update_epoch"]=epoch;
+      acquisition["camera_profile"]=profile;acquisition["scene_id"]=scene->Id();acquisition["frame"]=1;acquisition["update_epoch"]=epoch;
       acquisition["phase"]="PostUpdate_blocking_capture_no_subsequent_server_iteration";record["acquisition"]=acquisition;
       const auto labels=CaptureFragmentMrt(scene,sm,camera,record,path,LiveMark);
       for(const auto &[item,mat]:bound)if(item->getSubItem(0)->getMaterial()!=mat)throw std::runtime_error("material changed during acquisition");
@@ -204,6 +211,7 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       // Use each actual native Item's local BOX bounds and full scene transform.
       // Select a pixel whose centre AND four corners intersect both objects with
       // the same near/far ordering. This is not an EPD mask or association rule.
+      if(profile=="authored_oblique_overlap_fixture") {
       double best=1e9;Json::Value witness;
       for(unsigned y=0;y<256;++y)for(unsigned x=0;x<256;++x) {
         std::vector<unsigned> order;bool interior=true;
@@ -236,6 +244,23 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       if(witness.isNull() || witness["captured_id"]!=witness["near_id"])
         throw std::runtime_error("missing/incorrect native overlap occlusion witness");
       record["occlusion_verified"]=true;
+      } else {
+        std::vector<std::pair<unsigned,std::array<int,4>>> boxes;
+        for(const auto &[item,id]:itemIds) {
+          std::array<int,4> box{256,256,-1,-1};unsigned pixels=0;
+          for(int y=0;y<256;++y)for(int x=0;x<256;++x)if(labels[y*256+x]==id) {
+            ++pixels;box[0]=std::min(box[0],x);box[1]=std::min(box[1],y);box[2]=std::max(box[2],x);box[3]=std::max(box[3],y);
+          }
+          auto &w=record["separation_witness"];const auto key=std::to_string(id);w["pixel_counts"][key]=pixels;
+          for(auto edge:box)w["bounds"][key].append(edge);boxes.emplace_back(id,box);
+        }
+        std::sort(boxes.begin(),boxes.end(),[](const auto&a,const auto&b){return a.second[0]<b.second[0];});
+        if(boxes.size()!=2)throw std::runtime_error("incomplete separated view Items");
+        const int gap=boxes[1].second[0]-boxes[0].second[2]-1;record["separation_witness"]["blank_columns"]=gap;
+        if(gap<12)throw std::runtime_error("insufficient separated view projected gap");
+        for(const auto &[item,id]:itemIds)if(record["separation_witness"]["pixel_counts"][std::to_string(id)].asUInt()<1000)
+          throw std::runtime_error("insufficient separated view cube pixels");
+      }
 
       record["native_result"]="PASS_TESTED_VISUAL_DRAW_PRODUCTION";ok=true;
     }catch(const std::exception &e){done=true;ok=false;record["failure_reason"]=e.what();}
@@ -251,10 +276,12 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
 
 int main(int argc,char **argv) {
   // world, owner trace, output prefix, session; caller must use a fresh directory.
-  if(argc!=5)return 2;
+  if(argc!=5 && argc!=6)return 2;
+  const std::string profile=argc==6?argv[5]:"authored_oblique_overlap_fixture";
+  if(profile!="authored_oblique_overlap_fixture" && profile!="separated_workpieces")return 2;
   const std::string path=argv[3];
   for(const auto &s:{"",".rgb8",".ids.u32"})if(std::filesystem::exists(path+s))return 2;
-  auto capture=std::make_shared<LiveCapture>(argv[2],path,argv[4]);
+  auto capture=std::make_shared<LiveCapture>(argv[2],path,argv[4],profile);
   try {
     g::ServerConfig config;if(!config.SetSdfFile(argv[1]))throw std::runtime_error("invalid disposable SDF");
     LiveMark("server_construction_begin");
