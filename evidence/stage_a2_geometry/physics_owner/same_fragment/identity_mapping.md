@@ -1,5 +1,11 @@
 # Read-only Gazebo identity chain — runtime image binding BLOCKED
 
+Update: a live `RenderUtil` owner and same-Item MRT integration now compile.
+The sole disposable experiment stopped before drawing because Gazebo could not
+load the existing owner plugin. See [actual failure and implementation scope](live_gazebo_attempt/README.md).
+The missing acquisition hook described below records the baseline state; it is
+now implemented but **not runtime-qualified**. No collision-linked pixels exist.
+
 The successful manual RGB/R32_UINT capture is retained in `accepted_manual/`.
 Its fixture-local IDs are **not** Gazebo entity or physics collision IDs.
 

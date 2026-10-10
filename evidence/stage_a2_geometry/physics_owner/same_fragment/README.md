@@ -1,5 +1,9 @@
 # Same-fragment RGB / integer-ID fixture — production PASS; physics mapping BLOCKED
 
+Latest: the opt-in live Gazebo draw integration builds, but its one experiment
+failed before MRT because the physics-owner plugin did not load. No new RGB/ID
+buffers were produced. [Actual evidence and next blocker](live_gazebo_attempt/README.md).
+
 ## Preserved manual success (baseline 2753f7ab)
 
 The user's existing one-line `sm->updateSceneGraph()` change was preserved without reset/stash/clean or overwrite. The existing capture `/tmp/stage_a2_fixed_20261010_200705/` was independently read and validated; **no new GPU execution** was needed. ELF SHA256 matches the user's verified executed identity: **`3e998fd6cd255f8330a83f918c7a1235159bd76dfa35f53b55cb99084530fd9c`**. Current source SHA256 is `aa3d89c5c8fba4f2f03a6aa77cb78116e8ec4de64a297f675b7d1047d7213aed`. The manual exit 0 is user-reported; no independent process exit log is retained. Native `fixture_result=PASS` and image contents are independently verified. Hashes were verified at preservation, not falsely described as a new pre-run witness.

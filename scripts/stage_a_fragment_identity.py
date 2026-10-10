@@ -118,3 +118,32 @@ def bind_visual_collisions(owner,renderer,expected):
     return dict(mappings=mappings,scene_fingerprint=fingerprint,
         identity_metadata_consistency='PASS',mrt_binding='BLOCKED_NOT_WITNESSED',
         contact_authority=False,execution_goals=0)
+
+
+def validate_live_fragment_capture(owner,report,rgb,ids):
+    """Validate opt-in native draw provenance; NEVER promote timing/contact."""
+    require(report.get('render_owner')=='GazeboRenderUtil' and
+            report.get('geometry_source')=='SceneManager::VisualById::GeometryByIndex::OgreObject' and
+            report.get('owner_inventory_equal') is True and report.get('render_pass_count')==1 and
+            report.get('rgb_profile')=='opaque_unlit_diffuse_MRT','unsupported live capture')
+    acquisition=report.get('acquisition',{});updates=report.get('scene_updates',[])
+    require(len(updates)>=2 and all(u.get('epoch')==i+1 for i,u in enumerate(updates)) and
+            acquisition.get('update_epoch')==updates[-1]['epoch'] and
+            all(acquisition.get(k)==updates[-1].get(k) for k in ('step','stamp_ns')) and
+            acquisition.get('frame')==report.get('frame'),'stale/incomplete render updates')
+    expected={k:acquisition.get(k) for k in ('session','world_entity','step','stamp_ns','scene_id')}
+    expected['scene_fingerprint']=identity_scene_fingerprint(owner)
+    result=bind_visual_collisions(owner,report.get('renderer',{}),expected)
+    validate_fragment_capture(report,rgb,ids,expected['session'],acquisition['frame'])
+    bindings=report.get('draw_bindings',[])
+    require(len(bindings)==len(result['mappings']) and
+            all(b.get('original_item_reused') is True and type(b.get('item_id')) is int for b in bindings) and
+            len({b['item_id'] for b in bindings})==len(bindings),'missing/duplicate/replaced native item')
+    actual=[(b.get('visual_id'),b.get('renderer_id')) for b in bindings]
+    required=[(m['visual_id'],m['renderer_id']) for m in result['mappings']]
+    require(sorted(actual)==sorted(required),'draw/visual identity mismatch')
+    require({v['id'] for v in report['inventory']}=={m['renderer_id'] for m in result['mappings']},
+            'RGB/ID inventory differs from native mapping')
+    result.update(visual_collision_draw_binding='PASS',mrt_binding='PASS_TESTED_OPAQUE_BOX_CAPTURE',
+                  timing_authority='BLOCKED',contact_authority=False)
+    return result
