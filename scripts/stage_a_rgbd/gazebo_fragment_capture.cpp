@@ -1,5 +1,6 @@
 // Disposable Gazebo render owner. No ROS/EPD/planning/controller interfaces.
 #include "fragment_mrt.hh"
+#include "gl_context_witness.hh"
 #include "renderer_identity.hh"
 #include "physics_owner/identity_inventory.hh"
 #include "inventory_ecm_diagnostics.hh"
@@ -98,8 +99,20 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       LiveMark("visual_inventory_join_complete");
       auto scene=render.Scene();auto native=std::dynamic_pointer_cast<rd::Ogre2Scene>(scene);
       if(!native)throw std::runtime_error("unsupported native renderer");auto sm=native->OgreSceneManager();
-      GLint major=0,minor=0;glGetIntegerv(GL_MAJOR_VERSION,&major);glGetIntegerv(GL_MINOR_VERSION,&minor);
-      if(major<4||(major==4&&minor<5))throw std::runtime_error("GL4.5 typed clear API required");
+      record["gl_context"]["before_reacquire"]=GlContextWitness();
+      record["gl_context"]["same_render_thread"]=renderThread==std::this_thread::get_id();
+      auto rs=Ogre::Root::getSingleton().getRenderSystem();
+      if(!rs || rs->getName()!="OpenGL 3+ Rendering Subsystem")throw std::runtime_error("unsupported Ogre GL context owner");
+      record["gl_context"]["render_system"]=rs->getName();
+      // Public Ogre lifecycle API reacquires its EXISTING current context.
+      // RenderUtil initialization and capture are on the same checked thread.
+      record["gl_context"]["activation_api"]="Ogre::RenderSystem::postExtraThreadsStarted";
+      rs->postExtraThreadsStarted();
+      record["gl_context"]["after_reacquire"]=GlContextWitness();
+      // Flush diagnostics before this or any subsequent MRT gate can reject.
+      {std::ofstream diagnostics(path);diagnostics<<record<<'\n';diagnostics.flush();}
+      const auto glState=record["gl_context"]["after_reacquire"]["classification"].asString();
+      if(glState!="PASS_CURRENT_GL45")throw std::runtime_error("GL4.5 typed clear API required: "+glState);
       const auto world=inventory["worlds"];
       if(world.size()!=1 || world[0]["id"]!=owner["world_entity"])throw std::runtime_error("world identity mismatch");
       // Controlled profile: no subset silently selected from a larger world.

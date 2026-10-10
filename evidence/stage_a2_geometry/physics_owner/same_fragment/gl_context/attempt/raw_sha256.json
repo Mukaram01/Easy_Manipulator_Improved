@@ -1,0 +1,14 @@
+{
+  "capture.json": "402bf41b8b5dbedb62b9428eb37e80e7518f51dd3f9cf071c8d3a4dd90cec36c",
+  "capture.json.maps": "9491ca42d6370e406656f8e3cb840cc09cddbd4946ba7da9ab44248a8c7ca907",
+  "child_exit.json": "d26b0745a1a2f3d452def2624b3b0bcc425124b18690dbf694f4de0ff91cb07e",
+  "debugger.gdb": "16587e4617d07015c23833776f514fbbc15b3111f516dc8c27df69007aba07da",
+  "execution_claim.json": "58e459636fd61ed4b027de644c607b6d1982b89f8195af3db1e3874f75afaace",
+  "owner.jsonl": "ed1a5af107cd9d331da14df4b12afd3c65f90b903fd168ed852a077eb0b595af",
+  "preflight.json": "dc702340f17e9740d99e764b1a31918192b67bdc585c586d068034a6cccf7d8f",
+  "process_exit.json": "9d37f67e87ef8fa74cd2c85c4a822952a8485e956149e635f472f3d59ccccd42",
+  "result.json": "bd0f4e645e2e8a898de1ba8d8efcb63df4194b2f72572367f2ca17c6ecab3344",
+  "stderr.log": "690ded3e167c89a9fe69216a4cd929975eee708e0a4647bead9a19431c5e9cfa",
+  "stdout.log": "c9cd3b56ffefae99241ab6eba610feed5f872a295f2165ae6bb903ab74dcdc67",
+  "world.sdf": "0472458cb2c088998a0f7b077336cb2a247e546cd9f82f048405d684cc5496c1"
+}

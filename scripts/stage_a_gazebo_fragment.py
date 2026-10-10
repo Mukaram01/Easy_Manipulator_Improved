@@ -75,6 +75,13 @@ def disposable_world(source,owner,session,trace):
     # No support/contact claim: two original cubes, without bin/support/sensors.
     for child in list(world):
         if child.tag in ('model','plugin','include','actor','sensor','light'):world.remove(child)
+    scenes=world.findall('scene')
+    if len(scenes)>1:raise ValueError('multiple scene definitions')
+    scene=scenes[0] if scenes else ET.SubElement(world,'scene')
+    grids=scene.findall('grid')
+    if len(grids)>1:raise ValueError('multiple grid settings')
+    grid=grids[0] if grids else ET.SubElement(scene,'grid')
+    grid.text='false'
     plugin=copy.deepcopy(physics[0]);plugin.set('filename',str(owner));plugin.set('name','ignition::gazebo::systems::WorkcellOwnerPhysics')
     for key,value in dict(owner_output=str(trace),owner_session=session,owner_record_steps='2').items():ET.SubElement(plugin,key).text=value
     world.append(plugin)
@@ -98,13 +105,16 @@ def prepare(world,binary,owner,output):
         owner_qualification_sha256=qualification,
         geometry_scope='unchanged authored separated cubes only; support/bin omitted; no contact claim',
         binary_sha256=sha(binary),owner_sha256=sha(owner),world_sha256=sha(target),
-        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_rgbd/renderer_identity.hh','scripts/stage_a_rgbd/renderer_identity_check.hh','scripts/stage_a_gazebo_fragment.py')})
+        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/gl_context_witness.hh','scripts/stage_a_rgbd/gl_context_check.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_rgbd/renderer_identity.hh','scripts/stage_a_rgbd/renderer_identity_check.hh','scripts/stage_a_gazebo_fragment.py')})
     (output/'preflight.json').write_text(json.dumps(record,indent=2)+'\n')
     return record
 
 
 def validate_prepared_world(pre):
     world=ET.parse(pre['world']).getroot().find('world')
+    scenes=world.findall('scene')
+    if len(scenes)!=1 or len(scenes[0].findall('grid'))!=1 or scenes[0].findtext('grid')!='false':
+        raise ValueError('disposable grid must be disabled')
     plugins=world.findall('plugin')
     if len(plugins)!=1 or len(list(world.iter('plugin')))!=1:raise ValueError('exactly one owner System required')
     p=plugins[0]

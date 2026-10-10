@@ -63,3 +63,15 @@ def test_incomplete_native_mapping_is_retained_before_rejection_and_hash_pinned(
     runner=(root/'scripts/stage_a_gazebo_fragment.py').read_text()
     assert "'scripts/stage_a_rgbd/renderer_identity.hh'" in runner
     assert "'scripts/stage_a_rgbd/renderer_identity_check.hh'" in runner
+
+
+def test_native_gl_context_reacquisition_is_witnessed_and_strict():
+    root=Path(__file__).resolve().parents[1]
+    source=(root/'scripts/stage_a_rgbd/gazebo_fragment_capture.cpp').read_text()
+    assert source.index('["before_reacquire"]=GlContextWitness()')<source.index('rs->postExtraThreadsStarted()')
+    assert source.index('rs->postExtraThreadsStarted()')<source.index('["after_reacquire"]=GlContextWitness()')
+    assert source.index('diagnostics.flush()')<source.index('if(glState!="PASS_CURRENT_GL45")')
+    assert 'renderThread!=std::this_thread::get_id()' in source
+    runner=(root/'scripts/stage_a_gazebo_fragment.py').read_text()
+    for name in ('gl_context_witness.hh','gl_context_check.hh'):
+        assert "'scripts/stage_a_rgbd/"+name+"'" in runner

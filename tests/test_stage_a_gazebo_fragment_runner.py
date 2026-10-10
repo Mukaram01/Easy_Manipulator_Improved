@@ -129,3 +129,48 @@ def test_fatal_child_without_final_report_still_retains_exit_and_marker(tmp_path
     assert json.loads((tmp_path/'process_exit.json').read_text())['child']['signal']=='SIGILL'
     with pytest.raises(FileExistsError):runner.run(tmp_path)
     assert len(calls)==1
+
+
+def test_disposable_grid_disabled_without_changing_cubes():
+    source=world()
+    scene=ET.SubElement(source.find('world'),'scene')
+    ET.SubElement(scene,'grid').text='true'
+
+    original=ET.tostring(source)
+    cubes=[ET.tostring(m) for m in source.find('world').findall('model')]
+
+    result=runner.disposable_world(
+        source,'/owner.so','session','/owner.jsonl')
+
+    assert ET.tostring(source)==original
+    assert result.findtext('world/scene/grid')=='false'
+    assert [ET.tostring(m) for m in result.find('world').findall('model')]==cubes
+
+
+@pytest.mark.parametrize('mode',['enabled','missing','duplicate'])
+def test_prepared_world_rejects_grid_mutation(tmp_path,mode):
+    root=runner.disposable_world(
+        world(),'/owner.so','session',tmp_path/'owner.jsonl')
+
+    scene=root.find('world/scene')
+    grid=scene.find('grid')
+
+    if mode=='enabled':
+        grid.text='true'
+    elif mode=='missing':
+        scene.remove(grid)
+    else:
+        ET.SubElement(scene,'grid').text='false'
+
+    target=tmp_path/'world.sdf'
+    ET.ElementTree(root).write(target)
+
+    pre=dict(
+        world=str(target),
+        owner='/owner.so',
+        session='session',
+        output=str(tmp_path)
+    )
+
+    with pytest.raises(ValueError):
+        runner.validate_prepared_world(pre)
