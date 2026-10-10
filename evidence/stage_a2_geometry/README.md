@@ -267,3 +267,15 @@ table by 7.809–8.679 mm, above the existing 0.1 mm extraction limit. Both obje
 fail the existing extraction prerequisite; full-cycle acceptance was NOT RUN.
 See `separated_experiment.json` for compact measurements and provenance. No
 production code, collision rule, bridge gate or protected checkout was changed.
+
+## Support-conditioning proof review — 2026-10-10
+
+[Focused architecture/evidence review](support_conditioning_review.md) confirms
+that existing support policies certify the actual collision shape within 0.1 mm;
+they cannot interpret an unconditioned envelope as verified physical contact.
+Both separated objects still fail admission. Exported measured-face/dimension
+bounds admit bottom-face depths of about 0.251 mm as well as valid resting states.
+A verified support-conditioned physical pose set and typed carried-motion proof
+are missing. No exemption or implementation change was made; 29 focused Python
+and 24 native regressions PASS. Full-cycle acceptance was NOT RUN under the
+required admission stop gate. See the adjacent review JSON for exact evidence.

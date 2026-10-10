@@ -1,0 +1,86 @@
+{
+  "counterexamples": [
+    {
+      "object_id": "epd_27402000000_0",
+      "verified_support_binding_present": false,
+      "largest_declared_height_m": 0.02525,
+      "same_measured_top_face_height_m": 0.024999298095703094,
+      "counterexample_centre_xyz_m": [
+        0.45072149361636904,
+        -0.2163870507809421,
+        0.012374298095703094
+      ],
+      "centre_shift_from_estimate_m": 0.000125,
+      "existing_centre_uncertainty_m": 0.002781151900472069,
+      "counterexample_bottom_face_centre_z_m": -0.0002507019042969072,
+      "counterexample_penetration_lower_m": 0.0002507019042969072,
+      "allowed_depth_m": 0.0001,
+      "penetrating_configuration_not_excluded_by_existing_pose_dimension_bounds": true
+    },
+    {
+      "object_id": "epd_27402000000_1",
+      "verified_support_binding_present": false,
+      "largest_declared_height_m": 0.02525,
+      "same_measured_top_face_height_m": 0.024998809362361256,
+      "counterexample_centre_xyz_m": [
+        0.35093994633616477,
+        -0.21623012543771974,
+        0.012373809482480205
+      ],
+      "centre_shift_from_estimate_m": 0.000125,
+      "existing_centre_uncertainty_m": 0.002961785183777331,
+      "counterexample_bottom_face_centre_z_m": -0.0002511903974008467,
+      "counterexample_penetration_lower_m": 0.0002511903974008467,
+      "allowed_depth_m": 0.0001,
+      "penetrating_configuration_not_excluded_by_existing_pose_dimension_bounds": true
+    }
+  ],
+  "binding_negative_checks": {
+    "missing_association": "PASS: no eligible support binding",
+    "wrong_association": "PASS: no eligible support binding",
+    "unknown_support_frame": "PASS: no eligible support binding",
+    "tilted_support": "PASS: no eligible support binding"
+  },
+  "baseline_commit": "beb235b81ddcc67c37d681667b18613a26e68eed",
+  "result": "BLOCKED",
+  "implementation_changed": false,
+  "reason": "Current representation lacks a verified support-conditioned physical pose/shape set and typed native carried-motion contact certificate. Nominal resting consistency alone cannot exclude all invalid states allowed by exported uncertainty.",
+  "admission": {
+    "epd_27402000000_0": {
+      "result": "BLOCKED",
+      "neighbor": "workcell::support_surface_table",
+      "reason": "EXTRACTION_INITIAL_DEPTH",
+      "envelope_depth_m": 0.007808696750421378
+    },
+    "epd_27402000000_1": {
+      "result": "BLOCKED",
+      "neighbor": "workcell::support_surface_table",
+      "reason": "EXTRACTION_INITIAL_DEPTH",
+      "envelope_depth_m": 0.008678594537525508
+    }
+  },
+  "verification": {
+    "python_regressions": "29 PASS (28 geometry/extraction + 1 support binding)",
+    "native_regressions": "24 PASS",
+    "affected_native_build": "PASS: existing current library/test targets, no source changes",
+    "independent_review": "No existing safe mechanism found; minimal extension described in adjacent review document."
+  },
+  "full_plan_only_acceptance": "NOT RUN: extraction prerequisites failed",
+  "stage_results": {
+    "approach": "NOT RUN for separated capture",
+    "descent": "NOT RUN for separated capture",
+    "closing": "NOT RUN for separated capture",
+    "lift": "NOT RUN for separated capture",
+    "retreat": "NOT RUN for separated capture",
+    "transfer": "NOT RUN for separated capture",
+    "placement": "NOT RUN for separated capture",
+    "release": "NOT RUN for separated capture",
+    "home": "NOT RUN for separated capture"
+  },
+  "execution_goals_sent": 0,
+  "simulator_truth_used_as_planning_input": false,
+  "bridge_qualification_changed": false,
+  "envelopes_and_uncertainty_changed": false,
+  "tolerance_m": 0.0001,
+  "protected_checkout_unchanged": true
+}
