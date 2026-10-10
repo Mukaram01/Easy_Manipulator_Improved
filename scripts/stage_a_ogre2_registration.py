@@ -106,3 +106,92 @@ def analyse(report,rgb,depth,labels):
         native_intrinsics=[dict(fx=float(p[0][0]*256),fy=float(p[1][1]*256),cx=256,cy=256) for p in projections],
         total_registration_bound_px=None,contact_authority=False,execution_goals=0,
         outstanding_proof='active compositor-pass shader/uniform and rasterization/precision enclosure; then Gazebo/DART state alignment')
+
+
+def compositor_authority(report):
+    """Post-pass GL observations cannot assert draw-time bindings or a GPU bound.
+
+    Always emit an explicit empty qualified mask; no caller-supplied PASS or
+    numeric precision field can upgrade this diagnostic to contact authority.
+    """
+    malformed=not isinstance(report,dict)
+    if malformed:report={}
+    reasons={'DRAW_TIME_BINDING_AND_GPU_ARITHMETIC_UNQUALIFIED',
+        'RASTER_COVERAGE_VISIBILITY_AND_TEXTURE_UNIT_MAPPING_UNQUALIFIED'}
+    if malformed:reasons.add('CAPTURE_SCHEMA_INVALID')
+    events=report.get('compositor_events',[])
+    if not isinstance(events,list):reasons.add('CAPTURE_SCHEMA_INVALID');events=[]
+    if not events:reasons.add('MISSING_COMPOSITOR_EVENTS')
+    observed=0
+    acquisitions=report.get('acquisition_events',[])
+    if not isinstance(acquisitions,list) or any(not isinstance(a,dict) for a in acquisitions):
+        acquisitions=[];reasons.add('CAPTURE_SCHEMA_INVALID')
+    for index,e in enumerate(events):
+        if not isinstance(e,dict):reasons.add('CAPTURE_SCHEMA_INVALID');continue
+        if e.get('sequence')!=index:reasons.add('INCOMPLETE_COMPOSITOR_SEQUENCE')
+        boundary=e.get('acquisition_sequence',-1)
+        begins=[a.get('sequence',-1) for a in acquisitions if a.get('phase')=='render_begin' and (a.get('batch'),a.get('camera'))==(e.get('batch'),e.get('camera'))]
+        ends=[a.get('sequence',-1) for a in acquisitions if a.get('phase')=='render_end' and (a.get('batch'),a.get('camera'))==(e.get('batch'),e.get('camera'))]
+        reads=[a.get('sequence',-1) for a in acquisitions if a.get('phase')=='readback' and (a.get('batch'),a.get('camera'))==(e.get('batch'),e.get('camera'))]
+        if not(len(begins)==len(ends)==len(reads)==1 and begins[0]<boundary<=ends[0]<reads[0]):
+            reasons.add('COMPOSITOR_READBACK_ASSOCIATION_INVALID')
+        if e.get('session')!=report.get('native_session_id') or e.get('batch') not in (1,2,3):
+            reasons.add('STALE_COMPOSITOR_STATE')
+        if not e.get('pass_id') or e.get('phase')!='pass_post':reasons.add('INCOMPLETE_PASS_IDENTITY')
+        gl=e.get('gl',{})
+        if not isinstance(gl,dict):reasons.add('CAPTURE_SCHEMA_INVALID');continue
+        if gl.get('status')!='POST_EXECUTION_STATE':reasons.add('UNSUPPORTED_OR_MISSING_GL_STATE')
+        if not gl.get('fragment_program'):reasons.add('MISSING_ACTIVE_FRAGMENT_PROGRAM')
+        else:observed+=1
+        if e.get('pass_type') in ('scene','quad') and gl.get('viewport')!=[0,0,512,512]:reasons.add('UNSUPPORTED_GPU_VIEWPORT')
+        if gl.get('samples') not in (0,1):reasons.add('UNSUPPORTED_MULTISAMPLING')
+        if gl.get('gl_error_before') or gl.get('gl_error_after'):reasons.add('GL_QUERY_ERROR')
+        # The current diagnostic never asserts program correspondence from a
+        # matching CPU name or from an opaque program-binary blob.
+        if gl.get('draw_time_binding')!='UNKNOWN':reasons.add('UNSUPPORTED_AUTHORITY_CLAIM')
+        for name,values in gl.get('uniforms',{}).items():
+            if name in ('near','far','projectionParams'):
+                try:finite=np.all(np.isfinite(np.asarray(values,dtype=float)))
+                except (ValueError,TypeError):finite=False
+                if not finite:reasons.add('NONFINITE_DEPTH_CONVERSION')
+        depth=gl.get('depth_attachment',{})
+        if depth.get('format') not in (None,36012):reasons.add('UNSUPPORTED_DEPTH_ATTACHMENT')
+        cpu=e.get('pass_resource',{}).get('uniforms',{})
+        for name in ('near','far','projectionParams'):
+            if name in cpu and name in gl.get('uniforms',{}) and cpu[name]!=gl['uniforms'][name]:
+                reasons.add('CPU_GL_UNIFORM_DISAGREEMENT')
+    return dict(decision='BLOCKED',qualified_pixel_count=0,excluded_pixel_count=512*512,
+        qualified_pixel_mask=np.zeros((512,512),dtype=np.uint8),
+        shader_depth_error_m=None,total_registration_bound_px=None,
+        post_pass_fragment_observations=observed,failure_reasons=sorted(reasons),
+        contact_authority=False,execution_goals=0)
+
+
+if __name__=='__main__':
+    import argparse,json,hashlib
+    from pathlib import Path
+    parser=argparse.ArgumentParser(description='Fail-closed native image/compositor diagnostic; never grants contact authority')
+    parser.add_argument('capture_report',type=Path);parser.add_argument('new_result',type=Path)
+    args=parser.parse_args()
+    mask_path=Path(str(args.new_result)+'.mask.uint8')
+    if args.new_result.exists() or mask_path.exists():parser.error('result and mask paths must be new')
+    camera={};report={};input_error=None
+    try:
+        report=json.loads(args.capture_report.read_text())
+        raw=lambda suffix,dtype,shape:np.fromfile(str(args.capture_report)+suffix,dtype).reshape(shape)
+        camera=analyse(report,raw('.rgb8',np.uint8,(512,512,3)),raw('.depth.f32',np.float32,(512,512)),raw('.labels.rgb8',np.uint8,(512,512,3)))
+    except (OSError,ValueError,KeyError,TypeError,AttributeError) as error:
+        input_error=str(error)
+    try:result=compositor_authority(report)
+    except (ValueError,TypeError,KeyError,AttributeError,IndexError) as error:
+        result=compositor_authority({});result['failure_reasons'].append('CAPTURE_SCHEMA_INVALID');input_error=str(error)
+    mask=result.pop('qualified_pixel_mask')
+    if input_error:
+        result['failure_reasons'].append('CAPTURE_INPUT_INVALID');result['input_error']=input_error
+    result['camera']=camera
+    result['schema']='workcell_ogre2_registration/v2'
+    mask.tofile(mask_path)
+    result['qualified_mask']=dict(path=str(mask_path),format='uint8',width=512,height=512,
+        sha256=hashlib.sha256(mask.tobytes()).hexdigest())
+    args.new_result.write_text(json.dumps(result,indent=2)+'\n')
+    raise SystemExit(2)

@@ -1,0 +1,62 @@
+{
+  "decision": "BLOCKED",
+  "qualified_pixel_count": 0,
+  "excluded_pixel_count": 262144,
+  "shader_depth_error_m": null,
+  "total_registration_bound_px": null,
+  "post_pass_fragment_observations": 28,
+  "failure_reasons": [
+    "DRAW_TIME_BINDING_AND_GPU_ARITHMETIC_UNQUALIFIED",
+    "MISSING_ACTIVE_FRAGMENT_PROGRAM",
+    "RASTER_COVERAGE_VISIBILITY_AND_TEXTURE_UNIT_MAPPING_UNQUALIFIED"
+  ],
+  "contact_authority": false,
+  "execution_goals": 0,
+  "camera": {
+    "camera_callback_state": "PASS_STATIC_CPU_WITNESS",
+    "viewport_state": "LAST_VIEWPORT_RECORDED",
+    "qualified_pixel_count": 0,
+    "excluded_pixel_count": 262144,
+    "qualified_pixel_registration_error_px": null,
+    "qualified_depth_error_m": null,
+    "pixel_exclusion_reason": "active compositor uniforms, raster coverage, visibility and GPU arithmetic unqualified",
+    "binary32_to_binary64_matrix_conversion_error": 0,
+    "decision": "BLOCKED",
+    "image_production": "PASS",
+    "scope": "static native fixture; exact recorded-matrix coordinate discrepancy only",
+    "projection_only_registration_upper_px": 3.5238669374079335e-05,
+    "native_intrinsics": [
+      {
+        "fx": 443.4049987792969,
+        "fy": 443.4049987792969,
+        "cx": 256,
+        "cy": 256
+      },
+      {
+        "fx": 443.4049377441406,
+        "fy": 443.4049377441406,
+        "cx": 256,
+        "cy": 256
+      },
+      {
+        "fx": 443.4049987792969,
+        "fy": 443.4049987792969,
+        "cx": 256,
+        "cy": 256
+      }
+    ],
+    "total_registration_bound_px": null,
+    "contact_authority": false,
+    "execution_goals": 0,
+    "outstanding_proof": "active compositor-pass shader/uniform and rasterization/precision enclosure; then Gazebo/DART state alignment"
+  },
+  "schema": "workcell_ogre2_registration/v2",
+  "qualified_mask": {
+    "path": "qualified_mask.uint8.gz",
+    "format": "uint8",
+    "width": 512,
+    "height": 512,
+    "sha256": "8a39d2abd3999ab73c34db2476849cddf303ce389b35826850f9a700589b4a90",
+    "compression": "gzip; SHA-256 refers to decompressed bytes"
+  }
+}

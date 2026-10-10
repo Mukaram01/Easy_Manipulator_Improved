@@ -9,6 +9,7 @@
 #include <OgreTechnique.h>
 #include <OgrePass.h>
 #include <OgreGpuProgram.h>
+#include "uniform_readback.hh"
 #include <functional>
 #include <chrono>
 #include <unistd.h>
@@ -57,6 +58,7 @@ inline Json::Value depthMaterialState(const std::string &name) {
         for(const auto &uniform:{"projectionParams","near","far","min","max"}) {
           auto definition=parameters->_findNamedConstantDefinition(uniform,false);
           if(!definition)continue;
+          if(!readableFloatUniform(*definition,std::string(uniform)=="projectionParams"?2u:1u,parameters->getFloatConstantList().size())) {m["uniform_status"][uniform]="UNKNOWN_UNSUPPORTED_STORAGE";continue;}
           const auto data=static_cast<const Ogre::GpuProgramParameters &>(*parameters).getFloatPointer(definition->physicalIndex);
           Json::Value values(Json::arrayValue);
           for(unsigned i=0;i<(std::string(uniform)=="projectionParams"?2u:1u);++i) {
@@ -80,6 +82,8 @@ struct ProbeCameraListener final:Ogre::Camera::Listener {
   void cameraPreRenderScene(Ogre::Camera *c) override {record(c,"scene_pre");}
   void cameraPostRenderScene(Ogre::Camera *c) override {record(c,"scene_post");}
 };
+
+#include "compositor_witness.hh"
 
 inline bool images(const rd::ScenePtr &scene,const std::filesystem::path &output,Json::Value &r,
     const ignition::math::Pose3d &pose=ignition::math::Pose3d::Zero,
@@ -115,7 +119,8 @@ inline bool images(const rd::ScenePtr &scene,const std::filesystem::path &output
   }
   r["native_session_id"]=std::to_string(getpid())+":"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
   r["acquisition_events"]=Json::Value(Json::arrayValue);
-  int activeBatch=0;
+  int activeBatch=0,activeCamera=-1;
+  CompositorWitness compositor(r,activeBatch,activeCamera,output);
   auto event=[&](int camera,const char *phase,const Json::Value &state=Json::Value()) {
     Json::Value e;e["sequence"]=r["acquisition_events"].size();e["session"]=r["native_session_id"];
     e["batch"]=activeBatch;e["camera"]=camera;e["phase"]=phase;e["state"]=state;
@@ -126,6 +131,7 @@ inline bool images(const rd::ScenePtr &scene,const std::filesystem::path &output
     unsigned count=0;auto actual=attachedCamera(cameras[index],count);
     if(count!=1 || !actual){r["reason"]="AMBIGUOUS_ATTACHED_CAMERA";return false;}
     listeners.emplace_back(new ProbeCameraListener(actual,[&,index](Ogre::Camera *c,const char *phase) {
+      compositor.observe(c);
       Json::Value state;unsigned inventory=0;auto attached=attachedCamera(cameras[index],inventory);
       state["attached_camera_count"]=inventory;state["attached_matches"]=attached==c;
       state["camera_id"]=Json::UInt64(c->getId());state["name"]=c->getName();
@@ -162,7 +168,7 @@ inline bool images(const rd::ScenePtr &scene,const std::filesystem::path &output
   for(int batch=1;batch<=3;++batch) {
     activeBatch=batch;scene->PreRender();event(-1,"scene_pre_render");
     for(int index=0;index<3;++index) {
-      event(index,"render_begin");cameras[index]->Render();event(index,"render_end");
+      activeCamera=index;event(index,"render_begin");cameras[index]->Render();event(index,"render_end");
     }
     rgb->PostRender();rgb->Copy(image);event(0,"readback");
     depth->PostRender();seg->PostRender();

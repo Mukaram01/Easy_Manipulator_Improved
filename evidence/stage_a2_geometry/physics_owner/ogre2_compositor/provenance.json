@@ -1,0 +1,107 @@
+{
+  "baseline": "b73ba340a99381554acbf4d5c49a87f3bf56246b",
+  "session": "330398:255548796335860",
+  "fixture_runs": 1,
+  "loaded_library_sha256": {
+    "/usr/lib/x86_64-linux-gnu/dri/swrast_dri.so": "1a274eaf6b7a9453256367af11f24deb858425df3336f7779a36b7644f3f425f",
+    "/usr/lib/x86_64-linux-gnu/ign-rendering-6/engine-plugins/libignition-rendering6-ogre2.so.6.6.4": "035669da4198c8b0f8e1c74d5f5c57b057be52b874e230db97e1270ba6a00522",
+    "/usr/lib/x86_64-linux-gnu/libGL.so.1.7.0": "92e6ea9f8caa3c265f3ef141a122a18f7d2e27d6e5fd2b490cfea83262df745e",
+    "/usr/lib/x86_64-linux-gnu/libGLX.so.0.0.0": "19ad2625b20a3afe6f5e55f9acd1e18e0dfc81b0965d7d3f2181a05b6d48edbf",
+    "/usr/lib/x86_64-linux-gnu/libGLX_mesa.so.0.0.0": "75aa70461b471d69f95a48a29e8fb06bb919921f305799609132128a3f3942e9",
+    "/usr/lib/x86_64-linux-gnu/libGLdispatch.so.0.0.0": "a4f2642498fba54d2f39e90ca3daa94340cdd52198473185a5285608ae318cb6",
+    "/usr/lib/x86_64-linux-gnu/libLLVM-15.so.1": "de2e35a4f9b3f6a06d2a8a3342b3f62a3842b1923b8dfc2a6ce48e0cc2d1e85d",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextHlmsPbs.so.2.2.5": "fb0f9e04257bbe847b14747d8878be2d91e72d4fe97e71a357e1c0d88c5306cc",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextHlmsUnlit.so.2.2.5": "ddf22dd67efa3fd98f9f7d654c2ae52d2ca47c8ac519bff4024f486f4ea0db95",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextMain.so.2.2.5": "83fd86bb832a792598bd044b62bc7c94cc513ca6591bf5dd8e999d7ee8e8c388",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextOverlay.so.2.2.5": "b03bfd81a3abab5b51be4ea5c6112b2b04f47ac8f89823cf657d485c2a7f20bb",
+    "/usr/lib/x86_64-linux-gnu/libOgreNextPlanarReflections.so.2.2.5": "7b0dd4105dddf4b81e354a9cd379987211ac5fe092e7f5b7654d6325facd36cc",
+    "/usr/lib/x86_64-linux-gnu/libglapi.so.0.0.0": "6b0b3d9623ca09ae7d16d3320d8866dc0557d67e9cbb63c12752fe723444a0a1",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6-ogre2.so.6.6.4": "035669da4198c8b0f8e1c74d5f5c57b057be52b874e230db97e1270ba6a00522",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6.so.6.6.4": "4ae221f1e0c906be560e8b6421b12e3fc34fed16183ea384b8acb719e5363768"
+  },
+  "capture_probe_elf_sha256": null,
+  "capture_elf_limitation": "Exact pre-guard fixture ELF hash was not retained before final guard rebuild; do not substitute final build hash.",
+  "final_guard_build_elf_sha256": "c169d2c3f45b90f55a0c1ad17931718d872588dbd4c3652f3b10c48d664ddb41",
+  "final_guard_build_scope": "built and CPU storage CTest verified; not rerun as graphics fixture to preserve one-run limit",
+  "final_source_sha256": {
+    "scripts/stage_a_rgbd/compositor_witness.hh": "5bd6bae252fbf47fe0b86d740e4a083d9938e351046e68cb016f1de09913138b",
+    "scripts/stage_a_rgbd/render_triplet.hh": "db1a19edab1f94036b314ef22f3f91cf963f2ad8f18fec6ff537b3aa1504025a",
+    "scripts/stage_a_rgbd/uniform_readback.hh": "7d5d726b217d21bca73b23c00782f347720a865b5da5f68bbacdd0600c30c40c"
+  },
+  "gl_program_binaries": {
+    "/tmp/stage_a2_compositor_fixture.json.program-1.bin": {
+      "file": "stage_a2_compositor_fixture.json.program-1.bin.gz",
+      "sha256": "1e049a0ceec502d02975827b4a512713e88a4fcfde768ca13cbbb7e494ab690e",
+      "program": 1,
+      "binary_format": 34655,
+      "scope": "post-pass linked GL program binary; monolithic stage inventory and draw-time use unknown"
+    },
+    "/tmp/stage_a2_compositor_fixture.json.program-4.bin": {
+      "file": "stage_a2_compositor_fixture.json.program-4.bin.gz",
+      "sha256": "6b7aa2e470259a83b477ab88e3bce70605eecea3e4a3fea6c462e14698d48058",
+      "program": 4,
+      "binary_format": 34655,
+      "scope": "post-pass linked GL program binary; monolithic stage inventory and draw-time use unknown"
+    },
+    "/tmp/stage_a2_compositor_fixture.json.program-7.bin": {
+      "file": "stage_a2_compositor_fixture.json.program-7.bin.gz",
+      "sha256": "f1524fbb0b30abfed1fc0e21788de2443f2a89364b8066bf8da741280e14c71d",
+      "program": 7,
+      "binary_format": 34655,
+      "scope": "post-pass linked GL program binary; monolithic stage inventory and draw-time use unknown"
+    },
+    "/tmp/stage_a2_compositor_fixture.json.program-9.bin": {
+      "file": "stage_a2_compositor_fixture.json.program-9.bin.gz",
+      "sha256": "69c5bb16f5b9af1daf0110c54b47f352cf3237db8b9abb977c3ae846e0232baf",
+      "program": 9,
+      "binary_format": 34655,
+      "scope": "post-pass linked GL program binary; monolithic stage inventory and draw-time use unknown"
+    },
+    "/tmp/stage_a2_compositor_fixture.json.program-12.bin": {
+      "file": "stage_a2_compositor_fixture.json.program-12.bin.gz",
+      "sha256": "94692e32782bb62dc6a21e32fbcddd1246d32c4cc4821852034be3dac18da600",
+      "program": 12,
+      "binary_format": 34655,
+      "scope": "post-pass linked GL program binary; monolithic stage inventory and draw-time use unknown"
+    },
+    "/tmp/stage_a2_compositor_fixture.json.program-15.bin": {
+      "file": "stage_a2_compositor_fixture.json.program-15.bin.gz",
+      "sha256": "5ac155342ec8b917c12424693308dd2e2e68b0bbaa09217746923cb39bd1b369",
+      "program": 15,
+      "binary_format": 34655,
+      "scope": "post-pass linked GL program binary; monolithic stage inventory and draw-time use unknown"
+    }
+  },
+  "raw_image_sha256": {
+    ".rgb8": "1dd969c18736fcea67de7b9024e5ac4b5c6713cc839b1c9e8eb8a3c144a38d4a",
+    ".depth.f32": "bd5829b97103c923e24b2f68743f11052d2ba60ff66515bc022262a44a0ca03a",
+    ".labels.rgb8": "808d102a8bf19a8d88122e7fe03bb78dd4327cdd9e95379e9c74fdc705ab2726"
+  },
+  "compositor_event_count": 29,
+  "pass_counts": {
+    "scene": 15,
+    "quad": 9,
+    "other": 5
+  },
+  "field_scope_notes": {
+    "fragment_program": "Legacy key: GL_CURRENT_PROGRAM monolithic program handle when nonzero, otherwise pipeline fragment handle. Monolithic fragment-stage inventory is UNKNOWN.",
+    "scissor_box": "Recorded disabled GL scissor state is anomalous; no raster bound inferred.",
+    "depth_attachment_null_format": "GL renderbuffer format not queried; UNKNOWN, not proof of missing depth.",
+    "program_binary": "Driver opaque binary blob provenance, not a validated arithmetic enclosure."
+  },
+  "artifact_sha256": {
+    "depth.f32.gz": "7df487e94a2d970d46c5206d5742be6684379f194f64bf310ab15de13ea31ab4",
+    "labels.rgb8.gz": "50fa87bb2f43c21cf83207387f28490c3ad2a0a92db7d88dbea9abf27b642c4f",
+    "stage_a2_compositor_fixture.json.program-9.bin.gz": "cb0026a32090cc80d4ae26a30a7fc5e69a50312b58bae58439628d15c3de9c02",
+    "driver.log": "299fa4e23f7f5c8794be616a58085e1ae521a6dcc3256b2add4d12efe67a3b52",
+    "compositor_readback.json.gz": "d14ff8735406872d190d27cfdf6047d923dd820d5ba8aebcb786a6c3bd9e69ac",
+    "qualified_mask.uint8.gz": "398a00f1a1b6b52a0f315b0c9e2597a53f42e428db40c3c22a04ad0e511a62e2",
+    "stage_a2_compositor_fixture.json.program-7.bin.gz": "f8f974b5746c2d6dea78ff3212f5ea8d1637a7b83aa0163a346a16f5e69318dd",
+    "stage_a2_compositor_fixture.json.program-15.bin.gz": "b77f713723c7d62838f215572205670a38628196e2425693dc240f181c5b4352",
+    "stage_a2_compositor_fixture.json.program-12.bin.gz": "d39b967fd244b0f5591f6998dfcba4aa047cd53e1796242d90175ad1831d66ed",
+    "stage_a2_compositor_fixture.json.program-4.bin.gz": "3a52da1fed21e2161450cb2b61fa9d23ad3131b84a7ee6758b297d94edeffb29",
+    "stage_a2_compositor_fixture.json.program-1.bin.gz": "482e13bdc7921a84256b49cb7004e0f2df306ccce930dc1e3e1aa2b01ebeb7da",
+    "rgb8.gz": "bd92a65bb4dbdbe37a0a81d99cf7a42c8fa6892c7ca02221774b33a8c4dac773",
+    "registration.json": "1e0d1e02dbd888b9b699e09728fd3b374d00c3a6f696f3a4cbf9f916d89bd6ce"
+  }
+}
