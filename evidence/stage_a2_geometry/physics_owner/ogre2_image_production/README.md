@@ -43,3 +43,5 @@ Local results: four native checks and nine registration checks PASS (13 total, c
 Physics mapping, stale physics frames, ambiguous EPD masks and penetration regressions for a new capture are **not reached** at this prerequisite. Historical six-state DART→ODE bounds are not reused. Zero genuine Gazebo/EPD captures in this change; no DART-to-render synchronization, new physical bound, native permissions, MoveIt or execution goals. Original envelopes, 0.1 mm limit, bridge restrictions, production worlds and protected Stage-A1 checkout remain unchanged.
 
 **Exact next action:** add acquisition-time native camera/shader calibration witnesses and establish a conservative total RGB/depth/segmentation registration enclosure before the one bounded genuine Gazebo/EPD capture. This prerequisite, rather than missing image production, now blocks identity association.
+
+Follow-up: [native acquisition witnesses](../ogre2_acquisition/README.md) now bind actual CPU camera state and depth-material registry readback to explicit render callbacks. Total GPU registration/depth uncertainty remains unknown and all pixels remain excluded.

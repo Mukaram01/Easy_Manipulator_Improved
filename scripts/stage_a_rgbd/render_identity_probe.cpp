@@ -72,7 +72,8 @@ int main(int argc,char **argv) {
     auto start=line.find('/');if(start==std::string::npos)continue;
     auto path=line.substr(start);
     if(path.find(".so")!=std::string::npos &&
-       (path.find("rendering")!=std::string::npos || path.find("Ogre")!=std::string::npos))
+       (path.find("rendering")!=std::string::npos || path.find("Ogre")!=std::string::npos || path.find("/dri/")!=std::string::npos ||
+        path.find("libGL")!=std::string::npos || path.find("libglapi")!=std::string::npos || path.find("libLLVM")!=std::string::npos))
       paths.insert(path);
   }
   r["loaded_library_paths"]=Json::Value(Json::arrayValue);
