@@ -24,7 +24,7 @@ LIBGL_ALWAYS_SOFTWARE=1 timeout 60s /tmp/stage_a2_fragment_build/stage_a_fragmen
 
 The run threw `Object already attached to a SceneNode or a Bone` before shader/material construction and before any RGB/ID image. Ogre2's `SceneManager::createCamera` already attaches the camera to the dynamic root, as documented in installed OgreCamera.h and [pinned SceneManager source](https://github.com/OGRECave/ogre-next/blob/0e0c47ed70091e7bdead5fb1ca01e1cae5857ef4/OgreMain/src/OgreSceneManager.cpp#L293). The probe incorrectly attached it again. The final source preserves and checks the existing root attachment. That correction **builds**, but was **not run** to obey the one-fixture maximum. The original failed-run ELF was copied before rebuilding; its pre-execution hash and the corrected ELF hash are separate. Failed-run source bytes are retained compressed. No corrected-build hash is substituted for the failed capture.
 
-`failed_capture.json`, `driver.log`, build logs and `provenance.json` preserve this failure and loaded libraries. Loaded swrast proves the software driver library was present; no successful image or llvmpipe rendering result is claimed from this attempt. **Zero qualified pixels; no RGB/ID images produced.** Previous camera/projection bounds do not qualify this new custom path.
+`failed_capture.json.gz`, `driver.log`, build logs and `provenance.json` preserve this failure and loaded libraries. Loaded swrast proves the software driver library was present; no successful image or llvmpipe rendering result is claimed from this attempt. **Zero qualified pixels; no RGB/ID images produced.** Previous camera/projection bounds do not qualify this new custom path.
 
 ## Validation and downstream gates
 
