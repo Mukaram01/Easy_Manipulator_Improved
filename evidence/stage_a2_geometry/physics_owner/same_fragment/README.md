@@ -1,5 +1,27 @@
 # Same-fragment RGB / integer-ID fixture — runtime BLOCKED
 
+## Corrected-binary verification attempt (baseline 36c2637f)
+
+**BLOCKED before rendering.** Exactly one newly authorised bounded execution used the unchanged corrected ELF SHA256 `091aa50cb926b4a97e13df01ab5c5f27ef215afd69e08c49a33b2633f3e5b5c6` and source SHA256 `c2cceb47fbb5d57186f3b591ec564cbe083e677a5386b4c61d8247f8bc1e3b93`. HEAD/clean checkout, committed source equality, camera attachment fix, unchanged installed swrast hash and all-new output paths were verified before execution. No rebuild or source modification preceded this run.
+
+```bash
+LIBGL_ALWAYS_SOFTWARE=1 timeout 60s /tmp/stage_a2_fragment_build/stage_a_fragment_mrt /tmp/stage_a2_fragment_verified.json
+```
+
+The supervised command terminated with **SIGABRT** (Python subprocess return code **-6**) after approximately **0.795 s**. Complete stderr:
+
+```text
+libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device.
+stage_a_fragment_mrt: /build/ogre-next-UFfg83/ogre-next-2.2.5+dfsg3/OgreMain/src/Compositor/OgreCompositorNodeDef.cpp:46: Ogre::CompositorTargetDef* Ogre::CompositorNodeDef::addTargetPass(const String&, Ogre::uint32): Assertion `mTargetPasses.size() < mTargetPasses.capacity() && "setNumTargetPass called improperly!"' failed.
+timeout: the monitored command dumped core
+```
+
+Stdout is empty. No native JSON report, RGB bytes or ID bytes were produced. Actual driver identity, loaded-library inventory, attachment formats, render-pass count, depth-test/write state, visible IDs/counts, exact uint32 preservation and occlusion are **unavailable / NOT REACHED**, not PASS. The pre-run installed swrast hash is not a substitute for a run-time loaded-library or llvmpipe identity witness. Zero pixels qualify. Actual-buffer diagnostics and retained-capture mutation tests were **NOT RUN because no buffers exist**; previous synthetic CPU tests are not native evidence.
+
+The installed public `OgreCompositorNodeDef.h` documents `setNumTargetPass` as obligatory. The minimal next fix is **`nd->setNumTargetPass(1)` before `nd->addTargetPass("fragment_mrt")`**. It was not implemented or rerun in this execution-only task. This assertion is not evidence that MRT is unsupported. Stop here; no further investigation or graphics execution was attempted.
+
+[Retained attempt](verified_attempt/result.json) includes preflight hashes, exact invocation/termination, full stdout/stderr and artifact hashes. Historical evidence below remains unchanged. Baseline 36c2637f had Humble, Jazzy and both security checks PASS at inspection; the evidence follow-up commit has separate CI. Gazebo visual/collision mapping, genuine EPD association, DART/render synchronisation, current-frame physical penetration and extraction remain BLOCKED/NOT RUN. No installed libraries, protected Stage-A1, planning poses/envelopes, 0.1 mm threshold or collision permissions were changed. No Gazebo/EPD, MoveIt, controller or execution goals.
+
 Baseline `ab4be990c674b2259d82aa9896e9236a13970373`. **Supported API components compile; same-fragment output, occlusion and lossless runtime readback remain UNVERIFIED.** One bounded native fixture attempt failed before rendering. No Gazebo/EPD capture, MoveIt, controller or execution goals; no physics-owner, installed-library or protected Stage-A1 changes. No contact authority, envelope change or penetration-limit change.
 
 ## Implementation
