@@ -257,3 +257,13 @@ rerunning the same acceptance. Do not shrink these envelopes or relax the
 extraction guard to make this capture pass. ROS bridge qualification remains
 separately BLOCKED and unchanged. The protected Stage-A1 checkout fingerprint
 (HEAD, all file statuses and tracked diff) still matches the saved baseline.
+
+## Controlled separated-cube prerequisite — 2026-10-10
+
+The [two-cube experiment](separated_experiment.md) produced genuine EPD geometry
+for both settled cubes, with at least 51.926 mm envelope separation. It isolated
+a different blocker: the unchanged conservative envelopes overlap the unchanged
+table by 7.809–8.679 mm, above the existing 0.1 mm extraction limit. Both objects
+fail the existing extraction prerequisite; full-cycle acceptance was NOT RUN.
+See `separated_experiment.json` for compact measurements and provenance. No
+production code, collision rule, bridge gate or protected checkout was changed.
