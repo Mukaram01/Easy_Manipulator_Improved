@@ -1,0 +1,172 @@
+[
+  {
+    "detection": 0,
+    "mask_pixels": 2024,
+    "id_pixel_counts": {
+      "0": 90,
+      "65517": 210,
+      "65523": 1724
+    },
+    "candidate_mappings": [
+      {
+        "visual_id": 6,
+        "link_id": 5,
+        "model_id": 4,
+        "collision_id": 7,
+        "physics_shape_id": 6,
+        "shape_node_identity": "0x59205dd212e0",
+        "renderer_id": 65523
+      },
+      {
+        "visual_id": 10,
+        "link_id": 9,
+        "model_id": 8,
+        "collision_id": 11,
+        "physics_shape_id": 7,
+        "shape_node_identity": "0x59205dd2a850",
+        "renderer_id": 65517
+      }
+    ],
+    "candidate_scope": "diagnostic_only_not_accepted_association"
+  },
+  {
+    "detection": 1,
+    "mask_pixels": 174,
+    "id_pixel_counts": {
+      "0": 158,
+      "65517": 5,
+      "65523": 11
+    },
+    "candidate_mappings": [
+      {
+        "visual_id": 6,
+        "link_id": 5,
+        "model_id": 4,
+        "collision_id": 7,
+        "physics_shape_id": 6,
+        "shape_node_identity": "0x59205dd212e0",
+        "renderer_id": 65523
+      },
+      {
+        "visual_id": 10,
+        "link_id": 9,
+        "model_id": 8,
+        "collision_id": 11,
+        "physics_shape_id": 7,
+        "shape_node_identity": "0x59205dd2a850",
+        "renderer_id": 65517
+      }
+    ],
+    "candidate_scope": "diagnostic_only_not_accepted_association"
+  },
+  {
+    "detection": 2,
+    "mask_pixels": 27,
+    "id_pixel_counts": {
+      "0": 7,
+      "65517": 18,
+      "65523": 2
+    },
+    "candidate_mappings": [
+      {
+        "visual_id": 6,
+        "link_id": 5,
+        "model_id": 4,
+        "collision_id": 7,
+        "physics_shape_id": 6,
+        "shape_node_identity": "0x59205dd212e0",
+        "renderer_id": 65523
+      },
+      {
+        "visual_id": 10,
+        "link_id": 9,
+        "model_id": 8,
+        "collision_id": 11,
+        "physics_shape_id": 7,
+        "shape_node_identity": "0x59205dd2a850",
+        "renderer_id": 65517
+      }
+    ],
+    "candidate_scope": "diagnostic_only_not_accepted_association"
+  },
+  {
+    "detection": 3,
+    "mask_pixels": 226,
+    "id_pixel_counts": {
+      "0": 23,
+      "65517": 185,
+      "65523": 18
+    },
+    "candidate_mappings": [
+      {
+        "visual_id": 6,
+        "link_id": 5,
+        "model_id": 4,
+        "collision_id": 7,
+        "physics_shape_id": 6,
+        "shape_node_identity": "0x59205dd212e0",
+        "renderer_id": 65523
+      },
+      {
+        "visual_id": 10,
+        "link_id": 9,
+        "model_id": 8,
+        "collision_id": 11,
+        "physics_shape_id": 7,
+        "shape_node_identity": "0x59205dd2a850",
+        "renderer_id": 65517
+      }
+    ],
+    "candidate_scope": "diagnostic_only_not_accepted_association"
+  },
+  {
+    "detection": 4,
+    "mask_pixels": 887,
+    "id_pixel_counts": {
+      "0": 65,
+      "65517": 91,
+      "65523": 731
+    },
+    "candidate_mappings": [
+      {
+        "visual_id": 6,
+        "link_id": 5,
+        "model_id": 4,
+        "collision_id": 7,
+        "physics_shape_id": 6,
+        "shape_node_identity": "0x59205dd212e0",
+        "renderer_id": 65523
+      },
+      {
+        "visual_id": 10,
+        "link_id": 9,
+        "model_id": 8,
+        "collision_id": 11,
+        "physics_shape_id": 7,
+        "shape_node_identity": "0x59205dd2a850",
+        "renderer_id": 65517
+      }
+    ],
+    "candidate_scope": "diagnostic_only_not_accepted_association"
+  },
+  {
+    "detection": 5,
+    "mask_pixels": 55,
+    "id_pixel_counts": {
+      "0": 54,
+      "65523": 1
+    },
+    "candidate_mappings": [
+      {
+        "visual_id": 6,
+        "link_id": 5,
+        "model_id": 4,
+        "collision_id": 7,
+        "physics_shape_id": 6,
+        "shape_node_identity": "0x59205dd212e0",
+        "renderer_id": 65523
+      }
+    ],
+    "candidate_scope": "diagnostic_only_not_accepted_association"
+  }
+]

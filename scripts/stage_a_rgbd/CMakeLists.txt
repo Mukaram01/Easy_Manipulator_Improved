@@ -66,8 +66,10 @@ pkg_check_modules(JSON REQUIRED IMPORTED_TARGET jsoncpp)
 pkg_check_modules(XML REQUIRED IMPORTED_TARGET tinyxml2)
 add_executable(stage_a_rgbd_capture capture.cpp
   "${EPD_SOURCE_DIR}/src/ort_base.cpp" "${EPD_SOURCE_DIR}/src/p3_ort_base.cpp")
+add_executable(stage_a_epd_retained epd_retained.cpp
+  "${EPD_SOURCE_DIR}/src/ort_base.cpp" "${EPD_SOURCE_DIR}/src/p3_ort_base.cpp")
 add_executable(stage_a_rgbd_geometry_test test_geometry.cpp)
-foreach(target stage_a_rgbd_capture stage_a_rgbd_geometry_test)
+foreach(target stage_a_rgbd_capture stage_a_rgbd_geometry_test stage_a_epd_retained)
   target_include_directories(${target} PRIVATE "${EPD_SOURCE_DIR}/include" ${PCL_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
   ament_target_dependencies(${target} rclcpp sensor_msgs epd_msgs cv_bridge tf2 pcl_conversions)
   target_link_libraries(${target} ${OpenCV_LIBS} ${PCL_LIBRARIES})
@@ -78,3 +80,5 @@ target_link_libraries(stage_a_rgbd_geometry_test PkgConfig::XML PkgConfig::JSON)
 target_compile_options(stage_a_rgbd_geometry_test PRIVATE -UNDEBUG)
 enable_testing()
 add_test(NAME masked_depth_geometry COMMAND stage_a_rgbd_geometry_test)
+
+target_link_libraries(stage_a_epd_retained PkgConfig::JSON epd_onnxruntime_vendor::onnxruntime)

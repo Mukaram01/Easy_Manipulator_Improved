@@ -1,0 +1,62 @@
+{
+  "preprocessing": {
+    "input_order": "RGB",
+    "epd_order": "BGR",
+    "source_size": [
+      256,
+      256
+    ],
+    "epd_size": [
+      512,
+      512
+    ],
+    "resize": "INTER_LINEAR",
+    "scale": 2,
+    "padding": 0,
+    "pixel_centres": "u512=2*u256+0.5",
+    "external_epd": {
+      "resize": [
+        512,
+        512
+      ],
+      "interpolation": "INTER_LINEAR",
+      "channel_conversion": "BGR2RGB",
+      "tensor": "CHW_float32_RGB_div255",
+      "full_image_masks": true,
+      "roi": "clipped_integer_bbox_512"
+    },
+    "inverse_mask": "union_2x2_samples_no_ID_trimming",
+    "mask_threshold": 0.5,
+    "confidence_threshold": 0.8
+  },
+  "model": "/home/user/stage_a_cube_model/cube_maskrcnn.onnx",
+  "labels": "/home/user/stage_a_cube_model/labels.txt",
+  "model_sha256": "21362d62d816bd684f2b5c7769d0bcd1cd568af86419788fca9d095c46f2bad2",
+  "labels_sha256": "adeeb37af7c067d456ea0fb2978c9bc4a242bea4d1fbb5a7b53072d486d7e113",
+  "binary_sha256": "3bc8febf89c18133dfbac21e92b0fcb90ffd7d010f824eedd34e9fab18d49cc3",
+  "rgb_sha256": "920560881e06ae7285a33fd79d93e906a4001aac33f49583cf4af07016d1f526",
+  "id_sha256": "cba6227c654aa690e9064057b51dd932162d604b5c5e0b112aa81b8c2ce60020",
+  "session": "b973ddbbca2c41639d5350db47bdac74",
+  "frame": 1,
+  "acquisition": {
+    "frame": 1,
+    "phase": "PostUpdate_blocking_capture_no_subsequent_server_iteration",
+    "scene_id": 0,
+    "session": "b973ddbbca2c41639d5350db47bdac74",
+    "stamp_ns": 2000000,
+    "step": 2,
+    "update_epoch": 2,
+    "world_entity": 1
+  },
+  "execution_backend": "cpu",
+  "timeout_seconds": 120,
+  "source_sha256": {
+    "/home/user/workcell_ws_stage_a2/scripts/stage_a_epd_retained.py": "3448c2d6f7b78fe87f1a39af701ad5addcd26861a6f8fb46b689b83c397fcf95",
+    "/home/user/workcell_ws_stage_a2/scripts/stage_a_rgbd/epd_retained.cpp": "c8cc6a2aa04e9433e2cf0114c42989fa90512ba5cf9991fa8a0810e19b0bd67d",
+    "/home/user/epd_ros2_ws/src/easy_perception_deployment/easy_perception_deployment/src/p3_ort_base.cpp": "7a72e42d4f1c1b0153f7e1b880d8b70c01b20504a81e151d1b563c39360c0d10",
+    "/home/user/epd_ros2_ws/src/easy_perception_deployment/easy_perception_deployment/src/ort_base.cpp": "486d521a52b33e80f17896ddfec2af5eada46813e756131a2f8ee0f36cf5b5a1",
+    "/home/user/epd_ros2_ws/src/easy_perception_deployment/easy_perception_deployment/include/ort_cpp_lib/p3_ort_base.hpp": "9d6375f3dc2a93770300261e4741969351004623565cd9d3fe087442e43366f0"
+  },
+  "prepared_bgr_sha256": "491770cf444ee94c8489ecaaa7f8049bcd81f19b2d7cba6b2ca41ef88a66bea2",
+  "python_opencv_version": "4.11.0"
+}
