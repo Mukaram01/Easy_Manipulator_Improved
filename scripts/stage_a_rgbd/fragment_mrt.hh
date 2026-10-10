@@ -74,7 +74,8 @@ struct Formats:Ogre::CompositorWorkspaceListener {
 };
 
 
-inline std::vector<unsigned> CaptureFragmentMrt(const ignition::rendering::ScenePtr &scene, Ogre::SceneManager *sm, Ogre::Camera *camera, Json::Value &r, const std::string &path) {
+inline std::vector<unsigned> CaptureFragmentMrt(const ignition::rendering::ScenePtr &scene, Ogre::SceneManager *sm, Ogre::Camera *camera, Json::Value &r, const std::string &path, void (*mark)(const char*)=nullptr) {
+    if(mark)mark("mrt_preparation_begin");
     auto root=Ogre::Root::getSingletonPtr();auto rs=root->getRenderSystem();auto tm=rs->getTextureGpuManager();
     Ogre::CompositorChannelVec textures;
     for(int i=0;i<2;++i){auto t=tm->createTexture("fragment_output_"+std::to_string(i),Ogre::GpuPageOutStrategy::Discard,
@@ -106,17 +107,22 @@ inline std::vector<unsigned> CaptureFragmentMrt(const ignition::rendering::Scene
     }
     if(glGetError()!=GL_NO_ERROR)throw std::runtime_error("typed texture clear failed");
     Formats formats(r);workspace->addListener(&formats);
+    if(mark)mark("mrt_draw_begin");
     sm->updateSceneGraph();
     workspace->_beginUpdate(true);workspace->_update();workspace->_endUpdate(true);workspace->removeListener(&formats);
+    if(mark)mark("mrt_draw_complete");
     if(formats.calls!=1)throw std::runtime_error("incomplete scene-pass inventory");
     std::vector<unsigned char> rgba(256*256*4),rgb(256*256*3);std::vector<unsigned> labels(256*256);
+    if(mark)mark("image_readback_begin");
     for(int i=0;i<2;++i){auto src=textures[i]->getEmptyBox(0);Ogre::TextureBox dst(256,256,1,1,4,256*4,256*256*4);
       dst.data=i?static_cast<void*>(labels.data()):rgba.data();textures[i]->copyContentsToMemory(src,dst,i?Ogre::PFG_R32_UINT:Ogre::PFG_RGBA8_UNORM,false);
     }
+    if(mark)mark("image_readback_complete");
     scene->PostRender();
     for(size_t p=0;p<labels.size();++p)for(int c=0;c<3;++c)rgb[p*3+c]=rgba[p*4+c];
     auto save=[&](std::string suffix,const void* data,size_t n){std::ofstream out(path+suffix,std::ios::binary);out.write(static_cast<const char*>(data),n);if(!out)throw std::runtime_error("write failed");};
     save(".rgb8",rgb.data(),rgb.size());save(".ids.u32",labels.data(),labels.size()*4);
+    if(mark)mark("image_buffers_flushed");
     r["width"]=r["height"]=256;r["frame"]=1;r["shared_scene_pass"]=true;r["samples"]=1;
     r["opaque"]=true;r["blending"]=false;r["depth_test"]=true;r["depth_write"]=true;
     r["rgb_format"]="RGBA8_UNORM";r["id_format"]="R32_UINT";r["background_id"]=0;r["invalid_id"]=Json::UInt(4294967295u);

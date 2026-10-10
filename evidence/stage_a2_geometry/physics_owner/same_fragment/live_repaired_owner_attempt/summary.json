@@ -1,0 +1,100 @@
+{
+  "baseline": "eba8be03",
+  "runs": 1,
+  "decision": "BLOCKED_INVENTORY_JOIN",
+  "owner_loaded": "PASS",
+  "owner_sha256": "0f4a2dda8d7bfd67745b03493254a9d91ea66bb36dcb2d78440fbf5809ff072a",
+  "native_exit": {
+    "exit_code": 2
+  },
+  "supervisor_exit": 2,
+  "fatal_signal_observed": false,
+  "sigill_scope": "not reproduced in this GDB-supervised attempt; historical cause remains unknown",
+  "session": "606b9ed756004d28ab411647dd0c82f7",
+  "physics_step": 2,
+  "physics_stamp_ns": 2000000,
+  "world_entity": 1,
+  "owner_complete": true,
+  "owner_visuals": [
+    {
+      "geometry": {
+        "size": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "type": "BOX"
+      },
+      "id": 6,
+      "opaque": true,
+      "parent": 5
+    },
+    {
+      "geometry": {
+        "size": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "type": "BOX"
+      },
+      "id": 10,
+      "opaque": true,
+      "parent": 9
+    },
+    {
+      "geometry": {
+        "type": "UNSUPPORTED_OR_MISSING"
+      },
+      "id": 13,
+      "opaque": false,
+      "parent": 12
+    }
+  ],
+  "collision_shape_bindings": [
+    {
+      "collision_id": 7,
+      "physics_shape_id": 6,
+      "shape_node_identity": "0x56a8856062d0",
+      "shape_type": "BoxShape"
+    },
+    {
+      "collision_id": 11,
+      "physics_shape_id": 7,
+      "shape_node_identity": "0x56a88560f810",
+      "shape_type": "BoxShape"
+    }
+  ],
+  "rgb_id_production": "NOT_REACHED",
+  "visual_collision_draw_binding": "BLOCKED",
+  "pixel_counts": null,
+  "last_completed_work_boundary": "visual_inventory_join_begin (failed equality; no draw)",
+  "last_lifecycle_marker": "[workcell-lifecycle] native_report_flushed_before_capture_destruction",
+  "failure_reason": "owner/render ECM inventory changed",
+  "native_render_inventory_retained": false,
+  "exact_inventory_difference": "UNKNOWN: only equality flag retained",
+  "timing_authority": "BLOCKED",
+  "contact_authority": false,
+  "epd": "NOT_RUN",
+  "execution_goals": 0,
+  "artifact_uncompressed_sha256": {
+    "capture.json": "d1b32fe70fe1ba0e360e30c56b60ab0b7066c9e56fa56ce3dc793cea58e54484",
+    "capture.json.maps": "b7465041c7aadea0e03571d5adbdec8321b028e34fa04e4cac36f729142988ca",
+    "child_exit.json": "d26b0745a1a2f3d452def2624b3b0bcc425124b18690dbf694f4de0ff91cb07e",
+    "debugger.gdb": "36e9d919e99defb24595458d11f717327047e64d528aa71680a6ceb0a90756f3",
+    "execution_claim.json": "7a7e3f79a5a5bdee3f65df18d828eaeb601a54a60d6fef5995a56ce2d0d050bd",
+    "owner.jsonl": "3d7c6a3b21cfbab95d044fbdd095580b82a7817042ba4dfe72b4c720e5d3a44b",
+    "preflight.json": "31b47bc01c9a35d7f548ff32a0b301dac2c6f084a6168d11e8dd78b78994336a",
+    "process_exit.json": "9d37f67e87ef8fa74cd2c85c4a822952a8485e956149e635f472f3d59ccccd42",
+    "result.json": "e31965d723cc178d09492fda9bc7352f486c4824cefce9c6dd5ae8a640ae66a6",
+    "stderr.log": "9de8ed711f36fde09fd12966325bd873ef84aa8d822f1bbde4015b7e25da8e6a",
+    "stdout.log": "d5bc0393a6a9ab2feda5b21a12c79d20129ecbf8698660ea6389c292e6f48db9",
+    "world.sdf": "019b0ad000b0d9c3ea87cb6d543fdc8cc3a64f6e73d415a1a37ea1291a221ea7",
+    "pytest.log": "7edf690c92e279453c904847d0d54c58eecbc79bb0ae7fa64fc62df7703501cf",
+    "ctest.log": "7c3ef6dbd32682eaa0d6001a0ea760e97bec0de587c57b36283125f0167668d9",
+    "build.log": "6d6a3374008c2cf8ee152c4d9e9976e750c2f2633825cfd424520b662ea4a280",
+    "owner_build.log": "814ab5343e8fbd3a8267677f6f4329d1ff9380cb4d3c0bc817a694c89a0ad4fd",
+    "configure.log": "2b380f0b4286c109b21592eccbeee72093f207aa6c1b6f0d681e410b62aee30a",
+    "red.log": "5b7bf5604ffab991665b414f40434bf1bf865fa24692897a8434632a28c68d5f"
+  }
+}

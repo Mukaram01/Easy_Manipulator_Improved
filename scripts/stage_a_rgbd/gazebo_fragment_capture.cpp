@@ -11,10 +11,19 @@
 #include <ignition/rendering/Material.hh>
 #include <OgreItem.h>
 #include <OgreSubItem.h>
+#include <OgreRay.h>
+#include <OgreAxisAlignedBox.h>
 #include <thread>
 
 namespace g=ignition::gazebo;
 namespace rd=ignition::rendering;
+// Flushed stderr survives failure before the final JSON report.
+void LiveMark(const char *boundary) {
+  std::cerr<<"[workcell-lifecycle] "<<boundary<<std::endl;
+}
+void LiveMaps(const std::string &path) {
+  std::ifstream in("/proc/self/maps");std::ofstream out(path+".maps");out<<in.rdbuf();out.flush();
+}
 const char *liveFs=R"(#version 330 core
 uniform vec3 baseColour;
 uniform uint entityId;
@@ -41,13 +50,18 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
   void PostUpdate(const g::UpdateInfo &info,const g::EntityComponentManager &ecm) override {
     if(done)return;
     try {
+      LiveMark("physics_postupdate_enter");
+      LiveMaps(path);
+      if(std::filesystem::exists(ownerPath))LiveMark("owner_trace_exists_after_physics_update");
       if(!initialized) {
         renderThread=std::this_thread::get_id();
+        LiveMark("renderutil_init_begin");
         render.SetEngineName("ogre2");render.SetSceneName("live_fragment_"+session);
-        render.SetHeadlessRendering(true);render.SetEnableSensors(false);render.Init();initialized=true;
+        render.SetHeadlessRendering(true);render.SetEnableSensors(false);render.Init();initialized=true;LiveMark("renderutil_init_complete");
       }
       if(renderThread!=std::this_thread::get_id())throw std::runtime_error("render owner thread changed");
-      render.UpdateFromECM(info,ecm);render.Update();
+      LiveMark("renderutil_update_begin");
+      render.UpdateFromECM(info,ecm);render.Update();LiveMark("renderutil_update_complete");
       Json::Value event;event["epoch"]=++epoch;event["step"]=Json::UInt64(info.iterations);
       event["stamp_ns"]=Json::Int64(info.simTime.count());
       event["renderutil_stamp_ns"]=Json::Int64(render.SimTime().count());
@@ -63,13 +77,15 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       }
       if(owner.isNull() || !owner["complete"].asBool() || owner["session"]!=session ||
          owner["stamp_ns"].asInt64()!=info.simTime.count())throw std::runtime_error("missing/stale owner record");
+      LiveMark("physics_configure_and_step_observed_in_valid_owner_trace");
+      LiveMark("visual_inventory_join_begin");
       const auto inventory=workcell::IdentityInventory(ecm);
       record["owner_inventory_equal"]=inventory==owner["identity_inventory"];
       if(!record["owner_inventory_equal"].asBool())throw std::runtime_error("owner/render ECM inventory changed");
       // Fingerprint is calculated over retained records by the strict CPU validator.
       auto mapping=workcell::RendererIdentity(render.SceneManager(),owner,"");
       if(!mapping["complete"].asBool())throw std::runtime_error("incomplete live SceneManager map");
-      record["renderer"]=mapping;
+      record["renderer"]=mapping;LiveMark("visual_inventory_join_complete");
       auto scene=render.Scene();auto native=std::dynamic_pointer_cast<rd::Ogre2Scene>(scene);
       if(!native)throw std::runtime_error("unsupported native renderer");auto sm=native->OgreSceneManager();
       GLint major=0,minor=0;glGetIntegerv(GL_MAJOR_VERSION,&major);glGetIntegerv(GL_MINOR_VERSION,&minor);
@@ -87,7 +103,7 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
         if(program->hasCompileError())throw std::runtime_error("live shader compile error");
       }
       record["vertex_shader"]=vs;record["fragment_shader"]=liveFs;
-      std::set<Ogre::Item*> items;std::set<unsigned> ids;
+      std::set<Ogre::Item*> items;std::set<unsigned> ids;std::map<Ogre::Item*,unsigned> itemIds;
       std::vector<std::pair<Ogre::Item*,Ogre::MaterialPtr>> bound;
       for(const auto &entry:mapping["visuals"]) {
         const auto visualId=entry["visual_id"].asUInt64(),linkId=entry["link_id"].asUInt64();
@@ -109,6 +125,7 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
           throw std::runtime_error("missing/duplicate/unattached live Ogre Item");
         const unsigned id=visual->Id();
         if(id==0 || id==4294967295u || !ids.insert(id).second)throw std::runtime_error("duplicate/invalid native uint32 ID");
+        itemIds.emplace(item,id);
         const auto material=visual->Material();
         if(!material || material->Transparency()!=0)throw std::runtime_error("unsupported native material");
         const auto colour=material->Diffuse();
@@ -134,18 +151,58 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       record["inventory_complete"]=true;
       auto camera=sm->createCamera("live_mrt_camera");
       if(camera->getParentSceneNode()!=sm->getRootSceneNode(Ogre::SCENE_DYNAMIC))throw std::runtime_error("unexpected camera attachment");
-      camera->setPosition(.40,-.217,.35);camera->setNearClipDistance(.01);camera->setFarClipDistance(2);
+      // Optical fixture only: separated original cubes overlap in this oblique view.
+      // Authored camera constants do not establish object ownership or planning poses.
+      camera->setPosition(.20,-.217,.04);camera->lookAt(.35,-.217,.0125);
+      record["camera_profile"]="authored_oblique_overlap_fixture";camera->setNearClipDistance(.01);camera->setFarClipDistance(2);
       camera->setAspectRatio(1);camera->setFOVy(Ogre::Radian(1.0471975511965976));
       record["camera_id"]=Json::UInt64(camera->getId());
       Json::Value acquisition;acquisition["session"]=session;acquisition["world_entity"]=world[0]["id"];
       acquisition["step"]=Json::UInt64(info.iterations);acquisition["stamp_ns"]=Json::Int64(info.simTime.count());
       acquisition["scene_id"]=scene->Id();acquisition["frame"]=1;acquisition["update_epoch"]=epoch;
       acquisition["phase"]="PostUpdate_blocking_capture_no_subsequent_server_iteration";record["acquisition"]=acquisition;
-      const auto labels=CaptureFragmentMrt(scene,sm,camera,record,path);
+      const auto labels=CaptureFragmentMrt(scene,sm,camera,record,path,LiveMark);
       for(const auto &[item,mat]:bound)if(item->getSubItem(0)->getMaterial()!=mat)throw std::runtime_error("material changed during acquisition");
       std::set<unsigned> visible;
       for(auto id:labels){visible.insert(id);const auto key=std::to_string(id);record["pixel_counts"][key]=record["pixel_counts"].get(key,0).asUInt()+1;}
       ids.insert(0);if(visible!=ids)throw std::runtime_error("missing/unexpected visible IDs");
+      // Measured fixture occlusion diagnostic, not a renderer precision enclosure.
+      // Use each actual native Item's local BOX bounds and full scene transform.
+      // Select a pixel whose centre AND four corners intersect both objects with
+      // the same near/far ordering. This is not an EPD mask or association rule.
+      double best=1e9;Json::Value witness;
+      for(unsigned y=0;y<256;++y)for(unsigned x=0;x<256;++x) {
+        std::vector<unsigned> order;bool interior=true;
+        for(const auto &uv:std::vector<std::pair<double,double>>{{.5,.5},{0,0},{1,0},{0,1},{1,1}}) {
+          const auto ray=camera->getCameraToViewportRay((x+uv.first)/256.,(y+uv.second)/256.);
+          std::vector<std::pair<double,unsigned>> hits;
+          for(const auto &[item,mat]:bound) {
+            const auto inv=item->getParentSceneNode()->_getFullTransform().inverse();
+            const auto origin=inv*ray.getOrigin();
+            const auto direction=(inv*(ray.getOrigin()+ray.getDirection()))-origin;
+            const auto box=item->getLocalAabb();
+            const auto hit=Ogre::Ray(origin,direction).intersects(Ogre::AxisAlignedBox(box.getMinimum(),box.getMaximum()));
+            if(hit.first) {
+              hits.emplace_back(hit.second,itemIds.at(item));
+            }
+          }
+          std::sort(hits.begin(),hits.end());
+          if(hits.size()!=2 || hits[0].first>=hits[1].first){interior=false;break;}
+          if(order.empty())order={hits[0].second,hits[1].second};
+          else if(order!=std::vector<unsigned>{hits[0].second,hits[1].second}){interior=false;break;}
+        }
+        const double distance=(x-127.5)*(x-127.5)+(y-127.5)*(y-127.5);
+        if(interior && distance<best) {
+          best=distance;witness["x"]=x;witness["y"]=y;witness["near_id"]=order[0];
+          witness["far_id"]=order[1];witness["captured_id"]=labels[y*256+x];
+        }
+      }
+      record["occlusion_witness"]=witness;
+      record["occlusion_scope"]="tested_pixel_native_BOX_ray_diagnostic_not_numeric_registration_authority";
+      if(witness.isNull() || witness["captured_id"]!=witness["near_id"])
+        throw std::runtime_error("missing/incorrect native overlap occlusion witness");
+      record["occlusion_verified"]=true;
+
       record["native_result"]="PASS_TESTED_VISUAL_DRAW_PRODUCTION";ok=true;
     }catch(const std::exception &e){done=true;ok=false;record["failure_reason"]=e.what();}
     if(done) {
@@ -166,11 +223,16 @@ int main(int argc,char **argv) {
   auto capture=std::make_shared<LiveCapture>(argv[2],path,argv[4]);
   try {
     g::ServerConfig config;if(!config.SetSdfFile(argv[1]))throw std::runtime_error("invalid disposable SDF");
-    g::Server server(config);if(server.AddSystem(capture)!=std::optional<bool>(true))throw std::runtime_error("capture owner not installed");
+    LiveMark("server_construction_begin");
+    g::Server server(config);LiveMark("server_construction_complete");LiveMaps(path);
+    if(server.AddSystem(capture)!=std::optional<bool>(true))throw std::runtime_error("capture owner not installed");
+    LiveMark("physics_configuration_and_updates_begin");
     if(!server.Run(true,2,false))throw std::runtime_error("bounded Gazebo run failed");
+    LiveMark("server_run_complete");LiveMark("server_teardown_begin");
   }catch(const std::exception &e){capture->ok=false;capture->record["failure_reason"]=e.what();}
+  LiveMark("server_scope_exit_complete");
   std::ifstream maps("/proc/self/maps");std::string line;std::set<std::string> loaded;
   while(std::getline(maps,line)){auto pos=line.find('/');if(pos!=std::string::npos&&line.find(".so",pos)!=std::string::npos)loaded.insert(line.substr(pos));}
   for(const auto &p:loaded)capture->record["loaded_library_paths"].append(p);
-  std::ofstream output(path);output<<capture->record<<'\n';return capture->ok && output?0:2;
+  std::ofstream output(path);output<<capture->record<<'\n';output.flush();LiveMark("native_report_flushed_before_capture_destruction");return capture->ok && output?0:2;
 }
