@@ -24,6 +24,7 @@ public: void OwnerBeforeStep(const UpdateInfo &info) {
   owner.preStepTransforms.clear();
   auto world=OwnerWorld();if(!world)return;
   const auto nodes=OwnerNodes();owner.preStepFrames=world->getSimFrames();
+  owner.preStepDetector=world->getConstraintSolver()->getCollisionDetector()->getType();
   for(const auto &[id,b]:owner.bindings.entries)
     if(nodes.count(b.node))owner.preStepTransforms.emplace(id,b.node->getWorldTransform());
 }
@@ -44,6 +45,18 @@ public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ec
   ecm.Each<components::Collision>([&](const Entity &id,const auto*){ecmIds.insert(id);return true;});
   bool complete=world && owner.bindings.Complete(ids,nodes) && !owner.session.empty() && ecmIds.size()==ids.size();
   for(auto id:ecmIds)if(!ids.count(id))complete=false;
+  r["collision_detector_type_pre"]=owner.preStepDetector;
+  r["detector_shape_nodes"]=Json::Value(Json::arrayValue);
+  if(world) {
+    r["collision_detector_type"]=world->getConstraintSolver()->getCollisionDetector()->getType();
+    const auto group=world->getConstraintSolver()->getCollisionGroup();
+    std::set<const workcell::Node*> detectorNodes;
+    for(std::size_t i=0;i<group->getNumShapeFrames();++i) {
+      const auto node=group->getShapeFrame(i)->asShapeNode();
+      detectorNodes.insert(node);r["detector_shape_nodes"].append(workcell::Pointer(node));
+    }
+    if(detectorNodes!=nodes)complete=false;
+  }
   r["complete"]=complete;r["shapes"]=Json::Value(Json::arrayValue);
   r["frame_id"]="world";r["pre_step_dart_frames"]=owner.preStepFrames;
   r["geometry_state_phase"]="post_ForwardStep_position_integration";
@@ -76,6 +89,10 @@ public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ec
   r["contacts"]=Json::Value(Json::arrayValue);
   if(complete)for(const auto &c:world->getLastCollisionResult().getContacts()) {
     Json::Value contact;
+    contact["collision_object_type1"]=typeid(*c.collisionObject1).name();
+    contact["collision_object_type2"]=typeid(*c.collisionObject2).name();
+    contact["detector_type1"]=c.collisionObject1->getCollisionDetector()->getType();
+    contact["detector_type2"]=c.collisionObject2->getCollisionDetector()->getType();
     contact["node1"]=workcell::Pointer(c.collisionObject1->getShapeFrame()->asShapeNode());
     contact["node2"]=workcell::Pointer(c.collisionObject2->getShapeFrame()->asShapeNode());
     Json::Value point(Json::arrayValue),normal(Json::arrayValue);

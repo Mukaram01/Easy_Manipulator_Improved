@@ -1,5 +1,10 @@
 # Reporting reference and whole-BOX readback — 2026-10-10
 
+Follow-up: [DART→ODE numerical qualification](../ode_numeric/README.md) closes
+the conversion uncertainty for six instrumented contact-input states. The
+BLOCKED statements below describe this earlier baseline; EPD association remains
+blocked in the follow-up.
+
 **Finite contact comparison PASS. Stored DART geometry enclosure PASS.
 Qualified physical penetration remains BLOCKED. No contact authority.**
 

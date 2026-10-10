@@ -1,0 +1,149 @@
+
+/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000366e10 <dart::simulation::World::step(bool)@@Base>:
+  366e10:	f3 0f 1e fa          	endbr64
+  366e14:	41 57                	push   %r15
+  366e16:	41 56                	push   %r14
+  366e18:	41 89 f6             	mov    %esi,%r14d
+  366e1b:	41 55                	push   %r13
+  366e1d:	41 54                	push   %r12
+  366e1f:	55                   	push   %rbp
+  366e20:	48 89 fd             	mov    %rdi,%rbp
+  366e23:	53                   	push   %rbx
+  366e24:	48 83 ec 08          	sub    $0x8,%rsp
+  366e28:	4c 8b 6f 30          	mov    0x30(%rdi),%r13
+  366e2c:	48 8b 5f 28          	mov    0x28(%rdi),%rbx
+  366e30:	49 39 dd             	cmp    %rbx,%r13
+  366e33:	74 33                	je     366e68 <dart::simulation::World::step(bool)@@Base+0x58>
+  366e35:	0f 1f 00             	nopl   (%rax)
+  366e38:	4c 8b 23             	mov    (%rbx),%r12
+  366e3b:	4c 89 e7             	mov    %r12,%rdi
+  366e3e:	e8 cd 53 f5 ff       	call   2bc210 <dart::dynamics::Skeleton::isMobile() const@@Base>
+  366e43:	84 c0                	test   %al,%al
+  366e45:	74 18                	je     366e5f <dart::simulation::World::step(bool)@@Base+0x4f>
+  366e47:	4c 89 e7             	mov    %r12,%rdi
+  366e4a:	e8 51 85 f6 ff       	call   2cf3a0 <dart::dynamics::Skeleton::computeForwardDynamics()@@Base>
+  366e4f:	f2 0f 10 85 38 03 00 	movsd  0x338(%rbp),%xmm0
+  366e56:	00
+  366e57:	48 8b 3b             	mov    (%rbx),%rdi
+  366e5a:	e8 e1 c9 f5 ff       	call   2c3840 <dart::dynamics::Skeleton::integrateVelocities(double)@@Base>
+  366e5f:	48 83 c3 10          	add    $0x10,%rbx
+  366e63:	49 39 dd             	cmp    %rbx,%r13
+  366e66:	75 d0                	jne    366e38 <dart::simulation::World::step(bool)@@Base+0x28>
+  366e68:	48 8b bd 50 03 00 00 	mov    0x350(%rbp),%rdi
+  366e6f:	e8 4c 58 fe ff       	call   34c6c0 <dart::constraint::ConstraintSolver::solve()@@Base>
+  366e74:	4c 8b 6d 30          	mov    0x30(%rbp),%r13
+  366e78:	48 8b 5d 28          	mov    0x28(%rbp),%rbx
+  366e7c:	49 39 dd             	cmp    %rbx,%r13
+  366e7f:	0f 84 f5 00 00 00    	je     366f7a <dart::simulation::World::step(bool)@@Base+0x16a>
+  366e85:	0f 1f 00             	nopl   (%rax)
+  366e88:	4c 8b 23             	mov    (%rbx),%r12
+  366e8b:	4c 89 e7             	mov    %r12,%rdi
+  366e8e:	e8 7d 53 f5 ff       	call   2bc210 <dart::dynamics::Skeleton::isMobile() const@@Base>
+  366e93:	84 c0                	test   %al,%al
+  366e95:	0f 84 d2 00 00 00    	je     366f6d <dart::simulation::World::step(bool)@@Base+0x15d>
+  366e9b:	4c 89 e7             	mov    %r12,%rdi
+  366e9e:	e8 1d 88 f6 ff       	call   2cf6c0 <dart::dynamics::Skeleton::isImpulseApplied() const@@Base>
+  366ea3:	84 c0                	test   %al,%al
+  366ea5:	0f 85 05 01 00 00    	jne    366fb0 <dart::simulation::World::step(bool)@@Base+0x1a0>
+  366eab:	f2 0f 10 85 38 03 00 	movsd  0x338(%rbp),%xmm0
+  366eb2:	00
+  366eb3:	4c 89 e7             	mov    %r12,%rdi
+  366eb6:	e8 95 c8 f5 ff       	call   2c3750 <dart::dynamics::Skeleton::integratePositions(double)@@Base>
+  366ebb:	45 84 f6             	test   %r14b,%r14b
+  366ebe:	0f 84 a9 00 00 00    	je     366f6d <dart::simulation::World::step(bool)@@Base+0x15d>
+  366ec4:	48 8b 3b             	mov    (%rbx),%rdi
+  366ec7:	48 8d 0d 72 7a f6 ff 	lea    -0x9858e(%rip),%rcx        # 2ce940 <dart::dynamics::Skeleton::clearInternalForces()@@Base>
+  366ece:	48 8b 17             	mov    (%rdi),%rdx
+  366ed1:	48 8b 82 00 02 00 00 	mov    0x200(%rdx),%rax
+  366ed8:	48 39 c8             	cmp    %rcx,%rax
+  366edb:	0f 85 ef 00 00 00    	jne    366fd0 <dart::simulation::World::step(bool)@@Base+0x1c0>
+  366ee1:	48 8b 87 a8 05 00 00 	mov    0x5a8(%rdi),%rax
+  366ee8:	4c 8b a7 b0 05 00 00 	mov    0x5b0(%rdi),%r12
+  366eef:	4c 39 e0             	cmp    %r12,%rax
+  366ef2:	0f 84 e8 00 00 00    	je     366fe0 <dart::simulation::World::step(bool)@@Base+0x1d0>
+  366ef8:	49 89 c7             	mov    %rax,%r15
+  366efb:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
+  366f00:	49 8b 3f             	mov    (%r15),%rdi
+  366f03:	49 83 c7 08          	add    $0x8,%r15
+  366f07:	48 8b 17             	mov    (%rdi),%rdx
+  366f0a:	ff 92 e0 00 00 00    	call   *0xe0(%rdx)
+  366f10:	4d 39 fc             	cmp    %r15,%r12
+  366f13:	75 eb                	jne    366f00 <dart::simulation::World::step(bool)@@Base+0xf0>
+  366f15:	48 8b 3b             	mov    (%rbx),%rdi
+  366f18:	48 8d 0d e1 79 f6 ff 	lea    -0x9861f(%rip),%rcx        # 2ce900 <dart::dynamics::Skeleton::clearExternalForces()@@Base>
+  366f1f:	48 8b 07             	mov    (%rdi),%rax
+  366f22:	48 8b 80 f8 01 00 00 	mov    0x1f8(%rax),%rax
+  366f29:	48 39 c8             	cmp    %rcx,%rax
+  366f2c:	0f 85 ce 00 00 00    	jne    367000 <dart::simulation::World::step(bool)@@Base+0x1f0>
+  366f32:	48 8b 87 a8 05 00 00 	mov    0x5a8(%rdi),%rax
+  366f39:	4c 8b a7 b0 05 00 00 	mov    0x5b0(%rdi),%r12
+  366f40:	4c 39 e0             	cmp    %r12,%rax
+  366f43:	74 23                	je     366f68 <dart::simulation::World::step(bool)@@Base+0x158>
+  366f45:	49 89 c7             	mov    %rax,%r15
+  366f48:	0f 1f 84 00 00 00 00 	nopl   0x0(%rax,%rax,1)
+  366f4f:	00
+  366f50:	49 8b 3f             	mov    (%r15),%rdi
+  366f53:	49 83 c7 08          	add    $0x8,%r15
+  366f57:	48 8b 17             	mov    (%rdi),%rdx
+  366f5a:	ff 92 d8 00 00 00    	call   *0xd8(%rdx)
+  366f60:	4d 39 fc             	cmp    %r15,%r12
+  366f63:	75 eb                	jne    366f50 <dart::simulation::World::step(bool)@@Base+0x140>
+  366f65:	48 8b 3b             	mov    (%rbx),%rdi
+  366f68:	e8 53 a9 ef ff       	call   2618c0 <dart::dynamics::MetaSkeleton::resetCommands()@@Base>
+  366f6d:	48 83 c3 10          	add    $0x10,%rbx
+  366f71:	49 39 dd             	cmp    %rbx,%r13
+  366f74:	0f 85 0e ff ff ff    	jne    366e88 <dart::simulation::World::step(bool)@@Base+0x78>
+  366f7a:	f2 0f 10 85 40 03 00 	movsd  0x340(%rbp),%xmm0
+  366f81:	00
+  366f82:	f2 0f 58 85 38 03 00 	addsd  0x338(%rbp),%xmm0
+  366f89:	00
+  366f8a:	83 85 48 03 00 00 01 	addl   $0x1,0x348(%rbp)
+  366f91:	f2 0f 11 85 40 03 00 	movsd  %xmm0,0x340(%rbp)
+  366f98:	00
+  366f99:	48 83 c4 08          	add    $0x8,%rsp
+  366f9d:	5b                   	pop    %rbx
+  366f9e:	5d                   	pop    %rbp
+  366f9f:	41 5c                	pop    %r12
+  366fa1:	41 5d                	pop    %r13
+  366fa3:	41 5e                	pop    %r14
+  366fa5:	41 5f                	pop    %r15
+  366fa7:	c3                   	ret
+  366fa8:	0f 1f 84 00 00 00 00 	nopl   0x0(%rax,%rax,1)
+  366faf:	00
+  366fb0:	4c 89 e7             	mov    %r12,%rdi
+  366fb3:	e8 b8 c3 f6 ff       	call   2d3370 <dart::dynamics::Skeleton::computeImpulseForwardDynamics()@@Base>
+  366fb8:	4c 8b 23             	mov    (%rbx),%r12
+  366fbb:	31 f6                	xor    %esi,%esi
+  366fbd:	4c 89 e7             	mov    %r12,%rdi
+  366fc0:	e8 eb 86 f6 ff       	call   2cf6b0 <dart::dynamics::Skeleton::setImpulseApplied(bool)@@Base>
+  366fc5:	e9 e1 fe ff ff       	jmp    366eab <dart::simulation::World::step(bool)@@Base+0x9b>
+  366fca:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  366fd0:	ff d0                	call   *%rax
+  366fd2:	e9 3e ff ff ff       	jmp    366f15 <dart::simulation::World::step(bool)@@Base+0x105>
+  366fd7:	66 0f 1f 84 00 00 00 	nopw   0x0(%rax,%rax,1)
+  366fde:	00 00
+  366fe0:	48 8b 82 f8 01 00 00 	mov    0x1f8(%rdx),%rax
+  366fe7:	48 8d 35 12 79 f6 ff 	lea    -0x986ee(%rip),%rsi        # 2ce900 <dart::dynamics::Skeleton::clearExternalForces()@@Base>
+  366fee:	48 39 f0             	cmp    %rsi,%rax
+  366ff1:	0f 84 71 ff ff ff    	je     366f68 <dart::simulation::World::step(bool)@@Base+0x158>
+  366ff7:	66 0f 1f 84 00 00 00 	nopw   0x0(%rax,%rax,1)
+  366ffe:	00 00
+  367000:	ff d0                	call   *%rax
+  367002:	e9 5e ff ff ff       	jmp    366f65 <dart::simulation::World::step(bool)@@Base+0x155>
+
+/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000031dcf0 <dart::collision::CollisionObject::getTransform() const@@Base>:
+  31dcf0:	f3 0f 1e fa          	endbr64
+  31dcf4:	48 8b 7f 10          	mov    0x10(%rdi),%rdi
+  31dcf8:	48 8b 07             	mov    (%rdi),%rax
+  31dcfb:	48 03 78 a0          	add    -0x60(%rax),%rdi
+  31dcff:	e9 4c 83 ee ff       	jmp    206050 <dart::dynamics::Frame::getWorldTransform() const@@Base>

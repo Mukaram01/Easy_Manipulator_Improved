@@ -1,0 +1,31 @@
+--- baseline/owner_readback.hh
++++ instrumented/owner_readback.hh
+@@ -10,0 +11,4 @@
++#include <dart/collision/CollisionDetector.hpp>
++#include <dart/collision/CollisionGroup.hpp>
++#include <dart/constraint/ConstraintSolver.hpp>
++#include <typeinfo>
+@@ -33,0 +38 @@
++  std::string preStepDetector;
+--- baseline/owner_private.inc
++++ instrumented/owner_private.inc
+@@ -26,0 +27 @@
++  owner.preStepDetector=world->getConstraintSolver()->getCollisionDetector()->getType();
+@@ -46,0 +48,12 @@
++  r["collision_detector_type_pre"]=owner.preStepDetector;
++  r["detector_shape_nodes"]=Json::Value(Json::arrayValue);
++  if(world) {
++    r["collision_detector_type"]=world->getConstraintSolver()->getCollisionDetector()->getType();
++    const auto group=world->getConstraintSolver()->getCollisionGroup();
++    std::set<const workcell::Node*> detectorNodes;
++    for(std::size_t i=0;i<group->getNumShapeFrames();++i) {
++      const auto node=group->getShapeFrame(i)->asShapeNode();
++      detectorNodes.insert(node);r["detector_shape_nodes"].append(workcell::Pointer(node));
++    }
++    if(detectorNodes!=nodes)complete=false;
++  }
+@@ -78,0 +92,4 @@
++    contact["collision_object_type1"]=typeid(*c.collisionObject1).name();
++    contact["collision_object_type2"]=typeid(*c.collisionObject2).name();
++    contact["detector_type1"]=c.collisionObject1->getCollisionDetector()->getType();
++    contact["detector_type2"]=c.collisionObject2->getCollisionDetector()->getType();

@@ -8,6 +8,10 @@
 #include <dart/dynamics/Skeleton.hpp>
 #include <dart/collision/CollisionResult.hpp>
 #include <dart/collision/CollisionObject.hpp>
+#include <dart/collision/CollisionDetector.hpp>
+#include <dart/collision/CollisionGroup.hpp>
+#include <dart/constraint/ConstraintSolver.hpp>
+#include <typeinfo>
 #include <jsoncpp/json/json.h>
 #include <fstream>
 #include <sstream>
@@ -31,6 +35,7 @@ struct OwnerReadback {
   std::set<std::uint64_t> recordSteps;
   std::map<std::uint64_t,Eigen::Isometry3d> preStepTransforms;
   int preStepFrames=-1;
+  std::string preStepDetector;
   void Configure(const std::shared_ptr<const sdf::Element> &sdf) {
     output=sdf->Get<std::string>("owner_output", "").first;
     session=sdf->Get<std::string>("owner_session", "").first;
