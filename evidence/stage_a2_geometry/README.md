@@ -109,8 +109,7 @@ colcon --log-base "$A2_RUN/log" build --base-paths "$A2_SCENE" \
 source /tmp/pr3175_verify/install/setup.bash
 source "$A2_RUN/install/setup.bash"
 cp -a --reflink=auto /tmp/pr3175_verify/install/workcell_builder "$A2_RUN/workcell_builder"
-cp scripts/{runtime_pick_inputs,perceived_object_grasp_execute,full_cycle_preplanner,stage_a_rgbd_snapshot}.py \
-  "$A2_RUN/workcell_builder/lib/workcell_builder/"
+cp scripts/*.py "$A2_RUN/workcell_builder/lib/workcell_builder/"
 export AMENT_PREFIX_PATH="$A2_RUN/workcell_builder:$AMENT_PREFIX_PATH"
 python3 scripts/run_r14_plan_only_acceptance.py \
   --scene-dir "$A2_SCENE" --output-dir "$A2_RUN/planning" \
@@ -122,9 +121,9 @@ python3 scripts/run_r14_plan_only_acceptance.py \
 Builder installation, not the protected checkout. On another workstation use a
 Humble build of this branch instead. The runner fails closed on script or scene
 byte mismatches. An expected timeout is not a PASS: inspect `acceptance.json`.
-Next product action: diagnose the bounded MoveIt approach/IK failure from these
-logs, then rerun this same acceptance. Do not shrink conservative envelopes or
-change bridge gates to force a successful result.
+The historical approach/IK timeout diagnosis and subsequent closing correction
+are recorded below. Do not shrink conservative envelopes or change bridge gates
+to force a successful result.
 
 ## Timeout diagnosis — 2026-10-10
 
@@ -160,7 +159,7 @@ trace are at `/tmp/workcell_stage_a2_certified_budget`. To retain that trace on
 the next run, set `WORKCELL_PLANNING_TRACE_DIR="$A2_RUN/planning/adapter_trace"`
 before invoking the same acceptance runner. No additional validator was added.
 
-Latest result: the response-timeout cascade is corrected for explicit plan-only
+Baseline `211e7083` result: the response-timeout cascade is corrected for explicit plan-only
 acceptance. The bounded run finished in 291.528 s with actual MoveIt responses,
 13 distinct candidates / 19 attempts. Seven attempts passed certified approach
 and Cartesian descent. All seven failed closing with INVALID_MOTION_PLAN and
@@ -183,8 +182,78 @@ after the long runtime started and tested with simulated setup delay; the runtim
 finished inside its global budget. Its exact executed script hashes are retained;
 this is not a complete current-head feasibility PASS.
 
-Next action: inspect the saved closing request and private scene in the existing
+Baseline next action (addressed below): inspect the saved closing request and private scene in the existing
 adapter trace, identify the pair that remains uncertified at the reported interval,
 and correct only a demonstrated certification/clearance defect. A depth/precision
 limit is not proof of collision. Then run the command above again. Do not loosen
 certification, geometry, contact rules, task selection or bridge qualification.
+
+## Exact-limit closing correction — 2026-10-10
+
+The saved gripper request was replayed alone, using its actual private scene and
+ACM. There was **no unresolved collision pair** at the failing `[0,1] ns` leaf.
+`gripper_finger1_joint` starts at its exact lower limit, `0.0` rad. Charging the
+entire segment's evaluation error (`9.9475983006434842e-16` rad) against that
+boundary produced a negative lower enclosure at every subdivision. Depth 26 and
+`PRECISION_OR_DEPTH_LIMIT` described an inconclusive joint-limit proof, not a
+measured penetration or unreachable grasp.
+
+When the original Bernstein joint-limit bound is inconclusive, the existing
+certificate now additionally encloses the installed JTC's coefficient/product/
+sum arithmetic at every interior integer-nanosecond timestamp, with actual JTC
+endpoint evaluation and the stored-final-point rule. Mimic transforms retain
+outward rounding. Collision movement/error bounds, exact joint limits, ACM,
+attachment timing and conservative object envelopes are unchanged.
+
+The actual saved 16-point closing trajectory now certifies: 55 inspected
+intervals, 35 certified, depth 20, 0.879 s. Removing the target's two fingertip
+permissions produces `COLLISION / FCL_COLLISION`. A fresh single-request MoveIt
+replay returned `SUCCESS` in 1.114 s, with zero execution goals and clean
+shutdown. Native Humble library/test builds PASS; 67 affected native tests PASS,
+one historical external Stage-A approach fixture skipped (unavailable). Tests
+include negative motion from the lower limit and JTC arithmetic containment.
+See `closing_diagnosis.json` for fixture hashes and runtime provenance.
+
+Focused workstation commands (same isolated source and existing fixture format):
+
+```bash
+cd /home/user/workcell_ws_stage_a2
+source /opt/ros/humble/setup.bash
+source /tmp/pr3175_verify/install/setup.bash
+cmake -S workcell_builder/workcell_builder -B /tmp/stage_a2_closing_build \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON
+cmake --build /tmp/stage_a2_closing_build \
+  --target workcell_support_contact workcell_support_contact_test -j2
+WORKCELL_STAGE_A2_CLOSING_FIXTURE=/tmp/stage_a2_closing_fixture \
+  /tmp/stage_a2_closing_build/workcell_support_contact_test
+```
+
+The external fixture is the captured MoveIt trajectory and private scene, with
+expanded robot URDF/SRDF; it is not generated ground-truth perception. To use the
+corrected library for the existing acceptance command above, copy
+`/tmp/stage_a2_closing_build/libworkcell_support_contact.so` to the disposable
+Builder prefix's `lib/` and refresh its installed Python scripts from this
+checkout before launch. No protected checkout is installed or modified.
+
+Latest bounded acceptance: **full cycle BLOCKED** (runner FAIL), 324.378 s,
+13 distinct candidates / 19 attempts. Three actual MoveIt approaches, descents
+and closing trajectories PASS. `top_2f::002`, `finger_pinch_basic::003` and retry
+`finger_pinch_basic::000` then fail `NO_VALID_EXTRACTION / EXTRACTION_INITIAL_DEPTH`:
+target `runtime::epd_24056000000_4` and neighbor `runtime::epd_24056000000_2`
+conservative envelopes overlap by **13.634280 mm**, above the existing **0.1 mm**
+limit. This is conservative-envelope overlap, not proof that the physical cubes
+penetrate. The two objects outside authored pick selection remain obstacles.
+Lift, transfer, placement and retreat were not reached.
+
+The final AUTO retry exhausted the response budget with typed `ACTION_TIMEOUT`;
+no further candidates were started after that transport failure. Cancellation
+was not confirmed. Owned-process shutdown was clean, no owned groups remain,
+and zero robot/gripper/trajectory execution goals were observed. Replay and
+incomplete-scene execution restrictions remain in force. No second campaign ran.
+
+Next product action: obtain a genuinely separated-cube RGB-D/EPD observation,
+or reviewed evidence that justifies reducing reconstruction uncertainty, before
+rerunning the same acceptance. Do not shrink these envelopes or relax the
+extraction guard to make this capture pass. ROS bridge qualification remains
+separately BLOCKED and unchanged. The protected Stage-A1 checkout fingerprint
+(HEAD, all file statuses and tracked diff) still matches the saved baseline.

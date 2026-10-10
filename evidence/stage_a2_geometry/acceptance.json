@@ -292,306 +292,397 @@
   },
   "planning": {
     "result": "FAIL",
+    "runtime_seconds": 324.3778757350228,
+    "failure": "ACTION_TIMEOUT: action result timed out",
+    "orchestration_failure": "executor did not prove an unchanged, complete plan-only cycle",
     "execution_action_goals": [],
     "shutdown_clean": true,
     "trajectory_execution_enabled": false,
-    "orchestration_failure": "launch/planning deadline exceeded",
     "remaining_owned_process_groups": [],
+    "execution_attempted": false,
+    "full_cycle_prevalidated": false,
+    "milestone_result": "BLOCKED",
+    "closing_diagnosis": "closing_diagnosis.json",
+    "source_commit": "211e708303f90fd09f601dcf7628fa965ee487cc",
+    "source_dirty": true,
+    "executor_hashes": {
+      "perceived_object_grasp_execute.py": "eaf9fee9644062efb094f713573d0ece105d162c1f9873fcef9154c2b0dcfac1",
+      "perceived_object_grasp_plan.py": "f3b9a592201660f75b5beaaa27501cd7e1c41002109337085f555813df522660",
+      "runtime_pick_inputs.py": "f4bdb673570acae75d0ae053b3f6c04929f739f4f0b10d20a79f1128869cc12d",
+      "task_intent_resolver.py": "40d3f0deb205e3d9f6de11f49df6293bd480c9c9da4aeb10b327482e3332135a",
+      "task_intent_v2.py": "e9fd8a1f41fed44767925f01c38b6d28b033e5872fe7c20ee5fa1364fcbf73e7",
+      "full_cycle_preplanner.py": "991cd5afdb3a28029d42ed099b3b43c6f20f39771bcf9aa0c61085ce69ee949e",
+      "physical_destination.py": "7bce6368b287b932f92013deb72053733813fc8f50fa375cb9803d433c42a18b",
+      "grasp_strategy_candidates.py": "94a71747cbe7a3ed10da4b34e91bca13c277a643a86ba3f3813992d01a33377c"
+    },
+    "scene_hashes": {
+      "environment.yaml": "e3ea1f594b4df72fa55e1bf62ca92df1fcb5d75c470a2cab18b9ea3e2534bc21",
+      "cell_definition.yaml": "7b3939af22b90b8cefb90629820d5dd9c14819f3a4c06fe95503a6aa8d47898b",
+      "config/moveit_collision_objects.yaml": "deeeff4678c2472bba1b28c9f812bf2b3cdee1074763b6fd80693b5796f9a78a"
+    },
+    "cancellation_accepted": false,
+    "cancellation_confirmed": false,
     "candidate_attempts": [
       {
         "candidate_id": "top_2f::000",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 22.05278911901405,
-        "checks": [
-          {
-            "candidate_id": "top_2f::000",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "action result timed out",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "PREPLAN_APPROACH_FAILED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::000",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "action result timed out",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
           }
         ]
       },
       {
         "candidate_id": "top_2f::001",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 10.019094148010481,
-        "checks": [
-          {
-            "candidate_id": "top_2f::001",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "service timeout: /compute_ik",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "PREPLAN_APPROACH_FAILED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::001",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "service timeout: /compute_ik",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
           }
         ]
       },
       {
         "candidate_id": "top_2f::002",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 7.6810563310282305,
-        "checks": [
-          {
-            "candidate_id": "top_2f::002",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "NO_VALID_EXTRACTION",
         "stages": [
           {
-            "candidate_id": "top_2f::002",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_GRASP",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_CLOSE_GRIPPER",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "ATTACH",
+            "success": false,
+            "reason_code": "NO_VALID_EXTRACTION",
+            "failure_kind": "extraction",
+            "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'runtime::epd_24056000000_2', 'depth_m': 0.013634280420216933, 'gap_m': 0.0, 'normal': [0.2631174064220265, 0.9647638210638384, -2.0120615342666195e-06]}"
           }
-        ]
+        ],
+        "extraction_rejection": {
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "runtime::epd_24056000000_2",
+          "depth_m": 0.013634280420216933,
+          "gap_m": 0.0
+        }
       },
       {
         "candidate_id": "top_2f::003",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 4.671942993008997,
-        "checks": [
-          {
-            "candidate_id": "top_2f::003",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::003",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
           }
         ]
       },
       {
         "candidate_id": "top_2f::004",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 19.133000767993508,
-        "checks": [
-          {
-            "candidate_id": "top_2f::004",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "action result timed out",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "PREPLAN_APPROACH_FAILED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::004",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "action result timed out",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
           }
         ]
       },
       {
         "candidate_id": "top_2f::005",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 22.033183163002832,
-        "checks": [
-          {
-            "candidate_id": "top_2f::005",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "action result timed out",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "PREPLAN_APPROACH_FAILED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::005",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "planning",
-            "reason": "action result timed out",
-            "reason_code": "PREPLAN_APPROACH_FAILED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
           }
         ]
       },
       {
         "candidate_id": "top_2f::006",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 17.709011399012525,
-        "checks": [
-          {
-            "candidate_id": "top_2f::006",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::006",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
           }
         ]
       },
       {
         "candidate_id": "top_2f::007",
-        "candidate_wall_budget": 0.75,
-        "candidate_wall_seconds": 4.074136095994618,
-        "checks": [
-          {
-            "candidate_id": "top_2f::007",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 1,
-        "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
         "search_pass": "discovery:top_2f",
-        "segment_planning_time": 0.75,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::007",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate wall-clock slice exhausted",
-            "reason_code": "CANDIDATE_SLICE_EXHAUSTED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
           }
         ]
       },
       {
-        "candidate_id": "top_2f::002",
-        "candidate_wall_budget": 20.0,
-        "candidate_wall_seconds": 6.056346127006691,
-        "checks": [
-          {
-            "candidate_id": "top_2f::002",
-            "code": "PREPLAN_APPROACH",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate search budget exhausted",
-            "reason_code": "SEARCH_BUDGET_EXHAUSTED",
-            "status": "FAIL"
-          }
-        ],
-        "extraction_attempts": [],
+        "candidate_id": "top_2f::000",
         "object_id": "runtime::epd_24056000000_4",
-        "planning_attempts": 3,
-        "reason_code": "SEARCH_BUDGET_EXHAUSTED",
         "search_pass": "retry:top_2f",
-        "segment_planning_time": 3.0,
+        "reason_code": "PREPLAN_APPROACH_FAILED",
         "stages": [
           {
-            "candidate_id": "top_2f::002",
-            "failed_stage": "PREPLAN_APPROACH",
-            "failure_kind": "budget",
-            "reason": "candidate search budget exhausted",
-            "reason_code": "SEARCH_BUDGET_EXHAUSTED",
             "stage": "PREPLAN_APPROACH",
-            "success": false
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::001",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "top_2f::003",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:top_2f",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "side_grip_basic::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:side_grip_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -31,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "IK failed: -31"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -2,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-2"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::001",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::002",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::003",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "discovery:finger_pinch_basic",
+        "reason_code": "NO_VALID_EXTRACTION",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_GRASP",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_CLOSE_GRIPPER",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "ATTACH",
+            "success": false,
+            "reason_code": "NO_VALID_EXTRACTION",
+            "failure_kind": "extraction",
+            "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'runtime::epd_24056000000_2', 'depth_m': 0.013634280420216933, 'gap_m': 0.0, 'normal': [0.2631174064220265, 0.9647638210638384, -2.0120615342666195e-06]}"
+          }
+        ],
+        "extraction_rejection": {
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "runtime::epd_24056000000_2",
+          "depth_m": 0.013634280420216933,
+          "gap_m": 0.0
+        }
+      },
+      {
+        "candidate_id": "finger_pinch_basic::000",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:finger_pinch_basic",
+        "reason_code": "NO_VALID_EXTRACTION",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_GRASP",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "PREPLAN_CLOSE_GRIPPER",
+            "success": true,
+            "moveit_code": 1
+          },
+          {
+            "stage": "ATTACH",
+            "success": false,
+            "reason_code": "NO_VALID_EXTRACTION",
+            "failure_kind": "extraction",
+            "reason": "NO_VALID_EXTRACTION: EXTRACTION_INITIAL_DEPTH {'neighbor': 'runtime::epd_24056000000_2', 'depth_m': 0.013634280420216933, 'gap_m': 0.0, 'normal': [0.2631174064220265, 0.9647638210638384, -2.0120615342666195e-06]}"
+          }
+        ],
+        "extraction_rejection": {
+          "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+          "neighbor": "runtime::epd_24056000000_2",
+          "depth_m": 0.013634280420216933,
+          "gap_m": 0.0
+        }
+      },
+      {
+        "candidate_id": "finger_pinch_basic::001",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:finger_pinch_basic",
+        "reason_code": "PREPLAN_APPROACH_FAILED",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "moveit_code": -6,
+            "reason_code": "PREPLAN_APPROACH_FAILED",
+            "failure_kind": "planning",
+            "reason": "MoveIt action failed: status=6, code=-6"
+          }
+        ]
+      },
+      {
+        "candidate_id": "finger_pinch_basic::002",
+        "object_id": "runtime::epd_24056000000_4",
+        "search_pass": "retry:finger_pinch_basic",
+        "reason_code": "ACTION_TIMEOUT",
+        "stages": [
+          {
+            "stage": "PREPLAN_APPROACH",
+            "success": false,
+            "reason_code": "ACTION_TIMEOUT",
+            "failure_kind": "transport",
+            "reason": "action result timed out"
           }
         ]
       }
@@ -614,6 +705,8 @@
     "disposable_scene_build": "PASS",
     "full_cycle_feasibility": "BLOCKED: approach action/IK timeouts and search deadline",
     "bridge_commissioning": "BLOCKED: existing baseline SIGABRT prerequisite unavailable; not investigated",
-    "scene_completeness": "NOT PROVEN: 10 independently visible cubes, only 3 accepted representations"
+    "scene_completeness": "NOT PROVEN: 10 independently visible cubes, only 3 accepted representations",
+    "closing_certificate_native_build": "PASS",
+    "closing_certificate_native_tests": "67 PASS; 1 historical external fixture SKIPPED"
   }
 }
