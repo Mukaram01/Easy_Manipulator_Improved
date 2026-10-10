@@ -380,6 +380,15 @@ def retryable_plan_failure(code):
     return code in (-2, -6)
 
 
+class MoveItTransportFailure(RuntimeError):
+    """A missing response proves no geometric outcome and invalidates this search."""
+
+    def __init__(self, code, reason, **evidence):
+        super().__init__(reason)
+        self.reason_code = code
+        self.details = dict(failure_kind='transport', **evidence)
+
+
 def preplan_retryable_failure(result):
     """Return whether a failed preplan deserves a later identical planning retry.
 
@@ -387,7 +396,8 @@ def preplan_retryable_failure(result):
     while later objects/strategies remain untested. Deterministic IK, collision,
     geometry, corridor and task-constraint failures are terminal for that candidate.
     """
-    if result.success or result.reason_code == 'SEARCH_BUDGET_EXHAUSTED':
+    if (result.success or result.reason_code == 'SEARCH_BUDGET_EXHAUSTED' or
+            any(c.get('failure_kind') == 'transport' for c in result.checks)):
         return False
     if result.reason_code == 'CANDIDATE_SLICE_EXHAUSTED':
         return True
@@ -581,7 +591,7 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
 
 def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         contract, operations, deadline, summary, resolved=None,
-                        planning_time=3.0):
+                        planning_time=3.0, candidate_wall_budget=None):
     """Resolve with fair discovery, then spend retries only on stochastic failures.
 
     A fresh resolve gives every candidate one bounded planning window before any
@@ -603,6 +613,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     # every strategy and retry a small progress-ranked beam inside 300 s.
     discovery_candidate_budget = 0.75
     retry_candidate_budget = 20.0
+    if candidate_wall_budget is not None:
+        discovery_candidate_budget = retry_candidate_budget = float(candidate_wall_budget)
     retry_beam_width = 3
 
     def request_key(request):
@@ -719,7 +731,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 # seeds must never escape into another extraction alternative.
                 'transfer_ik_seed': copy.deepcopy(transfer_stage['transfer_ik_seed']) if result.success and transfer_stage else None,
                 'retryable': preplan_retryable_failure(result),
-                'stop_search': result.reason_code == 'SEARCH_BUDGET_EXHAUSTED',
+                'stop_search': (result.reason_code == 'SEARCH_BUDGET_EXHAUSTED' or
+                                any(c.get('failure_kind') == 'transport' for c in result.checks)),
                 'progress_passes': progress_passes,
                 'failed_stage': failed_stage}
 
@@ -806,7 +819,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
             if resolution['readiness_status'] in ('READY', 'WARNING'):
                 break
-            if resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED':
+            if (resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED' or
+                    any(c.get('failure_kind') == 'transport' for c in resolution['readiness']['checks'])):
                 stop_all = True
                 break
             if grasp_policy == 'EXACT':
@@ -873,7 +887,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
                 if resolution['readiness_status'] in ('READY', 'WARNING'):
                     break
-                if resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED':
+                if (resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED' or
+                    any(c.get('failure_kind') == 'transport' for c in resolution['readiness']['checks'])):
                     stop_all = True
                     break
 
@@ -1054,9 +1069,14 @@ def main():
     parser.add_argument('--commission-evidence', type=Path, help='Passing measured trial and cancellation evidence required for full-cycle')
     parser.add_argument('--simulator-receipt', type=Path, help='Live local Fortress receipt; independently verified, never an identity bypass')
     parser.add_argument('--segment-planning-time', type=float, default=3.0, help='Per-request computation budget, 0 < seconds <= 10; collision tolerances unchanged')
+    parser.add_argument('--candidate-wall-budget', type=float,
+        help='Explicit plan-only full-cycle budget including controller certification (seconds, <=300)')
     parser.add_argument('--timeout', type=float, default=180.0, help='Total candidate search budget in seconds')
     parser.add_argument('--retreat-distance', type=float)
     args = parser.parse_args()
+    if args.candidate_wall_budget is not None and (args.start or
+            not math.isfinite(args.candidate_wall_budget) or not 0 < args.candidate_wall_budget <= 300):
+        parser.error('--candidate-wall-budget requires plan-only mode and finite seconds in (0,300]')
     if not math.isfinite(args.segment_planning_time) or not 0 < args.segment_planning_time <= 10:
         parser.error('segment planning time must be finite and in (0, 10]')
     if args.simulator_commission and (not args.start or args.resolve_task):
@@ -1138,11 +1158,13 @@ def main():
         trace_sequence += 1
     def call(client, request):
         if not client.wait_for_service(timeout_sec=10):
-            raise RuntimeError(f'service unavailable: {client.srv_name}')
+            raise MoveItTransportFailure('SERVICE_UNAVAILABLE', f'service unavailable: {client.srv_name}',
+                                         service=client.srv_name)
         future = client.call_async(request)
         rclpy.spin_until_future_complete(node, future, timeout_sec=10)
         if not future.done() or future.result() is None:
-            raise RuntimeError(f'service timeout: {client.srv_name}')
+            raise MoveItTransportFailure('SERVICE_TIMEOUT', f'service timeout: {client.srv_name}',
+                                         service=client.srv_name, response_timeout_seconds=10)
         return future.result()
     def scene_now():
         req = GetPlanningScene.Request()
@@ -1151,8 +1173,10 @@ def main():
     def apply(diff):
         if not call(apply_client, ApplyPlanningScene.Request(scene=diff)).success:
             raise RuntimeError('PlanningScene rejected transition')
-    def action(client, goal, timeout):
+    def action(client, goal, timeout, *, response_deadline=None):
         from simulator_execution import GraspRetentionLoss
+        def wait_budget(limit):
+            return limit if response_deadline is None else max(0., min(limit, response_deadline-time.monotonic()))
         if client is execute_client and summary.get('grasp_recovery'):
             raise RuntimeError('RECOVERY_EXECUTION_INVALIDATED: fresh recovery continuation is unqualified')
         opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
@@ -1160,15 +1184,15 @@ def main():
         if client is execute_client:
             from rosidl_runtime_py.convert import message_to_ordereddict
             trajectory_evidence=message_to_ordereddict(goal.trajectory)
-        if not client.wait_for_server(timeout_sec=5):
-            raise RuntimeError('MoveIt action unavailable')
+        if not client.wait_for_server(timeout_sec=wait_budget(5)):
+            raise MoveItTransportFailure('ACTION_UNAVAILABLE', 'MoveIt action unavailable')
         if controlled_cancel and controller_audit:controller_audit.arm()
         sent = client.send_goal_async(goal)
-        rclpy.spin_until_future_complete(node, sent, timeout_sec=5)
+        rclpy.spin_until_future_complete(node, sent, timeout_sec=wait_budget(5))
         if not sent.done():
             # A late accepted goal must not keep running after the caller fails.
             sent.add_done_callback(lambda f: f.result().cancel_goal_async() if f.result() and f.result().accepted else None)
-            raise RuntimeError('action acceptance timed out')
+            raise MoveItTransportFailure('ACTION_ACCEPTANCE_TIMEOUT', 'action acceptance timed out')
         handle = sent.result()
         if not handle or not handle.accepted:
             raise RuntimeError('action goal rejected')
@@ -1200,9 +1224,9 @@ def main():
                     accepted_wall_ns=summary['owned_execution_goal']['wall_ns'])
                 summary['cancellation_motion']=motion_trial.evidence
             if execution_monitor is None:
-                rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+                rclpy.spin_until_future_complete(node, future, timeout_sec=wait_budget(timeout))
             else:
-                until=time.monotonic()+timeout
+                until=time.monotonic()+wait_budget(timeout)
                 while not future.done() and time.monotonic()<until:
                     rclpy.spin_once(node,timeout_sec=.005)
                     execution_monitor()
@@ -1213,7 +1237,8 @@ def main():
                         if moved and sample['sim_ns']-cancel_start>200000000:
                             raise RuntimeError('CONTROLLED_CANCELLATION')
             if not future.done() or future.result() is None:
-                raise RuntimeError('action result timed out')
+                raise MoveItTransportFailure('ACTION_TIMEOUT', 'action result timed out',
+                    response_timeout_seconds=timeout, owned_goal_uuid=bytes(owned_uuid).hex())
             if controlled_cancel:
                 # A short/successful approach must never turn this bounded trial
                 # into contact motion when cancellation was not demonstrated.
@@ -1290,6 +1315,9 @@ def main():
                     summary['cancellation_failure'] = str(cancel_error)
             else:
                 summary['cancellation_failure'] = 'ROS context already invalid'
+            if isinstance(exc, MoveItTransportFailure):
+                exc.details.update(cancellation_accepted=summary.get('cancellation_accepted', False),
+                                   cancellation_confirmed=summary.get('cancellation_confirmed', False))
             raise
         response = future.result()
         if response.status != 4 or response.result.error_code.val != 1:
@@ -1798,7 +1826,14 @@ def main():
         # start state, scene or execution action. All collision checks remain active.
         for attempt in range(planning_attempts):
             try:
-                result = action(plan_client, goal_msg, 12)
+                response_budget = (wall_deadline - time.monotonic()
+                                   if getattr(args, 'candidate_wall_budget', None) is not None else 12)
+                if response_budget <= 0:
+                    raise wall_budget_failure()
+                if getattr(args, 'candidate_wall_budget', None) is not None:
+                    result = action(plan_client, goal_msg, response_budget, response_deadline=wall_deadline)
+                else:
+                    result = action(plan_client, goal_msg, response_budget)
                 break
             except MoveItActionFailure as exc:
                 if time.monotonic() >= wall_deadline:
@@ -1811,6 +1846,8 @@ def main():
                     try:
                         validity = call(validity_client, GetStateValidity.Request(robot_state=goal_state, group_name=''))
                         contacts = contacts_in_planned_scene(validity.contacts, view, initial)
+                    except MoveItTransportFailure:
+                        raise
                     except Exception:
                         contacts = []  # Unavailable collision evidence is not a collision claim.
                     raise MotionFeasibilityFailure(str(exc), moveit_code=exc.code, contacts=contacts) from exc
@@ -1981,7 +2018,7 @@ def main():
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,
                 deadline=deadline, summary=summary, resolved=expected_resolution,
-                planning_time=args.segment_planning_time)
+                planning_time=args.segment_planning_time, candidate_wall_budget=args.candidate_wall_budget)
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')

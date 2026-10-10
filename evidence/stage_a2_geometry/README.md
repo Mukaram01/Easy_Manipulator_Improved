@@ -109,13 +109,13 @@ colcon --log-base "$A2_RUN/log" build --base-paths "$A2_SCENE" \
 source /tmp/pr3175_verify/install/setup.bash
 source "$A2_RUN/install/setup.bash"
 cp -a --reflink=auto /tmp/pr3175_verify/install/workcell_builder "$A2_RUN/workcell_builder"
-cp scripts/{runtime_pick_inputs,perceived_object_grasp_execute,stage_a_rgbd_snapshot}.py \
+cp scripts/{runtime_pick_inputs,perceived_object_grasp_execute,full_cycle_preplanner,stage_a_rgbd_snapshot}.py \
   "$A2_RUN/workcell_builder/lib/workcell_builder/"
 export AMENT_PREFIX_PATH="$A2_RUN/workcell_builder:$AMENT_PREFIX_PATH"
 python3 scripts/run_r14_plan_only_acceptance.py \
   --scene-dir "$A2_SCENE" --output-dir "$A2_RUN/planning" \
   --detections /tmp/workcell_stage_a2_acceptance/plan_only_replay.json \
-  --resolve-task --timeout 120 --domain-id 185
+  --resolve-task --candidate-wall-budget 300 --timeout 330 --domain-id 185
 ```
 
 `/tmp/pr3175_verify/install` is the previously verified published-baseline Humble
@@ -125,3 +125,66 @@ byte mismatches. An expected timeout is not a PASS: inspect `acceptance.json`.
 Next product action: diagnose the bounded MoveIt approach/IK failure from these
 logs, then rerun this same acceptance. Do not shrink conservative envelopes or
 change bridge gates to force a successful result.
+
+## Timeout diagnosis — 2026-10-10
+
+The original 12 s action response wait and 0.75 s discovery / 20 s retry cycle
+slices excluded the cost of controller-spline certification. With the same
+EPD replay, startup completed before planning; idle scene/FK/IK/validity services
+responded in 1–4 ms and collision-aware home-pose IK returned SUCCESS. During an
+active plan, advertised FK and validity services did not respond within 12 s.
+The existing controller certificate consumed 62.801 s and 38.030 s before
+returning UNCERTIFIED/PRECISION_OR_DEPTH_LIMIT. A later run certified an actual
+approach in 23.130 s and MoveIt returned SUCCESS after the caller had timed out.
+This establishes a response/candidate budget mismatch, not unreachable IK.
+
+The client also continued candidate search with cancellation unconfirmed.
+Transport failures now retain their own reason codes, owned-goal/cancellation
+evidence and BLOCKED status. Discovery, queued retries and extraction alternatives
+stop on a transport failure. Diagnostic validity failures cannot be swallowed
+into a geometric rejection. Normal returned MoveIt failures retain their existing
+AUTO/PREFERRED/EXACT handling; a returned TIMED_OUT code is distinct from a
+missing action response.
+
+The existing runner accepts optional `--candidate-wall-budget` for plan-only
+acceptance, bounded to 300 s. It allocates the full candidate cycle, including
+certification, and clamps server/acceptance/result waits to the same absolute
+candidate/global deadline. Separate bounded cancellation/cleanup remains.
+Execution requests reject this option. Default timing and all collision gates
+remain unchanged. The workstation command above uses 300 s based on the measured
+23–63 s certificate cost; OMPL segment computation budgets are unchanged.
+
+The bounded corrected-budget run and final stage outcomes are recorded in
+`timeout_diagnosis.json`. Raw local logs and the existing adapter's opt-in CDR
+trace are at `/tmp/workcell_stage_a2_certified_budget`. To retain that trace on
+the next run, set `WORKCELL_PLANNING_TRACE_DIR="$A2_RUN/planning/adapter_trace"`
+before invoking the same acceptance runner. No additional validator was added.
+
+Latest result: the response-timeout cascade is corrected for explicit plan-only
+acceptance. The bounded run finished in 291.528 s with actual MoveIt responses,
+13 distinct candidates / 19 attempts. Seven attempts passed certified approach
+and Cartesian descent. All seven failed closing with INVALID_MOTION_PLAN and
+controller PRECISION_OR_DEPTH_LIMIT, including [0,1] ns intervals. Five attempts
+returned planner TIMED_OUT (-6), six other approaches returned INVALID_MOTION_PLAN
+(-2), and the side-grip attempt returned IK NO_SOLUTION (-31). None of these is
+reported as a missing response or a proven geometric collision.
+
+Full acceptance: FAIL. Grasp descent: PASS; grasp closing: FAIL; retreat and
+placement: BLOCKED/not reached. Zero execution action goals, execution_attempted
+false, trajectory execution disabled, clean shutdown, no owned processes left.
+The same two objects remain outside authored selection. No rejected observation
+was substituted, no geometry was shrunk, and incomplete coverage still prohibits
+execution. Geometry/profile/bridge/native sources were unchanged in this fix.
+
+Verification: 287 focused tests plus 6 additional CLI guard cases PASS;
+Python compilation PASS. No native build was rerun because no native/CMake or
+dependency changes were made. The final absolute-deadline clamp was completed
+after the long runtime started and tested with simulated setup delay; the runtime
+finished inside its global budget. Its exact executed script hashes are retained;
+this is not a complete current-head feasibility PASS.
+
+Next action: inspect the saved closing request and private scene in the existing
+adapter trace, identify the pair that remains uncertified at the reported interval,
+and correct only a demonstrated certification/clearance defect. A depth/precision
+limit is not proof of collision. Then run the command above again. Do not loosen
+certification, geometry, contact rules, task selection or bridge qualification.

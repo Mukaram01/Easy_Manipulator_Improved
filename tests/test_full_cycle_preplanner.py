@@ -943,3 +943,87 @@ def test_real_extraction_failure_preserves_details_and_safe_variant_fallback(all
         assert result.cycle['extraction_intent']==variants[1]
         assert [step['stage'] for step in result.cycle['steps']]==EXPECTED
         assert all(check['status']=='PASS' for check in result.checks)
+
+
+def test_transport_failure_blocks_cycle_without_attempting_another_motion():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, trace, goals, validity = fixture()
+    def unavailable(*args, **kw):
+        exc = RuntimeError('action result timed out; cancellation unconfirmed')
+        exc.reason_code = 'ACTION_TIMEOUT'
+        exc.details = dict(failure_kind='transport', cancellation_confirmed=False)
+        raise exc
+    from dataclasses import replace
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=unavailable)
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code == 'ACTION_TIMEOUT'
+    assert result.checks[-1]['status'] == 'BLOCKED'
+    assert result.checks[-1]['failure_kind'] == 'transport'
+    assert trace[-1] == 'PREPLAN_APPROACH'
+    assert goals == []
+
+
+@pytest.mark.parametrize('policy', ['AUTO', 'PREFERRED', 'EXACT'])
+def test_authored_search_stops_after_transport_failure_for_all_policies(policy):
+    from dataclasses import replace
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    def timeout(*args, **kw):
+        exc = RuntimeError('action result timed out; cancellation unconfirmed')
+        exc.reason_code = 'ACTION_TIMEOUT'
+        exc.details = dict(failure_kind='transport', cancellation_confirmed=False)
+        raise exc
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=timeout)
+    summary = {'candidate_attempts': []}
+    with pytest.raises(RuntimeError, match='ACTION_TIMEOUT'):
+        runtime.plan_authored_cycle(intent=valid_intent(policy), environment=environment(),
+            cell=cell(), targets=[observation], summary=summary, **kwargs)
+    assert len(summary['candidate_attempts']) == 1
+    assert summary['task_intent_resolution']['readiness_status'] == 'BLOCKED'
+    assert not summary['task_intent_resolution']['grasp_resolution']['fallback']['used']
+
+
+@pytest.mark.parametrize('timeout_pass, expected_attempts', [('discovery', 2), ('retry', 9)])
+def test_transport_failure_abandons_already_queued_candidate_retry_beam(timeout_pass, expected_attempts):
+    from dataclasses import replace
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+    from full_cycle_preplanner import CandidateBudgetExhausted
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    calls = []
+    def timeout(*args, **kw):
+        search_pass = kwargs['contract'].get('_candidate_search_pass', '')
+        calls.append(search_pass)
+        if len(calls) == 1 or (timeout_pass == 'retry' and search_pass.startswith('discovery')):
+            raise CandidateBudgetExhausted('candidate wall-clock slice exhausted')
+        exc = RuntimeError('action result timed out')
+        exc.reason_code = 'ACTION_TIMEOUT'
+        exc.details = dict(failure_kind='transport', cancellation_confirmed=False)
+        raise exc
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=timeout)
+    summary = {'candidate_attempts': []}
+    with pytest.raises(RuntimeError, match='ACTION_TIMEOUT'):
+        runtime.plan_authored_cycle(intent=valid_intent('AUTO'), environment=environment(),
+            cell=cell(), targets=[observation], summary=summary, **kwargs)
+    assert len(summary['candidate_attempts']) == expected_attempts
+    assert summary['task_intent_resolution']['readiness_status'] == 'BLOCKED'
+
+
+def test_explicit_plan_only_candidate_budget_allows_complete_certified_cycle():
+    from tests.test_task_intent_resolver import valid_intent, environment, cell
+    kwargs, _, _, _ = fixture()
+    observation = dict(kwargs.pop('observation'), confidence=.9, class_id='bottle', shape='BOX')
+    kwargs.pop('candidate'); kwargs.pop('destination')
+    env = environment()
+    env['task_zones'][1]['placement_local']['dimensions'][2] = .2
+    env['task_zones'][1]['dimensions'][2] = .2
+    summary = {'candidate_attempts': []}
+    cycle = runtime.plan_authored_cycle(intent=valid_intent('AUTO'), environment=env,
+        cell=cell(), targets=[observation], summary=summary, candidate_wall_budget=180., **kwargs)
+    assert cycle['full_cycle_prevalidated']
+    assert summary['candidate_attempts'][0]['candidate_wall_budget'] == 180.
+    assert summary['candidate_attempts'][0]['segment_planning_time'] == .75
