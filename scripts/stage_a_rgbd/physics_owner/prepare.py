@@ -15,6 +15,16 @@ def once(text,old,new):
     if text.count(old)!=1:raise ValueError('source anchor changed: '+old[:100])
     return text.replace(old,new)
 
+def protect_owner_registration(cc):
+    # DT_NEEDED / RTLD_GLOBAL engine plugins also export IgnitionPluginHook.
+    # ELF DEFAULT visibility lets them preempt this library's registration calls,
+    # leaving its own map empty. Protect ONLY this exported hook, not physics or
+    # C++ interface symbols (unlike a library-wide -Bsymbolic linker switch).
+    return once(cc,'IGNITION_ADD_PLUGIN(WorkcellOwnerPhysics,',
+        '#if !defined(__ELF__)\n#error "Owner registration requires ELF protected visibility"\n#endif\n'
+        '__asm__(".protected IgnitionPluginHook");\n\n'
+        'IGNITION_ADD_PLUGIN(WorkcellOwnerPhysics,')
+
 def reporting_reference(cc):
     cc=once(cc,'  for (const auto &contactComposite : allContacts)\n',
         '  std::unordered_map<const WorldShapeType::ContactPoint *, const WorldShapeType::ExtraContactData *> reportExtras;\n\n  for (const auto &contactComposite : allContacts)\n')
@@ -71,6 +81,7 @@ def prepare(output,reference=False):
     cc=once(cc,'      stepOutput = this->dataPtr->Step(_info.dt);','      this->dataPtr->OwnerBeforeStep(_info);\n      stepOutput = this->dataPtr->Step(_info.dt);')
     cc=once(cc,'    this->dataPtr->RemovePhysicsEntities(_ecm);','    this->dataPtr->RemovePhysicsEntities(_ecm);\n    if (!_info.paused) this->dataPtr->OwnerRecord(_info, _ecm);')
     cc,hh=rename(cc,hh,'WorkcellOwnerPhysics')
+    cc=protect_owner_registration(cc)
     (output/'Physics.cc').write_text(cc);(output/'Physics.hh').write_text(hh)
     (output/'source_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 

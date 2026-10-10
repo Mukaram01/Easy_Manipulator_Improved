@@ -1,0 +1,14 @@
+{
+	"decision" : "BLOCKED",
+	"execution_goals" : 0,
+	"failure_reason" : "SystemLoader::LoadPlugin returned no instance",
+	"filename" : "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so",
+	"global_registration_hook_library" : "/usr/lib/x86_64-linux-gnu/ign-rendering-6/engine-plugins/libignition-rendering6-ogre2.so.6.6.4",
+	"graphics_started" : false,
+	"loaded" : false,
+	"physics_steps" : 0,
+	"registered_classes" : [],
+	"registration_report" : "Loader State\n\tKnown Interfaces: 0\n\tKnown Plugins: 0\n\n",
+	"requested_class" : "ignition::gazebo::systems::WorkcellOwnerPhysics",
+	"systemloader_report" : "Loader State\n\tKnown Interfaces: 0\n\tKnown Plugins: 0\n\n"
+}

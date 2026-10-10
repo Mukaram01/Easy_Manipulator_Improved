@@ -26,6 +26,9 @@ add_executable(owner_identity_inventory_test identity_inventory_test.cpp)
 target_link_libraries(owner_identity_inventory_test PRIVATE ignition-gazebo6::ignition-gazebo6
   ignition-gazebo6::ignition-gazebo6-rendering PkgConfig::JSON)
 add_test(NAME owner_identity_inventory COMMAND owner_identity_inventory_test)
+add_executable(owner_loader_preflight loader_preflight.cpp)
+target_link_libraries(owner_loader_preflight PRIVATE ignition-gazebo6::ignition-gazebo6
+  ignition-plugin1::loader PkgConfig::JSON ${CMAKE_DL_LIBS})
 
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/prepare.py
   ${CMAKE_CURRENT_BINARY_DIR}/reference --reference COMMAND_ERROR_IS_FATAL ANY)

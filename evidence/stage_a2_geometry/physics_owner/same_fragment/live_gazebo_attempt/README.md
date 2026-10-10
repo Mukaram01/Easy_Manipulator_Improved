@@ -108,3 +108,7 @@ python3 -m pytest -q tests/test_stage_a_gazebo_fragment_runner.py \
 through Gazebo `SystemLoader` in a graphics-free preflight. Surface the actual
 loader error before any further rendering experiment. No installed-library edit
 or alternative physics backend is warranted by this failure.
+
+## Subsequent graphics-free loader repair
+
+The historical failure above is preserved. See [owner loader qualification](../owner_loader/README.md) for the independently reproduced registration interposition defect, minimal repair and clean SystemLoader acceptance. No live renderer rerun or SIGILL resolution is claimed.
