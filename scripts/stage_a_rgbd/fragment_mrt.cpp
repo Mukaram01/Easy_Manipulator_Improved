@@ -156,6 +156,7 @@ int main(int argc,char **argv){
     }
     if(glGetError()!=GL_NO_ERROR)throw std::runtime_error("typed texture clear failed");
     Formats formats(r);workspace->addListener(&formats);
+    sm->updateSceneGraph();
     workspace->_beginUpdate(true);workspace->_update();workspace->_endUpdate(true);workspace->removeListener(&formats);
     if(formats.calls!=1)throw std::runtime_error("incomplete scene-pass inventory");
     std::vector<unsigned char> rgba(256*256*4),rgb(256*256*3);std::vector<unsigned> labels(256*256);

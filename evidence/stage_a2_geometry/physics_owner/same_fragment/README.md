@@ -1,4 +1,17 @@
-# Same-fragment RGB / integer-ID fixture — runtime BLOCKED
+# Same-fragment RGB / integer-ID fixture — production PASS; physics mapping BLOCKED
+
+## Preserved manual success (baseline 2753f7ab)
+
+The user's existing one-line `sm->updateSceneGraph()` change was preserved without reset/stash/clean or overwrite. The existing capture `/tmp/stage_a2_fixed_20261010_200705/` was independently read and validated; **no new GPU execution** was needed. ELF SHA256 matches the user's verified executed identity: **`3e998fd6cd255f8330a83f918c7a1235159bd76dfa35f53b55cb99084530fd9c`**. Current source SHA256 is `aa3d89c5c8fba4f2f03a6aa77cb78116e8ec4de64a297f675b7d1047d7213aed`. The manual exit 0 is user-reported; no independent process exit log is retained. Native `fixture_result=PASS` and image contents are independently verified. Hashes were verified at preservation, not falsely described as a new pre-run witness.
+
+- Actual nonblank RGB: 256×256×3 uint8, 196608 bytes.
+- Actual IDs: 256×256 uint32, 262144 bytes, exactly **0: 40612 pixels; 16777217: 21756 pixels; 4000000022: 3168 pixels**. No unexpected/invalid IDs or floating-point round trip.
+- Centre [128,128]: **16777217**, the intended nearer cube in the overlapping fixture. Both objects remain visible. This qualifies tested fixture occlusion, not arbitrary scene visibility or numeric depth accuracy.
+- Actual colour attachment formats: GL_RGBA8 (32856) and GL_R32UI (33334), each 256×256. One shared scene-pass callback; post-pass GL depth-test and write states both true; materials explicitly configure depth check/write and disable blending/MSAA.
+- Driver: **llvmpipe (LLVM 15.0.7, 256 bits)**; GL4.5 Core Mesa23.2.1. Exact original capture and buffers are retained losslessly compressed under [accepted_manual](accepted_manual/acceptance.json). Actual loaded paths are preserved; their current file hashes are separately labelled as preservation-time hashes.
+- Existing strict CPU diagnostic executed against the **actual** RGB/ID buffers: PASS. Scene-graph ordering regression added, checking omission/misordering in memory without altering the manual source. **25 focused CPU tests PASS**. Fixture-derived masks used for diagnostic checks are test inputs, not EPD inference.
+
+Only same-fragment production and the tested fixture's occlusion/uint32 readback are PASS. Gazebo visual/collision mapping, genuine EPD association, DART/render alignment, physical penetration and extraction remain BLOCKED/NOT RUN. No new motion goals, permissions, planning geometry or safety changes. Older failure attempts below remain historical.
 
 ## Reservation fix and sole run (baseline 214a30e2)
 

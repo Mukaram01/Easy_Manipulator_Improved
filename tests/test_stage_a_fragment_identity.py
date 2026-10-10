@@ -68,3 +68,12 @@ def test_mrt_target_reservation_immediately_precedes_target_creation():
     import re
     source=(Path(__file__).resolve().parents[1]/'scripts/stage_a_rgbd/fragment_mrt.cpp').read_text()
     assert re.search(r'nd->setNumTargetPass\(1\);\s*auto target=nd->addTargetPass\("fragment_mrt"\);',source)
+
+
+def test_native_scene_graph_preparation_precedes_manual_workspace_update():
+    import re
+    source=(Path(__file__).resolve().parents[1]/'scripts/stage_a_rgbd/fragment_mrt.cpp').read_text()
+    pattern=r'sm->updateSceneGraph\(\);\s*workspace->_beginUpdate\(true\);workspace->_update\(\);'
+    assert re.search(pattern,source)
+    assert not re.search(pattern,source.replace('sm->updateSceneGraph();',''))
+    assert not re.search(pattern,source.replace('sm->updateSceneGraph();','').replace('workspace->_update();','workspace->_update();sm->updateSceneGraph();'))
