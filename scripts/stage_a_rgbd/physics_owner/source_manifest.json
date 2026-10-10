@@ -1,0 +1,18 @@
+{
+  "Physics.cc": {
+    "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/Physics.cc",
+    "sha256": "80396c542654490b0eb2aad3890520c720839c01012fb741aa6d3943135f3a26"
+  },
+  "Physics.hh": {
+    "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/Physics.hh",
+    "sha256": "9b9b417d4fd0b02bbdf28d71ae1296e5a62f9ce9c3fdf0198056d6cab5c972cd"
+  },
+  "CanonicalLinkModelTracker.hh": {
+    "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/CanonicalLinkModelTracker.hh",
+    "sha256": "886c7ffac3c2310a67a0584090e8e41925af4d9609ab4cb361fe4436dd60b252"
+  },
+  "EntityFeatureMap.hh": {
+    "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/EntityFeatureMap.hh",
+    "sha256": "4464e0b070db9d9be43488bb3b41753b11be1c5258f02c35e39e4d59a53785bf"
+  }
+}

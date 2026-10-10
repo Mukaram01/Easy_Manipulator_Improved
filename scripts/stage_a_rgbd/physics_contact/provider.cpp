@@ -14,6 +14,8 @@
 #include <jsoncpp/json/json.h>
 #include <set>
 #include <sstream>
+#include <fstream>
+#include <ignition/gazebo/components/ContactSensorData.hh>
 
 namespace sim=ignition::gazebo;
 namespace components=sim::components;
@@ -25,11 +27,19 @@ class WorkcellPhysicsContactMeasurement final:public sim::System,
   sim::Entity world=sim::kNullEntity;
   std::string supportName,runId,worldName;
   std::set<std::string> workpieces;
+  std::string diagnosticOutput;
+  std::uint64_t diagnosticStep=0;
   ignition::transport::Node node;
   ignition::transport::Node::Publisher publisher;
  public:
   void Configure(const sim::Entity &entity,const std::shared_ptr<const sdf::Element> &sdf,
                  sim::EntityComponentManager &ecm,sim::EventManager &) override {
+    diagnosticOutput=sdf->Get<std::string>("diagnostic_output", "").first;
+    diagnosticStep=sdf->Get<std::uint64_t>("diagnostic_step", 0).first;
+    if(!diagnosticOutput.empty())ecm.Each<components::Collision>([&](const auto &id,const auto*) {
+      if(!ecm.Component<components::ContactSensorData>(id))ecm.CreateComponent(id,components::ContactSensorData());
+      return true;
+    });
     world=entity;worldName=ecm.Component<components::Name>(world)->Data();
     supportName=sdf->Get<std::string>("support_collision");
     runId=sdf->Get<std::string>("run_id");
@@ -107,6 +117,18 @@ class WorkcellPhysicsContactMeasurement final:public sim::System,
     record["decision"]="BLOCKED_BACKEND_STATE_ERROR";
     if(!complete)record["failure_reason"]="missing, duplicate or unsupported loaded collision inventory";
     Json::StreamWriterBuilder writer;writer["indentation"]="";writer["precision"]=17;
+    if(!diagnosticOutput.empty()&&info.iterations==diagnosticStep) {
+      record["diagnostic_contacts"]=Json::Value(Json::arrayValue);
+      ecm.Each<components::Collision,components::ContactSensorData>([&](const auto &id,const auto*,const auto *data) {
+        for(const auto &contact:data->Data().contact()) {
+          Json::Value c;c["owner_collision_id"]=Json::UInt64(id);
+          c["collision1"]=contact.collision1().id();c["collision2"]=contact.collision2().id();
+          c["depth_m"]=Json::Value(Json::arrayValue);for(auto d:contact.depth())c["depth_m"].append(d);
+          record["diagnostic_contacts"].append(c);
+        }return true;
+      });
+      std::ofstream output(diagnosticOutput);output<<Json::writeString(writer,record)<<"\n";
+    }
     ignition::msgs::StringMsg message;message.set_data(Json::writeString(writer,record));publisher.Publish(message);
   }
 };

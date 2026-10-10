@@ -1,0 +1,76 @@
+{
+  "baseline": "6363d526fddba5872da9bac8ec0449856d73d8b2",
+  "source": "ignition-gazebo6_6.18.0",
+  "live_access": "PASS",
+  "complete_collision_count": 8,
+  "dynamic_collision_count": 2,
+  "stock_contact_evidence_present": false,
+  "runtime_equivalence": "BLOCKED_MISSING_STOCK_CONTACT_EVIDENCE",
+  "physical_penetration_upper_m": null,
+  "epd_association": "BLOCKED_RENDERER_STEP_AND_MASK_IDENTITY_UNQUALIFIED",
+  "native_extraction": "BLOCKED",
+  "moveit": "NOT_RUN",
+  "execution_goals": 0,
+  "step": 2000,
+  "stamp_ns": 2000000000,
+  "dart_frames": 2000,
+  "dart_time_s": 1.9999999999998905,
+  "dart_vs_sim_time_difference_s": 1.0946799022804043e-13,
+  "backend_ecm_difference": [
+    {
+      "collision_id": 7,
+      "physics_shape_id": 12,
+      "collision_name": "a0::pick_support::support_link::support_collision",
+      "maximum_matrix_entry_difference": 1050.0
+    },
+    {
+      "collision_id": 15,
+      "physics_shape_id": 13,
+      "collision_name": "a0::target_bin_physics::bin_link::floor",
+      "maximum_matrix_entry_difference": 0.0
+    },
+    {
+      "collision_id": 16,
+      "physics_shape_id": 14,
+      "collision_name": "a0::target_bin_physics::bin_link::wall_x_minus",
+      "maximum_matrix_entry_difference": 0.0
+    },
+    {
+      "collision_id": 17,
+      "physics_shape_id": 15,
+      "collision_name": "a0::target_bin_physics::bin_link::wall_x_plus",
+      "maximum_matrix_entry_difference": 0.0
+    },
+    {
+      "collision_id": 18,
+      "physics_shape_id": 16,
+      "collision_name": "a0::target_bin_physics::bin_link::wall_y_minus",
+      "maximum_matrix_entry_difference": 0.0
+    },
+    {
+      "collision_id": 19,
+      "physics_shape_id": 17,
+      "collision_name": "a0::target_bin_physics::bin_link::wall_y_plus",
+      "maximum_matrix_entry_difference": 0.0
+    },
+    {
+      "collision_id": 23,
+      "physics_shape_id": 18,
+      "collision_name": "a0::part_00::link::collision",
+      "maximum_matrix_entry_difference": 5.701626901322837e-07
+    },
+    {
+      "collision_id": 27,
+      "physics_shape_id": 19,
+      "collision_name": "a0::part_01::link::collision",
+      "maximum_matrix_entry_difference": 5.701626901322837e-07
+    }
+  ],
+  "artifact_sha256": {
+    "instrumented_ecm.json": "0ad0ddde411e041974a9d062c40e1bd431b819ee964b9a633a78cf4034d6b6d0",
+    "instrumentation.diff": "295dbcd49bb1c969bb1d4ba643577ccf0f5147dcdd3bff43b667e000d0009a87",
+    "owner_readback.json": "751a4e91c2c08d1ce93446faae8139b90bb57f0d8239cd203bcacc2b51ecbdfe",
+    "stock_ecm.json": "0ad0ddde411e041974a9d062c40e1bd431b819ee964b9a633a78cf4034d6b6d0",
+    "comparison.json": "b20c8784df37ba595b36677bebec49b544a192ce21ee91a1bf63515365b9d160"
+  }
+}
