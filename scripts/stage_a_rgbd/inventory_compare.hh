@@ -12,6 +12,11 @@ inline bool InventoryId(const Json::Value &v,Json::UInt64 &id) {
   if(v.type()==Json::intValue && v.asInt64()<0)return false;
   id=v.asUInt64();return true;
 }
+inline bool SameEntityId(const Json::Value &a,const Json::Value &b) {
+  Json::UInt64 left=0,right=0;
+  return InventoryId(a,left) && InventoryId(b,right) &&
+         left!=0 && left==right;
+}
 inline void InventoryDifference(Json::Value &r,const std::string &path,
     const Json::Value &a,const Json::Value &b,const std::string &reason) {
   Json::Value d;d["path"]=path;d["owner"]=a;d["render"]=b;d["reason"]=reason;

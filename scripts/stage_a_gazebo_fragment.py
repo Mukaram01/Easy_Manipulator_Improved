@@ -105,7 +105,7 @@ def prepare(world,binary,owner,output):
         owner_qualification_sha256=qualification,
         geometry_scope='unchanged authored separated cubes only; support/bin omitted; no contact claim',
         binary_sha256=sha(binary),owner_sha256=sha(owner),world_sha256=sha(target),
-        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/gl_context_witness.hh','scripts/stage_a_rgbd/gl_context_check.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_rgbd/renderer_identity.hh','scripts/stage_a_rgbd/renderer_identity_check.hh','scripts/stage_a_gazebo_fragment.py')})
+        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/gl_context_witness.hh','scripts/stage_a_rgbd/gl_context_check.hh','scripts/stage_a_rgbd/material_contract.hh','scripts/stage_a_rgbd/material_witness.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_rgbd/renderer_identity.hh','scripts/stage_a_rgbd/renderer_identity_check.hh','scripts/stage_a_gazebo_fragment.py')})
     (output/'preflight.json').write_text(json.dumps(record,indent=2)+'\n')
     return record
 

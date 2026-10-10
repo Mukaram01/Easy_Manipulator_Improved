@@ -15,6 +15,7 @@
 #include <OgreSubItem.h>
 #include <OgreRay.h>
 #include <OgreAxisAlignedBox.h>
+#include "material_witness.hh"
 #include <thread>
 
 namespace g=ignition::gazebo;
@@ -59,7 +60,7 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
         renderThread=std::this_thread::get_id();
         LiveMark("renderutil_init_begin");
         render.SetEngineName("ogre2");render.SetSceneName("live_fragment_"+session);
-        render.SetHeadlessRendering(true);render.SetEnableSensors(false);render.Init();initialized=true;LiveMark("renderutil_init_complete");
+        render.SetHeadlessRendering(false);render.SetEnableSensors(false);render.Init();initialized=true;LiveMark("renderutil_init_complete");
       }
       if(renderThread!=std::this_thread::get_id())throw std::runtime_error("render owner thread changed");
       LiveMark("renderutil_update_begin");
@@ -114,11 +115,19 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
       const auto glState=record["gl_context"]["after_reacquire"]["classification"].asString();
       if(glState!="PASS_CURRENT_GL45")throw std::runtime_error("GL4.5 typed clear API required: "+glState);
       const auto world=inventory["worlds"];
-      if(world.size()!=1 || world[0]["id"]!=owner["world_entity"])throw std::runtime_error("world identity mismatch");
+      if(world.size()!=1 || !workcell::SameEntityId(world[0]["id"],owner["world_entity"]))throw std::runtime_error("world identity mismatch");
       // Controlled profile: no subset silently selected from a larger world.
       if(inventory["visuals"].size()!=2 || inventory["collisions"].size()!=2 ||
          inventory["links"].size()!=2 || inventory["models"].size()!=2 || owner["shapes"].size()!=2)
         throw std::runtime_error("unsupported/partial two-cube inventory");
+      // Retain BOTH original materials before any material gate or replacement.
+      std::map<Json::UInt64,Json::Value> materials;
+      for(const auto &entry:mapping["visuals"]) {
+        const auto visualId=entry["visual_id"].asUInt64();
+        const auto evidence=MaterialWitness(ecm,visualId,render.SceneManager().VisualById(visualId));
+        materials.emplace(visualId,evidence);record["materials"].append(evidence);
+      }
+      {std::ofstream diagnostics(path);diagnostics<<record<<'\n';diagnostics.flush();}
       auto &pm=Ogre::HighLevelGpuProgramManager::getSingleton();
       for(auto stage:{Ogre::GPT_VERTEX_PROGRAM,Ogre::GPT_FRAGMENT_PROGRAM}) {
         auto program=pm.createProgram(stage==Ogre::GPT_VERTEX_PROGRAM?"live_vs":"live_fs","General","glsl",stage);
@@ -133,7 +142,7 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
         Json::Value visualRow,collision,shape;unsigned collisions=0,visuals=0,shapes=0;
         for(const auto &v:inventory["visuals"])if(v["parent"].asUInt64()==linkId){visualRow=v;++visuals;}
         for(const auto &c:inventory["collisions"])if(c["parent"].asUInt64()==linkId){collision=c;++collisions;}
-        for(const auto &s:owner["shapes"])if(s["collision_id"]==collision["id"]){shape=s;++shapes;}
+        for(const auto &s:owner["shapes"])if(workcell::SameEntityId(s["collision_id"],collision["id"])){shape=s;++shapes;}
         if(visuals!=1 || collisions!=1 || shapes!=1 || !visualRow["opaque"].asBool() ||
            visualRow["geometry"]["type"]!="BOX" || collision["geometry"]["type"]!="BOX" ||
            shape["shape_type"]!="BoxShape" || shape["shape_node_identity"].asString().empty())
@@ -149,14 +158,16 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
         const unsigned id=visual->Id();
         if(id==0 || id==4294967295u || !ids.insert(id).second)throw std::runtime_error("duplicate/invalid native uint32 ID");
         itemIds.emplace(item,id);
-        const auto material=visual->Material();
-        if(!material || material->Transparency()!=0)throw std::runtime_error("unsupported native material");
-        const auto colour=material->Diffuse();
+        const auto &material=materials.at(visualId);
+        if(!material["failure"].asString().empty())throw std::runtime_error("unsupported native material: "+material["failure"].asString());
+        // SceneManager sets Geometry::Material; Visual::Material may be null.
+        // Use actual live ECM diffuse only after exact native/ECM opacity and colour checks.
+        const auto &colour=material["diffuse"];
         // Same live Ogre Item and geometry; only this disposable unlit material changes.
         auto mat=Ogre::MaterialManager::getSingleton().create("live_mrt_"+std::to_string(id),"General");
         auto pass=mat->getTechnique(0)->getPass(0);pass->setVertexProgram("live_vs");pass->setFragmentProgram("live_fs");
         pass->getVertexProgramParameters()->setNamedAutoConstant("worldViewProj",Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX);
-        pass->getFragmentProgramParameters()->setNamedConstant("baseColour",Ogre::Vector3(colour.R(),colour.G(),colour.B()));
+        pass->getFragmentProgramParameters()->setNamedConstant("baseColour",Ogre::Vector3(colour[0].asDouble(),colour[1].asDouble(),colour[2].asDouble()));
         pass->getFragmentProgramParameters()->setNamedConstant("entityId",id);
         Ogre::HlmsMacroblock macro;macro.mDepthCheck=true;macro.mDepthWrite=true;pass->setMacroblock(macro);
         Ogre::HlmsBlendblock blend;blend.mSourceBlendFactor=Ogre::SBF_ONE;blend.mDestBlendFactor=Ogre::SBF_ZERO;pass->setBlendblock(blend);

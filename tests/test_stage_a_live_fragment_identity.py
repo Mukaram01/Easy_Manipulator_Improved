@@ -75,3 +75,14 @@ def test_native_gl_context_reacquisition_is_witnessed_and_strict():
     runner=(root/'scripts/stage_a_gazebo_fragment.py').read_text()
     for name in ('gl_context_witness.hh','gl_context_check.hh'):
         assert "'scripts/stage_a_rgbd/"+name+"'" in runner
+
+
+def test_both_material_witnesses_precede_native_material_rejection():
+    root=Path(__file__).resolve().parents[1]
+    source=(root/'scripts/stage_a_rgbd/gazebo_fragment_capture.cpp').read_text()
+    assert source.index('record["materials"].append(evidence)')<source.index('unsupported native material: ')
+    assert 'materials.at(visualId)' in source
+    assert 'const auto &colour=material["diffuse"]' in source
+    runner=(root/'scripts/stage_a_gazebo_fragment.py').read_text()
+    for name in ('material_contract.hh','material_witness.hh'):
+        assert "'scripts/stage_a_rgbd/"+name+"'" in runner

@@ -10,7 +10,11 @@
 inline Json::Value GlContextWitness() {
   Json::Value r;
   using CurrentContext=void *(*)();
-  const auto egl=reinterpret_cast<CurrentContext>(dlsym(RTLD_DEFAULT,"eglGetCurrentContext"));
+  // Resolve EGL explicitly: Ogre may load it outside RTLD_DEFAULT.
+  // Loading the library does not create or activate an EGL context.
+  static void *eglLibrary=dlopen("libEGL.so.1",RTLD_NOW|RTLD_LOCAL);
+  const auto egl=reinterpret_cast<CurrentContext>(
+      eglLibrary?dlsym(eglLibrary,"eglGetCurrentContext"):nullptr);
   const auto glx=reinterpret_cast<CurrentContext>(dlsym(RTLD_DEFAULT,"glXGetCurrentContext"));
   r["egl_query_available"]=static_cast<bool>(egl);r["glx_query_available"]=static_cast<bool>(glx);
   auto witness=[&](const char *key,CurrentContext query) {

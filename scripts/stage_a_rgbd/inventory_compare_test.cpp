@@ -8,6 +8,14 @@ Json::Value fixture() {
   Json::Value r;std::istringstream in(R"({"complete":true,"worlds":[{"id":1,"parent":0}],"models":[{"id":2,"parent":1}],"links":[{"id":3,"parent":2}],"visuals":[{"id":4,"parent":3,"geometry":{"type":"BOX","size":[0.025,0.025,0.025]},"opaque":true}],"collisions":[{"id":5,"parent":3,"geometry":{"type":"BOX","size":[0.025,0.025,0.025]}}]})");in>>r;return r;
 }
 int main() {
+  check(workcell::SameEntityId(Json::Value(Json::Int64(1)),
+                                   Json::Value(Json::UInt64(1))));
+  check(workcell::SameEntityId(Json::Value(Json::UInt64(4294967297ull)),
+                                   Json::Value(Json::UInt64(4294967297ull))));
+  check(!workcell::SameEntityId(Json::Value(-1),Json::Value(1)));
+  check(!workcell::SameEntityId(Json::Value(1.0),Json::Value(1)));
+  check(!workcell::SameEntityId(Json::Value(1),Json::Value(2)));
+  check(!workcell::SameEntityId(Json::Value(0),Json::Value(0)));
   auto a=fixture();for(auto key:{"worlds","models","links","visuals","collisions"})
     for(auto &row:a[key])for(auto field:{"id","parent"})row[field]=Json::UInt64(row[field].asUInt64());
   Json::StreamWriterBuilder w;w["precision"]=17;
