@@ -20,10 +20,11 @@ def world():
 
 
 def test_disposable_world_preserves_original_cube_geometry_and_uses_one_owner():
-    source=world();before=ET.tostring(source)
+    source=world();ET.SubElement(source.find('world'),'light',name='sun',type='directional');before=ET.tostring(source)
     result=runner.disposable_world(source,'/owner.so','session','/owner.jsonl')
     assert ET.tostring(source)==before
     w=result.find('world');assert len(w.findall('plugin'))==1
+    assert not w.findall('light')
     assert w.find('plugin').get('name')=='ignition::gazebo::systems::WorkcellOwnerPhysics'
     assert w.findtext('plugin/owner_record_steps')=='2'
     assert [ET.tostring(m) for m in w.findall('model')]==[ET.tostring(m) for m in source.find('world').findall('model')]
@@ -80,7 +81,7 @@ def test_repaired_owner_provenance_rejects_substitution(kind):
     with pytest.raises(ValueError):runner.validate_owner_qualification(pre,r,exit,loaded,digest)
 
 
-@pytest.mark.parametrize('kind',['extra_plugin','wrong_session','wrong_trace','wrong_owner','sensor','extra_model'])
+@pytest.mark.parametrize('kind',['extra_plugin','wrong_session','wrong_trace','wrong_owner','sensor','extra_model','light'])
 def test_prepared_world_rejects_changed_runtime_configuration(tmp_path,kind):
     root=runner.disposable_world(world(),'/owner.so','s',tmp_path/'owner.jsonl');w=root.find('world')
     pre=dict(world=str(tmp_path/'world.sdf'),owner='/owner.so',session='s',output=str(tmp_path))
@@ -90,6 +91,7 @@ def test_prepared_world_rejects_changed_runtime_configuration(tmp_path,kind):
     if kind=='wrong_owner':w.find('plugin').set('name','ignition::gazebo::systems::Physics')
     if kind=='sensor':ET.SubElement(w.find('model/link'),'sensor')
     if kind=='extra_model':ET.SubElement(w,'model')
+    if kind=='light':ET.SubElement(w,'light',name='unexpected',type='directional')
     ET.ElementTree(root).write(pre['world'])
     with pytest.raises(ValueError):runner.validate_prepared_world(pre)
 

@@ -74,7 +74,7 @@ def disposable_world(source,owner,session,trace):
         models.append(copy.deepcopy(model))
     # No support/contact claim: two original cubes, without bin/support/sensors.
     for child in list(world):
-        if child.tag in ('model','plugin','include','actor','sensor'):world.remove(child)
+        if child.tag in ('model','plugin','include','actor','sensor','light'):world.remove(child)
     plugin=copy.deepcopy(physics[0]);plugin.set('filename',str(owner));plugin.set('name','ignition::gazebo::systems::WorkcellOwnerPhysics')
     for key,value in dict(owner_output=str(trace),owner_session=session,owner_record_steps='2').items():ET.SubElement(plugin,key).text=value
     world.append(plugin)
@@ -98,7 +98,7 @@ def prepare(world,binary,owner,output):
         owner_qualification_sha256=qualification,
         geometry_scope='unchanged authored separated cubes only; support/bin omitted; no contact claim',
         binary_sha256=sha(binary),owner_sha256=sha(owner),world_sha256=sha(target),
-        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_gazebo_fragment.py')})
+        source_sha256={name:sha(root/name) for name in ('scripts/stage_a_rgbd/gazebo_fragment_capture.cpp','scripts/stage_a_rgbd/fragment_mrt.hh','scripts/stage_a_rgbd/inventory_compare.hh','scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh','scripts/stage_a_rgbd/renderer_identity.hh','scripts/stage_a_rgbd/renderer_identity_check.hh','scripts/stage_a_gazebo_fragment.py')})
     (output/'preflight.json').write_text(json.dumps(record,indent=2)+'\n')
     return record
 
@@ -111,7 +111,7 @@ def validate_prepared_world(pre):
     if p.get('name')!='ignition::gazebo::systems::WorkcellOwnerPhysics' or p.get('filename')!=pre['owner'] or \
        p.findtext('owner_session')!=pre['session'] or p.findtext('owner_output')!=str(Path(pre['output'])/'owner.jsonl') or \
        p.findtext('owner_record_steps')!='2':raise ValueError('wrong owner configuration/session/trace')
-    if len(world.findall('model'))!=2 or any(e.tag in ('sensor','joint','include','actor') for e in world.iter()):
+    if len(world.findall('model'))!=2 or any(e.tag in ('sensor','joint','include','actor','light') for e in world.iter()):
         raise ValueError('unsupported disposable world/controller interface')
     for m in world.findall('model'):
         if len(m.findall('link'))!=1 or len(m.findall('link/visual'))!=1 or len(m.findall('link/collision'))!=1:

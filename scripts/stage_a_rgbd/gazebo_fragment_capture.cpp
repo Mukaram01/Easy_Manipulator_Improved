@@ -93,8 +93,9 @@ struct LiveCapture final:g::System,g::ISystemPostUpdate {
         throw std::runtime_error("unsupported complete inventory; see inventory_comparison/issues");
       // Fingerprint is calculated over retained records by the strict CPU validator.
       auto mapping=workcell::RendererIdentity(render.SceneManager(),owner,"");
-      if(!mapping["complete"].asBool())throw std::runtime_error("incomplete live SceneManager map");
-      record["renderer"]=mapping;LiveMark("visual_inventory_join_complete");
+      record["renderer"]=mapping; // Retain the incomplete map BEFORE rejection.
+      if(!mapping["complete"].asBool())throw std::runtime_error("incomplete live SceneManager map: "+mapping["first_failure"]["condition"].asString());
+      LiveMark("visual_inventory_join_complete");
       auto scene=render.Scene();auto native=std::dynamic_pointer_cast<rd::Ogre2Scene>(scene);
       if(!native)throw std::runtime_error("unsupported native renderer");auto sm=native->OgreSceneManager();
       GLint major=0,minor=0;glGetIntegerv(GL_MAJOR_VERSION,&major);glGetIntegerv(GL_MINOR_VERSION,&minor);

@@ -54,3 +54,12 @@ def test_live_gate_rejects_unproven_draw_or_context(kind):
     if kind=='missing_node':o['shapes'][0]['shape_node_identity']=''
     if kind=='bad_inventory':r['owner_inventory_equal']=False
     with pytest.raises(ValueError):api.validate_live_fragment_capture(o,r,rgb,ids)
+
+
+def test_incomplete_native_mapping_is_retained_before_rejection_and_hash_pinned():
+    root=Path(__file__).resolve().parents[1]
+    source=(root/'scripts/stage_a_rgbd/gazebo_fragment_capture.cpp').read_text()
+    assert source.index('record["renderer"]=mapping')<source.index('if(!mapping["complete"].asBool())')
+    runner=(root/'scripts/stage_a_gazebo_fragment.py').read_text()
+    assert "'scripts/stage_a_rgbd/renderer_identity.hh'" in runner
+    assert "'scripts/stage_a_rgbd/renderer_identity_check.hh'" in runner

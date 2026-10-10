@@ -49,7 +49,8 @@ def test_snapshot_and_lookup_are_wired_to_existing_authorities():
     adapter=(root/'renderer_identity.hh').read_text()
     assert 'workcell::IdentityInventory(ecm)' in owner
     assert 'entityWorldMap.Map().begin()->first' in owner
-    assert 'manager.VisualById(id)' in adapter and 'visual->Id()' in adapter
+    assert 'manager.VisualById(id)' in adapter and 'RendererNodeWitness(visual)' in adapter
+    assert 'Json::UInt64(node->Id())' in adapter
     assert 'UserData' not in adapter and 'Name()' not in adapter
 
 
