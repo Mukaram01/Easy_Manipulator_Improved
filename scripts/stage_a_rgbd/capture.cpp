@@ -17,6 +17,8 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <map>
+#include <sstream>
 #include "ort_cpp_lib/p3_ort_base.hpp"
 #include "geometry.hpp"
 #include "asset_geometry.hpp"
@@ -40,7 +42,7 @@ void write(const fs::path & path,const Json::Value & value) {
   out<<value;
 }
 int main(int argc,char ** argv) try {
-  if(argc!=5) throw std::runtime_error("Usage: stage_a_rgbd_capture MODEL LABELS NEW_OUTPUT_DIR WORLD_NAME");
+  if(argc!=5 && argc!=6) throw std::runtime_error("Usage: stage_a_rgbd_capture MODEL LABELS NEW_OUTPUT_DIR WORLD_NAME [PHYSICS_MEASUREMENT_RUN_ID]");
   const fs::path output(argv[3]);
   if(!fs::create_directory(output)) throw std::runtime_error("output must be a new directory");
   std::ifstream label_file(argv[2]); std::vector<std::string> labels; std::string label;
@@ -48,6 +50,8 @@ int main(int argc,char ** argv) try {
   if(labels.empty() || !fs::is_regular_file(argv[1])) throw std::runtime_error("model/labels unavailable");
   std::mutex mutex; std::condition_variable changed;
   ignition::msgs::Image rgb,depth; ignition::msgs::CameraInfo info;
+  std::map<int64_t,Json::Value> physicsStates;
+  Json::Value physicsMeasurement;
   int64_t now=0, acquisition_clock=0; bool frozen=false;
   ignition::transport::Node node;
   std::function<void(const ignition::msgs::Image &)> on_rgb=[&](const auto & msg) {
@@ -58,6 +62,17 @@ int main(int argc,char ** argv) try {
     std::lock_guard<std::mutex> lock(mutex);if(frozen) return;info=msg;changed.notify_all();};
   std::function<void(const ignition::msgs::WorldStatistics &)> on_stats=[&](const auto & msg) {
     std::lock_guard<std::mutex> lock(mutex);now=ns(msg.sim_time());changed.notify_all();};
+  std::function<void(const ignition::msgs::StringMsg &)> on_physics=[&](const auto & msg) {
+    Json::Value state;Json::CharReaderBuilder reader;std::string error;std::istringstream stream(msg.data());
+    if(!Json::parseFromStream(reader,stream,&state,&error)||!state["stamp_ns"].isInt64()||
+       state["run_id"].asString()!=argv[5]||state["world"].asString()!=argv[4])return;
+    std::lock_guard<std::mutex> lock(mutex);if(frozen)return;
+    physicsStates[state["stamp_ns"].asInt64()]=state;
+    while(physicsStates.size()>4096)physicsStates.erase(physicsStates.begin());
+    changed.notify_all();
+  };
+  if(argc==6 && !node.Subscribe("/stage_a/physics_contact_state",on_physics))
+    throw std::runtime_error("physics measurement subscribe failed");
   if(!node.Subscribe("/stage_a/camera/image",on_rgb) ||
      !node.Subscribe("/stage_a/camera/depth_image",on_depth) ||
      !node.Subscribe("/stage_a/camera/camera_info",on_info) ||
@@ -72,7 +87,8 @@ int main(int argc,char ** argv) try {
         if(std::isfinite(z) && z>=0.02f && z<=5.f) ++finite;
       }
       if(finite<12) return false;
-      return stage_a::fresh(ns(rgb.header().stamp()),ns(depth.header().stamp()),ns(info.header().stamp()),now);
+      return stage_a::fresh(ns(rgb.header().stamp()),ns(depth.header().stamp()),ns(info.header().stamp()),now) &&
+        (argc==5 || physicsStates.count(ns(rgb.header().stamp())));
     })) {
       std::cerr<<"last stamps rgb/depth/info/clock: "<<ns(rgb.header().stamp())<<"/"
         <<ns(depth.header().stamp())<<"/"<<ns(info.header().stamp())<<"/"<<now<<std::endl;
@@ -86,10 +102,13 @@ int main(int argc,char ** argv) try {
       }
       throw std::runtime_error("BLOCKED: no fresh synchronized valid RGB/depth/calibration and simulation clock within 30s");
     }
-    acquisition_clock=now;frozen=true;
+    acquisition_clock=now;
+    if(argc==6)physicsMeasurement=physicsStates.at(ns(rgb.header().stamp()));
+    frozen=true;
   }
   node.Unsubscribe("/stage_a/camera/image");node.Unsubscribe("/stage_a/camera/depth_image");
   node.Unsubscribe("/stage_a/camera/camera_info");
+  if(argc==6)node.Unsubscribe("/stage_a/physics_contact_state");
   const std::string optical="stage_a_camera_optical_frame";
   if(frame(rgb.header())!=optical || frame(depth.header())!=optical || frame(info.header())!=optical)
     throw std::runtime_error("optical frame mismatch");
@@ -114,6 +133,12 @@ int main(int argc,char ** argv) try {
   evidence["depth_encoding"]="32FC1";evidence["depth_units"]="metres";
   evidence["width"]=512;evidence["height"]=512;evidence["frame_id"]=optical;
   evidence["intrinsics"]=array({fx,fy,cx,cy});
+  if(argc==6) {
+    write(output/"physics_measurement.json",physicsMeasurement);
+    for(const auto &key:{"run_id","world","step","stamp_ns","support_collision_id","support_collision_name"})
+      evidence["physics_measurement"][key]=physicsMeasurement[key];
+    evidence["physics_measurement"]["scope"]="simulation_only_internal_measurement_not_planning_geometry";
+  }
   // Independent static-camera pose readback; never read cube poses for inference.
   ignition::msgs::Empty request;ignition::msgs::Scene scene;bool result=false;
   if(node.Request(std::string("/world/")+argv[4]+"/scene/info",request,5000,scene,result) && result) {
@@ -177,6 +202,7 @@ int main(int argc,char ** argv) try {
     item["attributes"]["position_semantics"]="visible_surface_centroid";
     item["attributes"]["valid_depth_pixels"]=Json::UInt64(object.valid_depth_pixel_count);
     item["attributes"]["mask_pixels"]=cv::countNonZero(mask);
+    if(argc==6)item["attributes"]["mask_file"]="mask_"+std::to_string(i)+".png";
     // Retain EPD's actual filtered metric surface, not reconstructed hidden geometry.
     item["attributes"]["surface_points_optical"]=Json::Value(Json::arrayValue);
     for(const auto & point:object.segmented_pcl)

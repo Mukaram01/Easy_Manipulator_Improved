@@ -325,3 +325,15 @@ extraction remain **BLOCKED**; the 0.2 mm downward witness remains admitted.
 No MoveIt acceptance ran. One contact-depth alternative was investigated;
 the adjacent report specifies the exact missing exhaustive penetration/error
 and EPD-association contract. See [machine-readable evidence](relative_support_measurement.json).
+
+## Physics-step contact provider implemented — 2026-10-10
+
+[Working Fortress provider and actual results](physics_contact_provider.md):
+per-step collision identities/state captured alongside genuine EPD images;
+exact all-eight-corner rational enclosure avoids manifold-completeness assumptions.
+A final two-detection capture measured conditional penetration of about 0.580 µm,
+with unique nominal mask candidates. Physical proof and identity binding remain
+**BLOCKED** because ECM-to-backend shape/state and render/projection errors are
+unqualified. Native admission still rejects unchanged table-envelope depths;
+MoveIt was not run. [Machine-readable evidence](physics_contact_provider.json)
+records the exact outstanding backend readback and projection obligations.
