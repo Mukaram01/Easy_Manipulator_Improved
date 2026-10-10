@@ -13,6 +13,22 @@ The user's existing one-line `sm->updateSceneGraph()` change was preserved witho
 
 Only same-fragment production and the tested fixture's occlusion/uint32 readback are PASS. Gazebo visual/collision mapping, genuine EPD association, DART/render alignment, physical penetration and extraction remain BLOCKED/NOT RUN. No new motion goals, permissions, planning geometry or safety changes. Older failure attempts below remain historical.
 
+## Read-only identity mapping implementation
+
+The existing physics owner now captures the complete ECM identity inventory at
+its recording boundary. A compiled public `SceneManager::VisualById` adapter
+reads native visual identities and parent pointers, and a strict metadata join
+rejects ambiguous/missing/stale ownership. **52 focused Python tests and two
+C++ tests PASS; updated owner plugin build PASS.** Actual retained GPU bytes are
+also checked by a reproducible regression. See [identity mapping scope and
+remaining acquisition hook](identity_mapping.md) and
+[focused build/test evidence](identity_metadata/result.json).
+
+End-to-end mapping remains **BLOCKED**: no live Gazebo acquisition hook yet binds
+those mapped visuals to the same-fragment MRT ID output. No Gazebo experiment,
+EPD inference or motion was run, and copied metadata timestamps do not prove
+render/physics alignment.
+
 ## Reservation fix and sole run (baseline 214a30e2)
 
 Inserted **`nd->setNumTargetPass(1)` immediately before `nd->addTargetPass("fragment_mrt")`**, matching the installed Ogre2.2 public API's obligatory reservation. Added the explicitly requested static ordering regression: observed RED before the fix, then **24 focused CPU tests PASS** after it. Opt-in MRT target build PASS. The only additional fixture changes record existing callback count and post-pass GL depth-test/write state for acceptance; no rendering refactor or shader/material change. Camera parent fix remains unchanged.

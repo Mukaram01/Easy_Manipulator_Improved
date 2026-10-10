@@ -1,6 +1,7 @@
 // Only public DART/ign-physics APIs. Raw state never enters EPD geometry.
 #pragma once
 #include "bindings.hh"
+#include "identity_inventory.hh"
 #include <gz/physics/dartsim/World.hh>
 #include <dart/dynamics/BoxShape.hpp>
 #include <dart/dynamics/BodyNode.hpp>

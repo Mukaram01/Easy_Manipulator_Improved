@@ -1,0 +1,68 @@
+{
+	"collisions" : 
+	[
+		{
+			"geometry" : 
+			{
+				"size" : 
+				[
+					0.025000000000000001,
+					0.025000000000000001,
+					0.025000000000000001
+				],
+				"type" : "BOX"
+			},
+			"id" : 5,
+			"parent" : 3
+		}
+	],
+	"complete" : true,
+	"links" : 
+	[
+		{
+			"id" : 3,
+			"parent" : 2
+		}
+	],
+	"models" : 
+	[
+		{
+			"id" : 2,
+			"parent" : 1
+		}
+	],
+	"visuals" : 
+	[
+		{
+			"geometry" : 
+			{
+				"size" : 
+				[
+					0.025000000000000001,
+					0.025000000000000001,
+					0.025000000000000001
+				],
+				"type" : "BOX"
+			},
+			"id" : 4,
+			"opaque" : true,
+			"parent" : 3
+		},
+		{
+			"geometry" : 
+			{
+				"type" : "UNSUPPORTED_OR_MISSING"
+			},
+			"id" : 6,
+			"opaque" : false,
+			"parent" : 0
+		}
+	],
+	"worlds" : 
+	[
+		{
+			"id" : 1,
+			"parent" : 0
+		}
+	]
+}

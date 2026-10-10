@@ -28,6 +28,25 @@ def test_distinct_large_integer_ids():
     assert result['contact_authority'] is False
 
 
+def test_preserved_manual_gpu_capture_actual_bytes():
+    import gzip
+    import json
+    p=Path(__file__).resolve().parents[1]/'evidence/stage_a2_geometry/physics_owner/same_fragment/accepted_manual'
+    r=json.loads(gzip.decompress((p/'capture.json.gz').read_bytes()))
+    acceptance=json.loads((p/'acceptance.json').read_text())
+    rgb_bytes=gzip.decompress((p/'capture.json.rgb8.gz').read_bytes())
+    id_bytes=gzip.decompress((p/'capture.json.ids.u32.gz').read_bytes())
+    rgb=np.frombuffer(rgb_bytes,dtype=np.uint8).reshape(r['height'],r['width'],3)
+    ids=np.frombuffer(id_bytes,dtype='<u4').reshape(r['height'],r['width'])
+    # These hashes attest retained readback bytes, not a new graphics run.
+    r['rgb_sha256']=acceptance['rgb_sha256'];r['id_sha256']=acceptance['id_sha256']
+    api.validate_fragment_capture(r,rgb,ids,r['session'],r['frame'])
+    assert dict(zip(*np.unique(ids,return_counts=True)))=={0:40612,16777217:21756,4000000022:3168}
+    assert ids[128,128]==16777217 and np.any(rgb) and np.ptp(rgb)>0
+    assert [a['format'] for a in r['actual_attachments']]==[32856,33334]
+    assert r['render_pass_count']==1 and r['post_pass_depth_test'] and r['post_pass_depth_write']
+
+
 @pytest.mark.parametrize('change',[
     lambda r:r.update(session='stale'),lambda r:r.update(frame=0),
     lambda r:r.update(inventory_complete=False),lambda r:r.update(shared_scene_pass=False),lambda r:r.update(id_format='RGBA8_UNORM'),

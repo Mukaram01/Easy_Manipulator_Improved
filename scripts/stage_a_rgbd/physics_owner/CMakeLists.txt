@@ -21,6 +21,11 @@ target_link_libraries(workcell_owner_physics PRIVATE ignition-gazebo6::ignition-
 enable_testing()
 add_executable(owner_bindings_test bindings_test.cpp)
 add_test(NAME owner_bindings COMMAND owner_bindings_test)
+find_package(ignition-gazebo6-rendering REQUIRED)
+add_executable(owner_identity_inventory_test identity_inventory_test.cpp)
+target_link_libraries(owner_identity_inventory_test PRIVATE ignition-gazebo6::ignition-gazebo6
+  ignition-gazebo6::ignition-gazebo6-rendering PkgConfig::JSON)
+add_test(NAME owner_identity_inventory COMMAND owner_identity_inventory_test)
 
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/prepare.py
   ${CMAKE_CURRENT_BINARY_DIR}/reference --reference COMMAND_ERROR_IS_FATAL ANY)

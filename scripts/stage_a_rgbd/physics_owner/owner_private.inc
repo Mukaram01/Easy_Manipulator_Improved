@@ -33,6 +33,9 @@ public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ec
   Json::Value r;
   r["schema"]="workcell_instrumented_owner/v1";
   r["session"]=owner.session;r["step"]=Json::UInt64(info.iterations);
+  r["identity_inventory"]=workcell::IdentityInventory(ecm);
+  if(this->entityWorldMap.Map().size()==1)
+    r["world_entity"]=Json::UInt64(this->entityWorldMap.Map().begin()->first);
   r["stamp_ns"]=Json::Int64(std::chrono::duration_cast<std::chrono::nanoseconds>(info.simTime).count());
   r["dt_ns"]=Json::Int64(std::chrono::duration_cast<std::chrono::nanoseconds>(info.dt).count());
   r["backend_path"]=owner.backendPath;r["backend_class"]=owner.backendClass;
