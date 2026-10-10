@@ -8,3 +8,9 @@ pkg_check_modules(JSON REQUIRED IMPORTED_TARGET jsoncpp)
 add_library(workcell_physics_contact_measurement SHARED provider.cpp)
 target_link_libraries(workcell_physics_contact_measurement PRIVATE
   ignition-gazebo6::ignition-gazebo6 ignition-plugin1::register PkgConfig::JSON)
+enable_testing()
+add_executable(contact_observer_lifecycle_test lifecycle_test.cpp)
+target_compile_options(contact_observer_lifecycle_test PRIVATE -UNDEBUG)
+target_link_libraries(contact_observer_lifecycle_test PRIVATE
+  ignition-gazebo6::ignition-gazebo6 ignition-plugin1::register PkgConfig::JSON)
+add_test(NAME contact_observer_lifecycle COMMAND contact_observer_lifecycle_test)

@@ -162,3 +162,7 @@ path. See [live owner evidence](physics_owner/README.md): actual DART ShapeNodes
 authoritative construction bindings and complete collision inventory are read
 from the same live engine. **Runtime equivalence stops at missing stock contact
 observations**, so physical bounds and all planning permissions remain BLOCKED.
+
+Latest correction: [matched-step stock contacts](physics_owner/contact_comparison/README.md)
+now exist in both runtimes. Stock normals/depths remain unexposed; all contact
+authority and extraction gates remain BLOCKED.

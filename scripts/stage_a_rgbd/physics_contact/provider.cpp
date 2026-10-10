@@ -23,12 +23,14 @@ Json::Value xyz(const ignition::math::Vector3d &v) {
   Json::Value a(Json::arrayValue);a.append(v.X());a.append(v.Y());a.append(v.Z());return a;
 }
 class WorkcellPhysicsContactMeasurement final:public sim::System,
-    public sim::ISystemConfigure,public sim::ISystemPostUpdate {
+    public sim::ISystemConfigure,public sim::ISystemPreUpdate,public sim::ISystemPostUpdate {
   sim::Entity world=sim::kNullEntity;
   std::string supportName,runId,worldName;
   std::set<std::string> workpieces;
   std::string diagnosticOutput;
   std::uint64_t diagnosticStep=0;
+  std::set<std::uint64_t> diagnosticSteps;
+  std::uint64_t requestedAtStep=0;
   ignition::transport::Node node;
   ignition::transport::Node::Publisher publisher;
  public:
@@ -36,16 +38,25 @@ class WorkcellPhysicsContactMeasurement final:public sim::System,
                  sim::EntityComponentManager &ecm,sim::EventManager &) override {
     diagnosticOutput=sdf->Get<std::string>("diagnostic_output", "").first;
     diagnosticStep=sdf->Get<std::uint64_t>("diagnostic_step", 0).first;
-    if(!diagnosticOutput.empty())ecm.Each<components::Collision>([&](const auto &id,const auto*) {
-      if(!ecm.Component<components::ContactSensorData>(id))ecm.CreateComponent(id,components::ContactSensorData());
-      return true;
-    });
+    std::istringstream schedule(sdf->Get<std::string>("diagnostic_steps", "").first);
+    std::uint64_t step;while(schedule>>step)diagnosticSteps.insert(step);
+    if(diagnosticSteps.empty())diagnosticSteps.insert(diagnosticStep);
     world=entity;worldName=ecm.Component<components::Name>(world)->Data();
     supportName=sdf->Get<std::string>("support_collision");
     runId=sdf->Get<std::string>("run_id");
     std::istringstream names(sdf->Get<std::string>("workpieces"));std::string name;
     while(names>>name)workpieces.insert(name);
     publisher=node.Advertise<ignition::msgs::StringMsg>("/stage_a/physics_contact_state");
+  }
+  void PreUpdate(const sim::UpdateInfo &info,sim::EntityComponentManager &ecm) override {
+    if(diagnosticOutput.empty())return;
+    // Configure can precede collision creation. Every PreUpdate precedes the
+    // owner's UpdateCollisions; add requests for new collisions, never reset data.
+    ecm.Each<components::Collision>([&](const auto &id,const auto*) {
+      if(!ecm.Component<components::ContactSensorData>(id))ecm.CreateComponent(id,components::ContactSensorData());
+      return true;
+    });
+    requestedAtStep=info.iterations;
   }
   void PostUpdate(const sim::UpdateInfo &info,const sim::EntityComponentManager &ecm) override {
     if(info.paused)return;
@@ -117,20 +128,32 @@ class WorkcellPhysicsContactMeasurement final:public sim::System,
     record["decision"]="BLOCKED_BACKEND_STATE_ERROR";
     if(!complete)record["failure_reason"]="missing, duplicate or unsupported loaded collision inventory";
     Json::StreamWriterBuilder writer;writer["indentation"]="";writer["precision"]=17;
-    if(!diagnosticOutput.empty()&&info.iterations==diagnosticStep) {
+    if(!diagnosticOutput.empty()&&diagnosticSteps.count(info.iterations)) {
       record["diagnostic_contacts"]=Json::Value(Json::arrayValue);
+      record["diagnostic_collision_ids"]=Json::Value(Json::arrayValue);
+      record["diagnostic_requested_ids"]=Json::Value(Json::arrayValue);
+      record["contact_request_step"]=Json::UInt64(requestedAtStep);
+      record["contact_read_phase"]="PostUpdate_after_Physics_UpdateCollisions";
+      ecm.Each<components::Collision>([&](const auto &id,const auto*) {
+        record["diagnostic_collision_ids"].append(Json::UInt64(id));return true;
+      });
       ecm.Each<components::Collision,components::ContactSensorData>([&](const auto &id,const auto*,const auto *data) {
+        record["diagnostic_requested_ids"].append(Json::UInt64(id));
         for(const auto &contact:data->Data().contact()) {
           Json::Value c;c["owner_collision_id"]=Json::UInt64(id);
           c["collision1"]=contact.collision1().id();c["collision2"]=contact.collision2().id();
+          c["position_m"]=Json::Value(Json::arrayValue);
+          for(const auto &v:contact.position()){Json::Value a(Json::arrayValue);a.append(v.x());a.append(v.y());a.append(v.z());c["position_m"].append(a);}
+          c["normal"]=Json::Value(Json::arrayValue);
+          for(const auto &v:contact.normal()){Json::Value a(Json::arrayValue);a.append(v.x());a.append(v.y());a.append(v.z());c["normal"].append(a);}
           c["depth_m"]=Json::Value(Json::arrayValue);for(auto d:contact.depth())c["depth_m"].append(d);
           record["diagnostic_contacts"].append(c);
         }return true;
       });
-      std::ofstream output(diagnosticOutput);output<<Json::writeString(writer,record)<<"\n";
+      std::ofstream output(diagnosticOutput,diagnosticSteps.size()>1?std::ios::app:std::ios::out);output<<Json::writeString(writer,record)<<"\n";
     }
     ignition::msgs::StringMsg message;message.set_data(Json::writeString(writer,record));publisher.Publish(message);
   }
 };
 IGNITION_ADD_PLUGIN(WorkcellPhysicsContactMeasurement,sim::System,
-  WorkcellPhysicsContactMeasurement::ISystemConfigure,WorkcellPhysicsContactMeasurement::ISystemPostUpdate)
+  WorkcellPhysicsContactMeasurement::ISystemConfigure,WorkcellPhysicsContactMeasurement::ISystemPreUpdate,WorkcellPhysicsContactMeasurement::ISystemPostUpdate)

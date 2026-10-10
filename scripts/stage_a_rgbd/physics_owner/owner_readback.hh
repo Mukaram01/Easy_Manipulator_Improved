@@ -23,10 +23,14 @@ struct OwnerReadback {
   Bindings<Node> bindings;
   std::string backendPath,backendClass,output,session;
   std::uint64_t recordStep=0;
+  std::set<std::uint64_t> recordSteps;
   void Configure(const std::shared_ptr<const sdf::Element> &sdf) {
     output=sdf->Get<std::string>("owner_output", "").first;
     session=sdf->Get<std::string>("owner_session", "").first;
     recordStep=sdf->Get<std::uint64_t>("owner_record_step", 0).first;
+    std::istringstream schedule(sdf->Get<std::string>("owner_record_steps", "").first);
+    std::uint64_t step;while(schedule>>step)recordSteps.insert(step);
+    if(recordSteps.empty())recordSteps.insert(recordStep);
   }
 };
 }

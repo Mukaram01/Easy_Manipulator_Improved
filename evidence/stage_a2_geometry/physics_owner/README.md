@@ -1,3 +1,7 @@
+> Latest update: [matched-step contact collection](contact_comparison/README.md)
+> fixes empty stock observations. Available fields match at six steps; full
+> qualification remains BLOCKED because stock normals/depths are omitted.
+
 # Isolated live Physics owner readback — 2026-10-10
 
 Baseline `6363d526fddba5872da9bac8ec0449856d73d8b2`, clean isolated

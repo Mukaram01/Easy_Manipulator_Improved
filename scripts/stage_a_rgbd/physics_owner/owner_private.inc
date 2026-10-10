@@ -20,7 +20,7 @@ public: std::set<const workcell::Node*> OwnerNodes() {
   return nodes;
 }
 public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ecm) {
-  if(owner.output.empty()||info.iterations!=owner.recordStep)return;
+  if(owner.output.empty()||!owner.recordSteps.count(info.iterations))return;
   Json::Value r;
   r["schema"]="workcell_instrumented_owner/v1";
   r["session"]=owner.session;r["step"]=Json::UInt64(info.iterations);
@@ -61,10 +61,19 @@ public: void OwnerRecord(const UpdateInfo &info,const EntityComponentManager &ec
     Json::Value contact;
     contact["node1"]=workcell::Pointer(c.collisionObject1->getShapeFrame()->asShapeNode());
     contact["node2"]=workcell::Pointer(c.collisionObject2->getShapeFrame()->asShapeNode());
+    Json::Value point(Json::arrayValue),normal(Json::arrayValue);
+    for(int i=0;i<3;++i){point.append(c.point[i]);normal.append(c.normal[i]);}
+    contact["position_m"]=point;contact["normal"]=normal;
+    for(const auto &[id,b]:owner.bindings.entries) {
+      if(b.node==c.collisionObject1->getShapeFrame()->asShapeNode())contact["collision1"]=Json::UInt64(id);
+      if(b.node==c.collisionObject2->getShapeFrame()->asShapeNode())contact["collision2"]=Json::UInt64(id);
+    }
+    if(!contact.isMember("collision1")||!contact.isMember("collision2"))complete=false;
     contact["depth_m"]=c.penetrationDepth;r["contacts"].append(contact);
   }
+  r["complete"]=complete;
   if(!complete)r["failure_reason"]="non-bijective construction witness, missing mappings, unsupported world or incomplete inventory";
   Json::StreamWriterBuilder writer;writer["indentation"]="";writer["precision"]=17;
-  std::ofstream stream(owner.output,std::ios::out|std::ios::trunc);
+  std::ofstream stream(owner.output,owner.recordSteps.size()>1?std::ios::app:std::ios::out);
   stream<<Json::writeString(writer,r)<<"\n";
 }
