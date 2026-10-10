@@ -1,0 +1,3 @@
+libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device.
+stage_a_fragment_mrt: /build/ogre-next-UFfg83/ogre-next-2.2.5+dfsg3/OgreMain/src/OgreSceneManager.cpp:1291: virtual void Ogre::SceneManager::_cullPhase01(Ogre::Camera*, Ogre::Camera*, const Ogre::Camera*, Ogre::uint8, Ogre::uint8, bool): Assertion `!mEntitiesMemoryManagerCulledList.empty()' failed.
+timeout: the monitored command dumped core

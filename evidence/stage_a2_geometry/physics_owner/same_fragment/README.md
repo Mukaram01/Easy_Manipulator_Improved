@@ -1,5 +1,29 @@
 # Same-fragment RGB / integer-ID fixture — runtime BLOCKED
 
+## Reservation fix and sole run (baseline 214a30e2)
+
+Inserted **`nd->setNumTargetPass(1)` immediately before `nd->addTargetPass("fragment_mrt")`**, matching the installed Ogre2.2 public API's obligatory reservation. Added the explicitly requested static ordering regression: observed RED before the fix, then **24 focused CPU tests PASS** after it. Opt-in MRT target build PASS. The only additional fixture changes record existing callback count and post-pass GL depth-test/write state for acceptance; no rendering refactor or shader/material change. Camera parent fix remains unchanged.
+
+Pre-run source SHA256: `b01a706970a34df62e9ca90e02d33d0722823f595b61f25cb7a1be581a13f476`.
+Executed ELF SHA256: **`6aca19a505cce4a0e10a2a9382c446969fd9968167f13f2fb960887f0d4c397c`**.
+Both were saved before execution; output/report/RGB/ID paths were checked absent.
+
+```bash
+LIBGL_ALWAYS_SOFTWARE=1 timeout 60s /tmp/stage_a2_fragment_build/stage_a_fragment_mrt /tmp/stage_a2_fragment_reserved.json
+```
+
+**BLOCKED:** this task's sole execution terminated SIGABRT (Python return **-6**) after **0.875 s**. The target-pass assertion is cleared; execution reached scene culling, then asserted:
+
+```text
+stage_a_fragment_mrt: /build/ogre-next-UFfg83/ogre-next-2.2.5+dfsg3/OgreMain/src/OgreSceneManager.cpp:1291: virtual void Ogre::SceneManager::_cullPhase01(Ogre::Camera*, Ogre::Camera*, const Ogre::Camera*, Ogre::uint8, Ogre::uint8, bool): Assertion `!mEntitiesMemoryManagerCulledList.empty()' failed.
+```
+
+[Exact retained evidence](reservation_attempt/result.json) contains preflight/ELF/source hashes, build log, full stdout/stderr, elapsed time/exit status and artifact hashes. Stdout is empty; stderr also contains the EGL software-rendering warning and timeout core-dump diagnostic. No native report or image buffers exist. Actual RGB, IDs/counts, attachment formats, pass count, depth-state readback, driver/loaded-library witness, uint32 preservation and occlusion are **NOT REACHED / unavailable**. No second GPU execution. Strict captured-buffer diagnostics/mutation tests were NOT RUN because no captured buffers exist. CPU fixtures are not substituted for native evidence.
+
+**One next fix:** prepare the native SceneManager with **`sm->updateSceneGraph()` before the manual workspace update**. Narrow source inspection shows `updateSceneGraph()` calls `highLevelCull()`, which populates the asserted culled-manager list, then updates transforms/bounds; the public installed header describes it as scene preparation. Merely reserving compositor targets cannot establish this state. That next fix was **not implemented or tested** here. No broader investigation, renderer replacement or GPU draw inspection.
+
+The acceptance milestone remains BLOCKED. Gazebo visual/collision mapping, genuine EPD association, DART/render synchronisation, physical penetration and extraction are unchanged and unqualified. No Gazebo/EPD, MoveIt, controller or execution goals; no collision permissions, installed-library or protected Stage-A1 modifications. Original EPD poses/envelopes and 0.1 mm threshold preserved. PR #3176 stays draft. Older attempts below are historical and do not replace this run's failure.
+
 ## Corrected-binary verification attempt (baseline 36c2637f)
 
 **BLOCKED before rendering.** Exactly one newly authorised bounded execution used the unchanged corrected ELF SHA256 `091aa50cb926b4a97e13df01ab5c5f27ef215afd69e08c49a33b2633f3e5b5c6` and source SHA256 `c2cceb47fbb5d57186f3b591ec564cbe083e677a5386b4c61d8247f8bc1e3b93`. HEAD/clean checkout, committed source equality, camera attachment fix, unchanged installed swrast hash and all-new output paths were verified before execution. No rebuild or source modification preceded this run.

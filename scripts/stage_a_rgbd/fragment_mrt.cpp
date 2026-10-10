@@ -52,7 +52,11 @@ void main(){ rgb=vec4(baseColour*(0.35+0.65*abs(normalize(faceNormal).z)),1.0);i
 struct Formats:Ogre::CompositorWorkspaceListener {
   Json::Value &r; explicit Formats(Json::Value &v):r(v){}
   void passPosExecute(Ogre::CompositorPass*) override {
-    ++calls;GLint fbo=0;glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING,&fbo);
+    ++calls;r["render_pass_count"]=calls;
+    r["post_pass_depth_test"]=static_cast<bool>(glIsEnabled(GL_DEPTH_TEST));
+    GLboolean depthWrite=GL_FALSE;glGetBooleanv(GL_DEPTH_WRITEMASK,&depthWrite);
+    r["post_pass_depth_write"]=static_cast<bool>(depthWrite);
+    GLint fbo=0;glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING,&fbo);
     for(int i=0;i<2;++i){GLint type=0,name=0,format=0,w=0,h=0;
       glGetNamedFramebufferAttachmentParameteriv(fbo,GL_COLOR_ATTACHMENT0+i,GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,&type);
       if(type!=GL_TEXTURE)throw std::runtime_error("attachment is not texture");
@@ -133,6 +137,7 @@ int main(int argc,char **argv){
     auto view=nd->addRenderTextureView("fragment_mrt");view->colourAttachments.resize(2);
     view->colourAttachments[0].textureName="rgb";view->colourAttachments[1].textureName="ids";
     view->depthBufferFormat=Ogre::PFG_D32_FLOAT;view->preferDepthTexture=true;
+    nd->setNumTargetPass(1);
     auto target=nd->addTargetPass("fragment_mrt");
     auto sp=static_cast<Ogre::CompositorPassSceneDef*>(target->addPass(Ogre::PASS_SCENE));
     // Ogre2.2's colour clear uses float clear calls: avoid those for uint attachment.

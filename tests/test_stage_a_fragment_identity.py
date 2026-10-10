@@ -60,3 +60,11 @@ def test_ambiguous_or_changed_mask_rejected(kind):
     if kind=='invalid_id':ids[1,1]=4294967295
     if kind=='float_id':ids=ids.astype(float)
     with pytest.raises(ValueError):api.mask_identity(r,rgb,ids,mask,'test',1,r['rgb_sha256'])
+
+
+def test_mrt_target_reservation_immediately_precedes_target_creation():
+    # Ogre2.2 requires reserve before addTargetPass; exercising it graphically
+    # would abort, so guard the fixture's explicit construction order statically.
+    import re
+    source=(Path(__file__).resolve().parents[1]/'scripts/stage_a_rgbd/fragment_mrt.cpp').read_text()
+    assert re.search(r'nd->setNumTargetPass\(1\);\s*auto target=nd->addTargetPass\("fragment_mrt"\);',source)
