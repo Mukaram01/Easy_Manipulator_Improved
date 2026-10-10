@@ -312,3 +312,16 @@ Focused capture/geometry/extraction Python regressions: **60 PASS**. Affected
 capture and geometry-test builds **PASS**; existing `masked_depth_geometry`
 CTest **1 PASS**. Independent scoped code review found no important defect.
 Protected Stage-A1 HEAD/status/tracked-diff fingerprint remains unchanged.
+
+## Working relative support measurement — 2026-10-10
+
+[Same-frame measurement](relative_support_measurement.md) now fits the observed
+table and computes physical cube corner clearances using the existing genuine
+EPD capture and qualified simulation dimensions. The optional snapshot path
+retains diagnostic source/object provenance and all original collision geometry.
+Measured nominal headroom is 99.381/97.012 µm; depth, plane/orientation,
+registration and numerical error remain unqualified. Support/native proof and
+extraction remain **BLOCKED**; the 0.2 mm downward witness remains admitted.
+No MoveIt acceptance ran. One contact-depth alternative was investigated;
+the adjacent report specifies the exact missing exhaustive penetration/error
+and EPD-association contract. See [machine-readable evidence](relative_support_measurement.json).

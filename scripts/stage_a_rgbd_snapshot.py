@@ -287,6 +287,9 @@ def main():
     parser.add_argument('--simulation-world', type=Path, help='Optional immutable authored simulation world; no pose authority')
     parser.add_argument('--simulation-world-sha256', help='Independently pinned authored world SHA256')
     parser.add_argument('--simulation-workpieces', nargs='+', help='Explicit uniform profile-associated model inventory')
+    parser.add_argument('--support-depth', type=Path, help='Optional same-capture float32 depth for relative support diagnostics')
+    parser.add_argument('--support-id', help='Loaded static support identity; ROI association remains unqualified')
+    parser.add_argument('--support-roi', type=int, nargs=4, help='Explicit table pixel ROI: u0 v0 u1 v1; diagnostics only')
     args = parser.parse_args()
     if args.workpiece_profile and args.camera_pose is None:
         parser.error('BLOCKED: reconstruction requires --camera-pose and optical input for verified extrinsics')
@@ -298,6 +301,9 @@ def main():
     simulation_args = (args.simulation_world, args.simulation_world_sha256, args.simulation_workpieces)
     if any(simulation_args) and (not all(simulation_args) or not args.workpiece_profile):
         parser.error('simulation specification requires world, pinned SHA256, inventory and workpiece profile')
+    support_args = (args.support_depth, args.support_id, args.support_roi)
+    if any(support_args) and (not all(support_args) or not all(simulation_args)):
+        parser.error('relative support diagnostics require depth, identity, ROI and simulation dimension qualification')
     if args.workpiece_profile:
         import hashlib
         import yaml
@@ -324,6 +330,17 @@ def main():
         if args.simulation_world:
             snapshot = qualify_simulation_dimensions(snapshot, profile_data['asset'],
                 args.simulation_world.read_bytes(), args.simulation_world_sha256, args.simulation_workpieces)
+    if args.support_depth:
+        import numpy as np
+        from stage_a_relative_support import measure_relative_support
+        source = snapshot['source']
+        depth_bytes = args.support_depth.read_bytes()
+        depth = np.frombuffer(depth_bytes, dtype=np.float32).reshape(source['height'], source['width'])
+        report = measure_relative_support(snapshot, depth, args.support_roi, args.support_id)
+        source['relative_support_diagnostic'] = {k:v for k,v in report.items() if k != 'objects'}
+        source['relative_support_diagnostic']['depth_sha256'] = hashlib.sha256(depth_bytes).hexdigest()
+        for obj, measurement in zip(snapshot['objects'], report['objects']):
+            obj['attributes']['relative_support_diagnostic'] = measurement
     errors = validate_normalized_snapshot(snapshot, expected_scene_id='ur5_2f_test', expected_camera_id='stage_a_camera')
     if errors:
         raise ValueError('; '.join(errors))
@@ -348,6 +365,9 @@ def main():
             json.dump(replay,output,indent=2,allow_nan=False)
     status = 'BLOCKED' if args.workpiece_profile and not snapshot['objects'] else 'PASS'
     print(f"{status}: {len(snapshot['objects'])} normalized observations in {snapshot['frame_id']}")
+    if args.support_depth:
+        print('BLOCKED: support contact; qualified total relative error bound missing (geometry export retained)')
+        raise SystemExit(2)
     if status == 'BLOCKED':
         raise SystemExit(2)
 

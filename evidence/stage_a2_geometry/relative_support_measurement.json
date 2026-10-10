@@ -1,0 +1,451 @@
+{
+  "schema": "workcell_relative_support_diagnostic/v1",
+  "camera_id": "stage_a_camera",
+  "capture_stamp_ns": 27639000000,
+  "support_id": "pick_support",
+  "support_association": "operator ROI; unverified registration",
+  "table_roi_uv": [
+    180,
+    180,
+    330,
+    205
+  ],
+  "table_pixels": 3750,
+  "table_plane_optical": {
+    "point": [
+      -0.0020766366240973643,
+      -0.08860306626454494,
+      0.6140001026789347
+    ],
+    "normal": [
+      -3.8608520822027263e-07,
+      -2.870255884079853e-07,
+      -0.9999999999998842
+    ],
+    "max_residual_m": 3.433499328887079e-08
+  },
+  "contact_authority": false,
+  "decision": "BLOCKED",
+  "objects": [
+    {
+      "object_id": "epd_27639000000_0",
+      "support_id": "pick_support",
+      "measurement_source": "same_frame_segmented_top_face_and_depth_table_roi",
+      "capture_stamp_ns": 27639000000,
+      "scope": "simulation_only_replay_diagnostic",
+      "nominal_top_face_height_m": 0.024999389336546173,
+      "nominal_face_table_angle_rad": 4.812406081543952e-07,
+      "nominal_face_optical": {
+        "centre_xyz": [
+          -0.0006129492190579122,
+          -0.050721493616368886,
+          0.5890007019042969
+        ],
+        "normal_xyz": [
+          -6.176160119090078e-26,
+          -2.220446049250313e-16,
+          -1.0
+        ]
+      },
+      "nominal_physical_box_optical": {
+        "centre_xyz": [
+          -0.0006129492190579122,
+          -0.050721493616368886,
+          0.6015007019042969
+        ],
+        "rotation_matrix": [
+          [
+            0.9805806853838193,
+            0.19611608667368197,
+            -6.176160119090079e-26
+          ],
+          [
+            0.19611608667368197,
+            -0.9805806853838193,
+            -2.220446049250313e-16
+          ],
+          [
+            -4.354651904546314e-17,
+            2.1773265087105413e-16,
+            -1.0
+          ]
+        ],
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ]
+      },
+      "nominal_corner_gaps_m": [
+        -6.077991533892657e-07,
+        0.02499939220084363,
+        -6.026557976881395e-07,
+        0.02499939734419933,
+        -6.1867110422094e-07,
+        0.024999381328892796,
+        -6.13527748519814e-07,
+        0.024999386472248496
+      ],
+      "nominal_lowest_corner_gap_m": -6.1867110422094e-07,
+      "nominal_penetration_m": 6.1867110422094e-07,
+      "remaining_total_vertical_error_budget_m": 9.938132889577906e-05,
+      "qualified_dimensions": {
+        "scope": "simulation_only_replay",
+        "source_world_sha256": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+        "loaded_geometry_source": "live_generate_world_sdf",
+        "world": "a0",
+        "capture_stamp_ns": 27639000000,
+        "profile_id": "stage_a_cube_25mm",
+        "inventory": [
+          {
+            "name": "part_00",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          },
+          {
+            "name": "part_01",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          }
+        ],
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "association": "explicit uniform inventory/profile; not simulator instance identification",
+        "numeric_error_m": 6.93889390390723e-18,
+        "numeric_error_scope": "dimension decimal/binary conversion only; not pose, depth or physics error",
+        "physical_metrology": false,
+        "contact_authority": false
+      },
+      "uncertainty_budget": {
+        "float32_storage_only": {
+          "bound_m": null,
+          "qualified": false,
+          "nominal_axial_half_ulp_sum_m": 5.960464477539064e-08,
+          "reason": "nominal axial storage resolution only; fitted face depth is not a raw sample; samplewise rounding and projection/fit propagation unqualified"
+        },
+        "dimension_representation_only": {
+          "bound_m": 6.93889390390723e-18,
+          "qualified": true
+        },
+        "depth_measurement": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "no worst-case differential renderer/depth bias bound"
+        },
+        "pixel_calibration_segmentation": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "no bounded intrinsics, pixel correspondence or face-edge bias"
+        },
+        "plane_fit_and_roll_pitch": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "residuals do not bound face/table normal or extrapolation error"
+        },
+        "camera_to_world": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "common rigid transform cancels algebraically; input consistency/arithmetic unqualified"
+        },
+        "timestamp_motion": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "RGB/depth/info stamps equal; no within-exposure motion bound"
+        },
+        "support_registration": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "operator ROI and static model identity do not prove visual/collision plane registration"
+        },
+        "floating_point_geometry": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "SVD, projection, dot products and geometric tolerances lack interval enclosure"
+        }
+      },
+      "conditional_existing_pose_set": {
+        "centre_radius_m": 0.002781151900472069,
+        "orientation_radius_rad": 0.22689280275926452,
+        "scope": "original conditional reconstruction set; not newly qualified by this measurement"
+      },
+      "all_configuration_penetration_upper_bound_m": null,
+      "verified_contact_relationship": false,
+      "downshift_0_2mm_excluded": false,
+      "decision": "BLOCKED",
+      "reasons": [
+        "nominal axial storage resolution only; fitted face depth is not a raw sample; samplewise rounding and projection/fit propagation unqualified",
+        "no worst-case differential renderer/depth bias bound",
+        "no bounded intrinsics, pixel correspondence or face-edge bias",
+        "residuals do not bound face/table normal or extrapolation error",
+        "common rigid transform cancels algebraically; input consistency/arithmetic unqualified",
+        "RGB/depth/info stamps equal; no within-exposure motion bound",
+        "operator ROI and static model identity do not prove visual/collision plane registration",
+        "SVD, projection, dot products and geometric tolerances lack interval enclosure"
+      ]
+    },
+    {
+      "object_id": "epd_27639000000_1",
+      "support_id": "pick_support",
+      "measurement_source": "same_frame_segmented_top_face_and_depth_table_roi",
+      "capture_stamp_ns": 27639000000,
+      "scope": "simulation_only_replay_diagnostic",
+      "nominal_top_face_height_m": 0.024998872024573134,
+      "nominal_face_table_angle_rad": 0.00013757778862635376,
+      "nominal_face_optical": {
+        "centre_xyz": [
+          -0.0007702704646790348,
+          0.04905835770841351,
+          0.5890011906376388
+        ],
+        "normal_xyz": [
+          -3.135860584318811e-05,
+          -0.00013433310272236787,
+          -0.9999999904856277
+        ]
+      },
+      "nominal_physical_box_optical": {
+        "centre_xyz": [
+          -0.0007698784821059956,
+          0.04906003687219753,
+          0.6015011905187091
+        ],
+        "rotation_matrix": [
+          [
+            0.9899494925195106,
+            -0.1414213607521902,
+            -3.135860584318687e-05
+          ],
+          [
+            -0.14142136371588424,
+            -0.989949483478504,
+            -0.00013433310272236798
+          ],
+          [
+            -1.204586547600782e-05,
+            0.00013741776367115187,
+            -0.9999999904856274
+          ]
+        ],
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ]
+      },
+      "nominal_corner_gaps_m": [
+        4.394457934723666e-07,
+        0.025000439209197804,
+        -2.987529760185141e-06,
+        0.02499701223364426,
+        7.320520976766667e-07,
+        0.02500073181550212,
+        -2.6949234558698184e-06,
+        0.024997304839948463
+      ],
+      "nominal_lowest_corner_gap_m": -2.987529760185141e-06,
+      "nominal_penetration_m": 2.987529760185141e-06,
+      "remaining_total_vertical_error_budget_m": 9.701247023981486e-05,
+      "qualified_dimensions": {
+        "scope": "simulation_only_replay",
+        "source_world_sha256": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+        "loaded_geometry_source": "live_generate_world_sdf",
+        "world": "a0",
+        "capture_stamp_ns": 27639000000,
+        "profile_id": "stage_a_cube_25mm",
+        "inventory": [
+          {
+            "name": "part_00",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          },
+          {
+            "name": "part_01",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          }
+        ],
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "association": "explicit uniform inventory/profile; not simulator instance identification",
+        "numeric_error_m": 6.93889390390723e-18,
+        "numeric_error_scope": "dimension decimal/binary conversion only; not pose, depth or physics error",
+        "physical_metrology": false,
+        "contact_authority": false
+      },
+      "uncertainty_budget": {
+        "float32_storage_only": {
+          "bound_m": null,
+          "qualified": false,
+          "nominal_axial_half_ulp_sum_m": 5.960464477539064e-08,
+          "reason": "nominal axial storage resolution only; fitted face depth is not a raw sample; samplewise rounding and projection/fit propagation unqualified"
+        },
+        "dimension_representation_only": {
+          "bound_m": 6.93889390390723e-18,
+          "qualified": true
+        },
+        "depth_measurement": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "no worst-case differential renderer/depth bias bound"
+        },
+        "pixel_calibration_segmentation": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "no bounded intrinsics, pixel correspondence or face-edge bias"
+        },
+        "plane_fit_and_roll_pitch": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "residuals do not bound face/table normal or extrapolation error"
+        },
+        "camera_to_world": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "common rigid transform cancels algebraically; input consistency/arithmetic unqualified"
+        },
+        "timestamp_motion": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "RGB/depth/info stamps equal; no within-exposure motion bound"
+        },
+        "support_registration": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "operator ROI and static model identity do not prove visual/collision plane registration"
+        },
+        "floating_point_geometry": {
+          "bound_m": null,
+          "qualified": false,
+          "reason": "SVD, projection, dot products and geometric tolerances lack interval enclosure"
+        }
+      },
+      "conditional_existing_pose_set": {
+        "centre_radius_m": 0.002961785183777331,
+        "orientation_radius_rad": 0.25879505184902307,
+        "scope": "original conditional reconstruction set; not newly qualified by this measurement"
+      },
+      "all_configuration_penetration_upper_bound_m": null,
+      "verified_contact_relationship": false,
+      "downshift_0_2mm_excluded": false,
+      "decision": "BLOCKED",
+      "reasons": [
+        "nominal axial storage resolution only; fitted face depth is not a raw sample; samplewise rounding and projection/fit propagation unqualified",
+        "no worst-case differential renderer/depth bias bound",
+        "no bounded intrinsics, pixel correspondence or face-edge bias",
+        "residuals do not bound face/table normal or extrapolation error",
+        "common rigid transform cancels algebraically; input consistency/arithmetic unqualified",
+        "RGB/depth/info stamps equal; no within-exposure motion bound",
+        "operator ROI and static model identity do not prove visual/collision plane registration",
+        "SVD, projection, dot products and geometric tolerances lack interval enclosure"
+      ]
+    }
+  ],
+  "input_sha256": {
+    "world_snapshot_qualified.json": "b8a1ceb11fd88180566de5a139ec583f7426b3e10959748e8ebb905c5c90f5bb",
+    "depth.f32": "8857fe3f1ea523e61444622379522d6765b8ecf949068deeb440e74244e9e061"
+  },
+  "input_binding": "operator supplied files; hashes pin replay bytes, not sensor authenticity",
+  "all_original_object_fields_preserved": true,
+  "baseline_commit": "cbe19ac180f40494fd9e283a35631719eda5472a",
+  "runtime_directory": "/tmp/workcell_stage_a2_dimensions",
+  "admission": [
+    {
+      "object_id": "runtime::epd_27639000000_0",
+      "result": "BLOCKED",
+      "failure_kind": "extraction",
+      "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+      "neighbor": "workcell::support_surface_table",
+      "depth_m": 0.007808696750421378,
+      "gap_m": 0.0,
+      "normal": [
+        -5.739718509874451e-42,
+        -6.176160119090079e-26,
+        -1.0
+      ]
+    },
+    {
+      "object_id": "runtime::epd_27639000000_1",
+      "result": "BLOCKED",
+      "failure_kind": "extraction",
+      "extraction_reason_code": "EXTRACTION_INITIAL_DEPTH",
+      "neighbor": "workcell::support_surface_table",
+      "depth_m": 0.008678594537525508,
+      "gap_m": 0.0,
+      "normal": [
+        -0.0,
+        -0.0,
+        -1.0
+      ]
+    }
+  ],
+  "native_library": {
+    "path": "/tmp/stage_a2_closing_build/libworkcell_support_contact.so",
+    "sha256": "f7e1bdc260fbfcbd60b7e20a27a9cbc4b81d774aaff793a3e1236d59e2df30f5",
+    "scope": "unchanged existing native FCL admission ABI; not a new support certificate"
+  },
+  "native_certificate": "BLOCKED: qualified initial physical set unavailable; no extension implemented",
+  "moveit_stages": {
+    "approach": "NOT RUN: admission BLOCKED",
+    "descent": "NOT RUN: admission BLOCKED",
+    "closing": "NOT RUN: admission BLOCKED",
+    "extraction": "NOT RUN: admission BLOCKED",
+    "retreat": "NOT RUN: admission BLOCKED",
+    "transfer": "NOT RUN: admission BLOCKED",
+    "placement": "NOT RUN: admission BLOCKED",
+    "release": "NOT RUN: admission BLOCKED",
+    "home": "NOT RUN: admission BLOCKED"
+  },
+  "contact_sensor_alternative": {
+    "result": "BLOCKED",
+    "method": "Fortress contact sensor with per-contact depth",
+    "missing": [
+      "qualified exhaustive deepest BOX-plane penetration upper bound including backend/numeric error",
+      "timestamped unique contact-collision identity to EPD mask association without dynamic object poses"
+    ],
+    "implemented": false,
+    "reason": "saved world has no contact sensor/Contact system; schema/backend expose point depths, not a qualified all-shape bound"
+  },
+  "verification": {
+    "focused_python": "82 PASS",
+    "existing_native_safety_regressions": "44 PASS",
+    "new_native_build": "NOT RUN: no native source changes",
+    "independent_review": "two P2 findings corrected with failing-then-passing regressions",
+    "execution_goals_sent": 0,
+    "moveit_acceptance": "NOT RUN",
+    "simulator_dynamic_pose_used": false
+  }
+}

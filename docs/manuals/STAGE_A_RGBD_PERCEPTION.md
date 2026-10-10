@@ -173,3 +173,22 @@ known cube. Declared dimensions are identified separately from measurements;
 partial geometry remains BLOCKED. See `evidence/stage_a2_geometry/README.md` for
 current results, limits and exact offline plan-only commands. This does not
 commission the bridge or establish physical execution readiness.
+
+### Optional relative support diagnostic
+
+Add these arguments to the simulation-dimension-qualified snapshot command:
+
+```bash
+  --support-depth "$RGBD_RUN/capture/depth.f32" \
+  --support-id pick_support --support-roi 180 180 330 205
+```
+
+The ROI above belongs to the retained separated-cube capture, not arbitrary
+camera placements. Select and review a clear table ROI for other captures.
+This fits a same-frame table plane and exports nominal physical corner gaps,
+source/ROI/hash/stamp and explicit unknown uncertainty terms in existing
+source/object attributes. Geometry/replay files are retained, but exit **2**
+means support qualification is **BLOCKED**. It never authorizes support contact,
+changes a collision box, or permits execution. Small residuals and float32
+storage resolution are not sensor error bounds. See
+[actual evidence and required error budget](../../evidence/stage_a2_geometry/relative_support_measurement.md).
