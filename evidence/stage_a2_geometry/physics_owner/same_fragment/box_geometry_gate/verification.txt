@@ -1,0 +1,6 @@
+........................................................................ [ 51%]
+.....................................................................    [100%]
+141 passed in 128.14s (0:02:08)
+
+Additional final CSV hash/frontier/coordinate test: 1 passed, 8 deselected in 0.30s.
+Initial scoped run: 139 passed, 1 failed (float32 distance roundoff); corrected and rerun above.
