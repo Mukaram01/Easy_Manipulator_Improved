@@ -1,0 +1,3 @@
+libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device.
+stage_a_fragment_mrt: /build/ogre-next-UFfg83/ogre-next-2.2.5+dfsg3/OgreMain/src/Compositor/OgreCompositorNodeDef.cpp:46: Ogre::CompositorTargetDef* Ogre::CompositorNodeDef::addTargetPass(const String&, Ogre::uint32): Assertion `mTargetPasses.size() < mTargetPasses.capacity() && "setNumTargetPass called improperly!"' failed.
+timeout: the monitored command dumped core

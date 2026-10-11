@@ -1,0 +1,832 @@
+{
+  "session": "ad9793f5-e93d-4ee7-969c-45cd4a461fd6",
+  "steps": 2000,
+  "original_world_sha256": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+  "execution_goals": 0,
+  "moveit_started": false,
+  "instrumented_runtime_only": true,
+  "stock": {
+    "exit": 0,
+    "wall_time_s": 8.15926519597997,
+    "world_sha256": "63200dc0395aa670f767cf53cd072837ba92b4a03751b4fe691cf42543ab1b4b",
+    "physics_xml": "<physics name=\"default_physics\" type=\"ode\">\n      <max_step_size>0.001</max_step_size>\n      <real_time_factor>1.0</real_time_factor>\n      <real_time_update_rate>1000</real_time_update_rate>\n    </physics>\n\n    ",
+    "gravity": "0 0 -9.81",
+    "loaded_libraries": {
+      "/tmp/stage_a2_physics_contact_build/libworkcell_physics_contact_measurement.so": "718754a5a29463bcb6d55a786493c7d9ca44b0b1aa6592f1e7da5c12e87dc82b",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-physics-system.so.6.18.0": "f1ccf096669cfc6f9cdfb2d153e1e8a6101571f8abcb22a24ca9040b4a86842b",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-scene-broadcaster-system.so.6.18.0": "2437676add6c768bce4fe2e48858de05f5d7619f5e412dd476a706f6e0ec0090",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-sensors-system.so.6.18.0": "1822b540859271d7f733f6e1e602792dbe5184e9b2b43f8a8e00c6654c1954d4",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-user-commands-system.so.6.18.0": "62b13f3e69cf68e081a54ed4fb155953848aa33199cd43c35e15cd480bfab2ca",
+      "/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics5-dartsim-plugin.so.5.4.0": "44e5d8573b44ef1f555eba6f2fbf01c1f0ab657b0fd32016c441e884ec5e71a1",
+      "/usr/lib/x86_64-linux-gnu/libdart-collision-bullet.so.6.12.1": "1ae679a95b5033ed801538468834785bd009ecf078ad695822bcb3c419060037",
+      "/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1": "cc914ae1d651bfd79fa7eb308c6f39a12174e8b59d0fb45318652f0eb61761ee",
+      "/usr/lib/x86_64-linux-gnu/libdart-external-odelcpsolver.so.6.12.1": "b9df61c1d196ee2652ce1ca94af8fff44e1e1ca5286f0fdd10cedd0e8981a31a",
+      "/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1": "5a0048707f55903e0ba62f9bba76456b6f0eb850c1d5016ea499432c1bab089b",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-gui.so.6.18.0": "641ae1539e310db64620c0df09b0c7d2154ef55f2836aea1431f4554e072675d",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-ign.so.6.18.0": "78e7226957ca35217ade7e358d7ea7ec8c8de31ead36c7c462cb4898d7a9085a",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-rendering.so.6.18.0": "e02946a7564ff486e735bd91641ea854ecfe5f7cc4976494d61ec2c3c3ffa4e9",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6.so.6.18.0": "8807ba9f771cff215bc50503b54e26dc0ca0691052e2444ad71f46b85e040b50",
+      "/usr/lib/x86_64-linux-gnu/libignition-physics5.so.5.4.0": "49510d312303dbb60a747f85c80c2af80d66d4823bb4081ee4ab8d05ad73600b",
+      "/usr/lib/x86_64-linux-gnu/libode.so.8.0.2": "0b40593ed29a7b4f72f364a989ac8d8ea0bdab2a7578518366048b5128c0343b"
+    }
+  },
+  "reference": {
+    "exit": 0,
+    "wall_time_s": 4.775229730992578,
+    "world_sha256": "70aa405ced444b88a59256ae4a2b760236c18c41f7f3772f5397674a6a3a32a3",
+    "physics_xml": "<physics name=\"default_physics\" type=\"ode\">\n      <max_step_size>0.001</max_step_size>\n      <real_time_factor>1.0</real_time_factor>\n      <real_time_update_rate>1000</real_time_update_rate>\n    </physics>\n\n    ",
+    "gravity": "0 0 -9.81",
+    "loaded_libraries": {
+      "/tmp/stage_a2_owner_build/libworkcell_reference_physics.so": "12e9d0b7a6b365a45f96fed4754e9c42f3953a4be471bfbb68ce8bbe2a35c687",
+      "/tmp/stage_a2_physics_contact_build/libworkcell_physics_contact_measurement.so": "718754a5a29463bcb6d55a786493c7d9ca44b0b1aa6592f1e7da5c12e87dc82b",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-scene-broadcaster-system.so.6.18.0": "2437676add6c768bce4fe2e48858de05f5d7619f5e412dd476a706f6e0ec0090",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-sensors-system.so.6.18.0": "1822b540859271d7f733f6e1e602792dbe5184e9b2b43f8a8e00c6654c1954d4",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-user-commands-system.so.6.18.0": "62b13f3e69cf68e081a54ed4fb155953848aa33199cd43c35e15cd480bfab2ca",
+      "/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics5-dartsim-plugin.so.5.4.0": "44e5d8573b44ef1f555eba6f2fbf01c1f0ab657b0fd32016c441e884ec5e71a1",
+      "/usr/lib/x86_64-linux-gnu/libdart-collision-bullet.so.6.12.1": "1ae679a95b5033ed801538468834785bd009ecf078ad695822bcb3c419060037",
+      "/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1": "cc914ae1d651bfd79fa7eb308c6f39a12174e8b59d0fb45318652f0eb61761ee",
+      "/usr/lib/x86_64-linux-gnu/libdart-external-odelcpsolver.so.6.12.1": "b9df61c1d196ee2652ce1ca94af8fff44e1e1ca5286f0fdd10cedd0e8981a31a",
+      "/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1": "5a0048707f55903e0ba62f9bba76456b6f0eb850c1d5016ea499432c1bab089b",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-gui.so.6.18.0": "641ae1539e310db64620c0df09b0c7d2154ef55f2836aea1431f4554e072675d",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-ign.so.6.18.0": "78e7226957ca35217ade7e358d7ea7ec8c8de31ead36c7c462cb4898d7a9085a",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-rendering.so.6.18.0": "e02946a7564ff486e735bd91641ea854ecfe5f7cc4976494d61ec2c3c3ffa4e9",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6.so.6.18.0": "8807ba9f771cff215bc50503b54e26dc0ca0691052e2444ad71f46b85e040b50",
+      "/usr/lib/x86_64-linux-gnu/libignition-physics5.so.5.4.0": "49510d312303dbb60a747f85c80c2af80d66d4823bb4081ee4ab8d05ad73600b",
+      "/usr/lib/x86_64-linux-gnu/libode.so.8.0.2": "0b40593ed29a7b4f72f364a989ac8d8ea0bdab2a7578518366048b5128c0343b"
+    }
+  },
+  "instrumented": {
+    "exit": 0,
+    "wall_time_s": 4.690604319999693,
+    "world_sha256": "3ae6c3b1cf3f36b37c86e86724f6ead69735a6955b0e2bfdad81358e014399ad",
+    "physics_xml": "<physics name=\"default_physics\" type=\"ode\">\n      <max_step_size>0.001</max_step_size>\n      <real_time_factor>1.0</real_time_factor>\n      <real_time_update_rate>1000</real_time_update_rate>\n    </physics>\n\n    ",
+    "gravity": "0 0 -9.81",
+    "loaded_libraries": {
+      "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so": "dbe7f3bafba260a3c0de50f45533540bb8fecfde2ee1547c1ed10bee0d807370",
+      "/tmp/stage_a2_physics_contact_build/libworkcell_physics_contact_measurement.so": "718754a5a29463bcb6d55a786493c7d9ca44b0b1aa6592f1e7da5c12e87dc82b",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-scene-broadcaster-system.so.6.18.0": "2437676add6c768bce4fe2e48858de05f5d7619f5e412dd476a706f6e0ec0090",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-sensors-system.so.6.18.0": "1822b540859271d7f733f6e1e602792dbe5184e9b2b43f8a8e00c6654c1954d4",
+      "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-user-commands-system.so.6.18.0": "62b13f3e69cf68e081a54ed4fb155953848aa33199cd43c35e15cd480bfab2ca",
+      "/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics5-dartsim-plugin.so.5.4.0": "44e5d8573b44ef1f555eba6f2fbf01c1f0ab657b0fd32016c441e884ec5e71a1",
+      "/usr/lib/x86_64-linux-gnu/libdart-collision-bullet.so.6.12.1": "1ae679a95b5033ed801538468834785bd009ecf078ad695822bcb3c419060037",
+      "/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1": "cc914ae1d651bfd79fa7eb308c6f39a12174e8b59d0fb45318652f0eb61761ee",
+      "/usr/lib/x86_64-linux-gnu/libdart-external-odelcpsolver.so.6.12.1": "b9df61c1d196ee2652ce1ca94af8fff44e1e1ca5286f0fdd10cedd0e8981a31a",
+      "/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1": "5a0048707f55903e0ba62f9bba76456b6f0eb850c1d5016ea499432c1bab089b",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-gui.so.6.18.0": "641ae1539e310db64620c0df09b0c7d2154ef55f2836aea1431f4554e072675d",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-ign.so.6.18.0": "78e7226957ca35217ade7e358d7ea7ec8c8de31ead36c7c462cb4898d7a9085a",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-rendering.so.6.18.0": "e02946a7564ff486e735bd91641ea854ecfe5f7cc4976494d61ec2c3c3ffa4e9",
+      "/usr/lib/x86_64-linux-gnu/libignition-gazebo6.so.6.18.0": "8807ba9f771cff215bc50503b54e26dc0ca0691052e2444ad71f46b85e040b50",
+      "/usr/lib/x86_64-linux-gnu/libignition-physics5.so.5.4.0": "49510d312303dbb60a747f85c80c2af80d66d4823bb4081ee4ab8d05ad73600b",
+      "/usr/lib/x86_64-linux-gnu/libode.so.8.0.2": "0b40593ed29a7b4f72f364a989ac8d8ea0bdab2a7578518366048b5128c0343b"
+    }
+  },
+  "stock_owner_observable_fields": {
+    "decision": "BLOCKED_MISSING_NORMAL_OR_DEPTH",
+    "positions_counts_pairs_equal": true,
+    "normal_depth_complete": false,
+    "steps": [
+      {
+        "step": 100,
+        "stamp_ns": 100000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 250,
+        "stamp_ns": 250000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 500,
+        "stamp_ns": 500000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 1000,
+        "stamp_ns": 1000000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 1500,
+        "stamp_ns": 1500000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 2000,
+        "stamp_ns": 2000000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      }
+    ],
+    "numeric_tolerance": 0
+  },
+  "stock_reference_observable_fields": {
+    "decision": "BLOCKED_MISSING_NORMAL_OR_DEPTH",
+    "positions_counts_pairs_equal": true,
+    "normal_depth_complete": false,
+    "steps": [
+      {
+        "step": 100,
+        "stamp_ns": 100000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 250,
+        "stamp_ns": 250000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 500,
+        "stamp_ns": 500000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 1000,
+        "stamp_ns": 1000000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 1500,
+        "stamp_ns": 1500000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      },
+      {
+        "step": 2000,
+        "stamp_ns": 2000000000,
+        "directed_pair_count": 4,
+        "unique_pair_count": 2,
+        "contact_point_count": 8
+      }
+    ],
+    "numeric_tolerance": 0
+  },
+  "reference_owner_full_fields": {
+    "decision": "PASS_FINITE_REFERENCE_OWNER",
+    "numeric_tolerance": 0,
+    "steps": [
+      {
+        "step": 100,
+        "contact_count": 8
+      },
+      {
+        "step": 250,
+        "contact_count": 8
+      },
+      {
+        "step": 500,
+        "contact_count": 8
+      },
+      {
+        "step": 1000,
+        "contact_count": 8
+      },
+      {
+        "step": 1500,
+        "contact_count": 8
+      },
+      {
+        "step": 2000,
+        "contact_count": 8
+      }
+    ]
+  },
+  "physics_configuration_equal": true,
+  "backend_libraries_equal": true,
+  "single_intended_physics_owner": true,
+  "runtime_equivalence": "PASS_FINITE_THREE_WAY",
+  "comparison_scope": "one identical-world finite-step run per binary; no stock-backend geometry attestation or universal equivalence claim",
+  "geometry": [
+    {
+      "scope": "instrumented_runtime_stored_DART_affine_geometry_only",
+      "step": 100,
+      "stamp_ns": 100000000,
+      "session": "ad9793f5-e93d-4ee7-969c-45cd4a461fd6",
+      "stored_geometry_decision": "PASS",
+      "pairs": [
+        {
+          "collision_id": 23,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d0e660",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -3.6698679250196645e-06,
+              -3.669867925019664e-06
+            ],
+            "stored_dart_penetration_upper_m": 3.6698679250196645e-06,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 4.235164736271502e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -3.6332673421270858e-06,
+              -3.6332673421270854e-06
+            ],
+            "stored_dart_penetration_upper_m": 3.6332673421270858e-06,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 4.235164736271502e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        },
+        {
+          "collision_id": 27,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d185c0",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -3.669867925019725e-06,
+              -3.6698679250197247e-06
+            ],
+            "stored_dart_penetration_upper_m": 3.669867925019725e-06,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 4.235164736271502e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -3.6332673421271468e-06,
+              -3.6332673421271463e-06
+            ],
+            "stored_dart_penetration_upper_m": 3.6332673421271468e-06,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 4.235164736271502e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        }
+      ],
+      "contact_authority": false,
+      "physical_penetration_upper_m": null,
+      "backend_conversion_error_bound_m": null,
+      "decision": "BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR",
+      "outstanding_proof": "bound DART matrix-to-quaternion and ODE detector transform conversion; exact stored ShapeNode geometry does not attest the detector representation"
+    },
+    {
+      "scope": "instrumented_runtime_stored_DART_affine_geometry_only",
+      "step": 250,
+      "stamp_ns": 250000000,
+      "session": "ad9793f5-e93d-4ee7-969c-45cd4a461fd6",
+      "stored_geometry_decision": "PASS",
+      "pairs": [
+        {
+          "collision_id": 23,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d0e660",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -8.203362432057152e-07,
+              -8.203362432057151e-07
+            ],
+            "stored_dart_penetration_upper_m": 8.203362432057152e-07,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.0587911840678754e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -8.122309803021628e-07,
+              -8.122309803021627e-07
+            ],
+            "stored_dart_penetration_upper_m": 8.122309803021628e-07,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.0587911840678754e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        },
+        {
+          "collision_id": 27,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d185c0",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -8.2033624320583e-07,
+              -8.203362432058299e-07
+            ],
+            "stored_dart_penetration_upper_m": 8.2033624320583e-07,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.0587911840678754e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -8.12230980302276e-07,
+              -8.122309803022759e-07
+            ],
+            "stored_dart_penetration_upper_m": 8.12230980302276e-07,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.0587911840678754e-22,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        }
+      ],
+      "contact_authority": false,
+      "physical_penetration_upper_m": null,
+      "backend_conversion_error_bound_m": null,
+      "decision": "BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR",
+      "outstanding_proof": "bound DART matrix-to-quaternion and ODE detector transform conversion; exact stored ShapeNode geometry does not attest the detector representation"
+    },
+    {
+      "scope": "instrumented_runtime_stored_DART_affine_geometry_only",
+      "step": 500,
+      "stamp_ns": 500000000,
+      "session": "ad9793f5-e93d-4ee7-969c-45cd4a461fd6",
+      "stored_geometry_decision": "PASS",
+      "pairs": [
+        {
+          "collision_id": 23,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d0e660",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -7.551004323257451e-08,
+              -7.55100432325745e-08
+            ],
+            "stored_dart_penetration_upper_m": 7.551004323257451e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.3234889800848443e-23,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -7.48530424662864e-08,
+              -7.485304246628639e-08
+            ],
+            "stored_dart_penetration_upper_m": 7.48530424662864e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.3234889800848443e-23,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        },
+        {
+          "collision_id": 27,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d185c0",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -7.551004323271013e-08,
+              -7.551004323271012e-08
+            ],
+            "stored_dart_penetration_upper_m": 7.551004323271013e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.3234889800848443e-23,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -7.485304246642008e-08,
+              -7.485304246642006e-08
+            ],
+            "stored_dart_penetration_upper_m": 7.485304246642008e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.3234889800848443e-23,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        }
+      ],
+      "contact_authority": false,
+      "physical_penetration_upper_m": null,
+      "backend_conversion_error_bound_m": null,
+      "decision": "BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR",
+      "outstanding_proof": "bound DART matrix-to-quaternion and ODE detector transform conversion; exact stored ShapeNode geometry does not attest the detector representation"
+    },
+    {
+      "scope": "instrumented_runtime_stored_DART_affine_geometry_only",
+      "step": 1000,
+      "stamp_ns": 1000000000,
+      "session": "ad9793f5-e93d-4ee7-969c-45cd4a461fd6",
+      "stored_geometry_decision": "PASS",
+      "pairs": [
+        {
+          "collision_id": 23,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d0e660",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -1.0241679886983003e-08,
+              -1.0241679886983002e-08
+            ],
+            "stored_dart_penetration_upper_m": 1.0241679886983003e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -1.0237362142888227e-08,
+              -1.0237362142888225e-08
+            ],
+            "stored_dart_penetration_upper_m": 1.0237362142888227e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        },
+        {
+          "collision_id": 27,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d185c0",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -1.0241679886969514e-08,
+              -1.0241679886969512e-08
+            ],
+            "stored_dart_penetration_upper_m": 1.0241679886969514e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -1.0237362142891684e-08,
+              -1.0237362142891683e-08
+            ],
+            "stored_dart_penetration_upper_m": 1.0237362142891684e-08,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        }
+      ],
+      "contact_authority": false,
+      "physical_penetration_upper_m": null,
+      "backend_conversion_error_bound_m": null,
+      "decision": "BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR",
+      "outstanding_proof": "bound DART matrix-to-quaternion and ODE detector transform conversion; exact stored ShapeNode geometry does not attest the detector representation"
+    },
+    {
+      "scope": "instrumented_runtime_stored_DART_affine_geometry_only",
+      "step": 1500,
+      "stamp_ns": 1500000000,
+      "session": "ad9793f5-e93d-4ee7-969c-45cd4a461fd6",
+      "stored_geometry_decision": "PASS",
+      "pairs": [
+        {
+          "collision_id": 23,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d0e660",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.812835217128246e-09,
+              -9.812835217128244e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.812835217128246e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.812805740705916e-09,
+              -9.812805740705914e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.812805740705916e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        },
+        {
+          "collision_id": 27,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d185c0",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.812835217120957e-09,
+              -9.812835217120955e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.812835217120957e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.812805740702614e-09,
+              -9.812805740702612e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.812805740702614e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        }
+      ],
+      "contact_authority": false,
+      "physical_penetration_upper_m": null,
+      "backend_conversion_error_bound_m": null,
+      "decision": "BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR",
+      "outstanding_proof": "bound DART matrix-to-quaternion and ODE detector transform conversion; exact stored ShapeNode geometry does not attest the detector representation"
+    },
+    {
+      "scope": "instrumented_runtime_stored_DART_affine_geometry_only",
+      "step": 2000,
+      "stamp_ns": 2000000000,
+      "session": "ad9793f5-e93d-4ee7-969c-45cd4a461fd6",
+      "stored_geometry_decision": "PASS",
+      "pairs": [
+        {
+          "collision_id": 23,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d0e660",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.810104939313421e-09,
+              -9.81010493931342e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.810104939313421e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.81010502258312e-09,
+              -9.810105022583118e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.81010502258312e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        },
+        {
+          "collision_id": 27,
+          "support_collision_id": 7,
+          "shape_node_identity": "0x62a4f8d185c0",
+          "support_node_identity": "0x62a4f8c62310",
+          "contact_evaluation_input": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.810104939314588e-09,
+              -9.810104939314586e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.810104939314588e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          },
+          "post_step": {
+            "evaluated_corner_count": 8,
+            "minimum_gap_interval_m": [
+              -9.810105022582795e-09,
+              -9.810105022582794e-09
+            ],
+            "stored_dart_penetration_upper_m": 9.810105022582795e-09,
+            "exact_arithmetic_error_m": 0,
+            "output_enclosure_width_m": 1.6543612251060553e-24,
+            "support_top_interval_m": [
+              0.0,
+              0.0
+            ],
+            "support_dimensions_m": [
+              2100.0,
+              2100.0,
+              2100.0
+            ]
+          }
+        }
+      ],
+      "contact_authority": false,
+      "physical_penetration_upper_m": null,
+      "backend_conversion_error_bound_m": null,
+      "decision": "BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR",
+      "outstanding_proof": "bound DART matrix-to-quaternion and ODE detector transform conversion; exact stored ShapeNode geometry does not attest the detector representation"
+    }
+  ]
+}

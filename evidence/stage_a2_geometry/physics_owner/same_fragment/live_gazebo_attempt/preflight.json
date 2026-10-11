@@ -1,0 +1,18 @@
+{
+  "session": "676dbf2641424c54a5bd502402847eee",
+  "output": "/tmp/stage_a2_live_identity_20261010_1cb3f6f1",
+  "binary": "/tmp/stage_a2_live_fragment_build/stage_a_gazebo_fragment_capture",
+  "owner": "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so",
+  "world": "/tmp/stage_a2_live_identity_20261010_1cb3f6f1/world.sdf",
+  "input_world": "/tmp/workcell_stage_a2_separated/physical_world.sdf",
+  "input_world_sha256": "1ac9bf3adea8f732607c84c80ab6160bc7f40ab32ab6ce2743f40cf9631f0884",
+  "execution_goals": 0,
+  "geometry_scope": "unchanged authored separated cubes only; support/bin omitted; no contact claim",
+  "binary_sha256": "df95b1e81e5660732b99f30f787540eb9995bc53144a17218aa88eab4f2d4d6c",
+  "owner_sha256": "feeb888374b0b6cf8a51eff6854e4ea31abe9a7547146b4860ac935cf9b377e0",
+  "world_sha256": "b5426c784c87e4da47caa71006d13f4379d709e2c5278e15f0fbf4f38720e529",
+  "source_sha256": {
+    "scripts/stage_a_rgbd/gazebo_fragment_capture.cpp": "080595ec86b20e1d169064cb2fa8d30d392190051b76a25c1d83cd94832966e8",
+    "scripts/stage_a_rgbd/fragment_mrt.hh": "8fc6d33d1751fad2c0467d7c949e182d7ad875018dcf1d0cd28579d1b8e2abfd"
+  }
+}

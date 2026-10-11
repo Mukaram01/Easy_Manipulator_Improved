@@ -1,0 +1,506 @@
+{
+  "diagnosis": "controller-certificate wall time exceeds fixed client/candidate response budgets; unconfirmed cancellation previously allowed candidate cascade",
+  "idle_services": {
+    "get_planning_scene_seconds": 0.003952216,
+    "compute_fk_seconds": 0.001289576,
+    "compute_ik_seconds": 0.001940532,
+    "compute_ik_code": 1,
+    "check_state_validity_seconds": 0.001111094,
+    "shutdown_clean": true
+  },
+  "busy_probe": {
+    "get_planning_scene_seconds": 1.256678623,
+    "compute_fk_available": true,
+    "compute_fk_response_within_12s": false,
+    "check_state_validity_available": true,
+    "check_state_validity_response_within_12s": false
+  },
+  "reproduced_controller_audits_seconds": [
+    62.800595,
+    38.030345
+  ],
+  "aborted_successful_approach_certificate_seconds": 23.129882,
+  "timing_correction": {
+    "candidate_wall_budget_seconds": 300,
+    "runner_timeout_seconds": 330,
+    "ompl_segment_budget_unchanged": true
+  },
+  "frozen_epd_replay_sha256": "b7bd01775702cae0d942abdf357f6bc22d07fef2934cbb2cb7ed8101e27cda89",
+  "runtime_source_commit": "442a628f886134eb69b9cab0ecdb731215bed11a",
+  "runtime_source_dirty": true,
+  "runtime_executor_hashes": {
+    "perceived_object_grasp_execute.py": "5f8661502102bf9fca5a28c8e469837358d3c49b4c8f9bc6538ad53b2b551b57",
+    "perceived_object_grasp_plan.py": "f3b9a592201660f75b5beaaa27501cd7e1c41002109337085f555813df522660",
+    "runtime_pick_inputs.py": "f4bdb673570acae75d0ae053b3f6c04929f739f4f0b10d20a79f1128869cc12d",
+    "task_intent_resolver.py": "40d3f0deb205e3d9f6de11f49df6293bd480c9c9da4aeb10b327482e3332135a",
+    "task_intent_v2.py": "e9fd8a1f41fed44767925f01c38b6d28b033e5872fe7c20ee5fa1364fcbf73e7",
+    "full_cycle_preplanner.py": "991cd5afdb3a28029d42ed099b3b43c6f20f39771bcf9aa0c61085ce69ee949e",
+    "physical_destination.py": "7bce6368b287b932f92013deb72053733813fc8f50fa375cb9803d433c42a18b",
+    "grasp_strategy_candidates.py": "94a71747cbe7a3ed10da4b34e91bca13c277a643a86ba3f3813992d01a33377c"
+  },
+  "runtime_note": "Final absolute-deadline clamp and diagnostic tests were completed after this run started; runtime ended before its 300 s search deadline. No second full campaign was run. This is not a complete current-head feasibility PASS.",
+  "runtime": {
+    "result": "FAIL",
+    "failure": "PREPLAN_CLOSE_GRIPPER_FAILED: MoveIt action failed: status=6, code=-2",
+    "runtime_seconds": 291.5276880710153,
+    "execution_action_goals": [],
+    "execution_attempted": false,
+    "trajectory_execution_enabled": false,
+    "shutdown_clean": true,
+    "remaining_owned_process_groups": [],
+    "inserted_object_ids": [
+      "runtime::epd_24056000000_2",
+      "runtime::epd_24056000000_3",
+      "runtime::epd_24056000000_4"
+    ],
+    "rejected_objects": {
+      "runtime::epd_24056000000_2": "outside_authored_selection",
+      "runtime::epd_24056000000_3": "outside_authored_selection"
+    }
+  },
+  "distinct_candidates": 13,
+  "attempt_count": 19,
+  "stage_successes": {
+    "PREPLAN_APPROACH": 7,
+    "PREPLAN_GRASP": 7
+  },
+  "terminal_failures": {
+    "PREPLAN_APPROACH:-6": 5,
+    "PREPLAN_APPROACH:-2": 6,
+    "PREPLAN_CLOSE_GRIPPER:-2": 7,
+    "PREPLAN_APPROACH:-31": 1
+  },
+  "candidate_attempts": [
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::000",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 0.7949974760122132,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -6,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-6"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::001",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 19.633881788991857,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::002",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 0.7919998159923125,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -6,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-6"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::003",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 0.7900474760099314,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -6,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-6"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::004",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 0.7957426650100388,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -6,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-6"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::005",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 4.595730828994419,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::006",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 2.963834633002989,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::007",
+      "search_pass": "discovery:top_2f",
+      "wall_seconds": 53.66048150099232,
+      "reason_code": "PREPLAN_CLOSE_GRIPPER_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::007",
+      "search_pass": "retry:top_2f",
+      "wall_seconds": 35.2311241790012,
+      "reason_code": "PREPLAN_CLOSE_GRIPPER_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::000",
+      "search_pass": "retry:top_2f",
+      "wall_seconds": 42.58430742099881,
+      "reason_code": "PREPLAN_CLOSE_GRIPPER_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "top_2f::001",
+      "search_pass": "retry:top_2f",
+      "wall_seconds": 12.701729545020498,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "side_grip_basic::000",
+      "search_pass": "discovery:side_grip_basic",
+      "wall_seconds": 1.0186818189977203,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -31,
+          "failure_kind": "planning",
+          "reason": "IK failed: -31"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "discovery:finger_pinch_basic",
+      "wall_seconds": 42.728294927976094,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "discovery:finger_pinch_basic",
+      "wall_seconds": 11.49303549900651,
+      "reason_code": "PREPLAN_CLOSE_GRIPPER_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "finger_pinch_basic::002",
+      "search_pass": "discovery:finger_pinch_basic",
+      "wall_seconds": 6.642770865990315,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "discovery:finger_pinch_basic",
+      "wall_seconds": 12.868885595991742,
+      "reason_code": "PREPLAN_CLOSE_GRIPPER_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "finger_pinch_basic::001",
+      "search_pass": "retry:finger_pinch_basic",
+      "wall_seconds": 12.51489241499803,
+      "reason_code": "PREPLAN_CLOSE_GRIPPER_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "finger_pinch_basic::003",
+      "search_pass": "retry:finger_pinch_basic",
+      "wall_seconds": 13.97790695601725,
+      "reason_code": "PREPLAN_CLOSE_GRIPPER_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_GRASP",
+          "success": true,
+          "moveit_code": 1
+        },
+        {
+          "stage": "PREPLAN_CLOSE_GRIPPER",
+          "success": false,
+          "moveit_code": -2,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-2"
+        }
+      ]
+    },
+    {
+      "object_id": "runtime::epd_24056000000_4",
+      "candidate_id": "finger_pinch_basic::000",
+      "search_pass": "retry:finger_pinch_basic",
+      "wall_seconds": 9.08279417900485,
+      "reason_code": "PREPLAN_APPROACH_FAILED",
+      "stages": [
+        {
+          "stage": "PREPLAN_APPROACH",
+          "success": false,
+          "moveit_code": -6,
+          "failure_kind": "planning",
+          "reason": "MoveIt action failed: status=6, code=-6"
+        }
+      ]
+    }
+  ],
+  "controller_certificate_log_lines": [
+    "[move_group-4] [INFO] [1791615513.497991669] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=807 certified=408 subdivided=398 depth=27 interval=[1986639278,1986639279] seconds=19.362316",
+    "[move_group-4] [INFO] [1791615520.479731949] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=174 certified=84 subdivided=89 depth=26 interval=[632900806,632900807] seconds=3.538384",
+    "[move_group-4] [INFO] [1791615523.444687550] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=123 certified=57 subdivided=65 depth=26 interval=[622954047,622954048] seconds=2.717957",
+    "[move_group-4] [INFO] [1791615575.275484384] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1872 certified=972 subdivided=900 depth=6 interval=[-1,-1] seconds=51.623615",
+    "[move_group-4] [INFO] [1791615576.461497691] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=49 certified=49 subdivided=0 depth=0 interval=[-1,-1] seconds=0.755144",
+    "[move_group-4] [INFO] [1791615577.105713105] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.435883",
+    "[move_group-4] [INFO] [1791615609.544224629] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1198 certified=656 subdivided=542 depth=4 interval=[-1,-1] seconds=32.241191",
+    "[move_group-4] [INFO] [1791615610.780599257] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=48 certified=48 subdivided=0 depth=0 interval=[-1,-1] seconds=0.784689",
+    "[move_group-4] [INFO] [1791615611.431891103] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.439176",
+    "[move_group-4] [INFO] [1791615611.885286308] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.421737",
+    "[move_group-4] [INFO] [1791615612.360564014] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.436022",
+    "[move_group-4] [INFO] [1791615652.114173913] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1468 certified=777 subdivided=691 depth=4 interval=[-1,-1] seconds=39.512175",
+    "[move_group-4] [INFO] [1791615653.299607717] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=48 certified=48 subdivided=0 depth=0 interval=[-1,-1] seconds=0.775118",
+    "[move_group-4] [INFO] [1791615654.001568093] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.446802",
+    "[move_group-4] [INFO] [1791615654.477702738] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.444018",
+    "[move_group-4] [INFO] [1791615654.961188317] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.433999",
+    "[move_group-4] [INFO] [1791615659.087624875] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=187 certified=92 subdivided=94 depth=27 interval=[723407694,723407695] seconds=3.891630",
+    "[move_group-4] [INFO] [1791615663.441574071] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=193 certified=95 subdivided=97 depth=27 interval=[723410383,723410384] seconds=4.155641",
+    "[move_group-4] [INFO] [1791615667.688204697] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=193 certified=94 subdivided=98 depth=26 interval=[723402003,723402004] seconds=4.095679",
+    "[move_group-4] [INFO] [1791615711.520062846] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=1455 certified=767 subdivided=687 depth=27 interval=[9375369202,9375369203] seconds=42.334243",
+    "[move_group-4] [INFO] [1791615721.489050541] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=484 certified=279 subdivided=205 depth=2 interval=[-1,-1] seconds=9.790432",
+    "[move_group-4] [INFO] [1791615722.330812754] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=36 certified=36 subdivided=0 depth=0 interval=[-1,-1] seconds=0.537159",
+    "[move_group-4] [INFO] [1791615723.014009068] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.460344",
+    "[move_group-4] [INFO] [1791615729.658148935] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=252 certified=124 subdivided=127 depth=27 interval=[760899123,760899124] seconds=6.434996",
+    "[move_group-4] [INFO] [1791615740.953487386] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=581 certified=335 subdivided=246 depth=2 interval=[-1,-1] seconds=11.131067",
+    "[move_group-4] [INFO] [1791615741.894855009] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=37 certified=37 subdivided=0 depth=0 interval=[-1,-1] seconds=0.570792",
+    "[move_group-4] [INFO] [1791615742.529020662] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.421357",
+    "[move_group-4] [INFO] [1791615752.527784008] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=484 certified=279 subdivided=205 depth=2 interval=[-1,-1] seconds=9.831408",
+    "[move_group-4] [INFO] [1791615753.450718536] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=36 certified=36 subdivided=0 depth=0 interval=[-1,-1] seconds=0.565790",
+    "[move_group-4] [INFO] [1791615754.095947377] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.443896",
+    "[move_group-4] [INFO] [1791615754.586995211] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.445886",
+    "[move_group-4] [INFO] [1791615755.075826080] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.437540",
+    "[move_group-4] [INFO] [1791615766.514205257] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=581 certified=335 subdivided=246 depth=2 interval=[-1,-1] seconds=11.181504",
+    "[move_group-4] [INFO] [1791615767.472480663] [workcell.controller_certificate]: result=0 reason=ALL_INTERVALS_CERTIFIED inspected=36 certified=36 subdivided=0 depth=0 interval=[-1,-1] seconds=0.578406",
+    "[move_group-4] [INFO] [1791615768.125070843] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.439369",
+    "[move_group-4] [INFO] [1791615768.616396160] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.448701",
+    "[move_group-4] [INFO] [1791615769.096325883] [workcell.controller_certificate]: result=2 reason=PRECISION_OR_DEPTH_LIMIT inspected=27 certified=0 subdivided=26 depth=26 interval=[0,1] seconds=0.439422"
+  ],
+  "stages": {
+    "approach": "PASS: 7 certified plans",
+    "grasp_descent": "PASS: 7 Cartesian plans",
+    "gripper_close": "FAIL: INVALID_MOTION_PLAN; PRECISION_OR_DEPTH_LIMIT",
+    "retreat": "BLOCKED: closing failed; not reached",
+    "placement": "BLOCKED: closing failed; not reached",
+    "full_plan_only_acceptance": "FAIL"
+  },
+  "focused_verification": {
+    "affected_tests": "287 PASS",
+    "additional_plan_only_CLI_guard_tests": "6 PASS",
+    "py_compile": "PASS",
+    "native_build": "NOT RUN: no native source/CMake/dependency changes",
+    "geometry": "unchanged; Stage-A2 reconstruction/contract/frozen replay tests included",
+    "bridge": "unchanged; no bridge launched"
+  },
+  "raw_evidence_directory": "/tmp/workcell_stage_a2_certified_budget",
+  "next_action": "Inspect existing adapter_trace closing request/private scene and controller-certificate interval [0,1] ns; identify the limiting pair before changing certification or clearance. Preserve conservative boxes and collision gates."
+}

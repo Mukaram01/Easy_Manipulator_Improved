@@ -90,7 +90,8 @@ def test_plan_only_retry_policy_accepts_only_measured_stochastic_failures():
         assert not MODULE.retryable_plan_failure(code)
 
 
-def test_plan_segment_timeout_retry_reuses_identical_private_request():
+@pytest.mark.parametrize('candidate_wall_budget', [None, 180.])
+def test_plan_segment_timeout_retry_reuses_identical_private_request(candidate_wall_budget):
     """Exercise the real nested planner boundary, not the helper in isolation."""
     import ast
     import copy
@@ -115,7 +116,11 @@ def test_plan_segment_timeout_retry_reuses_identical_private_request():
             JointTrajectoryPoint(positions=[0.5]),
         ]))
     goals = []
-    def action(client, goal, timeout):
+    def action(client, goal, timeout, **options):
+        assert 0 < timeout <= (10 if candidate_wall_budget is not None else 12)
+        assert ('response_deadline' in options) == (candidate_wall_budget is not None)
+        if candidate_wall_budget is None:
+            assert timeout == 12
         goals.append(copy.deepcopy(goal))
         if len(goals) < 3:
             raise MODULE.MoveItActionFailure(6, -6)
@@ -131,7 +136,7 @@ def test_plan_segment_timeout_retry_reuses_identical_private_request():
         copy=copy, time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
         stage=lambda name: None, deadline=time.monotonic()+10,
         contract={'planning_group':'arm_group','home_joint_names':['arm'],'tool_link':'tcp'},
-        args=SimpleNamespace(segment_planning_time=3.), mimics=[], initial=initial,
+        args=SimpleNamespace(segment_planning_time=3., candidate_wall_budget=candidate_wall_budget), mimics=[], initial=initial,
         plan_client=object(), action=action, trace=lambda *args: None, summary=summary,
         joint_constraints=lambda values: Constraints(joint_constraints=[
             JointConstraint(joint_name=n, position=v, tolerance_above=.0001,
@@ -957,3 +962,80 @@ def test_measured_collision_query_stops_virtual_carry_after_physical_separation(
     assert not MODULE.measured_payload_attached_for_collision(guard)
     guard.ownership='FREE_SETTLING';guard.planning_attached=False
     assert not MODULE.measured_payload_attached_for_collision(guard)
+
+
+@pytest.mark.parametrize('response_deadline', [None, 10.])
+def test_action_timeout_is_transport_failure_with_owned_cancellation_evidence(response_deadline):
+    import ast
+    tree = ast.parse(SCRIPT.read_text())
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    boundary = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'action')
+    unfinished = SimpleNamespace(done=lambda: False, result=lambda: None)
+    cancelled = SimpleNamespace(done=lambda: True, result=lambda: SimpleNamespace(goals_canceling=[]))
+    handle = SimpleNamespace(accepted=True, goal_id=SimpleNamespace(uuid=list(range(16))),
+        get_result_async=lambda: unfinished, cancel_goal_async=lambda: cancelled)
+    sent = SimpleNamespace(done=lambda: True, result=lambda: handle)
+    client = SimpleNamespace(wait_for_server=lambda **kw: True, send_goal_async=lambda g: sent)
+    summary = {'current_stage': 'PREPLAN_APPROACH'}
+    clock, waits = [0.], []
+    def spin(node, future, timeout_sec):
+        waits.append(timeout_sec)
+        if future is sent:
+            clock[0] = 7.
+    context = dict(vars(MODULE), summary=summary, controlled_cancel=False, controller_audit=None,
+        execute_client=object(), measurements=None, execution_monitor=None, node=object(),
+        time=SimpleNamespace(monotonic=lambda: clock[0]),
+        rclpy=SimpleNamespace(spin_until_future_complete=spin, ok=lambda: True))
+    exec(compile(ast.Module(body=[boundary], type_ignores=[]), '<actual-action-timeout>', 'exec'), context)
+    with pytest.raises(RuntimeError) as error:
+        context['action'](client, object(), 12, response_deadline=response_deadline)
+    assert waits[:2] == [5, 12 if response_deadline is None else 3]
+    assert getattr(error.value, 'reason_code', None) == 'ACTION_TIMEOUT'
+    assert error.value.details['failure_kind'] == 'transport'
+    assert error.value.details['cancellation_confirmed'] is False
+    assert error.value.details['owned_goal_uuid'] == bytes(range(16)).hex()
+
+
+def test_transport_failure_is_not_retried_as_stochastic_planning_failure():
+    result = SimpleNamespace(success=False, reason_code='ACTION_TIMEOUT',
+        checks=[dict(status='BLOCKED', failure_kind='transport')], extraction_attempts=[])
+    assert MODULE.preplan_retryable_failure(result) is False
+
+
+@pytest.mark.parametrize('available, code', [(False, 'SERVICE_UNAVAILABLE'), (True, 'SERVICE_TIMEOUT')])
+def test_service_transport_failure_is_distinct_from_ik_no_solution(available, code):
+    import ast
+    tree = ast.parse(SCRIPT.read_text())
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    boundary = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'call')
+    future = SimpleNamespace(done=lambda: False, result=lambda: None)
+    client = SimpleNamespace(srv_name='/compute_ik', wait_for_service=lambda **kw: available,
+                             call_async=lambda request: future)
+    context = dict(vars(MODULE), node=object(),
+                   rclpy=SimpleNamespace(spin_until_future_complete=lambda *a, **kw: None))
+    exec(compile(ast.Module(body=[boundary], type_ignores=[]), '<actual-service-timeout>', 'exec'), context)
+    with pytest.raises(MODULE.MoveItTransportFailure) as error:
+        context['call'](client, object())
+    assert error.value.reason_code == code
+    assert error.value.details['service'] == '/compute_ik'
+    assert 'moveit_code' not in error.value.details
+
+
+def test_terminal_plan_failure_does_not_swallow_diagnostic_service_timeout(monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    from moveit_msgs.srv import GetStateValidity
+    context, view, target, seed, requests, goals = transfer_segment_fixture()
+    context['GetStateValidity'] = GetStateValidity
+    context['validity_client'] = object()
+    solve = context['call']
+    def call(client, request):
+        if isinstance(request, GetStateValidity.Request):
+            raise MODULE.MoveItTransportFailure('SERVICE_TIMEOUT', 'state validity timed out')
+        return solve(client, request)
+    context['call'] = call
+    def reject(client, goal, timeout):
+        raise MODULE.MoveItActionFailure(6, -27)
+    context['action'] = reject
+    with pytest.raises(MODULE.MoveItTransportFailure) as error:
+        context['plan_segment'](view, 'PREPLAN_TRANSFER', target, ik_seed=seed)
+    assert error.value.reason_code == 'SERVICE_TIMEOUT'

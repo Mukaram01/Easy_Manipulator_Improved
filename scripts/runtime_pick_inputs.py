@@ -58,8 +58,10 @@ def task_request(raw, cell):
     return result
 
 
-def normalize(snapshot, now, geometry):
+def normalize(snapshot, now, geometry, *, execution_requested=False):
     """World-only first adapter. Other frames fail closed until a TF adapter exists."""
+    if execution_requested and snapshot.get('source', {}).get('plan_only') is True:
+        raise ValueError('plan-only geometry replay cannot authorize execution')
     if snapshot.get('schema_version') != 'detected_objects/v1':
         raise ValueError('schema_version must be detected_objects/v1')
     if not isinstance(snapshot.get('objects'), list) or not snapshot['objects']:
@@ -94,7 +96,8 @@ def normalize(snapshot, now, geometry):
                             class_id=label, color=raw.get('color'), confidence=confidence, timestamp=stamp,
                             frame_id='world', source_frame=raw.get('source_frame', pose['frame_id']), shape='BOX',
                             pose=xyz + geometry.quaternion_from_rpy(rpy), dimensions=dims,
-                            grasp=copy.deepcopy(raw.get('grasp'))))
+                            grasp=copy.deepcopy(raw.get('grasp')),
+                            attributes=copy.deepcopy(raw.get('attributes', {}))))
     return objects
 
 
@@ -123,11 +126,13 @@ def filter_targets(objects, task, cell, now, geometry):
     return sorted(eligible, key=lambda o: (o['confidence'] is None, -(o['confidence'] or 0.0), o['id'])), rejected
 
 
-def replay_snapshot(template, now):
+def replay_snapshot(template, now, *, execution_requested=False):
     """Stamp a new static replay observation once at acquisition, never renew live data."""
     result = copy.deepcopy(template)
     if result.get('source', {}).get('mode') != 'replayed_snapshot':
         raise ValueError('replay template must declare source.mode=replayed_snapshot')
+    if execution_requested and result.get('source', {}).get('plan_only') is True:
+        raise ValueError('plan-only geometry replay cannot authorize execution')
     for obj in result['objects']:
         obj['timestamp'] = now - obj.pop('age_seconds', 0.0)
     return result

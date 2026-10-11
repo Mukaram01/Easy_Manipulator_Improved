@@ -1,0 +1,8 @@
+{
+  "baseline": "214a30e24ca809886185e58574a62b038ca9c12f",
+  "source_sha256": "b01a706970a34df62e9ca90e02d33d0722823f595b61f25cb7a1be581a13f476",
+  "executable_sha256": "6aca19a505cce4a0e10a2a9382c446969fd9968167f13f2fb960887f0d4c397c",
+  "camera_attachment_fix_present": true,
+  "preflight_cpu_tests": 24,
+  "output": "/tmp/stage_a2_fragment_reserved.json"
+}

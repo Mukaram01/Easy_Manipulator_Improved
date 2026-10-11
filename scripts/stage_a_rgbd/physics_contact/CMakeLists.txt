@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.16)
+project(workcell_physics_contact_measurement LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+find_package(ignition-gazebo6 REQUIRED)
+find_package(ignition-plugin1 REQUIRED COMPONENTS register)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JSON REQUIRED IMPORTED_TARGET jsoncpp)
+add_library(workcell_physics_contact_measurement SHARED provider.cpp)
+target_link_libraries(workcell_physics_contact_measurement PRIVATE
+  ignition-gazebo6::ignition-gazebo6 ignition-plugin1::register PkgConfig::JSON)
+enable_testing()
+add_executable(contact_observer_lifecycle_test lifecycle_test.cpp)
+target_compile_options(contact_observer_lifecycle_test PRIVATE -UNDEBUG)
+target_link_libraries(contact_observer_lifecycle_test PRIVATE
+  ignition-gazebo6::ignition-gazebo6 ignition-plugin1::register PkgConfig::JSON)
+add_test(NAME contact_observer_lifecycle COMMAND contact_observer_lifecycle_test)

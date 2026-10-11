@@ -1,0 +1,8 @@
+Consolidate compiler generated dependencies of target owner_identity_inventory_test
+[ 50%] Building CXX object CMakeFiles/owner_identity_inventory_test.dir/identity_inventory_test.cpp.o
+[100%] Linking CXX executable owner_identity_inventory_test
+[100%] Built target owner_identity_inventory_test
+Consolidate compiler generated dependencies of target workcell_owner_physics
+[ 50%] Building CXX object CMakeFiles/workcell_owner_physics.dir/source/Physics.cc.o
+Linking CXX shared library libworkcell_owner_physics.so
+[150%] Built target workcell_owner_physics

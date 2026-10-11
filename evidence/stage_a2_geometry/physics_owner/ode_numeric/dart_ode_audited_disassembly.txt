@@ -1,0 +1,371 @@
+
+/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000000b160 <dart::collision::OdeCollisionObject::updateEngineData()@@Base>:
+    b160:	f3 0f 1e fa          	endbr64
+    b164:	41 57                	push   %r15
+    b166:	41 56                	push   %r14
+    b168:	41 55                	push   %r13
+    b16a:	41 54                	push   %r12
+    b16c:	55                   	push   %rbp
+    b16d:	48 89 fd             	mov    %rdi,%rbp
+    b170:	53                   	push   %rbx
+    b171:	48 81 ec 88 00 00 00 	sub    $0x88,%rsp
+    b178:	48 8b 7f 18          	mov    0x18(%rdi),%rdi
+    b17c:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+    b183:	00 00
+    b185:	48 89 44 24 78       	mov    %rax,0x78(%rsp)
+    b18a:	31 c0                	xor    %eax,%eax
+    b18c:	48 8b 07             	mov    (%rdi),%rax
+    b18f:	ff 50 10             	call   *0x10(%rax)
+    b192:	48 83 7d 20 00       	cmpq   $0x0,0x20(%rbp)
+    b197:	0f 84 b3 01 00 00    	je     b350 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x1f0>
+    b19d:	48 89 ef             	mov    %rbp,%rdi
+    b1a0:	e8 5b da ff ff       	call   8c00 <dart::collision::CollisionObject::getTransform() const@plt>
+    b1a5:	48 89 c3             	mov    %rax,%rbx
+    b1a8:	a8 0f                	test   $0xf,%al
+    b1aa:	0f 85 76 02 00 00    	jne    b426 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x2c6>
+    b1b0:	f2 0f 10 40 60       	movsd  0x60(%rax),%xmm0
+    b1b5:	f2 0f 10 50 70       	movsd  0x70(%rax),%xmm2
+    b1ba:	f2 0f 10 48 68       	movsd  0x68(%rax),%xmm1
+    b1bf:	48 8b 7d 20          	mov    0x20(%rbp),%rdi
+    b1c3:	e8 28 d6 ff ff       	call   87f0 <dBodySetPosition@plt>
+    b1c8:	f2 0f 10 63 50       	movsd  0x50(%rbx),%xmm4
+    b1cd:	f2 0f 10 5b 28       	movsd  0x28(%rbx),%xmm3
+    b1d2:	66 0f ef d2          	pxor   %xmm2,%xmm2
+    b1d6:	f2 0f 10 0b          	movsd  (%rbx),%xmm1
+    b1da:	66 0f 28 c4          	movapd %xmm4,%xmm0
+    b1de:	f2 0f 58 c3          	addsd  %xmm3,%xmm0
+    b1e2:	f2 0f 58 c1          	addsd  %xmm1,%xmm0
+    b1e6:	66 0f 2f c2          	comisd %xmm2,%xmm0
+    b1ea:	0f 87 90 01 00 00    	ja     b380 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x220>
+    b1f0:	31 c0                	xor    %eax,%eax
+    b1f2:	66 0f 2f d9          	comisd %xmm1,%xmm3
+    b1f6:	0f 97 c0             	seta   %al
+    b1f9:	48 8d 04 80          	lea    (%rax,%rax,4),%rax
+    b1fd:	66 0f 2f 24 c3       	comisd (%rbx,%rax,8),%xmm4
+    b202:	0f 87 d8 01 00 00    	ja     b3e0 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x280>
+    b208:	45 31 c0             	xor    %r8d,%r8d
+    b20b:	66 0f 2f d9          	comisd %xmm1,%xmm3
+    b20f:	41 0f 97 c0          	seta   %r8b
+    b213:	4d 8d 78 01          	lea    0x1(%r8),%r15
+    b217:	4b 8d 04 40          	lea    (%r8,%r8,2),%rax
+    b21b:	4d 8d 60 02          	lea    0x2(%r8),%r12
+    b21f:	4e 8d 34 85 00 00 00 	lea    0x0(,%r8,4),%r14
+    b226:	00
+    b227:	49 29 c4             	sub    %rax,%r12
+    b22a:	4b 8d 14 3e          	lea    (%r14,%r15,1),%rdx
+    b22e:	4a 8d 04 bd 00 00 00 	lea    0x0(,%r15,4),%rax
+    b235:	00
+    b236:	4e 8d 1c 38          	lea    (%rax,%r15,1),%r11
+    b23a:	49 8d 34 04          	lea    (%r12,%rax,1),%rsi
+    b23e:	4d 01 e6             	add    %r12,%r14
+    b241:	4c 01 c0             	add    %r8,%rax
+    b244:	4e 8d 2c a5 00 00 00 	lea    0x0(,%r12,4),%r13
+    b24b:	00
+    b24c:	4f 8d 14 80          	lea    (%r8,%r8,4),%r10
+    b250:	48 c1 e6 03          	shl    $0x3,%rsi
+    b254:	f2 42 0f 10 0c db    	movsd  (%rbx,%r11,8),%xmm1
+    b25a:	4f 8d 4c 25 00       	lea    0x0(%r13,%r12,1),%r9
+    b25f:	49 c1 e2 03          	shl    $0x3,%r10
+    b263:	48 c1 e2 03          	shl    $0x3,%rdx
+    b267:	4b 8d 4c 3d 00       	lea    0x0(%r13,%r15,1),%rcx
+    b26c:	49 c1 e1 03          	shl    $0x3,%r9
+    b270:	4d 01 c5             	add    %r8,%r13
+    b273:	48 c1 e1 03          	shl    $0x3,%rcx
+    b277:	4e 8d 7c fc 30       	lea    0x30(%rsp,%r15,8),%r15
+    b27c:	4a 8d 3c c5 00 00 00 	lea    0x0(,%r8,8),%rdi
+    b283:	00
+    b284:	48 c1 e0 03          	shl    $0x3,%rax
+    b288:	49 c1 e6 03          	shl    $0x3,%r14
+    b28c:	49 c1 e5 03          	shl    $0x3,%r13
+    b290:	49 c1 e4 03          	shl    $0x3,%r12
+    b294:	f2 42 0f 10 04 13    	movsd  (%rbx,%r10,1),%xmm0
+    b29a:	f2 0f 5c c1          	subsd  %xmm1,%xmm0
+    b29e:	f2 42 0f 5c 04 0b    	subsd  (%rbx,%r9,1),%xmm0
+    b2a4:	f2 0f 58 05 bc 51 00 	addsd  0x51bc(%rip),%xmm0        # 10468 <typeinfo name for std::_Sp_counted_ptr<dart::collision::OdeCollisionDetector*, (__gnu_cxx::_Lock_policy)2>@@Base+0x68>
+    b2ab:	00
+    b2ac:	66 0f 2e d0          	ucomisd %xmm0,%xmm2
+    b2b0:	0f 87 75 01 00 00    	ja     b42b <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x2cb>
+    b2b6:	f2 0f 51 c0          	sqrtsd %xmm0,%xmm0
+    b2ba:	f2 0f 10 0d ae 51 00 	movsd  0x51ae(%rip),%xmm1        # 10470 <typeinfo name for std::_Sp_counted_ptr<dart::collision::OdeCollisionDetector*, (__gnu_cxx::_Lock_policy)2>@@Base+0x70>
+    b2c1:	00
+    b2c2:	66 0f 28 d0          	movapd %xmm0,%xmm2
+    b2c6:	f2 0f 59 d1          	mulsd  %xmm1,%xmm2
+    b2ca:	f2 0f 5e c8          	divsd  %xmm0,%xmm1
+    b2ce:	f2 0f 10 04 33       	movsd  (%rbx,%rsi,1),%xmm0
+    b2d3:	f2 0f 5c 04 0b       	subsd  (%rbx,%rcx,1),%xmm0
+    b2d8:	f2 0f 11 54 3c 30    	movsd  %xmm2,0x30(%rsp,%rdi,1)
+    b2de:	f2 0f 59 c1          	mulsd  %xmm1,%xmm0
+    b2e2:	f2 0f 11 44 24 48    	movsd  %xmm0,0x48(%rsp)
+    b2e8:	f2 0f 10 04 13       	movsd  (%rbx,%rdx,1),%xmm0
+    b2ed:	f2 0f 58 04 03       	addsd  (%rbx,%rax,1),%xmm0
+    b2f2:	f2 0f 59 c1          	mulsd  %xmm1,%xmm0
+    b2f6:	f2 41 0f 11 07       	movsd  %xmm0,(%r15)
+    b2fb:	f2 42 0f 10 04 33    	movsd  (%rbx,%r14,1),%xmm0
+    b301:	f2 42 0f 58 04 2b    	addsd  (%rbx,%r13,1),%xmm0
+    b307:	f2 0f 59 c1          	mulsd  %xmm1,%xmm0
+    b30b:	f2 42 0f 11 44 24 30 	movsd  %xmm0,0x30(%rsp,%r12,1)
+    b312:	f2 0f 10 64 24 48    	movsd  0x48(%rsp),%xmm4
+    b318:	f2 0f 10 54 24 30    	movsd  0x30(%rsp),%xmm2
+    b31e:	f2 0f 10 4c 24 38    	movsd  0x38(%rsp),%xmm1
+    b324:	f2 0f 10 44 24 40    	movsd  0x40(%rsp),%xmm0
+    b32a:	48 8b 7d 20          	mov    0x20(%rbp),%rdi
+    b32e:	48 8d 74 24 50       	lea    0x50(%rsp),%rsi
+    b333:	f2 0f 11 64 24 50    	movsd  %xmm4,0x50(%rsp)
+    b339:	f2 0f 11 54 24 58    	movsd  %xmm2,0x58(%rsp)
+    b33f:	f2 0f 11 4c 24 60    	movsd  %xmm1,0x60(%rsp)
+    b345:	f2 0f 11 44 24 68    	movsd  %xmm0,0x68(%rsp)
+    b34b:	e8 a0 d5 ff ff       	call   88f0 <dBodySetQuaternion@plt>
+    b350:	48 8b 44 24 78       	mov    0x78(%rsp),%rax
+    b355:	64 48 2b 04 25 28 00 	sub    %fs:0x28,%rax
+    b35c:	00 00
+    b35e:	0f 85 bd 00 00 00    	jne    b421 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x2c1>
+    b364:	48 81 c4 88 00 00 00 	add    $0x88,%rsp
+    b36b:	5b                   	pop    %rbx
+    b36c:	5d                   	pop    %rbp
+    b36d:	41 5c                	pop    %r12
+    b36f:	41 5d                	pop    %r13
+    b371:	41 5e                	pop    %r14
+    b373:	41 5f                	pop    %r15
+    b375:	c3                   	ret
+    b376:	66 2e 0f 1f 84 00 00 	cs nopw 0x0(%rax,%rax,1)
+    b37d:	00 00 00
+    b380:	f2 0f 58 05 e0 50 00 	addsd  0x50e0(%rip),%xmm0        # 10468 <typeinfo name for std::_Sp_counted_ptr<dart::collision::OdeCollisionDetector*, (__gnu_cxx::_Lock_policy)2>@@Base+0x68>
+    b387:	00
+    b388:	66 0f 2e d0          	ucomisd %xmm0,%xmm2
+    b38c:	0f 87 d5 00 00 00    	ja     b467 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x307>
+    b392:	f2 0f 51 c0          	sqrtsd %xmm0,%xmm0
+    b396:	66 0f 28 e0          	movapd %xmm0,%xmm4
+    b39a:	f2 0f 10 53 30       	movsd  0x30(%rbx),%xmm2
+    b39f:	f2 0f 10 4b 40       	movsd  0x40(%rbx),%xmm1
+    b3a4:	f2 0f 10 1d c4 50 00 	movsd  0x50c4(%rip),%xmm3        # 10470 <typeinfo name for std::_Sp_counted_ptr<dart::collision::OdeCollisionDetector*, (__gnu_cxx::_Lock_policy)2>@@Base+0x70>
+    b3ab:	00
+    b3ac:	f2 0f 5c 53 48       	subsd  0x48(%rbx),%xmm2
+    b3b1:	f2 0f 5c 4b 10       	subsd  0x10(%rbx),%xmm1
+    b3b6:	f2 0f 59 e3          	mulsd  %xmm3,%xmm4
+    b3ba:	f2 0f 5e d8          	divsd  %xmm0,%xmm3
+    b3be:	f2 0f 10 43 08       	movsd  0x8(%rbx),%xmm0
+    b3c3:	f2 0f 5c 43 20       	subsd  0x20(%rbx),%xmm0
+    b3c8:	f2 0f 59 d3          	mulsd  %xmm3,%xmm2
+    b3cc:	f2 0f 59 cb          	mulsd  %xmm3,%xmm1
+    b3d0:	f2 0f 59 c3          	mulsd  %xmm3,%xmm0
+    b3d4:	e9 51 ff ff ff       	jmp    b32a <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x1ca>
+    b3d9:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+    b3e0:	41 bc 08 00 00 00    	mov    $0x8,%r12d
+    b3e6:	41 bd 30 00 00 00    	mov    $0x30,%r13d
+    b3ec:	41 be 48 00 00 00    	mov    $0x48,%r14d
+    b3f2:	b8 10 00 00 00       	mov    $0x10,%eax
+    b3f7:	4c 8d 7c 24 30       	lea    0x30(%rsp),%r15
+    b3fc:	ba 40 00 00 00       	mov    $0x40,%edx
+    b401:	b9 20 00 00 00       	mov    $0x20,%ecx
+    b406:	be 08 00 00 00       	mov    $0x8,%esi
+    b40b:	bf 10 00 00 00       	mov    $0x10,%edi
+    b410:	41 b9 28 00 00 00    	mov    $0x28,%r9d
+    b416:	41 ba 50 00 00 00    	mov    $0x50,%r10d
+    b41c:	e9 73 fe ff ff       	jmp    b294 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x134>
+    b421:	e8 0a d7 ff ff       	call   8b30 <__stack_chk_fail@plt>
+    b426:	e8 75 ef ff ff       	call   a3a0 <dart::collision::OdeCollisionDetector::~OdeCollisionDetector()@@Base+0x160>
+    b42b:	48 89 44 24 28       	mov    %rax,0x28(%rsp)
+    b430:	48 89 54 24 20       	mov    %rdx,0x20(%rsp)
+    b435:	48 89 4c 24 18       	mov    %rcx,0x18(%rsp)
+    b43a:	48 89 7c 24 10       	mov    %rdi,0x10(%rsp)
+    b43f:	48 89 74 24 08       	mov    %rsi,0x8(%rsp)
+    b444:	e8 c7 d5 ff ff       	call   8a10 <sqrt@plt>
+    b449:	48 8b 44 24 28       	mov    0x28(%rsp),%rax
+    b44e:	48 8b 54 24 20       	mov    0x20(%rsp),%rdx
+    b453:	48 8b 4c 24 18       	mov    0x18(%rsp),%rcx
+    b458:	48 8b 7c 24 10       	mov    0x10(%rsp),%rdi
+    b45d:	48 8b 74 24 08       	mov    0x8(%rsp),%rsi
+    b462:	e9 53 fe ff ff       	jmp    b2ba <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x15a>
+    b467:	e8 a4 d5 ff ff       	call   8a10 <sqrt@plt>
+    b46c:	e9 25 ff ff ff       	jmp    b396 <dart::collision::OdeCollisionObject::updateEngineData()@@Base+0x236>
+    b471:	90                   	nop
+    b472:	66 66 2e 0f 1f 84 00 	data16 cs nopw 0x0(%rax,%rax,1)
+    b479:	00 00 00 00
+    b47d:	0f 1f 00             	nopl   (%rax)
+
+/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000000c7a0 <dart::collision::detail::OdeBox::OdeBox(dart::collision::OdeCollisionObject const*, Eigen::Matrix<double, 3, 1, 0, 3, 1> const&)@@Base>:
+    c7a0:	f3 0f 1e fa          	endbr64
+    c7a4:	41 54                	push   %r12
+    c7a6:	55                   	push   %rbp
+    c7a7:	48 89 fd             	mov    %rdi,%rbp
+    c7aa:	53                   	push   %rbx
+    c7ab:	48 89 d3             	mov    %rdx,%rbx
+    c7ae:	e8 cd ff ff ff       	call   c780 <dart::collision::detail::OdeGeom::OdeGeom(dart::collision::OdeCollisionObject const*)@@Base>
+    c7b3:	f2 0f 10 53 10       	movsd  0x10(%rbx),%xmm2
+    c7b8:	f2 0f 10 03          	movsd  (%rbx),%xmm0
+    c7bc:	31 ff                	xor    %edi,%edi
+    c7be:	48 8b 05 83 77 00 00 	mov    0x7783(%rip),%rax        # 13f48 <vtable for dart::collision::detail::OdeBox@@Base+0x810>
+    c7c5:	f2 0f 10 4b 08       	movsd  0x8(%rbx),%xmm1
+    c7ca:	48 83 c0 10          	add    $0x10,%rax
+    c7ce:	48 89 45 00          	mov    %rax,0x0(%rbp)
+    c7d2:	e8 99 c0 ff ff       	call   8870 <dCreateBox@plt>
+    c7d7:	5b                   	pop    %rbx
+    c7d8:	48 89 45 10          	mov    %rax,0x10(%rbp)
+    c7dc:	5d                   	pop    %rbp
+    c7dd:	41 5c                	pop    %r12
+    c7df:	c3                   	ret
+
+/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+000000000000cfa0 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base>:
+    cfa0:	f3 0f 1e fa          	endbr64
+    cfa4:	41 57                	push   %r15
+    cfa6:	41 56                	push   %r14
+    cfa8:	41 55                	push   %r13
+    cfaa:	49 89 f5             	mov    %rsi,%r13
+    cfad:	41 54                	push   %r12
+    cfaf:	49 89 d4             	mov    %rdx,%r12
+    cfb2:	55                   	push   %rbp
+    cfb3:	53                   	push   %rbx
+    cfb4:	48 89 fb             	mov    %rdi,%rbx
+    cfb7:	48 81 ec a8 00 00 00 	sub    $0xa8,%rsp
+    cfbe:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+    cfc5:	00 00
+    cfc7:	48 89 84 24 98 00 00 	mov    %rax,0x98(%rsp)
+    cfce:	00
+    cfcf:	31 c0                	xor    %eax,%eax
+    cfd1:	48 8d 6c 24 10       	lea    0x10(%rsp),%rbp
+    cfd6:	e8 75 b9 ff ff       	call   8950 <dart::collision::CollisionObject::CollisionObject(dart::collision::CollisionDetector*, dart::dynamics::ShapeFrame const*)@plt>
+    cfdb:	48 8b 05 56 6f 00 00 	mov    0x6f56(%rip),%rax        # 13f38 <vtable for dart::collision::OdeCollisionObject@@Base+0x770>
+    cfe2:	4c 89 e6             	mov    %r12,%rsi
+    cfe5:	48 89 ef             	mov    %rbp,%rdi
+    cfe8:	48 c7 43 18 00 00 00 	movq   $0x0,0x18(%rbx)
+    cfef:	00
+    cff0:	48 83 c0 10          	add    $0x10,%rax
+    cff4:	48 c7 43 20 00 00 00 	movq   $0x0,0x20(%rbx)
+    cffb:	00
+    cffc:	48 89 03             	mov    %rax,(%rbx)
+    cfff:	e8 4c bc ff ff       	call   8c50 <dart::dynamics::ShapeFrame::getShape() const@plt>
+    d004:	4c 8b 74 24 18       	mov    0x18(%rsp),%r14
+    d009:	4c 8b 64 24 10       	mov    0x10(%rsp),%r12
+    d00e:	4d 85 f6             	test   %r14,%r14
+    d011:	74 25                	je     d038 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x98>
+    d013:	4c 8b 3d 6e 6f 00 00 	mov    0x6f6e(%rip),%r15        # 13f88 <__libc_single_threaded@GLIBC_2.32>
+    d01a:	41 80 3f 00          	cmpb   $0x0,(%r15)
+    d01e:	0f 84 b4 04 00 00    	je     d4d8 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x538>
+    d024:	41 8b 46 08          	mov    0x8(%r14),%eax
+    d028:	8d 50 ff             	lea    -0x1(%rax),%edx
+    d02b:	41 89 56 08          	mov    %edx,0x8(%r14)
+    d02f:	83 f8 01             	cmp    $0x1,%eax
+    d032:	0f 84 08 04 00 00    	je     d440 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x4a0>
+    d038:	e8 d3 bd ff ff       	call   8e10 <dart::dynamics::SphereShape::getStaticType[abi:cxx11]()@plt>
+    d03d:	49 89 c6             	mov    %rax,%r14
+    d040:	49 8b 04 24          	mov    (%r12),%rax
+    d044:	4c 89 e7             	mov    %r12,%rdi
+    d047:	ff 50 10             	call   *0x10(%rax)
+    d04a:	48 8b 38             	mov    (%rax),%rdi
+    d04d:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d051:	49 8b 36             	mov    (%r14),%rsi
+    d054:	49 3b 56 08          	cmp    0x8(%r14),%rdx
+    d058:	0f 84 b2 02 00 00    	je     d310 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x370>
+    d05e:	e8 7d b7 ff ff       	call   87e0 <dart::dynamics::BoxShape::getStaticType[abi:cxx11]()@plt>
+    d063:	49 89 c6             	mov    %rax,%r14
+    d066:	49 8b 04 24          	mov    (%r12),%rax
+    d06a:	4c 89 e7             	mov    %r12,%rdi
+    d06d:	ff 50 10             	call   *0x10(%rax)
+    d070:	48 8b 38             	mov    (%rax),%rdi
+    d073:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d077:	49 8b 36             	mov    (%r14),%rsi
+    d07a:	49 3b 56 08          	cmp    0x8(%r14),%rdx
+    d07e:	0f 84 6c 04 00 00    	je     d4f0 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x550>
+    d084:	e8 b7 bd ff ff       	call   8e40 <dart::dynamics::CapsuleShape::getStaticType[abi:cxx11]()@plt>
+    d089:	49 89 c6             	mov    %rax,%r14
+    d08c:	49 8b 04 24          	mov    (%r12),%rax
+    d090:	4c 89 e7             	mov    %r12,%rdi
+    d093:	ff 50 10             	call   *0x10(%rax)
+    d096:	48 8b 38             	mov    (%rax),%rdi
+    d099:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d09d:	49 8b 36             	mov    (%r14),%rsi
+    d0a0:	49 3b 56 08          	cmp    0x8(%r14),%rdx
+    d0a4:	0f 84 86 04 00 00    	je     d530 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x590>
+    d0aa:	e8 01 bb ff ff       	call   8bb0 <dart::dynamics::CylinderShape::getStaticType[abi:cxx11]()@plt>
+    d0af:	49 89 c6             	mov    %rax,%r14
+    d0b2:	49 8b 04 24          	mov    (%r12),%rax
+    d0b6:	4c 89 e7             	mov    %r12,%rdi
+    d0b9:	ff 50 10             	call   *0x10(%rax)
+    d0bc:	48 8b 38             	mov    (%rax),%rdi
+    d0bf:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d0c3:	49 8b 36             	mov    (%r14),%rsi
+    d0c6:	49 3b 56 08          	cmp    0x8(%r14),%rdx
+    d0ca:	0f 84 50 05 00 00    	je     d620 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x680>
+    d0d0:	e8 6b bb ff ff       	call   8c40 <dart::dynamics::PlaneShape::getStaticType[abi:cxx11]()@plt>
+    d0d5:	49 89 c6             	mov    %rax,%r14
+    d0d8:	49 8b 04 24          	mov    (%r12),%rax
+    d0dc:	4c 89 e7             	mov    %r12,%rdi
+    d0df:	ff 50 10             	call   *0x10(%rax)
+    d0e2:	48 8b 38             	mov    (%rax),%rdi
+    d0e5:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d0e9:	49 8b 36             	mov    (%r14),%rsi
+    d0ec:	49 3b 56 08          	cmp    0x8(%r14),%rdx
+    d0f0:	0f 84 ba 04 00 00    	je     d5b0 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x610>
+    d0f6:	e8 15 bc ff ff       	call   8d10 <dart::dynamics::MeshShape::getStaticType[abi:cxx11]()@plt>
+    d0fb:	49 89 c6             	mov    %rax,%r14
+    d0fe:	49 8b 04 24          	mov    (%r12),%rax
+    d102:	4c 89 e7             	mov    %r12,%rdi
+    d105:	ff 50 10             	call   *0x10(%rax)
+    d108:	48 8b 38             	mov    (%rax),%rdi
+    d10b:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d10f:	49 8b 36             	mov    (%r14),%rsi
+    d112:	49 3b 56 08          	cmp    0x8(%r14),%rdx
+    d116:	0f 84 5c 05 00 00    	je     d678 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x6d8>
+    d11c:	48 8b 05 6d 6e 00 00 	mov    0x6e6d(%rip),%rax        # 13f90 <guard variable for dart::dynamics::HeightmapShape<float>::getStaticType[abi:cxx11]()::type@@Base-0x130>
+    d123:	0f b6 00             	movzbl (%rax),%eax
+    d126:	84 c0                	test   %al,%al
+    d128:	0f 84 72 08 00 00    	je     d9a0 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0xa00>
+    d12e:	49 8b 04 24          	mov    (%r12),%rax
+    d132:	4c 89 e7             	mov    %r12,%rdi
+    d135:	ff 50 10             	call   *0x10(%rax)
+    d138:	48 8b 38             	mov    (%rax),%rdi
+    d13b:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d13f:	48 8b 05 72 6e 00 00 	mov    0x6e72(%rip),%rax        # 13fb8 <dart::dynamics::HeightmapShape<float>::getStaticType[abi:cxx11]()::type@@Base-0xe8>
+    d146:	48 8b 30             	mov    (%rax),%rsi
+    d149:	48 3b 50 08          	cmp    0x8(%rax),%rdx
+    d14d:	0f 84 70 05 00 00    	je     d6c3 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0x723>
+    d153:	48 8b 05 26 6e 00 00 	mov    0x6e26(%rip),%rax        # 13f80 <guard variable for dart::dynamics::HeightmapShape<double>::getStaticType[abi:cxx11]()::type@@Base-0x180>
+    d15a:	0f b6 00             	movzbl (%rax),%eax
+    d15d:	84 c0                	test   %al,%al
+    d15f:	0f 84 ea 0c 00 00    	je     de4f <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0xeaf>
+    d165:	49 8b 04 24          	mov    (%r12),%rax
+    d169:	4c 89 e7             	mov    %r12,%rdi
+    d16c:	ff 50 10             	call   *0x10(%rax)
+    d16f:	48 8b 38             	mov    (%rax),%rdi
+    d172:	48 8b 50 08          	mov    0x8(%rax),%rdx
+    d176:	48 8b 05 2b 6e 00 00 	mov    0x6e2b(%rip),%rax        # 13fa8 <dart::dynamics::HeightmapShape<double>::getStaticType[abi:cxx11]()::type@@Base-0x138>
+    d17d:	48 8b 30             	mov    (%rax),%rsi
+    d180:	48 3b 50 08          	cmp    0x8(%rax),%rdx
+    d184:	0f 84 18 0a 00 00    	je     dba2 <dart::collision::OdeCollisionObject::OdeCollisionObject(dart::collision::OdeCollisionDetector*, dart::dynamics::ShapeFrame const*)@@Base+0xc02>
+    d18a:	4c 8d 7c 24 60       	lea    0x60(%rsp),%r15
+    d18f:	48 8d 44 24 70       	lea    0x70(%rsp),%rax
+    d194:	31 d2                	xor    %edx,%edx
+    d196:	48 89 ee             	mov    %rbp,%rsi
+    d199:	4c 89 ff             	mov    %r15,%rdi
+    d19c:	48 89 44 24 08       	mov    %rax,0x8(%rsp)
+    d1a1:	48 89 44 24 60       	mov    %rax,0x60(%rsp)
+    d1a6:	48 c7 44 24 10 2b 00 	movq   $0x2b,0x10(%rsp)
+    d1ad:	00 00
+    d1af:	e8 1c bc ff ff       	call   8dd0 <std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_create(unsigned long&, unsigned long)@plt>
+    d1b4:	48 8b 54 24 10       	mov    0x10(%rsp),%rdx
+    d1b9:	48 89 44 24 60       	mov    %rax,0x60(%rsp)
+    d1be:	4c 89 fe             	mov    %r15,%rsi
+    d1c1:	48 b9 6e 4f 62 6a 65 	movabs $0x2e7463656a624f6e,%rcx
+    d1c8:	63 74 2e
+    d1cb:	66 0f 6f 05 bd 32 00 	movdqa 0x32bd(%rip),%xmm0        # 10490 <typeinfo name for std::_Sp_counted_ptr<dart::collision::OdeCollisionDetector*, (__gnu_cxx::_Lock_policy)2>@@Base+0x90>
+    d1d2:	00
+    d1d3:	4c 8d 74 24 40       	lea    0x40(%rsp),%r14
+    d1d8:	48 89 54 24 70       	mov    %rdx,0x70(%rsp)
+    d1dd:	ba                   	.byte 0xba
+    d1de:	63                   	.byte 0x63
+    d1df:	70                   	.byte 0x70

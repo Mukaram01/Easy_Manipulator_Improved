@@ -1,0 +1,1513 @@
+{
+  "accepted": 0,
+  "associations": [
+    {
+      "association": "REJECTED",
+      "bbox": [
+        371,
+        212,
+        469,
+        301
+      ],
+      "class_index": 1,
+      "confidence": 0.9756200909614563,
+      "label": "cube",
+      "mask_file": "mask_0.f32",
+      "reason": "BLOCKED: physics contact: mixed, missing or ambiguous mask ID"
+    },
+    {
+      "association": "REJECTED",
+      "bbox": [
+        38,
+        212,
+        146,
+        301
+      ],
+      "class_index": 1,
+      "confidence": 0.8621252775192261,
+      "label": "cube",
+      "mask_file": "mask_1.f32",
+      "reason": "BLOCKED: physics contact: mixed, missing or ambiguous mask ID"
+    },
+    {
+      "association": "REJECTED",
+      "bbox": [
+        373,
+        295,
+        394,
+        301
+      ],
+      "class_index": 1,
+      "confidence": 0.05048725754022598,
+      "label": "cube",
+      "mask_file": "mask_2.f32",
+      "reason": "below original confidence threshold or invalid confidence"
+    }
+  ],
+  "baseline": "6640cea2",
+  "classification": "MODEL OUTPUT",
+  "classification_scope": "exported ONNX model outputs versus external EPD native-512 processing; inverse union measured separately in baseline regression",
+  "detections": [
+    {
+      "class_index": 1,
+      "classification": "MODEL OUTPUT",
+      "confidence": 0.9756200909614563,
+      "epd_index": 0,
+      "float_crop_convention": "diagnostic only: x+.5,y+.5 inside half-open floating xyxy box",
+      "floating_box": [
+        371.97686767578125,
+        212.25132751464844,
+        469.6667785644531,
+        301.1519775390625
+      ],
+      "historical_bbox_equal": true,
+      "historical_confidence_equal": true,
+      "historical_mapped_pixels_changed": 0,
+      "historical_roi_sha256": "056d0ff27316dd11686b42e259894b5aead3df9325d3e5591434d4481af61fc2",
+      "historical_roi_values_changed": 0,
+      "instrumented_roi_sha256": "056d0ff27316dd11686b42e259894b5aead3df9325d3e5591434d4481af61fc2",
+      "post_added_background_samples": 0,
+      "post_roi_foreground_id_counts": {
+        "0": 296,
+        "65517": 8313
+      },
+      "quantization_vs_float_pixel_centre_crop": {
+        "foreground_added": 0,
+        "foreground_removed": 84,
+        "values_changed": 178
+      },
+      "raw_background_runs_y_x0_x1_exclusive": [
+        [
+          212,
+          382,
+          406
+        ],
+        [
+          213,
+          374,
+          406
+        ],
+        [
+          213,
+          468,
+          469
+        ],
+        [
+          214,
+          373,
+          376
+        ],
+        [
+          214,
+          468,
+          470
+        ],
+        [
+          215,
+          372,
+          376
+        ],
+        [
+          215,
+          468,
+          470
+        ],
+        [
+          216,
+          372,
+          374
+        ],
+        [
+          216,
+          468,
+          470
+        ],
+        [
+          217,
+          372,
+          374
+        ],
+        [
+          217,
+          468,
+          470
+        ],
+        [
+          218,
+          468,
+          470
+        ],
+        [
+          219,
+          468,
+          470
+        ],
+        [
+          220,
+          468,
+          470
+        ],
+        [
+          221,
+          468,
+          470
+        ],
+        [
+          222,
+          468,
+          470
+        ],
+        [
+          223,
+          468,
+          470
+        ],
+        [
+          224,
+          468,
+          470
+        ],
+        [
+          225,
+          468,
+          470
+        ],
+        [
+          226,
+          468,
+          470
+        ],
+        [
+          227,
+          468,
+          470
+        ],
+        [
+          228,
+          468,
+          470
+        ],
+        [
+          229,
+          468,
+          470
+        ],
+        [
+          230,
+          468,
+          470
+        ],
+        [
+          231,
+          468,
+          470
+        ],
+        [
+          232,
+          468,
+          470
+        ],
+        [
+          233,
+          468,
+          470
+        ],
+        [
+          234,
+          468,
+          470
+        ],
+        [
+          235,
+          468,
+          470
+        ],
+        [
+          236,
+          468,
+          470
+        ],
+        [
+          237,
+          468,
+          470
+        ],
+        [
+          238,
+          468,
+          470
+        ],
+        [
+          239,
+          468,
+          470
+        ],
+        [
+          240,
+          468,
+          470
+        ],
+        [
+          241,
+          468,
+          470
+        ],
+        [
+          242,
+          468,
+          470
+        ],
+        [
+          243,
+          468,
+          470
+        ],
+        [
+          244,
+          468,
+          470
+        ],
+        [
+          245,
+          468,
+          470
+        ],
+        [
+          246,
+          468,
+          470
+        ],
+        [
+          247,
+          468,
+          470
+        ],
+        [
+          248,
+          468,
+          470
+        ],
+        [
+          249,
+          468,
+          470
+        ],
+        [
+          250,
+          468,
+          470
+        ],
+        [
+          251,
+          468,
+          470
+        ],
+        [
+          252,
+          468,
+          470
+        ],
+        [
+          253,
+          468,
+          470
+        ],
+        [
+          254,
+          468,
+          470
+        ],
+        [
+          255,
+          468,
+          470
+        ],
+        [
+          256,
+          468,
+          470
+        ],
+        [
+          257,
+          468,
+          470
+        ],
+        [
+          258,
+          468,
+          470
+        ],
+        [
+          259,
+          468,
+          470
+        ],
+        [
+          260,
+          468,
+          470
+        ],
+        [
+          261,
+          468,
+          470
+        ],
+        [
+          262,
+          468,
+          470
+        ],
+        [
+          263,
+          468,
+          470
+        ],
+        [
+          264,
+          468,
+          470
+        ],
+        [
+          265,
+          468,
+          470
+        ],
+        [
+          266,
+          468,
+          470
+        ],
+        [
+          267,
+          468,
+          470
+        ],
+        [
+          268,
+          468,
+          470
+        ],
+        [
+          269,
+          468,
+          470
+        ],
+        [
+          270,
+          468,
+          470
+        ],
+        [
+          271,
+          468,
+          470
+        ],
+        [
+          272,
+          468,
+          470
+        ],
+        [
+          273,
+          468,
+          470
+        ],
+        [
+          274,
+          468,
+          470
+        ],
+        [
+          275,
+          468,
+          470
+        ],
+        [
+          276,
+          468,
+          470
+        ],
+        [
+          277,
+          468,
+          470
+        ],
+        [
+          278,
+          468,
+          470
+        ],
+        [
+          279,
+          468,
+          470
+        ],
+        [
+          280,
+          468,
+          470
+        ],
+        [
+          281,
+          468,
+          470
+        ],
+        [
+          282,
+          468,
+          470
+        ],
+        [
+          283,
+          468,
+          470
+        ],
+        [
+          284,
+          468,
+          470
+        ],
+        [
+          285,
+          468,
+          470
+        ],
+        [
+          286,
+          468,
+          470
+        ],
+        [
+          287,
+          468,
+          470
+        ],
+        [
+          288,
+          468,
+          470
+        ],
+        [
+          289,
+          468,
+          470
+        ],
+        [
+          290,
+          468,
+          470
+        ],
+        [
+          291,
+          468,
+          470
+        ],
+        [
+          292,
+          468,
+          470
+        ],
+        [
+          293,
+          468,
+          470
+        ],
+        [
+          294,
+          372,
+          374
+        ],
+        [
+          294,
+          468,
+          470
+        ],
+        [
+          295,
+          372,
+          374
+        ],
+        [
+          295,
+          468,
+          470
+        ],
+        [
+          296,
+          372,
+          374
+        ],
+        [
+          296,
+          468,
+          470
+        ],
+        [
+          297,
+          372,
+          374
+        ],
+        [
+          297,
+          468,
+          470
+        ],
+        [
+          298,
+          373,
+          394
+        ],
+        [
+          298,
+          468,
+          469
+        ],
+        [
+          299,
+          373,
+          394
+        ],
+        [
+          299,
+          468,
+          469
+        ],
+        [
+          300,
+          375,
+          467
+        ],
+        [
+          301,
+          394,
+          463
+        ]
+      ],
+      "raw_foreground_id_counts": {
+        "0": 449,
+        "65517": 8313
+      },
+      "raw_index": 0,
+      "removed_background_samples": 153,
+      "roi_box": [
+        371,
+        212,
+        469,
+        301
+      ],
+      "stage_differences": {
+        "raw_to_full_copy": {
+          "foreground_added": 0,
+          "foreground_removed": 0,
+          "values_changed": 0
+        },
+        "raw_to_roi_embedded": {
+          "foreground_added": 0,
+          "foreground_removed": 153,
+          "values_changed": 662
+        },
+        "roi_values_changed_at_identical_coordinates": 0
+      },
+      "truncated_box_before_clamp": [
+        371,
+        212,
+        469,
+        301
+      ]
+    },
+    {
+      "class_index": 1,
+      "classification": "MODEL OUTPUT",
+      "confidence": 0.8621252775192261,
+      "epd_index": 1,
+      "float_crop_convention": "diagnostic only: x+.5,y+.5 inside half-open floating xyxy box",
+      "floating_box": [
+        38.25672149658203,
+        212.29083251953125,
+        146.5597686767578,
+        301.1468505859375
+      ],
+      "historical_bbox_equal": true,
+      "historical_confidence_equal": true,
+      "historical_mapped_pixels_changed": 0,
+      "historical_roi_sha256": "cfd13ed6ab6ad70563e708fd92fee00bccb7458c314cfbf15eced739afa442ab",
+      "historical_roi_values_changed": 0,
+      "instrumented_roi_sha256": "cfd13ed6ab6ad70563e708fd92fee00bccb7458c314cfbf15eced739afa442ab",
+      "post_added_background_samples": 0,
+      "post_roi_foreground_id_counts": {
+        "0": 438,
+        "65523": 8663
+      },
+      "quantization_vs_float_pixel_centre_crop": {
+        "foreground_added": 0,
+        "foreground_removed": 0,
+        "values_changed": 89
+      },
+      "raw_background_runs_y_x0_x1_exclusive": [
+        [
+          212,
+          112,
+          130
+        ],
+        [
+          213,
+          40,
+          42
+        ],
+        [
+          213,
+          112,
+          135
+        ],
+        [
+          214,
+          39,
+          42
+        ],
+        [
+          214,
+          136,
+          138
+        ],
+        [
+          215,
+          39,
+          42
+        ],
+        [
+          215,
+          136,
+          139
+        ],
+        [
+          216,
+          39,
+          42
+        ],
+        [
+          216,
+          138,
+          140
+        ],
+        [
+          217,
+          39,
+          42
+        ],
+        [
+          217,
+          138,
+          141
+        ],
+        [
+          218,
+          39,
+          42
+        ],
+        [
+          218,
+          140,
+          142
+        ],
+        [
+          219,
+          39,
+          42
+        ],
+        [
+          219,
+          140,
+          143
+        ],
+        [
+          220,
+          39,
+          42
+        ],
+        [
+          220,
+          142,
+          143
+        ],
+        [
+          221,
+          39,
+          42
+        ],
+        [
+          221,
+          142,
+          143
+        ],
+        [
+          222,
+          39,
+          42
+        ],
+        [
+          222,
+          142,
+          144
+        ],
+        [
+          223,
+          39,
+          42
+        ],
+        [
+          223,
+          142,
+          144
+        ],
+        [
+          224,
+          40,
+          42
+        ],
+        [
+          224,
+          142,
+          144
+        ],
+        [
+          225,
+          40,
+          42
+        ],
+        [
+          225,
+          142,
+          144
+        ],
+        [
+          226,
+          40,
+          42
+        ],
+        [
+          226,
+          142,
+          144
+        ],
+        [
+          227,
+          40,
+          42
+        ],
+        [
+          227,
+          142,
+          144
+        ],
+        [
+          228,
+          41,
+          42
+        ],
+        [
+          228,
+          142,
+          144
+        ],
+        [
+          229,
+          41,
+          42
+        ],
+        [
+          229,
+          142,
+          144
+        ],
+        [
+          230,
+          41,
+          42
+        ],
+        [
+          230,
+          142,
+          144
+        ],
+        [
+          231,
+          41,
+          42
+        ],
+        [
+          231,
+          142,
+          144
+        ],
+        [
+          232,
+          41,
+          42
+        ],
+        [
+          232,
+          142,
+          144
+        ],
+        [
+          233,
+          41,
+          42
+        ],
+        [
+          233,
+          142,
+          144
+        ],
+        [
+          234,
+          41,
+          42
+        ],
+        [
+          234,
+          142,
+          144
+        ],
+        [
+          235,
+          41,
+          42
+        ],
+        [
+          235,
+          142,
+          144
+        ],
+        [
+          236,
+          41,
+          42
+        ],
+        [
+          236,
+          142,
+          144
+        ],
+        [
+          237,
+          41,
+          42
+        ],
+        [
+          237,
+          142,
+          145
+        ],
+        [
+          238,
+          41,
+          42
+        ],
+        [
+          238,
+          142,
+          145
+        ],
+        [
+          239,
+          41,
+          42
+        ],
+        [
+          239,
+          142,
+          145
+        ],
+        [
+          240,
+          41,
+          42
+        ],
+        [
+          240,
+          142,
+          145
+        ],
+        [
+          241,
+          41,
+          42
+        ],
+        [
+          241,
+          142,
+          145
+        ],
+        [
+          242,
+          142,
+          145
+        ],
+        [
+          243,
+          142,
+          145
+        ],
+        [
+          244,
+          142,
+          145
+        ],
+        [
+          245,
+          142,
+          145
+        ],
+        [
+          246,
+          142,
+          145
+        ],
+        [
+          247,
+          142,
+          145
+        ],
+        [
+          248,
+          142,
+          145
+        ],
+        [
+          249,
+          142,
+          145
+        ],
+        [
+          250,
+          142,
+          145
+        ],
+        [
+          251,
+          142,
+          145
+        ],
+        [
+          252,
+          142,
+          145
+        ],
+        [
+          253,
+          142,
+          145
+        ],
+        [
+          254,
+          142,
+          145
+        ],
+        [
+          255,
+          142,
+          145
+        ],
+        [
+          256,
+          142,
+          145
+        ],
+        [
+          257,
+          142,
+          145
+        ],
+        [
+          258,
+          142,
+          145
+        ],
+        [
+          259,
+          142,
+          145
+        ],
+        [
+          260,
+          142,
+          145
+        ],
+        [
+          261,
+          142,
+          144
+        ],
+        [
+          262,
+          142,
+          144
+        ],
+        [
+          263,
+          142,
+          144
+        ],
+        [
+          264,
+          142,
+          144
+        ],
+        [
+          265,
+          142,
+          144
+        ],
+        [
+          266,
+          142,
+          144
+        ],
+        [
+          267,
+          142,
+          144
+        ],
+        [
+          268,
+          142,
+          144
+        ],
+        [
+          269,
+          142,
+          144
+        ],
+        [
+          270,
+          142,
+          144
+        ],
+        [
+          271,
+          142,
+          144
+        ],
+        [
+          272,
+          142,
+          144
+        ],
+        [
+          273,
+          142,
+          144
+        ],
+        [
+          274,
+          142,
+          144
+        ],
+        [
+          275,
+          142,
+          145
+        ],
+        [
+          276,
+          142,
+          145
+        ],
+        [
+          277,
+          41,
+          42
+        ],
+        [
+          277,
+          142,
+          145
+        ],
+        [
+          278,
+          41,
+          42
+        ],
+        [
+          278,
+          142,
+          145
+        ],
+        [
+          279,
+          41,
+          42
+        ],
+        [
+          279,
+          142,
+          145
+        ],
+        [
+          280,
+          41,
+          42
+        ],
+        [
+          280,
+          142,
+          145
+        ],
+        [
+          281,
+          41,
+          42
+        ],
+        [
+          281,
+          142,
+          145
+        ],
+        [
+          282,
+          41,
+          42
+        ],
+        [
+          282,
+          142,
+          145
+        ],
+        [
+          283,
+          41,
+          42
+        ],
+        [
+          283,
+          142,
+          145
+        ],
+        [
+          284,
+          41,
+          42
+        ],
+        [
+          284,
+          142,
+          145
+        ],
+        [
+          285,
+          41,
+          42
+        ],
+        [
+          285,
+          142,
+          145
+        ],
+        [
+          286,
+          41,
+          42
+        ],
+        [
+          286,
+          142,
+          145
+        ],
+        [
+          287,
+          41,
+          42
+        ],
+        [
+          287,
+          142,
+          145
+        ],
+        [
+          288,
+          41,
+          42
+        ],
+        [
+          288,
+          142,
+          144
+        ],
+        [
+          289,
+          40,
+          42
+        ],
+        [
+          289,
+          142,
+          144
+        ],
+        [
+          290,
+          40,
+          42
+        ],
+        [
+          290,
+          142,
+          144
+        ],
+        [
+          291,
+          40,
+          42
+        ],
+        [
+          291,
+          142,
+          144
+        ],
+        [
+          292,
+          40,
+          42
+        ],
+        [
+          292,
+          142,
+          144
+        ],
+        [
+          293,
+          40,
+          42
+        ],
+        [
+          293,
+          142,
+          143
+        ],
+        [
+          294,
+          40,
+          42
+        ],
+        [
+          294,
+          138,
+          143
+        ],
+        [
+          295,
+          41,
+          42
+        ],
+        [
+          295,
+          138,
+          141
+        ],
+        [
+          296,
+          41,
+          42
+        ],
+        [
+          296,
+          136,
+          140
+        ],
+        [
+          297,
+          41,
+          42
+        ],
+        [
+          297,
+          136,
+          139
+        ],
+        [
+          298,
+          126,
+          137
+        ],
+        [
+          299,
+          126,
+          134
+        ],
+        [
+          300,
+          43,
+          128
+        ],
+        [
+          301,
+          48,
+          119
+        ]
+      ],
+      "raw_foreground_id_counts": {
+        "0": 509,
+        "65523": 8663
+      },
+      "raw_index": 1,
+      "removed_background_samples": 71,
+      "roi_box": [
+        38,
+        212,
+        146,
+        301
+      ],
+      "stage_differences": {
+        "raw_to_full_copy": {
+          "foreground_added": 0,
+          "foreground_removed": 0,
+          "values_changed": 0
+        },
+        "raw_to_roi_embedded": {
+          "foreground_added": 0,
+          "foreground_removed": 71,
+          "values_changed": 784
+        },
+        "roi_values_changed_at_identical_coordinates": 0
+      },
+      "truncated_box_before_clamp": [
+        38,
+        212,
+        146,
+        301
+      ]
+    },
+    {
+      "class_index": 1,
+      "classification": "MODEL OUTPUT",
+      "confidence": 0.05048725754022598,
+      "epd_index": 2,
+      "float_crop_convention": "diagnostic only: x+.5,y+.5 inside half-open floating xyxy box",
+      "floating_box": [
+        373.82806396484375,
+        295.9470520019531,
+        394.64251708984375,
+        301.24237060546875
+      ],
+      "historical_bbox_equal": true,
+      "historical_confidence_equal": true,
+      "historical_mapped_pixels_changed": 0,
+      "historical_roi_sha256": "f89ad4b195807252b2f6b396cb5b8364eb6c2e8c87f984cd938c4a08fb4d7411",
+      "historical_roi_values_changed": 0,
+      "instrumented_roi_sha256": "f89ad4b195807252b2f6b396cb5b8364eb6c2e8c87f984cd938c4a08fb4d7411",
+      "post_added_background_samples": 0,
+      "post_roi_foreground_id_counts": {
+        "0": 58,
+        "65517": 35
+      },
+      "quantization_vs_float_pixel_centre_crop": {
+        "foreground_added": 0,
+        "foreground_removed": 0,
+        "values_changed": 31
+      },
+      "raw_background_runs_y_x0_x1_exclusive": [
+        [
+          298,
+          374,
+          394
+        ],
+        [
+          299,
+          374,
+          394
+        ],
+        [
+          300,
+          376,
+          394
+        ]
+      ],
+      "raw_foreground_id_counts": {
+        "0": 58,
+        "65517": 35
+      },
+      "raw_index": 2,
+      "removed_background_samples": 0,
+      "roi_box": [
+        373,
+        295,
+        394,
+        301
+      ],
+      "stage_differences": {
+        "raw_to_full_copy": {
+          "foreground_added": 0,
+          "foreground_removed": 0,
+          "values_changed": 0
+        },
+        "raw_to_roi_embedded": {
+          "foreground_added": 0,
+          "foreground_removed": 0,
+          "values_changed": 35
+        },
+        "roi_values_changed_at_identical_coordinates": 0
+      },
+      "truncated_box_before_clamp": [
+        373,
+        295,
+        394,
+        301
+      ]
+    }
+  ],
+  "execution_goals": 0,
+  "ground_truth_limit": "repeated 2x2 retained 256 ID cells, not independent native 512 ground truth",
+  "inference_attempts": 1,
+  "manifest_sha256": "11f9fe0899926a07f666b060df50c29eff6b89219a454bdcada03f707dfb19c6",
+  "tensor_contract": [
+    {
+      "bytes": 48,
+      "elements": 12,
+      "file": "session_outputs_after_Run_0.bin",
+      "index": 0,
+      "name": "boxes",
+      "onnx_element_type": 1,
+      "shape": [
+        3,
+        4
+      ]
+    },
+    {
+      "bytes": 24,
+      "elements": 3,
+      "file": "session_outputs_after_Run_1.bin",
+      "index": 1,
+      "name": "labels",
+      "onnx_element_type": 7,
+      "shape": [
+        3
+      ]
+    },
+    {
+      "bytes": 12,
+      "elements": 3,
+      "file": "session_outputs_after_Run_2.bin",
+      "index": 2,
+      "name": "scores",
+      "onnx_element_type": 1,
+      "shape": [
+        3
+      ]
+    },
+    {
+      "bytes": 3145728,
+      "elements": 786432,
+      "file": "session_outputs_after_Run_3.bin",
+      "index": 3,
+      "name": "masks",
+      "onnx_element_type": 1,
+      "shape": [
+        3,
+        1,
+        512,
+        512
+      ]
+    }
+  ],
+  "uncertainty": "graph-internal mask-head versus paste/resize contribution unobserved; no internal graph tensors requested"
+}

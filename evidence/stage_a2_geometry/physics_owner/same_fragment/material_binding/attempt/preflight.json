@@ -1,0 +1,36 @@
+{
+  "session": "b973ddbbca2c41639d5350db47bdac74",
+  "output": "/tmp/stage_a2_material_41ab8565_20261010",
+  "binary": "/tmp/stage_a2_live_fragment_build/stage_a_gazebo_fragment_capture",
+  "owner": "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so",
+  "world": "/tmp/stage_a2_material_41ab8565_20261010/world.sdf",
+  "input_world": "/tmp/workcell_stage_a2_separated/physical_world.sdf",
+  "input_world_sha256": "1ac9bf3adea8f732607c84c80ab6160bc7f40ab32ab6ce2743f40cf9631f0884",
+  "execution_goals": 0,
+  "debugger": "/usr/bin/gdb",
+  "debugger_sha256": "a6222ff0f450ca040e3479c04fdb7d0f1e0cabb099688270e720b7115d933c3d",
+  "owner_qualification_sha256": {
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/pre_run.json": "37fd36af21c0b324dd01f3b8f27ab472f8553574588c6bee9f16fc9cece6b174",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/result.json.gz": "82826751aaadfb9fcdf974cdd5fb1127e4f7a5d1bfdc7358698beec8a3165749",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/exit.json": "1e3f6691f455051e8adb15d961e4bf3c7a17e83dd88b2afdd13315cc288250bb",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/loaded_sha256.json": "db8ea5f65bf4acfdc1eb243a2953efc9a2766f4bf8965421f311e37cc67c8388",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/identity_metadata/result.json": "9050ddff291d9088b9926188fb79942e50dfc9ea23c5917ae000ac4150a2ee09"
+  },
+  "geometry_scope": "unchanged authored separated cubes only; support/bin omitted; no contact claim",
+  "binary_sha256": "4fb15a27dcfc277da55fe4985e98f8d4f72663b8dd5d623a9c601fb56651945e",
+  "owner_sha256": "0f4a2dda8d7bfd67745b03493254a9d91ea66bb36dcb2d78440fbf5809ff072a",
+  "world_sha256": "55a70bec16c5646aa27ee6d5f59f2497672ba0e3cdade44c0bcf72b746c833b3",
+  "source_sha256": {
+    "scripts/stage_a_rgbd/gazebo_fragment_capture.cpp": "5216ae5fa3f0700f7a9ddf04f7f2b1f589a09f44478ce9a8f1eaaac9b49250d1",
+    "scripts/stage_a_rgbd/fragment_mrt.hh": "b70a619781b13aaa546791b14756300bfccaaa1aca5a79a19ff594ca546d600e",
+    "scripts/stage_a_rgbd/gl_context_witness.hh": "f69ed63bade0d39b72714ad1dcd90043fbd1ca8b23b8a14f9a3fd8d7de1b7b3e",
+    "scripts/stage_a_rgbd/gl_context_check.hh": "4b9035e37cd5dab6e8da55528ee40f0404055f6d91b10a45b5a980173a943df1",
+    "scripts/stage_a_rgbd/material_contract.hh": "0100896ed4f8c3d6eae80a5635129904cc8e0240b3fcf79c49b7dcc7d0fd9929",
+    "scripts/stage_a_rgbd/material_witness.hh": "e701c6127eff15dd2f8db8720c55999b12d75e35eebe920af051aae3ef797785",
+    "scripts/stage_a_rgbd/inventory_compare.hh": "d9844e5f6f52543e679b9035689a77a7a0164407120bb5aff707f6f3ad87b705",
+    "scripts/stage_a_rgbd/inventory_ecm_diagnostics.hh": "429598724fd48c87ceffb2cce7817dffe7d62eae7a8ddde83b39afad4a745574",
+    "scripts/stage_a_rgbd/renderer_identity.hh": "8d665af6c101a1738dca8d1eb41c431f3164d59fe084d7c193322d178dd101b5",
+    "scripts/stage_a_rgbd/renderer_identity_check.hh": "79a43e9f66ce41196807b46ddef9a81755c10b870edc7ba6e9a152f9408949f0",
+    "scripts/stage_a_gazebo_fragment.py": "3392999d56994d274acac996ccb7e18f754376a1f90dfcd03227299ef7da3c53"
+  }
+}

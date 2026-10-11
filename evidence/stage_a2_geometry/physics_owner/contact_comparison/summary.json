@@ -1,0 +1,99 @@
+{
+  "baseline": "fa3d27ea0c189ff1ff43d14681a86bac56b6aeeb",
+  "runtime_comparison_runs": 1,
+  "server_runs": 2,
+  "runner_exit": 2,
+  "stock_contact_occurrence_positions_counts": "PASS_FINITE_SAMPLES",
+  "instrumented_contact_occurrence_positions_counts": "PASS_FINITE_SAMPLES",
+  "normal_depth_comparison": "BLOCKED_STOCK_API_OMITS_FIELDS",
+  "runtime_equivalence": "BLOCKED_MISSING_NORMAL_OR_DEPTH",
+  "physics_penetration_upper_m": null,
+  "epd_identity_binding": "BLOCKED",
+  "moveit_started": false,
+  "execution_goals": 0,
+  "steps": [
+    {
+      "step": 100,
+      "stamp_ns": 100000000,
+      "requested_collision_count": 8,
+      "unique_pair_count": 2,
+      "contact_point_count": 8,
+      "owner_contact_points_equal_stock_ecm": true,
+      "backend_ecm_maximum_matrix_entry_difference_by_collision": {
+        "23": 9.884279075778046e-07,
+        "27": 9.884279075778046e-07
+      }
+    },
+    {
+      "step": 250,
+      "stamp_ns": 250000000,
+      "requested_collision_count": 8,
+      "unique_pair_count": 2,
+      "contact_point_count": 8,
+      "owner_contact_points_equal_stock_ecm": true,
+      "backend_ecm_maximum_matrix_entry_difference_by_collision": {
+        "23": 7.709975757795584e-07,
+        "27": 7.709975757795584e-07
+      }
+    },
+    {
+      "step": 500,
+      "stamp_ns": 500000000,
+      "requested_collision_count": 8,
+      "unique_pair_count": 2,
+      "contact_point_count": 8,
+      "owner_contact_points_equal_stock_ecm": true,
+      "backend_ecm_maximum_matrix_entry_difference_by_collision": {
+        "23": 5.051197526882711e-07,
+        "27": 5.051197526882711e-07
+      }
+    },
+    {
+      "step": 1000,
+      "stamp_ns": 1000000000,
+      "requested_collision_count": 8,
+      "unique_pair_count": 2,
+      "contact_point_count": 8,
+      "owner_contact_points_equal_stock_ecm": true,
+      "backend_ecm_maximum_matrix_entry_difference_by_collision": {
+        "23": 5.697354330119753e-07,
+        "27": 5.697354330119753e-07
+      }
+    },
+    {
+      "step": 1500,
+      "stamp_ns": 1500000000,
+      "requested_collision_count": 8,
+      "unique_pair_count": 2,
+      "contact_point_count": 8,
+      "owner_contact_points_equal_stock_ecm": true,
+      "backend_ecm_maximum_matrix_entry_difference_by_collision": {
+        "23": 5.701599894141623e-07,
+        "27": 5.701599894141623e-07
+      }
+    },
+    {
+      "step": 2000,
+      "stamp_ns": 2000000000,
+      "requested_collision_count": 8,
+      "unique_pair_count": 2,
+      "contact_point_count": 8,
+      "owner_contact_points_equal_stock_ecm": true,
+      "backend_ecm_maximum_matrix_entry_difference_by_collision": {
+        "23": 5.701626901322837e-07,
+        "27": 5.701626901322837e-07
+      }
+    }
+  ],
+  "stock_and_instrumented_ecm_traces_identical": true,
+  "contact_phase": "LastCollisionResult from ForwardStep, read after UpdateCollisions; contact evaluation is not asserted to be post-integration geometry",
+  "artifact_sha256": {
+    "instrumented_ecm.jsonl": "de38d108296f531af21340a0b00d9b0ec656d0b3c3618ea184a74af0921c9bdb",
+    "stock_ecm.jsonl": "de38d108296f531af21340a0b00d9b0ec656d0b3c3618ea184a74af0921c9bdb",
+    "comparison.json": "9697f8088b51903f936ec0a2f7959d083c2975ad9d609c4fb7139bd44ffa5c3a",
+    "owner_readback.jsonl": "5197f42c7589ba769c27317ded8ca5bc5383768b2c00d327d777c1a1afb4298a",
+    "installed_backend_features.txt": "04e406cd3e1000dde00e108c1d0136b103dde71eb1172437c98593298320d143"
+  },
+  "installed_dart_supports_contact_surface_callback": false,
+  "get_contacts_feature_present": true
+}

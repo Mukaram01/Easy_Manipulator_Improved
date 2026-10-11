@@ -1,0 +1,14 @@
+{
+  "command": [
+    "timeout",
+    "60s",
+    "/tmp/stage_a2_fragment_build/stage_a_fragment_mrt",
+    "/tmp/stage_a2_fragment_reserved.json"
+  ],
+  "environment_override": {
+    "LIBGL_ALWAYS_SOFTWARE": "1"
+  },
+  "exit_code": -6,
+  "elapsed_s": 0.8753677239874378,
+  "native_runs": 1
+}

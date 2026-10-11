@@ -1,0 +1,8 @@
+Consolidate compiler generated dependencies of target workcell_owner_physics
+[ 50%] Building CXX object CMakeFiles/workcell_owner_physics.dir/source/Physics.cc.o
+[100%] Linking CXX shared library libworkcell_owner_physics.so
+[100%] Built target workcell_owner_physics
+Consolidate compiler generated dependencies of target owner_loader_preflight
+[ 50%] Building CXX object CMakeFiles/owner_loader_preflight.dir/loader_preflight.cpp.o
+[100%] Linking CXX executable owner_loader_preflight
+[100%] Built target owner_loader_preflight

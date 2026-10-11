@@ -1,0 +1,8 @@
+Consolidate compiler generated dependencies of target owner_loader_preflight
+[ 50%] Building CXX object CMakeFiles/owner_loader_preflight.dir/loader_preflight.cpp.o
+[100%] Linking CXX executable owner_loader_preflight
+[100%] Built target owner_loader_preflight
+Consolidate compiler generated dependencies of target owner_bindings_test
+[100%] Built target owner_bindings_test
+Consolidate compiler generated dependencies of target owner_identity_inventory_test
+[100%] Built target owner_identity_inventory_test

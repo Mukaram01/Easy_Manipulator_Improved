@@ -810,6 +810,85 @@ TEST(ControllerCertificate, KnownClearRealStageAApproach) {
   EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
 }
 
+TEST(ControllerCertificate, ClosingFromExactLowerLimitCertifiesButNegativeMotionRejects) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
+  auto* joint=const_cast<moveit::core::JointModel*>(f.scene->getRobotModel()->getJointModel("lift"));
+  auto bounds=joint->getVariableBounds("lift");bounds.min_position_=0.;
+  joint->setVariableBounds("lift",bounds);
+  auto trajectory=ordinaryQuintic(f,.1,0.);
+  trajectory->getWayPointPtr(1)->setVariablePosition("lift",.005);
+  trajectory->getWayPointPtr(1)->setVariableVelocity("lift",.1);
+  trajectory->getWayPointPtr(1)->setVariableAcceleration("lift",1.);
+  EXPECT_EQ(workcell::controller_certificate::certify(*trajectory,*f.scene).result,
+    workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  trajectory->getWayPointPtr(0)->setVariableVelocity("lift",-.1);
+  const auto unsafe=workcell::controller_certificate::certify(*trajectory,*f.scene);
+  EXPECT_NE(unsafe.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+TEST(ControllerCertificate, PositionRangeEnclosesInstalledJtcNearZeroAndCancellation) {
+  using namespace workcell::controller_certificate;
+  joint_trajectory_controller::Trajectory jtc;
+  for(double offset:{0.,.2,-.1}) {
+    trajectory_msgs::msg::JointTrajectoryPoint a,b;
+    a.positions={offset};b.positions={offset+.005};
+    a.velocities={0.};b.velocities={.1};a.accelerations={0.};b.accelerations={1.};
+    for(auto times:std::vector<std::pair<int64_t,int64_t>>{{1,1},{1,2},{1,1000},{1000,1000000},{1000000,99999999}}) {
+      const auto range=controllerPositionRange(a,b,0,100000000,times.first,times.second);
+      for(int64_t t:{times.first,(times.first+times.second)/2,times.second}) {
+        trajectory_msgs::msg::JointTrajectoryPoint sample;
+        jtc.interpolate_between_points(rclcpp::Time(0),a,rclcpp::Time(100000000),b,rclcpp::Time(t),sample);
+        EXPECT_GE(sample.positions[0],range.lower());EXPECT_LE(sample.positions[0],range.upper());
+      }
+      // A broad natural interval may be inconclusive; narrow positive
+      // intervals must prove the boundary without a tolerance.
+      if(offset==0.&&times.second<=2) { EXPECT_GE(range.lower(),0.); }
+    }
+  }
+}
+TEST(ControllerCertificate, PositionRangeRetainsNegativeAndOvershootEvidence) {
+  using namespace workcell::controller_certificate;
+  trajectory_msgs::msg::JointTrajectoryPoint a,b;
+  a.positions={0.};b.positions={.005};a.velocities={-.1};b.velocities={0.};
+  a.accelerations={0.};b.accelerations={0.};
+  EXPECT_LT(controllerPositionRange(a,b,0,100000000,1,1000).upper(),0.);
+  a.velocities={1.};b.velocities={-1.};
+  EXPECT_GT(controllerPositionRange(a,b,0,100000000,50000000,50000000).lower(),.005);
+}
+TEST(ControllerCertificate, RealStageA2ClosingAndForbiddenTargetContact) {
+  const char* directory=std::getenv("WORKCELL_STAGE_A2_CLOSING_FIXTURE");
+  if(!directory) GTEST_SKIP()<<"Set the historical scene/trajectory fixture directory for the real Stage A acceptance gate";
+  auto read=[&](const std::string& name) {
+    std::ifstream file(std::string(directory)+"/"+name,std::ios::binary);
+    if(!file) throw std::runtime_error("Missing real Stage A evidence: "+name);
+    return std::string(std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>());
+  };
+  auto u=urdf::parseURDF(read("robot.urdf"));ASSERT_TRUE(u);
+  auto semantic=std::make_shared<srdf::Model>();ASSERT_TRUE(semantic->initString(*u,read("robot.srdf")));
+  auto model=std::make_shared<moveit::core::RobotModel>(u,semantic);
+  auto deserialize=[&](const std::string& name,auto& message) {
+    auto bytes=read(name);rclcpp::SerializedMessage serialized(bytes.size());
+    auto& raw=serialized.get_rcl_serialized_message();std::memcpy(raw.buffer,bytes.data(),bytes.size());raw.buffer_length=bytes.size();
+    rclcpp::Serialization<std::decay_t<decltype(message)>> serializer;serializer.deserialize_message(&serialized,&message);
+  };
+  moveit_msgs::msg::PlanningScene message;deserialize("scene.cdr",message);
+  planning_scene::PlanningScene scene(model);scene.setPlanningSceneMsg(message);
+  moveit_msgs::msg::RobotTrajectory emitted;deserialize("trajectory.cdr",emitted);
+  ASSERT_EQ(emitted.joint_trajectory.points.size(),16U); // actual MoveIt gripper closing
+  robot_trajectory::RobotTrajectory trajectory(model,"gripper");
+  trajectory.setRobotTrajectoryMsg(scene.getCurrentState(),emitted);
+  const auto report=workcell::controller_certificate::certify(trajectory,scene);
+  std::cout<<"REAL_STAGE_A result="<<int(report.result)<<" reason="<<report.reason<<" inspected="<<report.inspected
+    <<" certified="<<report.certified<<" subdivided="<<report.subdivided<<" depth="<<report.deepest
+    <<" seconds="<<report.wall_seconds<<" failure=["<<report.failure_begin_ns<<","<<report.failure_end_ns<<"]\n";
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  // Removing phase-specific fingertip permissions must still reject contact.
+  scene.getAllowedCollisionMatrixNonConst().setEntry("runtime::epd_24056000000_4","gripper_finger1_finger_tip_link",false);
+  scene.getAllowedCollisionMatrixNonConst().setEntry("runtime::epd_24056000000_4","gripper_finger2_finger_tip_link",false);
+  const auto unsafe=workcell::controller_certificate::certify(trajectory,scene);
+  EXPECT_EQ(unsafe.result,workcell::ControllerCertificate::COLLISION);
+  EXPECT_EQ(unsafe.reason,"FCL_COLLISION");
+}
+
 #include <geometric_shapes/mesh_operations.h>
 struct DetachedFixture {
   moveit::core::RobotModelPtr model;

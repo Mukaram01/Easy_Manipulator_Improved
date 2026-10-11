@@ -1,0 +1,53 @@
+{
+  "decision": "PASS_SIMULATION_ONLY_NUMERICS",
+  "scope": "six finite contact-input states of the pinned instrumented runtime; two 25mm BOXes and fixed constructed support BOX",
+  "physical_penetration_upper_m": 3.6698679250213306e-06,
+  "final_contact_input_physical_penetration_upper_m": 9.810104940194408e-09,
+  "maximum_cube_conversion_corner_error_linf_m": 4.7243685999152796e-17,
+  "support_transform_geometry_error_m": 0,
+  "contact_authority": false,
+  "support_contact_permission": false,
+  "epd_association": "BLOCKED_RENDERER_PHYSICS_EXPOSURE_AND_UNIQUE_VISIBLE_IDENTITY",
+  "native_extraction": "NOT_RUN",
+  "moveit_started": false,
+  "execution_goals": 0,
+  "saved_geometry_contacts_exactly_equal": true,
+  "covered_states": [
+    {
+      "contact_evaluation_step": 100,
+      "dart_input_frame": 99,
+      "input_nominal_stamp_ns": 99000000,
+      "reported_contact_stamp_ns": 100000000
+    },
+    {
+      "contact_evaluation_step": 250,
+      "dart_input_frame": 249,
+      "input_nominal_stamp_ns": 249000000,
+      "reported_contact_stamp_ns": 250000000
+    },
+    {
+      "contact_evaluation_step": 500,
+      "dart_input_frame": 499,
+      "input_nominal_stamp_ns": 499000000,
+      "reported_contact_stamp_ns": 500000000
+    },
+    {
+      "contact_evaluation_step": 1000,
+      "dart_input_frame": 999,
+      "input_nominal_stamp_ns": 999000000,
+      "reported_contact_stamp_ns": 1000000000
+    },
+    {
+      "contact_evaluation_step": 1500,
+      "dart_input_frame": 1499,
+      "input_nominal_stamp_ns": 1499000000,
+      "reported_contact_stamp_ns": 1500000000
+    },
+    {
+      "contact_evaluation_step": 2000,
+      "dart_input_frame": 1999,
+      "input_nominal_stamp_ns": 1999000000,
+      "reported_contact_stamp_ns": 2000000000
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "baseline": "917f39dced28d8c40a60aa29d22d6e476a7f32aa",
+  "scope": "standalone capability probe, no Gazebo world or camera frame",
+  "world_definition": "evidence/stage_a2_geometry/physics_owner/ode_numeric/original_world.sdf",
+  "world_sha256": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+  "world_render_engine": "ogre",
+  "binary": "/tmp/pytest-of-user/pytest-current/render_probe_build0/stage_a_render_identity_probe",
+  "binary_sha256": "1d437d2fa00d314f18687726c3ba7bbac364a984eb919f9d4ff1de889fee244a",
+  "loaded_libraries": {
+    "/usr/lib/x86_64-linux-gnu/ign-rendering-6/engine-plugins/libignition-rendering6-ogre.so.6.6.4": "eb7965c733f4b0bb07f881699122f7c4c6a37e7543d9fcfa4c393b6e8b92b69c",
+    "/usr/lib/x86_64-linux-gnu/libOgreMain.so.1.9.0": "51690385e79f1e9efa26205af2142ce96f560d067ffbcdfe3a6929971b60ac2b",
+    "/usr/lib/x86_64-linux-gnu/libOgreOverlay.so.1.9.0": "01abde494063029d37f166fb05f6a93a0650a18ac077e27527f3993d5db66ac7",
+    "/usr/lib/x86_64-linux-gnu/libOgrePaging.so.1.9.0": "32774916d09884dbafdf8744071e157cf807e796f51c444dea7a9cd1803b3e6b",
+    "/usr/lib/x86_64-linux-gnu/libOgreRTShaderSystem.so.1.9.0": "932ab5bf4d83eabdd34d446c43de5c9ac39ceb12a3a4aa525fe5c46a85837aab",
+    "/usr/lib/x86_64-linux-gnu/libOgreTerrain.so.1.9.0": "7db619aff0d934de4c27502189bca2e75a106399e39cf5516ed5fdbf770a25bf",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6.so.6.6.4": "4ae221f1e0c906be560e8b6421b12e3fc34fed16183ea384b8acb719e5363768"
+  },
+  "upstream_source": {
+    "Sensors.cc": {
+      "sha256": "6c1c654d1e7b4f9fddfe29b5025c05c77a1af6fd576e9437960bac333efdff2e",
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/sensors/Sensors.cc"
+    },
+    "RenderUtil.cc": {
+      "sha256": "3bda8e8fff5bb32385632bd729df74df8381547998fd34fb88dc3f2fe2d833fe",
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/rendering/RenderUtil.cc"
+    }
+  },
+  "lifecycle_source_binary_equivalence": "UNQUALIFIED; matching upstream tag inspection only",
+  "genuine_captures": 0,
+  "contact_authority": false,
+  "moveit_started": false,
+  "execution_goals": 0
+}

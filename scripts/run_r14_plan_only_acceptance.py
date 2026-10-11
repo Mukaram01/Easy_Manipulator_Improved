@@ -3,6 +3,7 @@
 import argparse
 import json
 import hashlib
+import math
 import os
 import re
 from pathlib import Path
@@ -114,6 +115,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--timeout', type=float, default=120, help='Total launch/planning budget; cleanup adds at most 16 seconds per process')
+    parser.add_argument('--candidate-wall-budget', type=float,
+                        help='Explicit plan-only full-cycle budget including controller certification (<=300 seconds)')
     parser.add_argument('--domain-id', type=int, default=179, help='An unused, isolated ROS domain')
     parser.add_argument('--execute', action='store_true', help='R1.5: execute the complete cycle on exclusively mock hardware')
     parser.add_argument('--launch-rviz', action='store_true', help='Show the single owned scene in RViz')
@@ -123,6 +126,9 @@ def main():
     parser.add_argument('--detections', type=Path, help='Replay observation input, never a task override')
     parser.add_argument('--stream-status', action='store_true', help='Emit structured stage/result events for Studio')
     args = parser.parse_args()
+    if args.candidate_wall_budget is not None and (args.execute or
+            not math.isfinite(args.candidate_wall_budget) or not 0 < args.candidate_wall_budget <= 300):
+        parser.error('--candidate-wall-budget requires plan-only mode and finite seconds in (0,300]')
     if not 0 < args.timeout <= 900 or not 0 <= args.domain_id <= 232:
         parser.error('timeout must be in (0,900]; domain-id in [0,232]')
     os.environ.update(ROS_DOMAIN_ID=str(args.domain_id), ROS_LOCALHOST_ONLY='1')
@@ -231,6 +237,7 @@ def main():
                 '--detections', str(args.detections or root/'config/runtime/r1_4_replay.yaml'), '--replay',
                 '--timeout', str(min(300, max(1, deadline-time.monotonic()-5))), '--summary-output', str(summary_path)]
                 + (['--resolve-task'] if args.resolve_task else [] if uses_authored_task else ['--task-request', str(root/'config/runtime/r1_4b_task.yaml')])
+                + (['--candidate-wall-budget', str(args.candidate_wall_budget)] if args.candidate_wall_budget is not None else [])
                 + (['--start'] if args.execute else []),
                 stdout=elog, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: executor.poll() is not None)

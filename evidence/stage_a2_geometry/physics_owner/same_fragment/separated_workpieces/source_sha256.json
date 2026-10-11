@@ -1,0 +1,7 @@
+{
+  "scripts/stage_a_fragment_camera.py": "312753b8e89ab41f374e5aad2b0fb413d3e74ea1b12e3b1392d60c752c1cfb2a",
+  "scripts/stage_a_gazebo_fragment.py": "54db9d6acfd23e3a1eaa9fb09f332db4b454b62ecb87f828a7687197e92861df",
+  "scripts/stage_a_epd_retained.py": "fb23991be23f4b6c8d17d9d785edad75a336930fa1e8a2218c42864579e9b20f",
+  "scripts/stage_a_rgbd/gazebo_fragment_capture.cpp": "9dcd1d7b68569fd721acddaca873e490620549175c30f3ccb560716a63544658",
+  "tests/test_stage_a_fragment_camera.py": "37bf683abdfaaaafd4610479445d23945dcc78bd77450d05b07327b25a7a2174"
+}

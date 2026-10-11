@@ -1,0 +1,39 @@
+{
+  "schema": "workcell_fragment_verification_attempt/v1",
+  "scope": "external supervision of exactly one corrected native fixture attempt; no image qualification",
+  "baseline": "36c2637f85ffbb4ba1daffefa8f97c99994a1cc2",
+  "executed_binary_sha256": "091aa50cb926b4a97e13df01ab5c5f27ef215afd69e08c49a33b2633f3e5b5c6",
+  "executed_source_sha256": "c2cceb47fbb5d57186f3b591ec564cbe083e677a5386b4c61d8247f8bc1e3b93",
+  "fixture": "BLOCKED_BEFORE_RENDER",
+  "exit_code": -6,
+  "termination": "SIGABRT",
+  "native_runs": 1,
+  "output_files_present": {
+    "": false,
+    ".rgb8": false,
+    ".ids.u32": false
+  },
+  "actual_driver": null,
+  "actual_loaded_libraries": null,
+  "driver_provenance_status": "swrast installed-library hash verified pre-run; native report unavailable after abort, not a loaded-library witness",
+  "render_pass_count": null,
+  "actual_attachment_formats": null,
+  "depth_test_write_state": null,
+  "visible_id_counts": null,
+  "uint32_preservation": "NOT_REACHED",
+  "occlusion": "NOT_REACHED",
+  "strict_actual_buffer_diagnostic": "NOT_RUN_NO_BUFFERS",
+  "capture_mutation_tests": "NOT_RUN_NO_BUFFERS",
+  "qualified_pixel_count": 0,
+  "epd_capture_runs": 0,
+  "execution_goals": 0,
+  "contact_authority": false,
+  "minimal_next_fix": "nd->setNumTargetPass(1) before nd->addTargetPass(\"fragment_mrt\")",
+  "installed_node_definition_header_sha256": "b89a76e7285213f9b9bade76a2a40d02bbd2a3bbcd5e3be18d5d5733e4b7e109",
+  "artifact_sha256": {
+    "preflight.json": "84c05f1e8d205cf7ac55666bf5e0eea42d271efa7f6641e724f2bc1fb65c5ec7",
+    "execution.json": "ca6d4421b0d90a9872a813b3879ec342e1967d4bc2759d9fffbc38c7aaeb7baa",
+    "stderr.log": "a5dc2c63a770a31c9ffd8875a7680f2a9edc79cfdf947c5b81d66b3d7252b433",
+    "stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

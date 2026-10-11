@@ -1,0 +1,211 @@
+{
+  "baseline_commit": "2824a2c545bd8c394e7038800961649b54d83864",
+  "runtime_directory": "/tmp/workcell_stage_a2_dimensions",
+  "authored_world_sha256": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+  "loaded_geometry": {
+    "capture_stamp_ns": 27639000000,
+    "complete": true,
+    "models": [
+      {
+        "name": "pick_support",
+        "static": true
+      },
+      {
+        "name": "target_bin_physics",
+        "static": true
+      },
+      {
+        "collision": "collision",
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "link": "link",
+        "name": "part_00",
+        "static": false,
+        "supported": true
+      },
+      {
+        "collision": "collision",
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "link": "link",
+        "name": "part_01",
+        "static": false,
+        "supported": true
+      },
+      {
+        "name": "stage_a_camera",
+        "static": true
+      }
+    ],
+    "query_clock_ns": 27855000000,
+    "source": "live_generate_world_sdf",
+    "world": "a0"
+  },
+  "epd_detections": 2,
+  "valid_surfaces": 2,
+  "collision_ready_objects": 2,
+  "dimension_qualification": "PASS: real fresh capture, explicit uniform inventory/profile",
+  "old_capture_dimension_qualification": "BLOCKED: loaded collision definition record missing; not retrofitted",
+  "objects": [
+    {
+      "object_id": "epd_27639000000_0",
+      "dimension_specification": {
+        "scope": "simulation_only_replay",
+        "source_world_sha256": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+        "loaded_geometry_source": "live_generate_world_sdf",
+        "world": "a0",
+        "capture_stamp_ns": 27639000000,
+        "profile_id": "stage_a_cube_25mm",
+        "inventory": [
+          {
+            "name": "part_00",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          },
+          {
+            "name": "part_01",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          }
+        ],
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "association": "explicit uniform inventory/profile; not simulator instance identification",
+        "numeric_error_m": 6.93889390390723e-18,
+        "numeric_error_scope": "dimension decimal/binary conversion only; not pose, depth or physics error",
+        "physical_metrology": false,
+        "contact_authority": false
+      },
+      "collision_dimensions_m": [
+        0.040615989692248965,
+        0.040615989692248965,
+        0.040615989692248965
+      ],
+      "centre_uncertainty_m": 0.002781151900472069,
+      "orientation_uncertainty_rad": 0.22689280275926452,
+      "original_25_25mm_height_counterexample": "excluded by qualified specification only",
+      "remaining_pose_bound_witness": {
+        "downshift_m": 0.0002,
+        "within_exported_centre_bound": true,
+        "lowest_corner_z_m": -0.00020070190429690576,
+        "interpretation": "analytical configuration within exported pose bounds; not actual physical penetration"
+      },
+      "support_contact_authority": false,
+      "admission": "BLOCKED: EXTRACTION_INITIAL_DEPTH"
+    },
+    {
+      "object_id": "epd_27639000000_1",
+      "dimension_specification": {
+        "scope": "simulation_only_replay",
+        "source_world_sha256": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+        "loaded_geometry_source": "live_generate_world_sdf",
+        "world": "a0",
+        "capture_stamp_ns": 27639000000,
+        "profile_id": "stage_a_cube_25mm",
+        "inventory": [
+          {
+            "name": "part_00",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          },
+          {
+            "name": "part_01",
+            "static": false,
+            "supported": true,
+            "link": "link",
+            "collision": "collision",
+            "dimensions_m": [
+              0.025,
+              0.025,
+              0.025
+            ]
+          }
+        ],
+        "dimensions_m": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "association": "explicit uniform inventory/profile; not simulator instance identification",
+        "numeric_error_m": 6.93889390390723e-18,
+        "numeric_error_scope": "dimension decimal/binary conversion only; not pose, depth or physics error",
+        "physical_metrology": false,
+        "contact_authority": false
+      },
+      "collision_dimensions_m": [
+        0.04234847888320927,
+        0.04234847888320927,
+        0.04234847888320927
+      ],
+      "centre_uncertainty_m": 0.002961785183777331,
+      "orientation_uncertainty_rad": 0.25879505184902307,
+      "original_25_25mm_height_counterexample": "excluded by qualified specification only",
+      "remaining_pose_bound_witness": {
+        "downshift_m": 0.0002,
+        "within_exported_centre_bound": true,
+        "lowest_corner_z_m": -0.00020305869514377316,
+        "interpretation": "analytical configuration within exported pose bounds; not actual physical penetration"
+      },
+      "support_contact_authority": false,
+      "admission": "BLOCKED: EXTRACTION_INITIAL_DEPTH"
+    }
+  ],
+  "support_qualification": "BLOCKED: unchanged pose bounds admit over-depth configurations; no qualified relative depth/calibration/roll-pitch error budget",
+  "native_contact_extension": "NOT IMPLEMENTED: upstream support proof missing",
+  "full_plan_only_acceptance": "NOT RUN: admission BLOCKED",
+  "all_moveit_stages": "NOT RUN",
+  "execution_goals_sent": 0,
+  "bridge_launched": false,
+  "shutdown": {
+    "owned_server_exit": 0,
+    "execution_goals_sent": 0
+  },
+  "envelopes_pose_uncertainty_thresholds_unchanged": true,
+  "next_action": "Qualify relative face/table depth, transform and roll-pitch bounds (roughly <99 micrometres total vertical budget for these nominal observations); then derive the supported physical set and extend native carried-motion certification.",
+  "hashes": {
+    "world.sdf": "8d2a1127a8e6963286a498d57e4f9be84c689d5da896ea5a28f8bbd813d2bc58",
+    "capture/snapshot.json": "12da7c2a7b92b1c365530dc72b03560dda6f533624628b7fecdb15a06e9b7e01",
+    "capture/depth.f32": "8857fe3f1ea523e61444622379522d6765b8ecf949068deeb440e74244e9e061",
+    "capture/rgb.png": "ad42412bef0f8521d821126a75979563908bb6470eced976e23800b95f547680",
+    "capture/world_snapshot_qualified.json": "b8a1ceb11fd88180566de5a139ec583f7426b3e10959748e8ebb905c5c90f5bb"
+  },
+  "verification": {
+    "focused_python_tests": "60 PASS",
+    "affected_capture_and_geometry_build": "PASS",
+    "masked_depth_geometry_ctest": "1 PASS",
+    "focused_independent_code_review": "no important defect",
+    "full_builder_build": "NOT RUN: unrelated to optional capture/snapshot changes"
+  },
+  "capture_binary_sha256": "09388b68730defac45d6d3658acd7a0231bc57ab74380147f74ee0d69510e46d",
+  "workpiece_profile_sha256": "f477feb2e5a39d85a3dd2ae1a47c8bfb06489f4a6e3e51d395e83fb9b1bd8a81"
+}

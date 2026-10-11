@@ -1,0 +1,12 @@
+{
+  "baseline_commit": "6106fe833e6683689201eaacd69b55da158ee988",
+  "independent_distance_check": "All raw/cropped metrics and complete report exactly equal independent float64 nearest-neighbour KDTree results; no SciPy dependency added to experiment",
+  "independent_review": "No important issues after cropped-path and deterministic-distance corrections",
+  "numpy": "1.26.4",
+  "opencv": "4.11.0",
+  "python": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+  "source_sha256": {
+    "scripts/stage_a_box_gate.py": "daee61d3245800672c745b3a0912865a929d95e05f66cc35ee4c117756bd28f1",
+    "tests/test_stage_a_box_gate.py": "82772bee0ecb0178c12bf7034872a9bece07ff737049943f1f316005628be3bc"
+  }
+}

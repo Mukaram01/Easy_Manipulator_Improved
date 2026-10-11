@@ -1,0 +1,151 @@
+{
+  "dart_ode": {
+    "path": "/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1",
+    "sha256": "cc914ae1d651bfd79fa7eb308c6f39a12174e8b59d0fb45318652f0eb61761ee",
+    "functions": [
+      {
+        "name": "collision_update",
+        "start": "0xb160",
+        "end": "0xb480"
+      },
+      {
+        "name": "box_ctor",
+        "start": "0xc7a0",
+        "end": "0xc7e0"
+      },
+      {
+        "name": "object_ctor",
+        "start": "0xcfa0",
+        "end": "0xd1e0"
+      }
+    ]
+  },
+  "ode": {
+    "path": "/usr/lib/x86_64-linux-gnu/libode.so.8.0.2",
+    "sha256": "0b40593ed29a7b4f72f364a989ac8d8ea0bdab2a7578518366048b5128c0343b",
+    "functions": [
+      {
+        "name": "normalize",
+        "start": "0x68b10",
+        "end": "0x68c00"
+      },
+      {
+        "name": "rotation",
+        "start": "0x710f0",
+        "end": "0x71260"
+      },
+      {
+        "name": "body_quaternion",
+        "start": "0x63840",
+        "end": "0x63900"
+      },
+      {
+        "name": "body_position",
+        "start": "0x63700",
+        "end": "0x63764"
+      },
+      {
+        "name": "geom_composition",
+        "start": "0x3be50",
+        "end": "0x3c100"
+      },
+      {
+        "name": "box_ctor",
+        "start": "0x31510",
+        "end": "0x31610"
+      },
+      {
+        "name": "geom_ctor",
+        "start": "0x3b5f0",
+        "end": "0x3b71f"
+      },
+      {
+        "name": "geom_body",
+        "start": "0x3c540",
+        "end": "0x3c7ce"
+      },
+      {
+        "name": "offset_position",
+        "start": "0x3dbd0",
+        "end": "0x3dccf"
+      },
+      {
+        "name": "offset_quaternion",
+        "start": "0x3ddf0",
+        "end": "0x3ded0"
+      }
+    ]
+  },
+  "dart": {
+    "path": "/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1",
+    "sha256": "5a0048707f55903e0ba62f9bba76456b6f0eb850c1d5016ea499432c1bab089b",
+    "functions": [
+      {
+        "name": "world_step",
+        "start": "0x366e10",
+        "end": "0x367007"
+      },
+      {
+        "name": "collision_transform",
+        "start": "0x31dcf0",
+        "end": "0x31dd04"
+      }
+    ]
+  },
+  "backend": {
+    "path": "/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics5-dartsim-plugin.so.5.4.0",
+    "sha256": "44e5d8573b44ef1f555eba6f2fbf01c1f0ab657b0fd32016c441e884ec5e71a1",
+    "functions": [
+      {
+        "name": "forward_step",
+        "start": "0x1a7370",
+        "end": "0x1a777e"
+      }
+    ]
+  },
+  "source": {
+    "/tmp/stage_a2_ode_numeric_source/ode_0.16.2-1.dsc": "5bd430b3006cf7db17a772b098e78540a03fb39e1f249c7a39659cc421253ee8",
+    "/tmp/stage_a2_ode_numeric_source/rules": "0a6145f261957164680c72397e7c5777c0889a0065785081281717a41a9d368a",
+    "/tmp/stage_a2_ode_numeric_source/box.cpp": "1685d7bb93efa7dc32801b8ec691dfd2a91034079582b8a76694cc47f84ee6cb",
+    "/tmp/stage_a2_ode_numeric_source/collision_kernel.cpp": "432c0e2f8cd1e51b0b001d368b67bf29911c8f72b07fbbb6aae75b09d743d305",
+    "/tmp/stage_a2_ode_numeric_source/ode_0.16.2-1.debian.tar.xz": "f5ca5ff6f66ada4ceec77fc7f6bb048dc3d751555c644aa3d52043259ea3c1fd",
+    "/tmp/stage_a2_ode_numeric_source/rotation.cpp": "a909509ffaf4849dd6936e33633f8a8a9c09a08f593b26b61c8caa7147edc015",
+    "/tmp/stage_a2_ode_numeric_source/ode_0.16.2.orig.tar.gz": "b26aebdcb015e2d89720ef48e0cb2e8a3ca77915f89d853893e7cc861f810f22",
+    "/tmp/stage_a2_ode_numeric_source/odemath.cpp": "9d30c341ab8f148054dfdbdf3422dd024af0b1279f5474a946f73e042431fcba",
+    "/tmp/stage_a2_ode_numeric_source/ode.cpp": "eef7bddcd04b1981800be153994a3761835826b40c62f8a58898cd31bb4f6949"
+  },
+  "source_urls": [
+    "https://archive.ubuntu.com/ubuntu/pool/universe/o/ode/ode_0.16.2-1.dsc",
+    "https://archive.ubuntu.com/ubuntu/pool/universe/o/ode/ode_0.16.2.orig.tar.gz",
+    "https://archive.ubuntu.com/ubuntu/pool/universe/o/ode/ode_0.16.2-1.debian.tar.xz"
+  ],
+  "versions": "libdart-collision-ode6.12:amd64\t6.12.1+dfsg4-11build2\nlibdart6.12:amd64\t6.12.1+dfsg4-11build2\nlibeigen3-dev\t3.4.0-2ubuntu2\nlibode-dev\t2:0.16.2-1\nlibode8\t2:0.16.2-1\n",
+  "scope": "selected ELF operations audited; complete historical compiler flags and whole-library source reproduction not established",
+  "loaded_libraries": {
+    "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so": "58e990834de007fffe3f0f980177e872200e2360340e0d33cf5bf33e8fbfb2d2",
+    "/tmp/stage_a2_physics_contact_build/libworkcell_physics_contact_measurement.so": "718754a5a29463bcb6d55a786493c7d9ca44b0b1aa6592f1e7da5c12e87dc82b",
+    "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-scene-broadcaster-system.so.6.18.0": "2437676add6c768bce4fe2e48858de05f5d7619f5e412dd476a706f6e0ec0090",
+    "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-sensors-system.so.6.18.0": "1822b540859271d7f733f6e1e602792dbe5184e9b2b43f8a8e00c6654c1954d4",
+    "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-user-commands-system.so.6.18.0": "62b13f3e69cf68e081a54ed4fb155953848aa33199cd43c35e15cd480bfab2ca",
+    "/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics5-dartsim-plugin.so.5.4.0": "44e5d8573b44ef1f555eba6f2fbf01c1f0ab657b0fd32016c441e884ec5e71a1",
+    "/usr/lib/x86_64-linux-gnu/libdart-collision-bullet.so.6.12.1": "1ae679a95b5033ed801538468834785bd009ecf078ad695822bcb3c419060037",
+    "/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1": "cc914ae1d651bfd79fa7eb308c6f39a12174e8b59d0fb45318652f0eb61761ee",
+    "/usr/lib/x86_64-linux-gnu/libdart-external-odelcpsolver.so.6.12.1": "b9df61c1d196ee2652ce1ca94af8fff44e1e1ca5286f0fdd10cedd0e8981a31a",
+    "/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1": "5a0048707f55903e0ba62f9bba76456b6f0eb850c1d5016ea499432c1bab089b",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-gui.so.6.18.0": "641ae1539e310db64620c0df09b0c7d2154ef55f2836aea1431f4554e072675d",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-ign.so.6.18.0": "78e7226957ca35217ade7e358d7ea7ec8c8de31ead36c7c462cb4898d7a9085a",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-rendering.so.6.18.0": "e02946a7564ff486e735bd91641ea854ecfe5f7cc4976494d61ec2c3c3ffa4e9",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6.so.6.18.0": "8807ba9f771cff215bc50503b54e26dc0ca0691052e2444ad71f46b85e040b50",
+    "/usr/lib/x86_64-linux-gnu/libignition-physics5.so.5.4.0": "49510d312303dbb60a747f85c80c2af80d66d4823bb4081ee4ab8d05ad73600b",
+    "/usr/lib/x86_64-linux-gnu/libode.so.8.0.2": "0b40593ed29a7b4f72f364a989ac8d8ea0bdab2a7578518366048b5128c0343b"
+  },
+  "baseline": "787799f82bfc75f0b296c91f6a8cef1b9b436ecd",
+  "owner_compile_flags": "# CMAKE generated file: DO NOT EDIT!\n# Generated by \"Unix Makefiles\" Generator, CMake Version 3.22\n\n# compile CXX with /usr/bin/c++\nCXX_DEFINES = -DBOOST_ALL_NO_LIB -DBOOST_FILESYSTEM_DYN_LINK -DBOOST_SYSTEM_DYN_LINK -DBOOST_TEST_DYN_LINK -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_QMLMODELS_LIB -DQT_QML_LIB -DQT_QUICKCONTROLS2_LIB -DQT_QUICK_LIB -DQT_WIDGETS_LIB -Dworkcell_owner_physics_EXPORTS\n\nCXX_INCLUDES = -I/home/user/workcell_ws_stage_a2/scripts/stage_a_rgbd/physics_owner -isystem /usr/include/ignition/gazebo6 -isystem /usr/include/ignition/math6 -isystem /usr/include/ignition/plugin1 -isystem /usr/include/ignition/cmake2 -isystem /usr/include/ignition/common4 -isystem /usr/include/uuid -isystem /usr/include/ignition/fuel_tools7 -isystem /usr/include/ignition/msgs8 -isystem /usr/include/ignition/gui6 -isystem /usr/include/ignition/utils1 -isystem /usr/include/eigen3 -isystem /usr/include/ignition/transport11 -isystem /usr/include/x86_64-linux-gnu/qt5 -isystem /usr/include/x86_64-linux-gnu/qt5/QtCore -isystem /usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -isystem /usr/include/x86_64-linux-gnu/qt5/QtQml -isystem /usr/include/x86_64-linux-gnu/qt5/QtNetwork -isystem /usr/include/x86_64-linux-gnu/qt5/QtQuick -isystem /usr/include/x86_64-linux-gnu/qt5/QtQmlModels -isystem /usr/include/x86_64-linux-gnu/qt5/QtGui -isystem /usr/include/x86_64-linux-gnu/qt5/QtQuickControls2 -isystem /usr/include/x86_64-linux-gnu/qt5/QtWidgets -isystem /usr/include/ignition/physics5 -isystem /usr/include/ignition/rendering6 -isystem /usr/include/ignition/sdformat12 -isystem /opt/ros/humble/include -isystem /usr/include/jsoncpp\n\nCXX_FLAGS = -fPIC -O0 -g0 -fvisibility=hidden -I/usr/include/uuid -I/usr/include/x86_64-linux-gnu -fPIC\n\n",
+  "implementation_sha256": {
+    "scripts/stage_a_rgbd/physics_owner/owner_private.inc": "3e032d3701f243a0668bfcdd66f0ca0c8f1c92960b357924df3025110d6ff9b8",
+    "scripts/stage_a_rgbd/physics_owner/owner_readback.hh": "05534e9c0e0a6f70df8a54965e748f0519bc35157748356d5df9d2fc26ba3e14",
+    "scripts/stage_a_ode_numeric.py": "8a069a61b9cd37db26b35ef769a430bba43c7d518b8758d32ea82fd6eb93b884"
+  },
+  "ode_source_archive_checksums_match_dsc": true,
+  "ode_source_dsc_signature_verified": false
+}

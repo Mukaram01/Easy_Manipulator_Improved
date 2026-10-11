@@ -1,0 +1,20 @@
+{
+  "stock_observable_fields": "PASS_FINITE_SIX_SAMPLES",
+  "reference_owner_contact_fields": "PASS_EXACT_FINITE_SIX_SAMPLES",
+  "instrumented_shape_mapping": "PASS_COMPLETE_EIGHT_SHAPES",
+  "stored_dart_geometry": "PASS_EXACT_BINARY_AFFINE_GEOMETRY",
+  "physical_whole_shape": "BLOCKED_COLLISION_DETECTOR_TRANSFORM_ERROR",
+  "physical_penetration_upper_m": null,
+  "backend_error_bound_m": null,
+  "contact_authority": false,
+  "epd_association": "BLOCKED_UNQUALIFIED_RENDERER_PHYSICS_EXPOSURE_IDENTITY",
+  "native_extraction": "BLOCKED_NOT_RUN",
+  "moveit_started": false,
+  "execution_goals": 0,
+  "final_stored_dart_penetration_upper_m": 9.81010502258312e-09,
+  "max_sampled_stored_dart_penetration_upper_m": 3.669867925019725e-06,
+  "max_cube_ecm_translation_difference_m": {
+    "23": 9.884279075778046e-07,
+    "27": 9.884279075778046e-07
+  }
+}

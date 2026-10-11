@@ -1,0 +1,264 @@
+
+/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics5-dartsim-plugin.so.5.4.0:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+00000000001a7370 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base>:
+  1a7370:	f3 0f 1e fa          	endbr64
+  1a7374:	41 57                	push   %r15
+  1a7376:	41 56                	push   %r14
+  1a7378:	41 55                	push   %r13
+  1a737a:	49 89 fd             	mov    %rdi,%r13
+  1a737d:	41 54                	push   %r12
+  1a737f:	55                   	push   %rbp
+  1a7380:	4c 89 c5             	mov    %r8,%rbp
+  1a7383:	53                   	push   %rbx
+  1a7384:	48 83 ec 68          	sub    $0x68,%rsp
+  1a7388:	48 89 54 24 10       	mov    %rdx,0x10(%rsp)
+  1a738d:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+  1a7394:	00 00
+  1a7396:	48 89 44 24 58       	mov    %rax,0x58(%rsp)
+  1a739b:	48 8b 07             	mov    (%rdi),%rax
+  1a739e:	48 03 78 d8          	add    -0x28(%rax),%rdi
+  1a73a2:	e8 29 58 fa ff       	call   14cbd0 <ignition::physics::detail::Implementation::Reference(ignition::physics::Identity const&) const@plt>
+  1a73a7:	48 8b 35 fa 24 09 00 	mov    0x924fa(%rip),%rsi        # 2398a8 <typeinfo name for std::chrono::duration<long, std::ratio<1l, 1000000000l> >@@Base+0x6fd68>
+  1a73ae:	48 8d 7c 24 30       	lea    0x30(%rsp),%rdi
+  1a73b3:	48 8b 00             	mov    (%rax),%rax
+  1a73b6:	48 89 7c 24 28       	mov    %rdi,0x28(%rsp)
+  1a73bb:	48 8d 56 32          	lea    0x32(%rsi),%rdx
+  1a73bf:	48 89 04 24          	mov    %rax,(%rsp)
+  1a73c3:	48 8b 45 00          	mov    0x0(%rbp),%rax
+  1a73c7:	48 03 68 98          	add    -0x68(%rax),%rbp
+  1a73cb:	48 8b 45 00          	mov    0x0(%rbp),%rax
+  1a73cf:	48 03 68 d8          	add    -0x28(%rax),%rbp
+  1a73d3:	48 8b 45 00          	mov    0x0(%rbp),%rax
+  1a73d7:	48 8b 58 e8          	mov    -0x18(%rax),%rbx
+  1a73db:	48 8d 44 24 40       	lea    0x40(%rsp),%rax
+  1a73e0:	48 89 44 24 08       	mov    %rax,0x8(%rsp)
+  1a73e5:	48 01 eb             	add    %rbp,%rbx
+  1a73e8:	48 89 44 24 30       	mov    %rax,0x30(%rsp)
+  1a73ed:	48 89 5c 24 20       	mov    %rbx,0x20(%rsp)
+  1a73f2:	48 8d 6b 10          	lea    0x10(%rbx),%rbp
+  1a73f6:	e8 c5 e5 ff ff       	call   1a59c0 <std::__detail::_Compiler<std::__cxx11::regex_traits<char> >::_M_expression_term<true, true>(std::__detail::_Compiler<std::__cxx11::regex_traits<char> >::_BracketState&, std::__detail::_BracketMatcher<std::__cxx11::regex_traits<char>, true, true>&)::{lambda(char)#1}::operator()(char) const@@Base+0x6e0>
+  1a73fb:	4c 8b 7b 18          	mov    0x18(%rbx),%r15
+  1a73ff:	48 89 6c 24 18       	mov    %rbp,0x18(%rsp)
+  1a7404:	4c 8b 74 24 30       	mov    0x30(%rsp),%r14
+  1a7409:	4d 85 ff             	test   %r15,%r15
+  1a740c:	0f 84 fe 01 00 00    	je     1a7610 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2a0>
+  1a7412:	48 8b 5c 24 38       	mov    0x38(%rsp),%rbx
+  1a7417:	eb 10                	jmp    1a7429 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0xb9>
+  1a7419:	0f 1f 80 00 00 00 00 	nopl   0x0(%rax)
+  1a7420:	4d 8b 7f 18          	mov    0x18(%r15),%r15
+  1a7424:	4d 85 ff             	test   %r15,%r15
+  1a7427:	74 52                	je     1a747b <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x10b>
+  1a7429:	4d 8b 67 28          	mov    0x28(%r15),%r12
+  1a742d:	48 89 da             	mov    %rbx,%rdx
+  1a7430:	49 8b 7f 20          	mov    0x20(%r15),%rdi
+  1a7434:	49 39 dc             	cmp    %rbx,%r12
+  1a7437:	49 0f 46 d4          	cmovbe %r12,%rdx
+  1a743b:	48 85 d2             	test   %rdx,%rdx
+  1a743e:	74 0c                	je     1a744c <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0xdc>
+  1a7440:	4c 89 f6             	mov    %r14,%rsi
+  1a7443:	e8 78 58 fa ff       	call   14ccc0 <memcmp@plt>
+  1a7448:	85 c0                	test   %eax,%eax
+  1a744a:	75 1f                	jne    1a746b <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0xfb>
+  1a744c:	49 29 dc             	sub    %rbx,%r12
+  1a744f:	b8 00 00 00 80       	mov    $0x80000000,%eax
+  1a7454:	49 39 c4             	cmp    %rax,%r12
+  1a7457:	7d 16                	jge    1a746f <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0xff>
+  1a7459:	48 b8 ff ff ff 7f ff 	movabs $0xffffffff7fffffff,%rax
+  1a7460:	ff ff ff
+  1a7463:	49 39 c4             	cmp    %rax,%r12
+  1a7466:	7e b8                	jle    1a7420 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0xb0>
+  1a7468:	44 89 e0             	mov    %r12d,%eax
+  1a746b:	85 c0                	test   %eax,%eax
+  1a746d:	78 b1                	js     1a7420 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0xb0>
+  1a746f:	4c 89 fd             	mov    %r15,%rbp
+  1a7472:	4d 8b 7f 10          	mov    0x10(%r15),%r15
+  1a7476:	4d 85 ff             	test   %r15,%r15
+  1a7479:	75 ae                	jne    1a7429 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0xb9>
+  1a747b:	48 39 6c 24 18       	cmp    %rbp,0x18(%rsp)
+  1a7480:	0f 84 8a 01 00 00    	je     1a7610 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2a0>
+  1a7486:	4c 8b 65 28          	mov    0x28(%rbp),%r12
+  1a748a:	48 89 da             	mov    %rbx,%rdx
+  1a748d:	48 8b 75 20          	mov    0x20(%rbp),%rsi
+  1a7491:	49 39 dc             	cmp    %rbx,%r12
+  1a7494:	49 0f 46 d4          	cmovbe %r12,%rdx
+  1a7498:	48 85 d2             	test   %rdx,%rdx
+  1a749b:	74 0c                	je     1a74a9 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x139>
+  1a749d:	4c 89 f7             	mov    %r14,%rdi
+  1a74a0:	e8 1b 58 fa ff       	call   14ccc0 <memcmp@plt>
+  1a74a5:	85 c0                	test   %eax,%eax
+  1a74a7:	75 1b                	jne    1a74c4 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x154>
+  1a74a9:	4c 29 e3             	sub    %r12,%rbx
+  1a74ac:	48 81 fb ff ff ff 7f 	cmp    $0x7fffffff,%rbx
+  1a74b3:	7f 17                	jg     1a74cc <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x15c>
+  1a74b5:	48 81 fb 00 00 00 80 	cmp    $0xffffffff80000000,%rbx
+  1a74bc:	0f 8c 4e 01 00 00    	jl     1a7610 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2a0>
+  1a74c2:	89 d8                	mov    %ebx,%eax
+  1a74c4:	85 c0                	test   %eax,%eax
+  1a74c6:	0f 88 44 01 00 00    	js     1a7610 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2a0>
+  1a74cc:	4c 3b 74 24 08       	cmp    0x8(%rsp),%r14
+  1a74d1:	0f 85 65 02 00 00    	jne    1a773c <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x3cc>
+  1a74d7:	48 8b 45 40          	mov    0x40(%rbp),%rax
+  1a74db:	48 85 c0             	test   %rax,%rax
+  1a74de:	0f 84 37 01 00 00    	je     1a761b <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2ab>
+  1a74e4:	80 7d 49 00          	cmpb   $0x0,0x49(%rbp)
+  1a74e8:	75 0e                	jne    1a74f8 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x188>
+  1a74ea:	48 8b 4c 24 20       	mov    0x20(%rsp),%rcx
+  1a74ef:	48 83 41 40 01       	addq   $0x1,0x40(%rcx)
+  1a74f4:	c6 45 49 01          	movb   $0x1,0x49(%rbp)
+  1a74f8:	48 8b 3c 24          	mov    (%rsp),%rdi
+  1a74fc:	66 0f ef c9          	pxor   %xmm1,%xmm1
+  1a7500:	f2 48 0f 2a 48 08    	cvtsi2sdq 0x8(%rax),%xmm1
+  1a7506:	f2 0f 5e 0d 6a 26 02 	divsd  0x2266a(%rip),%xmm1        # 1c9b78 <typeinfo name for std::chrono::duration<long, std::ratio<1l, 1000000000l> >@@Base+0x38>
+  1a750d:	00
+  1a750e:	f2 0f 11 4c 24 18    	movsd  %xmm1,0x18(%rsp)
+  1a7514:	e8 77 65 fa ff       	call   14da90 <dart::simulation::World::getTimeStep() const@plt>
+  1a7519:	f2 0f 10 4c 24 18    	movsd  0x18(%rsp),%xmm1
+  1a751f:	66 0f 28 d0          	movapd %xmm0,%xmm2
+  1a7523:	66 0f 28 c1          	movapd %xmm1,%xmm0
+  1a7527:	f2 0f 5c c2          	subsd  %xmm2,%xmm0
+  1a752b:	66 0f 54 05 ad bd 01 	andpd  0x1bdad(%rip),%xmm0        # 1c32e0 <typeinfo name for ignition::physics::dartsim::CustomHeightmapShape@@Base+0x80>
+  1a7532:	00
+  1a7533:	66 0f 2f 05 bd bd 01 	comisd 0x1bdbd(%rip),%xmm0        # 1c32f8 <typeinfo name for ignition::physics::dartsim::CustomHeightmapShape@@Base+0x98>
+  1a753a:	00
+  1a753b:	0f 86 da 00 00 00    	jbe    1a761b <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2ab>
+  1a7541:	4c 8b 34 24          	mov    (%rsp),%r14
+  1a7545:	66 0f 28 c1          	movapd %xmm1,%xmm0
+  1a7549:	4c 89 f7             	mov    %r14,%rdi
+  1a754c:	e8 3f 55 fa ff       	call   14ca90 <dart::simulation::World::setTimeStep(double)@plt>
+  1a7551:	48 8b 5c 24 28       	mov    0x28(%rsp),%rbx
+  1a7556:	48 8b 44 24 08       	mov    0x8(%rsp),%rax
+  1a755b:	48 8d 15 51 21 02 00 	lea    0x22151(%rip),%rdx        # 1c96b3 <typeinfo name for std::_Sp_counted_ptr_inplace<dart::dynamics::PlaneShape, std::allocator<dart::dynamics::PlaneShape>, (__gnu_cxx::_Lock_policy)2>@@Base+0x93>
+  1a7562:	48 8d 72 dd          	lea    -0x23(%rdx),%rsi
+  1a7566:	48 89 df             	mov    %rbx,%rdi
+  1a7569:	48 89 44 24 30       	mov    %rax,0x30(%rsp)
+  1a756e:	e8 4d e4 ff ff       	call   1a59c0 <std::__detail::_Compiler<std::__cxx11::regex_traits<char> >::_M_expression_term<true, true>(std::__detail::_Compiler<std::__cxx11::regex_traits<char> >::_BracketState&, std::__detail::_BracketMatcher<std::__cxx11::regex_traits<char>, true, true>&)::{lambda(char)#1}::operator()(char) const@@Base+0x6e0>
+  1a7573:	48 8b 3d b6 26 09 00 	mov    0x926b6(%rip),%rdi        # 239c30 <ignition::common::Console::dbg@Base>
+  1a757a:	ba 47 00 00 00       	mov    $0x47,%edx
+  1a757f:	48 89 de             	mov    %rbx,%rsi
+  1a7582:	e8 09 58 fa ff       	call   14cd90 <ignition::common::Logger::operator()(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int)@plt>
+  1a7587:	ba 1c 00 00 00       	mov    $0x1c,%edx
+  1a758c:	48 8d 35 31 21 02 00 	lea    0x22131(%rip),%rsi        # 1c96c4 <typeinfo name for std::_Sp_counted_ptr_inplace<dart::dynamics::PlaneShape, std::allocator<dart::dynamics::PlaneShape>, (__gnu_cxx::_Lock_policy)2>@@Base+0xa4>
+  1a7593:	48 89 c7             	mov    %rax,%rdi
+  1a7596:	48 89 c5             	mov    %rax,%rbp
+  1a7599:	e8 62 5f fa ff       	call   14d500 <std::basic_ostream<char, std::char_traits<char> >& std::__ostream_insert<char, std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&, char const*, long)@plt>
+  1a759e:	4c 89 f7             	mov    %r14,%rdi
+  1a75a1:	e8 ea 64 fa ff       	call   14da90 <dart::simulation::World::getTimeStep() const@plt>
+  1a75a6:	48 89 ef             	mov    %rbp,%rdi
+  1a75a9:	e8 12 66 fa ff       	call   14dbc0 <std::ostream& std::ostream::_M_insert<double>(double)@plt>
+  1a75ae:	48 89 c5             	mov    %rax,%rbp
+  1a75b1:	48 8b 00             	mov    (%rax),%rax
+  1a75b4:	48 8b 40 e8          	mov    -0x18(%rax),%rax
+  1a75b8:	4c 8b a4 05 f0 00 00 	mov    0xf0(%rbp,%rax,1),%r12
+  1a75bf:	00
+  1a75c0:	4d 85 e4             	test   %r12,%r12
+  1a75c3:	0f 84 89 01 00 00    	je     1a7752 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x3e2>
+  1a75c9:	41 80 7c 24 38 00    	cmpb   $0x0,0x38(%r12)
+  1a75cf:	0f 84 c3 00 00 00    	je     1a7698 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x328>
+  1a75d5:	41 0f be 74 24 43    	movsbl 0x43(%r12),%esi
+  1a75db:	48 89 ef             	mov    %rbp,%rdi
+  1a75de:	e8 9d 52 fa ff       	call   14c880 <std::ostream::put(char)@plt>
+  1a75e3:	48 89 c7             	mov    %rax,%rdi
+  1a75e6:	e8 25 5a fa ff       	call   14d010 <std::ostream::flush()@plt>
+  1a75eb:	48 8b 7c 24 30       	mov    0x30(%rsp),%rdi
+  1a75f0:	48 3b 7c 24 08       	cmp    0x8(%rsp),%rdi
+  1a75f5:	74 24                	je     1a761b <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2ab>
+  1a75f7:	48 8b 44 24 40       	mov    0x40(%rsp),%rax
+  1a75fc:	48 8d 70 01          	lea    0x1(%rax),%rsi
+  1a7600:	e8 bb 5d fa ff       	call   14d3c0 <operator delete(void*, unsigned long)@plt>
+  1a7605:	eb 14                	jmp    1a761b <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2ab>
+  1a7607:	66 0f 1f 84 00 00 00 	nopw   0x0(%rax,%rax,1)
+  1a760e:	00 00
+  1a7610:	4c 3b 74 24 08       	cmp    0x8(%rsp),%r14
+  1a7615:	0f 85 41 01 00 00    	jne    1a775c <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x3ec>
+  1a761b:	48 8b 3c 24          	mov    (%rsp),%rdi
+  1a761f:	be 01 00 00 00       	mov    $0x1,%esi
+  1a7624:	e8 17 5a fa ff       	call   14d040 <dart::simulation::World::step(bool)@plt>
+  1a7629:	48 8b 4c 24 10       	mov    0x10(%rsp),%rcx
+  1a762e:	48 8b 01             	mov    (%rcx),%rax
+  1a7631:	48 03 48 c0          	add    -0x40(%rax),%rcx
+  1a7635:	48 8b 51 08          	mov    0x8(%rcx),%rdx
+  1a7639:	48 89 cb             	mov    %rcx,%rbx
+  1a763c:	48 8b 42 40          	mov    0x40(%rdx),%rax
+  1a7640:	48 85 c0             	test   %rax,%rax
+  1a7643:	0f 84 87 00 00 00    	je     1a76d0 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x360>
+  1a7649:	80 7a 49 00          	cmpb   $0x0,0x49(%rdx)
+  1a764d:	74 31                	je     1a7680 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x310>
+  1a764f:	48 8b 54 24 58       	mov    0x58(%rsp),%rdx
+  1a7654:	64 48 2b 14 25 28 00 	sub    %fs:0x28,%rdx
+  1a765b:	00 00
+  1a765d:	0f 85 f4 00 00 00    	jne    1a7757 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x3e7>
+  1a7663:	48 83 c4 68          	add    $0x68,%rsp
+  1a7667:	4c 89 ef             	mov    %r13,%rdi
+  1a766a:	48 8d 70 08          	lea    0x8(%rax),%rsi
+  1a766e:	5b                   	pop    %rbx
+  1a766f:	5d                   	pop    %rbp
+  1a7670:	41 5c                	pop    %r12
+  1a7672:	41 5d                	pop    %r13
+  1a7674:	41 5e                	pop    %r14
+  1a7676:	41 5f                	pop    %r15
+  1a7678:	e9 c3 e4 ff ff       	jmp    1a5b40 <ignition::physics::dartsim::SimulationFeatures::Write(ignition::physics::ChangedWorldPoses&) const@@Base>
+  1a767d:	0f 1f 00             	nopl   (%rax)
+  1a7680:	48 8b 0b             	mov    (%rbx),%rcx
+  1a7683:	48 03 59 e8          	add    -0x18(%rcx),%rbx
+  1a7687:	48 83 43 40 01       	addq   $0x1,0x40(%rbx)
+  1a768c:	c6 42 49 01          	movb   $0x1,0x49(%rdx)
+  1a7690:	eb bd                	jmp    1a764f <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2df>
+  1a7692:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  1a7698:	4c 89 e7             	mov    %r12,%rdi
+  1a769b:	e8 70 5e fa ff       	call   14d510 <std::ctype<char>::_M_widen_init() const@plt>
+  1a76a0:	49 8b 04 24          	mov    (%r12),%rax
+  1a76a4:	be 0a 00 00 00       	mov    $0xa,%esi
+  1a76a9:	48 8b 40 30          	mov    0x30(%rax),%rax
+  1a76ad:	48 3b 05 54 24 09 00 	cmp    0x92454(%rip),%rax        # 239b08 <vtable for ignition::physics::dartsim::Plugin@@Base+0x32f0>
+  1a76b4:	0f 84 21 ff ff ff    	je     1a75db <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x26b>
+  1a76ba:	4c 89 e7             	mov    %r12,%rdi
+  1a76bd:	ff d0                	call   *%rax
+  1a76bf:	0f be f0             	movsbl %al,%esi
+  1a76c2:	e9 14 ff ff ff       	jmp    1a75db <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x26b>
+  1a76c7:	66 0f 1f 84 00 00 00 	nopw   0x0(%rax,%rax,1)
+  1a76ce:	00 00
+  1a76d0:	48 8b 01             	mov    (%rcx),%rax
+  1a76d3:	bf 40 00 00 00       	mov    $0x40,%edi
+  1a76d8:	48 03 48 e8          	add    -0x18(%rax),%rcx
+  1a76dc:	48 83 41 38 01       	addq   $0x1,0x38(%rcx)
+  1a76e1:	e8 5a 5c fa ff       	call   14d340 <operator new(unsigned long)@plt>
+  1a76e6:	66 0f ef c0          	pxor   %xmm0,%xmm0
+  1a76ea:	48 8d 50 30          	lea    0x30(%rax),%rdx
+  1a76ee:	0f 11 40 18          	movups %xmm0,0x18(%rax)
+  1a76f2:	48 89 50 20          	mov    %rdx,0x20(%rax)
+  1a76f6:	48 8b 15 f3 21 09 00 	mov    0x921f3(%rip),%rdx        # 2398f0 <vtable for ignition::physics::MakeCloneable<ignition::physics::ChangedWorldPoses>@@Base+0xd6d0>
+  1a76fd:	48 c7 40 38 00 00 00 	movq   $0x0,0x38(%rax)
+  1a7704:	00
+  1a7705:	48 83 c2 10          	add    $0x10,%rdx
+  1a7709:	0f 11 40 08          	movups %xmm0,0x8(%rax)
+  1a770d:	48 89 10             	mov    %rdx,(%rax)
+  1a7710:	48 8b 53 08          	mov    0x8(%rbx),%rdx
+  1a7714:	0f 11 40 28          	movups %xmm0,0x28(%rax)
+  1a7718:	48 8b 7a 40          	mov    0x40(%rdx),%rdi
+  1a771c:	48 89 42 40          	mov    %rax,0x40(%rdx)
+  1a7720:	48 85 ff             	test   %rdi,%rdi
+  1a7723:	0f 84 20 ff ff ff    	je     1a7649 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2d9>
+  1a7729:	48 8b 07             	mov    (%rdi),%rax
+  1a772c:	ff 50 08             	call   *0x8(%rax)
+  1a772f:	48 8b 53 08          	mov    0x8(%rbx),%rdx
+  1a7733:	48 8b 42 40          	mov    0x40(%rdx),%rax
+  1a7737:	e9 0d ff ff ff       	jmp    1a7649 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2d9>
+  1a773c:	48 8b 44 24 40       	mov    0x40(%rsp),%rax
+  1a7741:	4c 89 f7             	mov    %r14,%rdi
+  1a7744:	48 8d 70 01          	lea    0x1(%rax),%rsi
+  1a7748:	e8 73 5c fa ff       	call   14d3c0 <operator delete(void*, unsigned long)@plt>
+  1a774d:	e9 85 fd ff ff       	jmp    1a74d7 <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x167>
+  1a7752:	e8 59 5f fa ff       	call   14d6b0 <std::__throw_bad_cast()@plt>
+  1a7757:	e8 34 5d fa ff       	call   14d490 <__stack_chk_fail@plt>
+  1a775c:	48 8b 44 24 40       	mov    0x40(%rsp),%rax
+  1a7761:	4c 89 f7             	mov    %r14,%rdi
+  1a7764:	48 8d 70 01          	lea    0x1(%rax),%rsi
+  1a7768:	e8 53 5c fa ff       	call   14d3c0 <operator delete(void*, unsigned long)@plt>
+  1a776d:	e9 a9 fe ff ff       	jmp    1a761b <ignition::physics::dartsim::SimulationFeatures::WorldForwardStep(ignition::physics::Identity const&, ignition::physics::SpecifyData<ignition::physics::RequireData<ignition::physics::WorldPoses>, ignition::physics::ExpectData<ignition::physics::ChangedWorldPoses, ignition::physics::Contacts, ignition::physics::JointPositions> >&, ignition::physics::CompositeData&, ignition::physics::ExpectData<ignition::physics::ApplyExternalForceTorques, ignition::physics::ApplyGeneralizedForces, ignition::physics::VelocityControlCommands, ignition::physics::ServoControlCommands> const&)@@Base+0x2ab>
+  1a7772:	f3 0f 1e fa          	endbr64
+  1a7776:	48 89 c5             	mov    %rax,%rbp
+  1a7779:	e9 ee 92 fa ff       	jmp    150a6c <std::__throw_bad_variant_access(bool)@@Base+0x14f2>

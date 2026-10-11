@@ -1,0 +1,28 @@
+
+==================================== ERRORS ====================================
+________________________ ERROR collecting test session _________________________
+../.local/lib/python3.10/site-packages/pluggy/_hooks.py:512: in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+../.local/lib/python3.10/site-packages/pluggy/_manager.py:120: in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+/usr/lib/python3/dist-packages/_pytest/python.py:200: in pytest_collect_file
+    module: Module = ihook.pytest_pycollect_makemodule(path=path, parent=parent)
+../.local/lib/python3.10/site-packages/pluggy/_hooks.py:512: in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+../.local/lib/python3.10/site-packages/pluggy/_manager.py:120: in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+/opt/ros/humble/lib/python3.10/site-packages/launch_testing/pytest/hooks.py:193: in pytest_pycollect_makemodule
+    entrypoint = find_launch_test_entrypoint(path)
+/opt/ros/humble/lib/python3.10/site-packages/launch_testing/pytest/hooks.py:186: in find_launch_test_entrypoint
+    module = path.pyimport()
+/usr/lib/python3/dist-packages/py/_path/local.py:704: in pyimport
+    __import__(modname)
+/usr/lib/python3/dist-packages/_pytest/assertion/rewrite.py:170: in exec_module
+    exec(co, module.__dict__)
+tests/test_stage_a_fragment_camera.py:6: in <module>
+    import stage_a_fragment_camera as camera
+E   ModuleNotFoundError: No module named 'stage_a_fragment_camera'
+=========================== short test summary info ============================
+ERROR  - ModuleNotFoundError: No module named 'stage_a_fragment_camera'
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.40s

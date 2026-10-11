@@ -1,0 +1,6 @@
+{
+  "supervisor_exit_code": 0,
+  "child": {
+    "exit_code": 0
+  }
+}

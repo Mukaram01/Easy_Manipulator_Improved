@@ -1,0 +1,34 @@
+{
+  "scope": "CPU metadata consistency and compiled read-only adapters only; no live rendering/physics identity qualification",
+  "identity_metadata_tests": "PASS",
+  "python_tests": 52,
+  "cpp_tests": 2,
+  "owner_plugin_build": "PASS",
+  "renderer_lookup_compile": "PASS",
+  "renderer_lookup_live": "NOT_RUN",
+  "same_fragment_gazebo_collision_binding": "BLOCKED",
+  "gazebo_identity_experiment": "NOT_RUN",
+  "epd": "NOT_RUN",
+  "execution_goals": 0,
+  "contact_authority": false,
+  "source_sha256": {
+    "scripts/stage_a_fragment_identity.py": "7df40a71fa81f952dcaf44c82e5cf129cbb1bf582bf57f7ab1eef679543ec68e",
+    "scripts/stage_a_rgbd/renderer_identity.hh": "5b4294b2f2dbec3539cef972024433085020dc4193cd2af82ffa93fec4ce437d",
+    "scripts/stage_a_rgbd/physics_owner/identity_inventory.hh": "ab3dc8c1a2167d0c0e42f22603cb93d7ecc066c5af0557653b38a9eb455895cc",
+    "scripts/stage_a_rgbd/physics_owner/owner_private.inc": "5ab9feaa153178f933ca527e7acb61d84394a276fda8c6953576c21608985bf0"
+  },
+  "built_binary_sha256": {
+    "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so": "feeb888374b0b6cf8a51eff6854e4ea31abe9a7547146b4860ac935cf9b377e0",
+    "/tmp/stage_a2_owner_build/owner_identity_inventory_test": "88ba53115a3446669a9ef1c958850789fa1eb4e07664734fde777c17c450e6f9"
+  },
+  "binary_scope": "owner plugin built but not loaded; integration executable exercised ECM and null-scene rejection only",
+  "artifact_sha256": {
+    "pytest.log": "e0eb340a483e93543f70a34e2d943b4ca0acef9769b996e834b7ec48d832fc21",
+    "ctest.log": "9380cb50ce26d59880d71f1495714221ef41849ed17b903cc158d06c2dde885a",
+    "build.log": "42955fe2d5cefb9d3d514bf6fad4e08a3f30cbc9b33325186c42c2559783449d",
+    "ecm_missing_visual_data.json": "372fd929d8f7bbdc5235d1a5c2b0ec567140246a65f84ab709edd3773cac187e",
+    "source_manifest.json": "7e363aa3485709475fb87c303131dee708c0f4eebefee4a5af806b8bce456883"
+  },
+  "blocker": "No acquisition hook currently binds a live Gazebo SceneManager visual to its same-fragment MRT ID output with independently established owner/render context.",
+  "next_action": "Connect the read-only SceneManager lookup adapter at the live Gazebo capture owner and bind Visual::Id() to that visual same-fragment RGB/ID draw before one identity experiment."
+}

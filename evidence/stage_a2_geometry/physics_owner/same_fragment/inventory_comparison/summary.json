@@ -1,0 +1,378 @@
+{
+  "baseline": "0e38ee51",
+  "runs": 1,
+  "comparison": "PASS_EXACT_INTEGER_VALUE_EQUIVALENCE",
+  "raw_json_equal": false,
+  "equivalent": true,
+  "differences": [],
+  "representations": [
+    {
+      "exact_uint64": 7,
+      "owner_json_type": 0,
+      "path": "/collisions/7/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 5,
+      "owner_json_type": 0,
+      "path": "/collisions/7/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 11,
+      "owner_json_type": 0,
+      "path": "/collisions/11/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 9,
+      "owner_json_type": 0,
+      "path": "/collisions/11/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 5,
+      "owner_json_type": 0,
+      "path": "/links/5/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 4,
+      "owner_json_type": 0,
+      "path": "/links/5/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 9,
+      "owner_json_type": 0,
+      "path": "/links/9/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 8,
+      "owner_json_type": 0,
+      "path": "/links/9/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 4,
+      "owner_json_type": 0,
+      "path": "/models/4/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 1,
+      "owner_json_type": 0,
+      "path": "/models/4/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 8,
+      "owner_json_type": 0,
+      "path": "/models/8/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 1,
+      "owner_json_type": 0,
+      "path": "/models/8/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 6,
+      "owner_json_type": 0,
+      "path": "/visuals/6/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 5,
+      "owner_json_type": 0,
+      "path": "/visuals/6/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 10,
+      "owner_json_type": 0,
+      "path": "/visuals/10/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 9,
+      "owner_json_type": 0,
+      "path": "/visuals/10/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 13,
+      "owner_json_type": 0,
+      "path": "/visuals/13/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 12,
+      "owner_json_type": 0,
+      "path": "/visuals/13/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 1,
+      "owner_json_type": 0,
+      "path": "/worlds/1/id",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    },
+    {
+      "exact_uint64": 0,
+      "owner_json_type": 0,
+      "path": "/worlds/1/parent",
+      "reason": "equal_integer_value_different_signedness",
+      "render_json_type": 0
+    }
+  ],
+  "schema_valid": false,
+  "supported_geometry": false,
+  "issues": [
+    {
+      "path": "/visuals/13/geometry",
+      "reason": "unsupported_or_invalid_BOX_geometry",
+      "side": "owner"
+    },
+    {
+      "path": "/visuals/13/opaque",
+      "reason": "unsupported_material",
+      "side": "owner"
+    },
+    {
+      "path": "/visuals/13/parent",
+      "reason": "missing_or_unsupported_parent_role",
+      "side": "owner"
+    },
+    {
+      "path": "/visuals/13/geometry",
+      "reason": "unsupported_or_invalid_BOX_geometry",
+      "side": "render"
+    },
+    {
+      "path": "/visuals/13/opaque",
+      "reason": "unsupported_material",
+      "side": "render"
+    },
+    {
+      "path": "/visuals/13/parent",
+      "reason": "missing_or_unsupported_parent_role",
+      "side": "render"
+    }
+  ],
+  "visual_13": {
+    "entity_id": 13,
+    "parent_chain": [
+      {
+        "classification": "visual_child_of_authoritative_Light_entity_without_Geometry",
+        "components": [
+          {
+            "registered_name": "ign_gazebo_components.ParentEntity",
+            "type_id": 3297509811873971798
+          },
+          {
+            "registered_name": "ign_gazebo_components.Pose",
+            "type_id": 6612894081701502240
+          },
+          {
+            "registered_name": "ign_gazebo_components.CastShadows",
+            "type_id": 13011964647677164955
+          },
+          {
+            "registered_name": "ign_gazebo_components.Transparency",
+            "type_id": 13440282432131634483
+          },
+          {
+            "registered_name": "ign_gazebo_components.Name",
+            "type_id": 13994732549916512682
+          },
+          {
+            "registered_name": "ign_gazebo_components.Visual",
+            "type_id": 16454635107327670381
+          }
+        ],
+        "diagnostic_name_not_identity": "sunVisual",
+        "exists": true,
+        "has_collision": false,
+        "has_geometry": false,
+        "has_light": false,
+        "has_link": false,
+        "has_model": false,
+        "has_visual": true,
+        "has_world": false,
+        "id": 13,
+        "parent_id": 12
+      },
+      {
+        "components": [
+          {
+            "registered_name": "ign_gazebo_components.ParentEntity",
+            "type_id": 3297509811873971798
+          },
+          {
+            "registered_name": "ign_gazebo_components.Light",
+            "type_id": 3866641186784191835
+          },
+          {
+            "registered_name": "ign_gazebo_components.Pose",
+            "type_id": 6612894081701502240
+          },
+          {
+            "registered_name": "ign_gazebo_components.LightType",
+            "type_id": 9912133897551038435
+          },
+          {
+            "registered_name": "ign_gazebo_components.Name",
+            "type_id": 13994732549916512682
+          }
+        ],
+        "diagnostic_name_not_identity": "sun",
+        "exists": true,
+        "has_collision": false,
+        "has_geometry": false,
+        "has_light": true,
+        "has_link": false,
+        "has_model": false,
+        "has_visual": false,
+        "has_world": false,
+        "id": 12,
+        "light_type_component": "directional",
+        "parent_id": 1
+      },
+      {
+        "components": [
+          {
+            "registered_name": "ign_gazebo_components.RenderEngineServerHeadless",
+            "type_id": 1966610718496615735
+          },
+          {
+            "registered_name": "ign_gazebo_components.Physics",
+            "type_id": 2188341333082264598
+          },
+          {
+            "registered_name": "ign_gazebo_components.World",
+            "type_id": 2251689575469537287
+          },
+          {
+            "registered_name": "ign_gazebo_components.SystemPluginInfo",
+            "type_id": 3246420869490501367
+          },
+          {
+            "registered_name": "ign_gazebo_components.PhysicsEnginePlugin",
+            "type_id": 3630648173860223239
+          },
+          {
+            "registered_name": "ign_gazebo_components.PhysicsSolver",
+            "type_id": 4906787361437880049
+          },
+          {
+            "registered_name": "ign_gazebo_components.WorldSdf",
+            "type_id": 4981278897826323946
+          },
+          {
+            "registered_name": "ign_gazebo_components.PhysicsCollisionDetector",
+            "type_id": 7381306350865462520
+          },
+          {
+            "registered_name": "ign_gazebo_components.RenderEngineGuiPlugin",
+            "type_id": 8705992680619689917
+          },
+          {
+            "registered_name": "ign_gazebo_components.Gravity",
+            "type_id": 12592746352568925681
+          },
+          {
+            "registered_name": "ign_gazebo_components.MagneticField",
+            "type_id": 13224937992534617849
+          },
+          {
+            "registered_name": "ign_gazebo_components.Name",
+            "type_id": 13994732549916512682
+          },
+          {
+            "registered_name": "ign_gazebo_components.Scene",
+            "type_id": 17100615127981600159
+          },
+          {
+            "registered_name": "ign_gazebo_components.RenderEngineServerPlugin",
+            "type_id": 17459188283658606303
+          },
+          {
+            "registered_name": "ign_gazebo_components.Atmosphere",
+            "type_id": 17605309075052480649
+          }
+        ],
+        "diagnostic_name_not_identity": "a0",
+        "exists": true,
+        "has_collision": false,
+        "has_geometry": false,
+        "has_light": false,
+        "has_link": false,
+        "has_model": false,
+        "has_visual": false,
+        "has_world": true,
+        "id": 1,
+        "parent_id": 0
+      }
+    ]
+  },
+  "acquisition": "BLOCKED_UNSUPPORTED_LIGHT_VISUAL",
+  "rgb_id_production": "NOT_REACHED",
+  "pixel_counts": null,
+  "session": "95fe950740c04bfead02840ec7c19151",
+  "physics_step": 2,
+  "physics_stamp_ns": 2000000,
+  "world_entity": 1,
+  "owner_complete": true,
+  "owner_elf_mapped": true,
+  "child_exit": {
+    "exit_code": 2
+  },
+  "supervisor_exit": 2,
+  "execution_goals": 0,
+  "timing_authority": "BLOCKED",
+  "contact_authority": false,
+  "artifact_uncompressed_sha256": {
+    "capture.json": "08e649b704f9aec88e0cd5eb120d74465d1f256450ae3b1d7b058c1e0fdef2c2",
+    "capture.json.maps": "6b2b9b4a9735a9d218007a05d5e6ffae15a62c17679aea4be2c005733ea5a8c3",
+    "child_exit.json": "d26b0745a1a2f3d452def2624b3b0bcc425124b18690dbf694f4de0ff91cb07e",
+    "debugger.gdb": "888474599cc83a300af353eae0c99c28b3e1720bab4f7e80f174935590d2fba9",
+    "execution_claim.json": "1924bbfe404693670f13e35be9423cf6175e6353e34808bf095d7ac414a3aebc",
+    "owner.jsonl": "fe5bca3a8f30c15319aa11503fb6ad9e2deb176012b1396f9206426f5b6efc0d",
+    "preflight.json": "2823150115d733cdf2ecb1e159458db3cb3baef9cf21b0d825665fe18a61bf0b",
+    "process_exit.json": "9d37f67e87ef8fa74cd2c85c4a822952a8485e956149e635f472f3d59ccccd42",
+    "result.json": "368b5c00b644b073051eec9dc615c2020e239258cf89f3d88ae12ac0f53d16bf",
+    "stderr.log": "9de8ed711f36fde09fd12966325bd873ef84aa8d822f1bbde4015b7e25da8e6a",
+    "stdout.log": "32c6281de2f7d4079383f385171a840c1b6d59f5dfcb0c4ebfbf34a055df7bef",
+    "world.sdf": "29bfd871e96d4976c815451587f4246454536deaa040e5bfaf3f8d8cf9d250b1",
+    "red.log": "6f3ba71dfcc7553c35685d913e05c81821ea3edd537797bcf7414f69f84ec512",
+    "build.log": "f5bb5c4b3ccde946d09ebd5cdf900949824a73eec46d0baaf6cb57b38b9c69ba",
+    "native_build.log": "5fcee89445cac4a1a9d6c2e1dd82c06fa87443f75c94b8000a42bc104d31881a",
+    "configure.log": "2b380f0b4286c109b21592eccbeee72093f207aa6c1b6f0d681e410b62aee30a",
+    "ctest.log": "f496448e248128e578f34c08aeca1e6c0c1b3a146f46f8ba25153ffeb62023bb",
+    "owner_ctest.log": "e840b52ec73e3bc15ffed0b1cc3a7d4e344dafc228d3ae324d911e84af63d1f3",
+    "pytest.log": "4614008624b08c6a578ea34084b87cb4986c2ec94c15a88ae5215c34c9a3529f",
+    "preflight.log": "2823150115d733cdf2ecb1e159458db3cb3baef9cf21b0d825665fe18a61bf0b"
+  }
+}

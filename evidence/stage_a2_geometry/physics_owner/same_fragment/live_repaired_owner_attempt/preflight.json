@@ -1,0 +1,28 @@
+{
+  "session": "606b9ed756004d28ab411647dd0c82f7",
+  "output": "/tmp/stage_a2_live_identity_repaired_20261010_eba8be03",
+  "binary": "/tmp/stage_a2_live_fragment_build/stage_a_gazebo_fragment_capture",
+  "owner": "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so",
+  "world": "/tmp/stage_a2_live_identity_repaired_20261010_eba8be03/world.sdf",
+  "input_world": "/tmp/workcell_stage_a2_separated/physical_world.sdf",
+  "input_world_sha256": "1ac9bf3adea8f732607c84c80ab6160bc7f40ab32ab6ce2743f40cf9631f0884",
+  "execution_goals": 0,
+  "debugger": "/usr/bin/gdb",
+  "debugger_sha256": "a6222ff0f450ca040e3479c04fdb7d0f1e0cabb099688270e720b7115d933c3d",
+  "owner_qualification_sha256": {
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/pre_run.json": "37fd36af21c0b324dd01f3b8f27ab472f8553574588c6bee9f16fc9cece6b174",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/result.json.gz": "82826751aaadfb9fcdf974cdd5fb1127e4f7a5d1bfdc7358698beec8a3165749",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/exit.json": "1e3f6691f455051e8adb15d961e4bf3c7a17e83dd88b2afdd13315cc288250bb",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/owner_loader/loaded_sha256.json": "db8ea5f65bf4acfdc1eb243a2953efc9a2766f4bf8965421f311e37cc67c8388",
+    "/home/user/workcell_ws_stage_a2/evidence/stage_a2_geometry/physics_owner/same_fragment/identity_metadata/result.json": "9050ddff291d9088b9926188fb79942e50dfc9ea23c5917ae000ac4150a2ee09"
+  },
+  "geometry_scope": "unchanged authored separated cubes only; support/bin omitted; no contact claim",
+  "binary_sha256": "86168c05f49b4070d98601bd39c33b1da5c042210ad030b72bfb10157c77065d",
+  "owner_sha256": "0f4a2dda8d7bfd67745b03493254a9d91ea66bb36dcb2d78440fbf5809ff072a",
+  "world_sha256": "019b0ad000b0d9c3ea87cb6d543fdc8cc3a64f6e73d415a1a37ea1291a221ea7",
+  "source_sha256": {
+    "scripts/stage_a_rgbd/gazebo_fragment_capture.cpp": "0a75944ad6bf20e1187d1be381bc55f718d8fcfcd8d03a222c3dc5d3f9158848",
+    "scripts/stage_a_rgbd/fragment_mrt.hh": "b70a619781b13aaa546791b14756300bfccaaa1aca5a79a19ff594ca546d600e",
+    "scripts/stage_a_gazebo_fragment.py": "95f76e8f962e998a2a36a7da7c0813927852e7b6223fd3cae67e77ce66a002db"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "contact_authority": false,
+  "decision": "BLOCKED",
+  "execution_goals": 0,
+  "loaded_library_paths": [
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6.so.6.6.4"
+  ],
+  "moveit_started": false,
+  "reason": "RENDER_ENGINE_UNAVAILABLE",
+  "requested_engine": "stage_a_unknown_engine",
+  "schema": "workcell_render_identity_capability/v1",
+  "scope": "standalone empty-scene API capability; no frame or association qualification",
+  "segmentation_camera_created": false
+}

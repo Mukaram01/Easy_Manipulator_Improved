@@ -1,0 +1,21 @@
+{
+  "contact_authority": false,
+  "decision": "BLOCKED",
+  "engine_name": "ogre",
+  "execution_goals": 0,
+  "loaded_library_paths": [
+    "/usr/lib/x86_64-linux-gnu/ign-rendering-6/engine-plugins/libignition-rendering6-ogre.so.6.6.4",
+    "/usr/lib/x86_64-linux-gnu/libOgreMain.so.1.9.0",
+    "/usr/lib/x86_64-linux-gnu/libOgreOverlay.so.1.9.0",
+    "/usr/lib/x86_64-linux-gnu/libOgrePaging.so.1.9.0",
+    "/usr/lib/x86_64-linux-gnu/libOgreRTShaderSystem.so.1.9.0",
+    "/usr/lib/x86_64-linux-gnu/libOgreTerrain.so.1.9.0",
+    "/usr/lib/x86_64-linux-gnu/libignition-rendering6.so.6.6.4"
+  ],
+  "moveit_started": false,
+  "reason": "SEGMENTATION_CAMERA_UNSUPPORTED",
+  "requested_engine": "ogre",
+  "schema": "workcell_render_identity_capability/v1",
+  "scope": "standalone empty-scene API capability; no frame or association qualification",
+  "segmentation_camera_created": false
+}

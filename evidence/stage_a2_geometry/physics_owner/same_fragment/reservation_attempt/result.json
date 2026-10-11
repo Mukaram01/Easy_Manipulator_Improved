@@ -1,0 +1,40 @@
+{
+  "schema": "workcell_fragment_reservation_attempt/v1",
+  "baseline": "214a30e24ca809886185e58574a62b038ca9c12f",
+  "fixture": "BLOCKED_CULLING_PREPARATION",
+  "source_sha256": "b01a706970a34df62e9ca90e02d33d0722823f595b61f25cb7a1be581a13f476",
+  "executed_binary_sha256": "6aca19a505cce4a0e10a2a9382c446969fd9968167f13f2fb960887f0d4c397c",
+  "native_runs": 1,
+  "exit_code": -6,
+  "termination": "SIGABRT",
+  "preflight_cpu_tests": 24,
+  "reservation_regression": "RED_THEN_GREEN",
+  "reservation_assertion": "CLEARED_REACHED_SCENE_CULL",
+  "output_files_present": {
+    "": false,
+    ".rgb8": false,
+    ".ids.u32": false
+  },
+  "rgb_id_production": "NOT_REACHED",
+  "visible_ids": null,
+  "visible_pixel_counts": null,
+  "occlusion": "NOT_REACHED",
+  "uint32_preservation": "NOT_REACHED",
+  "actual_attachment_formats": null,
+  "actual_render_pass_count": null,
+  "actual_depth_state": null,
+  "actual_driver": null,
+  "actual_loaded_libraries": null,
+  "strict_actual_buffer_diagnostic": "NOT_RUN_NO_BUFFERS",
+  "actual_capture_mutation_tests": "NOT_RUN_NO_BUFFERS",
+  "contact_authority": false,
+  "execution_goals": 0,
+  "minimal_next_fix": "Prepare native SceneManager via sm->updateSceneGraph() before manual workspace update; this calls highLevelCull and updates transforms/bounds. Not implemented or executed here.",
+  "artifact_sha256": {
+    "preflight.json": "845fe373aac7c98257a09545501143e3063c520da6bb94e2d9f835f1f93b54a3",
+    "execution.json": "97fc7887252dca17be2a7919552e34877af99e0bc5914f4722129780f9eb3218",
+    "stderr.log": "af16c3b05a936e3e6317ad100a2e5f747a4b4b418c66f70e8a5393239411e1b2",
+    "build.log": "83a384b1644cfdcde6f23ab610c79193e02bf3e3fb16b21f1fde64f00a6cc178",
+    "stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

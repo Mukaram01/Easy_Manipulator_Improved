@@ -1,0 +1,45 @@
+{
+  "baseline": "6a949a2b17cba873bd532512b9daf6a14d37718a",
+  "source_manifest": {
+    "Physics.cc": {
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/Physics.cc",
+      "sha256": "80396c542654490b0eb2aad3890520c720839c01012fb741aa6d3943135f3a26"
+    },
+    "Physics.hh": {
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/Physics.hh",
+      "sha256": "9b9b417d4fd0b02bbdf28d71ae1296e5a62f9ce9c3fdf0198056d6cab5c972cd"
+    },
+    "CanonicalLinkModelTracker.hh": {
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/CanonicalLinkModelTracker.hh",
+      "sha256": "886c7ffac3c2310a67a0584090e8e41925af4d9609ab4cb361fe4436dd60b252"
+    },
+    "EntityFeatureMap.hh": {
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/EntityFeatureMap.hh",
+      "sha256": "4464e0b070db9d9be43488bb3b41753b11be1c5258f02c35e39e4d59a53785bf"
+    }
+  },
+  "build_command": "cmake -S scripts/stage_a_rgbd/physics_owner -B /tmp/stage_a2_owner_build; cmake --build /tmp/stage_a2_owner_build -j2",
+  "files_sha256": {
+    "/tmp/stage_a2_owner_build/source/Physics.cc": "69c7fc7a505605920cb3ead085faea3985e81799b20f58ffef1153c56dde5a3c",
+    "/tmp/stage_a2_owner_build/source/Physics.hh": "a87ddff123e029b2822629ae982b7860371d6bec51be41a8ff9666b5ceaa8a37",
+    "/tmp/stage_a2_owner_build/source/EntityFeatureMap.hh": "4464e0b070db9d9be43488bb3b41753b11be1c5258f02c35e39e4d59a53785bf",
+    "/tmp/stage_a2_owner_build/source/CanonicalLinkModelTracker.hh": "886c7ffac3c2310a67a0584090e8e41925af4d9609ab4cb361fe4436dd60b252",
+    "/tmp/stage_a2_owner_build/reference/Physics.cc": "a44e3907e653b2b7d9785a11fc2a514f53d75ceb71f5488807dd33d3736c756d",
+    "/tmp/stage_a2_owner_build/reference/Physics.hh": "b5f949ecef6041ec2ee533221ffbe40ff8f1d0d40e04795f7e03fcfd955e3711",
+    "/tmp/stage_a2_owner_build/reference/EntityFeatureMap.hh": "4464e0b070db9d9be43488bb3b41753b11be1c5258f02c35e39e4d59a53785bf",
+    "/tmp/stage_a2_owner_build/reference/CanonicalLinkModelTracker.hh": "886c7ffac3c2310a67a0584090e8e41925af4d9609ab4cb361fe4436dd60b252",
+    "scripts/stage_a_rgbd/physics_owner/owner_readback.hh": "a8a3427099ca2adbb123db435558c8bd24075f99d8535ff2a92dbf36b3387006",
+    "scripts/stage_a_rgbd/physics_owner/owner_private.inc": "1ae3d8d313b6aa9379c4271b9fe219d50b2a55520806ce89f58bdcc5b034ab00",
+    "scripts/stage_a_rgbd/physics_owner/compare.py": "cd222e01c37ea16f7d249e717c6cd56b3117f44e3c31ce717aff1320491d2c55",
+    "scripts/stage_a_rgbd/physics_owner/bindings_test.cpp": "36a0ab87aba308801b02716b55b8d3747a678983fbebf575a4258d08cb87525b",
+    "scripts/stage_a_rgbd/physics_owner/prepare.py": "e91c3119bdca1f48d66813e66034b9c15f8c0022ed0d82bed1011b85916d0082",
+    "scripts/stage_a_rgbd/physics_owner/bindings.hh": "65c7a9d1956e84d5ccdc51937cebde1fffd8e9521c0ee9ba861072a6ac5fbfaa",
+    "scripts/stage_a_rgbd/physics_owner/CMakeLists.txt": "01466fa7da07be0e7be267c21f177b0d3d839ca1389bfcfb67526b84267c787d",
+    "scripts/stage_a_rgbd/physics_owner/source_manifest.json": "7e363aa3485709475fb87c303131dee708c0f4eebefee4a5af806b8bce456883",
+    "scripts/stage_a_physics_contact.py": "bcfe6bf167ae1b54e0f75ff1286bf7082c526f7770f1afeed2a55fea02fc500c",
+    "tests/test_stage_a_owner_geometry.py": "5b2019500bfcdb0413cb461334b51226a93654123370c086bc42ff2a2cf9d955",
+    "tests/test_stage_a_owner_contact_compare.py": "c221207530e7981fff16eea17b27e708e20fd3b1de8b001cc3dfa4c4d9b31dba",
+    "/usr/include/dart/collision/ode/OdeCollisionObject.hpp": "90010a331e1bc98d51f30eb98eb61cc85aab71b5a4385b5f3d18707ddb0cf3ba",
+    "/home/user/workcell_ws/diagnostics/stage-a1-follower-bound-20260926/sources/dart_6.12.1+dfsg4.orig.tar.xz": "bd93ce6889a131ffbed95b283f31fba4d103654f613cba1c2439990ecb5212fe"
+  }
+}

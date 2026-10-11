@@ -1,0 +1,45 @@
+{
+  "profile": "separated_workpieces",
+  "position": [
+    0.4,
+    -0.357,
+    0.0125
+  ],
+  "look_at": [
+    0.4,
+    -0.217,
+    0.0125
+  ],
+  "up": [
+    0,
+    0,
+    1
+  ],
+  "fovy_radians": 1.0471975511965976,
+  "near": 0.01,
+  "far": 2,
+  "aspect": 1,
+  "source": "authored BOX corner pinhole framing only",
+  "workpieces": [
+    {
+      "authored_model": "part_00",
+      "projected_bounds": [
+        21.36965446009914,
+        105.96590010615373,
+        71.20668531741849,
+        150.03409989384627
+      ]
+    },
+    {
+      "authored_model": "part_01",
+      "projected_bounds": [
+        185.645004542167,
+        105.87679265334609,
+        233.77984270312282,
+        150.1232073466539
+      ]
+    }
+  ],
+  "projected_gap_pixels": 114.4383192247485,
+  "scope": "preflight framing diagnostic; measured raster counts required"
+}

@@ -1,0 +1,2 @@
+[1;31m[Err] [SystemLoader.cc:103] [0m[1;31mFailed to load system plugin [[0m[1;31m/tmp/stage_a2_owner_build/libworkcell_owner_physics.so[0m[1;31m] : couldn't load library on path [[0m[1;31m/tmp/stage_a2_owner_build/libworkcell_owner_physics.so[0m[1;31m].[0m[1;31m[0m
+timeout: the monitored command dumped core

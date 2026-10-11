@@ -1,0 +1,199 @@
+{
+  "baseline_commit": "211e708303f90fd09f601dcf7628fa965ee487cc",
+  "root_cause": "segment-wide JTC evaluation-error enclosure crosses the exact gripper lower position limit; not an unresolved collision pair",
+  "closing_request": "/tmp/workcell_stage_a2_certified_budget/adapter_trace/1791615576639491402_9.request.cdr",
+  "collision_pair": null,
+  "joint": "gripper_finger1_joint",
+  "position": 0.0,
+  "bounds": [
+    0.0,
+    0.804
+  ],
+  "failed_interval_ns": [
+    0,
+    1
+  ],
+  "depth": 26,
+  "evaluation_error": 9.947598300643484e-16,
+  "old_enclosed_position": [
+    -9.947598300643484e-16,
+    9.947598300793486e-16
+  ],
+  "diagnostic_unresolved_collision_pairs": [],
+  "diagnostic_source": "throwaway instrumented copy in /tmp/stage_a2_closing_diagnostic_source; no diagnostic bypass in product",
+  "fixture": {
+    "directory": "/tmp/stage_a2_closing_fixture",
+    "files": {
+      "robot.urdf": "62d402c8477df0d711dcba1272960aaea8e345c756c5dc0cca3be86b39d9e614",
+      "robot.srdf": "0c697311945d632f53ccafbd827d0192417ad85152d7d735d6e2176006785cda",
+      "scene.cdr": "05d61bcc4ea9692a0bc40d79c31ed446724497231ea1af68c08bc4f5a12c40cd",
+      "trajectory.cdr": "ece93fd5153bfcf7a40bd6036183421da42e69a7bc3df6ff572f36063fd3c7a3"
+    },
+    "trajectory_points": 16
+  },
+  "correction": "If the existing Bernstein joint-limit enclosure is inconclusive, enclose the installed JTC arithmetic over all interior integer-nanosecond timestamps and evaluate both endpoints with the existing actual JTC evaluator, including stored-final-point semantics. Mimic affine bounds remain outward-rounded. Collision proof and all limits are unchanged.",
+  "red_test": "Saved actual closing trajectory/scene returned PRECISION_OR_DEPTH_LIMIT before correction.",
+  "offline_closing_certificate": {
+    "result": "PASS",
+    "reason": "ALL_INTERVALS_CERTIFIED",
+    "inspected": 55,
+    "certified": 35,
+    "subdivided": 20,
+    "depth": 20,
+    "seconds": 0.87918
+  },
+  "forbidden_target_fingertip_contact": {
+    "result": "PASS",
+    "certificate_result": "COLLISION",
+    "reason": "FCL_COLLISION"
+  },
+  "single_request_runtime": {
+    "result": "PASS",
+    "moveit_code": 1,
+    "planning_service_seconds": 1.11413514,
+    "certificate_seconds": 1.01981,
+    "execution_goals": [],
+    "shutdown_clean": true,
+    "directory": "/tmp/stage_a2_closing_corrected"
+  },
+  "native_build": "PASS: Humble RelWithDebInfo workcell_support_contact and workcell_support_contact_test",
+  "native_tests": {
+    "passed": 67,
+    "skipped": 1,
+    "skip": "historical Stage-A external approach fixture unavailable",
+    "log": "/tmp/stage_a2_closing_tests.log"
+  },
+  "epd_replay_sha256": "b7bd01775702cae0d942abdf357f6bc22d07fef2934cbb2cb7ed8101e27cda89",
+  "runtime_library_sha256": "f7e1bdc260fbfcbd60b7e20a27a9cbc4b81d774aaff793a3e1236d59e2df30f5",
+  "full_cycle": {
+    "result": "BLOCKED",
+    "runner_result": "FAIL",
+    "runtime_seconds": 324.3778757350228,
+    "failure": "ACTION_TIMEOUT: action result timed out",
+    "orchestration_failure": "executor did not prove an unchanged, complete plan-only cycle",
+    "directory": "/tmp/workcell_stage_a2_closing_acceptance",
+    "unique_candidates": 13,
+    "attempt_count": 19,
+    "stage_successes": {
+      "PREPLAN_APPROACH": 3,
+      "PREPLAN_GRASP": 3,
+      "PREPLAN_CLOSE_GRIPPER": 3
+    },
+    "candidate_reasons": {
+      "PREPLAN_APPROACH_FAILED": 15,
+      "NO_VALID_EXTRACTION": 3,
+      "ACTION_TIMEOUT": 1
+    },
+    "stage_results": {
+      "approach": "PASS",
+      "grasp_descent": "PASS",
+      "gripper_closing": "PASS",
+      "retreat": "BLOCKED",
+      "placement": "BLOCKED"
+    },
+    "extraction_blocker": {
+      "target": "runtime::epd_24056000000_4",
+      "neighbor": "runtime::epd_24056000000_2",
+      "reason": "EXTRACTION_INITIAL_DEPTH",
+      "conservative_envelope_depth_m": 0.013634280420216933,
+      "allowed_depth_m": 0.0001,
+      "note": "Conservative collision-envelope overlap; not evidence of physical cube penetration."
+    },
+    "closing_success_candidates": [
+      {
+        "candidate_id": "top_2f::002",
+        "search_pass": "discovery:top_2f"
+      },
+      {
+        "candidate_id": "finger_pinch_basic::003",
+        "search_pass": "discovery:finger_pinch_basic"
+      },
+      {
+        "candidate_id": "finger_pinch_basic::000",
+        "search_pass": "retry:finger_pinch_basic"
+      }
+    ],
+    "execution_action_goals": [],
+    "execution_attempted": false,
+    "trajectory_execution_enabled": false,
+    "shutdown_clean": true,
+    "remaining_owned_process_groups": [],
+    "last_timeout": {
+      "candidate_id": "finger_pinch_basic::002",
+      "candidate_wall_budget": 300.0,
+      "candidate_wall_seconds": 26.3737134859839,
+      "checks": [
+        {
+          "cancellation_accepted": false,
+          "cancellation_confirmed": false,
+          "candidate_id": "finger_pinch_basic::002",
+          "code": "PREPLAN_APPROACH",
+          "failed_stage": "PREPLAN_APPROACH",
+          "failure_kind": "transport",
+          "owned_goal_uuid": "308d34d49d3947a8b988f0dabf4005b7",
+          "reason": "action result timed out",
+          "reason_code": "ACTION_TIMEOUT",
+          "response_timeout_seconds": 3.8953549189900514,
+          "status": "BLOCKED"
+        }
+      ],
+      "extraction_attempts": [],
+      "object_id": "runtime::epd_24056000000_4",
+      "planning_attempts": 3,
+      "reason_code": "ACTION_TIMEOUT",
+      "search_pass": "retry:finger_pinch_basic",
+      "segment_planning_time": 3.0,
+      "stages": [
+        {
+          "cancellation_accepted": false,
+          "cancellation_confirmed": false,
+          "candidate_id": "finger_pinch_basic::002",
+          "failed_stage": "PREPLAN_APPROACH",
+          "failure_kind": "transport",
+          "owned_goal_uuid": "308d34d49d3947a8b988f0dabf4005b7",
+          "reason": "action result timed out",
+          "reason_code": "ACTION_TIMEOUT",
+          "response_timeout_seconds": 3.8953549189900514,
+          "stage": "PREPLAN_APPROACH",
+          "success": false
+        }
+      ]
+    },
+    "executor_hashes": {
+      "perceived_object_grasp_execute.py": "eaf9fee9644062efb094f713573d0ece105d162c1f9873fcef9154c2b0dcfac1",
+      "perceived_object_grasp_plan.py": "f3b9a592201660f75b5beaaa27501cd7e1c41002109337085f555813df522660",
+      "runtime_pick_inputs.py": "f4bdb673570acae75d0ae053b3f6c04929f739f4f0b10d20a79f1128869cc12d",
+      "task_intent_resolver.py": "40d3f0deb205e3d9f6de11f49df6293bd480c9c9da4aeb10b327482e3332135a",
+      "task_intent_v2.py": "e9fd8a1f41fed44767925f01c38b6d28b033e5872fe7c20ee5fa1364fcbf73e7",
+      "full_cycle_preplanner.py": "991cd5afdb3a28029d42ed099b3b43c6f20f39771bcf9aa0c61085ce69ee949e",
+      "physical_destination.py": "7bce6368b287b932f92013deb72053733813fc8f50fa375cb9803d433c42a18b",
+      "grasp_strategy_candidates.py": "94a71747cbe7a3ed10da4b34e91bca13c277a643a86ba3f3813992d01a33377c"
+    },
+    "scene_hashes": {
+      "environment.yaml": "e3ea1f594b4df72fa55e1bf62ca92df1fcb5d75c470a2cab18b9ea3e2534bc21",
+      "cell_definition.yaml": "7b3939af22b90b8cefb90629820d5dd9c14819f3a4c06fe95503a6aa8d47898b",
+      "config/moveit_collision_objects.yaml": "deeeff4678c2472bba1b28c9f812bf2b3cdee1074763b6fd80693b5796f9a78a"
+    },
+    "runtime_source_commit": "211e708303f90fd09f601dcf7628fa965ee487cc",
+    "runtime_source_dirty": true
+  },
+  "preserved": [
+    "collision geometry and uncertainty",
+    "phase-specific ACM",
+    "attachment timing",
+    "controller collision certification",
+    "Stage-A1 grasp-retention physics",
+    "replay-only frozen observations",
+    "incomplete-scene execution restriction",
+    "ROS bridge qualification gates"
+  ],
+  "protected_checkout": {
+    "unchanged": true,
+    "field_matches": {
+      "head": true,
+      "status": true,
+      "diff_sha256": true
+    }
+  },
+  "review": "Focused independent arithmetic review: no critical or important findings."
+}

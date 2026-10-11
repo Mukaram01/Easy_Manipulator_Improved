@@ -1,0 +1,21 @@
+--- upstream/Physics.cc
++++ reference/Physics.cc
+@@ -3299,0 +3300,2 @@
++  std::unordered_map<const WorldShapeType::ContactPoint *, const WorldShapeType::ExtraContactData *> reportExtras;
++
+@@ -3302,0 +3305 @@
++    reportExtras.emplace(&contact, contactComposite.Query<WorldShapeType::ExtraContactData>());
+@@ -3354,0 +3358,13 @@
++            const auto extra = reportExtras.at(contact);
++            if (extra)
++            {
++              // Reporting normal acts on the reported first body (2 -> 1).
++              const auto first = this->entityCollisionMap.GetByPhysicsId(
++                  contact->collision1->EntityID());
++              const double sign = first == _collEntity1 ? 1.0 : -1.0;
++              auto *normal = contactMsg->add_normal();
++              normal->set_x(sign * extra->normal.x());
++              normal->set_y(sign * extra->normal.y());
++              normal->set_z(sign * extra->normal.z());
++              contactMsg->add_depth(extra->depth);
++            }

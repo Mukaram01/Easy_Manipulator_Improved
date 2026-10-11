@@ -54,7 +54,7 @@ inline unsigned choose(unsigned n,unsigned k) {
 // the controller's trajectory.cpp. Bounds include coefficient cancellation,
 // unlike endpoint displacement or ideal Hermite coefficients alone.
 inline Controls polynomial(const trajectory_msgs::msg::JointTrajectoryPoint& a,
-    const trajectory_msgs::msg::JointTrajectoryPoint& b,std::size_t j,int64_t ns,double* evaluation_error=nullptr) {
+    const trajectory_msgs::msg::JointTrajectoryPoint& b,std::size_t j,int64_t ns,double* evaluation_error=nullptr,Controls* power_coefficients=nullptr) {
   const double seconds=rclcpp::Duration::from_nanoseconds(ns).seconds();
   const Interval t(seconds);
   Interval T[6]={Interval(1.),t};
@@ -77,6 +77,7 @@ inline Controls polynomial(const trajectory_msgs::msg::JointTrajectoryPoint& a,
         (-12.*p+12.*q-x*T[2]+y*T[2]-6.*u*T[1]-6.*w*T[1])/(2.*T[5])};
     }
   }
+  if(power_coefficients) *power_coefficients=c;
   // The installed implementation computes powers and a sum of <=6 terms in
   // double, after converting nanoseconds to seconds. gamma_128 is deliberately
   // above the number of rounded operations, including time conversion. Charging
@@ -95,6 +96,24 @@ inline Controls polynomial(const trajectory_msgs::msg::JointTrajectoryPoint& a,
       bernstein[i]+=c[k]*T[k]*double(choose(i,k))/double(choose(degree,k));
   hull(bernstein);
   return bernstein;
+}
+// A second, tighter position-limit enclosure follows the installed JTC's
+// power products and left-to-right sum with outward rounding. It includes
+// coefficient and evaluation roundoff without charging distant segment times
+// against an exact limit boundary. This does not replace collision bounds.
+inline Interval controllerPositionRange(const trajectory_msgs::msg::JointTrajectoryPoint& a,
+    const trajectory_msgs::msg::JointTrajectoryPoint& b,std::size_t j,int64_t duration_ns,
+    int64_t first_ns,int64_t last_ns) {
+  if(first_ns<0||last_ns<first_ns||last_ns>duration_ns)
+    throw std::runtime_error("CONTROLLER_POSITION_RANGE_TIME_INVALID");
+  Controls c;polynomial(a,b,j,duration_ns,nullptr,&c);
+  // int64 nanoseconds -> double seconds is monotone; use the controller's
+  // actual conversion at both ends, not an ideal real-valued time conversion.
+  const Interval t(rclcpp::Duration::from_nanoseconds(first_ns).seconds(),
+                   rclcpp::Duration::from_nanoseconds(last_ns).seconds());
+  Interval power(1.),value=c.front();
+  for(std::size_t k=1;k<c.size();++k) {power*=t;value+=power*c[k];}
+  finite(value);return value;
 }
 inline std::pair<Controls,Controls> split(const Controls& c,const Interval& fraction) {
   Controls row=c,left{row.front()},right{row.back()};
@@ -585,7 +604,32 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         // Bernstein hull also excludes unsampled position-limit violations.
         for(const auto& item:controls) {
           const auto range=hull(item.second)+Interval(-errors.at(item.first),errors.at(item.first));const auto& bounds=scene.getRobotModel()->getVariableBounds(item.first);
-          if(bounds.position_bounded_&&(range.lower()<bounds.min_position_||range.upper()>bounds.max_position_)) clear=false;
+          if(bounds.position_bounded_&&(range.lower()<bounds.min_position_||range.upper()>bounds.max_position_)) {
+            // ROS controller timestamps are integer nanoseconds. Endpoints are
+            // evaluated exactly by the same JTC evaluator above (including its
+            // stored final-point rule); enclose every representable interior
+            // timestamp independently. Never relax a joint limit by epsilon.
+            const auto left=evaluate(lo),right=evaluate(hi);
+            std::function<Interval(const std::string&,unsigned)> interior;
+            interior=[&](const std::string& name,unsigned depth)->Interval {
+              if(depth>32) throw std::runtime_error("MIMIC_DEPTH_EXCEEDED");
+              const auto* joint=scene.getRobotModel()->getJointOfVariable(name);
+              if(joint->getMimic())
+                return interior(joint->getMimic()->getVariableNames()[0],depth+1)*
+                  joint->getMimicFactor()+joint->getMimicOffset();
+              const auto found=std::find(msg.joint_names.begin(),msg.joint_names.end(),name);
+              if(found==msg.joint_names.end()) return Interval(first.getVariablePosition(name));
+              return controllerPositionRange(a,b,std::distance(msg.joint_names.begin(),found),
+                end-begin,lo-begin+1,hi-begin-1);
+            };
+            double lower=std::min(left.getVariablePosition(item.first),right.getVariablePosition(item.first));
+            double upper=std::max(left.getVariablePosition(item.first),right.getVariablePosition(item.first));
+            if(hi-lo>1) {
+              const auto enclosed=interior(item.first,0);
+              lower=std::min(lower,enclosed.lower());upper=std::max(upper,enclosed.upper());
+            }
+            if(lower<bounds.min_position_||upper>bounds.max_position_) clear=false;
+          }
         }
         if(clear) {if(detached) detached->pairs=std::move(proposed);++report.certified;return true;}
         if(depth>=options.max_depth||hi-lo<=options.min_interval_ns||mid==lo||mid==hi) {

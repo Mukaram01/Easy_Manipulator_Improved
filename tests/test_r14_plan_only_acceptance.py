@@ -99,3 +99,17 @@ def test_execution_rejects_lost_bottle_duplicate_cup_and_non_mock_hardware():
     result['fake_hardware_guard']['hardware_classes'].append('custom/Hardware')
     with pytest.raises(RuntimeError, match='mock hardware'):
         acceptance.check_execution_result(result, statuses)
+
+
+@pytest.mark.parametrize('script, required, execution', [
+    ('run_r14_plan_only_acceptance.py', ['--output-dir', '/unused'], '--execute'),
+    ('perceived_object_grasp_execute.py', ['--summary-output', '/unused', '--detections', '/unused'], '--start'),
+])
+@pytest.mark.parametrize('budget, execute', [('180', True), ('nan', False), ('301', False)])
+def test_extended_candidate_budget_rejects_execution_and_invalid_limits(script, required, execution, budget, execute):
+    import subprocess, sys
+    p = Path(__file__).parents[1]/'scripts'/script
+    result = subprocess.run([sys.executable, str(p), *required, '--candidate-wall-budget', budget,
+                             *([execution] if execute else [])], capture_output=True, text=True)
+    assert result.returncode == 2
+    assert '--candidate-wall-budget requires plan-only mode' in result.stderr

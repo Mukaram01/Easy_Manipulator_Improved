@@ -1,0 +1,10 @@
+{
+  "binary_sha256": "091aa50cb926b4a97e13df01ab5c5f27ef215afd69e08c49a33b2633f3e5b5c6",
+  "source_sha256": "c2cceb47fbb5d57186f3b591ec564cbe083e677a5386b4c61d8247f8bc1e3b93",
+  "head": "36c2637f85ffbb4ba1daffefa8f97c99994a1cc2",
+  "clean": true,
+  "camera_fix_present": true,
+  "swrast_sha256": "1a274eaf6b7a9453256367af11f24deb858425df3336f7779a36b7644f3f425f",
+  "software_driver_scope": "same installed swrast library as prior native llvmpipe evidence; actual driver must be reported by this run",
+  "output": "/tmp/stage_a2_fragment_verified.json"
+}

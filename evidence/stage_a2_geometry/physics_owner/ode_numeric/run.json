@@ -1,0 +1,25 @@
+{
+  "exit": 0,
+  "wall_time_s": 4.759277209988795,
+  "world_sha256": "57280a9dade53696b1c06c397234271d8d0c5f0e1220583fc2fbc8120b359890",
+  "physics_xml": "<physics name=\"default_physics\" type=\"ode\">\n      <max_step_size>0.001</max_step_size>\n      <real_time_factor>1.0</real_time_factor>\n      <real_time_update_rate>1000</real_time_update_rate>\n    </physics>\n\n    ",
+  "gravity": "0 0 -9.81",
+  "loaded_libraries": {
+    "/tmp/stage_a2_owner_build/libworkcell_owner_physics.so": "58e990834de007fffe3f0f980177e872200e2360340e0d33cf5bf33e8fbfb2d2",
+    "/tmp/stage_a2_physics_contact_build/libworkcell_physics_contact_measurement.so": "718754a5a29463bcb6d55a786493c7d9ca44b0b1aa6592f1e7da5c12e87dc82b",
+    "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-scene-broadcaster-system.so.6.18.0": "2437676add6c768bce4fe2e48858de05f5d7619f5e412dd476a706f6e0ec0090",
+    "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-sensors-system.so.6.18.0": "1822b540859271d7f733f6e1e602792dbe5184e9b2b43f8a8e00c6654c1954d4",
+    "/usr/lib/x86_64-linux-gnu/ign-gazebo-6/plugins/libignition-gazebo6-user-commands-system.so.6.18.0": "62b13f3e69cf68e081a54ed4fb155953848aa33199cd43c35e15cd480bfab2ca",
+    "/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics5-dartsim-plugin.so.5.4.0": "44e5d8573b44ef1f555eba6f2fbf01c1f0ab657b0fd32016c441e884ec5e71a1",
+    "/usr/lib/x86_64-linux-gnu/libdart-collision-bullet.so.6.12.1": "1ae679a95b5033ed801538468834785bd009ecf078ad695822bcb3c419060037",
+    "/usr/lib/x86_64-linux-gnu/libdart-collision-ode.so.6.12.1": "cc914ae1d651bfd79fa7eb308c6f39a12174e8b59d0fb45318652f0eb61761ee",
+    "/usr/lib/x86_64-linux-gnu/libdart-external-odelcpsolver.so.6.12.1": "b9df61c1d196ee2652ce1ca94af8fff44e1e1ca5286f0fdd10cedd0e8981a31a",
+    "/usr/lib/x86_64-linux-gnu/libdart.so.6.12.1": "5a0048707f55903e0ba62f9bba76456b6f0eb850c1d5016ea499432c1bab089b",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-gui.so.6.18.0": "641ae1539e310db64620c0df09b0c7d2154ef55f2836aea1431f4554e072675d",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-ign.so.6.18.0": "78e7226957ca35217ade7e358d7ea7ec8c8de31ead36c7c462cb4898d7a9085a",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6-rendering.so.6.18.0": "e02946a7564ff486e735bd91641ea854ecfe5f7cc4976494d61ec2c3c3ffa4e9",
+    "/usr/lib/x86_64-linux-gnu/libignition-gazebo6.so.6.18.0": "8807ba9f771cff215bc50503b54e26dc0ca0691052e2444ad71f46b85e040b50",
+    "/usr/lib/x86_64-linux-gnu/libignition-physics5.so.5.4.0": "49510d312303dbb60a747f85c80c2af80d66d4823bb4081ee4ab8d05ad73600b",
+    "/usr/lib/x86_64-linux-gnu/libode.so.8.0.2": "0b40593ed29a7b4f72f364a989ac8d8ea0bdab2a7578518366048b5128c0343b"
+  }
+}

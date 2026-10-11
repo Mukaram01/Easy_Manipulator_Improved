@@ -1,0 +1,14 @@
+Internal ctest changing into directory: /tmp/stage_a2_live_fragment_build
+Test project /tmp/stage_a2_live_fragment_build
+    Start 1: material_contract
+1/4 Test #1: material_contract ................   Passed    0.01 sec
+    Start 2: gl_context_classification
+2/4 Test #2: gl_context_classification ........   Passed    0.01 sec
+    Start 3: renderer_identity_diagnostics
+3/4 Test #3: renderer_identity_diagnostics ....   Passed    0.01 sec
+    Start 4: inventory_lossless_comparison
+4/4 Test #4: inventory_lossless_comparison ....   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Total Test time (real) =   0.03 sec
