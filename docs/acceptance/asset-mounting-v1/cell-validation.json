@@ -1,0 +1,38 @@
+{
+  "capabilities": {
+    "capability_refs": {
+      "end_effector": null,
+      "environment_assets": [],
+      "robot": null,
+      "sensors": [],
+      "task": null
+    },
+    "checks": {
+      "events": [],
+      "status": "PASS"
+    },
+    "resolved": {}
+  },
+  "environment_layout": {
+    "asset_count": 6,
+    "layout_id": "mounting_acceptance_v12",
+    "path": "layout/workcell_studio_layout.yaml",
+    "result": "PASS",
+    "safety_zone_count": 0,
+    "zone_count": 2
+  },
+  "errors": [],
+  "grasp_strategy": {
+    "mode": "none",
+    "ref": null,
+    "resolved_path": null,
+    "status": "PASS"
+  },
+  "notes": [
+    "environment.layout: validated canonical workcell_studio_layout/v1 metadata."
+  ],
+  "parser": "pyyaml",
+  "path": "scenes/mounting_acceptance_v12/cell_definition.yaml",
+  "result": "PASS",
+  "warnings": []
+}

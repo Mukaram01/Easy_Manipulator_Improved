@@ -62,6 +62,7 @@
 #include <QJsonArray>
 #include <QDesktopServices>
 #include <QHeaderView>
+#include <QTreeWidgetItemIterator>
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -99,6 +100,7 @@
 #include <QPointer>
 #include <QProgressDialog>
 #include <QProcess>
+#include <QScopedValueRollback>
 #include <QProcessEnvironment>
 #include <QRandomGenerator>
 #include <QUuid>
@@ -541,7 +543,7 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ, RoleMetadataExplicitlyEdited };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ, RoleMetadataExplicitlyEdited, RoleMountingYaml };
 enum SceneTreeRoles {
   TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
@@ -2125,8 +2127,7 @@ bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const 
     add_blocker(QString("scene_not_found:%1").arg(scene_name));
     return false;
   }
-  select_scene_by_row(scene_idx);
-  if (!open_scene_builder_for_selected_scene(QStringLiteral("Scene3D smoke deterministic load"))) {
+  if (!open_scene_builder_for_scene_index(scene_idx, QStringLiteral("Scene3D smoke deterministic load"))) {
     add_blocker("open_scene_builder_for_selected_scene_failed");
     return false;
   }
@@ -2792,7 +2793,15 @@ void MainWindow::setup_studio_shell()
       double roll, double pitch, double yaw)
     {
       const QString stable_id = id.trimmed();
-      if (stable_id.isEmpty()) return;
+      if (stable_id.isEmpty() || mounting_update_guard_) return;
+      const QString echo = authored_pose_signature(stable_id, x, y, z, roll, pitch, yaw);
+      bool mounted_graph = false;
+      for (const auto & p : all_scene_preview_items_) mounted_graph = mounted_graph || p.mounting_yaml.contains("parent_object");
+      if (mounted_graph && !pending_native_web_pose_signatures_.contains(echo)) {
+        commit_mounting_request({{"id", stable_id}, {"world_pose", QJsonObject{
+          {"xyz", QJsonArray{x, y, z}}, {"rpy", QJsonArray{roll, pitch, yaw}}}}});
+        return;
+      }
 
       ScenePreviewWidget::PreviewItem before_item;
       bool found_authored_item = false;
@@ -2926,7 +2935,14 @@ void MainWindow::setup_studio_shell()
   if (scene3d_viewport) {
     scene3d_viewport->setObjectName("scene3dViewportWidget");
     scene3d_viewport->transform_changed_cb = [this](const QString &id, double x, double y, double z, double r, double p, double yaw){
-      if (!digital_twin_scene_) return;
+      if (!digital_twin_scene_ || mounting_update_guard_) return;
+      bool mounted_graph = false;
+      for (const auto & row : all_scene_preview_items_) mounted_graph = mounted_graph || row.mounting_yaml.contains("parent_object");
+      if (mounted_graph) {
+        commit_mounting_request({{"id", id}, {"world_pose", QJsonObject{
+          {"xyz", QJsonArray{x, y, z}}, {"rpy", QJsonArray{r, p, yaw}}}}});
+        return;
+      }
       for (auto * item : digital_twin_scene_->items()) {
         if (item->data(RoleId).toString() != id) continue;
         const bool locked_item = item->data(RoleLocked).toBool();
@@ -3477,6 +3493,11 @@ void MainWindow::setup_studio_shell()
   inspector_type_->setReadOnly(true);
   metadata_form->addRow("Type", inspector_type_);
   selected_item_card_layout->addLayout(metadata_form);
+  auto * mounting_button = new QPushButton("Mount To / Relative Pose…", scene_builder);
+  mounting_button->setObjectName("sceneBuilderMounting");
+  mounting_button->setToolTip("Mount this asset to another asset or a named anchor. Reparent and detach preserve its world pose.");
+  selected_item_card_layout->addWidget(mounting_button);
+  connect(mounting_button, &QPushButton::clicked, this, &MainWindow::edit_selected_mounting);
   auto * transform_title = new QLabel("<b>Transform</b><br/>Position in metres; rotation in degrees.", scene_builder);
   transform_title->setWordWrap(true);
   selected_item_card_layout->addWidget(transform_title);
@@ -4696,14 +4717,8 @@ MainWindow::SelectedSceneItemState MainWindow::current_selected_scene_item() con
   };
   const auto find_tree_item_by_id = [&](const QString & id) -> QTreeWidgetItem * {
     if (!scene_hierarchy_tree_ || id.trimmed().isEmpty()) return nullptr;
-    for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount(); ++row) {
-      auto * top = scene_hierarchy_tree_->topLevelItem(row);
-      if (!top) continue;
-      if (top->data(0, TreeRoleId).toString().trimmed() == id) return top;
-      for (int child = 0; child < top->childCount(); ++child) {
-        auto * node = top->child(child);
-        if (node && node->data(0, TreeRoleId).toString().trimmed() == id) return node;
-      }
+    for (QTreeWidgetItemIterator it(scene_hierarchy_tree_); *it; ++it) {
+      if ((*it)->data(0, TreeRoleId).toString().trimmed() == id) return *it;
     }
     return nullptr;
   };
@@ -7736,14 +7751,8 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   bool matched_tree_item = false;
   if (scene_hierarchy_tree_) {
     QTreeWidgetItem * matched = nullptr;
-    for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount() && !matched; ++row) {
-      auto * tree_item = scene_hierarchy_tree_->topLevelItem(row);
-      if (!tree_item) continue;
-      if (tree_item->data(0, TreeRoleId).toString().trimmed() == selected_id) matched = tree_item;
-      for (int child = 0; child < tree_item->childCount() && !matched; ++child) {
-        auto * node = tree_item->child(child);
-        if (node && node->data(0, TreeRoleId).toString().trimmed() == selected_id) matched = node;
-      }
+    for (QTreeWidgetItemIterator it(scene_hierarchy_tree_); *it && !matched; ++it) {
+      if ((*it)->data(0, TreeRoleId).toString().trimmed() == selected_id) matched = *it;
     }
     if (matched) {
       matched_tree_item = true;
@@ -8122,8 +8131,14 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
     gi->data(RoleMeshScaleX).isValid() ? gi->data(RoleMeshScaleX).toDouble() : 1.0,
     gi->data(RoleMeshScaleY).isValid() ? gi->data(RoleMeshScaleY).toDouble() : 1.0,
     gi->data(RoleMeshScaleZ).isValid() ? gi->data(RoleMeshScaleZ).toDouble() : 1.0}};
-  return workcell_builder::serialize_layout_item(
+  auto result = workcell_builder::serialize_layout_item(
     state, existing, gi->data(RoleMetadataExplicitlyEdited).toBool());
+  const auto metadata = YAML::Load(gi->data(RoleMountingYaml).toString().toStdString());
+  for (const char * key : {"parent_object", "parent_link", "joint_type", "origin", "mounting_anchors"}) {
+    if (metadata && metadata[key]) result[key] = YAML::Clone(metadata[key]);
+    else result.remove(key);
+  }
+  return result;
 }
 
 void MainWindow::save_layout_changes(){
@@ -8928,7 +8943,19 @@ void MainWindow::on_canvas_selection_changed()
   const QString selected_role = sel->data(RoleRole).toString().trimmed();
   apply_scene_selection(selected_id, selected_role, false, false);
 }
-void MainWindow::on_canvas_item_moved(QGraphicsItem * item, const QPointF &, const QPointF &, const QString & reason){ if(item) select_canvas_item(item); mark_layout_dirty(reason); }
+void MainWindow::on_canvas_item_moved(QGraphicsItem * item, const QPointF &, const QPointF & position, const QString & reason)
+{
+  if (!item || mounting_update_guard_) return;
+  bool mounted_graph = false;
+  for (const auto & p : all_scene_preview_items_) mounted_graph = mounted_graph || p.mounting_yaml.contains("parent_object");
+  if (mounted_graph) {
+    commit_mounting_request({{"id", item->data(RoleId).toString()}, {"world_pose", QJsonObject{
+      {"xyz", QJsonArray{position.x()/100., position.y()/100., item->data(RolePoseZ).toDouble()}},
+      {"rpy", QJsonArray{item->data(RoleRoll).toDouble(), item->data(RolePitch).toDouble(), item->data(RoleYaw).toDouble()}}}}});
+    return;
+  }
+  select_canvas_item(item); mark_layout_dirty(reason);
+}
 bool MainWindow::parse_transform_clipboard_text(
   const QString & text, double * x, double * y, double * z, double * r, double * p, double * yaw, QString * error)
 {
@@ -8963,6 +8990,7 @@ void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * it
   state.dim_x = item->data(RoleWidth).toDouble();
   state.dim_y = item->data(RoleDepth).toDouble();
   state.dim_z = item->data(RoleHeight).toDouble();
+  selected_item_state_ = state;
   refresh_selection_transform_editor_from_state(state);
 }
 
@@ -9107,6 +9135,157 @@ void MainWindow::reset_robot_base_pose_from_snapshot()
   apply_robot_base_pose_from_inspector();
 }
 
+QJsonArray MainWindow::mounting_items() const
+{
+  QJsonArray rows;
+  for (const auto & p : all_scene_preview_items_) {
+    if (!p.editable || p.locked || p.source_layer != QStringLiteral("editable_layout") || deleted_layout_item_ids_.contains(p.id)) continue;
+    rows.append(QJsonObject{{"id", p.id}, {"role", p.role}, {"category", p.category}, {"mounting_yaml", p.mounting_yaml},
+      {"pose_xyz", QJsonArray{p.x, p.y, p.z}}, {"pose_rpy", QJsonArray{p.roll, p.pitch, p.yaw}}});
+  }
+  return rows;
+}
+
+QJsonObject MainWindow::run_mounting_request(QJsonObject request)
+{
+  request.insert("items", mounting_items());
+  const QString root = resolve_workcell_studio_repo_root(fs::path(selected_scene_state_.path.toStdString()));
+  QProcess process;
+  process.start("python3", {QDir(root).filePath("scripts/asset_mounting.py")});
+  if (!process.waitForStarted(3000)) return {{"ok", false}, {"error", "Could not start asset mounting resolver; check Python installation."}};
+  process.write(QJsonDocument(request).toJson(QJsonDocument::Compact));
+  process.closeWriteChannel();
+  if (!process.waitForFinished(5000)) {
+    process.kill(); process.waitForFinished(1000);
+    return {{"ok", false}, {"error", "Asset mounting resolver timed out; edits were not applied."}};
+  }
+  const auto response = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  if (response.isEmpty()) return {{"ok", false}, {"error", QString::fromUtf8(process.readAllStandardError())}};
+  return response;
+}
+
+void MainWindow::apply_mounting_snapshot(const QVector<ScenePreviewWidget::PreviewItem> & snapshot)
+{
+  const QScopedValueRollback<bool> updating(mounting_update_guard_, true);
+  for (const auto & p : snapshot) {
+    for (auto & existing : all_scene_preview_items_) if (existing.id == p.id) { existing = p; break; }
+    if (auto * canvas = find_canvas_item_by_stable_id(p.id)) {
+      workcell_builder::set_authored_canvas_position(canvas, QPointF(p.x * 100., p.y * 100.));
+      canvas->setData(RolePoseZ, p.z); canvas->setData(RoleRoll, p.roll);
+      canvas->setData(RolePitch, p.pitch); canvas->setData(RoleYaw, p.yaw);
+      canvas->setData(RoleMountingYaml, p.mounting_yaml);
+      canvas->setData(RoleDisplayName, p.display_name); canvas->setData(RoleRole, p.role);
+      canvas->setData(RoleWidth, p.sx); canvas->setData(RoleDepth, p.sy); canvas->setData(RoleHeight, p.sz);
+      canvas->setData(RoleMetadataExplicitlyEdited, true);
+    }
+    if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+      pending_native_web_pose_signatures_.insert(authored_pose_signature(p.id, p.x, p.y, p.z, p.roll, p.pitch, p.yaw));
+      scene_preview_widget_->set_authoring_item_pose(p.id, p.x, p.y, p.z, p.roll, p.pitch, p.yaw);
+    }
+  }
+  // Selection state is also a projection; refresh it before capturing the session.
+  if (auto * selected = find_canvas_item_by_stable_id(current_selected_scene_item_id_)) {
+    refresh_selection_transform_editor_from_item(selected);
+  }
+  refresh_scene_hierarchy_tree_from_current_items();
+  capture_active_editable_layout_session();
+  if (scene_preview_widget_ && !scene_preview_widget_->embedded_web_authoring_active()) apply_scene3d_preview_layer_filters(false);
+}
+
+bool MainWindow::commit_mounting_request(QJsonObject request)
+{
+  if (!ensure_live_authoring_mutation_available(QStringLiteral("Asset mounting"))) return false;
+  const auto response = run_mounting_request(request);
+  if (!response.value("ok").toBool()) {
+    QMessageBox::warning(this, "Asset mounting", response.value("error").toString());
+    return false;
+  }
+  QVector<ScenePreviewWidget::PreviewItem> before, after;
+  for (const auto & value : response.value("result").toArray()) {
+    const auto row = value.toObject();
+    for (const auto & existing : all_scene_preview_items_) if (existing.id == row.value("id").toString()) {
+      before.push_back(existing);
+      auto p = existing;
+      const auto xyz = row.value("pose_xyz").toArray(), rpy = row.value("pose_rpy").toArray();
+      p.x = xyz[0].toDouble(); p.y = xyz[1].toDouble(); p.z = xyz[2].toDouble();
+      p.roll = rpy[0].toDouble(); p.pitch = rpy[1].toDouble(); p.yaw = rpy[2].toDouble();
+      p.mounting_yaml = row.value("mounting_yaml").toString();
+      if (p.id == request.value("id").toString() && request.value("inspector_edit").toBool()) {
+        if (inspector_display_name_ && !inspector_display_name_->text().trimmed().isEmpty()) p.display_name = inspector_display_name_->text().trimmed();
+        if (inspector_semantic_role_ && !inspector_semantic_role_->currentData().toString().isEmpty()) p.role = inspector_semantic_role_->currentData().toString();
+        if (inspector_dim_x_->isEnabled() && !inspector_dim_x_->isReadOnly()) {
+          p.sx = inspector_dim_x_->value(); p.sy = inspector_dim_y_->value(); p.sz = inspector_dim_z_->value();
+        }
+      }
+      after.push_back(p); break;
+    }
+  }
+  CanvasEditCommand command{"mounting", request.value("id").toString(), {}, {}, false, false, before};
+  command.after_items = after;
+  apply_mounting_snapshot(after);
+  undo_stack_.push_back(command); redo_stack_.clear();
+  mark_layout_dirty("Asset mounting / hierarchical transform");
+  scene_preview_widget_->set_native_authoring_history_available(true, false);
+  return true;
+}
+
+void MainWindow::edit_selected_mounting()
+{
+  const auto target = resolve_selected_editable_layout_target();
+  if (!target.ok) { QMessageBox::information(this, "Mount To", target.blocker); return; }
+  const auto response = run_mounting_request({{"operation", "anchors"}});
+  if (!response.value("ok").toBool()) { QMessageBox::warning(this, "Mount To", response.value("error").toString()); return; }
+  const auto named = response.value("result").toObject();
+  QDialog dialog(this); dialog.setWindowTitle("Mount asset — " + target.state.display_name);
+  dialog.setObjectName("assetMountingDialog");
+  auto * form = new QFormLayout(&dialog);
+  auto * parent = new QComboBox(&dialog); parent->setObjectName("mountTo"); parent->addItem("World", "world");
+  for (const auto & p : all_scene_preview_items_) if (named.contains(p.id) && p.id != target.state.id && !p.semantic_task_zone_helper)
+    parent->addItem(p.display_name + " [" + p.id + "]", p.id);
+  auto * anchor = new QComboBox(&dialog); anchor->setObjectName("mountAnchor");
+  const auto fill_anchors = [parent, anchor, named]() {
+    anchor->clear(); const auto id = parent->currentData().toString();
+    if (id == "world") anchor->addItem("world");
+    else for (const auto & key : named.value(id).toObject().keys()) anchor->addItem(key);
+  };
+  connect(parent, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, [fill_anchors](int){ fill_anchors(); });
+  form->addRow("Mount To", parent); form->addRow("Anchor", anchor);
+  auto * relative = new QCheckBox("Apply relative pose (metres / degrees)", &dialog); relative->setObjectName("applyRelativePose");
+  form->addRow(relative);
+  std::array<QDoubleSpinBox *, 6> values;
+  const std::array<const char *, 6> keys{{"x", "y", "z", "roll", "pitch", "yaw"}};
+  YAML::Node metadata;
+  for (const auto & p : all_scene_preview_items_) if (p.id == target.state.id) metadata = YAML::Load(p.mounting_yaml.toStdString());
+  if (metadata && metadata["parent_object"]) parent->setCurrentIndex(qMax(0, parent->findData(QString::fromStdString(metadata["parent_object"].as<std::string>()))));
+  fill_anchors();
+  if (metadata && metadata["parent_link"]) anchor->setCurrentText(QString::fromStdString(metadata["parent_link"].as<std::string>()));
+  for (int k = 0; k < 6; ++k) {
+    values[k] = new QDoubleSpinBox(&dialog); values[k]->setRange(-10000., 10000.); values[k]->setDecimals(6);
+    values[k]->setObjectName(QString("relative_%1").arg(keys[k]));
+    const double v = metadata && metadata["origin"] ? metadata["origin"][keys[k]].as<double>(0.) : 0.;
+    values[k]->setValue(k < 3 ? v : qRadiansToDegrees(v)); values[k]->setEnabled(false);
+    connect(relative, &QCheckBox::toggled, values[k], &QWidget::setEnabled);
+    form->addRow(QString("Relative %1").arg(keys[k]), values[k]);
+  }
+  auto * note = new QLabel("Mounting and detaching keep the current world pose unless Apply relative pose is selected.", &dialog);
+  note->setWordWrap(true); form->addRow(note);
+  auto * buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Cancel, &dialog);
+  auto * detach = buttons->addButton("Detach", QDialogButtonBox::ActionRole); detach->setObjectName("detachAsset");
+  form->addRow(buttons);
+  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  connect(detach, &QPushButton::clicked, &dialog, [this, &dialog, target]() {
+    if (commit_mounting_request({{"id", target.state.id}, {"parent_object", "world"}, {"parent_link", "world"}})) dialog.accept();
+  });
+  connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, &dialog, [this, &dialog, target, parent, anchor, relative, values]() {
+    QJsonObject request{{"id", target.state.id}, {"parent_object", parent->currentData().toString()}, {"parent_link", anchor->currentText()}};
+    if (relative->isChecked()) request.insert("relative_pose", QJsonObject{
+      {"xyz", QJsonArray{values[0]->value(), values[1]->value(), values[2]->value()}},
+      {"rpy", QJsonArray{qDegreesToRadians(values[3]->value()), qDegreesToRadians(values[4]->value()), qDegreesToRadians(values[5]->value())}}});
+    if (commit_mounting_request(request)) dialog.accept();
+  });
+  dialog.exec();
+}
+
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
 
 void MainWindow::apply_inspector_pose_to_item()
@@ -9120,6 +9299,17 @@ void MainWindow::apply_inspector_pose_to_item()
   }
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Inspector edit"))) return;
 
+  bool mounted_graph = false;
+  for (const auto & row : mounting_items()) {
+    const auto meta = YAML::Load(row.toObject().value("mounting_yaml").toString().toStdString());
+    mounted_graph = mounted_graph || (meta && meta["parent_object"] && meta["parent_object"].as<std::string>() != "world");
+  }
+  if (mounted_graph) {
+    commit_mounting_request(QJsonObject{{"id", target.state.id}, {"inspector_edit", true}, {"world_pose", QJsonObject{
+      {"xyz", QJsonArray{inspector_x_->value(), inspector_y_->value(), inspector_z_->value()}},
+      {"rpy", QJsonArray{qDegreesToRadians(inspector_roll_->value()), qDegreesToRadians(inspector_pitch_->value()), qDegreesToRadians(inspector_yaw_->value())}}}}});
+    return;
+  }
   QGraphicsItem * i = target.fallback_item;
   const QString item_id = target.state.id.trimmed();
   const QPointF old(target.state.pose_x * 100.0, target.state.pose_y * 100.0);
@@ -9352,7 +9542,9 @@ void MainWindow::undo_layout_edit(){
         snapshot.roll, snapshot.pitch, snapshot.yaw);
     }
   };
-  if (c.kind == QStringLiteral("delete")) {
+  if (c.kind == QStringLiteral("mounting")) {
+    apply_mounting_snapshot(c.preview_items);
+  } else if (c.kind == QStringLiteral("delete")) {
     deleted_layout_item_ids_.remove(c.item_id);
     for (const auto & p : c.preview_items) {
       bool exists = false;
@@ -9423,7 +9615,9 @@ void MainWindow::redo_layout_edit(){
         snapshot.roll, snapshot.pitch, snapshot.yaw);
     }
   };
-  if (c.kind == QStringLiteral("delete")) {
+  if (c.kind == QStringLiteral("mounting")) {
+    apply_mounting_snapshot(c.after_items);
+  } else if (c.kind == QStringLiteral("delete")) {
     deleted_layout_item_ids_.insert(c.item_id);
     for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == c.item_id) all_scene_preview_items_.removeAt(i);
     if (digital_twin_scene_) for (auto * item : digital_twin_scene_->items()) if (item->data(RoleId).toString() == c.item_id) { delete item; break; }
@@ -9538,6 +9732,11 @@ void MainWindow::duplicate_selected_item()
 
   copy.id = new_id;
   copy.display_name = new_name;
+  if (!copy.mounting_yaml.isEmpty()) {
+    auto metadata = YAML::Load(copy.mounting_yaml.toStdString());
+    for (const char * key : {"parent_object", "parent_link", "joint_type", "origin"}) metadata.remove(key);
+    YAML::Emitter emitter; emitter << metadata; copy.mounting_yaml = QString::fromUtf8(emitter.c_str());
+  }
   copy.x += 0.10;
   copy.y += 0.10;
   copy.editable = true;
@@ -9549,6 +9748,7 @@ void MainWindow::duplicate_selected_item()
 
   auto * item = new DraggableCanvasItem(QRectF(0, 0, qMax(10.0, copy.sx * 35.0), qMax(10.0, copy.sy * 35.0)));
   item->setPos(copy.x * 100.0, copy.y * 100.0);
+  item->setData(RoleMountingYaml, copy.mounting_yaml);
   item->setData(RoleId, copy.id); item->setData(RoleDisplayName, copy.display_name);
   item->setData(RoleType, target.state.type); item->setData(RoleCategory, copy.category); item->setData(RoleRole, copy.role);
   item->setData(RoleSource, copy.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder"));
@@ -9604,6 +9804,13 @@ void MainWindow::delete_selected_item(){
   }
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Delete"))) return;
   const QString id = target.state.id.trimmed();
+  for (const auto & p : all_scene_preview_items_) {
+    const auto meta = YAML::Load(p.mounting_yaml.toStdString());
+    if (meta && meta["parent_object"] && meta["parent_object"].as<std::string>() == id.toStdString()) {
+      QMessageBox::warning(this, "Remove asset", "Detach or reparent the mounted children before removing their parent.");
+      return;
+    }
+  }
   QVector<ScenePreviewWidget::PreviewItem> deleted_preview_items;
   for (const auto & p : all_scene_preview_items_) if (p.id == id) deleted_preview_items.push_back(p);
   if (deleted_preview_items.isEmpty()) {
@@ -9679,6 +9886,15 @@ void MainWindow::keyPressEvent(QKeyEvent * event)
     default: QMainWindow::keyPressEvent(event); return;
   }
   const QPointF old_pos = item->pos();
+  bool mounted_graph = false;
+  for (const auto & p : all_scene_preview_items_) mounted_graph = mounted_graph || p.mounting_yaml.contains("parent_object");
+  if (mounted_graph) {
+    const auto updated = snap_canvas_position(old_pos + delta);
+    commit_mounting_request({{"id", item->data(RoleId).toString()}, {"world_pose", QJsonObject{
+      {"xyz", QJsonArray{updated.x()/100., updated.y()/100., item->data(RolePoseZ).toDouble()+dz}},
+      {"rpy", QJsonArray{item->data(RoleRoll).toDouble(), item->data(RolePitch).toDouble(), item->data(RoleYaw).toDouble()}}}}});
+    event->accept(); return;
+  }
   item->setPos(snap_canvas_position(old_pos + delta));
   item->setData(RolePoseZ, item->data(RolePoseZ).toDouble() + dz);
   if (snap_step_label_) snap_step_label_->setText(QString("Nudge step: %1 m").arg(step_m, 0, 'f', 3));
@@ -10990,6 +11206,20 @@ void MainWindow::refresh_scene_hierarchy_tree_from_current_items()
     if (instance_id == selected_id) selected_node = node;
   }
 
+  QMap<QString, QTreeWidgetItem *> nodes;
+  for (int row = 0; row < scene_hierarchy_tree_->topLevelItemCount(); ++row) {
+    auto * node = scene_hierarchy_tree_->topLevelItem(row);
+    nodes.insert(node->data(0, TreeRoleId).toString(), node);
+  }
+  for (const auto & p : all_scene_preview_items_) {
+    const auto meta = YAML::Load(p.mounting_yaml.toStdString());
+    const QString parent = meta && meta["parent_object"] ? QString::fromStdString(meta["parent_object"].as<std::string>()) : QString();
+    if (nodes.contains(p.id) && nodes.contains(parent) && p.id != parent) {
+      auto * child = nodes[p.id];
+      scene_hierarchy_tree_->takeTopLevelItem(scene_hierarchy_tree_->indexOfTopLevelItem(child));
+      nodes[parent]->addChild(child); nodes[parent]->setExpanded(true);
+    }
+  }
   if (scene_hierarchy_tree_->topLevelItemCount() == 0) {
     auto * empty = new QTreeWidgetItem(scene_hierarchy_tree_, {QStringLiteral("No scene items"), QString(), QString()});
     empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);
@@ -11312,7 +11542,7 @@ void MainWindow::populate_scene_hierarchy()
       p->yaw = semantic_seq_double(rpy, 2, p->yaw);
     }
     const YAML::Node origin = node["origin"];
-    const YAML::Node scalar_pose_source = origin && origin.IsMap() ? origin : node;
+    const YAML::Node scalar_pose_source = origin && origin.IsMap() && !node["parent_object"] ? origin : node;
     try { if (scalar_pose_source["x"]) p->x = scalar_pose_source["x"].as<double>(p->x); } catch (...) {}
     try { if (scalar_pose_source["y"]) p->y = scalar_pose_source["y"].as<double>(p->y); } catch (...) {}
     try { if (scalar_pose_source["z"]) p->z = scalar_pose_source["z"].as<double>(p->z); } catch (...) {}
@@ -13712,6 +13942,40 @@ void MainWindow::populate_scene_hierarchy()
     preview_provenance_summary_ = preview_provenance_summary_.isEmpty()
       ? visual_diagnostics_summary
       : QString("%1 | %2").arg(preview_provenance_summary_, visual_diagnostics_summary);
+  }
+  try {
+    const auto authored = YAML::LoadFile((s.scene_dir / "environment.yaml").string());
+    const auto physical = authored["environment"];
+    QHash<QString, QString> physical_to_editor;
+    for (const char * collection : {"support_surfaces", "assets", "sensors", "task_zones"}) {
+      if (!physical || !physical[collection] || !physical[collection].IsSequence()) continue;
+      for (const auto & record : physical[collection]) {
+        const auto physical_id = QString::fromStdString(record["id"].as<std::string>(""));
+        physical_to_editor.insert(physical_id, QString::fromStdString(record["layout_item_ref"].as<std::string>(physical_id.toStdString())));
+      }
+    }
+    for (const char * collection : {"support_surfaces", "assets", "sensors", "task_zones"}) {
+      if (!physical || !physical[collection] || !physical[collection].IsSequence()) continue;
+      for (const auto & record : physical[collection]) {
+        const auto id = QString::fromStdString(record["layout_item_ref"].as<std::string>(record["id"].as<std::string>("")));
+        YAML::Node metadata(YAML::NodeType::Map);
+        for (const char * key : {"parent_object", "parent_link", "joint_type", "origin", "mounting_anchors", "surface_z_m"})
+          if (record[key]) metadata[key] = YAML::Clone(record[key]);
+        if (metadata["parent_object"]) {
+          const auto parent = QString::fromStdString(metadata["parent_object"].as<std::string>());
+          metadata["parent_object"] = physical_to_editor.value(parent, parent).toStdString();
+        }
+        YAML::Emitter emitter; emitter << metadata;
+        for (auto & p : preview_items) if (p.id == id && p.editable && !p.locked)
+          p.mounting_yaml = QString::fromUtf8(emitter.c_str());
+      }
+    }
+    if (layout_dirty_) for (const auto & pending : editable_layout_session_items_)
+      for (auto & p : preview_items) if (p.id == pending.id) p.mounting_yaml = pending.mounting_yaml;
+    for (const auto & p : preview_items) if (auto * canvas = find_canvas_item_by_stable_id(p.id))
+      canvas->setData(RoleMountingYaml, p.mounting_yaml);
+  } catch (const std::exception & error) {
+    append_studio_log(QString("Cannot load asset mounting metadata: %1").arg(error.what()));
   }
   all_scene_preview_items_ = preview_items;
   preview_warning_details_ = preview_warning_details;

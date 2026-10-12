@@ -1229,6 +1229,14 @@ int main(int argc, char * argv[])
     return a.exec();
   }
 
+  if (has_cli_flag(args, "--asset-mounting-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_mounting_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"));
+    return a.exec();
+  }
   if (has_cli_flag(args, "--full-cycle-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     if (output.isEmpty() || QFileInfo::exists(output + "/acceptance.json")) return 2;

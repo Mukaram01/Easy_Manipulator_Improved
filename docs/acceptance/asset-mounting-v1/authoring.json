@@ -1,0 +1,273 @@
+{
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "mounted": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{\"parent_object\": \"camera_01\", \"parent_link\": \"origin\", \"joint_type\": \"fixed\", \"origin\": {\"x\": 0.15, \"y\": 0.089957, \"z\": 1.2, \"roll\": 0.0, \"pitch\": 1.5707963267948966, \"yaw\": -0.0}}",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.360043,
+                1.2
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "environment",
+            "id": "support_surface_table",
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "category": "environment",
+            "id": "target_bin_default",
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.2606668243408203, \"y\": 0.42000000000000004, \"z\": 0.10089999949932099, \"roll\": 0.0, \"pitch\": -0.0, \"yaw\": 0.0}}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.45,
+                0.22000000000000003,
+                0.1
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.25,
+                -0.45,
+                0
+            ],
+            "role": "camera"
+        }
+    ],
+    "moved": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{\"parent_object\": \"camera_01\", \"parent_link\": \"origin\", \"joint_type\": \"fixed\", \"origin\": {\"x\": 0.15, \"y\": 0.089957, \"z\": 1.2, \"roll\": 0.0, \"pitch\": 1.5707963267948966, \"yaw\": -0.0}}",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.41018678708473905,
+                -0.31416504941311174,
+                1.2
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "environment",
+            "id": "support_surface_table",
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.76,
+                -0.2,
+                0
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "category": "environment",
+            "id": "target_bin_default",
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.2606668243408203, \"y\": 0.42000000000000004, \"z\": 0.10089999949932099, \"roll\": 0.0, \"pitch\": -0.0, \"yaw\": 0.0}}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.3714048484864537,
+                0.1055175961087873,
+                0.10089999949932099
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.3,
+                -0.45,
+                0
+            ],
+            "role": "camera"
+        }
+    ],
+    "parent_edits_undo_redo_reparent_detach": true,
+    "placed_items": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                1.570000000000127,
+                0
+            ],
+            "pose_xyz": [
+                0.40000000000000013,
+                -0.36004294887185107,
+                0.8499999999999998
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "environment",
+            "id": "support_surface_table",
+            "mounting_yaml": "surface_z_m: 0.0",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "category": "environment",
+            "id": "target_bin_default",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.45,
+                0.22,
+                0.1
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mounting_yaml": "",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.25,
+                -0.45,
+                0
+            ],
+            "role": "camera"
+        }
+    ],
+    "placement_return": true,
+    "relative_pose_controls_used": true,
+    "result": "PASS",
+    "saved": true,
+    "support_catalog_candidates": [
+        {
+            "disabled": "",
+            "id": "camera_stand.urdf",
+            "source": "/home/user/workcell-asset-relationships-v1/workcell_builder/workcell_builder/assets/environment/camera_stand_description/urdf/camera_stand.urdf.xacro"
+        },
+        {
+            "disabled": "",
+            "id": "camera_stand",
+            "source": "/home/user/workcell-asset-relationships-v1/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl"
+        },
+        {
+            "disabled": "",
+            "id": "pipe_camera_stand_description",
+            "source": "/home/user/workcell-asset-relationships-v1/assets/environment/pipe_camera_stand_description/meshes/visual/pipe_camera_stand.stl"
+        }
+    ],
+    "wizard_created": "/home/user/workcell-relationships-ws/src/easy_manipulation_deployment/scenes/mounting_acceptance_v12"
+}

@@ -40313,6 +40313,14 @@ function bindExpandedUrdfPickRecordToSubtree(linkRoot, record, urdfLinkRoots) {
   }
   return boundNodeCount;
 }
+function derivedTransformTargetId(item) {
+  const targetId = String(item?.target_ref || "").trim();
+  const identity2 = [item?.role, item?.semantic_role, item?.type, item?.category, item?.id].map((value) => String(value || "").toLowerCase().replaceAll("_", " ")).join(" ");
+  return targetId && /\bplace zone\b/.test(identity2) ? targetId : "";
+}
+function isDerivedTransformDependent(item) {
+  return Boolean(derivedTransformTargetId(item));
+}
 function inspectionSelectionRendered(rendered) {
   return rendered?.item?.id ? rendered : null;
 }
@@ -45152,7 +45160,7 @@ function buildEditPatch() {
   const edits = [];
   for (const rendered of state.objects) {
     const dirty = state.dirtyTransforms.get(rendered.item.id);
-    if (!dirty)
+    if (!dirty || !canEditItem(rendered.item) || isDerivedTransformDependent(rendered.item))
       continue;
     edits.push({
       item_id: rendered.item.id,
@@ -45676,6 +45684,17 @@ function setVisibleItemIdsFromBridge(ids) {
   renderSceneSummary();
   return editorState();
 }
+function rebasePersistedDependents(persistedIds) {
+  for (const rendered of state.objects) {
+    const target = derivedTransformTargetId(rendered.item);
+    if (!target || !persistedIds.includes(target) || state.dirtyTransforms.has(target))
+      continue;
+    const current = cloneTransform(transformFromObject(rendered.object3d));
+    rendered.originalTransform = cloneTransform(current);
+    rendered.authoredBaselineTransform = cloneTransform(current);
+    state.dirtyTransforms.delete(rendered.item.id);
+  }
+}
 function rebasePersistedPatch(patch) {
   const api2 = window.__WORKCELL_EDITOR_API_V1__;
   const editorState7 = api2.getState();
@@ -45732,6 +45751,7 @@ function rebasePersistedPatch(patch) {
     if (typeof syncInspectorTransformFields === "function")
       syncInspectorTransformFields(rendered);
   }
+  rebasePersistedDependents(rebasedItemIds);
   state.undoStack = [];
   state.redoStack = [];
   updateDirtyState();

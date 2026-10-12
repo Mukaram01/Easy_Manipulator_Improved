@@ -46,6 +46,7 @@ public:
     QString display_name;
     QString category;
     QString catalog_asset_id;
+    QString mounting_yaml;  // Pending fixed-joint metadata; world pose remains the editor projection.
     double x{ 0.0 }, y{ 0.0 }, z{ 0.0 };
     double roll{ 0.0 }, pitch{ 0.0 }, yaw{ 0.0 };
     double sx{ 0.3 }, sy{ 0.3 }, sz{ 0.3 };

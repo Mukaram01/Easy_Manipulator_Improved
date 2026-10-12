@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 import yaml
 import copy
+import hashlib
+import shutil
+import struct
+import math
 from authored_yaml import write_preserving
+from asset_mounting import validate_physical, validate, RELATION_FIELDS
 
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
@@ -58,6 +63,7 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
         if any(str(item.get('id', '')) in deleted for item in layout.get('items', []) if isinstance(item, dict)):
             raise ValueError('Deleted IDs still exist in saved layout; refusing environment projection')
         env = without_deleted(env)
+        validate_physical(env.get("environment", {}))
         manifest = without_deleted(manifest)
         write_preserving(scene_dir/'environment.yaml', env)
         _save_yaml(scene_dir/'scene_manifest.yaml', manifest)
@@ -65,10 +71,57 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
 
     warnings: list[str] = []
     blockers: list[str] = []
+    validate_physical(env.get("environment", {}))
     layout_items = layout.get('items') if isinstance(layout.get('items'), list) else []
     if save_authored:
+        validate(layout_items)
+        # Catalog placement may hold a workstation path while editing. Runtime
+        # resources use the existing scene-owned assets contract, never an
+        # absolute path accepted by a relaxed publisher gate.
+        for item in layout_items:
+            mesh = item.get('mesh') if isinstance(item, dict) else None
+            if not item.get('catalog_asset_id') or not isinstance(mesh, dict):
+                continue
+            source = Path(str(mesh.get('path', '')))
+            if not source.is_absolute():
+                continue
+            if not source.is_file() or source.suffix.lower() != '.stl':
+                raise ValueError(f"asset {item['id']}: catalog mesh must be an existing STL; use Import Mesh for other formats")
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            relative = Path('assets/imported/catalog') / (digest[:16] + '.stl')
+            destination = scene_dir / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if not destination.exists():
+                data = source.read_bytes()
+                count = struct.unpack_from('<I', data, 80)[0] if len(data) >= 84 else 0
+                if count and 84 + 50 * count == len(data):
+                    shutil.copy2(source, destination)
+                else:
+                    # RViz accepts binary STL only. Reuse the bounded collision
+                    # reader and retain every catalog triangle and coordinate.
+                    from generate_moveit_collision_manifest import read_stl_mesh
+                    vertices, triangles = read_stl_mesh(source)
+                    binary = bytearray(b'Workcell catalog STL'.ljust(80, b'\0'))
+                    binary.extend(struct.pack('<I', len(triangles)))
+                    for triangle in triangles:
+                        a, b, c = [vertices[i] for i in triangle]
+                        u, v = [b[i]-a[i] for i in range(3)], [c[i]-a[i] for i in range(3)]
+                        normal = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]]
+                        length = math.sqrt(sum(x*x for x in normal))
+                        normal = [x/length for x in normal] if length else [0., 0., 0.]
+                        binary.extend(struct.pack('<12fH', *normal, *a, *b, *c, 0))
+                    destination.write_bytes(binary)
+            mesh['path'] = relative.as_posix()
+            mesh.pop('source_package', None)
+            for key in ('mesh_path', 'source_path'):
+                if key in item:
+                    item[key] = relative.as_posix()
         physical = env.setdefault('environment', {})
         previous_physical = copy.deepcopy(physical)
+        editor_to_physical = {}
+        for key in ('support_surfaces', 'assets', 'sensors', 'task_zones'):
+            for record in physical.get(key, []):
+                editor_to_physical.setdefault(record.get('layout_item_ref', record.get('id')), record.get('id'))
         from physical_destination import resolve_destination, is_destination_zone, destination_ids
         for zone_id in destination_ids(previous_physical, env.get('task') or {}):
             resolve_destination(previous_physical, zone_id)
@@ -101,6 +154,13 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
                         target[key] = copy.deepcopy(item[key])
                 if item.get('mesh') and 'collision' not in target:
                     target['collision'] = {'enabled': True, 'mode': 'mesh'}
+                for key in RELATION_FIELDS:
+                    if key in item:
+                        target[key] = copy.deepcopy(item[key])
+                    else:
+                        target.pop(key, None)
+                if target.get('parent_object') not in (None, '', 'world'):
+                    target['parent_object'] = editor_to_physical.get(target['parent_object'], target['parent_object'])
                 target['layout_item_ref'] = iid
                 pose = item.get('pose', {})
                 for key in ('xyz', 'rpy'):
@@ -137,6 +197,12 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
             for mirror in env.get('task_zones', []):
                 if mirror.get('id') == zone['id']:
                     mirror.update(copy.deepcopy(zone))
+        validate_physical(physical)
+        camera = env.get('camera') or {}
+        camera_id = camera.get('camera_id', camera.get('id'))
+        for asset in physical.get('assets', []) + physical.get('sensors', []):
+            if camera_id and asset.get('id') == camera_id:
+                camera['pose'] = asset['pose_xyz'] + asset['pose_rpy']
         write_preserving(scene_dir/'environment.yaml', env)
         write_preserving(scene_dir/'layout'/'workcell_studio_layout.yaml', layout)
     # Generated physical state is a projection of environment.yaml only.

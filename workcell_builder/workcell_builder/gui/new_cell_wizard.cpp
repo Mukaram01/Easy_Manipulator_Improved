@@ -183,7 +183,7 @@ void NewCellWizard::build_ui(){
    v->addWidget(pos); v->addWidget(ori); return wrap;
  };
 
- auto *s1=new QWidget(this); auto *f1=new QFormLayout(s1); display_name_=new QLineEdit(); scene_name_=new QLineEdit(); description_=new QTextEdit(); application_scenario_=new QComboBox(); application_scenario_->setObjectName("applicationScenarioCombo");
+ auto *s1=new QWidget(this); auto *f1=new QFormLayout(s1); display_name_=new QLineEdit(); scene_name_=new QLineEdit(); display_name_->setObjectName("newCellDisplayName"); scene_name_->setObjectName("newCellSceneName"); description_=new QTextEdit(); application_scenario_=new QComboBox(); application_scenario_->setObjectName("applicationScenarioCombo");
  const auto scenario_choices = load_industrial_scenario_choices(scenario_catalog_path());
  for (const auto &choice : scenario_choices) { application_scenario_->addItem(choice.label, choice.id); application_scenario_->setItemData(application_scenario_->count()-1, choice.category, Qt::UserRole+1); }
  output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Application / Scenario",application_scenario_); f1->addRow("Output scenes path",output_path_); mk_page(s1);

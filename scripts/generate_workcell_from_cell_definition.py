@@ -832,8 +832,10 @@ def _build_environment_objects(cell_def: dict[str, Any]) -> dict[str, Any]:
                 "rpy": entry.get("pose_rpy", [0.0, 0.0, 0.0]),
                 "frame": entry.get("frame", "world"),
             }
+        from asset_mounting import RELATION_FIELDS
         objects.append(
             {
+                **{key: copy.deepcopy(entry[key]) for key in RELATION_FIELDS if key in entry},
                 "id": entry.get("id", entry.get("name")),
                 "type": entry.get("type", entry.get("shape", key.rstrip("s"))),
                 "role": entry.get("role", role),
@@ -1689,6 +1691,13 @@ def write_scene_package_contract(
     (package_dir / "generated" / "scene_package_readiness.json").write_text(
         json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    # The report itself is a required output. Verify it after writing, within
+    # the unpublished staging package, so a new cell does not report its own
+    # not-yet-written file as a permanent blocker. All other checks remain.
+    readiness = _build_scene_package_readiness(package_name, package_dir, required_files, warnings, extra=readiness_extra)
+    (package_dir / "generated" / "scene_package_readiness.json").write_text(
+        json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return required_files
 
 
@@ -1802,6 +1811,8 @@ def generate_package(
     # The handoff carries authored physical state; layout remains editor metadata.
     authored_physical = (source_snapshot.get("environment") or {}).get("environment")
     if isinstance(authored_physical, dict):
+        from asset_mounting import validate_physical
+        validate_physical(authored_physical)
         from physical_destination import resolve_destination, destination_ids
         for zone_id in destination_ids(authored_physical, (source_snapshot.get('environment') or {}).get('task') or {}):
             resolve_destination(authored_physical, zone_id)

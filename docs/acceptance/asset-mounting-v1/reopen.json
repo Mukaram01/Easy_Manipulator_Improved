@@ -1,0 +1,199 @@
+{
+    "all_loaded_items": [
+        {
+            "editable": false,
+            "id": "home_pose",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_knuckle_link::visual_9::9",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger1_finger_link::visual_10::10",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_finger_link::visual_11::11",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger1_inner_knuckle_link::visual_12::12",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_inner_knuckle_link::visual_13::13",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger1_finger_tip_link::visual_14::14",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_finger_tip_link::visual_15::15",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::camera_link::visual_16::16",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": true,
+            "id": "camera_01",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": true,
+            "id": "pick_zone_main",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": false,
+            "id": "place_zone_default",
+            "layer": "overlay",
+            "locked": true
+        },
+        {
+            "editable": true,
+            "id": "realsense_overhead",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": true,
+            "id": "support_surface_table",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": true,
+            "id": "target_bin_default",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": false,
+            "id": "default_drop_zone",
+            "layer": "overlay",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "robotiq_85_gripper",
+            "layer": "selection_owner_registry",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "ur5",
+            "layer": "selection_owner_registry",
+            "locked": true
+        }
+    ],
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "gui_generation_invoked": true,
+    "reopened": [
+        {
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.3,
+                -0.45,
+                0
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "parent_object: camera_01\nparent_link: origin\njoint_type: fixed\norigin:\n  x: 0.15\n  y: 0.089957\n  z: 1.2\n  roll: 0.0\n  pitch: 1.5707963267948966\n  yaw: -0.0",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.41018678708473905,
+                -0.31416504941311174,
+                1.2
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "environment",
+            "id": "support_surface_table",
+            "mounting_yaml": "surface_z_m: 0.0",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.76,
+                -0.2,
+                0
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "category": "environment",
+            "id": "target_bin_default",
+            "mounting_yaml": "parent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.2606668243408203\n  y: 0.42000000000000004\n  z: 0.10089999949932099\n  roll: 0.0\n  pitch: -0.0\n  yaw: 0.0",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.3714048484864537,
+                0.10551759610878729,
+                0.10089999949932099
+            ],
+            "role": "place_target_bin"
+        }
+    ],
+    "result": "PASS",
+    "selected_scene_path": "/home/user/workcell-asset-relationships-v1/scenes/mounting_acceptance_v12"
+}
