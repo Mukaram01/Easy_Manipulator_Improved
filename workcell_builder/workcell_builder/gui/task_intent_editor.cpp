@@ -5,10 +5,13 @@
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
+#include <QPlainTextEdit>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QProcess>
@@ -71,6 +74,96 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   });
   auto * input_help = new QLabel("No workpiece geometry is invented. Off/replay uses explicit commissioning observations. Live requires a current normalized adapter snapshot; stale or unavailable objects block planning.", this);
   input_help->setWordWrap(true); perception->addRow(input_help);
+  auto * batch_button = new QPushButton("Preview multi-object task queue (no motion)", this);
+  batch_button->setObjectName("taskSimulationBatchPreview");
+  batch_button->setEnabled(false);
+  perception->addRow(batch_button);
+  auto * batch_status = new QLabel("Select an explicit commissioning recording and Save Task to preview the queue.", this);
+  batch_status->setObjectName("taskSimulationBatchStatus");
+  batch_status->setWordWrap(true);
+  perception->addRow(batch_status);
+  auto * batch_details = new QPlainTextEdit(this);
+  batch_details->setObjectName("taskSimulationBatchDetails");
+  batch_details->setReadOnly(true);
+  batch_details->setMinimumHeight(135);
+  batch_details->setMaximumHeight(205);
+  batch_details->setPlainText("No batch preview has been run.");
+  perception->addRow(batch_details);
+  connect(batch_button, &QPushButton::clicked, this,
+          [this, batch_button, batch_status, batch_details] {
+    const auto * mode = findChild<QComboBox *>("taskPerceptionMode");
+    const QString selection = mode->currentData().toString();
+    const bool allowed = selection == "off" || selection == "replayed_snapshot";
+    if (scene_.isEmpty() || dirty_ || !allowed) {
+      batch_status->setText("BLOCKED — Save an explicit commissioning or replay task before preview.");
+      return;
+    }
+    const QString script = QFileInfo(helper_).dir().absoluteFilePath("simulation_batch_preview.py");
+    if (!QFileInfo::exists(script)) {
+      batch_status->setText("BLOCKED — simulation_batch_preview.py is not installed with the Task helper.");
+      return;
+    }
+    const QString original_scene = scene_;
+    const QString original_mode = selection;
+    const QString original_snapshot = findChild<QLineEdit *>("taskReplayPath")->text();
+    auto * process = new QProcess(this);
+    batch_button->setEnabled(false);
+    batch_status->setText("Checking saved task and commissioning objects; no ROS, MoveIt or robot execution.");
+    batch_details->setPlainText("Working…");
+    connect(process, &QProcess::errorOccurred, this,
+            [batch_status, batch_details](QProcess::ProcessError error) {
+      if (error == QProcess::FailedToStart) {
+        batch_status->setText("BLOCKED — batch preview helper failed to start.");
+        batch_details->setPlainText("No planning or motion was attempted.");
+      }
+    });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this, process, original_scene, original_mode, original_snapshot,
+             batch_button, batch_status, batch_details](int exit_code, QProcess::ExitStatus exit_status) {
+      const QJsonObject report = QJsonDocument::fromJson(process->readAllStandardOutput()).object();
+      process->deleteLater();
+      if (original_scene != scene_) return;
+      const auto * mode = findChild<QComboBox *>("taskPerceptionMode");
+      const bool unchanged = !dirty_ && mode->currentData().toString() == original_mode &&
+          findChild<QLineEdit *>("taskReplayPath")->text() == original_snapshot;
+      batch_button->setEnabled(unchanged && (original_mode == "off" || original_mode == "replayed_snapshot"));
+      if (!unchanged) {
+        batch_status->setText("BLOCKED — Task or recording changed during preview. Save and try again.");
+        batch_details->setPlainText("Old results cannot be used after changing the task.");
+        return;
+      }
+      const bool ready = exit_status == QProcess::NormalExit && exit_code == 0 &&
+          report.value("status").toString() == "ELIGIBILITY_ONLY";
+      if (!ready) {
+        batch_status->setText("BLOCKED — " + report.value("reason").toString("No eligible commissioning objects."));
+        batch_details->setPlainText("No planning or motion attempted.");
+        return;
+      }
+      batch_status->setText(QString("Eligibility only: %1 queued of %2 eligible (%3 observed). Not MoveIt-approved.")
+          .arg(report.value("queued").toInt())
+          .arg(report.value("total_eligible").toInt())
+          .arg(report.value("total_observed").toInt()));
+      QStringList details;
+      const auto queue = report.value("queue").toArray();
+      for (const auto & entry : queue) {
+        const auto item = entry.toObject();
+        details << QString("Queue %1: %2 [%3] → %4")
+            .arg(item.value("order").toInt())
+            .arg(item.value("object_id").toString(), item.value("class_id").toString(),
+                 item.value("destination_region_ref").toString());
+      }
+      for (const auto & entry : report.value("observed_objects").toArray()) {
+        const auto item = entry.toObject();
+        if (item.value("role").toString() == "NON_TARGET_OBSTACLE") {
+          details << QString("Not picked: %1 — %2 (retained for future collision checks)")
+              .arg(item.value("object_id").toString(), item.value("reason").toString());
+        }
+      }
+      details << "Read-only commissioning preview. No live simulator, EPD, MoveIt plan or robot motion.";
+      batch_details->setPlainText(details.join("\n"));
+    });
+    process->start("python3", {script, "--scene", original_scene, "--limit", "20"});
+  });
   auto * grasp = section("How to grasp");
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
   strategies_ = choice_field(grasp, "taskGraspIntent", "Grasp strategy", "pick/grasp/strategy_ref", {});
@@ -187,7 +280,9 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   if (path == "pick/selection/zone_ref" && findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "off") {
     model_.set_field({"pick", "selection", "source_ref"}, json_value(value).toStdString());
   }
-  dirty_ = true; error_.clear(); status_->setText("Unsaved task — validate and save before planning.");
+  dirty_ = true; error_.clear();
+  findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(false);
+  status_->setText("Unsaved task — validate and save before planning.");
   validation_timer_->start(250); emit edited();
 }
 void TaskIntentEditor::refresh_fields()
@@ -195,6 +290,10 @@ void TaskIntentEditor::refresh_fields()
   loading_ = true;
   const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(workcell_builder::canonical_task_intent_json_for_testing(model_.to_yaml()))).object();
   for (auto it = readers_.begin(); it != readers_.end(); ++it) it.value()(value_at(root, it.key()));
+  const QString mode = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString();
+  findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(
+      !dirty_ && (mode == "off" || mode == "replayed_snapshot") &&
+      !findChild<QLineEdit *>("taskReplayPath")->text().trimmed().isEmpty());
   loading_ = false;
 }
 QJsonObject TaskIntentEditor::request(bool draft)
@@ -231,6 +330,9 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     if (current == loaded_bytes_) { setEnabled(true); return true; }
   }
   scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_blocker_.clear(); input_errors_.clear();
+  findChild<QLabel *>("taskSimulationBatchStatus")->setText(
+      "Select an explicit commissioning recording and Save Task to preview the queue.");
+  findChild<QPlainTextEdit *>("taskSimulationBatchDetails")->setPlainText("No batch preview has been run.");
   validation_timer_->stop(); model_ = {};
   try {
     QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
