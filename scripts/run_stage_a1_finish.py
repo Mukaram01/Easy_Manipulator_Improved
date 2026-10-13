@@ -397,12 +397,19 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
             raise RuntimeError("full physical cycle final acceptance is incomplete")
 
 
-def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None):
+def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None,
+                     retention_veto=None):
     cmd=[sys.executable,str(repo/"scripts/perceived_object_grasp_execute.py"),
          "--scene-package",str(scene),"--backend","simulator","--simulator-receipt",str(receipt),
          "--detections",str(observations),"--timeout","300","--segment-planning-time",str(planning_time),
          "--summary-output",str(summary)]
     if resolve:cmd.append("--resolve-task")
+    if retention_veto is not None:
+        if not resolve or gate is not None:
+            raise ValueError("retention veto is available only during fresh plan-only resolution")
+        report, strategy = retention_veto
+        cmd += ["--retention-failure-report",str(report),
+                "--retention-failure-strategy",strategy]
     if gate is not None:
         cmd+=["--start","--simulator-commission",gate]
         if gate=="full-cycle":
@@ -457,7 +464,8 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         report["moveit_overlay"]=verify_session_moveit(domain,env["IGN_PARTITION"],args.moveit_overlay_identity)
         report["bridge_overlay"]=verify_session_bridge(domain,env["IGN_PARTITION"],args.bridge_overlay_identity)
         resolve_summary=session/"resolve/summary.json"
-        run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,resolve=True),
+        run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,
+                             resolve=True,retention_veto=args.retention_veto),
             env=env,cwd=repo,log=session/"resolve/executor.log",timeout=420)
         resolved=json.loads(resolve_summary.read_text());assert_plan(resolved,require_resolved=True)
 
@@ -514,7 +522,25 @@ def main(argv=None):
     parser.add_argument("--class-id",default="part")
     parser.add_argument("--segment-planning-time",type=float,default=3.0)
     parser.add_argument("--through",choices=GATES,default="full-cycle")
+    parser.add_argument("--retention-failure-report",type=Path,
+                        help="Optional operator-reviewed opposing-contact failure evidence")
+    parser.add_argument("--retention-failure-strategy",
+                        help="Explicit historical grasp strategy to exclude (cannot be guessed from index)")
     args=parser.parse_args(argv)
+    args.retention_veto=None
+    if args.retention_failure_report is not None or args.retention_failure_strategy is not None:
+        if args.retention_failure_report is None or args.retention_failure_strategy is None:
+            parser.error("Both --retention-failure-report and --retention-failure-strategy are required")
+        from stage_a_retention_candidate_veto import load_retention_veto
+        try:
+            args.retention_failure_report=args.retention_failure_report.resolve(strict=True)
+            args.retention_veto=(args.retention_failure_report,args.retention_failure_strategy)
+            veto_manifest=load_retention_veto(args.retention_failure_report,
+                                               strategy_ref=args.retention_failure_strategy)
+        except (OSError,ValueError) as exc:
+            parser.error(str(exc))
+    else:
+        veto_manifest=None
 
     repo=Path(__file__).resolve().parents[1];workspace=repo.parent.parent
     args.output=args.output.resolve()
@@ -522,6 +548,8 @@ def main(argv=None):
     if not 0<args.segment_planning_time<=10:parser.error("segment planning time must be in (0,10]")
     args.output.mkdir(parents=True)
     overall={"status":"BLOCKED","gates":{},"preflight":None}
+    if veto_manifest is not None:
+        overall["commissioning_retention_veto"]=veto_manifest
     try:
         source_world=discover_source_world(args.source_world,workspace)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
