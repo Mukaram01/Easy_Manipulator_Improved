@@ -249,21 +249,28 @@ def main(argv: list[str] | None = None) -> int:
     args, ros_args = parser.parse_known_args(argv)
     if args.preflight_only and args.task_intent_scene is None:
         parser.error("--preflight-only requires --task-intent-scene")
-    bound = load_bound_live_task(args.task_intent_scene) if args.task_intent_scene is not None else None
-    if bound is not None:
-        # Legacy fixture defaults are never accepted for a task-bound session.
-        args.scene_package = bound["scene"]
-        args.topic = bound["topic"]
-        args.message_type = bound["message_type"]
-        args.camera_id = bound["camera_id"]
-        args.frame_fallback = ""  # Native EPD headers required; no invented optical frame.
-        args.planning_frame = bound["planning_frame"]
-    contract = load_task_contract(args.scene_package)
-    if bound is not None and (
-        contract["filter"].get("class_id") != bound["target_class"] or
-        contract["task"]["pick"]["source_ref"] != bound["pick_zone"]
-    ):
-        raise ValueError("TASK_GENERATION_STALE: legacy handoff disagrees with saved TaskIntent")
+    try:
+        bound = load_bound_live_task(args.task_intent_scene) if args.task_intent_scene is not None else None
+        if bound is not None:
+            # Legacy fixture defaults are never accepted for a task-bound session.
+            args.scene_package = bound["scene"]
+            args.topic = bound["topic"]
+            args.message_type = bound["message_type"]
+            args.camera_id = bound["camera_id"]
+            args.frame_fallback = ""  # Native EPD headers required; no invented optical frame.
+            args.planning_frame = bound["planning_frame"]
+        contract = load_task_contract(args.scene_package)
+        if bound is not None and (
+            contract["filter"].get("class_id") != bound["target_class"] or
+            contract["task"]["pick"]["source_ref"] != bound["pick_zone"]
+        ):
+            raise ValueError("TASK_GENERATION_STALE: generated handoff disagrees with saved TaskIntent")
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        if args.preflight_only:
+            print(json.dumps({"status": "BLOCKED", "error": str(exc),
+                              "planning_ready": False, "robot_motion_commanded": False}))
+            return 1
+        raise
     if args.preflight_only:
         print(json.dumps(bound, indent=2, sort_keys=True))
         return 0
