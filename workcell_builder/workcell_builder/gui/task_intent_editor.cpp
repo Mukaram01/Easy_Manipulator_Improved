@@ -176,6 +176,69 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     process->start("python3", {script, "--scene", captured_scene, "--camera-source", source,
                                "--output-dir", temporary->path(), "--timeout", "5"});
   });
+  auto * epd_button = new QPushButton("Capture live EPD objects (no robot motion)", this);
+  epd_button->setObjectName("taskCaptureLiveEpd");
+  epd_button->setEnabled(false);
+  perception->addRow(epd_button);
+  auto * epd_status = new QLabel("A saved live task and a running EPD localization/tracking topic are required.", this);
+  epd_status->setObjectName("taskCaptureLiveEpdStatus");
+  epd_status->setWordWrap(true); perception->addRow(epd_status);
+  connect(epd_button, &QPushButton::clicked, this, [this, epd_button, epd_status] {
+    const auto * mode = findChild<QComboBox *>("taskPerceptionMode");
+    const auto * source = findChild<QComboBox *>("taskCameraSource");
+    if (dirty_ || scene_.isEmpty() || mode->currentData().toString() != "live_epd" ||
+        source->currentData().toString().isEmpty()) {
+      epd_status->setText("BLOCKED — Select a live camera and save the task before EPD capture.");
+      return;
+    }
+    const QString script = QFileInfo(helper_).dir().absoluteFilePath("capture_selected_live_epd.py");
+    if (!QFileInfo::exists(script)) {
+      epd_status->setText("BLOCKED — capture_selected_live_epd.py is unavailable beside the Task helper.");
+      return;
+    }
+    const QString captured_scene = scene_;
+    const QString captured_source = source->currentData().toString();
+    auto * process = new QProcess(this);
+    epd_button->setEnabled(false);
+    epd_status->setText("Waiting for live EPD detections and observed world-frame geometry; no motion.");
+    connect(process, &QProcess::errorOccurred, this,
+            [epd_button, epd_status](QProcess::ProcessError error) {
+      if (error == QProcess::FailedToStart) {
+        epd_status->setText("BLOCKED — EPD capture helper could not start.");
+        epd_button->setEnabled(true);
+      }
+    });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this, process, captured_scene, captured_source, epd_button, epd_status]
+            (int exit_code, QProcess::ExitStatus exit_status) {
+      const auto report = QJsonDocument::fromJson(process->readAllStandardOutput()).object();
+      process->deleteLater();
+      if (captured_scene != scene_) return;
+      const auto source = findChild<QComboBox *>("taskCameraSource")->currentData().toString();
+      const bool same_selection = !dirty_ && source == captured_source &&
+          findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd";
+      epd_button->setEnabled(same_selection);
+      if (exit_status != QProcess::NormalExit || exit_code != 0 ||
+          report.value("status").toString() != "CAPTURE_QUALIFIED_FOR_TASK_INPUT") {
+        epd_status->setText("BLOCKED — " + report.value("error").toString(
+          "No eligible EPD capture; check saved camera/EPD topic, measurement and TF diagnostics."));
+        return;
+      }
+      const QString observed = report.value("capture_path").toString();
+      if (!same_selection || observed.isEmpty()) {
+        epd_status->setText("Capture saved at " + observed +
+          " but the task or camera changed during capture. Review the file and select it manually.");
+        return;
+      }
+      // Adopt the qualified candidate into the in-memory task. The user must
+      // explicitly save; no old replay or authored source file is overwritten.
+      set_field("perception/replay_path", observed);
+      refresh_fields();
+      epd_status->setText("EPD task observation captured: " + observed +
+        "\nReview and Save Task. Source hardware identity and full grasp remain unqualified.");
+    });
+    process->start("python3", {script, "--scene", captured_scene, "--timeout", "10"});
+  });
   auto * grasp = section("How to grasp");
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
   strategies_ = choice_field(grasp, "taskGraspIntent", "Grasp strategy", "pick/grasp/strategy_ref", {});
@@ -294,6 +357,7 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   }
   dirty_ = true; error_.clear();
   findChild<QPushButton *>("taskCameraCapture")->setEnabled(false);
+  findChild<QPushButton *>("taskCaptureLiveEpd")->setEnabled(false);
   status_->setText("Unsaved task — validate and save before planning.");
   validation_timer_->start(250); emit edited();
 }
@@ -304,8 +368,10 @@ void TaskIntentEditor::refresh_fields()
   for (auto it = readers_.begin(); it != readers_.end(); ++it) it.value()(value_at(root, it.key()));
   const bool live = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd";
   findChild<QComboBox *>("taskCameraSource")->setEnabled(live);
-  findChild<QPushButton *>("taskCameraCapture")->setEnabled(live && !dirty_ &&
-    !findChild<QComboBox *>("taskCameraSource")->currentData().toString().isEmpty());
+  const bool camera_ready = live && !dirty_ &&
+    !findChild<QComboBox *>("taskCameraSource")->currentData().toString().isEmpty();
+  findChild<QPushButton *>("taskCameraCapture")->setEnabled(camera_ready);
+  findChild<QPushButton *>("taskCaptureLiveEpd")->setEnabled(camera_ready);
   loading_ = false;
 }
 QJsonObject TaskIntentEditor::request(bool draft)
@@ -347,6 +413,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
   findChild<QLabel *>("taskCameraDepthPreview")->setPixmap(QPixmap());
   findChild<QLabel *>("taskCameraDepthPreview")->setText("Depth — no capture");
   findChild<QLabel *>("taskCameraCaptureStatus")->setText("Save and select a live camera to inspect existing ROS streams.");
+  findChild<QLabel *>("taskCaptureLiveEpdStatus")->setText("A saved live task and a running EPD localization/tracking topic are required.");
   validation_timer_->stop(); model_ = {};
   try {
     QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
