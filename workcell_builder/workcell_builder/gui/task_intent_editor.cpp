@@ -55,6 +55,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   camera->addItem("Choose camera source…", "");
   camera->addItem("Simulated RGB-D (Gazebo + EPD)", "simulated_rgbd");
   camera->addItem("Intel RealSense D435i (EPD)", "realsense_d435i");
+  camera->setEnabled(false);
   perception->addRow("Live camera source", camera);
   readers_["perception/camera_source"] = [camera](const QJsonValue & value) {
     const int index = value.isString() ? camera->findData(value.toString()) : -1;
