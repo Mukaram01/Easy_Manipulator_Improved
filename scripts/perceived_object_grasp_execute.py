@@ -581,7 +581,7 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
 
 def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         contract, operations, deadline, summary, resolved=None,
-                        planning_time=3.0):
+                        planning_time=3.0, retention_veto=None):
     """Resolve with fair discovery, then spend retries only on stochastic failures.
 
     A fresh resolve gives every candidate one bounded planning window before any
@@ -591,6 +591,12 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     """
     from task_intent_resolver import resolve_task_intent, STRATEGY_ORDER
     from full_cycle_preplanner import preplan_full_cycle
+    from stage_a_retention_candidate_veto import excludes_candidate, rejected_evaluation
+    if retention_veto is not None and resolved is not None:
+        raise ValueError('RETENTION_VETO_REQUIRES_FRESH_RESOLUTION: never revise a consumed resolved grasp')
+    if retention_veto is not None:
+        summary['commissioning_retention_veto'] = copy.deepcopy(retention_veto)
+        summary['retention_veto_skips'] = []
     cycles = {}
     resolution_reference_time = time.time()
     evaluation_cache = {}
@@ -778,6 +784,18 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                     return copy.deepcopy(cached)
                 if key not in discovery_order:
                     discovery_order[key] = len(discovery_order)
+                if retention_veto is not None and excludes_candidate(request, retention_veto):
+                    outcome = rejected_evaluation(request, retention_veto)
+                    evaluation_cache[key] = copy.deepcopy(outcome)
+                    phase_discovered.append(key)
+                    summary['retention_veto_skips'].append({
+                        'object_id': request['observation']['id'],
+                        'candidate_id': request['candidate'].candidate_id,
+                        'strategy_ref': request['strategy_ref'],
+                        'report_sha256': retention_veto['report_sha256'],
+                        'reason_code': outcome['reason_code'],
+                    })
+                    return outcome
                 outcome = evaluate_once(
                     request, search_pass=f'discovery:{strategy}',
                     planning_attempts=1, segment_time=discovery_time,
@@ -910,6 +928,13 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     if resolution['readiness_status'] not in ('READY', 'WARNING'):
         raise RuntimeError(resolution['readiness']['primary_code'] + ': ' + resolution['readiness']['reason'])
     grasp = resolution['grasp_resolution']
+    if retention_veto is not None and (
+        grasp['selected_object_id'] == retention_veto['object_id'] and
+        grasp['selected_strategy_ref'] == retention_veto['strategy_ref'] and
+        grasp['selected_candidate_id'].rsplit('::', 1)[-1].isdigit() and
+        int(grasp['selected_candidate_id'].rsplit('::', 1)[-1]) == retention_veto['grasp_index']
+    ):
+        raise RuntimeError('RETENTION_VETO_BYPASSED: rejected physical candidate was selected')
     cycle = cycles[grasp['selected_candidate_id'], grasp['selected_object_id']]
     cycle['grasp_index'] = int(grasp['selected_candidate_id'].rsplit('::', 1)[1])
     return cycle
@@ -1046,6 +1071,10 @@ def main():
     parser.add_argument('--scene-package', default='ur5_2f_test')
     parser.add_argument('--task-request')
     parser.add_argument('--resolve-task', action='store_true', help='Resolve the saved authored task and write derived evidence after plan-only verification')
+    parser.add_argument('--retention-failure-report', type=Path,
+        help='Optional operator-reviewed measured fingertip-loss report; fresh simulator plan-only resolve only')
+    parser.add_argument('--retention-failure-strategy',
+        help='Explicit strategy of the failed historical grasp (not inferred from index)')
     parser.add_argument('--detections', required=True)
     parser.add_argument('--replay', action='store_true')
     parser.add_argument('--start', action='store_true')
@@ -1061,6 +1090,18 @@ def main():
         parser.error('segment planning time must be finite and in (0, 10]')
     if args.simulator_commission and (not args.start or args.resolve_task):
         parser.error('commissioning requires --start and a consumed generated resolution; resolve separately')
+    retention_veto = None
+    if args.retention_failure_report is not None or args.retention_failure_strategy is not None:
+        if (args.retention_failure_report is None or args.retention_failure_strategy is None or
+                not args.resolve_task or args.start or args.backend != 'simulator' or args.replay or
+                args.simulator_commission):
+            parser.error('retention veto requires both evidence and strategy, fresh --resolve-task, --backend simulator, and NO --start/replay/commissioning')
+        from stage_a_retention_candidate_veto import load_retention_veto
+        try:
+            retention_veto = load_retention_veto(
+                args.retention_failure_report, strategy_ref=args.retention_failure_strategy)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
     import yaml
     import xml.etree.ElementTree as ET
     import rclpy
@@ -1981,7 +2022,7 @@ def main():
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,
                 deadline=deadline, summary=summary, resolved=expected_resolution,
-                planning_time=args.segment_planning_time)
+                planning_time=args.segment_planning_time, retention_veto=retention_veto)
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')
