@@ -1229,12 +1229,12 @@ int main(int argc, char * argv[])
     return a.exec();
   }
 
-  if (has_cli_flag(args, "--asset-mounting-acceptance")) {
+  if (has_cli_flag(args, "--asset-mounting-acceptance") || has_cli_flag(args, "--newcell-task-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     const QString scene = cli_value(args, "--scene");
     if (output.isEmpty() || scene.isEmpty()) return 2;
     MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
-    TestMain::start_mounting_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"));
+    TestMain::start_mounting_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"), has_cli_flag(args, "--newcell-task-acceptance"), cli_value(args, "--observations"));
     return a.exec();
   }
   if (has_cli_flag(args, "--full-cycle-acceptance")) {

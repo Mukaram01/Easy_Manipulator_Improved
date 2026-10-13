@@ -2018,6 +2018,7 @@ void MainWindow::show_studio_page(StudioPage page)
     .arg(studio_pages_ ? studio_pages_->currentIndex() : -1)
     .arg(selected_scene_name().isEmpty() ? QStringLiteral("(none)") : selected_scene_name()));
   if (!synchronized) append_studio_log(QStringLiteral("Studio navigation synchronization failed."));
+  if (page == StudioPage::PlanSimulatePage) refresh_preview_launch_ui();
 }
 
 void MainWindow::show_workcells_home()
@@ -3369,6 +3370,7 @@ void MainWindow::setup_studio_shell()
   environment_task_editor_ = new TaskIntentEditor(right_panel);
   connect(environment_task_editor_, &TaskIntentEditor::edited, this, [this] {
     validation_stale_ = true; launch_artifacts_ready_ = false;
+    if (save_layout_button_) save_layout_button_->setEnabled(true);
     if (layout_state_label_) layout_state_label_->setText("Unsaved task edits — Save task before planning.");
     refresh_preview_launch_ui();
   });
@@ -4315,8 +4317,8 @@ bool MainWindow::generate_yaml_draft_for_selected_scene()
   if (selected_scene_index_ < 0) return false;
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
-    if (!environment_task_editor_->blocker().isEmpty()) {
-      append_studio_log("Generate blocked: " + environment_task_editor_->blocker()); return false;
+    if (!environment_task_editor_->blocker(false).isEmpty()) {
+      append_studio_log("Generate blocked: " + environment_task_editor_->blocker(false)); return false;
     }
   }
   const auto selected = scene_browser_result_.scenes[(size_t)selected_scene_index_];
@@ -4347,8 +4349,8 @@ bool MainWindow::generate_yaml_draft_for_selected_scene()
 void MainWindow::generate_scene_package_for_selected_scene() {
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
-    if (!environment_task_editor_->blocker().isEmpty()) {
-      append_studio_log("Generate blocked: " + environment_task_editor_->blocker()); return;
+    if (!environment_task_editor_->blocker(false).isEmpty()) {
+      append_studio_log("Generate blocked: " + environment_task_editor_->blocker(false)); return;
     }
   }
   if (selected_scene_index_ < 0) return;
@@ -8142,6 +8144,10 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
 }
 
 void MainWindow::save_layout_changes(){
+  if (environment_task_editor_ && environment_task_editor_->scene() == selected_scene_path() && environment_task_editor_->dirty()) {
+    QString error;
+    if (!environment_task_editor_->save(&error)) { append_studio_log("Save blocked: " + error); return; }
+  }
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
     scene_preview_widget_->request_authoring_save();
     return;

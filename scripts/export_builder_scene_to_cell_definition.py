@@ -590,6 +590,12 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             'pose_xyz': destination['pose_xyz'], 'pose_rpy': destination['pose_rpy']}],
         'rules': task_intent_payload.get('routing', {}).get('rules', []),
     }
+    if 'mode' in task_intent_payload.get('perception', {}):
+        cell_def['perception'].update(task_intent_payload['perception'])
+        cell_def['perception']['enabled'] = task_intent_payload['perception']['mode'] != 'off'
+        cell_def['perception']['required_object_classes'] = [selection['object_filter']['class_id']] if selection['object_filter'].get('class_id') else []
+        cell_def['perception']['confidence_threshold'] = selection['object_filter'].get('min_confidence')
+        cell_def['perception']['freshness_timeout_s'] = selection['object_filter'].get('max_age_seconds') or 2.0
     builder_task_intent = task_intent_payload
     task_intent_validation = {'status': 'PASS', 'normalized_intent_sha256': resolution['normalized_intent_sha256']}
     if resolution['readiness_status'] in ('READY', 'WARNING'):

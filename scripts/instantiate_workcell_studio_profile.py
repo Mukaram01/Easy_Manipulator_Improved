@@ -95,14 +95,17 @@ def materialize(scene, profile_id, destination):
     physical_camera = next(item for item in authored['environment']['assets'] if item['id'] == camera['camera_id'])
     camera['pose'] = physical_camera['pose_xyz'] + physical_camera['pose_rpy']
     source = studio['pick_zone']['object_source']
+    # Camera/adapter binding metadata belongs to the physical equipment profile,
+    # even while perception is off. Later task-mode changes reuse these reviewed
+    # bindings rather than inventing an EPD topic or copying a reference task.
+    perception = copy.deepcopy(defaults['perception'])
+    perception['enabled'] = source['mode'] != 'manual_simulated'
+    perception['mode'] = {'manual_simulated': 'off', 'recorded_perception': 'replay'}.get(source['mode'], 'live')
     if source['mode'] != 'manual_simulated':
-        # Consume the existing EPD contract; its implementation stays in EPD.
-        perception = copy.deepcopy(defaults['perception'])
-        perception['mode'] = 'replay' if source['mode'] == 'recorded_perception' else 'live'
         perception['epd_input']['topic'] = source['perception_binding']
-        perception['required_object_classes'] = [source['required_class']] if source['required_class'] else []
-        perception['confidence_threshold'] = source.get('minimum_confidence')
-        authored['perception'] = perception
+    perception['required_object_classes'] = [source['required_class']] if source.get('required_class') else []
+    perception['confidence_threshold'] = source.get('minimum_confidence')
+    authored['perception'] = perception
     # TaskIntent is authored from this wizard, never from the profile source task.
     studio['place_zone']['region'] = profile['place_region']
     if studio['place_zone']['target'] != profile['place_asset']:

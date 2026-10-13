@@ -1,0 +1,142 @@
+{
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "invalid_exact_blocked": "PLACE_LOCAL_POSE_OUTSIDE_REGION: PLACE_LOCAL_POSE_OUTSIDE_REGION: destination default_drop_zone: placement/object outside target usable placement geometry. Edit the requested local pose or explicitly choose AUTO.",
+    "mounted": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                1.570000000000127,
+                0
+            ],
+            "pose_xyz": [
+                0.40000000000000013,
+                -0.36004294887185107,
+                0.8499999999999998
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "environment",
+            "id": "support_surface_table",
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "category": "environment",
+            "id": "target_bin_default",
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.2606668243408203, \"y\": 0.42000000000000004, \"z\": 0.10089999949932099, \"roll\": 0.0, \"pitch\": -0.0, \"yaw\": 0.0}}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.45,
+                0.22000000000000003,
+                0.1
+            ],
+            "role": "place_target_bin"
+        }
+    ],
+    "moved": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                1.570000000000127,
+                0
+            ],
+            "pose_xyz": [
+                0.40000000000000013,
+                -0.36004294887185107,
+                0.8499999999999998
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "environment",
+            "id": "support_surface_table",
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "category": "environment",
+            "id": "target_bin_default",
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.2606668243408203, \"y\": 0.42000000000000004, \"z\": 0.10089999949932099, \"roll\": 0.0, \"pitch\": -0.0, \"yaw\": 0.0}}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.45,
+                0.22000000000000003,
+                0.1
+            ],
+            "role": "place_target_bin"
+        }
+    ],
+    "result": "PASS",
+    "saved": true,
+    "task_yaml": "{\n    \"perception\": {\n        \"mode\": \"replayed_snapshot\",\n        \"replay_path\": \"/home/user/workcell-newcell-task-readiness-v1/config/runtime/r1_4_replay.yaml\"\n    },\n    \"pick\": {\n        \"grasp\": {\n            \"aperture\": {\n                \"max_m\": 0.085,\n                \"min_m\": 0\n            },\n            \"approach\": {\n                \"axis\": \"z_down\",\n                \"distance_m\": 0.12\n            },\n            \"contact\": {\n                \"min_quality\": 0,\n                \"required\": true\n            },\n            \"lift\": {\n                \"axis\": \"z_up\",\n                \"distance_m\": 0.15\n            },\n            \"orientation\": {\n                \"allowed_roll_deg\": [\n                    0\n                ],\n                \"allowed_yaw_deg\": [\n                    0,\n                    90,\n                    180,\n                    270\n                ],\n                \"mode\": \"vertical\",\n                \"tolerance_rad\": [\n                    0,\n                    0,\n                    0\n                ]\n            },\n            \"policy\": \"AUTO\",\n            \"required_capability\": \"two_finger_parallel\",\n            \"strategy_ref\": null,\n            \"tcp_offset_rpy_rad\": [\n                0,\n                0,\n                0\n            ],\n            \"tcp_offset_xyz_m\": [\n                0,\n                0,\n                0\n            ]\n        },\n        \"selection\": {\n            \"object_filter\": {\n                \"class_id\": \"cup\",\n                \"color\": null,\n                \"max_age_seconds\": 300,\n                \"min_confidence\": null\n            },\n            \"source_ref\": \"detected_objects/v1\",\n            \"source_type\": \"perception\",\n            \"zone_ref\": \"pick_zone_main\"\n        }\n    },\n    \"place\": {\n        \"placement\": {\n            \"approach\": {\n                \"axis\": \"z_down\",\n                \"distance_m\": 0.1\n            },\n            \"clearance_m\": 0.001,\n            \"orientation\": {\n                \"mode\": \"target_default\",\n                \"rpy_rad\": [\n                    0,\n                    0,\n                    0\n                ],\n                \"tolerance_rad\": [\n                    0,\n                    0,\n                    0\n                ]\n            },\n            \"policy\": \"AUTO\",\n            \"requested_local_pose\": {\n                \"rpy_rad\": [\n                    0,\n                    0,\n                    0\n                ],\n                \"xyz_m\": [\n                    10,\n                    0,\n                    0\n                ]\n            },\n            \"retreat\": {\n                \"axis\": \"z_up\",\n                \"distance_m\": 0.1\n            }\n        },\n        \"release\": {\n            \"strategy\": \"tool_release\"\n        },\n        \"target\": {\n            \"asset_ref\": \"target_bin_default\",\n            \"region_ref\": \"default_drop_zone\"\n        }\n    },\n    \"safety\": {\n        \"execution_mode\": \"simulation_preview\",\n        \"preview_policy\": \"diagnostic_if_unresolved\",\n        \"real_hardware_enabled\": false,\n        \"require_fake_hardware\": true\n    },\n    \"scene_package\": \"/home/user/workcell-newcell-task-readiness-v1/scenes/task_readiness_acceptance\",\n    \"schema\": \"workcell_builder_task_intent/v2\",\n    \"task\": {\n        \"id\": \"task_readiness_acceptance_pick_place\",\n        \"template\": \"pick_place\",\n        \"type\": \"pick_place\"\n    }\n}\n",
+    "unavailable_input_blocked": "TASK_INPUT_UNAVAILABLE: snapshot /home/user/workcell-newcell-task-readiness-v1/scenes/task_readiness_acceptance/missing-acceptance-input.yaml is missing; select an existing input in Task settings.",
+    "wizard_created": "/home/user/workcell-task-readiness-ws/src/easy_manipulation_deployment/scenes/task_readiness_acceptance"
+}

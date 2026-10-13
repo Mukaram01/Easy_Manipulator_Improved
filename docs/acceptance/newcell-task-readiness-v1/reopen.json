@@ -1,0 +1,1012 @@
+{
+    "all_loaded_items": [
+        {
+            "editable": false,
+            "id": "home_pose",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_knuckle_link::visual_9::9",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger1_finger_link::visual_10::10",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_finger_link::visual_11::11",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger1_inner_knuckle_link::visual_12::12",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_inner_knuckle_link::visual_13::13",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger1_finger_tip_link::visual_14::14",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::gripper_finger2_finger_tip_link::visual_15::15",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "generated_urdf::camera_link::visual_16::16",
+            "layer": "locked_generated_urdf_visual",
+            "locked": true
+        },
+        {
+            "editable": true,
+            "id": "pick_zone_main",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": false,
+            "id": "place_zone_default",
+            "layer": "overlay",
+            "locked": true
+        },
+        {
+            "editable": true,
+            "id": "realsense_overhead",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": true,
+            "id": "support_surface_table",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": true,
+            "id": "target_bin_default",
+            "layer": "editable_layout",
+            "locked": false
+        },
+        {
+            "editable": false,
+            "id": "default_drop_zone",
+            "layer": "overlay",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "robotiq_85_gripper",
+            "layer": "selection_owner_registry",
+            "locked": true
+        },
+        {
+            "editable": false,
+            "id": "ur5",
+            "layer": "selection_owner_registry",
+            "locked": true
+        }
+    ],
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "gui_generation_invoked": true,
+    "plan_result": {
+        "action_terminal_statuses": [
+        ],
+        "candidate_attempts": [
+            {
+                "candidate_id": "top_2f::000",
+                "checks": [
+                    {
+                        "code": "PREPLAN_APPROACH",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_GRASP",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_CLOSE_GRIPPER",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "ATTACH",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_LIFT",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_TRANSFER",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_PLACE",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "DESTINATION_CONTAINMENT",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_OPEN_GRIPPER",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "DETACH",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_RETREAT",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_HOME",
+                        "status": "PASS"
+                    }
+                ],
+                "object_id": "runtime::sample-cup",
+                "reason_code": null,
+                "stages": [
+                    {
+                        "attached_ids": [
+                        ],
+                        "moveit_code": 1,
+                        "planning_time": 0.102870407,
+                        "points": 44,
+                        "stage": "PREPLAN_APPROACH",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "runtime::sample-cup",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                        ],
+                        "cartesian_waypoints": 25,
+                        "initial_support_contact": null,
+                        "moveit_code": 1,
+                        "planning_time": 2.668409483,
+                        "points": 76,
+                        "stage": "PREPLAN_GRASP",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "runtime::sample-cup",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                        ],
+                        "moveit_code": 1,
+                        "planning_time": 0.014625852,
+                        "points": 12,
+                        "stage": "PREPLAN_CLOSE_GRIPPER",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "runtime::sample-cup",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                            "runtime::sample-cup"
+                        ],
+                        "cartesian_waypoints": 31,
+                        "initial_support_contact": null,
+                        "moveit_code": 1,
+                        "planning_time": 4.437297208999999,
+                        "points": 94,
+                        "stage": "PREPLAN_LIFT",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                            "runtime::sample-cup"
+                        ],
+                        "moveit_code": 1,
+                        "planning_time": 0.14358880499999999,
+                        "points": 40,
+                        "stage": "PREPLAN_TRANSFER",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                            "runtime::sample-cup"
+                        ],
+                        "moveit_code": 1,
+                        "planning_time": 0.144025302,
+                        "points": 12,
+                        "stage": "PREPLAN_PLACE",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                            "runtime::sample-cup"
+                        ],
+                        "moveit_code": 1,
+                        "planning_time": 0.052156259999999996,
+                        "points": 12,
+                        "stage": "PREPLAN_OPEN_GRIPPER",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                        ],
+                        "cartesian_waypoints": 21,
+                        "initial_support_contact": null,
+                        "moveit_code": 1,
+                        "planning_time": 2.3241191779999997,
+                        "points": 64,
+                        "stage": "PREPLAN_RETREAT",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default",
+                            "runtime::sample-cup"
+                        ]
+                    },
+                    {
+                        "attached_ids": [
+                        ],
+                        "moveit_code": 1,
+                        "planning_time": 0.137255584,
+                        "points": 29,
+                        "stage": "PREPLAN_HOME",
+                        "success": true,
+                        "world_ids": [
+                            "runtime::sample-bottle",
+                            "workcell::support_surface_table",
+                            "workcell::target_bin_default",
+                            "runtime::sample-cup"
+                        ]
+                    }
+                ]
+            }
+        ],
+        "current_stage": "VERIFY_PREPLAN_UNCHANGED",
+        "domain_id": 213,
+        "execution_action_goals": [
+        ],
+        "execution_attempted": false,
+        "executor": "/home/user/workcell-task-readiness-ws/install/workcell_builder/lib/workcell_builder/perceived_object_grasp_execute.py",
+        "executor_hashes": {
+            "full_cycle_preplanner.py": "a605b66b9142e7b948f19d9e76087c191a69ea6d4cad192a18454319ddea0034",
+            "grasp_strategy_candidates.py": "94a71747cbe7a3ed10da4b34e91bca13c277a643a86ba3f3813992d01a33377c",
+            "perceived_object_grasp_execute.py": "59160fc22948c12f3aa04a02f8a31627ec3d2fc710d8512d8fccf54c165c323f",
+            "perceived_object_grasp_plan.py": "f3b9a592201660f75b5beaaa27501cd7e1c41002109337085f555813df522660",
+            "physical_destination.py": "7bce6368b287b932f92013deb72053733813fc8f50fa375cb9803d433c42a18b",
+            "runtime_pick_inputs.py": "3a42c2dc5c94cfe6f0af7830f058e005981a02bbf589b860c4d1f6fa3ffb5807",
+            "task_intent_resolver.py": "2c2ddb53eb70bcb455af22753e8592aa0faec5913ed63aa4dacd3fd11f6aab6a",
+            "task_intent_v2.py": "acdda808a4a4b78d460aeb0a43e56ef20901bb1b6cf29ec2e9d6c79026d13498"
+        },
+        "fake_hardware_guard": {
+            "hardware_classes": [
+                "mock_components/GenericSystem",
+                "mock_components/GenericSystem"
+            ],
+            "move_group_use_fake_hardware": true,
+            "real_hardware": false
+        },
+        "full_cycle_execution_success": false,
+        "full_cycle_plan_success": true,
+        "full_cycle_prevalidated": true,
+        "inserted_object_ids": [
+            "runtime::sample-cup",
+            "runtime::sample-bottle"
+        ],
+        "mode": "R1.4 plan-only",
+        "normalized_intent_sha256": "aec623f470698a147f6594e044e44bb593cf3e606f359ef541b6c0b408b4b0c7",
+        "normalized_objects": [
+            {
+                "class_id": "cup",
+                "color": null,
+                "confidence": 0.99,
+                "dimensions": [
+                    0.06,
+                    0.06,
+                    0.1
+                ],
+                "frame_id": "world",
+                "grasp": null,
+                "id": "runtime::sample-cup",
+                "object_id": "sample-cup",
+                "pose": [
+                    0.26,
+                    -0.08,
+                    0.051,
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "shape": "BOX",
+                "source_frame": "world",
+                "timestamp": 1791882001.497365
+            },
+            {
+                "class_id": "bottle",
+                "color": null,
+                "confidence": 0.99,
+                "dimensions": [
+                    0.06,
+                    0.06,
+                    0.18
+                ],
+                "frame_id": "world",
+                "grasp": null,
+                "id": "runtime::sample-bottle",
+                "object_id": "sample-bottle",
+                "pose": [
+                    0.4,
+                    -0.08,
+                    0.091,
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "shape": "BOX",
+                "source_frame": "world",
+                "timestamp": 1791882001.497365
+            }
+        ],
+        "owned_processes": {
+            "executor": {
+                "pid": 77113,
+                "returncode": 0
+            },
+            "launch": {
+                "pid": 77005,
+                "returncode": 0
+            }
+        },
+        "plan_metadata": [
+            {
+                "attached_ids": [
+                ],
+                "moveit_code": 1,
+                "planning_time": 0.102870407,
+                "points": 44,
+                "stage": "PREPLAN_APPROACH",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "runtime::sample-cup",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default"
+                ]
+            },
+            {
+                "attached_ids": [
+                ],
+                "cartesian_waypoints": 25,
+                "initial_support_contact": null,
+                "moveit_code": 1,
+                "planning_time": 2.668409483,
+                "points": 76,
+                "stage": "PREPLAN_GRASP",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "runtime::sample-cup",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default"
+                ]
+            },
+            {
+                "attached_ids": [
+                ],
+                "moveit_code": 1,
+                "planning_time": 0.014625852,
+                "points": 12,
+                "stage": "PREPLAN_CLOSE_GRIPPER",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "runtime::sample-cup",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default"
+                ]
+            },
+            {
+                "attached_ids": [
+                    "runtime::sample-cup"
+                ],
+                "cartesian_waypoints": 31,
+                "initial_support_contact": null,
+                "moveit_code": 1,
+                "planning_time": 4.437297208999999,
+                "points": 94,
+                "stage": "PREPLAN_LIFT",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default"
+                ]
+            },
+            {
+                "attached_ids": [
+                    "runtime::sample-cup"
+                ],
+                "moveit_code": 1,
+                "planning_time": 0.14358880499999999,
+                "points": 40,
+                "stage": "PREPLAN_TRANSFER",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default"
+                ]
+            },
+            {
+                "attached_ids": [
+                    "runtime::sample-cup"
+                ],
+                "moveit_code": 1,
+                "planning_time": 0.144025302,
+                "points": 12,
+                "stage": "PREPLAN_PLACE",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default"
+                ]
+            },
+            {
+                "attached_ids": [
+                    "runtime::sample-cup"
+                ],
+                "moveit_code": 1,
+                "planning_time": 0.052156259999999996,
+                "points": 12,
+                "stage": "PREPLAN_OPEN_GRIPPER",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default"
+                ]
+            },
+            {
+                "attached_ids": [
+                ],
+                "cartesian_waypoints": 21,
+                "initial_support_contact": null,
+                "moveit_code": 1,
+                "planning_time": 2.3241191779999997,
+                "points": 64,
+                "stage": "PREPLAN_RETREAT",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default",
+                    "runtime::sample-cup"
+                ]
+            },
+            {
+                "attached_ids": [
+                ],
+                "moveit_code": 1,
+                "planning_time": 0.137255584,
+                "points": 29,
+                "stage": "PREPLAN_HOME",
+                "success": true,
+                "world_ids": [
+                    "runtime::sample-bottle",
+                    "workcell::support_surface_table",
+                    "workcell::target_bin_default",
+                    "runtime::sample-cup"
+                ]
+            }
+        ],
+        "planned_stages": [
+            "PREPLAN_APPROACH",
+            "PREPLAN_GRASP",
+            "PREPLAN_CLOSE_GRIPPER",
+            "PREPLAN_LIFT",
+            "PREPLAN_TRANSFER",
+            "PREPLAN_PLACE",
+            "PREPLAN_OPEN_GRIPPER",
+            "PREPLAN_RETREAT",
+            "PREPLAN_HOME"
+        ],
+        "prevalidation_left_live_scene_unchanged": true,
+        "rejected_objects": {
+            "runtime::sample-bottle": "outside_authored_selection"
+        },
+        "remaining_owned_process_groups": [
+        ],
+        "resolution_sha256": "c1d2e41e42f899f2e9148f159ecbf94061ed656c6d8a9f98b242535f3f50f69c",
+        "result": "PASS",
+        "runtime_seconds": 22.03160466699046,
+        "scene_hashes": {
+            "cell_definition.yaml": "19931fa6c0a2797244991b425d8af44c96dc80a2b04dd3d91c33af7df0e12617",
+            "config/moveit_collision_objects.yaml": "3d4116cfcd003c1693df7308767b74798d95e43c242b92b77ae33b7750ab43ec",
+            "environment.yaml": "f1cf4387613326a66c710a5bd780bd11f28b350326a5bad2ceba047e66e24b55"
+        },
+        "scene_share": "/home/user/workcell-task-readiness-ws/install/task_readiness_acceptance/share/task_readiness_acceptance",
+        "selected_grasp_index": 0,
+        "selected_object_id": "runtime::sample-cup",
+        "shutdown_clean": true,
+        "shutdown_crashes": [
+            "[ERROR] [move_group-3]: process has died [pid 77012, exit code -11, cmd '/opt/ros/humble/lib/moveit_ros_move_group/move_group --ros-args --params-file /tmp/launch_params_4hc5muz5 --params-file /tmp/launch_params_bmjfuedy --params-file /tmp/launch_params_a3k5ggda --params-file /tmp/launch_params_fsbn3aoo']."
+        ],
+        "source_commit": "db4dfaa2179190c20517e927a3360e15dbf967ac",
+        "source_dirty": true,
+        "stage_events": [
+            {
+                "stage": "IDLE",
+                "timestamp": 1791882000.9091337
+            },
+            {
+                "stage": "PREFLIGHT",
+                "timestamp": 1791882001.0779736
+            },
+            {
+                "stage": "ACQUIRE_OBJECTS",
+                "timestamp": 1791882001.4946783
+            },
+            {
+                "stage": "FILTER_TARGETS",
+                "timestamp": 1791882001.4974654
+            },
+            {
+                "stage": "UPDATE_PLANNING_SCENE",
+                "timestamp": 1791882001.5177097
+            },
+            {
+                "stage": "GENERATE_GRASPS",
+                "timestamp": 1791882001.8663309
+            },
+            {
+                "stage": "PREPLAN_APPROACH",
+                "timestamp": 1791882001.86654
+            },
+            {
+                "stage": "PREPLAN_GRASP",
+                "timestamp": 1791882002.038613
+            },
+            {
+                "stage": "PREPLAN_CLOSE_GRIPPER",
+                "timestamp": 1791882006.1614907
+            },
+            {
+                "stage": "ATTACH",
+                "timestamp": 1791882006.2608469
+            },
+            {
+                "stage": "PREPLAN_LIFT",
+                "timestamp": 1791882006.2857292
+            },
+            {
+                "stage": "PREPLAN_TRANSFER",
+                "timestamp": 1791882012.5382397
+            },
+            {
+                "stage": "PREPLAN_PLACE",
+                "timestamp": 1791882012.7243955
+            },
+            {
+                "stage": "PREPLAN_OPEN_GRIPPER",
+                "timestamp": 1791882012.9132988
+            },
+            {
+                "stage": "DETACH",
+                "timestamp": 1791882013.0073898
+            },
+            {
+                "stage": "PREPLAN_RETREAT",
+                "timestamp": 1791882013.026372
+            },
+            {
+                "stage": "PREPLAN_HOME",
+                "timestamp": 1791882016.3113732
+            },
+            {
+                "stage": "CANDIDATE_READY",
+                "timestamp": 1791882016.4980989
+            },
+            {
+                "stage": "VERIFY_PREPLAN_UNCHANGED",
+                "timestamp": 1791882016.498376
+            }
+        ],
+        "stages": [
+        ],
+        "task_intent_resolution": {
+            "capability_profile": {
+                "capabilities": [
+                    "two_finger_parallel"
+                ],
+                "installed_tool_id": "robotiq_85_gripper",
+                "release_mapping": {
+                    "tool_release": "fingers_open"
+                }
+            },
+            "context_sha256": "42aec7ae52339162c225b448effea32a02e517c47c67d5d8a67d34e1160b3d3b",
+            "grasp_resolution": {
+                "attempts": [
+                    {
+                        "candidate_id": "top_2f::000",
+                        "checks": [
+                            {
+                                "code": "PREPLAN_APPROACH",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_GRASP",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_CLOSE_GRIPPER",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "ATTACH",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_LIFT",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_TRANSFER",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_PLACE",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "DESTINATION_CONTAINMENT",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_OPEN_GRIPPER",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "DETACH",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_RETREAT",
+                                "status": "PASS"
+                            },
+                            {
+                                "code": "PREPLAN_HOME",
+                                "status": "PASS"
+                            }
+                        ],
+                        "object_id": "runtime::sample-cup",
+                        "reason": null,
+                        "reason_code": null,
+                        "strategy_ref": "top_2f",
+                        "success": true
+                    }
+                ],
+                "fallback": {
+                    "used": false
+                },
+                "policy": "AUTO",
+                "requested_strategy_ref": null,
+                "selected_candidate_id": "top_2f::000",
+                "selected_object_id": "runtime::sample-cup",
+                "selected_strategy_ref": "top_2f"
+            },
+            "normalized_intent_sha256": "aec623f470698a147f6594e044e44bb593cf3e606f359ef541b6c0b408b4b0c7",
+            "observations_sha256": "96d4ebab173f8319081f61f625622dac3ee0a70fe6c155c753d2dfb55cc94e5a",
+            "pick_selection": {
+                "object_filter": {
+                    "class_id": "cup",
+                    "color": null,
+                    "max_age_seconds": 300,
+                    "min_confidence": null
+                },
+                "source_ref": "detected_objects/v1",
+                "source_type": "perception",
+                "zone_ref": "pick_zone_main"
+            },
+            "place_resolution": {
+                "destination": {
+                    "dimensions": [
+                        0.2,
+                        0.1,
+                        0.12
+                    ],
+                    "frame_id": "world",
+                    "id": "default_drop_zone",
+                    "physical_destination_contract": "target_local/v1",
+                    "placement_local": {
+                        "dimensions": [
+                            0.2,
+                            0.1,
+                            0.12
+                        ],
+                        "pose_rpy": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "pose_xyz": [
+                            0,
+                            0,
+                            0.009999999999999995
+                        ]
+                    },
+                    "pose_rpy": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "pose_xyz": [
+                        0.45,
+                        0.22,
+                        0.11
+                    ],
+                    "target_id": "target_bin_default",
+                    "target_pose_rpy": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "target_pose_xyz": [
+                        0.45,
+                        0.22,
+                        0.1
+                    ],
+                    "usable_placement": {
+                        "dimensions": [
+                            0.24,
+                            0.12,
+                            0.14
+                        ],
+                        "pose_rpy": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "pose_xyz": [
+                            0,
+                            0,
+                            0.01
+                        ],
+                        "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+                    }
+                },
+                "fallback": {
+                    "used": false
+                },
+                "physical_destination_contract": "target_local/v1",
+                "policy": "AUTO",
+                "requested_local_pose": {
+                    "rpy_rad": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "xyz_m": [
+                        10,
+                        0,
+                        0
+                    ]
+                },
+                "selected_local_pose": {
+                    "rpy_rad": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "xyz_m": [
+                        0,
+                        0,
+                        0.009999999999999995
+                    ]
+                },
+                "world_pose": {
+                    "rpy_rad": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "xyz_m": [
+                        0.45,
+                        0.22,
+                        0.11
+                    ]
+                }
+            },
+            "readiness": {
+                "checks": [
+                    {
+                        "code": "PREPLAN_APPROACH",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_GRASP",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_CLOSE_GRIPPER",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "ATTACH",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_LIFT",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_TRANSFER",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_PLACE",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "DESTINATION_CONTAINMENT",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_OPEN_GRIPPER",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "DETACH",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_RETREAT",
+                        "status": "PASS"
+                    },
+                    {
+                        "code": "PREPLAN_HOME",
+                        "status": "PASS"
+                    }
+                ],
+                "primary_code": "COMPLETE_CYCLE_RESOLVED",
+                "reason": "Complete cycle evaluation succeeded."
+            },
+            "readiness_status": "READY",
+            "resolution_sha256": "c1d2e41e42f899f2e9148f159ecbf94061ed656c6d8a9f98b242535f3f50f69c",
+            "schema": "workcell_task_intent_resolution/v1"
+        },
+        "task_request": {
+            "action": "pick_and_place",
+            "allow_missing_confidence": true,
+            "destination_zone": "default_drop_zone",
+            "max_age_seconds": 300,
+            "min_confidence": 0,
+            "selection_policy": "task_semantics",
+            "source_zone": "pick_zone_main",
+            "target_class": "cup"
+        },
+        "task_resolution_mode": "consume",
+        "trajectory_execution_enabled": false
+    },
+    "readiness_blockers": [
+    ],
+    "reopened": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                1.570000000000127,
+                0
+            ],
+            "pose_xyz": [
+                0.40000000000000013,
+                -0.36004294887185107,
+                0.8499999999999998
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "environment",
+            "id": "support_surface_table",
+            "mounting_yaml": "surface_z_m: 0.0",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "category": "environment",
+            "id": "target_bin_default",
+            "mounting_yaml": "parent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.2606668243408203\n  y: 0.42000000000000004\n  z: 0.10089999949932099\n  roll: 0.0\n  pitch: -0.0\n  yaw: 0.0",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.45,
+                0.22,
+                0.1
+            ],
+            "role": "place_target_bin"
+        }
+    ],
+    "result": "PASS",
+    "runtime_evidence": "/home/user/workcell-task-readiness-ws/log/studio_cycles/0041fefa-7856-4c2c-88f5-7d2eabe9d0b1",
+    "selected_scene_path": "/home/user/workcell-newcell-task-readiness-v1/scenes/task_readiness_acceptance",
+    "task_reopened_identically": true
+}
