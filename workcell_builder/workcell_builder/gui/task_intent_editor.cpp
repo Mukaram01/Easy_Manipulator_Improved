@@ -111,10 +111,13 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     batch_status->setText("Checking saved task and commissioning objects; no ROS, MoveIt or robot execution.");
     batch_details->setPlainText("Working…");
     connect(process, &QProcess::errorOccurred, this,
-            [batch_status, batch_details](QProcess::ProcessError error) {
-      if (error == QProcess::FailedToStart) {
+            [this, process, original_scene, batch_button, batch_status, batch_details](QProcess::ProcessError error) {
+      if (error == QProcess::FailedToStart && original_scene == scene_) {
         batch_status->setText("BLOCKED — batch preview helper failed to start.");
         batch_details->setPlainText("No planning or motion was attempted.");
+        const QString selected = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString();
+        batch_button->setEnabled(!dirty_ && (selected == "off" || selected == "replayed_snapshot"));
+        process->deleteLater();
       }
     });
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
