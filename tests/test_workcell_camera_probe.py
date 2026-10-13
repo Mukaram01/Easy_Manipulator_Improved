@@ -101,3 +101,12 @@ def test_camera_probe_missing_topics_fails_without_guessing(tmp_path):
         yaml.safe_dump({"camera": {"enabled": True, "frame_id": "optical"}}))
     with pytest.raises(ValueError, match="CAMERA_TOPICS_MISSING"):
         probe.camera_config(tmp_path, "realsense_d435i")
+
+
+def test_malformed_environment_blocks_with_actionable_reason(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/workcell_builder_task_intent.yaml").write_text(
+        yaml.safe_dump({"perception": {"mode": "live_epd", "camera_source": "simulated_rgbd"}}))
+    (tmp_path / "environment.yaml").write_text("null\n")
+    with pytest.raises(ValueError, match="CAMERA_SCENE_INVALID"):
+        probe.camera_config(tmp_path, "simulated_rgbd")
