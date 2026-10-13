@@ -42,8 +42,12 @@ def source_binding(scene: Path) -> tuple[dict, dict, dict, dict]:
         raise ValueError("CAMERA_ID_MISSING: a physical scene camera_id is required")
 
     document = yaml.safe_load((scene / "environment.yaml").read_text(encoding="utf-8"))
-    root = document.get("environment", document) if isinstance(document, dict) else {}
-    config = root.get("perception", document.get("perception", {}))
+    if not isinstance(document, dict):
+        raise ValueError("EPD_CONFIG_MISSING: scene environment must be a mapping")
+    root = document.get("environment", document)
+    if not isinstance(root, dict):
+        raise ValueError("EPD_CONFIG_MISSING: scene environment must be a mapping")
+    config = root.get("perception") or document.get("perception", {})
     if not isinstance(config, dict):
         raise ValueError("EPD_CONFIG_MISSING: scene perception configuration must be a mapping")
     epd = config.get("epd_input")
@@ -174,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = capture_task(args.scene, timeout=args.timeout)
-    except (ValueError, OSError, TypeError, KeyError, yaml.YAMLError) as exc:
+    except (ValueError, OSError, TypeError, KeyError, AttributeError, yaml.YAMLError) as exc:
         result = {"status": "BLOCKED", "error": str(exc),
                   "planning_ready": False, "robot_motion_commanded": False}
     print(json.dumps(result, sort_keys=True))
