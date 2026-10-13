@@ -125,6 +125,9 @@ def test_wizard_perception_modes_use_supported_normalized_source(tmp_path):
         assert intent['pick']['selection']['source_ref'] == 'detected_objects/v1'
         assert intent['pick']['selection']['zone_ref'] == 'pick'
         assert intent['perception']['mode'] == expected
+        assert intent['perception'].get('camera_source') == (
+            'realsense_d435i' if mode == 'live_epd_realsense' else None
+        )
 
 
 def test_explicit_task_input_has_no_hidden_replay_fallback(tmp_path):
