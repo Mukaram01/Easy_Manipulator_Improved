@@ -125,6 +125,9 @@ def test_wizard_perception_modes_use_supported_normalized_source(tmp_path):
         assert intent['pick']['selection']['source_ref'] == 'detected_objects/v1'
         assert intent['pick']['selection']['zone_ref'] == 'pick'
         assert intent['perception']['mode'] == expected
+        assert intent['perception'].get('camera_source') == (
+            'realsense_d435i' if mode == 'live_epd_realsense' else None
+        )
 
 
 def test_explicit_task_input_has_no_hidden_replay_fallback(tmp_path):
@@ -217,3 +220,47 @@ def test_refresh_publishes_current_task_identity_without_replacing_curated_metad
     assert refreshed['resolution_sha256'] == 'current-result'
     assert 'grasp_strategy' not in refreshed
     assert existing['task_recipe']['enabled'] is False
+
+
+def test_live_camera_source_validation_preserves_authority():
+    from scripts.task_intent_v2 import validate_intent
+    intent = valid_intent()
+    intent['pick']['selection'].update(source_ref='detected_objects/v1', source_type='perception')
+    intent['perception'] = {'mode': 'live_epd', 'camera_source': 'simulated_rgbd', 'replay_path': 'observations.yaml'}
+    assert not any(e['code'].startswith('CAMERA_SOURCE_') for e in validate_intent(intent))
+    intent['perception']['camera_source'] = 'realsense_d435i'
+    assert not any(e['code'].startswith('CAMERA_SOURCE_') for e in validate_intent(intent))
+    intent['perception']['camera_source'] = 'unknown_camera'
+    assert 'CAMERA_SOURCE_UNSUPPORTED' in [e['code'] for e in validate_intent(intent)]
+    intent['perception']['camera_source'] = 'simulated_rgbd'
+    intent['perception']['mode'] = 'replayed_snapshot'
+    assert 'CAMERA_SOURCE_MODE_MISMATCH' in [e['code'] for e in validate_intent(intent)]
+
+
+def test_live_camera_must_match_observation_source_before_planning(tmp_path):
+    import pytest
+    from scripts.task_intent_authoring import planning_input
+    root = scene(tmp_path)
+    intent = valid_intent()
+    intent['pick']['selection'].update(source_ref='detected_objects/v1', source_type='perception')
+    intent['perception'] = {'mode': 'live_epd', 'replay_path': 'live.yaml'}
+    snapshot = yaml.safe_load((ROOT / 'config/runtime/r1_4_replay.yaml').read_text())
+    snapshot['source'] = {'mode': 'live_epd', 'camera_source': 'realsense_d435i'}
+    (root / 'live.yaml').write_text(yaml.safe_dump(snapshot))
+    with pytest.raises(ValueError, match='CAMERA_SOURCE_REQUIRED'):
+        planning_input(root, intent)
+    intent['perception']['camera_source'] = 'simulated_rgbd'
+    with pytest.raises(ValueError, match='CAMERA_SOURCE_MISMATCH'):
+        planning_input(root, intent)
+    snapshot['source'].pop('camera_source')
+    (root / 'live.yaml').write_text(yaml.safe_dump(snapshot))
+    with pytest.raises(ValueError, match='CAMERA_SOURCE_MISMATCH'):
+        planning_input(root, intent)
+    intent['perception']['camera_source'] = 'realsense_d435i'
+    with pytest.raises(ValueError, match='CAMERA_SOURCE_MISMATCH'):
+        planning_input(root, intent)
+    # A replay file never becomes live, even if source.camera_source is forged.
+    snapshot['source'] = {'mode': 'replayed_snapshot', 'camera_source': 'realsense_d435i'}
+    (root / 'live.yaml').write_text(yaml.safe_dump(snapshot))
+    with pytest.raises(ValueError, match='LIVE_INPUT_REQUIRED'):
+        planning_input(root, intent)
