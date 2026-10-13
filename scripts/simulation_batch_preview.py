@@ -96,13 +96,21 @@ def preview_batch(scene: Path, *, limit: int = 20, now: float | None = None) -> 
     task_path = scene / "config/workcell_builder_task_intent.yaml"
     if not task_path.is_file():
         raise ValueError("TASK_INTENT_MISSING: save the Task in Builder first")
+    # Reject unsafe or live/EPD modes *before* evaluating unrelated authoring
+    # errors, so a user receives the true first safety/authority blocker.
+    authored = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+    if not isinstance(authored, dict):
+        raise ValueError("TASK_INVALID: saved TaskIntent must be a mapping")
+    binding = authored.get("perception")
+    if not isinstance(binding, dict) or binding.get("mode") not in ("off", "replayed_snapshot"):
+        raise ValueError("SIMULATION_SOURCE_REQUIRED: select a saved Off/commissioning or Recorded observation mode")
+    safety = authored.get("safety")
+    if not isinstance(safety, dict) or safety.get("real_hardware_enabled") is not False or safety.get("require_fake_hardware") is not True:
+        raise ValueError("FAKE_HARDWARE_REQUIRED: commissioning preview requires the real robot locked")
     report = load_authoring(scene)
     if report.get("status") == "FAIL" or not isinstance(report.get("task_intent"), dict):
         raise ValueError("TASK_INVALID: " + "; ".join(map(str, report.get("errors", []))))
     intent = report["task_intent"]
-    safety = intent.get("safety", {})
-    if safety.get("real_hardware_enabled") is not False or safety.get("require_fake_hardware") is not True:
-        raise ValueError("FAKE_HARDWARE_REQUIRED: commissioning preview requires the real robot locked")
     path, recording, source_sha = _load_explicit_replay(scene, intent)
     # Single explicit replay acquisition; NOT a claim of sensor freshness.
     normalized = normalize(replay_snapshot(recording, when), when, geometry)
