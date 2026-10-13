@@ -239,6 +239,61 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     });
     process->start("python3", {script, "--scene", captured_scene, "--timeout", "10"});
   });
+  auto * scene_preflight = new QPushButton("Check live PlanningScene binding (no ROS start)", this);
+  scene_preflight->setObjectName("taskLiveScenePreflight");
+  scene_preflight->setEnabled(false);
+  perception->addRow(scene_preflight);
+  auto * preflight_status = new QLabel("Check after saving and generating your live task.", this);
+  preflight_status->setObjectName("taskLiveScenePreflightStatus");
+  preflight_status->setWordWrap(true);
+  perception->addRow(preflight_status);
+  connect(scene_preflight, &QPushButton::clicked, this, [this, scene_preflight, preflight_status] {
+    const QString source = findChild<QComboBox *>("taskCameraSource")->currentData().toString();
+    if (dirty_ || scene_.isEmpty() || source.isEmpty() ||
+        findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() != "live_epd") {
+      preflight_status->setText("BLOCKED — Save the selected live task before checking PlanningScene binding.");
+      return;
+    }
+    const QString script = QFileInfo(helper_).dir().absoluteFilePath("epd_dynamic_planning_scene_node.py");
+    if (!QFileInfo::exists(script)) {
+      preflight_status->setText("BLOCKED — Existing continuous EPD PlanningScene helper is not installed.");
+      return;
+    }
+    const QString selected_scene = scene_;
+    auto * process = new QProcess(this);
+    scene_preflight->setEnabled(false);
+    preflight_status->setText("Checking saved camera, task and generated scene parity — no ROS started.");
+    connect(process, &QProcess::errorOccurred, this,
+            [scene_preflight, preflight_status](QProcess::ProcessError error) {
+      if (error == QProcess::FailedToStart) {
+        preflight_status->setText("BLOCKED — PlanningScene preflight helper could not start.");
+        scene_preflight->setEnabled(true);
+      }
+    });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this, process, selected_scene, source, scene_preflight, preflight_status]
+            (int exit_code, QProcess::ExitStatus exit_status) {
+      const auto report = QJsonDocument::fromJson(process->readAllStandardOutput()).object();
+      process->deleteLater();
+      if (selected_scene != scene_) return;
+      const bool unchanged = !dirty_ &&
+          findChild<QComboBox *>("taskCameraSource")->currentData().toString() == source &&
+          findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd";
+      scene_preflight->setEnabled(unchanged);
+      if (!unchanged) {
+        preflight_status->setText("BLOCKED — Task/camera changed during preflight; save and recheck.");
+      } else if (exit_status == QProcess::NormalExit && exit_code == 0 &&
+                 report.value("status").toString() == "PREFLIGHT_CONFIGURED_ONLY") {
+        preflight_status->setText("Configuration consistent: " + report.value("camera_id").toString() +
+          " / " + report.value("topic").toString() +
+          "\nNo ROS started; camera identity and planning/motion are NOT qualified.");
+      } else {
+        preflight_status->setText("BLOCKED — " + report.value("error").toString(
+          "Check saved TaskIntent, camera, Generate output and EPD topic parity."));
+      }
+    });
+    process->start("python3", {script, "--task-intent-scene", selected_scene, "--preflight-only"});
+  });
   auto * grasp = section("How to grasp");
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
   strategies_ = choice_field(grasp, "taskGraspIntent", "Grasp strategy", "pick/grasp/strategy_ref", {});
@@ -358,6 +413,7 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   dirty_ = true; error_.clear();
   findChild<QPushButton *>("taskCameraCapture")->setEnabled(false);
   findChild<QPushButton *>("taskCaptureLiveEpd")->setEnabled(false);
+  findChild<QPushButton *>("taskLiveScenePreflight")->setEnabled(false);
   status_->setText("Unsaved task — validate and save before planning.");
   validation_timer_->start(250); emit edited();
 }
@@ -372,6 +428,7 @@ void TaskIntentEditor::refresh_fields()
     !findChild<QComboBox *>("taskCameraSource")->currentData().toString().isEmpty();
   findChild<QPushButton *>("taskCameraCapture")->setEnabled(camera_ready);
   findChild<QPushButton *>("taskCaptureLiveEpd")->setEnabled(camera_ready);
+  findChild<QPushButton *>("taskLiveScenePreflight")->setEnabled(camera_ready);
   loading_ = false;
 }
 QJsonObject TaskIntentEditor::request(bool draft)
@@ -414,6 +471,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
   findChild<QLabel *>("taskCameraDepthPreview")->setText("Depth — no capture");
   findChild<QLabel *>("taskCameraCaptureStatus")->setText("Save and select a live camera to inspect existing ROS streams.");
   findChild<QLabel *>("taskCaptureLiveEpdStatus")->setText("A saved live task and a running EPD localization/tracking topic are required.");
+  findChild<QLabel *>("taskLiveScenePreflightStatus")->setText("Check after saving and generating your live task.");
   validation_timer_->stop(); model_ = {};
   try {
     QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");

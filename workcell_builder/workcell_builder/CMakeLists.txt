@@ -890,6 +890,7 @@ install(PROGRAMS
   ../../scripts/task_intent_authoring.py
   ../../scripts/workcell_camera_probe.py
   ../../scripts/capture_selected_live_epd.py
+  ../../scripts/continuous_epd_task_binding.py
   ../../scripts/task_intent_v2.py
   ../../scripts/task_intent_resolver.py
   ../../scripts/validate_builder_task_intent.py
