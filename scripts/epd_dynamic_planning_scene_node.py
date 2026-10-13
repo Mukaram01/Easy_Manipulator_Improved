@@ -23,6 +23,7 @@ from capture_epd_detected_objects import convert_epd_message_to_detected_objects
 from dynamic_object_planning_scene_bridge import (
     apply_and_verify, build_collision_object, build_remove_collision_object)
 from epd_snapshot_adapter import normalize_detected_objects_snapshot
+from continuous_epd_task_binding import load_bound_live_task, bound_epd_message_error
 
 
 def load_task_contract(scene_package: str) -> dict[str, Any]:
@@ -241,8 +242,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout-seconds", type=float, default=5.0)
     parser.add_argument("--summary-output", type=Path, default=Path("/tmp/workcell_perception_summary.json"))
     parser.add_argument("--snapshot-output", type=Path, default=Path("/tmp/workcell_perception_snapshot.json"))
+    parser.add_argument("--task-intent-scene", type=Path,
+        help="Opt in to strict saved TaskIntent v2 camera/topic and generated-scene parity")
+    parser.add_argument("--preflight-only", action="store_true",
+        help="Inspect TaskIntent/generated scene without starting ROS or writing PlanningScene")
     args, ros_args = parser.parse_known_args(argv)
+    if args.preflight_only and args.task_intent_scene is None:
+        parser.error("--preflight-only requires --task-intent-scene")
+    bound = load_bound_live_task(args.task_intent_scene) if args.task_intent_scene is not None else None
+    if bound is not None:
+        # Legacy fixture defaults are never accepted for a task-bound session.
+        args.scene_package = bound["scene"]
+        args.topic = bound["topic"]
+        args.message_type = bound["message_type"]
+        args.camera_id = bound["camera_id"]
+        args.frame_fallback = ""  # Native EPD headers required; no invented optical frame.
+        args.planning_frame = bound["planning_frame"]
     contract = load_task_contract(args.scene_package)
+    if bound is not None and (
+        contract["filter"].get("class_id") != bound["target_class"] or
+        contract["task"]["pick"]["source_ref"] != bound["pick_zone"]
+    ):
+        raise ValueError("TASK_GENERATION_STALE: legacy handoff disagrees with saved TaskIntent")
+    if args.preflight_only:
+        print(json.dumps(bound, indent=2, sort_keys=True))
+        return 0
 
     import rclpy
     from epd_msgs.msg import EPDObjectLocalization, EPDObjectTracking
@@ -260,6 +284,12 @@ def main(argv: list[str] | None = None) -> int:
     listener = TransformListener(buffer, node)  # noqa: F841
     publisher = node.create_publisher(String, args.normalized_topic, 10)
     summary = initial_summary()
+    if bound is not None:
+        summary.update(
+            task_binding="saved_task_intent_v2", camera_source=bound["camera_source"],
+            camera_id=bound["camera_id"], source_identity_attested=False,
+            planning_ready=False, no_robot_motion=True,
+            note="Configured ROS transport only; not authenticated hardware or full-cycle planning")
     applied_ids: set[str] = set()
     latest_objects: dict[str, Any] = {}
     ownership = {"id": "", "object": None}
@@ -300,6 +330,11 @@ def main(argv: list[str] | None = None) -> int:
     def process_message(message: Any) -> None:
         nonlocal seen_message, latest_snapshot, last_stamp_ns
         seen_message = True
+        if bound is not None:
+            failure = bound_epd_message_error(
+                message, bound, node.get_clock().now().nanoseconds, last_stamp_ns)
+            if failure:
+                raise ValueError(failure)
         detected, warnings = convert_epd_message_to_detected_objects(
             message, args.topic, args.scene_package, args.frame_fallback)
         summary["objects_received"] += len(detected["objects"])
@@ -307,6 +342,11 @@ def main(argv: list[str] | None = None) -> int:
             "camera_id": args.camera_id, "frame_id": detected["source"]["frame_id"]}}}
         normalized = normalize_detected_objects_snapshot(detected, profile)
         summary["objects_normalized"] += len(normalized["objects"])
+        if bound is not None:
+            # This remains only the configured topic/scene binding, not proof
+            # of real D435i or Gazebo sensor origin. No camera identity forgery.
+            normalized["configured_camera_source"] = bound["camera_source"]
+            normalized["source_identity_attested"] = False
         from perceived_object_grasp_plan import _collision_object_dict
         eligible = []
         rejected = {}
@@ -467,7 +507,7 @@ def main(argv: list[str] | None = None) -> int:
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-    return 0 if summary["result"] == "PASS" else 1
+    return 0 if summary["result"] == "READY" else 1
 
 
 if __name__ == "__main__":
