@@ -5,6 +5,7 @@
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -12,12 +13,15 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QProcess>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSignalBlocker>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <cmath>
+#include <memory>
 
 namespace {
 QJsonValue value_at(QJsonObject root, const QString & path)
@@ -88,6 +92,90 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   });
   auto * input_help = new QLabel("Select Simulated RGB-D or RealSense D435i for live EPD input. This setting does not start a camera. Live observations must declare the selected source and provide measured geometry, valid frames and freshness; no automatic replay or invented geometry.", this);
   input_help->setWordWrap(true); perception->addRow(input_help);
+  auto * probe_button = new QPushButton("Capture RGB-D preview (read-only)", this);
+  probe_button->setObjectName("taskCameraCapture");
+  probe_button->setEnabled(false);
+  perception->addRow(probe_button);
+  auto * preview_status = new QLabel("Save and select a live camera to inspect existing ROS streams.", this);
+  preview_status->setObjectName("taskCameraCaptureStatus");
+  preview_status->setWordWrap(true);
+  perception->addRow(preview_status);
+  auto * preview_row = new QHBoxLayout;
+  auto * rgb_preview = new QLabel("RGB — no capture", this);
+  auto * depth_preview = new QLabel("Depth — no capture", this);
+  rgb_preview->setObjectName("taskCameraRgbPreview");
+  depth_preview->setObjectName("taskCameraDepthPreview");
+  for (auto * preview : {rgb_preview, depth_preview}) {
+    preview->setMinimumSize(170, 112);
+    preview->setMaximumSize(240, 160);
+    preview->setAlignment(Qt::AlignCenter);
+    preview->setScaledContents(false);
+    preview_row->addWidget(preview);
+  }
+  perception->addRow(preview_row);
+  connect(probe_button, &QPushButton::clicked, this,
+          [this, probe_button, preview_status, rgb_preview, depth_preview] {
+    const auto * selected = findChild<QComboBox *>("taskCameraSource");
+    const auto * live_mode = findChild<QComboBox *>("taskPerceptionMode");
+    if (scene_.isEmpty() || dirty_ || live_mode->currentData().toString() != "live_epd" ||
+        selected->currentData().toString().isEmpty()) {
+      preview_status->setText("BLOCKED — Save the Task with a selected live camera before preview.");
+      return;
+    }
+    const QString script = QFileInfo(helper_).dir().absoluteFilePath("workcell_camera_probe.py");
+    if (!QFileInfo::exists(script)) {
+      preview_status->setText("BLOCKED — workcell_camera_probe.py is not installed beside the Task helper.");
+      return;
+    }
+    const auto temporary = std::make_shared<QTemporaryDir>();
+    if (!temporary->isValid()) {
+      preview_status->setText("BLOCKED — Cannot create private camera preview directory.");
+      return;
+    }
+    const QString captured_scene = scene_;
+    const QString source = selected->currentData().toString();
+    auto * process = new QProcess(this);
+    probe_button->setEnabled(false);
+    rgb_preview->setText("Waiting for RGB…"); depth_preview->setText("Waiting for depth…");
+    preview_status->setText("Capturing existing ROS RGB/depth topics; no camera or robot is launched.");
+    connect(process, &QProcess::errorOccurred, this,
+            [probe_button, preview_status](QProcess::ProcessError error) {
+      if (error == QProcess::FailedToStart) {
+        preview_status->setText("BLOCKED — Python camera probe failed to start.");
+        probe_button->setEnabled(true);
+      }
+    });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this, process, temporary, captured_scene, probe_button, preview_status,
+             rgb_preview, depth_preview](int exit_code, QProcess::ExitStatus exit_status) {
+      const auto parsed = QJsonDocument::fromJson(process->readAllStandardOutput()).object();
+      process->deleteLater();
+      if (captured_scene != scene_) return;  // Never display another cell's capture.
+      probe_button->setEnabled(findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd");
+      const auto errors = parsed.value("errors").toArray();
+      const auto warnings = parsed.value("warnings").toArray();
+      QStringList messages;
+      for (const auto & error : errors) messages << error.toString();
+      for (const auto & warning : warnings) messages << warning.toString();
+      const bool captured = exit_status == QProcess::NormalExit && exit_code == 0 &&
+          parsed.value("status").toString() == "PREVIEW_CAPTURED";
+      const QString headline = captured ? "RGB-D preview captured — NOT calibrated or motion-ready." :
+          "BLOCKED — camera preview incomplete.";
+      preview_status->setText(headline + (messages.isEmpty() ? "" : "\n" + messages.join("\n")));
+      for (const auto & item : {qMakePair(rgb_preview, QString("rgb")),
+                                qMakePair(depth_preview, QString("depth"))}) {
+        QPixmap pixmap(temporary->filePath(item.second + ".png"));
+        if (pixmap.isNull()) {
+          item.first->setPixmap(QPixmap());
+          item.first->setText(item.second.toUpper() + " unavailable");
+        } else {
+          item.first->setPixmap(pixmap.scaled(item.first->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
+      }
+    });
+    process->start("python3", {script, "--scene", captured_scene, "--camera-source", source,
+                               "--output-dir", temporary->path(), "--timeout", "5"});
+  });
   auto * grasp = section("How to grasp");
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
   strategies_ = choice_field(grasp, "taskGraspIntent", "Grasp strategy", "pick/grasp/strategy_ref", {});
@@ -204,7 +292,9 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   if (path == "pick/selection/zone_ref" && findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "off") {
     model_.set_field({"pick", "selection", "source_ref"}, json_value(value).toStdString());
   }
-  dirty_ = true; error_.clear(); status_->setText("Unsaved task — validate and save before planning.");
+  dirty_ = true; error_.clear();
+  findChild<QPushButton *>("taskCameraCapture")->setEnabled(false);
+  status_->setText("Unsaved task — validate and save before planning.");
   validation_timer_->start(250); emit edited();
 }
 void TaskIntentEditor::refresh_fields()
@@ -212,8 +302,10 @@ void TaskIntentEditor::refresh_fields()
   loading_ = true;
   const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(workcell_builder::canonical_task_intent_json_for_testing(model_.to_yaml()))).object();
   for (auto it = readers_.begin(); it != readers_.end(); ++it) it.value()(value_at(root, it.key()));
-  findChild<QComboBox *>("taskCameraSource")->setEnabled(
-    findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd");
+  const bool live = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd";
+  findChild<QComboBox *>("taskCameraSource")->setEnabled(live);
+  findChild<QPushButton *>("taskCameraCapture")->setEnabled(live && !dirty_ &&
+    !findChild<QComboBox *>("taskCameraSource")->currentData().toString().isEmpty());
   loading_ = false;
 }
 QJsonObject TaskIntentEditor::request(bool draft)
@@ -250,6 +342,11 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     if (current == loaded_bytes_) { setEnabled(true); return true; }
   }
   scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_blocker_.clear(); input_errors_.clear();
+  findChild<QLabel *>("taskCameraRgbPreview")->setPixmap(QPixmap());
+  findChild<QLabel *>("taskCameraRgbPreview")->setText("RGB — no capture");
+  findChild<QLabel *>("taskCameraDepthPreview")->setPixmap(QPixmap());
+  findChild<QLabel *>("taskCameraDepthPreview")->setText("Depth — no capture");
+  findChild<QLabel *>("taskCameraCaptureStatus")->setText("Save and select a live camera to inspect existing ROS streams.");
   validation_timer_->stop(); model_ = {};
   try {
     QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
