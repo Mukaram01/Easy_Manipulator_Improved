@@ -458,6 +458,10 @@ TEST(TaskIntentEditor, ExplicitLiveCameraSourceSurvivesReopenAndClearsOutsideLiv
   auto * live_epd = editor.findChild<QPushButton *>("taskCaptureLiveEpd");
   ASSERT_NE(live_epd, nullptr);
   ASSERT_NE(editor.findChild<QLabel *>("taskCaptureLiveEpdStatus"), nullptr);
+  auto * preflight = editor.findChild<QPushButton *>("taskLiveScenePreflight");
+  ASSERT_NE(preflight, nullptr);
+  ASSERT_NE(editor.findChild<QLabel *>("taskLiveScenePreflightStatus"), nullptr);
+  EXPECT_FALSE(preflight->isEnabled());
   EXPECT_FALSE(capture->isEnabled());
   EXPECT_FALSE(live_epd->isEnabled());
   mode->setCurrentIndex(mode->findData("live_epd"));
@@ -465,7 +469,9 @@ TEST(TaskIntentEditor, ExplicitLiveCameraSourceSurvivesReopenAndClearsOutsideLiv
   camera->setCurrentIndex(camera->findData("simulated_rgbd"));
   EXPECT_FALSE(capture->isEnabled());  // Unsaved camera edits cannot probe.
   EXPECT_FALSE(live_epd->isEnabled());
+  EXPECT_FALSE(preflight->isEnabled());
   ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preflight->isEnabled());  // Check is explicit; no ROS starts by saving.
   EXPECT_TRUE(capture->isEnabled());  // No ROS launched until explicit click.
   EXPECT_TRUE(live_epd->isEnabled());  // No EPD subscribed until explicit click.
   EXPECT_TRUE(editor.blocker().contains("TASK_INPUT_UNAVAILABLE"));
@@ -487,6 +493,7 @@ TEST(TaskIntentEditor, ExplicitLiveCameraSourceSurvivesReopenAndClearsOutsideLiv
   EXPECT_FALSE(physical->isEnabled());
   EXPECT_FALSE(d435i.findChild<QPushButton *>("taskCameraCapture")->isEnabled());
   EXPECT_FALSE(d435i.findChild<QPushButton *>("taskCaptureLiveEpd")->isEnabled());
+  EXPECT_FALSE(d435i.findChild<QPushButton *>("taskLiveScenePreflight")->isEnabled());
   ASSERT_TRUE(d435i.save());
   const auto task = QJsonDocument::fromJson(QByteArray::fromStdString(
     workcell_builder::canonical_task_intent_json_for_testing(d435i.model().to_yaml()))).object();
