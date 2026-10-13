@@ -902,6 +902,7 @@ install(PROGRAMS
   ../../scripts/capture_epd_detected_objects.py
   ../../scripts/epd_dynamic_planning_scene_node.py
   ../../scripts/perceived_object_grasp_plan.py
+  ../../scripts/asset_mounting.py
   ../../scripts/physical_destination.py
   ../../scripts/runtime_pick_inputs.py
   ../../scripts/full_cycle_preplanner.py

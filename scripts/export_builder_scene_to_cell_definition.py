@@ -311,6 +311,8 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
     from physical_destination import resolve_destination, destination_ids
     physical = env.get("environment") or {}
+    from asset_mounting import validate_physical
+    validate_physical(physical)
     for zone_id in destination_ids(physical, env.get('task') or {}):
         resolve_destination(physical, zone_id)
     task_zones, task_zone_counts, _ = _extract_task_zones(physical or env)

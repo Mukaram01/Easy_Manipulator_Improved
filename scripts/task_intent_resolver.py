@@ -395,6 +395,8 @@ def read_scene_task(scene):
     if report['status'] == 'FAIL':
         raise ValueError('; '.join(report['errors']))
     document = yaml.safe_load((scene / 'environment.yaml').read_text())
+    from asset_mounting import validate_physical
+    validate_physical(document.get('environment', document))
     return report['task_intent'], document.get('environment', document), document
 
 

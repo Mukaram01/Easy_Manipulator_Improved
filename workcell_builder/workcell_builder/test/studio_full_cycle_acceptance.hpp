@@ -1,6 +1,10 @@
 #pragma once
 // Explicit workstation acceptance using the real window/actions, never a mock executor.
 #include <QApplication>
+#include <QDialogButtonBox>
+#include <QListWidget>
+#include <QSettings>
+#include "gui/new_cell_wizard.h"
 #include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -19,6 +23,162 @@
 
 class TestMain {
 public:
+  static void start_mounting_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & scene_name, bool reopen) {
+    struct Session { int phase=0, ticks=0; QString scene, support, camera; QJsonArray baseline, moved; QJsonObject evidence; };
+    auto s = std::make_shared<Session>(); QDir().mkpath(output);
+    s->evidence = {{"result", "FAIL"}, {"fake_hardware_only", true}, {"execution_goals_sent", 0}};
+    auto write = [=]() { QFile f(output + (reopen ? "/reopen.json" : "/authoring.json")); if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson()); };
+    auto require = [](bool value, const char * message) { if (!value) throw std::runtime_error(message); };
+    auto mount = [=](const QString & child, const QString & parent, const QString & anchor, bool detach=false, bool relative_edit=false) {
+      window->apply_scene_selection(child, "", false, false);
+      QTimer::singleShot(100, window, [=]() {
+        auto * dialog = window->findChild<QDialog *>("assetMountingDialog");
+        if (!dialog) return;
+        if (detach) { dialog->findChild<QPushButton *>("detachAsset")->click(); return; }
+        auto * parents = dialog->findChild<QComboBox *>("mountTo");
+        parents->setCurrentIndex(parents->findData(parent));
+        dialog->findChild<QComboBox *>("mountAnchor")->setCurrentText(anchor);
+        if (relative_edit) {
+          dialog->findChild<QCheckBox *>("applyRelativePose")->setChecked(true);
+          dialog->findChild<QDoubleSpinBox *>("relative_z")->setValue(1.2);
+          dialog->findChild<QDoubleSpinBox *>("relative_pitch")->setValue(90.);
+        }
+        dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();
+      });
+      window->findChild<QPushButton *>("sceneBuilderMounting")->click();
+    };
+    auto * modal_watch = new QTimer(window); modal_watch->setInterval(250);
+    QObject::connect(modal_watch, &QTimer::timeout, window, [=]() {
+      for (auto * widget : QApplication::topLevelWidgets()) if (auto * message = qobject_cast<QMessageBox *>(widget)) {
+        if (!message->isVisible()) continue;
+        s->evidence["failure"] = message->text();
+        s->evidence["studio_log"] = window->studio_log_->toPlainText();
+        window->grab().save(output+"/failure.png"); write(); message->reject(); app->exit(1);
+      }
+    }); modal_watch->start();
+    auto * timer = new QTimer(window); timer->setInterval(300);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
+      if (++s->ticks > 1000) throw std::runtime_error("mounting GUI acceptance timed out");
+      if (window->load_watcher_ && window->load_watcher_->isRunning()) return;
+      switch (s->phase) {
+        case 0: {
+          if (s->ticks < 5) return;
+          const QString root = window->detect_workspace_root() + "/src/easy_manipulation_deployment";
+          s->scene = root + "/scenes/" + scene_name;
+          if (reopen) {
+            QStringList blockers; QJsonObject diagnostics;
+            require(window->load_scene_for_scene3d_smoke(scene_name, s->scene, &blockers, &diagnostics), "saved cell did not reopen");
+            s->phase=4; s->ticks=0; break;
+          }
+          require(!QFileInfo::exists(s->scene), "acceptance refuses to replace an existing cell");
+          QSettings().setValue("startup/last_scene_output_root", root + "/scenes");
+          QTimer::singleShot(100, window, [=]() {
+            auto * wizard = window->findChild<NewCellWizard *>(); if (!wizard) return;
+            wizard->findChild<QLineEdit *>("newCellSceneName")->setText(scene_name);
+            wizard->findChild<QLineEdit *>("newCellDisplayName")->setText("Asset Mounting Acceptance");
+            wizard->findChild<QListWidget *>("newCellWizardSteps")->setCurrentRow(5);
+            for (auto * button : wizard->findChildren<QPushButton *>()) if (button->text() == "Create and Open") { button->click(); break; }
+          });
+          timer->stop(); window->open_new_scene_creation_flow(); timer->start();
+          require(QFileInfo::exists(s->scene + "/environment.yaml"), "real New Cell Wizard did not create the cell");
+          window->show_studio_page(MainWindow::StudioPage::SceneBuilderPage);
+          s->evidence["wizard_created"] = s->scene; s->phase=1; s->ticks=0; break;
+        }
+        case 1: {
+          if (s->ticks < 10) return;
+          require(window->has_selected_scene(), "new cell not selected in Studio");
+          if (window->scene_preview_widget_ && !window->scene_preview_widget_->is_native_product_view_backend() &&
+              !window->scene_preview_widget_->embedded_web_authoring_active()) return;
+          QString stand_asset;
+          QJsonArray candidates;
+          for (const auto & entry : window->asset_catalog_entries_) if (entry.asset_id.contains("camera_stand")) {
+            candidates.append(QJsonObject{{"id",entry.asset_id},{"source",entry.source_path},{"disabled",entry.disabled_reason}});
+            if (entry.editable && entry.disabled_reason.isEmpty() && (stand_asset.isEmpty() || entry.asset_id == "camera_stand")) stand_asset=entry.asset_id;
+          }
+          s->evidence["support_catalog_candidates"] = candidates;
+          require(!stand_asset.isEmpty(), "camera stand unavailable in Asset Library");
+          const bool placed = window->place_catalog_asset_at_world_position(stand_asset, .25, -.45, 0., false);
+          for (const auto & p : window->all_scene_preview_items_) {
+            if (p.catalog_asset_id == stand_asset) s->support = p.id;
+            if (p.id == "realsense_overhead") s->camera = p.id;
+          }
+          s->evidence["placement_return"] = placed;
+          s->evidence["placed_items"] = window->mounting_items(); write();
+          require(!s->support.isEmpty() && !s->camera.isEmpty(), "camera/support IDs not in real scene");
+          timer->stop(); mount("target_bin_default", "support_surface_table", "surface"); mount(s->camera, s->support, "origin"); mount(s->camera, s->support, "origin", false, true); timer->start();
+          s->baseline = window->mounting_items();
+          require(s->baseline.size() >= 4, "physical mounting model missing assets");
+          s->evidence["mounted"] = s->baseline; s->evidence["relative_pose_controls_used"] = true;
+          s->phase=2; s->ticks=0; break;
+        }
+        case 2: {
+          if (s->ticks < 3) return;
+          for (const auto & id : {QString("support_surface_table"), s->support}) {
+            window->apply_scene_selection(id, "", false, false);
+            window->inspector_update_guard_ = true;
+            window->inspector_x_->setValue(window->inspector_x_->value()+.05);
+            window->inspector_yaw_->setValue(window->inspector_yaw_->value()+20.);
+            window->inspector_update_guard_ = false;
+            window->inspector_apply_button_->click();
+          }
+          s->moved = window->mounting_items();
+          require(s->moved != s->baseline, "Inspector parent edit did not move the scene");
+          window->undo_layout_edit(); window->undo_layout_edit();
+          require(window->mounting_items() == s->baseline, "undo did not restore full graph");
+          window->redo_layout_edit(); window->redo_layout_edit();
+          require(window->mounting_items() == s->moved, "redo did not restore full graph");
+          timer->stop(); mount(s->camera, "world", "world", true); timer->start();
+          window->undo_layout_edit();
+          require(window->mounting_items() == s->moved, "detach undo lost graph/poses");
+          timer->stop(); mount("target_bin_default", s->support, "origin"); timer->start();
+          window->undo_layout_edit();
+          require(window->mounting_items() == s->moved, "reparent undo lost graph/poses");
+          s->evidence["parent_edits_undo_redo_reparent_detach"] = true;
+          s->evidence["moved"] = s->moved;
+          require(window->save_layout_button_ && window->save_layout_button_->isEnabled(), "Save Layout control is unavailable");
+          window->save_layout_button_->click();
+          s->phase=3; s->ticks=0; break;
+        }
+        case 3: {
+          if (s->ticks < 5 || window->layout_dirty_) return;
+          window->grab().save(output+"/mounted_scene.png");
+          s->evidence["saved"] = true; s->evidence["result"] = "PASS";
+          write(); timer->stop(); window->close(); app->exit(0); break;
+        }
+        case 4: {
+          if (s->ticks < 12) return;
+          QFile previous(output+"/authoring.json"); require(previous.open(QIODevice::ReadOnly), "authoring evidence missing");
+          const auto before = QJsonDocument::fromJson(previous.readAll()).object().value("moved").toArray();
+          require(QFileInfo(window->selected_scene_state_.path).canonicalFilePath() == QFileInfo(s->scene).canonicalFilePath(), "reopen selected a different scene");
+          const auto after = window->mounting_items();
+          s->evidence["reopened"] = after;
+          QJsonArray loaded;
+          for (const auto & p : window->all_scene_preview_items_) loaded.append(QJsonObject{{"id",p.id},{"editable",p.editable},{"locked",p.locked},{"layer",p.source_layer}});
+          s->evidence["all_loaded_items"] = loaded; s->evidence["selected_scene_path"] = window->selected_scene_state_.path; write();
+          require(before.size() == after.size(), "reopen changed physical identities");
+          QMap<QString,QJsonObject> indexed;
+          for (const auto & row : after) indexed.insert(row.toObject().value("id").toString(), row.toObject());
+          for (const auto & value : before) {
+            const auto row=value.toObject(), actual=indexed.value(row.value("id").toString());
+            require(!actual.isEmpty(), "reopen lost an asset");
+            for (const auto & key : {QString("pose_xyz"),QString("pose_rpy")}) {
+              for (int k=0;k<3;++k) require(std::abs(row.value(key).toArray()[k].toDouble()-actual.value(key).toArray()[k].toDouble())<1e-8,"reopen changed transform");
+            }
+            const auto a=YAML::Load(row.value("mounting_yaml").toString().toStdString()), b=YAML::Load(actual.value("mounting_yaml").toString().toStdString());
+            for (const auto & key : {"parent_object","parent_link"}) require(a[key].as<std::string>("")==b[key].as<std::string>(""),"reopen changed mounting relationship");
+          }
+          s->evidence["reopened"] = after;
+          window->generate_scene_package_for_selected_scene();
+          require(QFileInfo::exists(s->scene+"/generated/generated_environment_objects.yaml"), "GUI generation did not produce environment objects");
+          s->evidence["gui_generation_invoked"] = true; s->evidence["result"] = "PASS";
+          window->grab().save(output+"/reopened_scene.png"); write(); timer->stop(); window->close(); app->exit(0); break;
+        }
+      }
+    } catch (const std::exception & error) { s->evidence["failure"] = QString::fromUtf8(error.what()); write(); timer->stop(); app->exit(1); } });
+    timer->start();
+  }
+
   static void start_persistence_only(MainWindow * window, QApplication * app, const QString & output) {
     struct Session { int phase=0, ticks=0; QString scene; QJsonObject evidence; };
     auto s=std::make_shared<Session>(); QDir().mkpath(output);

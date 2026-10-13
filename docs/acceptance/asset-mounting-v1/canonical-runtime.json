@@ -1,0 +1,27 @@
+{
+  "scene": "ur5_2f_test",
+  "fake_hardware_only": true,
+  "execution_goals_sent": 0,
+  "result": "PASS",
+  "description_and_semantic_loaded": true,
+  "controllers": {
+    "joint_state_broadcaster": "active",
+    "ur5_arm_controller": "active",
+    "ur5_gripper_controller": "active"
+  },
+  "joint_states_received": 177,
+  "collision_object_ids": [
+    "workcell::support_surface_table",
+    "workcell::target_bin_default"
+  ],
+  "collision_manifest_applied": true,
+  "camera_world_xyz": [
+    0.41250843709978047,
+    -0.34254294887185105,
+    0.8394099574448048
+  ],
+  "launch_exit_code": 0,
+  "camera_tf_matches_physical_sensor_offset": true,
+  "rviz_started": true,
+  "verification_note": "Corrected probe uses physical camera mount plus sensor macro offset; top-level compatibility pose is not canonical runtime camera source."
+}

@@ -360,6 +360,12 @@ private:
   void on_canvas_selection_changed();
   void on_canvas_item_moved(QGraphicsItem * item, const QPointF & old_pos, const QPointF & new_pos, const QString & reason);
   void apply_inspector_pose_to_item();
+  bool mounting_update_guard_{false};
+  QJsonArray mounting_items() const;
+  QJsonObject run_mounting_request(QJsonObject request);
+  bool commit_mounting_request(QJsonObject request);
+  void apply_mounting_snapshot(const QVector<ScenePreviewWidget::PreviewItem> & snapshot);
+  void edit_selected_mounting();
   void apply_selection_transform_from_editor();
   void revert_selection_transform_editor();
   void copy_selection_transform_to_clipboard();
@@ -781,6 +787,7 @@ private:
     bool created;
     bool deleted;
     QVector<ScenePreviewWidget::PreviewItem> preview_items;
+    QVector<ScenePreviewWidget::PreviewItem> after_items;
     ScenePreviewWidget::PreviewItem before_item;
     ScenePreviewWidget::PreviewItem after_item;
   };

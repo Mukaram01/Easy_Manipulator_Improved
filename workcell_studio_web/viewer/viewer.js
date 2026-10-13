@@ -6415,7 +6415,9 @@ function buildEditPatch() {
   const edits = [];
   for (const rendered of state.objects) {
     const dirty = state.dirtyTransforms.get(rendered.item.id);
-    if (!dirty) continue;
+    // Linked destinations follow their target for display. Their canonical
+    // pose is resolved from the physical target, not a world-pose edit.
+    if (!dirty || !canEditItem(rendered.item) || isDerivedTransformDependent(rendered.item)) continue;
     edits.push({
       item_id: rendered.item.id,
       label: itemLabel(rendered.item),
@@ -6870,6 +6872,18 @@ function setVisibleItemIdsFromBridge(ids) {
   return editorState();
 }
 
+// A target-local destination is persisted with its target, not as a patch edit.
+function rebasePersistedDependents(persistedIds) {
+  for (const rendered of state.objects) {
+    const target = derivedTransformTargetId(rendered.item);
+    if (!target || !persistedIds.includes(target) || state.dirtyTransforms.has(target)) continue;
+    const current = cloneTransform(transformFromObject(rendered.object3d));
+    rendered.originalTransform = cloneTransform(current);
+    rendered.authoredBaselineTransform = cloneTransform(current);
+    state.dirtyTransforms.delete(rendered.item.id);
+  }
+}
+
 // Runs inside the viewer module; Qt must not access module-private editor state.
 function rebasePersistedPatch(patch) {
   const api = window.__WORKCELL_EDITOR_API_V1__;
@@ -6927,6 +6941,7 @@ function rebasePersistedPatch(patch) {
     rebasedItemIds.push(itemId);
     if (typeof syncInspectorTransformFields === 'function') syncInspectorTransformFields(rendered);
   }
+  rebasePersistedDependents(rebasedItemIds);
   state.undoStack = [];
   state.redoStack = [];
   updateDirtyState();

@@ -399,6 +399,8 @@ def load_and_build(layout_path: Path, *, scene_name: str | None = None,
     except (OSError, yaml.YAMLError) as exc:
         raise CollisionManifestError(f"cannot read authoritative environment {environment_path}: {exc}") from exc
     physical = environment.get("environment", {})
+    from asset_mounting import validate_physical
+    validate_physical(physical)
     items = []
     for collection in ("support_surfaces", "assets", "sensors", "task_zones"):
         for item in physical.get(collection, []):

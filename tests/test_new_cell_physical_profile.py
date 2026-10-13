@@ -85,6 +85,9 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     assert marker["Topic"]["Value"] == f"/{scene.name}/canonical_mesh_markers"
     assert marker["Topic"]["Durability Policy"] == "Transient Local"
     scene.rename(destination)
+    readiness = json.loads((destination / 'generated/scene_package_readiness.json').read_text())
+    assert not readiness['blockers']
+    assert all(record['exists'] for record in readiness['contract_files'])
     summary = json.loads((destination / 'generated/generated_workcell_summary.json').read_text())
     for key in ('task_recipe_path', 'detected_objects_example_path', 'environment_objects_path', 'destinations_path', 'source_cell_definition'):
         assert Path(summary[key]).is_file(), (key, summary[key])
