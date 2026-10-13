@@ -51,16 +51,32 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   mode->addItem("Recorded / replayed observations", "replayed_snapshot");
   mode->addItem("Live — normalized adapter snapshot", "live_epd");
   perception->addRow("Perception mode", mode);
+  auto * camera = new QComboBox(this); camera->setObjectName("taskCameraSource");
+  camera->addItem("Choose camera source…", "");
+  camera->addItem("Simulated RGB-D (Gazebo + EPD)", "simulated_rgbd");
+  camera->addItem("Intel RealSense D435i (EPD)", "realsense_d435i");
+  perception->addRow("Live camera source", camera);
+  readers_["perception/camera_source"] = [camera](const QJsonValue & value) {
+    const int index = value.isString() ? camera->findData(value.toString()) : -1;
+    camera->setCurrentIndex(index >= 0 ? index : 0);
+  };
+  connect(camera, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, mode, camera](int index) {
+    if (loading_ || index < 0 || mode->currentData().toString() != "live_epd") return;
+    const auto source = camera->currentData().toString();
+    set_field("perception/camera_source", source.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(source));
+  });
   readers_["perception/mode"] = [mode](const QJsonValue & value) {
     mode->setCurrentIndex(value.isString() ? mode->findData(value.toString()) : -1);
   };
-  connect(mode, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, mode](int index) {
+  connect(mode, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, mode, camera](int index) {
     if (loading_ || index < 0) return;
     const auto value = mode->currentData().toString();
     set_field("perception/mode", value);
     set_field("pick/selection/source_type", value == "off" ? "manual_simulated" : "perception");
     set_field("pick/selection/source_ref", value == "off" ? QString::fromStdString(model_.pick_selection.zone_ref) : "detected_objects/v1");
+    if (value != "live_epd") set_field("perception/camera_source", QJsonValue(QJsonValue::Null));
     refresh_fields();
+    camera->setEnabled(value == "live_epd");
   });
   text_field(perception, "taskReplayPath", "Observation snapshot", "perception/replay_path");
   auto * choose = new QPushButton("Choose observation file…", this); choose->setObjectName("taskChooseObservations");
@@ -69,7 +85,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     const auto path = QFileDialog::getOpenFileName(this, "Choose existing detected_objects/v1 observations", scene_, "Observations (*.yaml *.yml *.json)");
     if (!path.isEmpty()) { set_field("perception/replay_path", path); refresh_fields(); }
   });
-  auto * input_help = new QLabel("No workpiece geometry is invented. Off/replay uses explicit commissioning observations. Live requires a current normalized adapter snapshot; stale or unavailable objects block planning.", this);
+  auto * input_help = new QLabel("Select Simulated RGB-D or RealSense D435i for live EPD input. This setting does not start a camera. Live observations must declare the selected source and provide measured geometry, valid frames and freshness; no automatic replay or invented geometry.", this);
   input_help->setWordWrap(true); perception->addRow(input_help);
   auto * grasp = section("How to grasp");
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
@@ -195,6 +211,8 @@ void TaskIntentEditor::refresh_fields()
   loading_ = true;
   const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(workcell_builder::canonical_task_intent_json_for_testing(model_.to_yaml()))).object();
   for (auto it = readers_.begin(); it != readers_.end(); ++it) it.value()(value_at(root, it.key()));
+  findChild<QComboBox *>("taskCameraSource")->setEnabled(
+    findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd");
   loading_ = false;
 }
 QJsonObject TaskIntentEditor::request(bool draft)
