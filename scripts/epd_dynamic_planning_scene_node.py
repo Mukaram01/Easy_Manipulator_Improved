@@ -338,7 +338,8 @@ def main(argv: list[str] | None = None) -> int:
         detected, warnings = convert_epd_message_to_detected_objects(
             message, args.topic, args.scene_package, args.frame_fallback)
         summary["objects_received"] += len(detected["objects"])
-        profile = {"scene_id": args.scene_package, "perception": {"camera": {
+        profile = {"scene_id": bound["scene_id"] if bound is not None else args.scene_package,
+                   "perception": {"camera": {
             "camera_id": args.camera_id, "frame_id": detected["source"]["frame_id"]}}}
         normalized = normalize_detected_objects_snapshot(detected, profile)
         summary["objects_normalized"] += len(normalized["objects"])
@@ -461,6 +462,7 @@ def main(argv: list[str] | None = None) -> int:
             summary["result"] = "BLOCKED"
             summary["blocker"] = "unqualified perceived collision geometry or MoveIt update"
             summary["geometry_blockers"] = geometry_blockers
+            summary["eligible_ids"] = []
             # Never publish candidate targets as motion/plan-ready when a
             # nearby non-target obstacle could not be represented safely.
             latest_snapshot["objects"] = []
