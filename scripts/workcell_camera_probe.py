@@ -32,8 +32,12 @@ def camera_config(scene: Path, selected: str) -> dict[str, str]:
     if not isinstance(perception, dict) or perception.get("mode") != "live_epd" or perception.get("camera_source") != selected:
         raise ValueError("CAMERA_SOURCE_MISMATCH: save the selected live camera in Task settings before preview")
     document = yaml.safe_load((scene / "environment.yaml").read_text(encoding="utf-8"))
-    environment = document.get("environment", document) if isinstance(document, dict) else {}
-    camera = environment.get("camera", document.get("camera", {}))
+    if not isinstance(document, dict):
+        raise ValueError("CAMERA_SCENE_INVALID: environment.yaml must be a mapping")
+    environment = document.get("environment", document)
+    if not isinstance(environment, dict):
+        raise ValueError("CAMERA_SCENE_INVALID: environment must be a mapping")
+    camera = environment.get("camera") or document.get("camera", {})
     if not isinstance(camera, dict) or camera.get("enabled") is not True:
         raise ValueError("CAMERA_NOT_CONFIGURED: enable a physical camera in the existing scene environment")
     rgb = camera.get("rgb_topic")
