@@ -1,0 +1,168 @@
+{
+  "result": "PASS",
+  "mode": "R1.4 plan-only",
+  "selected_object_id": "runtime::sample-cup",
+  "full_cycle_plan_success": true,
+  "full_cycle_prevalidated": true,
+  "execution_attempted": false,
+  "execution_action_goals": [],
+  "prevalidation_left_live_scene_unchanged": true,
+  "shutdown_clean": true,
+  "fake_hardware_guard": {
+    "hardware_classes": [
+      "mock_components/GenericSystem",
+      "mock_components/GenericSystem"
+    ],
+    "move_group_use_fake_hardware": true,
+    "real_hardware": false
+  },
+  "planned_stages": [
+    "PREPLAN_APPROACH",
+    "PREPLAN_GRASP",
+    "PREPLAN_CLOSE_GRIPPER",
+    "PREPLAN_LIFT",
+    "PREPLAN_TRANSFER",
+    "PREPLAN_PLACE",
+    "PREPLAN_OPEN_GRIPPER",
+    "PREPLAN_RETREAT",
+    "PREPLAN_HOME"
+  ],
+  "plan_metadata": [
+    {
+      "attached_ids": [],
+      "moveit_code": 1,
+      "planning_time": 0.144060949,
+      "points": 44,
+      "stage": "PREPLAN_APPROACH",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "runtime::sample-cup",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    {
+      "attached_ids": [],
+      "cartesian_waypoints": 25,
+      "initial_support_contact": null,
+      "moveit_code": 1,
+      "planning_time": 2.633589795,
+      "points": 76,
+      "stage": "PREPLAN_GRASP",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "runtime::sample-cup",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    {
+      "attached_ids": [],
+      "moveit_code": 1,
+      "planning_time": 0.019994144,
+      "points": 12,
+      "stage": "PREPLAN_CLOSE_GRIPPER",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "runtime::sample-cup",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    {
+      "attached_ids": [
+        "runtime::sample-cup"
+      ],
+      "cartesian_waypoints": 31,
+      "initial_support_contact": null,
+      "moveit_code": 1,
+      "planning_time": 4.339757768000001,
+      "points": 94,
+      "stage": "PREPLAN_LIFT",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    {
+      "attached_ids": [
+        "runtime::sample-cup"
+      ],
+      "moveit_code": 1,
+      "planning_time": 0.14763927300000002,
+      "points": 23,
+      "stage": "PREPLAN_TRANSFER",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    {
+      "attached_ids": [
+        "runtime::sample-cup"
+      ],
+      "moveit_code": 1,
+      "planning_time": 0.125731398,
+      "points": 14,
+      "stage": "PREPLAN_PLACE",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    {
+      "attached_ids": [
+        "runtime::sample-cup"
+      ],
+      "moveit_code": 1,
+      "planning_time": 0.044008752,
+      "points": 12,
+      "stage": "PREPLAN_OPEN_GRIPPER",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ]
+    },
+    {
+      "attached_ids": [],
+      "cartesian_waypoints": 30,
+      "initial_support_contact": null,
+      "moveit_code": 1,
+      "planning_time": 3.4485134100000003,
+      "points": 91,
+      "stage": "PREPLAN_RETREAT",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default",
+        "runtime::sample-cup"
+      ]
+    },
+    {
+      "attached_ids": [],
+      "moveit_code": 1,
+      "planning_time": 0.07581961,
+      "points": 29,
+      "stage": "PREPLAN_HOME",
+      "success": true,
+      "world_ids": [
+        "runtime::sample-bottle",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default",
+        "runtime::sample-cup"
+      ]
+    }
+  ]
+}

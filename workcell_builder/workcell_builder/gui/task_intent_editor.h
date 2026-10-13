@@ -22,7 +22,7 @@ public:
   void bind_destination(const QString & id);
   bool dirty() const { return dirty_; }
   QString scene() const { return scene_; }
-  QString blocker() const;
+  QString blocker(bool require_input = true) const;
   const workcell_builder::TaskIntentModel & model() const { return model_; }
 signals:
   void edited();
@@ -37,7 +37,7 @@ private:
   QComboBox * choice_field(QFormLayout *, const QString &, const QString &, const QString &, const QStringList &);
   void vector_field(QFormLayout *, const QString &, const QString &, const QString &, int size = 3);
   workcell_builder::TaskIntentModel model_;
-  QString scene_, helper_, loaded_bytes_, error_;
+  QString scene_, helper_, loaded_bytes_, error_, input_blocker_;
   bool loading_{false}, dirty_{false};
   QJsonObject report_;
   QMap<QString, std::function<void(const QJsonValue &)>> readers_;

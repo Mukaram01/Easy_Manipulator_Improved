@@ -60,6 +60,23 @@ def _is_existing_package_generator_owned_output(relative_path: Path) -> bool:
     return relative_path.as_posix() in {"urdf/generated_asset_metadata.yaml", "config/moveit_collision_objects.yaml", "cell_definition.yaml"}
 
 
+def _updated_task_manifest(existing: dict[str, Any], generated: dict[str, Any]) -> dict[str, Any]:
+    """Refresh generated task projections without replacing curated ROS metadata."""
+    result = copy.deepcopy(existing or generated)
+    for key in ('task_recipe', 'grasp_strategy', 'task_intent_resolution'):
+        if key in generated:
+            result[key] = copy.deepcopy(generated[key])
+        else:
+            result.pop(key, None)
+    resolution = generated.get('task_intent_resolution', {})
+    for key in ('normalized_intent_sha256', 'resolution_sha256'):
+        if key in resolution:
+            result[key] = resolution[key]
+        else:
+            result.pop(key, None)
+    return result
+
+
 def _load_module(module_name: str, module_path: Path):
     if not module_path.is_file():
         raise FileNotFoundError(f"Required helper script not found: {module_path}")
@@ -135,6 +152,11 @@ def _normalize_task_recipe(task_recipe: dict[str, Any], warnings: list[str]) -> 
         when = rule.get("when") if isinstance(rule.get("when"), dict) else {}
         if when.get("default") is True or when.get("always") is True:
             rule_has_default = True
+
+    # A blocked recipe cannot route anything; report the resolver's actual
+    # blocker. Direct placement explicitly forbids fallback routing.
+    if normalized.get('enabled') is False or (rule_has_default and normalized.get('expected', {}).get('allow_fallback_rule') is False):
+        return normalized
 
     destination_ids = [item.get("id") for item in normalized.get("destinations", []) if isinstance(item, dict)]
     has_reject_destination = any(
@@ -2024,13 +2046,20 @@ def generate_package(
             except Exception as exc:
                 print(f"FAIL: Cannot refresh authored collision manifest: {exc}")
                 return 2
+        if loaded.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2':
+            for name in ('scene_manifest.yaml', 'workcell.yaml'):
+                path = package_dir / name
+                previous = existing_package_dir / name
+                existing = _safe_load_yaml_file(previous) if previous.is_file() else {}
+                refreshed = _updated_task_manifest(existing or {}, _safe_load_yaml_file(path))
+                path.write_text(yaml.safe_dump(refreshed, sort_keys=False), encoding='utf-8')
         # In-place refresh is deliberately allowlisted: curated authored and ROS
         # runtime files in the selected package never inherit generic staged files.
         profile_launch_owned = _profile_review_launch_owned(existing_package_dir, package_name, str(loaded.get("cell", {}).get("planning_frame") or "world"))
         for staged_path in sorted(package_dir.rglob("*")):
             relative = staged_path.relative_to(package_dir)
             if staged_path.is_dir() or not (_is_existing_package_generator_owned_output(relative) or
-                    (loaded.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2' and relative.as_posix() == 'config/task_recipe.yaml') or
+                    (loaded.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2' and relative.as_posix() in {'config/task_recipe.yaml', 'scene_manifest.yaml', 'workcell.yaml'}) or
                     (profile_launch_owned and relative.as_posix() in {"launch/demo.launch.py", "package.xml", "config/ros2_controllers.yaml", "urdf/arm_hand.srdf.xacro"})):
                 continue
             destination = final_package_dir / relative

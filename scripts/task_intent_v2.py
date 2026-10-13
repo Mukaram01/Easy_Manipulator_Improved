@@ -212,6 +212,15 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
                 errors.append({"code": "EXACT_LOCAL_POSE_REQUIRED", "message": "EXACT placement requires finite xyz_m/rpy_rad in target-asset-local frame"})
         if policy in {"PREFERRED", "EXACT"} and not block.get("strategy_ref") and label == "grasp":
             errors.append({"code": "STRATEGY_REQUIRED", "message": "grasp.strategy_ref is required for this policy"})
+    perception = model.get('perception')
+    if isinstance(perception, dict) and 'mode' in perception:
+        mode = perception['mode']
+        selection = model.get('pick', {}).get('selection', {})
+        if mode not in ('off', 'replayed_snapshot', 'live_epd'):
+            errors.append({'code': 'PERCEPTION_MODE_UNSUPPORTED', 'message': 'Select off, replayed_snapshot or live_epd.'})
+        elif ((mode == 'off' and (selection.get('source_type') != 'manual_simulated' or selection.get('source_ref') != selection.get('zone_ref'))) or
+              (mode != 'off' and (selection.get('source_type') != 'perception' or selection.get('source_ref') != 'detected_objects/v1'))):
+            errors.append({'code': 'PICK_SOURCE_MODE_MISMATCH', 'message': 'Select the perception mode in Task settings to update the normalized source binding.'})
     cap = grasp.get("required_capability")
     if cap not in SUPPORTED_CAPABILITIES:
         errors.append({"code": "UNSUPPORTED_CAPABILITY", "message": f"unsupported capability: {cap}"})

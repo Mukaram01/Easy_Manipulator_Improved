@@ -140,6 +140,14 @@ def main():
         current = scene_resolution(scene_dir, intent, physical, document)
         args.resolve_task = current['readiness_status'] == 'BLOCKED'
     uses_authored_task = args.resolve_if_needed or args.resolve_task or yaml.safe_load((scene_dir / 'cell_definition.yaml').read_text()).get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2'
+    if uses_authored_task:
+        from task_intent_resolver import read_scene_task
+        from task_intent_authoring import planning_input
+        saved_intent, _, _ = read_scene_task(scene_dir)
+        input_path, replay_input = planning_input(scene_dir, saved_intent, args.detections)
+    else:
+        input_path, replay_input = args.detections or root/'config/runtime/r1_4_replay.yaml', True
+
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     if (out/'acceptance.json').exists():
@@ -228,8 +236,9 @@ def main():
             spin_until(lambda: 'authored collision objects; MoveIt is planning truth' in (out/'launch.log').read_text())
             executor = subprocess.Popen([sys.executable, str(executor_path),
                 '--scene-package', str(scene_dir),
-                '--detections', str(args.detections or root/'config/runtime/r1_4_replay.yaml'), '--replay',
+                '--detections', str(input_path),
                 '--timeout', str(min(300, max(1, deadline-time.monotonic()-5))), '--summary-output', str(summary_path)]
+                + (['--replay'] if replay_input else [])
                 + (['--resolve-task'] if args.resolve_task else [] if uses_authored_task else ['--task-request', str(root/'config/runtime/r1_4b_task.yaml')])
                 + (['--start'] if args.execute else []),
                 stdout=elog, stderr=subprocess.STDOUT, start_new_session=True)

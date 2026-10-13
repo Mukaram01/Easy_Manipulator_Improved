@@ -1,0 +1,85 @@
+{
+  "result": "PASS",
+  "shared_identity": {
+    "normalized_intent_sha256": "aec623f470698a147f6594e044e44bb593cf3e606f359ef541b6c0b408b4b0c7",
+    "resolution_sha256": "c1d2e41e42f899f2e9148f159ecbf94061ed656c6d8a9f98b242535f3f50f69c",
+    "destination": {
+      "dimensions": [
+        0.2,
+        0.1,
+        0.12
+      ],
+      "frame_id": "world",
+      "id": "default_drop_zone",
+      "physical_destination_contract": "target_local/v1",
+      "placement_local": {
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.009999999999999995
+        ]
+      },
+      "pose_rpy": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "pose_xyz": [
+        0.45,
+        0.22,
+        0.11
+      ],
+      "target_id": "target_bin_default",
+      "target_pose_rpy": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "target_pose_xyz": [
+        0.45,
+        0.22,
+        0.1
+      ],
+      "usable_placement": {
+        "dimensions": [
+          0.24,
+          0.12,
+          0.14
+        ],
+        "pose_rpy": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "review": "Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json."
+      }
+    }
+  },
+  "consumers": [
+    "resolver",
+    "cell",
+    "manifest",
+    "manifest_mirror",
+    "recipe",
+    "compatibility_recipe",
+    "offline_preview",
+    "validation",
+    "product_view",
+    "plan"
+  ]
+}

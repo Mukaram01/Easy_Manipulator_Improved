@@ -111,6 +111,9 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     assert authored['environment'] == reviewed['environment']
     assert authored['scene']['id'] == destination.name
     assert 'task' not in authored  # The reference scene task was not cloned.
+    assert authored['perception']['epd_input']['topic']  # Keep reviewed input metadata when switching modes later.
+    assert authored['perception']['enabled'] is False
+    assert authored['perception']['mode'] == 'off'
     intent = load_authoring(destination)['task_intent']
     assert intent['scene_package'] == str(destination)
     assert intent['task']['id'] == destination.name + '_pick_place'

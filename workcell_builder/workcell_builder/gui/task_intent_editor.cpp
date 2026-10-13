@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -42,11 +43,39 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   };
   auto * what = section("What / Pick eligibility");
   text_field(what, "taskTargetClass", "Object class", "pick/selection/object_filter/class_id");
-  text_field(what, "taskSource", "Source reference", "pick/selection/source_ref");
+
   pick_zones_ = choice_field(what, "taskPickZone", "Search region", "pick/selection/zone_ref", {});
+  auto * perception = section("Object input");
+  auto * mode = new QComboBox(this); mode->setObjectName("taskPerceptionMode");
+  mode->addItem("Off — commissioning objects", "off");
+  mode->addItem("Recorded / replayed observations", "replayed_snapshot");
+  mode->addItem("Live — normalized adapter snapshot", "live_epd");
+  perception->addRow("Perception mode", mode);
+  readers_["perception/mode"] = [mode](const QJsonValue & value) {
+    mode->setCurrentIndex(value.isString() ? mode->findData(value.toString()) : -1);
+  };
+  connect(mode, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, mode](int index) {
+    if (loading_ || index < 0) return;
+    const auto value = mode->currentData().toString();
+    set_field("perception/mode", value);
+    set_field("pick/selection/source_type", value == "off" ? "manual_simulated" : "perception");
+    set_field("pick/selection/source_ref", value == "off" ? QString::fromStdString(model_.pick_selection.zone_ref) : "detected_objects/v1");
+    refresh_fields();
+  });
+  text_field(perception, "taskReplayPath", "Observation snapshot", "perception/replay_path");
+  auto * choose = new QPushButton("Choose observation file…", this); choose->setObjectName("taskChooseObservations");
+  perception->addRow(choose);
+  connect(choose, &QPushButton::clicked, this, [this] {
+    const auto path = QFileDialog::getOpenFileName(this, "Choose existing detected_objects/v1 observations", scene_, "Observations (*.yaml *.yml *.json)");
+    if (!path.isEmpty()) { set_field("perception/replay_path", path); refresh_fields(); }
+  });
+  auto * input_help = new QLabel("No workpiece geometry is invented. Off/replay uses explicit commissioning observations. Live requires a current normalized adapter snapshot; stale or unavailable objects block planning.", this);
+  input_help->setWordWrap(true); perception->addRow(input_help);
   auto * grasp = section("How to grasp");
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
   strategies_ = choice_field(grasp, "taskGraspIntent", "Grasp strategy", "pick/grasp/strategy_ref", {});
+  number_field(grasp, "taskApproachDistance", "Approach distance", "pick/grasp/approach/distance_m", " m");
+  number_field(grasp, "taskRetreatDistance", "Lift / retreat distance", "pick/grasp/lift/distance_m", " m");
   auto * where = section("Where");
   assets_ = choice_field(where, "taskPlaceAsset", "Physical target", "place/target/asset_ref", {});
   regions_ = choice_field(where, "taskPlaceRegion", "Placement region", "place/target/region_ref", {});
@@ -54,6 +83,9 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   choice_field(place, "taskPlacePolicy", "Placement policy", "place/placement/policy", {"AUTO", "PREFERRED", "EXACT"});
   vector_field(place, "taskLocalXYZ", "Requested local XYZ (m)", "place/placement/requested_local_pose/xyz_m");
   vector_field(place, "taskLocalRPY", "Requested local RPY (rad)", "place/placement/requested_local_pose/rpy_rad");
+  number_field(place, "taskPlaceClearance", "Placement clearance", "place/placement/clearance_m", " m");
+  number_field(place, "taskPlaceApproach", "Place approach", "place/placement/approach/distance_m", " m");
+  number_field(place, "taskPlaceRetreat", "Place retreat", "place/placement/retreat/distance_m", " m");
   auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. Local poses use the physical target's frame; values are never clamped.", this);
   help->setWordWrap(true); layout->addWidget(help);
   auto * advanced = new QGroupBox("Advanced task settings", this);
@@ -62,13 +94,12 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   auto * fields = new QWidget(advanced); auto * form = new QFormLayout(fields);
   advanced_layout->addWidget(fields); fields->hide();
   connect(advanced, &QGroupBox::toggled, fields, &QWidget::setVisible);
+  text_field(form, "taskSource", "Source reference", "pick/selection/source_ref");
   text_field(form, "taskSourceType", "Source type", "pick/selection/source_type");
   number_field(form, "taskMinimumConfidence", "Minimum confidence (−1 = unset)", "pick/selection/object_filter/min_confidence", "", true);
   number_field(form, "taskMaximumAge", "Maximum observation age", "pick/selection/object_filter/max_age_seconds", " s", true);
   text_field(form, "taskGraspAxis", "Grasp approach axis", "pick/grasp/approach/axis");
-  number_field(form, "taskApproachDistance", "Grasp approach", "pick/grasp/approach/distance_m", " m");
   text_field(form, "taskLiftAxis", "Lift axis", "pick/grasp/lift/axis");
-  number_field(form, "taskRetreatDistance", "Lift distance", "pick/grasp/lift/distance_m", " m");
   text_field(form, "taskOrientation", "Grasp orientation", "pick/grasp/orientation/mode");
   vector_field(form, "taskRollAngles", "Allowed rolls (deg)", "pick/grasp/orientation/allowed_roll_deg", 0);
   vector_field(form, "taskYawAngles", "Allowed yaws (deg)", "pick/grasp/orientation/allowed_yaw_deg", 0);
@@ -86,10 +117,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   vector_field(form, "taskPlaceOrientationRPY", "Placement orientation RPY (rad)", "place/placement/orientation/rpy_rad");
   vector_field(form, "taskPlaceTolerance", "Placement tolerance (rad)", "place/placement/orientation/tolerance_rad");
   text_field(form, "taskPlaceApproachAxis", "Place approach axis", "place/placement/approach/axis");
-  number_field(form, "taskPlaceApproach", "Place approach", "place/placement/approach/distance_m", " m");
-  number_field(form, "taskPlaceClearance", "Place clearance", "place/placement/clearance_m", " m");
   text_field(form, "taskPlaceRetreatAxis", "Place retreat axis", "place/placement/retreat/axis");
-  number_field(form, "taskPlaceRetreat", "Place retreat", "place/placement/retreat/distance_m", " m");
   form->addRow(new QLabel("Release: installed tool release. Fake hardware required; real robot locked.", this));
   status_ = new QLabel(this); status_->setObjectName("taskValidationStatus"); status_->setWordWrap(true); layout->addWidget(status_);
   auto * buttons = new QHBoxLayout;
@@ -156,6 +184,9 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   std::vector<std::string> keys; for (const auto & key : path.split('/')) keys.push_back(key.toStdString());
   try { model_.set_field(keys, json_value(value).toStdString()); }
   catch (const std::exception & exc) { error_ = QString::fromUtf8(exc.what()); status_->setText("BLOCKED — " + error_); return; }
+  if (path == "pick/selection/zone_ref" && findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "off") {
+    model_.set_field({"pick", "selection", "source_ref"}, json_value(value).toStdString());
+  }
   dirty_ = true; error_.clear(); status_->setText("Unsaved task — validate and save before planning.");
   validation_timer_->start(250); emit edited();
 }
@@ -199,7 +230,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     const auto current = file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
     if (current == loaded_bytes_) { setEnabled(true); return true; }
   }
-  scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_errors_.clear();
+  scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_blocker_.clear(); input_errors_.clear();
   validation_timer_->stop(); model_ = {};
   try {
     QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
@@ -223,12 +254,14 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
   report_ = report;
   QStringList messages; for (const auto & value : report["errors"].toArray()) messages << value.toString();
   error_ = messages.join("\n");
+  input_blocker_ = report["planning_input_blocker"].toString();
+  if (!input_blocker_.isEmpty()) messages << input_blocker_;
   for (const auto & value : report["warnings"].toArray()) messages << value.toString();
   const auto destination = report["resolved_destination"].toObject();
   if (!destination.isEmpty()) {
     messages << "Resolved destination in world (m): " + json_value(destination["pose_xyz"]);
   }
-  const auto status = error_.isEmpty() ? (report["warnings"].toArray().isEmpty() ? "Authoring valid" : "WARNING") : "BLOCKED";
+  const auto status = (error_.isEmpty() && input_blocker_.isEmpty()) ? (report["warnings"].toArray().isEmpty() ? "Authoring valid" : "WARNING") : "BLOCKED";
   status_->setText(QString("%1%2\n%3\nIntent hash: %4\nPlanning still requires complete-cycle validation.")
     .arg(status, dirty_ ? " — unsaved" : "", messages.join("\n"), report["normalized_intent_sha256"].toString("unavailable")));
 }
@@ -245,11 +278,11 @@ void TaskIntentEditor::validate_now()
   }
   catch (const std::exception & exc) { error_ = QString::fromUtf8(exc.what()); status_->setText("BLOCKED — " + error_); }
 }
-QString TaskIntentEditor::blocker() const
+QString TaskIntentEditor::blocker(bool require_input) const
 {
   if (dirty_) return "Save task edits before planning.";
   if (!input_errors_.isEmpty()) return input_errors_.first();
-  return error_;
+  return !error_.isEmpty() ? error_ : require_input ? input_blocker_ : QString();
 }
 bool TaskIntentEditor::save(QString * error)
 {
@@ -275,7 +308,9 @@ bool TaskIntentEditor::save(QString * error)
 }
 void TaskIntentEditor::bind_pick(const QString & id)
 {
-  set_field("pick/selection/source_ref", id); set_field("pick/selection/zone_ref", id); refresh_fields();
+  const auto mode = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString();
+  if (mode.isEmpty() || mode == "off") set_field("pick/selection/source_ref", id);
+  set_field("pick/selection/zone_ref", id); refresh_fields();
 }
 void TaskIntentEditor::bind_destination(const QString & id)
 {

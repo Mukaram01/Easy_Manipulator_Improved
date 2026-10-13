@@ -5,6 +5,7 @@
 #include <QListWidget>
 #include <QSettings>
 #include "gui/new_cell_wizard.h"
+#include "gui/task_intent_editor.h"
 #include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -24,7 +25,7 @@
 class TestMain {
 public:
   static void start_mounting_acceptance(MainWindow * window, QApplication * app,
-      const QString & output, const QString & scene_name, bool reopen) {
+      const QString & output, const QString & scene_name, bool reopen, bool task_mode=false, const QString & observations={}) {
     struct Session { int phase=0, ticks=0; QString scene, support, camera; QJsonArray baseline, moved; QJsonObject evidence; };
     auto s = std::make_shared<Session>(); QDir().mkpath(output);
     s->evidence = {{"result", "FAIL"}, {"fake_hardware_only", true}, {"execution_goals_sent", 0}};
@@ -59,7 +60,7 @@ public:
     }); modal_watch->start();
     auto * timer = new QTimer(window); timer->setInterval(300);
     QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
-      if (++s->ticks > 1000) throw std::runtime_error("mounting GUI acceptance timed out");
+      if (++s->ticks > (task_mode ? 3500 : 1000)) throw std::runtime_error("mounting GUI acceptance timed out");
       if (window->load_watcher_ && window->load_watcher_->isRunning()) return;
       switch (s->phase) {
         case 0: {
@@ -90,6 +91,11 @@ public:
           require(window->has_selected_scene(), "new cell not selected in Studio");
           if (window->scene_preview_widget_ && !window->scene_preview_widget_->is_native_product_view_backend() &&
               !window->scene_preview_widget_->embedded_web_authoring_active()) return;
+          if (task_mode) {
+            timer->stop(); mount("target_bin_default", "support_surface_table", "surface"); timer->start();
+            s->baseline = s->moved = window->mounting_items();
+            s->evidence["mounted"] = s->baseline; s->phase=2; s->ticks=0; break;
+          }
           QString stand_asset;
           QJsonArray candidates;
           for (const auto & entry : window->asset_catalog_entries_) if (entry.asset_id.contains("camera_stand")) {
@@ -114,6 +120,40 @@ public:
         }
         case 2: {
           if (s->ticks < 3) return;
+          if (task_mode) {
+            auto * editor = window->environment_task_editor_; require(editor != nullptr, "existing TaskIntentEditor unavailable");
+            const auto text = [=](const char * name, const QString & value) {
+              auto * edit = editor->findChild<QLineEdit *>(name); require(edit != nullptr, "task text control missing"); edit->setText(value); edit->textEdited(value);
+            };
+            auto * mode = editor->findChild<QComboBox *>("taskPerceptionMode");
+            mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+            text("taskReplayPath", observations); text("taskTargetClass", "cup");
+            editor->findChild<QComboBox *>("taskPickZone")->setCurrentText("pick_zone_main");
+            editor->findChild<QComboBox *>("taskPlaceAsset")->setCurrentText("target_bin_default");
+            editor->findChild<QComboBox *>("taskPlaceRegion")->setCurrentText("default_drop_zone");
+            editor->findChild<QComboBox *>("taskGraspPolicy")->setCurrentText("AUTO");
+            editor->findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("AUTO");
+            editor->findChild<QDoubleSpinBox *>("taskMaximumAge")->setValue(300.);
+            editor->findChild<QDoubleSpinBox *>("taskApproachDistance")->setValue(.12);
+            editor->findChild<QDoubleSpinBox *>("taskRetreatDistance")->setValue(.15);
+            editor->findChild<QDoubleSpinBox *>("taskPlaceClearance")->setValue(.001);
+            editor->findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("EXACT");
+            text("taskLocalXYZ", "10, 0, 0"); text("taskLocalRPY", "0, 0, 0");
+            editor->findChild<QPushButton *>("taskSave")->click();
+            require(editor->blocker().contains("PLACE_LOCAL_POSE_OUTSIDE_REGION"), "invalid EXACT was not blocked");
+            require(!window->selected_scene_readiness().ready, "invalid EXACT falsely ready");
+            s->evidence["invalid_exact_blocked"] = editor->blocker();
+            editor->findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("AUTO");
+            text("taskReplayPath", "missing-acceptance-input.yaml"); editor->findChild<QPushButton *>("taskSave")->click();
+            require(editor->blocker().contains("TASK_INPUT_UNAVAILABLE"), "unavailable input was not blocked");
+            s->evidence["unavailable_input_blocked"] = editor->blocker();
+            text("taskReplayPath", observations);
+            // The normal Save Layout action must persist the dirty task as well.
+            window->save_layout_button_->click();
+            require(!editor->dirty() && editor->blocker().isEmpty(), "normal Save did not persist a valid task");
+            s->evidence["task_yaml"] = QString::fromStdString(editor->model().to_yaml());
+            s->evidence["moved"] = s->moved; s->phase=3; s->ticks=0; break;
+          }
           for (const auto & id : {QString("support_surface_table"), s->support}) {
             window->apply_scene_selection(id, "", false, false);
             window->inspector_update_guard_ = true;
@@ -169,10 +209,34 @@ public:
             for (const auto & key : {"parent_object","parent_link"}) require(a[key].as<std::string>("")==b[key].as<std::string>(""),"reopen changed mounting relationship");
           }
           s->evidence["reopened"] = after;
+          if (task_mode) {
+            QFile saved(output+"/authoring.json"); require(saved.open(QIODevice::ReadOnly), "authoring task evidence missing");
+            const auto authored = QJsonDocument::fromJson(saved.readAll()).object()["task_yaml"].toString();
+            require(QString::fromStdString(window->environment_task_editor_->model().to_yaml()) == authored, "reopen changed TaskIntent");
+            s->evidence["task_reopened_identically"] = true;
+          }
           window->generate_scene_package_for_selected_scene();
           require(QFileInfo::exists(s->scene+"/generated/generated_environment_objects.yaml"), "GUI generation did not produce environment objects");
-          s->evidence["gui_generation_invoked"] = true; s->evidence["result"] = "PASS";
+          s->evidence["gui_generation_invoked"] = true;
+          if (task_mode) {
+            window->validate_generated_scene_for_selected_scene();
+            const auto ready = window->selected_scene_readiness();
+            s->evidence["readiness_blockers"] = QJsonArray::fromStringList(ready.blockers); write();
+            require(ready.ready, "new cell GUI planning prerequisites blocked");
+            window->show_studio_page(MainWindow::StudioPage::PlanSimulatePage);
+            window->run_preview_button_->click();
+            require(window->full_cycle_mode_, "Plan / Simulate did not start the existing planner");
+            s->phase=5; s->ticks=0; break;
+          }
+          s->evidence["result"] = "PASS";
           window->grab().save(output+"/reopened_scene.png"); write(); timer->stop(); window->close(); app->exit(0); break;
+        }
+        case 5: {
+          if (window->preview_process_->state() != QProcess::NotRunning) return;
+          s->evidence["plan_result"] = window->cycle_result_; s->evidence["runtime_evidence"] = window->cycle_output_dir_; write();
+          require(window->cycle_result_["result"].toString() == "PASS", "complete collision-aware plan failed; see runtime evidence");
+          require(!window->cycle_result_["execution_attempted"].toBool(), "unexpected execution attempt");
+          s->evidence["result"] = "PASS"; window->grab().save(output+"/planned_scene.png"); write(); timer->stop(); window->close(); app->exit(0); break;
         }
       }
     } catch (const std::exception & error) { s->evidence["failure"] = QString::fromUtf8(error.what()); write(); timer->stop(); app->exit(1); } });

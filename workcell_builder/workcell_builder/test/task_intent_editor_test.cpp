@@ -28,7 +28,7 @@ robot: {name: ur5}
 assets:
 - {id: bin, frame: world, pose_xyz: [1, 2, 3], pose_rpy: [0, 0, 0], collision: {enabled: true}, usable_placement: {pose_xyz: [0, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.4, 0.3, 0.2]}}
 task_zones:
-- {id: pick, type: pick_zone}
+- {id: pick, type: pick_zone, frame: world, pose_xyz: [0.3, 0, 0.2], pose_rpy: [0, 0, 0], dimensions: [1, 1, 1]}
 - {id: drop, target_ref: bin, frame: world, pose_xyz: [1.05, 2, 3.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1], placement_local: {pose_xyz: [0.05, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1]}}
 )");
   write(scene + "/config/workcell_builder_task_intent.yaml", R"(schema: workcell_builder_task_intent/v2
@@ -127,8 +127,8 @@ TEST(TaskIntentEditor, ExistingNewCellWizardCreatesEditableV2DraftWithoutFileRep
   EXPECT_EQ(before.normalized_yaml, after.normalized_yaml);
   EXPECT_EQ(workcell_builder::authoritative_task_intent_sha256(before), workcell_builder::authoritative_task_intent_sha256(after));
   EXPECT_EQ(read(scene + "/environment.yaml"), environment);
-  // The reviewed profile supplies physical containment; this is not motion readiness.
-  EXPECT_TRUE(reopened.blocker().isEmpty());
+  // A new task without explicit observations is a savable draft, never plan-ready.
+  EXPECT_TRUE(reopened.blocker().contains("TASK_INPUT_UNAVAILABLE"));
 }
 
 #include <QDoubleSpinBox>
@@ -391,6 +391,9 @@ TEST(TaskIntentEditor, RuntimeParityCreatesFreshCellAndSavesReplayTask) {
     std::string before_hash;
     {
       TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(scene, helper()));
+      auto * input_mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+      input_mode->setCurrentIndex(input_mode->findData("replayed_snapshot"));
+      edit(editor, "taskReplayPath", QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
       edit(editor, "taskTargetClass", "cup");
       editor.findChild<QComboBox *>("taskGraspPolicy")->setCurrentText("AUTO");
       editor.findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("AUTO");
@@ -420,4 +423,24 @@ TEST(TaskIntentEditor, RuntimeParityCreatesFreshCellAndSavesReplayTask) {
     EXPECT_EQ(environment, read(scene + "/environment.yaml"));
     EXPECT_TRUE(reopened.blocker().isEmpty());
   }
+}
+
+TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {
+  application(); QTemporaryDir dir; seed(dir.path()); TaskIntentEditor editor;
+  ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode"); ASSERT_NE(mode, nullptr);
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  edit(editor, "taskReplayPath", QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
+  ASSERT_TRUE(editor.save()); EXPECT_TRUE(editor.blocker().isEmpty()) << editor.blocker().toStdString();
+  editor.bind_pick("pick");
+  EXPECT_EQ(editor.model().pick_selection.source_ref, "detected_objects/v1");
+  ASSERT_TRUE(editor.save());
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  EXPECT_EQ(reopened.findChild<QComboBox *>("taskPerceptionMode")->currentData().toString(), "replayed_snapshot");
+  edit(reopened, "taskReplayPath", "missing-recording.yaml");
+  ASSERT_TRUE(reopened.save()); EXPECT_TRUE(reopened.blocker().contains("TASK_INPUT_UNAVAILABLE"));
+  EXPECT_TRUE(reopened.blocker(false).isEmpty());  // Physical-only Generate must remain available.
+  mode = reopened.findChild<QComboBox *>("taskPerceptionMode"); mode->setCurrentIndex(mode->findData("off"));
+  EXPECT_EQ(reopened.model().pick_selection.source_type, "manual_simulated");
+  EXPECT_EQ(reopened.model().pick_selection.source_ref, "pick");
 }

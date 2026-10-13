@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def scene(tmp_path):
     env = environment()
-    env['task_zones'].append({'id': 'pick_zone_main', 'type': 'pick_zone'})
+    env['task_zones'] = [z for z in env['task_zones'] if z['id'] != 'pick_zone_main']
+    env['task_zones'].append({'id': 'pick_zone_main', 'type': 'pick_zone', 'frame': 'world', 'pose_xyz': [0.3, 0, 0.2], 'pose_rpy': [0,0,0], 'dimensions': [1,1,1]})
     env['end_effector'] = {'id': 'robotiq_85_gripper', 'type': 'finger'}
     (tmp_path / 'environment.yaml').write_text(yaml.safe_dump(env))
     (tmp_path / 'config').mkdir()
@@ -110,3 +111,109 @@ def test_tool_identity_outside_environment_geometry_wrapper_is_preserved(tmp_pat
     report = load_authoring(root)
     assert report['strategies'] == ['top_2f', 'side_grip_basic', 'finger_pinch_basic']
     assert report['status'] == 'PASS'
+
+
+def test_wizard_perception_modes_use_supported_normalized_source(tmp_path):
+    from scripts.task_intent_authoring import _wizard_intent
+    for mode, expected in [('recorded_perception', 'replayed_snapshot'), ('live_epd_realsense', 'live_epd')]:
+        env = {'workcell_studio': {'scenario': {'id': 'static_table_pick_place'},
+            'pick_zone': {'object_source': {'mode': mode, 'source_zone_ref': 'pick', 'required_class': 'cup'}},
+            'place_zone': {'target': 'bin'}, 'task_intent': {'grasp_strategy': 'auto'}},
+            'task_zones': [{'id': 'pick', 'type': 'pick_zone'}, {'id': 'drop', 'target_ref': 'bin'}]}
+        intent = _wizard_intent(tmp_path, env)
+        assert intent['pick']['selection']['source_type'] == 'perception'
+        assert intent['pick']['selection']['source_ref'] == 'detected_objects/v1'
+        assert intent['pick']['selection']['zone_ref'] == 'pick'
+        assert intent['perception']['mode'] == expected
+
+
+def test_explicit_task_input_has_no_hidden_replay_fallback(tmp_path):
+    from scripts.task_intent_authoring import planning_input
+    import pytest
+    scene(tmp_path)
+    intent = valid_intent()
+    intent['perception'] = {'mode': 'replayed_snapshot', 'replay_path': ''}
+    with pytest.raises(ValueError, match='TASK_INPUT_UNAVAILABLE'):
+        planning_input(tmp_path, intent)
+    source = tmp_path / 'recording.yaml'
+    source.write_text((ROOT / 'config/runtime/r1_4_replay.yaml').read_text())
+    intent['perception']['replay_path'] = 'recording.yaml'
+    assert planning_input(tmp_path, intent) == (source, True)
+    intent['perception']['mode'] = 'live_epd'
+    with pytest.raises(ValueError, match='LIVE_INPUT_REQUIRED'):
+        planning_input(tmp_path, intent)
+    intent['perception']['mode'] = 'off'
+    intent['pick']['selection'].update(source_type='manual_simulated', source_ref='pick_zone_main')
+    assert planning_input(tmp_path, intent) == (source, True)
+    source.unlink()
+    with pytest.raises(ValueError, match='TASK_INPUT_UNAVAILABLE'):
+        planning_input(tmp_path, intent)
+
+
+def test_invalid_perception_mode_and_source_mismatch_block(tmp_path):
+    root = scene(tmp_path)
+    intent = valid_intent()
+    intent['perception'] = {'mode': 'unknown'}
+    from scripts.validate_builder_task_intent import validate_payload
+    assert 'PERCEPTION_MODE_UNSUPPORTED' in str(validate_payload(intent, root)['errors'])
+    intent['perception']['mode'] = 'off'
+    assert 'PICK_SOURCE_MODE_MISMATCH' in str(validate_payload(intent, root)['errors'])
+
+
+def test_snapshot_without_eligible_workpiece_blocks_before_launch(tmp_path):
+    from scripts.task_intent_authoring import planning_input
+    import pytest
+    root = scene(tmp_path)
+    intent = valid_intent()
+    intent['perception'] = {'mode': 'replayed_snapshot', 'replay_path': 'observations.yaml'}
+    snapshot = yaml.safe_load((ROOT / 'config/runtime/r1_4_replay.yaml').read_text())
+    intent['pick']['selection']['object_filter']['class_id'] = 'not-recorded'
+    (root / 'observations.yaml').write_text(yaml.safe_dump(snapshot))
+    with pytest.raises(ValueError, match='OBSERVATION_UNAVAILABLE'):
+        planning_input(root, intent)
+    intent['pick']['selection']['object_filter']['class_id'] = 'bottle'
+    for obj in snapshot['objects']:
+        obj['age_seconds'] = 30
+    (root / 'observations.yaml').write_text(yaml.safe_dump(snapshot))
+    with pytest.raises(ValueError, match='OBSERVATION_UNAVAILABLE'):
+        planning_input(root, intent)
+    snapshot['source'] = []
+    (root / 'observations.yaml').write_text(yaml.safe_dump(snapshot))
+    with pytest.raises(ValueError, match='TASK_INPUT_INVALID'):
+        planning_input(root, intent)
+    snapshot['source'] = {'mode': 'replayed_snapshot'}
+    snapshot['objects'] = [None]
+    (root / 'observations.yaml').write_text(yaml.safe_dump(snapshot))
+    with pytest.raises(ValueError, match='TASK_INPUT_INVALID'):
+        planning_input(root, intent)
+
+
+def test_direct_resolved_task_does_not_require_invented_fallback_routes():
+    from scripts.generate_workcell_from_cell_definition import _normalize_task_recipe
+    warnings = []
+    direct = {'task_type': 'pick_place', 'enabled': True,
+              'decision_rules': [{'when': {'always': True}, 'destination': 'drop'}],
+              'destinations': [{'id': 'drop'}], 'expected': {'allow_fallback_rule': False}}
+    assert _normalize_task_recipe(direct, warnings) == direct
+    assert warnings == []
+    warnings = []
+    _normalize_task_recipe({'task_type': 'pick_place', 'enabled': False}, warnings)
+    assert warnings == []
+
+
+def test_refresh_publishes_current_task_identity_without_replacing_curated_metadata():
+    from scripts.generate_workcell_from_cell_definition import _updated_task_manifest
+    existing = {'robot': {'custom': 'reviewed'}, 'operator_note': 'retain',
+                'task_recipe': {'enabled': False}, 'grasp_strategy': {'strategy_ref': 'old'},
+                'task_intent_resolution': {'normalized_intent_sha256': 'old', 'resolution_sha256': 'old'}}
+    generated = {'robot': {'custom': 'generic scaffold'}, 'task_recipe': {'enabled': True},
+                 'task_intent_resolution': {'normalized_intent_sha256': 'current-task', 'resolution_sha256': 'current-result'}}
+    refreshed = _updated_task_manifest(existing, generated)
+    assert refreshed['robot'] == existing['robot']
+    assert refreshed['operator_note'] == 'retain'
+    assert refreshed['task_recipe']['enabled'] is True
+    assert refreshed['task_intent_resolution'] == generated['task_intent_resolution']
+    assert refreshed['normalized_intent_sha256'] == 'current-task'
+    assert refreshed['resolution_sha256'] == 'current-result'
+    assert 'grasp_strategy' not in refreshed
+    assert existing['task_recipe']['enabled'] is False

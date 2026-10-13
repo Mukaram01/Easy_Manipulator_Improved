@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import time
 
 import yaml
 
@@ -36,8 +37,8 @@ def _wizard_intent(scene, env):
         'schema': 'workcell_builder_task_intent/v2', 'scene_package': str(scene),
         'task': {'id': scene.name + '_pick_place', 'type': 'pick_place', 'template': 'pick_place'},
         'pick': {
-            'selection': {'source_ref': source.get('source_zone_ref', pick.get('pick_object_source', '')),
-                          'source_type': source.get('mode', 'manual_simulated'),
+            'selection': {'source_ref': ('detected_objects/v1' if source.get('mode') in ('recorded_perception', 'live_epd_realsense') else source.get('source_zone_ref', pick.get('pick_object_source', ''))),
+                          'source_type': ('perception' if source.get('mode') in ('recorded_perception', 'live_epd_realsense') else 'manual_simulated'),
                           'zone_ref': pick_zones[0] if len(pick_zones) == 1 else pick.get('pick_object_source', ''),
                           'object_filter': {'class_id': source.get('required_class', ''), 'color': None,
                                             'min_confidence': source.get('minimum_confidence'), 'max_age_seconds': 2.0}},
@@ -59,9 +60,60 @@ def _wizard_intent(scene, env):
                                 'approach': {'axis': 'z_down', 'distance_m': 0.1}, 'clearance_m': 0.01,
                                 'retreat': {'axis': 'z_up', 'distance_m': 0.1}},
                   'release': {'strategy': 'tool_release'}},
+        'perception': {'mode': {'recorded_perception': 'replayed_snapshot', 'live_epd_realsense': 'live_epd'}.get(source.get('mode'), 'off'), 'replay_path': ''},
         'safety': {'execution_mode': 'simulation_preview', 'require_fake_hardware': True,
                    'real_hardware_enabled': False, 'preview_policy': 'diagnostic_if_unresolved'},
     }
+
+
+def planning_input(scene, intent, override=None):
+    """Consume the saved input binding; never substitute observations for new tasks.
+
+    Existing tasks without an explicit perception binding retain their reviewed
+    commissioning replay. Live snapshots are never stamped as fresh replay data.
+    """
+    binding = intent.get('perception')
+    if binding is not None and not isinstance(binding, dict):
+        raise ValueError('TASK_INPUT_INVALID: perception binding must be a mapping.')
+    if binding is None or 'mode' not in binding:
+        return Path(override) if override else SCRIPT_DIR.parent / 'config/runtime/r1_4_replay.yaml', True
+    mode = binding['mode']
+    if mode not in ('off', 'replayed_snapshot', 'live_epd'):
+        raise ValueError('PERCEPTION_MODE_UNSUPPORTED: choose off, replay or live.')
+    name = binding.get('replay_path')
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError('TASK_INPUT_UNAVAILABLE: choose a commissioning replay or normalized live snapshot in Task settings.')
+    path = Path(name).expanduser()
+    if not path.is_absolute():
+        path = Path(scene) / path
+    if override is not None and Path(override).resolve() != path.resolve():
+        raise ValueError('TASK_INPUT_OVERRIDE_REJECTED: use the saved Task input; edit it in Builder to change recordings.')
+    if not path.is_file():
+        raise ValueError(f'TASK_INPUT_UNAVAILABLE: snapshot {path} is missing; select an existing input in Task settings.')
+    snapshot = yaml.safe_load(path.read_text())
+    if not isinstance(snapshot, dict) or snapshot.get('schema_version') != 'detected_objects/v1' or not snapshot.get('objects'):
+        raise ValueError('TASK_INPUT_INVALID: input must contain detected_objects/v1 observations with measured geometry.')
+    if not isinstance(snapshot['objects'], list) or any(not isinstance(obj, dict) for obj in snapshot['objects']):
+        raise ValueError('TASK_INPUT_INVALID: observations must be a list of object mappings.')
+    if not isinstance(snapshot.get('source'), dict):
+        raise ValueError('TASK_INPUT_INVALID: snapshot source must be a mode mapping.')
+    replay = mode != 'live_epd'
+    if not replay and snapshot.get('source', {}).get('mode') == 'replayed_snapshot':
+        raise ValueError('LIVE_INPUT_REQUIRED: live mode needs current normalized observations, not a replay template.')
+    if replay and snapshot.get('source', {}).get('mode') != 'replayed_snapshot':
+        raise ValueError('REPLAY_INPUT_REQUIRED: select a snapshot declaring source.mode=replayed_snapshot.')
+    # Reuse the runtime normalizer and shared selection/zone authority. This is
+    # input eligibility, never a replacement for collision-aware cycle planning.
+    from runtime_pick_inputs import normalize, replay_snapshot
+    import perceived_object_grasp_plan as geometry
+    from task_intent_resolver import select_observations
+    now = time.time()
+    observations = normalize(replay_snapshot(snapshot, now) if replay else snapshot, now, geometry)
+    document = yaml.safe_load((Path(scene) / 'environment.yaml').read_text())
+    physical = document.get('environment', document)
+    if not select_observations(intent, physical, observations, now):
+        raise ValueError('OBSERVATION_UNAVAILABLE: no current workpiece matches the class, confidence, age and pick-zone constraints.')
+    return path, replay
 
 
 def load_authoring(scene, draft=None):
@@ -89,6 +141,11 @@ def load_authoring(scene, draft=None):
                             if 'two_finger_parallel' in TOOL_CAPABILITY_MAP.get(tool_id, set()) else [])
     report['assets'] = [a['id'] for a in env.get('assets', [])]
     report['regions'] = {z['id']: z.get('target_ref') for z in env.get('task_zones', []) if z.get('target_ref')}
+    try:
+        input_path, replay = planning_input(scene, payload)
+        report['planning_input'] = {'path': str(input_path), 'replay': replay}
+    except (ValueError, OSError, yaml.YAMLError) as exc:
+        report['planning_input_blocker'] = str(exc)
     report['pick_zones'] = [z['id'] for z in env.get('task_zones', []) if z.get('type') == 'pick_zone']
     return report
 
