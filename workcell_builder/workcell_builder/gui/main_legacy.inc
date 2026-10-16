@@ -1237,6 +1237,14 @@ int main(int argc, char * argv[])
     TestMain::start_mounting_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"), has_cli_flag(args, "--newcell-task-acceptance"), cli_value(args, "--observations"));
     return a.exec();
   }
+  if (has_cli_flag(args, "--multiobject-plan-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString recording = cli_value(args, "--observations");
+    if (output.isEmpty() || recording.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_multiobject_plan_acceptance(&w, &a, output, recording, has_cli_flag(args, "--reopen"));
+    return a.exec();
+  }
   if (has_cli_flag(args, "--full-cycle-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     if (output.isEmpty() || QFileInfo::exists(output + "/acceptance.json")) return 2;

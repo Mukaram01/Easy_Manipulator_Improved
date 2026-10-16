@@ -454,6 +454,29 @@ TEST(TaskIntentEditor, MultiObjectPreviewIsSavedReplayOnlyAndDoesNotLaunchOnSave
   EXPECT_FALSE(preview->isEnabled());
 }
 
+TEST(TaskIntentEditor, PlanCheckIsSavedReplayOnlyAndNeverStartsByItself) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * check = editor.findChild<QPushButton *>("taskSimulationBatchPlanCheck");
+  auto * cancel = editor.findChild<QPushButton *>("taskSimulationBatchPlanCancel");
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  ASSERT_NE(check, nullptr); ASSERT_NE(cancel, nullptr);
+  EXPECT_FALSE(check->isEnabled());
+  EXPECT_FALSE(cancel->isEnabled());
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  edit(editor, "taskReplayPath",
+       QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
+  EXPECT_FALSE(check->isEnabled());  // Unsaved edits never reach MoveIt.
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(check->isEnabled());
+  EXPECT_FALSE(cancel->isEnabled());  // Saving does not start a check.
+  edit(editor, "taskTargetClass", "cup");
+  EXPECT_FALSE(check->isEnabled());
+  mode->setCurrentIndex(mode->findData("live_epd"));
+  ASSERT_TRUE(editor.save());
+  EXPECT_FALSE(check->isEnabled());  // Live input is not a commissioning plan check.
+}
+
 TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {
   application(); QTemporaryDir dir; seed(dir.path()); TaskIntentEditor editor;
   ASSERT_TRUE(editor.load_scene(dir.path(), helper()));

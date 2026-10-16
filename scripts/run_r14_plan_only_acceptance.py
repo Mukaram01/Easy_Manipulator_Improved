@@ -122,7 +122,11 @@ def main():
     parser.add_argument('--resolve-if-needed', action='store_true', help='Studio: consume current resolution, or resolve a blocked/unresolved saved task')
     parser.add_argument('--detections', type=Path, help='Replay observation input, never a task override')
     parser.add_argument('--stream-status', action='store_true', help='Emit structured stage/result events for Studio')
+    parser.add_argument('--target-object-id', help='Multi-object plan check: plan only this eligible object; all '
+                        'other observations stay in the fresh PlanningScene as obstacles. Writes no task artifacts.')
     args = parser.parse_args()
+    if args.target_object_id is not None and args.execute:
+        parser.error('--target-object-id is plan-only')
     if not 0 < args.timeout <= 900 or not 0 <= args.domain_id <= 232:
         parser.error('timeout must be in (0,900]; domain-id in [0,232]')
     os.environ.update(ROS_DOMAIN_ID=str(args.domain_id), ROS_LOCALHOST_ONLY='1')
@@ -134,6 +138,8 @@ def main():
     scene_dir = (args.scene_dir or root / 'scenes/ur5_2f_test').resolve()
     scene_name = scene_dir.name
     import yaml
+    if args.target_object_id is not None:
+        args.resolve_if_needed, args.resolve_task = False, True
     if args.resolve_if_needed and not args.resolve_task:
         from task_intent_resolver import read_scene_task, scene_resolution
         intent, physical, document = read_scene_task(scene_dir)
@@ -240,7 +246,8 @@ def main():
                 '--timeout', str(min(300, max(1, deadline-time.monotonic()-5))), '--summary-output', str(summary_path)]
                 + (['--replay'] if replay_input else [])
                 + (['--resolve-task'] if args.resolve_task else [] if uses_authored_task else ['--task-request', str(root/'config/runtime/r1_4b_task.yaml')])
-                + (['--start'] if args.execute else []),
+                + (['--start'] if args.execute else [])
+                + (['--target-object-id', args.target_object_id] if args.target_object_id is not None else []),
                 stdout=elog, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: executor.poll() is not None)
             stream_stages()

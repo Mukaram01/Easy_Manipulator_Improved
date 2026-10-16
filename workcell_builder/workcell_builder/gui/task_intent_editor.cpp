@@ -14,6 +14,7 @@
 #include <QPlainTextEdit>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QHBoxLayout>
 #include <QProcess>
 #include <QPushButton>
 #include <QSaveFile>
@@ -167,6 +168,30 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     });
     process->start("python3", {script, "--scene", original_scene, "--limit", "20"});
   });
+  auto * check_row = new QHBoxLayout;
+  auto * check_button = new QPushButton("Check plans (no motion)", this);
+  check_button->setObjectName("taskSimulationBatchPlanCheck");
+  check_button->setEnabled(false);
+  check_button->setToolTip("Plans every queued object with MoveIt in a private fake-hardware scene. Nothing moves.");
+  auto * cancel_button = new QPushButton("Cancel check", this);
+  cancel_button->setObjectName("taskSimulationBatchPlanCancel");
+  cancel_button->setEnabled(false);
+  check_row->addWidget(check_button);
+  check_row->addWidget(cancel_button);
+  perception->addRow(check_row);
+  auto * check_help = new QLabel("Check plans starts a private fake-hardware MoveIt scene for each queued object "
+    "(about half a minute each) with every recorded object in place as an obstacle. It plans only: the robot is "
+    "never moved and results are not saved into the task.", this);
+  check_help->setWordWrap(true);
+  perception->addRow(check_help);
+  connect(check_button, &QPushButton::clicked, this, &TaskIntentEditor::start_plan_check);
+  connect(cancel_button, &QPushButton::clicked, this, [this, cancel_button] {
+    if (!plan_check_) return;
+    cancel_button->setEnabled(false);
+    findChild<QLabel *>("taskSimulationBatchStatus")->setText(
+      "Cancelling — stopping the private planning scene cleanly. No motion was performed.");
+    plan_check_->terminate();  // SIGTERM: the checker stops its owned launch before exiting.
+  });
   auto * grasp = section("How to grasp");
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
   strategies_ = choice_field(grasp, "taskGraspIntent", "Grasp strategy", "pick/grasp/strategy_ref", {});
@@ -285,6 +310,7 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   }
   dirty_ = true; error_.clear();
   findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(false);
+  findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(false);
   status_->setText("Unsaved task — validate and save before planning.");
   validation_timer_->start(250); emit edited();
 }
@@ -294,9 +320,10 @@ void TaskIntentEditor::refresh_fields()
   const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(workcell_builder::canonical_task_intent_json_for_testing(model_.to_yaml()))).object();
   for (auto it = readers_.begin(); it != readers_.end(); ++it) it.value()(value_at(root, it.key()));
   const QString mode = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString();
-  findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(
-      !dirty_ && (mode == "off" || mode == "replayed_snapshot") &&
-      !findChild<QLineEdit *>("taskReplayPath")->text().trimmed().isEmpty());
+  const bool batch_ready = !dirty_ && (mode == "off" || mode == "replayed_snapshot") &&
+      !findChild<QLineEdit *>("taskReplayPath")->text().trimmed().isEmpty();
+  findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(batch_ready);
+  findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(batch_ready && !plan_check_);
   loading_ = false;
 }
 QJsonObject TaskIntentEditor::request(bool draft)
@@ -332,6 +359,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     const auto current = file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
     if (current == loaded_bytes_) { setEnabled(true); return true; }
   }
+  if (scene != scene_) stop_plan_check(90000);
   scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_blocker_.clear(); input_errors_.clear();
   findChild<QLabel *>("taskSimulationBatchStatus")->setText(
       "Select an explicit commissioning recording and Save Task to preview the queue.");
@@ -428,4 +456,152 @@ void TaskIntentEditor::bind_destination(const QString & id)
     if (matches.size() == 1) set_field("place/target/region_ref", matches.first());
   }
   refresh_fields();
+}
+
+TaskIntentEditor::~TaskIntentEditor()
+{
+  // Never orphan an owned MoveIt launch: let the checker shut it down before exit.
+  stop_plan_check(90000);
+}
+
+bool TaskIntentEditor::stop_plan_check(int wait_ms)
+{
+  if (!plan_check_) return true;
+  auto * process = plan_check_;
+  process->disconnect(this);
+  plan_check_ = nullptr;
+  process->terminate();
+  const bool clean = process->waitForFinished(wait_ms);
+  if (!clean) { process->kill(); process->waitForFinished(5000); }
+  process->deleteLater();
+  if (auto * cancel = findChild<QPushButton *>("taskSimulationBatchPlanCancel")) cancel->setEnabled(false);
+  return clean;
+}
+
+void TaskIntentEditor::start_plan_check()
+{
+  auto * status = findChild<QLabel *>("taskSimulationBatchStatus");
+  auto * details = findChild<QPlainTextEdit *>("taskSimulationBatchDetails");
+  const QString mode = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString();
+  if (plan_check_) return;
+  if (scene_.isEmpty() || dirty_ || (mode != "off" && mode != "replayed_snapshot")) {
+    status->setText("BLOCKED — Save an explicit commissioning or replay task, then Generate, before checking plans.");
+    return;
+  }
+  const QString script = QFileInfo(helper_).dir().absoluteFilePath("simulation_batch_plan_check.py");
+  if (!QFileInfo::exists(script)) {
+    status->setText("BLOCKED — simulation_batch_plan_check.py is not installed with the Task helper.");
+    return;
+  }
+  QFile task(scene_ + "/config/workcell_builder_task_intent.yaml");
+  plan_check_task_bytes_ = task.open(QIODevice::ReadOnly) ? QString::fromUtf8(task.readAll()) : QString();
+  plan_check_scene_ = scene_;
+  plan_check_buffer_.clear(); plan_check_lines_.clear(); plan_check_report_ = QJsonObject(); plan_check_total_ = 0;
+  plan_check_ = new QProcess(this);
+  plan_check_->setProcessChannelMode(QProcess::SeparateChannels);
+  findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(false);
+  findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(false);
+  findChild<QPushButton *>("taskSimulationBatchPlanCancel")->setEnabled(true);
+  status->setText("Checking plans — building the queue from the saved task. No robot motion.");
+  details->setPlainText("Plan-only check started. Each object gets a fresh private MoveIt scene.");
+  connect(plan_check_, &QProcess::readyReadStandardOutput, this, &TaskIntentEditor::on_plan_check_output);
+  connect(plan_check_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+    if (error == QProcess::FailedToStart) finish_plan_check(-1, false);
+  });
+  connect(plan_check_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+          [this](int code, QProcess::ExitStatus exit) { finish_plan_check(code, exit == QProcess::NormalExit); });
+  plan_check_->start("python3", {script, "--scene", plan_check_scene_, "--limit", "10"});
+}
+
+void TaskIntentEditor::on_plan_check_output()
+{
+  if (!plan_check_) return;
+  plan_check_buffer_ += plan_check_->readAllStandardOutput();
+  auto * status = findChild<QLabel *>("taskSimulationBatchStatus");
+  auto * details = findChild<QPlainTextEdit *>("taskSimulationBatchDetails");
+  int newline;
+  while ((newline = plan_check_buffer_.indexOf('\n')) >= 0) {
+    const QJsonObject e = QJsonDocument::fromJson(plan_check_buffer_.left(newline)).object();
+    plan_check_buffer_.remove(0, newline + 1);
+    const QString kind = e.value("event").toString();
+    if (kind == "batch_start") {
+      plan_check_total_ = e.value("queued").toInt();
+    } else if (kind == "object_start") {
+      status->setText(QString("Checking %1 of %2: %3 (%4) — starting private fake-hardware MoveIt scene. No motion.")
+        .arg(e.value("order").toInt()).arg(plan_check_total_)
+        .arg(e.value("object_id").toString(), e.value("class_id").toString()));
+    } else if (kind == "stage") {
+      status->setText(status->text().section(" — ", 0, 0) + " — " + e.value("stage").toString() + ". No motion.");
+    } else if (kind == "object_result") {
+      plan_check_lines_ << QString("%1. %2: %3%4 — %5").arg(e.value("order").toInt())
+        .arg(e.value("object_id").toString(), e.value("outcome").toString(),
+             e.value("first_failed_stage").isString() ? " at " + e.value("first_failed_stage").toString() : QString(),
+             e.value("reason").toString());
+      details->setPlainText(plan_check_lines_.join("\n"));
+    } else if (kind == "batch_result") {
+      plan_check_report_ = e.value("report").toObject();
+    }
+  }
+}
+
+void TaskIntentEditor::finish_plan_check(int exit_code, bool normal_exit)
+{
+  if (!plan_check_) return;
+  on_plan_check_output();
+  plan_check_->deleteLater();
+  plan_check_ = nullptr;
+  auto * status = findChild<QLabel *>("taskSimulationBatchStatus");
+  auto * details = findChild<QPlainTextEdit *>("taskSimulationBatchDetails");
+  findChild<QPushButton *>("taskSimulationBatchPlanCancel")->setEnabled(false);
+  refresh_fields();
+  QFile task(scene_ + "/config/workcell_builder_task_intent.yaml");
+  const QString current = task.open(QIODevice::ReadOnly) ? QString::fromUtf8(task.readAll()) : QString();
+  if (plan_check_scene_ != scene_ || dirty_ || current != plan_check_task_bytes_) {
+    status->setText("BLOCKED — Task changed during the plan check. Save, Generate and check again.");
+    details->setPlainText("Old plan results cannot be used after changing the task. No motion was performed.");
+    return;
+  }
+  const QJsonObject r = plan_check_report_;
+  const QString state = r.value("status").toString(normal_exit ? "BLOCKED" : "FAILED");
+  if (state != "CHECKED" && state != "CANCELLED") {
+    status->setText("BLOCKED — " + r.value("reason").toString(
+      exit_code < 0 ? "plan check helper failed to start" : "plan check did not produce a result"));
+    details->setPlainText("No complete plan check. No robot motion was performed.");
+    return;
+  }
+  const QJsonObject counts = r.value("outcome_counts").toObject();
+  QStringList summary;
+  for (auto it = counts.begin(); it != counts.end(); ++it) {
+    if (it.value().toInt() > 0) summary << QString("%1 %2").arg(it.value().toInt()).arg(it.key());
+  }
+  status->setText(QString("%1 plan check (no motion): %2 objects — %3. Sequence not validated.")
+    .arg(state == "CANCELLED" ? "Cancelled" : "Finished")
+    .arg(r.value("objects").toArray().size())
+    .arg(summary.join(", ")));
+  QStringList lines;
+  for (const auto & value : r.value("objects").toArray()) {
+    const auto o = value.toObject();
+    QString line = QString("%1. %2 [%3] → %4: %5").arg(o.value("order").toInt())
+      .arg(o.value("object_id").toString(), o.value("class_id").toString(),
+           o.value("destination_region_ref").toString(), o.value("outcome").toString());
+    if (o.value("outcome").toString() != "PLANNABLE") {
+      line += QString("\n   first failed stage: %1\n   reason: %2")
+        .arg(o.value("first_failed_stage").toString("—"), o.value("reason").toString());
+      const auto hits = o.value("collision_objects").toVariant().toStringList();
+      if (!hits.isEmpty()) line += "\n   collides with: " + hits.join(", ");
+    } else {
+      line += QString(" (grasp strategy %1, all nine stages planned)").arg(o.value("selected_grasp_strategy").toString("resolved"));
+    }
+    lines << line;
+  }
+  for (const auto & value : r.value("obstacles").toArray()) {
+    const auto o = value.toObject();
+    lines << QString("Obstacle (not picked): %1 [%2] — %3").arg(o.value("object_id").toString(),
+      o.value("class_id").toString(), o.value("reason").toString());
+  }
+  lines << "Each object was planned from the same recorded scene; picking one first is not simulated, "
+           "so the batch order is NOT validated.";
+  lines << "GRASP plans are not reachability-free execution approvals. No robot movement was performed.";
+  lines << "Evidence: " + r.value("output_dir").toString();
+  details->setPlainText(lines.join("\n"));
 }
