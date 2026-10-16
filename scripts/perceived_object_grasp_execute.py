@@ -587,7 +587,11 @@ def main():
     parser.add_argument('--start', action='store_true')
     parser.add_argument('--timeout', type=float, default=180.0, help='Total candidate search budget in seconds')
     parser.add_argument('--retreat-distance', type=float)
+    parser.add_argument('--target-object-id', help='Plan-only batch check: restrict the pick target to this eligible '
+                        'observation. Every observed object is still inserted as a PlanningScene obstacle.')
     args = parser.parse_args()
+    if args.target_object_id is not None and (args.start or not args.resolve_task):
+        parser.error('--target-object-id is plan-only and requires --resolve-task without --start')
     import yaml
     import xml.etree.ElementTree as ET
     import rclpy
@@ -879,6 +883,15 @@ def main():
             from task_intent_resolver import select_observations, scene_resolution
             eligible = select_observations(intent, physical, objects, time.time())
             rejected = {o['id']: 'outside_authored_selection' for o in objects if o not in eligible}
+            if args.target_object_id is not None:
+                # Others stay in `objects` (inserted below as obstacles); only the target set narrows.
+                eligible = [o for o in eligible if o['id'] == args.target_object_id]
+                if not eligible:
+                    raise ValueError(f'TARGET_NOT_ELIGIBLE: {args.target_object_id} is not an eligible observation '
+                                     'under the saved task')
+                rejected.update({o['id']: 'not_batch_target_retained_as_obstacle' for o in objects
+                                 if o['id'] != args.target_object_id and o['id'] not in rejected})
+                summary['batch_target_object_id'] = args.target_object_id
             expected_resolution = None if args.resolve_task else scene_resolution(
                 package, intent, physical, document, require_ready=True)
             if expected_resolution is not None:
@@ -959,7 +972,8 @@ def main():
             from task_intent_resolver import consume_resolution, read_scene_task, write_resolution_artifacts
             current_intent, current_physical, current_document = read_scene_task(package)
             consume_resolution(summary['task_intent_resolution'], current_intent, current_physical, current_document)
-            if args.resolve_task:
+            if args.resolve_task and args.target_object_id is None:
+                # A per-object batch check is evidence only, never the persisted task resolution.
                 write_resolution_artifacts(summary['task_intent_resolution'], package / 'generated')
         if not args.start:
             summary['result'] = 'PLAN_ONLY'
@@ -1045,7 +1059,8 @@ def main():
         stage('FAILED')
         summary['recovery_required'] = summary['execution_attempted']
         resolution = summary.get('task_intent_resolution')
-        if args.resolve_task and resolution is not None and resolution['readiness_status'] == 'BLOCKED':
+        if (args.resolve_task and args.target_object_id is None and resolution is not None
+                and resolution['readiness_status'] == 'BLOCKED'):
             try:
                 from task_intent_resolver import consume_resolution, read_scene_task, write_resolution_artifacts
                 current_intent, current_physical, current_document = read_scene_task(package)

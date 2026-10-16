@@ -16,6 +16,10 @@
 #include <QCheckBox>
 #include <QTimer>
 #include <QTextEdit>
+#include <QPlainTextEdit>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QLabel>
 #include <cmath>
 #include <limits>
 #include <yaml-cpp/yaml.h>
@@ -240,6 +244,138 @@ public:
         }
       }
     } catch (const std::exception & error) { s->evidence["failure"] = QString::fromUtf8(error.what()); write(); timer->stop(); app->exit(1); } });
+    timer->start();
+  }
+
+  // Feature 4B: Task tab -> Save -> Generate -> "Check plans (no motion)"; --reopen proves persistence + recheck.
+  static void start_multiobject_plan_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & recording, bool reopen) {
+    struct Session { int phase=0, ticks=0; QString scene; QJsonObject evidence; };
+    auto s = std::make_shared<Session>(); QDir().mkpath(output);
+    const QString tag = reopen ? "reopen" : "author";
+    s->evidence = {{"result", "FAIL"}, {"phase", tag}, {"robot_motion_commanded", false}};
+    auto write = [=]() { QFile f(output + "/" + tag + ".json"); if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson()); };
+    auto require = [](bool value, const char * message) { if (!value) throw std::runtime_error(message); };
+    auto * modal_watch = new QTimer(window); modal_watch->setInterval(250);
+    QObject::connect(modal_watch, &QTimer::timeout, window, [=]() {
+      for (auto * widget : QApplication::topLevelWidgets()) if (auto * message = qobject_cast<QMessageBox *>(widget)) {
+        if (!message->isVisible()) continue;
+        s->evidence["modal_dialog"] = message->text() + "\n" + message->informativeText();
+        window->grab().save(output + "/" + tag + "_modal.png"); message->grab().save(output + "/" + tag + "_modal_dialog.png");
+        write(); message->reject(); app->exit(1);
+      }
+    }); modal_watch->start();
+    auto * timer = new QTimer(window); timer->setInterval(500);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
+      if (++s->ticks > 4800) throw std::runtime_error("multi-object plan acceptance timed out");
+      const bool loading = window->load_watcher_ && window->load_watcher_->isRunning();
+      if (s->ticks % 20 == 1) {
+        s->evidence["progress"] = QJsonObject{{"phase", s->phase}, {"ticks", s->ticks}, {"load_watcher_running", loading},
+                                              {"has_selected_scene", window->has_selected_scene()}};
+        write();
+      }
+      if (loading && s->phase != 4 && s->phase != 6) return;
+      auto * editor = window->environment_task_editor_;
+      switch (s->phase) {
+        case 0: {
+          if (s->ticks < 6) return;
+          s->scene = QFileInfo(window->detect_workspace_root() + "/src/easy_manipulation_deployment/scenes/ur5_2f_test").canonicalFilePath();
+          int index = -1;
+          for (size_t i = 0; i < window->scene_browser_result_.scenes.size(); ++i)
+            if (QFileInfo(QString::fromStdString(window->scene_browser_result_.scenes[i].scene_dir.string())).canonicalFilePath() == s->scene) index = int(i);
+          require(index >= 0, "ur5_2f_test not discovered in the selected workspace");
+          require(window->open_scene_builder_for_scene_index(index, "4B multi-object plan acceptance"), "scene did not open");
+          s->phase = 1; s->ticks = 0; break;
+        }
+        case 1: {
+          if (s->ticks < 8) return;
+          auto * mode = editor->findChild<QComboBox *>("taskPerceptionMode");
+          auto * path = editor->findChild<QLineEdit *>("taskReplayPath");
+          auto * target = editor->findChild<QLineEdit *>("taskTargetClass");
+          require(mode && path && target, "Task tab controls missing");
+          if (reopen) {
+            s->evidence["reopened_fields"] = QJsonObject{{"mode", mode->currentData().toString()},
+              {"replay_path", path->text()}, {"target_class", target->text()}, {"dirty", editor->dirty()}};
+            require(mode->currentData().toString() == "replayed_snapshot" && path->text() == recording &&
+                    target->text() == "cup" && !editor->dirty() &&
+                    editor->findChild<QComboBox *>("taskGraspPolicy")->currentText() == "AUTO" &&
+                    std::abs(editor->findChild<QDoubleSpinBox *>("taskPlaceClearance")->value() - 0.005) < 1e-9 &&
+                    std::abs(editor->findChild<QDoubleSpinBox *>("taskMaximumAge")->value() - 300.0) < 1e-9,
+                    "saved task did not reopen identically");
+            s->phase = 3; s->ticks = 0; break;
+          }
+          mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+          path->setText(recording); emit path->textEdited(recording);
+          target->setText("cup"); emit target->textEdited("cup");
+          // Beginner Task-tab choices: let the resolver try every grasp candidate, and use a
+          // placement clearance the authored 0.12 m drop region can satisfy for a 0.10 m cup.
+          auto * policy = editor->findChild<QComboBox *>("taskGraspPolicy");
+          auto * clearance = editor->findChild<QDoubleSpinBox *>("taskPlaceClearance");
+          require(policy && clearance, "grasp policy / placement clearance controls missing");
+          policy->setCurrentText("AUTO");
+          clearance->setValue(0.005);
+          // A static commissioning recording: allow time for every grasp candidate to be planned.
+          auto * max_age = editor->findChild<QDoubleSpinBox *>("taskMaximumAge");
+          require(max_age, "maximum observation age control missing");
+          max_age->setValue(300.0);
+          QString error;
+          require(editor->save(&error), "Task save failed");
+          s->phase = 5; s->ticks = 0; break;
+        }
+        case 5: {  // Generate exactly as the user does, once Product View live authoring is ready.
+          if (!window->ensure_live_authoring_mutation_available("4B acceptance")) {
+            s->evidence["generate_wait_ticks"] = s->ticks;
+            require(s->ticks < 180, "Product View live authoring never became available; Generate is locked");
+            return;
+          }
+          window->generate_scene_package_for_selected_scene();
+          s->phase = 2; s->ticks = 0; break;
+        }
+        case 2: {
+          if (s->ticks < 10) return;
+          QFile task(s->scene + "/config/workcell_builder_task_intent.yaml"); task.open(QIODevice::ReadOnly);
+          s->evidence["saved_task_intent"] = QString::fromUtf8(task.readAll());
+          s->phase = 3; s->ticks = 0; break;
+        }
+        case 3: {
+          if (s->ticks < 4) return;
+          auto * check = editor->findChild<QPushButton *>("taskSimulationBatchPlanCheck");
+          require(check && check->isEnabled(), "Check plans is not enabled for the saved task");
+          check->click(); s->phase = 4; s->ticks = 0; break;
+        }
+        case 4: {
+          auto * cancel = editor->findChild<QPushButton *>("taskSimulationBatchPlanCancel");
+          auto * status = editor->findChild<QLabel *>("taskSimulationBatchStatus");
+          if (s->ticks % 20 == 0) { s->evidence["last_progress"] = status->text(); write(); }
+          if (cancel->isEnabled() || s->ticks < 4) return;
+          const QString details = editor->findChild<QPlainTextEdit *>("taskSimulationBatchDetails")->toPlainText();
+          s->evidence["final_status"] = status->text();
+          s->evidence["final_details"] = details;
+          const QString evidence_dir = details.section("Evidence: ", 1).trimmed();
+          QFile report(evidence_dir + "/batch_plan_check.json");
+          require(report.open(QIODevice::ReadOnly), "batch report missing");
+          const auto batch = QJsonDocument::fromJson(report.readAll()).object();
+          s->evidence["batch_report"] = evidence_dir + "/batch_plan_check.json";
+          s->evidence["outcome_counts"] = batch.value("outcome_counts");
+          require(batch.value("status").toString() == "CHECKED", "batch did not complete");
+          require(!batch.value("execution_attempted").toBool() && !batch.value("motion_commanded").toBool(), "motion observed");
+          for (int i = 0; i < window->scene_builder_inspector_tabs_->count(); ++i)
+            if (window->scene_builder_inspector_tabs_->widget(i)->isAncestorOf(editor))
+              window->scene_builder_inspector_tabs_->setCurrentIndex(i);
+          s->phase = 6; s->ticks = 0; write(); break;
+        }
+        case 6: {  // Let the Task tab lay out before capturing it.
+          if (s->ticks < 3) return;
+          auto * results = editor->findChild<QLabel *>("taskSimulationBatchStatus")->parentWidget();
+          results->grab().save(output + "/" + tag + "_task_results.png");
+          window->grab().save(output + "/" + tag + "_window.png");
+          s->evidence["result"] = "PASS"; write(); timer->stop(); window->close(); app->exit(0); break;
+        }
+      }
+    } catch (const std::exception & e) {
+      s->evidence["failure"] = e.what(); window->grab().save(output + "/" + tag + "_failure.png"); write();
+      timer->stop(); app->exit(1);
+    } });
     timer->start();
   }
 

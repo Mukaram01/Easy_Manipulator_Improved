@@ -889,6 +889,7 @@ install(PROGRAMS
   scripts/epd_to_workcell_snapshot_node.py
   ../../scripts/task_intent_authoring.py
   ../../scripts/simulation_batch_preview.py
+  ../../scripts/simulation_batch_plan_check.py
   ../../scripts/task_intent_v2.py
   ../../scripts/task_intent_resolver.py
   ../../scripts/validate_builder_task_intent.py
