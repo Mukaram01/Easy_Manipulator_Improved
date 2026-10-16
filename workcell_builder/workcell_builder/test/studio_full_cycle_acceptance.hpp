@@ -15,6 +15,9 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QTimer>
+#include <QSet>
+#include <QTableWidget>
+#include "epd_detection_readiness_model.hpp"
 #include <QTextEdit>
 #include <cmath>
 #include <limits>
@@ -240,6 +243,69 @@ public:
         }
       }
     } catch (const std::exception & error) { s->evidence["failure"] = QString::fromUtf8(error.what()); write(); timer->stop(); app->exit(1); } });
+    timer->start();
+  }
+
+  // EPD readiness panel acceptance: real MainWindow, real monitor artifact, no planning or motion.
+  // Records every distinct panel state seen while an external replay drives the monitor node.
+  static void start_epd_readiness_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & scene_name, const QString & scene_path,
+      int cycle, int duration_s) {
+    struct Session { int phase=0, ticks=0; QSet<QString> seen; QJsonArray observations; QJsonObject evidence; };
+    auto s = std::make_shared<Session>(); QDir().mkpath(output);
+    const QString tag = QString("cycle%1").arg(cycle);
+    s->evidence = {{"result", "FAIL"}, {"cycle", cycle}, {"execution_goals_sent", 0}, {"planning_requests_sent", 0}};
+    auto write = [=]() { s->evidence["observations"] = s->observations; QFile f(output + "/" + tag + ".json"); if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson()); };
+    auto * timer = new QTimer(window); timer->setInterval(250);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
+      if (window->load_watcher_ && window->load_watcher_->isRunning()) return;
+      ++s->ticks;
+      if (s->phase == 0) {
+        if (s->ticks < 5) return;
+        QStringList blockers; QJsonObject diagnostics;
+        if (!window->load_scene_for_scene3d_smoke(scene_name, scene_path, &blockers, &diagnostics)) {
+          s->evidence["load_blockers"] = QJsonArray::fromStringList(blockers);
+          throw std::runtime_error("scene did not load");
+        }
+        auto * table = window->findChild<QTableWidget *>("epdReadinessTable");
+        if (!table || !window->epd_readiness_timer_ || !window->epd_readiness_timer_->isActive()) throw std::runtime_error("readiness panel or timer missing");
+        for (int i = 0; i < window->scene_builder_inspector_tabs_->count(); ++i) {
+          if (window->scene_builder_inspector_tabs_->widget(i)->isAncestorOf(table)) window->scene_builder_inspector_tabs_->setCurrentIndex(i);
+        }
+        s->evidence["scene_path"] = window->selected_scene_path();
+        s->evidence["artifact_path"] = workcell_builder::epd_readiness_artifact_path(window->selected_scene_path());
+        s->phase = 1; s->ticks = 0; return;
+      }
+      auto * table = window->epd_readiness_table_;
+      QJsonArray rows; QStringList signature;
+      for (int r = 0; r < table->rowCount(); ++r) {
+        QJsonObject row; QStringList cells;
+        for (int c = 0; c < table->columnCount(); ++c) {
+          const QString value = table->item(r, c) ? table->item(r, c)->text() : QString();
+          row[table->horizontalHeaderItem(c)->text()] = value; cells << value;
+        }
+        rows.append(row); signature << cells.mid(0, 1).join("") + "/" + cells.value(3) + "/" + cells.value(5);
+      }
+      const QString label = window->epd_readiness_label_->text();
+      const QString connection = label.section(' ', 2, 2);
+      const QString key = connection + "|" + signature.join(",");
+      if (!s->seen.contains(key)) {
+        s->seen.insert(key);
+        const QString shot = QString("%1_%2.png").arg(tag).arg(s->observations.size(), 2, 10, QChar('0'));
+        QWidget * card = table->parentWidget();
+        card->grab().save(output + "/" + shot);
+        s->observations.append(QJsonObject{{"t_s", s->ticks * 0.25}, {"connection", connection}, {"label", label},
+                                           {"rows", rows}, {"panel_screenshot", shot}});
+        write();
+      }
+      if (s->ticks * 0.25 >= duration_s) {
+        window->grab().save(output + "/" + tag + "_window.png");
+        s->evidence["result"] = "PASS"; s->evidence["readiness_timer_active_before_close"] = window->epd_readiness_timer_->isActive();
+        write(); timer->stop(); window->close(); app->exit(0);
+      }
+    } catch (const std::exception & e) {
+      s->evidence["failure"] = e.what(); window->grab().save(output + "/" + tag + "_failure.png"); write(); timer->stop(); app->exit(1);
+    } });
     timer->start();
   }
 
