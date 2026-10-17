@@ -229,7 +229,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   number_field(place, "taskPlaceClearance", "Placement clearance", "place/placement/clearance_m", " m");
   number_field(place, "taskPlaceApproach", "Place approach", "place/placement/approach/distance_m", " m");
   number_field(place, "taskPlaceRetreat", "Place retreat", "place/placement/retreat/distance_m", " m");
-  auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. Local poses use the physical target's frame; values are never clamped.", this);
+  auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. In a full-sequence check, AUTO and PREFERRED give each object its own free place in the region; EXACT sends every object to the same place. Local poses use the physical target's frame; values are never clamped.", this);
   help->setWordWrap(true); layout->addWidget(help);
   auto * advanced = new QGroupBox("Advanced task settings", this);
   advanced->setCheckable(true); advanced->setChecked(false); layout->addWidget(advanced);
@@ -552,7 +552,13 @@ void TaskIntentEditor::start_plan_check(bool sequence)
     for (int i = 0; i < order->count(); ++i) ids << order->item(i)->text();
     args << "--sequence";
     if (!ids.isEmpty()) args << "--order" << ids.join(",");
-    status->setText("Checking full sequence — one private fake-hardware MoveIt scene, objects planned in order. No motion.");
+    QString text = "Checking full sequence — one private fake-hardware MoveIt scene, objects planned in order. No motion.";
+    auto * place_policy = findChild<QComboBox *>("taskPlacePolicy");
+    if (place_policy && place_policy->currentText() == "EXACT" && ids.size() != 1) {
+      text += "\nPlacement policy is EXACT: every object is planned to the same place. "
+              "Choose AUTO to give each object its own free place in the destination.";
+    }
+    status->setText(text);
   }
   plan_check_->start("python3", args);
 }
@@ -638,7 +644,14 @@ void TaskIntentEditor::finish_plan_check(int exit_code, bool normal_exit)
           .arg(o.value("robot_start_matches_previous_end").toBool() ? "consistent" : "INCONSISTENT");
       }
       if (o.value("outcome").toString() == "PLANNABLE") {
-        line += QString("\n   grasp %1; virtually placed at destination").arg(o.value("grasp_strategy").toString("resolved"));
+        const auto local = o.value("place_local_pose").toObject().value("xyz_m").toArray();
+        const bool allocated = o.value("placement_allocation").toObject().value("applied").toBool();
+        line += local.size() == 3
+          ? QString("\n   grasp %1; virtually placed in %2 at target-local (%3, %4, %5) m%6")
+              .arg(o.value("grasp_strategy").toString("resolved"), o.value("destination_region_ref").toString())
+              .arg(local[0].toDouble(), 0, 'f', 3).arg(local[1].toDouble(), 0, 'f', 3).arg(local[2].toDouble(), 0, 'f', 3)
+              .arg(allocated ? " (free place allocated)" : "")
+          : QString("\n   grasp %1; virtually placed at destination").arg(o.value("grasp_strategy").toString("resolved"));
       } else {
         line += QString("\n   first failed stage: %1\n   reason: %2").arg(o.value("first_failed_stage").toString("—"),
                                                                        o.value("reason").toString());

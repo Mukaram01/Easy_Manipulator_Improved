@@ -136,7 +136,7 @@ def classify(audit: dict, object_id: str) -> dict[str, Any]:
     if any(k in text for k in ("STALE", "expired", "OBSERVATION_TIME_INVALID")):
         return dict(out, outcome="STALE_INPUT")
     if any(k in text for k in ("PHYSICAL_DESTINATION_INVALID", "PLACE_LOCAL_POSE_OUTSIDE_REGION",
-                               "destination bounds")):
+                               "destination bounds", "DESTINATION_FULL")):
         return dict(out, outcome="MISSING_DESTINATION")
     if any(k in text for k in ("TARGET_NOT_ELIGIBLE", "insertion mismatch", "GRASP_CANDIDATE_INVALID",
                                "SIMULATION_INPUT_INVALID")):
@@ -377,18 +377,29 @@ def check_sequence(scene: Path, output_dir: Path, *, order: list[str] | None, pe
                         collision_objects_considered=entry.get("collision_objects_considered", []),
                         grasp_strategy=entry.get("grasp_strategy"), grasp_candidate=entry.get("grasp_candidate"),
                         destination=entry.get("destination"), placed_pose=entry.get("placed_pose"),
+                        place_local_pose=entry.get("place_local_pose"),
+                        placement_allocation=entry.get("placement_allocation"),
+                        placement_attempts=entry.get("placement_attempts", []),
                         objects_already_moved=[m["object_id"] for m in moves])
             occupied = sorted(set(item.get("collision_objects") or []) & {m["object_id"] for m in moves})
             if item["outcome"] == "COLLISION" and occupied:
                 item["blocked_by_virtually_placed"] = occupied
-                item["missing_prerequisite"] = ("destination provides a single authored placement pose; "
-                                                "allocating separate placements for several objects is not modelled")
-                item["reason"] = (f"destination occupied by {', '.join(occupied)} placed earlier in this sequence "
-                                  f"(virtual revision {item['revision_before']}); {item['missing_prerequisite']}. "
-                                  f"MoveIt: {item['reason']}")
+                allocation = entry.get("placement_allocation") or {}
+                if allocation.get("applied"):
+                    tried = len(item["placement_attempts"])
+                    item["reason"] = (f"blocked by {', '.join(occupied)} placed earlier in this sequence (virtual "
+                                      f"revision {item['revision_before']}): MoveIt rejected all {tried} free "
+                                      f"placement(s) tried in the destination. MoveIt: {item['reason']}")
+                else:
+                    item["missing_prerequisite"] = ("EXACT placement sends every object to the one authored pose; "
+                                                    "choose AUTO or PREFERRED placement to allocate free places")
+                    item["reason"] = (f"destination occupied by {', '.join(occupied)} placed earlier in this sequence "
+                                      f"(virtual revision {item['revision_before']}); {item['missing_prerequisite']}. "
+                                      f"MoveIt: {item['reason']}")
             if entry.get("result") == "PLANNED":
                 moves.append({"revision": entry["revision_after"], "object_id": oid,
-                              "from_pose": observed[oid]["world_pose"], "to_pose": entry["placed_pose"]})
+                              "from_pose": observed[oid]["world_pose"], "to_pose": entry["placed_pose"],
+                              "place_local_pose": entry.get("place_local_pose")})
         if item["outcome"] != "PLANNABLE" and report["first_blocking"] is None:
             report["first_blocking"] = {k: item.get(k) for k in ("position", "object_id", "outcome",
                                                                  "first_failed_stage", "reason")}

@@ -1,0 +1,612 @@
+{
+  "epd_used": false,
+  "evidence_dir": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T214907Z/sequence",
+  "execution_attempted": false,
+  "final_revision": 2,
+  "first_blocking": {
+    "first_failed_stage": "PREPLAN_GRASP",
+    "object_id": "runtime::cup-03",
+    "outcome": "COLLISION",
+    "position": 1,
+    "reason": "MoveIt action failed: status=6, code=-27"
+  },
+  "motion_commanded": false,
+  "moveit_planning_attempted": true,
+  "objects": [
+    {
+      "attempt_failure_kinds": [
+        "collision",
+        "constraint",
+        "planning"
+      ],
+      "candidate_attempts": 13,
+      "class_id": "cup",
+      "colliding_links": [
+        "gripper_finger1_finger_tip_link",
+        "gripper_finger2_finger_tip_link"
+      ],
+      "collision_objects": [
+        "runtime::bottle-n",
+        "runtime::bottle-s"
+      ],
+      "collision_objects_considered": [
+        "runtime::bottle-e",
+        "runtime::bottle-n",
+        "runtime::bottle-s",
+        "runtime::bottle-w",
+        "runtime::cup-01",
+        "runtime::cup-02",
+        "runtime::cup-03",
+        "runtime::cup-04",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ],
+      "destination": null,
+      "destination_region_ref": "default_drop_zone",
+      "first_failed_stage": "PREPLAN_GRASP",
+      "grasp_candidate": null,
+      "grasp_strategy": null,
+      "moveit_code": -27,
+      "object_id": "runtime::cup-03",
+      "objects_already_moved": [],
+      "outcome": "COLLISION",
+      "place_local_pose": null,
+      "placed_pose": null,
+      "placement_allocation": {
+        "applied": true,
+        "authored_policy": "AUTO",
+        "free_slot_count": 85,
+        "objects_checked_for_overlap": 7,
+        "slots_to_try": [
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.065,
+              0.0,
+              0.009999999999999995
+            ]
+          },
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.05,
+              -0.015,
+              0.009999999999999995
+            ]
+          },
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.05,
+              0.015,
+              0.009999999999999995
+            ]
+          }
+        ]
+      },
+      "placement_attempts": [
+        {
+          "failure": "GENERATE_GRASPS_FAILED: TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle",
+          "furthest_reason": "MoveIt action failed: status=6, code=-27",
+          "furthest_stage": "PREPLAN_GRASP",
+          "local_pose": {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.065,
+              0.0,
+              0.009999999999999995
+            ]
+          },
+          "result": "FAILED"
+        }
+      ],
+      "position": 1,
+      "reason": "MoveIt action failed: status=6, code=-27",
+      "recorded_geometry": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "revision_after": null,
+      "revision_before": 0,
+      "robot_end_matches_sandbox": null,
+      "robot_start_matches_previous_end": true,
+      "source_pose": [
+        0.38,
+        -0.25,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "cup",
+      "colliding_links": [],
+      "collision_objects": [],
+      "collision_objects_considered": [
+        "runtime::bottle-e",
+        "runtime::bottle-n",
+        "runtime::bottle-s",
+        "runtime::bottle-w",
+        "runtime::cup-01",
+        "runtime::cup-02",
+        "runtime::cup-03",
+        "runtime::cup-04",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ],
+      "destination": "default_drop_zone",
+      "destination_region_ref": "default_drop_zone",
+      "first_failed_stage": null,
+      "grasp_candidate": "top_2f::001",
+      "grasp_strategy": "top_2f",
+      "moveit_code": 1,
+      "object_id": "runtime::cup-01",
+      "objects_already_moved": [],
+      "outcome": "PLANNABLE",
+      "place_local_pose": {
+        "rpy_rad": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "xyz_m": [
+          -0.065,
+          0.0,
+          0.009999999999999995
+        ]
+      },
+      "placed_pose": [
+        0.3850316759823049,
+        0.21999032222244624,
+        0.11006218093518963,
+        6.001388411885209e-05,
+        -5.576873399247274e-05,
+        -1.888824607681197e-05,
+        0.999999996465708
+      ],
+      "placement_allocation": {
+        "applied": true,
+        "authored_policy": "AUTO",
+        "free_slot_count": 85,
+        "objects_checked_for_overlap": 7,
+        "slots_to_try": [
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.065,
+              0.0,
+              0.009999999999999995
+            ]
+          },
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.05,
+              -0.015,
+              0.009999999999999995
+            ]
+          },
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.05,
+              0.015,
+              0.009999999999999995
+            ]
+          }
+        ]
+      },
+      "placement_attempts": [
+        {
+          "local_pose": {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              -0.065,
+              0.0,
+              0.009999999999999995
+            ]
+          },
+          "result": "PLANNED"
+        }
+      ],
+      "position": 2,
+      "reason": "all nine plan-only stages succeeded from virtual revision 0",
+      "recorded_geometry": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "revision_after": 1,
+      "revision_before": 0,
+      "robot_end_matches_sandbox": true,
+      "robot_start_matches_previous_end": true,
+      "source_pose": [
+        0.26,
+        -0.08,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "cup",
+      "colliding_links": [],
+      "collision_objects": [],
+      "collision_objects_considered": [
+        "runtime::bottle-e",
+        "runtime::bottle-n",
+        "runtime::bottle-s",
+        "runtime::bottle-w",
+        "runtime::cup-01",
+        "runtime::cup-02",
+        "runtime::cup-03",
+        "runtime::cup-04",
+        "workcell::support_surface_table",
+        "workcell::target_bin_default"
+      ],
+      "destination": "default_drop_zone",
+      "destination_region_ref": "default_drop_zone",
+      "first_failed_stage": null,
+      "grasp_candidate": "top_2f::002",
+      "grasp_strategy": "top_2f",
+      "moveit_code": 1,
+      "object_id": "runtime::cup-02",
+      "objects_already_moved": [
+        "runtime::cup-01"
+      ],
+      "outcome": "PLANNABLE",
+      "place_local_pose": {
+        "rpy_rad": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "xyz_m": [
+          3.8386e-05,
+          0.0,
+          0.009999999999999995
+        ]
+      },
+      "placed_pose": [
+        0.45006452157259813,
+        0.22002844330822846,
+        0.11004541097810003,
+        1.0719723161147843e-05,
+        -5.063807612093567e-05,
+        4.3187116939353374e-05,
+        0.9999999977278727
+      ],
+      "placement_allocation": {
+        "applied": true,
+        "authored_policy": "AUTO",
+        "free_slot_count": 45,
+        "objects_checked_for_overlap": 7,
+        "slots_to_try": [
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              3.8386e-05,
+              0.0,
+              0.009999999999999995
+            ]
+          },
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              0.02,
+              -0.01,
+              0.009999999999999995
+            ]
+          },
+          {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              0.02,
+              0.01,
+              0.009999999999999995
+            ]
+          }
+        ]
+      },
+      "placement_attempts": [
+        {
+          "local_pose": {
+            "rpy_rad": [
+              0.0,
+              -0.0,
+              0.0
+            ],
+            "xyz_m": [
+              3.8386e-05,
+              0.0,
+              0.009999999999999995
+            ]
+          },
+          "result": "PLANNED"
+        }
+      ],
+      "position": 3,
+      "reason": "all nine plan-only stages succeeded from virtual revision 1",
+      "recorded_geometry": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "revision_after": 2,
+      "revision_before": 1,
+      "robot_end_matches_sandbox": true,
+      "robot_start_matches_previous_end": true,
+      "source_pose": [
+        0.45,
+        -0.12,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "obstacles": [
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-e",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.448,
+        -0.25,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-n",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.38,
+        -0.182,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-s",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.38,
+        -0.318,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-w",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.312,
+        -0.25,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "cup",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "object_id": "runtime::cup-04",
+      "planning_scene_verified": false,
+      "reason": "OUTSIDE_PICK_VOLUME",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.565,
+        -0.34,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "outcome_counts": {
+    "BLOCKED": 0,
+    "COLLISION": 1,
+    "INVALID_GEOMETRY": 0,
+    "INVALID_INPUT": 0,
+    "MISSING_DESTINATION": 0,
+    "NO_VALID_GRASP": 0,
+    "PLANNABLE": 2,
+    "SEQUENCE_BLOCKED": 0,
+    "STALE_INPUT": 0,
+    "UNREACHABLE": 0
+  },
+  "output_dir": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T214907Z",
+  "planned_not_executed": true,
+  "preview": {
+    "destination_region_ref": "default_drop_zone",
+    "reason": "",
+    "source_path": "/ws/src/easy_manipulation_deployment/tests/fixtures/multiobject_plan_check_ur5_2f_test.yaml",
+    "source_sha256": "bc94da59df646fa2ebc42bcc9b8fe0d720b5c6a192f742c0bf7d29fdac3c3ca5",
+    "status": "ELIGIBILITY_ONLY",
+    "task_intent_sha256": "b338b5df43f1123ef81d15ff11464530b987461a65a14d20464ac13cacf2f50d",
+    "total_eligible": 3,
+    "total_observed": 8
+  },
+  "scene": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+  "schema_version": "workcell_simulation_sequence_plan_check/v1",
+  "sequence_order": [
+    "runtime::cup-03",
+    "runtime::cup-01",
+    "runtime::cup-02"
+  ],
+  "sequence_status": "SEQUENCE_BLOCKED",
+  "shutdown_clean": true,
+  "simulator_live_connected": false,
+  "status": "CHECKED",
+  "virtual_scene": [
+    {
+      "from_pose": [
+        0.26,
+        -0.08,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "object_id": "runtime::cup-01",
+      "place_local_pose": {
+        "rpy_rad": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "xyz_m": [
+          -0.065,
+          0.0,
+          0.009999999999999995
+        ]
+      },
+      "revision": 1,
+      "to_pose": [
+        0.3850316759823049,
+        0.21999032222244624,
+        0.11006218093518963,
+        6.001388411885209e-05,
+        -5.576873399247274e-05,
+        -1.888824607681197e-05,
+        0.999999996465708
+      ]
+    },
+    {
+      "from_pose": [
+        0.45,
+        -0.12,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "object_id": "runtime::cup-02",
+      "place_local_pose": {
+        "rpy_rad": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "xyz_m": [
+          3.8386e-05,
+          0.0,
+          0.009999999999999995
+        ]
+      },
+      "revision": 2,
+      "to_pose": [
+        0.45006452157259813,
+        0.22002844330822846,
+        0.11004541097810003,
+        1.0719723161147843e-05,
+        -5.063807612093567e-05,
+        4.3187116939353374e-05,
+        0.9999999977278727
+      ]
+    }
+  ],
+  "virtual_state_scope": "owned plan-only sandbox launch for this check; authored scene and task untouched"
+}

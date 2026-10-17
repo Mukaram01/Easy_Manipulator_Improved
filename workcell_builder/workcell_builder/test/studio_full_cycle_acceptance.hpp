@@ -300,6 +300,7 @@ public:
             require(mode->currentData().toString() == "replayed_snapshot" && path->text() == recording &&
                     target->text() == "cup" && !editor->dirty() &&
                     editor->findChild<QComboBox *>("taskGraspPolicy")->currentText() == "AUTO" &&
+                    editor->findChild<QComboBox *>("taskPlacePolicy")->currentText() == "AUTO" &&
                     std::abs(editor->findChild<QDoubleSpinBox *>("taskPlaceClearance")->value() - 0.005) < 1e-9 &&
                     std::abs(editor->findChild<QDoubleSpinBox *>("taskMaximumAge")->value() - 300.0) < 1e-9,
                     "saved task did not reopen identically");
@@ -315,6 +316,10 @@ public:
           require(policy && clearance, "grasp policy / placement clearance controls missing");
           policy->setCurrentText("AUTO");
           clearance->setValue(0.005);
+          // AUTO placement lets a multi-object sequence give each object its own free place.
+          auto * place_policy = editor->findChild<QComboBox *>("taskPlacePolicy");
+          require(place_policy, "placement policy control missing");
+          place_policy->setCurrentText("AUTO");
           // A static commissioning recording: allow time for every grasp candidate to be planned.
           auto * max_age = editor->findChild<QDoubleSpinBox *>("taskMaximumAge");
           require(max_age, "maximum observation age control missing");
