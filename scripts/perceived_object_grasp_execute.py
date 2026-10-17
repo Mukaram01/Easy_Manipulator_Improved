@@ -508,6 +508,18 @@ def sequence_place_poses(intent, environment, occupied, dimensions, max_slots=3,
     return chosen, dict(allocation, applied=True, free_slot_count=len(slots), slots_to_try=chosen)
 
 
+PLACE_INDEPENDENT_STAGES = 4  # APPROACH, GRASP, CLOSE_GRIPPER, LIFT do not depend on the place
+
+
+def furthest_attempt(attempts):
+    """The candidate attempt that progressed furthest, its failing check and stage count."""
+    if not attempts:
+        return None, {}, 0
+    best = max(attempts, key=lambda a: sum(1 for s in a.get('stages', []) if s.get('success')))
+    failed = next((c for c in best.get('checks', []) if c.get('status') == 'FAIL'), {})
+    return best, failed, sum(1 for s in best.get('stages', []) if s.get('success'))
+
+
 def require_prevalidated_execution(start, cycle):
     if not start or not cycle.get('full_cycle_prevalidated'):
         raise RuntimeError('execution requires --start and a fully prevalidated cycle')
@@ -1049,8 +1061,12 @@ def main():
                             deadline=object_deadline, summary=per_object, resolved=None)
                     except Exception as exc:
                         failures.append((exc, per_object))
-                        entry['placement_attempts'].append(dict(local_pose=local_pose, result='FAILED', failure=str(exc)))
-                        if time.monotonic() >= object_deadline:
+                        _, failed, progress = furthest_attempt(per_object['candidate_attempts'])
+                        entry['placement_attempts'].append(dict(
+                            local_pose=local_pose, result='FAILED', failure=str(exc),
+                            furthest_stage=failed.get('code'), furthest_reason=failed.get('reason')))
+                        # No candidate got past LIFT: another place cannot change the outcome.
+                        if progress < PLACE_INDEPENDENT_STAGES or time.monotonic() >= object_deadline:
                             break
                         continue
                     entry['placement_attempts'].append(dict(local_pose=local_pose, result='PLANNED'))

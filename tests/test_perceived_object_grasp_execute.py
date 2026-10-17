@@ -358,3 +358,16 @@ def test_sequence_preferred_placement_tries_the_nearest_free_place_first():
     poses, _ = MODULE.sequence_place_poses(
         sequence_intent("PREFERRED", {"xyz_m": [0.06, 0.0, 0.01], "rpy_rad": [0, 0, 0]}), SEQUENCE_ENVIRONMENT, [], CUP)
     assert poses[0]["xyz_m"] == pytest.approx([0.06, 0, 0.01])
+
+
+def test_furthest_attempt_reports_how_far_a_place_got():
+    ok = [dict(stage=s, success=True) for s in ("PREPLAN_APPROACH", "PREPLAN_GRASP", "PREPLAN_CLOSE_GRIPPER", "PREPLAN_LIFT")]
+    pick_blocked = {"stages": [dict(stage="PREPLAN_APPROACH", success=True), dict(stage="PREPLAN_GRASP", success=False)],
+                    "checks": [dict(status="FAIL", code="PREPLAN_GRASP", reason="collision")]}
+    place_blocked = {"stages": ok + [dict(stage="PREPLAN_TRANSFER", success=True), dict(stage="PREPLAN_PLACE", success=False)],
+                     "checks": [dict(status="PASS", code="ATTACH"), dict(status="FAIL", code="PREPLAN_PLACE", reason="collision")]}
+    assert MODULE.furthest_attempt([]) == (None, {}, 0)
+    _, failed, progress = MODULE.furthest_attempt([pick_blocked])
+    assert failed["code"] == "PREPLAN_GRASP" and progress < MODULE.PLACE_INDEPENDENT_STAGES
+    best, failed, progress = MODULE.furthest_attempt([pick_blocked, place_blocked])
+    assert best is place_blocked and failed["code"] == "PREPLAN_PLACE" and progress == 5
