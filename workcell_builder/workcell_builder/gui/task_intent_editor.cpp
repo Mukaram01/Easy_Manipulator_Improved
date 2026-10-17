@@ -22,7 +22,36 @@
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <cmath>
+
+namespace {
+// Sequence list items keep the object ID and the preview's place options; the text only shows them.
+constexpr int kObjectIdRole = Qt::UserRole;
+constexpr int kPlaceOptionsRole = Qt::UserRole + 1;
+constexpr int kChosenPlaceRole = Qt::UserRole + 2;
+
+QString sequence_object_id(const QListWidgetItem * item)
+{
+  const QString id = item->data(kObjectIdRole).toString();
+  return id.isEmpty() ? item->text() : id;
+}
+
+QJsonObject chosen_place(const QListWidgetItem * item)
+{
+  const QString chosen = item->data(kChosenPlaceRole).toString();
+  for (const auto & value : item->data(kPlaceOptionsRole).toJsonArray())
+    if (value.toObject().value("id").toString() == chosen) return value.toObject();
+  return {};
+}
+
+void show_sequence_item(QListWidgetItem * item)
+{
+  const QJsonObject place = chosen_place(item);
+  item->setText(sequence_object_id(item) + "  →  " +
+                (place.isEmpty() ? QString("Automatic place") : place.value("label").toString()));
+}
+}  // namespace
 
 namespace {
 QJsonValue value_at(QJsonObject root, const QString & path)
@@ -152,7 +181,13 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
       const auto queue = report.value("queue").toArray();
       auto * order_list = findChild<QListWidget *>("taskSequenceOrder");
       order_list->clear();
-      for (const auto & entry : queue) order_list->addItem(entry.toObject().value("object_id").toString());
+      for (const auto & entry : queue) {
+        auto * item = new QListWidgetItem(order_list);
+        item->setData(kObjectIdRole, entry.toObject().value("object_id").toString());
+        item->setData(kPlaceOptionsRole, entry.toObject().value("place_options").toArray());
+        show_sequence_item(item);
+      }
+      if (order_list->count()) order_list->setCurrentRow(0);
       for (const auto & entry : queue) {
         const auto item = entry.toObject();
         details << QString("Queue %1: %2 [%3] → %4")
@@ -197,6 +232,30 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   order->setDragDropMode(QAbstractItemView::InternalMove);
   order->setMaximumHeight(110);
   perception->addRow(order);
+  auto * sequence_place = new QComboBox(this);
+  sequence_place->setObjectName("taskSequencePlace");
+  sequence_place->setEnabled(false);
+  sequence_place->setToolTip("Where the selected object is put in the destination. Automatic gives it the next free place. "
+                    "Numbered places are free spots in the empty destination region, measured in the target's frame; "
+                    "the full-sequence check plans them, nothing moves.");
+  perception->addRow("Place for selected object:", sequence_place);
+  connect(order, &QListWidget::currentItemChanged, this, [sequence_place](QListWidgetItem * item) {
+    const QSignalBlocker block(sequence_place);
+    sequence_place->clear();
+    sequence_place->addItem("Automatic (next free place)", QString());
+    const auto options = item ? item->data(kPlaceOptionsRole).toJsonArray() : QJsonArray();
+    for (const auto & value : options)
+      sequence_place->addItem(value.toObject().value("label").toString(), value.toObject().value("id").toString());
+    sequence_place->setCurrentIndex(item ? std::max(0, sequence_place->findData(item->data(kChosenPlaceRole).toString())) : 0);
+    sequence_place->setEnabled(item && !options.isEmpty());
+  });
+  connect(sequence_place, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, order, sequence_place](int) {
+    auto * item = order->currentItem();
+    if (!item) return;
+    item->setData(kChosenPlaceRole, sequence_place->currentData().toString());
+    show_sequence_item(item);
+    findChild<QLabel *>("taskSimulationBatchStatus")->setText("Places changed — check the full sequence again.");
+  });
   auto * sequence_button = new QPushButton("Check full sequence (no motion)", this);
   sequence_button->setObjectName("taskSimulationSequenceCheck");
   sequence_button->setEnabled(false);
@@ -229,7 +288,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   number_field(place, "taskPlaceClearance", "Placement clearance", "place/placement/clearance_m", " m");
   number_field(place, "taskPlaceApproach", "Place approach", "place/placement/approach/distance_m", " m");
   number_field(place, "taskPlaceRetreat", "Place retreat", "place/placement/retreat/distance_m", " m");
-  auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. In a full-sequence check, AUTO and PREFERRED give each object its own free place in the region; EXACT sends every object to the same place. Local poses use the physical target's frame; values are never clamped.", this);
+  auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. In a full-sequence check, AUTO and PREFERRED give each object its own free place in the region; EXACT sends every object to the same place. You can also choose a place for each object under Pick sequence. Local poses use the physical target's frame; values are never clamped.", this);
   help->setWordWrap(true); layout->addWidget(help);
   auto * advanced = new QGroupBox("Advanced task settings", this);
   advanced->setCheckable(true); advanced->setChecked(false); layout->addWidget(advanced);
@@ -548,10 +607,16 @@ void TaskIntentEditor::start_plan_check(bool sequence)
   QStringList args{script, "--scene", plan_check_scene_, "--limit", "10"};
   if (sequence) {
     QStringList ids;
+    QJsonObject places;
     auto * order = findChild<QListWidget *>("taskSequenceOrder");
-    for (int i = 0; i < order->count(); ++i) ids << order->item(i)->text();
+    for (int i = 0; i < order->count(); ++i) {
+      ids << sequence_object_id(order->item(i));
+      const QJsonObject chosen = chosen_place(order->item(i));
+      if (!chosen.isEmpty()) places.insert(ids.back(), chosen.value("local_pose"));
+    }
     args << "--sequence";
     if (!ids.isEmpty()) args << "--order" << ids.join(",");
+    if (!places.isEmpty()) args << "--placements" << QString::fromUtf8(QJsonDocument(places).toJson(QJsonDocument::Compact));
     QString text = "Checking full sequence — one private fake-hardware MoveIt scene, objects planned in order. No motion.";
     auto * place_policy = findChild<QComboBox *>("taskPlacePolicy");
     if (place_policy && place_policy->currentText() == "EXACT" && ids.size() != 1) {
@@ -645,12 +710,14 @@ void TaskIntentEditor::finish_plan_check(int exit_code, bool normal_exit)
       }
       if (o.value("outcome").toString() == "PLANNABLE") {
         const auto local = o.value("place_local_pose").toObject().value("xyz_m").toArray();
-        const bool allocated = o.value("placement_allocation").toObject().value("applied").toBool();
+        const auto allocation = o.value("placement_allocation").toObject();
+        const QString how = allocation.value("operator_selected").toBool() ? " (your chosen place)"
+                          : allocation.value("applied").toBool() ? " (free place allocated)" : "";
         line += local.size() == 3
           ? QString("\n   grasp %1; virtually placed in %2 at target-local (%3, %4, %5) m%6")
               .arg(o.value("grasp_strategy").toString("resolved"), o.value("destination_region_ref").toString())
               .arg(local[0].toDouble(), 0, 'f', 3).arg(local[1].toDouble(), 0, 'f', 3).arg(local[2].toDouble(), 0, 'f', 3)
-              .arg(allocated ? " (free place allocated)" : "")
+              .arg(how)
           : QString("\n   grasp %1; virtually placed at destination").arg(o.value("grasp_strategy").toString("resolved"));
       } else {
         line += QString("\n   first failed stage: %1\n   reason: %2").arg(o.value("first_failed_stage").toString("—"),

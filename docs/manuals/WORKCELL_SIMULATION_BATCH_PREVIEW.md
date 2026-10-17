@@ -62,6 +62,22 @@ present. **PREFERRED** tries the free places nearest the requested local pose
 first. **EXACT** sends every object to the same authored pose, so a second
 object is reported as blocked by the first.
 
+**Choosing places yourself.** **Preview multi-object task queue** fills **Pick
+sequence** with the eligible objects. It also offers numbered places for each
+object: non-overlapping spots in the empty destination region, sized to that
+object, with **Placement clearance** included. Select an object in the list and
+choose its place under **Place for selected object**. **Automatic** (the
+default) uses the allocation above and leaves places chosen for later objects
+free. A chosen place is planned as given, regardless of the placement policy,
+and is never swapped for another one.
+
+Before starting MoveIt, the check refuses chosen places that lie outside the
+region or that overlap each other (`PLACE_OUTSIDE_REGION`, `PLACE_CONFLICT`).
+If an object already in place overlaps a chosen place, the result is
+`MISSING_DESTINATION` with `PLACE_OCCUPIED`. Chosen places and the order apply
+only to the check: they are not saved in the task. An object that fits nowhere
+in the region has no numbered places.
+
 The Task results list the target-local place chosen for every planned object.
 `MISSING_DESTINATION` with `DESTINATION_FULL` means that no free place for the
 object's footprint is left in the region. `COLLISION` with

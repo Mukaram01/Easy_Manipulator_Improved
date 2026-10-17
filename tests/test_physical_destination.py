@@ -280,3 +280,19 @@ def test_placement_slots_pack_flush_against_a_placed_object_within_planning_tole
     placed = [1., 2. - .015 + .0004, 3.1, 0., 0., math.sqrt(.5), math.sqrt(.5)]  # region x is world +y
     slots = placement_slots(destination, cup, .005, [(placed, cup)])
     assert slots[0]['xyz_m'] == pytest.approx([.0504, 0., .1])
+
+
+def test_place_options_and_conflicts_share_the_allocator_geometry():
+    from physical_destination import (local_to_world_pose, place_conflicts, place_options,
+                                      resolve_destination, resolve_local_destination)
+    environment = scene()
+    destination = resolve_destination(environment, 'drop')
+    cup = [.06, .06, .08]
+    options = place_options(destination, cup, .005)
+    assert [o['xyz_m'] for o in options] == [pytest.approx(p) for p in ([-.015, 0, .1], [.05, 0, .1], [.115, 0, .1])]
+    world = local_to_world_pose(destination, options[0])
+    assert world == pytest.approx(resolve_local_destination(environment, 'bin', 'drop', options[0])['pose_xyz']
+                                  + [0., 0., math.sqrt(.5), math.sqrt(.5)])
+    assert place_conflicts(destination, options[1], cup, .005, [(world, cup)]) == []
+    assert place_conflicts(destination, {'xyz_m': [.03, 0, .1], 'rpy_rad': [0, 0, 0]}, cup, .005, [(world, cup)]) == [0]
+    assert place_options(destination, [.06, .06, .2], 0.) == []

@@ -371,3 +371,19 @@ def test_furthest_attempt_reports_how_far_a_place_got():
     assert failed["code"] == "PREPLAN_GRASP" and progress < MODULE.PLACE_INDEPENDENT_STAGES
     best, failed, progress = MODULE.furthest_attempt([pick_blocked, place_blocked])
     assert best is place_blocked and failed["code"] == "PREPLAN_PLACE" and progress == 5
+
+
+def test_sequence_chosen_place_is_tried_alone_unless_already_occupied():
+    chosen = {"xyz_m": [0.065, 0.0, 0.01], "rpy_rad": [0, 0, 0]}
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, [], CUP, chosen=chosen)
+    assert poses == [chosen] and allocation["operator_selected"] is True and allocation["conflicts"] == []
+    placed = [([0.385, 0.22, 0.11, 0, 0, 0, 1], CUP), ([0.51, 0.22, 0.11, 0, 0, 0, 1], CUP)]
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("EXACT", chosen), SEQUENCE_ENVIRONMENT, placed, CUP,
+                                                    chosen=chosen)
+    assert poses == [] and allocation["conflicts"] == [1]  # A choice overrides EXACT, never an occupied place.
+
+
+def test_sequence_automatic_places_keep_clear_of_places_chosen_for_later_objects():
+    later = [([0.385, 0.22, 0.11, 0, 0, 0, 1], CUP)]  # Left end reserved for a later object.
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, [], CUP, reserved=later)
+    assert poses[0]["xyz_m"] == pytest.approx([0.0, 0, 0.01]) and allocation["reserved_for_later_objects"] == 1

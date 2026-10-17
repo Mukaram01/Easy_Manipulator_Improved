@@ -480,32 +480,41 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     return cycle
 
 
-def sequence_place_poses(intent, environment, occupied, dimensions, max_slots=3, min_spacing=0.02):
+def sequence_place_poses(intent, environment, occupied, dimensions, max_slots=3, min_spacing=0.02,
+                         chosen=None, reserved=()):
     """Target-local placements to try, in order, for the next object of a plan-only sequence.
 
-    An authored EXACT pose is honoured unchanged (None: plan the saved intent as is).
-    AUTO packs free slots from the region's corner; PREFERRED tries the free slots
-    nearest the requested pose. Each pose is planned by the unchanged resolver and
-    full-cycle preplanner as an EXACT placement; nothing here proves feasibility.
+    An operator-chosen place is tried alone, unless it overlaps an object already there
+    (`conflicts` lists those indices into `occupied`). Otherwise an authored EXACT pose is
+    honoured unchanged (None: plan the saved intent as is); AUTO packs free slots from the
+    region's corner and PREFERRED tries the free slots nearest the requested pose, both
+    keeping clear of `reserved` places chosen for later objects. Each pose is planned by the
+    unchanged resolver and full-cycle preplanner as an EXACT placement; nothing here proves
+    feasibility.
     """
-    from physical_destination import placement_slots, resolve_destination
+    from physical_destination import place_conflicts, placement_slots, resolve_destination
     placement = intent['place']['placement']
     allocation = {'authored_policy': placement['policy'], 'objects_checked_for_overlap': len(occupied)}
+    destination = resolve_destination(environment, intent['place']['target']['region_ref'])
+    if chosen is not None:
+        conflicts = place_conflicts(destination, chosen, dimensions, placement['clearance_m'], occupied)
+        return ([] if conflicts else [chosen]), dict(allocation, applied=False, operator_selected=True,
+                                                    chosen_local_pose=chosen, conflicts=conflicts)
     if placement['policy'] == 'EXACT':
         return [None], dict(allocation, applied=False,
                             reason='EXACT placement: every object is planned to the one authored pose')
-    destination = resolve_destination(environment, intent['place']['target']['region_ref'])
-    slots = placement_slots(destination, dimensions, placement['clearance_m'], occupied)
+    slots = placement_slots(destination, dimensions, placement['clearance_m'], list(occupied) + list(reserved))
     if placement['policy'] == 'PREFERRED':
         wanted = placement['requested_local_pose']['xyz_m']
         slots.sort(key=lambda slot: math.dist(slot['xyz_m'], wanted))
-    chosen = []
+    chosen_slots = []
     for slot in slots:
-        if all(math.dist(slot['xyz_m'], other['xyz_m']) >= min_spacing for other in chosen):
-            chosen.append(slot)
-        if len(chosen) == max_slots:
+        if all(math.dist(slot['xyz_m'], other['xyz_m']) >= min_spacing for other in chosen_slots):
+            chosen_slots.append(slot)
+        if len(chosen_slots) == max_slots:
             break
-    return chosen, dict(allocation, applied=True, free_slot_count=len(slots), slots_to_try=chosen)
+    return chosen_slots, dict(allocation, applied=True, free_slot_count=len(slots), slots_to_try=chosen_slots,
+                              reserved_for_later_objects=len(reserved))
 
 
 PLACE_INDEPENDENT_STAGES = 4  # APPROACH, GRASP, CLOSE_GRIPPER, LIFT do not depend on the place
@@ -633,9 +642,13 @@ def main():
     parser.add_argument('--retreat-distance', type=float)
     parser.add_argument('--sequence-object-ids', help='Plan-only sequence check: comma-separated eligible '
                         'observation IDs, planned in order against validated virtual scene revisions.')
+    parser.add_argument('--sequence-placements', help='Plan-only sequence check: JSON object mapping object IDs to '
+                        'operator-chosen target-local places {"xyz_m": [...], "rpy_rad": [...]}; others use AUTO.')
     parser.add_argument('--target-object-id', help='Plan-only batch check: restrict the pick target to this eligible '
                         'observation. Every observed object is still inserted as a PlanningScene obstacle.')
     args = parser.parse_args()
+    if args.sequence_placements is not None and args.sequence_object_ids is None:
+        parser.error('--sequence-placements requires --sequence-object-ids')
     if args.target_object_id is not None and (args.start or not args.resolve_task):
         parser.error('--target-object-id is plan-only and requires --resolve-task without --start')
     if args.sequence_object_ids is not None and (args.start or not args.resolve_task or args.target_object_id):
@@ -1011,6 +1024,11 @@ def main():
             eligible_ids = {o['id'] for o in eligible}
             if not order or len(set(order)) != len(order):
                 raise ValueError('SEQUENCE_INVALID: object order must list distinct IDs')
+            chosen_places = json.loads(args.sequence_placements or '{}')
+            if not isinstance(chosen_places, dict) or not set(chosen_places) <= set(order):
+                raise ValueError('SEQUENCE_PLACEMENTS_INVALID: places must be chosen for objects in the order')
+            from physical_destination import local_to_world_pose, resolve_destination as region_destination
+            place_region = region_destination(physical, intent['place']['target']['region_ref'])
             revision, prev_end, entries = 0, None, []
             moved = {}
             budget = max(1.0, args.timeout / len(order))
@@ -1035,11 +1053,21 @@ def main():
                         continue
                 entry['collision_objects_considered'] = sorted(o.id for o in current.world.collision_objects)
                 initial = current  # plan_segment's IK/contact diagnostics compare against this sandbox state
-                occupied = [(box['pose'], box['dimensions']) for box in
-                            (collision_object_dict(o) for o in current.world.collision_objects
-                             if o.id in by_id and o.id != oid) if box is not None]
-                poses, allocation = sequence_place_poses(intent, physical, occupied, by_id[oid]['dimensions'])
+                boxes = [box for box in (collision_object_dict(o) for o in current.world.collision_objects
+                                         if o.id in by_id and o.id != oid) if box is not None]
+                occupied = [(box['pose'], box['dimensions']) for box in boxes]
+                # Places chosen for later objects stay free for them.
+                reserved = [(local_to_world_pose(place_region, chosen_places[later]), by_id[later]['dimensions'])
+                            for later in order[position:] if later in chosen_places and later in by_id]
+                poses, allocation = sequence_place_poses(intent, physical, occupied, by_id[oid]['dimensions'],
+                                                         chosen=chosen_places.get(oid), reserved=reserved)
                 entry.update(placement_allocation=allocation, placement_attempts=[])
+                if allocation.get('operator_selected') and not poses:
+                    blocking = sorted(boxes[i]['id'] for i in allocation['conflicts'])
+                    entry.update(result='FAILED', candidate_attempts=[],
+                                 failure=(f"PLACE_OCCUPIED: the chosen place overlaps {', '.join(blocking)} "
+                                          "(with placement clearance); choose another place or Automatic"))
+                    continue
                 if not poses:
                     entry.update(result='FAILED', candidate_attempts=[],
                                  failure=(f"DESTINATION_FULL: no free placement for this object's "

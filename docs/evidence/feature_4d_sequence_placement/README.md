@@ -55,6 +55,19 @@ with 5 mm clearance only if every placement is exact. The planner accepts up
 to 3 mm of placement error, so after two cups there is no room left for a third.
 cup-03 is blocked anyway: its grasp collides with the bottles around it.
 
+## Per-object place selection (Task tab)
+
+The harness option `--sequence-places id=place-k,...` clicks **Preview**,
+orders **Pick sequence** and chooses each place in **Place for selected
+object**, as a user would. The places were chosen in the Task tab and checked
+with the same fake-hardware setup as above.
+
+| Run | Choices | Result |
+|---|---|---|
+| `placesA` | cup-01 → Place 3 (+0.065, 0); cup-02 → Place 1 (−0.065, 0) | **SEQUENCE_PLANNED**: both at the chosen places, 105 s |
+| `placesB` | cup-01 Automatic; cup-02 → Place 1 (−0.065, 0) | **SEQUENCE_PLANNED**: cup-01 Automatic at (0.000, 0), which leaves Place 1 free; cup-02 at Place 1, 93 s |
+| `pair2` (regression, no choices) | — | **SEQUENCE_PLANNED**: same places as `pair`, 100 s |
+
 ## Known defect seen during these runs (not fixed here)
 
 In 3 of 10 plain runs the Builder process crashed during shutdown, after the

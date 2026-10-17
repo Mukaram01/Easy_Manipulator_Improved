@@ -387,3 +387,75 @@ def test_sequence_full_destination_and_rejected_places_are_explained(tmp_path):
     assert second["outcome"] == "COLLISION" and "missing_prerequisite" not in second
     assert "MoveIt rejected all 3 free placement(s)" in second["reason"]
     assert r["sequence_status"] == "SEQUENCE_BLOCKED"
+
+
+def two_cup_scene(tmp_path):
+    """Two eligible 0.10 m cups; zero clearance so they fit the 0.10 m tall fixture drop region."""
+    scene, recording = prepare(tmp_path, target="cup")
+    task_file = scene / "config/workcell_builder_task_intent.yaml"
+    task = yaml.safe_load(task_file.read_text())
+    task["place"]["placement"]["clearance_m"] = 0.0
+    task_file.write_text(yaml.safe_dump(task))
+    second = dict(recording["objects"][0], object_id="cup-02")
+    second["pose"] = dict(second["pose"], xyz=[0.30, -0.20, 0.05])
+    recording["objects"].append(second)
+    (scene / "commissioning.yaml").write_text(yaml.safe_dump(recording))
+    intent, physical, document = read_scene_task(scene)
+    (scene / "cell_definition.yaml").write_text(yaml.safe_dump({
+        "normalized_intent_sha256": normalized_intent_hash(intent),
+        "task_intent_resolution": {"context_sha256": context_hash(intent, physical, document)}}))
+    return scene
+
+
+ORDER = ["runtime::cup-01", "runtime::cup-02"]
+LEFT = {"xyz_m": [-0.02, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+MIDDLE = {"xyz_m": [0.04, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+DIMS = {oid: [0.06, 0.06, 0.10] for oid in ORDER}
+
+
+def test_chosen_places_are_validated_before_any_launch(tmp_path):
+    scene = two_cup_scene(tmp_path)
+    assert batch.validate_placements(scene, {ORDER[0]: LEFT, ORDER[1]: MIDDLE}, ORDER, DIMS) == ""
+    assert batch.validate_placements(scene, {"runtime::bottle-01": LEFT}, ORDER, DIMS).startswith("PLACEMENTS_INVALID")
+    outside = {"xyz_m": [0.5, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+    assert batch.validate_placements(scene, {ORDER[1]: outside}, ORDER, DIMS).startswith("PLACE_OUTSIDE_REGION: runtime::cup-02")
+    edge = {"xyz_m": [-0.04, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}  # Centre inside, cup sticks out.
+    assert batch.validate_placements(scene, {ORDER[0]: edge}, ORDER, DIMS).startswith("PLACE_OUTSIDE_REGION")
+    overlap = {"xyz_m": [0.01, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+    assert batch.validate_placements(scene, {ORDER[0]: LEFT, ORDER[1]: overlap}, ORDER, DIMS) == (
+        "PLACE_CONFLICT: runtime::cup-01 and runtime::cup-02 were given overlapping places")
+
+
+def test_sequence_passes_chosen_places_to_the_supervisor_and_blocks_bad_ones_early(tmp_path):
+    scene = two_cup_scene(tmp_path)
+    stub = tmp_path / "echo_stub.py"
+    stub.write_text(textwrap.dedent("""
+        import json, sys
+        from pathlib import Path
+        a = sys.argv; out = Path(a[a.index('--output-dir') + 1]); out.mkdir(parents=True)
+        (out / 'argv.json').write_text(json.dumps(a))
+        (out / 'acceptance.json').write_text(json.dumps({'result': 'FAIL', 'failure': 'stub', 'shutdown_clean': True,
+            'execution_attempted': False, 'sequence': []}))
+    """))
+    common = [sys.executable, str(ROOT / "scripts/simulation_batch_plan_check.py"), "--scene", str(scene), "--sequence",
+              "--order", ",".join(ORDER), "--supervisor", str(stub), "--per-object-timeout", "60"]
+    subprocess.run(common + ["--output-dir", str(tmp_path / "ok"), "--placements", json.dumps({ORDER[1]: LEFT})],
+                   cwd=ROOT, capture_output=True, timeout=60)
+    argv = json.loads((tmp_path / "ok/sequence/argv.json").read_text())
+    assert json.loads(argv[argv.index("--sequence-placements") + 1]) == {ORDER[1]: LEFT}
+    report = json.loads((tmp_path / "ok/sequence_plan_check.json").read_text())
+    assert report["chosen_places"] == {ORDER[1]: LEFT}
+    bad = {ORDER[0]: LEFT, ORDER[1]: {"xyz_m": [0.01, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}}
+    subprocess.run(common + ["--output-dir", str(tmp_path / "bad"), "--placements", json.dumps(bad)],
+                   cwd=ROOT, capture_output=True, timeout=60)
+    report = json.loads((tmp_path / "bad/sequence_plan_check.json").read_text())
+    assert report["status"] == "BLOCKED" and report["reason"].startswith("PLACE_CONFLICT")
+    assert report["moveit_planning_attempted"] is False and not (tmp_path / "bad/sequence").exists()
+
+
+def test_chosen_place_collision_and_occupied_place_are_explained():
+    occupied = {"object_id": OID, "result": "FAILED", "candidate_attempts": [],
+                "placement_allocation": {"operator_selected": True, "conflicts": [0]},
+                "failure": "PLACE_OCCUPIED: the chosen place overlaps runtime::cup-01 (with placement clearance)"}
+    verdict = batch.classify_sequence_entry(occupied)
+    assert verdict["outcome"] == "MISSING_DESTINATION" and "PLACE_OCCUPIED" in verdict["reason"]
