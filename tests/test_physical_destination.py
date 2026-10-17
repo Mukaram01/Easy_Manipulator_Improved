@@ -242,3 +242,41 @@ def test_local_destination_target_mismatch_is_structural():
     with pytest.raises(PhysicalDestinationContextError, match='mismatch'):
         resolve_local_destination(scene(), 'other', 'drop',
                                   {'xyz_m': [.05, 0, .1], 'rpy_rad': [0, 0, 0]})
+
+
+def test_placement_slots_pack_free_places_inside_the_rotated_region():
+    from physical_destination import (check_object_containment, placement_slots,
+                                      resolve_destination, resolve_local_destination)
+    environment = scene()
+    destination = resolve_destination(environment, 'drop')
+    cup = [.06, .06, .08]
+    first = placement_slots(destination, cup, .005)
+    assert first[0]['xyz_m'] == pytest.approx([-.015, 0., .1])  # packed from the region's -x edge
+    assert first[0]['rpy_rad'] == pytest.approx([0., 0., 0.])
+    occupied = []
+    for _ in range(3):
+        slots = placement_slots(destination, cup, .005, occupied)
+        placed = resolve_local_destination(environment, 'bin', 'drop', slots[0])
+        world = placed['pose_xyz'] + [0., 0., math.sqrt(.5), math.sqrt(.5)]  # region yaw in world
+        check_object_containment(placed, world, cup, .005)
+        assert all(math.dist(world[:3], other[:3]) >= .065 - 1e-9 for other, _ in occupied)
+        occupied.append((world, cup))
+    assert placement_slots(destination, cup, .005, occupied) == []
+
+
+def test_placement_slots_reject_objects_that_do_not_fit():
+    from physical_destination import placement_slots, resolve_destination
+    destination = resolve_destination(scene(), 'drop')
+    assert placement_slots(destination, [.06, .2, .05], .0) == []
+    assert placement_slots(destination, [.06, .06, .11], .0) == []
+    assert len(placement_slots(destination, [.2, .1, .1], 0.)) == 1
+
+
+def test_placement_slots_pack_flush_against_a_placed_object_within_planning_tolerance():
+    from physical_destination import placement_slots, resolve_destination
+    destination = resolve_destination(scene(), 'drop')
+    cup = [.06, .06, .08]
+    # Placed 0.4 mm off its slot (inside the planner's 3 mm placement tolerance).
+    placed = [1., 2. - .015 + .0004, 3.1, 0., 0., math.sqrt(.5), math.sqrt(.5)]  # region x is world +y
+    slots = placement_slots(destination, cup, .005, [(placed, cup)])
+    assert slots[0]['xyz_m'] == pytest.approx([.0504, 0., .1])

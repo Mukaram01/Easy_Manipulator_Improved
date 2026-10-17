@@ -178,6 +178,59 @@ def check_object_containment(destination, object_pose, object_dimensions, cleara
         contains(destination, values[:3], rot, dims, clearance)
 
 
+def placement_slots(destination, object_dimensions, clearance=0., occupied=(), step=0.01):
+    """Free target-local poses for one more object inside the authored region.
+
+    Candidates lie on a grid inside the containment region (the one
+    check_object_containment enforces), packed from the region's -x/-y corner
+    so later objects keep room. `occupied` holds (world 7-pose, dimensions) of
+    objects already there; a slot whose footprint, inflated by `clearance`,
+    overlaps one is dropped. Gripper clearance is not modelled here: the
+    full-cycle planner remains the only feasibility check for every slot.
+    """
+    region = destination.get('region_local', destination['placement_local'])
+    rp, rr = pose(region)
+    hx, hy, hz = (d/2 for d in dimensions(region))
+    ox, oy, oz = (d/2 for d in vector(object_dimensions, 'object dimensions'))
+    tp = destination['target_pose_xyz']
+    tr = rotation(destination['target_pose_rpy'])
+    to_region = transpose(multiply(tr, rr))
+    origin = [a+b for a, b in zip(tp, apply(tr, rp))]
+    boxes = []
+    for world_pose, dims in occupied:
+        values = vector(world_pose, 'occupied pose', 7)
+        qx, qy, qz, qw = values[3:]
+        orient = [[1-2*(qy*qy+qz*qz), 2*(qx*qy-qz*qw), 2*(qx*qz+qy*qw)],
+                  [2*(qx*qy+qz*qw), 1-2*(qx*qx+qz*qz), 2*(qy*qz-qx*qw)],
+                  [2*(qx*qz-qy*qw), 2*(qy*qz+qx*qw), 1-2*(qx*qx+qy*qy)]]
+        local = multiply(to_region, orient)
+        half = [sum(abs(v)*d/2 for v, d in zip(row, vector(dims, 'occupied dimensions'))) for row in local]
+        boxes.append((apply(to_region, [a-b for a, b in zip(values[:3], origin)]), half))
+
+    def axis(h, o, i):
+        lo, hi = -h+o+clearance, h-o-clearance
+        if lo > hi+1e-9:
+            return []
+        # The authored region is centred on its frame: keep the centre-line on the grid.
+        inner = [k*step for k in range(int(math.ceil(lo/step-1e-9)), int(math.floor(hi/step+1e-9))+1)]
+        # Flush against each occupied footprint, so a placed object's planning tolerance
+        # does not cost a whole grid step of room.
+        flush = [c[i]+side*(half[i]+o+clearance) for c, half in boxes for side in (-1, 1)]
+        return sorted({round(v, 9) for v in [lo, hi] + inner + flush if lo-1e-9 <= v <= hi+1e-9})
+
+    if oz+clearance > hz+1e-8:
+        return []
+    slots = []
+    for x in axis(hx, ox, 0):
+        for y in sorted(axis(hy, oy, 1), key=abs):
+            if any(abs(x-c[0]) < ox+h[0]+clearance-1e-9 and abs(y-c[1]) < oy+h[1]+clearance-1e-9 and
+                   abs(c[2]) < oz+h[2]+clearance-1e-9 for c, h in boxes):
+                continue
+            slots.append({'xyz_m': [a+b for a, b in zip(rp, apply(rr, [x, y, 0.]))],
+                          'rpy_rad': angles(rr)})
+    return slots
+
+
 def is_destination_zone(zone):
     return (zone.get('target_ref') or zone.get('placement_local') or
             zone.get('type') == 'place_zone' or zone.get('role') in ('place', 'place_zone'))
