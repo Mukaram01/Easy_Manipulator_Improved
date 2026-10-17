@@ -30,7 +30,7 @@ signals:
   void edited();
   void saved();
 private:
-  void start_plan_check();
+  void start_plan_check(bool sequence = false);
   void on_plan_check_output();
   void finish_plan_check(int exit_code, bool normal_exit);
   bool stop_plan_check(int wait_ms);
@@ -61,4 +61,6 @@ private:
   QJsonObject plan_check_report_;
   QStringList plan_check_lines_;
   int plan_check_total_{0};
+  bool plan_check_sequence_{false};
+  void clear_sequence_results(const QString & why);
 };

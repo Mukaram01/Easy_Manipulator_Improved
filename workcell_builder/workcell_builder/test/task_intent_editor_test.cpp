@@ -1,5 +1,6 @@
 #include <QFileInfo>
 #include <gtest/gtest.h>
+#include <QListWidget>
 #include <QApplication>
 #include <QComboBox>
 #include <QDir>
@@ -475,6 +476,31 @@ TEST(TaskIntentEditor, PlanCheckIsSavedReplayOnlyAndNeverStartsByItself) {
   mode->setCurrentIndex(mode->findData("live_epd"));
   ASSERT_TRUE(editor.save());
   EXPECT_FALSE(check->isEnabled());  // Live input is not a commissioning plan check.
+}
+
+TEST(TaskIntentEditor, SequenceCheckIsSavedReplayOnlyAndOrderClearsOnSceneLoad) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * sequence = editor.findChild<QPushButton *>("taskSimulationSequenceCheck");
+  auto * order = editor.findChild<QListWidget *>("taskSequenceOrder");
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  ASSERT_NE(sequence, nullptr); ASSERT_NE(order, nullptr);
+  EXPECT_FALSE(sequence->isEnabled());
+  EXPECT_EQ(order->dragDropMode(), QAbstractItemView::InternalMove);  // Operator reordering.
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  edit(editor, "taskReplayPath",
+       QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
+  EXPECT_FALSE(sequence->isEnabled());
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(sequence->isEnabled());  // Enabled, never started by saving.
+  EXPECT_FALSE(editor.findChild<QPushButton *>("taskSimulationBatchPlanCancel")->isEnabled());
+  order->addItem("runtime::sample-cup");
+  edit(editor, "taskTargetClass", "cup");
+  EXPECT_FALSE(sequence->isEnabled());
+  QTemporaryDir other; seed(other.path());
+  ASSERT_TRUE(editor.save());
+  ASSERT_TRUE(editor.load_scene(other.path(), helper()));
+  EXPECT_EQ(order->count(), 0);  // A queue from another cell never carries over.
 }
 
 TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {

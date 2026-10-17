@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QHBoxLayout>
+#include <QListWidget>
 #include <QProcess>
 #include <QPushButton>
 #include <QSaveFile>
@@ -149,6 +150,9 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
           .arg(report.value("total_observed").toInt()));
       QStringList details;
       const auto queue = report.value("queue").toArray();
+      auto * order_list = findChild<QListWidget *>("taskSequenceOrder");
+      order_list->clear();
+      for (const auto & entry : queue) order_list->addItem(entry.toObject().value("object_id").toString());
       for (const auto & entry : queue) {
         const auto item = entry.toObject();
         details << QString("Queue %1: %2 [%3] → %4")
@@ -184,7 +188,25 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     "never moved and results are not saved into the task.", this);
   check_help->setWordWrap(true);
   perception->addRow(check_help);
-  connect(check_button, &QPushButton::clicked, this, &TaskIntentEditor::start_plan_check);
+  connect(check_button, &QPushButton::clicked, this, [this] { start_plan_check(false); });
+  auto * order_label = new QLabel("Pick sequence (drag to reorder; filled by Preview queue):", this);
+  order_label->setWordWrap(true);
+  perception->addRow(order_label);
+  auto * order = new QListWidget(this);
+  order->setObjectName("taskSequenceOrder");
+  order->setDragDropMode(QAbstractItemView::InternalMove);
+  order->setMaximumHeight(110);
+  perception->addRow(order);
+  auto * sequence_button = new QPushButton("Check full sequence (no motion)", this);
+  sequence_button->setObjectName("taskSimulationSequenceCheck");
+  sequence_button->setEnabled(false);
+  sequence_button->setToolTip("Plans the objects in this order. Each complete plan virtually places the object "
+                              "before the next one is planned. PLANNED — NOT EXECUTED.");
+  perception->addRow(sequence_button);
+  connect(sequence_button, &QPushButton::clicked, this, [this] { start_plan_check(true); });
+  connect(order->model(), &QAbstractItemModel::rowsMoved, this, [this] {
+    findChild<QLabel *>("taskSimulationBatchStatus")->setText("Sequence order changed — check the full sequence again.");
+  });
   connect(cancel_button, &QPushButton::clicked, this, [this, cancel_button] {
     if (!plan_check_) return;
     cancel_button->setEnabled(false);
@@ -311,6 +333,8 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   dirty_ = true; error_.clear();
   findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(false);
   findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(false);
+  findChild<QPushButton *>("taskSimulationSequenceCheck")->setEnabled(false);
+  clear_sequence_results("Task changed — earlier plan results no longer apply.");
   status_->setText("Unsaved task — validate and save before planning.");
   validation_timer_->start(250); emit edited();
 }
@@ -324,6 +348,7 @@ void TaskIntentEditor::refresh_fields()
       !findChild<QLineEdit *>("taskReplayPath")->text().trimmed().isEmpty();
   findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(batch_ready);
   findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(batch_ready && !plan_check_);
+  findChild<QPushButton *>("taskSimulationSequenceCheck")->setEnabled(batch_ready && !plan_check_);
   loading_ = false;
 }
 QJsonObject TaskIntentEditor::request(bool draft)
@@ -364,6 +389,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
   findChild<QLabel *>("taskSimulationBatchStatus")->setText(
       "Select an explicit commissioning recording and Save Task to preview the queue.");
   findChild<QPlainTextEdit *>("taskSimulationBatchDetails")->setPlainText("No batch preview has been run.");
+  findChild<QListWidget *>("taskSequenceOrder")->clear();
   validation_timer_->stop(); model_ = {};
   try {
     QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
@@ -478,7 +504,14 @@ bool TaskIntentEditor::stop_plan_check(int wait_ms)
   return clean;
 }
 
-void TaskIntentEditor::start_plan_check()
+void TaskIntentEditor::clear_sequence_results(const QString & why)
+{
+  if (plan_check_) return;
+  auto * details = findChild<QPlainTextEdit *>("taskSimulationBatchDetails");
+  if (details && details->toPlainText().contains("PLANNED — NOT EXECUTED")) details->setPlainText(why);
+}
+
+void TaskIntentEditor::start_plan_check(bool sequence)
 {
   auto * status = findChild<QLabel *>("taskSimulationBatchStatus");
   auto * details = findChild<QPlainTextEdit *>("taskSimulationBatchDetails");
@@ -499,7 +532,9 @@ void TaskIntentEditor::start_plan_check()
   plan_check_buffer_.clear(); plan_check_lines_.clear(); plan_check_report_ = QJsonObject(); plan_check_total_ = 0;
   plan_check_ = new QProcess(this);
   plan_check_->setProcessChannelMode(QProcess::SeparateChannels);
+  plan_check_sequence_ = sequence;
   findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(false);
+  findChild<QPushButton *>("taskSimulationSequenceCheck")->setEnabled(false);
   findChild<QPushButton *>("taskSimulationBatchPreview")->setEnabled(false);
   findChild<QPushButton *>("taskSimulationBatchPlanCancel")->setEnabled(true);
   status->setText("Checking plans — building the queue from the saved task. No robot motion.");
@@ -510,7 +545,16 @@ void TaskIntentEditor::start_plan_check()
   });
   connect(plan_check_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
           [this](int code, QProcess::ExitStatus exit) { finish_plan_check(code, exit == QProcess::NormalExit); });
-  plan_check_->start("python3", {script, "--scene", plan_check_scene_, "--limit", "10"});
+  QStringList args{script, "--scene", plan_check_scene_, "--limit", "10"};
+  if (sequence) {
+    QStringList ids;
+    auto * order = findChild<QListWidget *>("taskSequenceOrder");
+    for (int i = 0; i < order->count(); ++i) ids << order->item(i)->text();
+    args << "--sequence";
+    if (!ids.isEmpty()) args << "--order" << ids.join(",");
+    status->setText("Checking full sequence — one private fake-hardware MoveIt scene, objects planned in order. No motion.");
+  }
+  plan_check_->start("python3", args);
 }
 
 void TaskIntentEditor::on_plan_check_output()
@@ -530,6 +574,9 @@ void TaskIntentEditor::on_plan_check_output()
       status->setText(QString("Checking %1 of %2: %3 (%4) — starting private fake-hardware MoveIt scene. No motion.")
         .arg(e.value("order").toInt()).arg(plan_check_total_)
         .arg(e.value("object_id").toString(), e.value("class_id").toString()));
+    } else if (kind == "stage" && e.value("stage").toString().startsWith("SEQUENCE_OBJECT_")) {
+      status->setText(QString("Sequence: planning object %1 of %2 against the current virtual scene. No motion.")
+        .arg(e.value("stage").toString().section('_', 2)).arg(plan_check_total_));
     } else if (kind == "stage") {
       status->setText(status->text().section(" — ", 0, 0) + " — " + e.value("stage").toString() + ". No motion.");
     } else if (kind == "object_result") {
@@ -567,6 +614,54 @@ void TaskIntentEditor::finish_plan_check(int exit_code, bool normal_exit)
     status->setText("BLOCKED — " + r.value("reason").toString(
       exit_code < 0 ? "plan check helper failed to start" : "plan check did not produce a result"));
     details->setPlainText("No complete plan check. No robot motion was performed.");
+    return;
+  }
+  if (plan_check_sequence_) {
+    const QJsonObject block = r.value("first_blocking").toObject();
+    const QString seq = r.value("sequence_status").toString();
+    status->setText(seq == "SEQUENCE_PLANNED"
+      ? QString("PLANNED — NOT EXECUTED: the full %1-object sequence plans in MoveIt. No robot motion.")
+          .arg(r.value("objects").toArray().size())
+      : QString("%1 — sequence blocked at position %2 (%3): %4 at %5. PLANNED — NOT EXECUTED.")
+          .arg(state == "CANCELLED" ? "Cancelled" : "SEQUENCE_BLOCKED")
+          .arg(block.value("position").toInt()).arg(block.value("object_id").toString(),
+               block.value("outcome").toString(), block.value("first_failed_stage").toString("—")));
+    QStringList lines{"PLANNED — NOT EXECUTED. Virtual scene only; no robot or simulated motion."};
+    for (const auto & value : r.value("objects").toArray()) {
+      const auto o = value.toObject();
+      QString line = QString("%1. %2 [%3] → %4: %5").arg(o.value("position").toInt())
+        .arg(o.value("object_id").toString(), o.value("class_id").toString(),
+             o.value("destination_region_ref").toString(), o.value("outcome").toString());
+      if (o.contains("revision_before")) {
+        line += QString("  (scene rev %1%2, robot start %3)").arg(o.value("revision_before").toInt())
+          .arg(o.value("revision_after").isDouble() ? QString("→%1").arg(o.value("revision_after").toInt()) : QString())
+          .arg(o.value("robot_start_matches_previous_end").toBool() ? "consistent" : "INCONSISTENT");
+      }
+      if (o.value("outcome").toString() == "PLANNABLE") {
+        line += QString("\n   grasp %1; virtually placed at destination").arg(o.value("grasp_strategy").toString("resolved"));
+      } else {
+        line += QString("\n   first failed stage: %1\n   reason: %2").arg(o.value("first_failed_stage").toString("—"),
+                                                                       o.value("reason").toString());
+        const auto hits = o.value("collision_objects").toVariant().toStringList();
+        if (!hits.isEmpty()) line += "\n   collides with: " + hits.join(", ");
+      }
+      lines << line;
+    }
+    for (const auto & value : r.value("virtual_scene").toArray()) {
+      const auto m = value.toObject();
+      const auto from = m.value("from_pose").toArray(), to = m.value("to_pose").toArray();
+      lines << QString("Virtual scene rev %1: %2 moved (%3, %4, %5) → (%6, %7, %8)")
+        .arg(m.value("revision").toInt()).arg(m.value("object_id").toString())
+        .arg(from[0].toDouble(), 0, 'f', 3).arg(from[1].toDouble(), 0, 'f', 3).arg(from[2].toDouble(), 0, 'f', 3)
+        .arg(to[0].toDouble(), 0, 'f', 3).arg(to[1].toDouble(), 0, 'f', 3).arg(to[2].toDouble(), 0, 'f', 3);
+    }
+    for (const auto & value : r.value("obstacles").toArray()) {
+      const auto o = value.toObject();
+      lines << QString("Obstacle throughout (not picked): %1 [%2] — %3").arg(o.value("object_id").toString(),
+        o.value("class_id").toString(), o.value("reason").toString());
+    }
+    lines << "Evidence: " + r.value("output_dir").toString();
+    details->setPlainText(lines.join("\n"));
     return;
   }
   const QJsonObject counts = r.value("outcome_counts").toObject();
