@@ -140,7 +140,11 @@ def main():
                         'other observations stay in the fresh PlanningScene as obstacles. Writes no task artifacts.')
     parser.add_argument('--sequence-object-ids', help='Sequential plan-only check of these eligible IDs, in order, '
                         'against validated virtual revisions inside this owned launch. Writes no task artifacts.')
+    parser.add_argument('--sequence-placements', help='JSON object of operator-chosen target-local places per '
+                        'sequence object ID (plan-only; passed to the executor unchanged)')
     args = parser.parse_args()
+    if args.sequence_placements is not None and args.sequence_object_ids is None:
+        parser.error('--sequence-placements requires --sequence-object-ids')
     if args.target_object_id is not None and args.execute:
         parser.error('--target-object-id is plan-only')
     if args.sequence_object_ids is not None and (args.execute or args.target_object_id is not None):
@@ -267,7 +271,8 @@ def main():
                 + (['--resolve-task'] if args.resolve_task else [] if uses_authored_task else ['--task-request', str(root/'config/runtime/r1_4b_task.yaml')])
                 + (['--start'] if args.execute else [])
                 + (['--target-object-id', args.target_object_id] if args.target_object_id is not None else [])
-                + (['--sequence-object-ids', args.sequence_object_ids] if args.sequence_object_ids is not None else []),
+                + (['--sequence-object-ids', args.sequence_object_ids] if args.sequence_object_ids is not None else [])
+                + (['--sequence-placements', args.sequence_placements] if args.sequence_placements is not None else []),
                 stdout=elog, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: executor.poll() is not None)
             stream_stages()

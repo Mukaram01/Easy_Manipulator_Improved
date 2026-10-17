@@ -178,6 +178,117 @@ def check_object_containment(destination, object_pose, object_dimensions, cleara
         contains(destination, values[:3], rot, dims, clearance)
 
 
+def _region_frame(destination):
+    """The containment region check_object_containment enforces, as (origin, rotation, half extents)."""
+    region = destination.get('region_local', destination['placement_local'])
+    rp, rr = pose(region)
+    tr = rotation(destination['target_pose_rpy'])
+    origin = [a+b for a, b in zip(destination['target_pose_xyz'], apply(tr, rp))]
+    return rp, rr, multiply(tr, rr), origin, [d/2 for d in dimensions(region)]
+
+
+def _quaternion_matrix(values):
+    qx, qy, qz, qw = values
+    return [[1-2*(qy*qy+qz*qz), 2*(qx*qy-qz*qw), 2*(qx*qz+qy*qw)],
+            [2*(qx*qy+qz*qw), 1-2*(qx*qx+qz*qz), 2*(qy*qz-qx*qw)],
+            [2*(qx*qz-qy*qw), 2*(qy*qz+qx*qw), 1-2*(qx*qx+qy*qy)]]
+
+
+def _footprint(to_region, orient, dims):
+    local = multiply(to_region, orient)
+    return [sum(abs(v)*d/2 for v, d in zip(row, dims)) for row in local]
+
+
+def _occupied_boxes(destination, occupied):
+    _, _, world_rot, origin, _ = _region_frame(destination)
+    to_region = transpose(world_rot)
+    boxes = []
+    for world_pose, dims in occupied:
+        values = vector(world_pose, 'occupied pose', 7)
+        boxes.append((apply(to_region, [a-b for a, b in zip(values[:3], origin)]),
+                      _footprint(to_region, _quaternion_matrix(values[3:]), vector(dims, 'occupied dimensions'))))
+    return boxes
+
+
+def _overlapping(center, half, boxes, clearance):
+    return [i for i, (c, h) in enumerate(boxes)
+            if all(abs(a-b) < x+y+clearance-1e-9 for a, b, x, y in zip(center, c, half, h))]
+
+
+def local_to_world_pose(destination, local_pose):
+    """A target-local {xyz_m, rpy_rad} placement as a world [x, y, z, qx, qy, qz, qw] pose."""
+    tr = rotation(destination['target_pose_rpy'])
+    xyz = [a+b for a, b in zip(destination['target_pose_xyz'], apply(tr, vector(local_pose['xyz_m'], 'local xyz')))]
+    m = multiply(tr, rotation(local_pose['rpy_rad']))
+    w = math.sqrt(max(0., 1+m[0][0]+m[1][1]+m[2][2]))/2
+    x = math.copysign(math.sqrt(max(0., 1+m[0][0]-m[1][1]-m[2][2]))/2, m[2][1]-m[1][2])
+    y = math.copysign(math.sqrt(max(0., 1-m[0][0]+m[1][1]-m[2][2]))/2, m[0][2]-m[2][0])
+    z = math.copysign(math.sqrt(max(0., 1-m[0][0]-m[1][1]+m[2][2]))/2, m[1][0]-m[0][1])
+    return xyz + [x, y, z, w]
+
+
+def place_conflicts(destination, local_pose, object_dimensions, clearance=0., occupied=()):
+    """Indices of `occupied` (world 7-pose, dimensions) whose footprint a chosen place overlaps."""
+    rp, rr, _, _, _ = _region_frame(destination)
+    to_region = transpose(rr)
+    center = apply(to_region, [a-b for a, b in zip(vector(local_pose['xyz_m'], 'local xyz'), rp)])
+    half = _footprint(to_region, rotation(local_pose['rpy_rad']), vector(object_dimensions, 'object dimensions'))
+    return _overlapping(center, half, _occupied_boxes(destination, occupied), clearance)
+
+
+def placement_slots(destination, object_dimensions, clearance=0., occupied=(), step=0.01):
+    """Free target-local poses for one more object inside the authored region.
+
+    Candidates lie on a grid inside the containment region (the one
+    check_object_containment enforces), packed from the region's -x/-y corner
+    so later objects keep room. `occupied` holds (world 7-pose, dimensions) of
+    objects already there; a slot whose footprint, inflated by `clearance`,
+    overlaps one is dropped. Gripper clearance is not modelled here: the
+    full-cycle planner remains the only feasibility check for every slot.
+    """
+    rp, rr, _, _, (hx, hy, hz) = _region_frame(destination)
+    ox, oy, oz = (d/2 for d in vector(object_dimensions, 'object dimensions'))
+    boxes = _occupied_boxes(destination, occupied)
+
+    def axis(h, o, i):
+        lo, hi = -h+o+clearance, h-o-clearance
+        if lo > hi+1e-9:
+            return []
+        # The authored region is centred on its frame: keep the centre-line on the grid.
+        inner = [k*step for k in range(int(math.ceil(lo/step-1e-9)), int(math.floor(hi/step+1e-9))+1)]
+        # Flush against each occupied footprint, so a placed object's planning tolerance
+        # does not cost a whole grid step of room.
+        flush = [c[i]+side*(half[i]+o+clearance) for c, half in boxes for side in (-1, 1)]
+        return sorted({round(v, 9) for v in [lo, hi] + inner + flush if lo-1e-9 <= v <= hi+1e-9})
+
+    if oz+clearance > hz+1e-8:
+        return []
+    slots = []
+    for x in axis(hx, ox, 0):
+        for y in sorted(axis(hy, oy, 1), key=abs):
+            if _overlapping([x, y, 0.], [ox, oy, oz], boxes, clearance):
+                continue
+            slots.append({'xyz_m': [a+b for a, b in zip(rp, apply(rr, [x, y, 0.]))],
+                          'rpy_rad': angles(rr)})
+    return slots
+
+
+def place_options(destination, object_dimensions, clearance=0., limit=12):
+    """Distinct, non-overlapping places an operator can choose for one object in an empty region.
+
+    The same packing AUTO uses, applied to an empty region: place k is the first
+    free slot once places 1..k-1 are taken.
+    """
+    taken, options = [], []
+    while len(options) < limit:
+        slots = placement_slots(destination, object_dimensions, clearance, taken)
+        if not slots:
+            break
+        options.append(slots[0])
+        taken.append((local_to_world_pose(destination, slots[0]), object_dimensions))
+    return options
+
+
 def is_destination_zone(zone):
     return (zone.get('target_ref') or zone.get('placement_local') or
             zone.get('type') == 'place_zone' or zone.get('role') in ('place', 'place_zone'))

@@ -22,6 +22,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from physical_destination import place_options, resolve_destination
 from task_intent_authoring import load_authoring
 from task_intent_resolver import select_observations
 from task_intent_v2 import normalized_intent_hash
@@ -126,11 +127,32 @@ def preview_batch(scene: Path, *, limit: int = 20, now: float | None = None) -> 
     if len(eligible_ids) != len(eligible):
         raise ValueError("OBJECT_ID_AMBIGUOUS: duplicate normalized object identity")
     selected = eligible[:limit]
+    try:
+        destination = resolve_destination(environment, intent["place"]["target"]["region_ref"])
+    except ValueError:
+        destination = None  # Generate/plan report the destination blocker; the queue stays inspectable.
+    clearance = intent["place"]["placement"]["clearance_m"]
+    options_by_size: dict[tuple, list] = {}
+
+    def choices(item: dict) -> list[dict]:
+        """Places the operator may pick for this object in the empty region (geometry only, not planned)."""
+        key = tuple(item["dimensions"])
+        if destination is None:
+            return []
+        if key not in options_by_size:
+            slots = place_options(destination, item["dimensions"], clearance)
+            options_by_size[key] = [{
+                "id": f"place-{k}", "local_pose": slot,
+                "label": (f"Place {k} of {len(slots)} (x {slot['xyz_m'][0]:+.3f}, y {slot['xyz_m'][1]:+.3f} m)"),
+            } for k, slot in enumerate(slots, 1)]
+        return options_by_size[key]
+
     queue = [{
         "order": i + 1, "object_id": item["id"], "class_id": item["class_id"],
         "status": "ELIGIBLE_NOT_PLANNED",
         "destination_region_ref": intent["place"]["target"]["region_ref"],
         "grasp_strategy_policy": intent["pick"]["grasp"]["policy"],
+        "place_options": choices(item),
     } for i, item in enumerate(selected)]
     # All detected/non-target objects remain reported as scene obstacles;
     # none is silently discarded or claimed to be verified in MoveIt.

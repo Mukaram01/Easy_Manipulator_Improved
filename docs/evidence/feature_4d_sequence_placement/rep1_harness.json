@@ -1,0 +1,30 @@
+{
+  "batch_report": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T212217Z/sequence_plan_check.json",
+  "final_details": "PLANNED \u2014 NOT EXECUTED. Virtual scene only; no robot or simulated motion.\n1. runtime::cup-01 [cup] \u2192 default_drop_zone: PLANNABLE  (scene rev 0\u21921, robot start consistent)\n   grasp top_2f; virtually placed in default_drop_zone at target-local (-0.065, 0.000, 0.010) m (free place allocated)\n2. runtime::cup-02 [cup] \u2192 default_drop_zone: PLANNABLE  (scene rev 1\u21922, robot start consistent)\n   grasp top_2f; virtually placed in default_drop_zone at target-local (0.000, 0.000, 0.010) m (free place allocated)\n3. runtime::cup-03 [cup] \u2192 default_drop_zone: MISSING_DESTINATION  (scene rev 2, robot start consistent)\n   first failed stage: \u2014\n   reason: DESTINATION_FULL: no free placement for this object's [0.06, 0.06, 0.1] m footprint is left in default_drop_zone after 2 object(s) placed earlier in this sequence\nVirtual scene rev 1: runtime::cup-01 moved (0.260, -0.080, 0.051) \u2192 (0.385, 0.220, 0.110)\nVirtual scene rev 2: runtime::cup-02 moved (0.450, -0.120, 0.051) \u2192 (0.450, 0.220, 0.110)\nObstacle throughout (not picked): runtime::bottle-e [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::bottle-n [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::bottle-s [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::bottle-w [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::cup-04 [cup] \u2014 OUTSIDE_PICK_VOLUME\nEvidence: /ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T212217Z",
+  "final_status": "SEQUENCE_BLOCKED \u2014 sequence blocked at position 3 (runtime::cup-03): MISSING_DESTINATION at \u2014. PLANNED \u2014 NOT EXECUTED.",
+  "generate_wait_ticks": 11,
+  "last_progress": "Sequence: planning object 2 of 3 against the current virtual scene. No motion. \u2014 PREPLAN_LIFT. No motion.",
+  "outcome_counts": {
+    "BLOCKED": 0,
+    "COLLISION": 0,
+    "INVALID_GEOMETRY": 0,
+    "INVALID_INPUT": 0,
+    "MISSING_DESTINATION": 1,
+    "NO_VALID_GRASP": 0,
+    "PLANNABLE": 2,
+    "SEQUENCE_BLOCKED": 0,
+    "STALE_INPUT": 0,
+    "UNREACHABLE": 0
+  },
+  "phase": "author",
+  "progress": {
+    "has_selected_scene": true,
+    "load_watcher_running": false,
+    "phase": 6,
+    "ticks": 1
+  },
+  "result": "PASS",
+  "robot_motion_commanded": false,
+  "sequence_order": "runtime::cup-01,runtime::cup-02,runtime::cup-03",
+  "sequence_status": "SEQUENCE_BLOCKED"
+}

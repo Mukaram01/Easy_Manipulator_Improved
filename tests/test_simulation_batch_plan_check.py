@@ -272,8 +272,27 @@ SEQ_STUB = textwrap.dedent("""
     seq = [dict(position=1, object_id=ids[0], result='PLANNED', revision_before=0, revision_after=1,
                 robot_start_matches_previous_end=True, placed_pose=[0.45, 0.22, 0.11, 0, 0, 0, 1],
                 grasp_strategy='top_2f', plan_metadata=meta, collision_objects_considered=[])]
-    for i, oid in enumerate(ids[1:], 2):
-        seq.append(dict(position=i, object_id=oid, result='FAILED', revision_before=1, robot_start_matches_previous_end=True,
+    if mode == 'allocated':
+        local = {{'xyz_m': [-0.065, 0.0, 0.01], 'rpy_rad': [0.0, 0.0, 0.0]}}
+        seq[0].update(place_local_pose=local, placement_allocation={{'authored_policy': 'AUTO', 'applied': True}},
+                      placement_attempts=[dict(local_pose=local, result='PLANNED')])
+        seq.append(dict(position=2, object_id=ids[1], result='PLANNED', revision_before=1, revision_after=2,
+                        robot_start_matches_previous_end=True, placed_pose=[0.45, 0.22, 0.11, 0, 0, 0, 1],
+                        place_local_pose={{'xyz_m': [0.0, 0.0, 0.01], 'rpy_rad': [0.0, 0.0, 0.0]}},
+                        placement_allocation={{'authored_policy': 'AUTO', 'applied': True}},
+                        plan_metadata=meta, collision_objects_considered=[ids[0]]))
+        ids = ids[:2]
+    if mode == 'full':
+        seq.append(dict(position=2, object_id=ids[1], result='FAILED', revision_before=1, candidate_attempts=[],
+                        placement_allocation={{'authored_policy': 'AUTO', 'applied': True}},
+                        failure='DESTINATION_FULL: no free placement for this object'))
+        ids = ids[:2]
+    if mode == 'blocked_all_slots':
+        seq[0].update(placement_allocation={{'authored_policy': 'AUTO', 'applied': True}})
+    for i, oid in enumerate(ids[1:] if mode not in ('allocated', 'full') else [], 2):
+        extra = dict(placement_allocation={{'authored_policy': 'AUTO', 'applied': True}},
+                     placement_attempts=[dict(result='FAILED')] * 3) if mode == 'blocked_all_slots' else {{}}
+        seq.append(dict(position=i, object_id=oid, result='FAILED', revision_before=1, robot_start_matches_previous_end=True, **extra,
                         failure='PREPLAN_PLACE_FAILED: MoveIt action failed: status=6, code=-27',
                         candidate_attempts=[{{'object_id': oid, 'stages': [], 'checks': [dict(status='FAIL',
                             code='PREPLAN_PLACE', failure_kind='collision', moveit_code=-27, reason='MoveIt action failed',
@@ -303,7 +322,7 @@ def test_sequence_reports_revisions_and_occupied_destination(tmp_path):
     assert first["outcome"] == "PLANNABLE" and first["revision_before"] == 0 and first["revision_after"] == 1
     assert second["outcome"] == "COLLISION" and second["revision_before"] == 1
     assert second["blocked_by_virtually_placed"] == ["runtime::bottle-02"]
-    assert "single authored placement pose" in second["reason"]
+    assert "EXACT placement sends every object" in second["reason"]
     assert r["sequence_status"] == "SEQUENCE_BLOCKED" and r["first_blocking"]["position"] == 2
     assert r["virtual_scene"][0]["object_id"] == "runtime::bottle-02" and r["final_revision"] == 1
     assert r["planned_not_executed"] is True and r["execution_attempted"] is False
@@ -340,3 +359,103 @@ def test_sequence_cancel_stops_owned_launch(tmp_path):
     assert r["status"] == "CANCELLED"
     assert all(o["outcome"] == "BLOCKED" for o in r["objects"])
     assert r["sequence_status"] == "SEQUENCE_BLOCKED"
+
+
+def test_sequence_allocates_separate_places_and_reports_them(tmp_path):
+    scene = generated(tmp_path)
+    process, out = run_sequence(scene, tmp_path, "allocated", ["--order", "runtime::bottle-02,runtime::bottle-01"])
+    process.communicate(timeout=60)
+    r = json.loads((out / "sequence_plan_check.json").read_text())
+    assert r["sequence_status"] == "SEQUENCE_PLANNED" and r["final_revision"] == 2
+    assert [o["outcome"] for o in r["objects"]] == ["PLANNABLE", "PLANNABLE"]
+    assert r["objects"][0]["place_local_pose"]["xyz_m"] == [-0.065, 0.0, 0.01]
+    assert r["objects"][0]["placement_allocation"]["applied"] is True
+    assert [m["place_local_pose"]["xyz_m"] for m in r["virtual_scene"]] == [[-0.065, 0.0, 0.01], [0.0, 0.0, 0.01]]
+    assert r["planned_not_executed"] is True and r["execution_attempted"] is False
+
+
+def test_sequence_full_destination_and_rejected_places_are_explained(tmp_path):
+    scene = generated(tmp_path)
+    process, out = run_sequence(scene, tmp_path, "full", ["--order", "runtime::bottle-02,runtime::bottle-01"])
+    process.communicate(timeout=60)
+    second = json.loads((out / "sequence_plan_check.json").read_text())["objects"][1]
+    assert second["outcome"] == "MISSING_DESTINATION" and "DESTINATION_FULL" in second["reason"]
+    process, out = run_sequence(scene, tmp_path, "blocked_all_slots", ["--order", "runtime::bottle-02,runtime::bottle-01"])
+    process.communicate(timeout=60)
+    r = json.loads((out / "sequence_plan_check.json").read_text())
+    second = r["objects"][1]
+    assert second["outcome"] == "COLLISION" and "missing_prerequisite" not in second
+    assert "MoveIt rejected all 3 free placement(s)" in second["reason"]
+    assert r["sequence_status"] == "SEQUENCE_BLOCKED"
+
+
+def two_cup_scene(tmp_path):
+    """Two eligible 0.10 m cups; zero clearance so they fit the 0.10 m tall fixture drop region."""
+    scene, recording = prepare(tmp_path, target="cup")
+    task_file = scene / "config/workcell_builder_task_intent.yaml"
+    task = yaml.safe_load(task_file.read_text())
+    task["place"]["placement"]["clearance_m"] = 0.0
+    task_file.write_text(yaml.safe_dump(task))
+    second = dict(recording["objects"][0], object_id="cup-02")
+    second["pose"] = dict(second["pose"], xyz=[0.30, -0.20, 0.05])
+    recording["objects"].append(second)
+    (scene / "commissioning.yaml").write_text(yaml.safe_dump(recording))
+    intent, physical, document = read_scene_task(scene)
+    (scene / "cell_definition.yaml").write_text(yaml.safe_dump({
+        "normalized_intent_sha256": normalized_intent_hash(intent),
+        "task_intent_resolution": {"context_sha256": context_hash(intent, physical, document)}}))
+    return scene
+
+
+ORDER = ["runtime::cup-01", "runtime::cup-02"]
+LEFT = {"xyz_m": [-0.02, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+MIDDLE = {"xyz_m": [0.04, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+DIMS = {oid: [0.06, 0.06, 0.10] for oid in ORDER}
+
+
+def test_chosen_places_are_validated_before_any_launch(tmp_path):
+    scene = two_cup_scene(tmp_path)
+    assert batch.validate_placements(scene, {ORDER[0]: LEFT, ORDER[1]: MIDDLE}, ORDER, DIMS) == ""
+    assert batch.validate_placements(scene, {"runtime::bottle-01": LEFT}, ORDER, DIMS).startswith("PLACEMENTS_INVALID")
+    outside = {"xyz_m": [0.5, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+    assert batch.validate_placements(scene, {ORDER[1]: outside}, ORDER, DIMS).startswith("PLACE_OUTSIDE_REGION: runtime::cup-02")
+    edge = {"xyz_m": [-0.04, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}  # Centre inside, cup sticks out.
+    assert batch.validate_placements(scene, {ORDER[0]: edge}, ORDER, DIMS).startswith("PLACE_OUTSIDE_REGION")
+    overlap = {"xyz_m": [0.01, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+    assert batch.validate_placements(scene, {ORDER[0]: LEFT, ORDER[1]: overlap}, ORDER, DIMS) == (
+        "PLACE_CONFLICT: runtime::cup-01 and runtime::cup-02 were given overlapping places")
+
+
+def test_sequence_passes_chosen_places_to_the_supervisor_and_blocks_bad_ones_early(tmp_path):
+    scene = two_cup_scene(tmp_path)
+    stub = tmp_path / "echo_stub.py"
+    stub.write_text(textwrap.dedent("""
+        import json, sys
+        from pathlib import Path
+        a = sys.argv; out = Path(a[a.index('--output-dir') + 1]); out.mkdir(parents=True)
+        (out / 'argv.json').write_text(json.dumps(a))
+        (out / 'acceptance.json').write_text(json.dumps({'result': 'FAIL', 'failure': 'stub', 'shutdown_clean': True,
+            'execution_attempted': False, 'sequence': []}))
+    """))
+    common = [sys.executable, str(ROOT / "scripts/simulation_batch_plan_check.py"), "--scene", str(scene), "--sequence",
+              "--order", ",".join(ORDER), "--supervisor", str(stub), "--per-object-timeout", "60"]
+    subprocess.run(common + ["--output-dir", str(tmp_path / "ok"), "--placements", json.dumps({ORDER[1]: LEFT})],
+                   cwd=ROOT, capture_output=True, timeout=60)
+    argv = json.loads((tmp_path / "ok/sequence/argv.json").read_text())
+    assert json.loads(argv[argv.index("--sequence-placements") + 1]) == {ORDER[1]: LEFT}
+    report = json.loads((tmp_path / "ok/sequence_plan_check.json").read_text())
+    assert report["chosen_places"] == {ORDER[1]: LEFT}
+    bad = {ORDER[0]: LEFT, ORDER[1]: {"xyz_m": [0.01, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}}
+    subprocess.run(common + ["--output-dir", str(tmp_path / "bad"), "--placements", json.dumps(bad)],
+                   cwd=ROOT, capture_output=True, timeout=60)
+    report = json.loads((tmp_path / "bad/sequence_plan_check.json").read_text())
+    assert report["status"] == "BLOCKED" and report["reason"].startswith("PLACE_CONFLICT")
+    assert report["moveit_planning_attempted"] is False and not (tmp_path / "bad/sequence").exists()
+
+
+def test_chosen_place_collision_and_occupied_place_are_explained():
+    occupied = {"object_id": OID, "result": "FAILED", "candidate_attempts": [],
+                "placement_allocation": {"operator_selected": True, "conflicts": [0]},
+                "failure": "PLACE_OCCUPIED: the chosen place overlaps runtime::cup-01 (with placement clearance)"}
+    verdict = batch.classify_sequence_entry(occupied)
+    assert verdict["outcome"] == "MISSING_DESTINATION" and "PLACE_OCCUPIED" in verdict["reason"]

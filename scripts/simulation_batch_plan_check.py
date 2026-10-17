@@ -136,7 +136,7 @@ def classify(audit: dict, object_id: str) -> dict[str, Any]:
     if any(k in text for k in ("STALE", "expired", "OBSERVATION_TIME_INVALID")):
         return dict(out, outcome="STALE_INPUT")
     if any(k in text for k in ("PHYSICAL_DESTINATION_INVALID", "PLACE_LOCAL_POSE_OUTSIDE_REGION",
-                               "destination bounds")):
+                               "destination bounds", "DESTINATION_FULL", "PLACE_OCCUPIED")):
         return dict(out, outcome="MISSING_DESTINATION")
     if any(k in text for k in ("TARGET_NOT_ELIGIBLE", "insertion mismatch", "GRASP_CANDIDATE_INVALID",
                                "SIMULATION_INPUT_INVALID")):
@@ -296,6 +296,34 @@ def _handoff_current(scene: Path) -> bool:
             cell.get("task_intent_resolution", {}).get("context_sha256") == context_hash(intent, physical, document))
 
 
+def validate_placements(scene: Path, placements: dict, order: list[str], dimensions: dict) -> str:
+    """First reason chosen places cannot be checked, or "" (fail before any launch)."""
+    from physical_destination import (check_object_containment, local_to_world_pose, place_conflicts,
+                                      resolve_local_destination)
+    from task_intent_resolver import read_scene_task
+    if not isinstance(placements, dict) or not set(placements) <= set(order):
+        return "PLACEMENTS_INVALID: places can only be chosen for objects in the sequence order"
+    intent, physical, _ = read_scene_task(scene)
+    target = intent["place"]["target"]
+    clearance = intent["place"]["placement"]["clearance_m"]
+    checked = []
+    for oid in order:
+        if oid not in placements:
+            continue
+        try:
+            place = resolve_local_destination(physical, target["asset_ref"], target["region_ref"], placements[oid])
+            world = local_to_world_pose(place, placements[oid])
+            check_object_containment(place, world, dimensions[oid], clearance)
+        except (ValueError, TypeError, KeyError) as exc:
+            return f"PLACE_OUTSIDE_REGION: {oid}: the chosen place does not fit in {target['region_ref']}: {exc}"
+        hits = place_conflicts(place, placements[oid], dimensions[oid], clearance,
+                               [(pose, dims) for _, pose, dims in checked])
+        if hits:
+            return f"PLACE_CONFLICT: {checked[hits[0]][0]} and {oid} were given overlapping places"
+        checked.append((oid, world, dimensions[oid]))
+    return ""
+
+
 def classify_sequence_entry(entry: dict) -> dict[str, Any]:
     """One sequence entry -> outcome. PLANNED was already checked for nine code-1 stages by the supervisor."""
     result = entry.get("result")
@@ -315,7 +343,8 @@ def classify_sequence_entry(entry: dict) -> dict[str, Any]:
 
 
 def check_sequence(scene: Path, output_dir: Path, *, order: list[str] | None, per_object_timeout: float,
-                   domain_id: int, supervisor: Path, cancel_flag: list[bool]) -> dict[str, Any]:
+                   domain_id: int, supervisor: Path, cancel_flag: list[bool],
+                   placements: dict | None = None) -> dict[str, Any]:
     preview = preview_batch(scene, limit=100)
     observed = {o["object_id"]: o for o in preview["observed_objects"]}
     queue_ids = [q["object_id"] for q in preview["queue"]]
@@ -341,6 +370,12 @@ def check_sequence(scene: Path, output_dir: Path, *, order: list[str] | None, pe
     if unknown or len(set(order)) != len(order):
         report.update(status="BLOCKED", reason=f"SEQUENCE_ORDER_INVALID: not eligible or duplicated: {unknown or order}")
         return report
+    placements = placements or {}
+    report["chosen_places"] = placements
+    why = validate_placements(scene, placements, order, {oid: observed[oid]["dimensions_m"] for oid in order})
+    if why:
+        report.update(status="BLOCKED", reason=why)
+        return report
     if per_object_timeout * len(order) > 3600:
         report.update(status="BLOCKED", reason="SEQUENCE_TOO_LONG: per-object time x objects exceeds 3600 s")
         return report
@@ -351,7 +386,9 @@ def check_sequence(scene: Path, output_dir: Path, *, order: list[str] | None, pe
     audit, clean_stop = _run_supervisor(
         [sys.executable, str(supervisor), "--output-dir", str(run_dir), "--scene-dir", str(scene),
          "--sequence-object-ids", ",".join(order), "--timeout", str(total),
-         "--domain-id", str(domain_id), "--stream-status"], run_dir, total, cancel_flag, "sequence")
+         "--domain-id", str(domain_id), "--stream-status"]
+        + (["--sequence-placements", json.dumps(placements, sort_keys=True)] if placements else []),
+        run_dir, total, cancel_flag, "sequence")
     entries = {e["object_id"]: e for e in audit.get("sequence") or []}
     supervisor_ok = audit.get("result") == "PASS" and audit.get("sequence_planning_completed") is True
     report["execution_attempted"] = bool(audit.get("execution_attempted") or audit.get("execution_action_goals"))
@@ -377,18 +414,33 @@ def check_sequence(scene: Path, output_dir: Path, *, order: list[str] | None, pe
                         collision_objects_considered=entry.get("collision_objects_considered", []),
                         grasp_strategy=entry.get("grasp_strategy"), grasp_candidate=entry.get("grasp_candidate"),
                         destination=entry.get("destination"), placed_pose=entry.get("placed_pose"),
+                        place_local_pose=entry.get("place_local_pose"),
+                        placement_allocation=entry.get("placement_allocation"),
+                        placement_attempts=entry.get("placement_attempts", []),
                         objects_already_moved=[m["object_id"] for m in moves])
             occupied = sorted(set(item.get("collision_objects") or []) & {m["object_id"] for m in moves})
             if item["outcome"] == "COLLISION" and occupied:
                 item["blocked_by_virtually_placed"] = occupied
-                item["missing_prerequisite"] = ("destination provides a single authored placement pose; "
-                                                "allocating separate placements for several objects is not modelled")
-                item["reason"] = (f"destination occupied by {', '.join(occupied)} placed earlier in this sequence "
-                                  f"(virtual revision {item['revision_before']}); {item['missing_prerequisite']}. "
-                                  f"MoveIt: {item['reason']}")
+                allocation = entry.get("placement_allocation") or {}
+                if allocation.get("operator_selected"):
+                    item["reason"] = (f"blocked by {', '.join(occupied)} placed earlier in this sequence (virtual "
+                                      f"revision {item['revision_before']}): MoveIt rejected the chosen place. "
+                                      f"Choose another place or Automatic. MoveIt: {item['reason']}")
+                elif allocation.get("applied"):
+                    tried = len(item["placement_attempts"])
+                    item["reason"] = (f"blocked by {', '.join(occupied)} placed earlier in this sequence (virtual "
+                                      f"revision {item['revision_before']}): MoveIt rejected all {tried} free "
+                                      f"placement(s) tried in the destination. MoveIt: {item['reason']}")
+                else:
+                    item["missing_prerequisite"] = ("EXACT placement sends every object to the one authored pose; "
+                                                    "choose AUTO or PREFERRED placement to allocate free places")
+                    item["reason"] = (f"destination occupied by {', '.join(occupied)} placed earlier in this sequence "
+                                      f"(virtual revision {item['revision_before']}); {item['missing_prerequisite']}. "
+                                      f"MoveIt: {item['reason']}")
             if entry.get("result") == "PLANNED":
                 moves.append({"revision": entry["revision_after"], "object_id": oid,
-                              "from_pose": observed[oid]["world_pose"], "to_pose": entry["placed_pose"]})
+                              "from_pose": observed[oid]["world_pose"], "to_pose": entry["placed_pose"],
+                              "place_local_pose": entry.get("place_local_pose")})
         if item["outcome"] != "PLANNABLE" and report["first_blocking"] is None:
             report["first_blocking"] = {k: item.get(k) for k in ("position", "object_id", "outcome",
                                                                  "first_failed_stage", "reason")}
@@ -417,11 +469,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sequence", action="store_true",
                         help="Plan the queue in order against validated virtual scene revisions (one owned launch)")
     parser.add_argument("--order", help="Comma-separated eligible object IDs for --sequence (default: queue order)")
+    parser.add_argument("--placements", type=json.loads, default=None,
+                        help='JSON object: object ID -> chosen target-local place {"xyz_m": [...], "rpy_rad": [...]} '
+                             "for --sequence; objects not listed get a free place automatically")
     parser.add_argument("--supervisor", type=Path,
                         help="Owned plan-only supervisor (default: the scene repository's scripts/, as Builder uses)")
     args = parser.parse_args(argv)
     if not 0 < args.per_object_timeout <= 900 or not 0 <= args.domain_id <= 232:
         parser.error("per-object-timeout must be in (0,900]; domain-id in [0,232]")
+    if args.placements is not None and not args.sequence:
+        parser.error("--placements requires --sequence")
     scene = args.scene.resolve()
     if args.supervisor is None:
         candidates = [scene.parent.parent / "scripts/run_r14_plan_only_acceptance.py",
@@ -440,7 +497,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.sequence:
             report = check_sequence(scene, out, order=[o for o in (args.order or "").split(",") if o] or None,
                                     per_object_timeout=args.per_object_timeout, domain_id=args.domain_id,
-                                    supervisor=args.supervisor, cancel_flag=cancel)
+                                    supervisor=args.supervisor, cancel_flag=cancel, placements=args.placements)
         else:
             report = check_batch(scene, out, limit=args.limit, per_object_timeout=args.per_object_timeout,
                                  domain_id=args.domain_id, supervisor=args.supervisor, cancel_flag=cancel)

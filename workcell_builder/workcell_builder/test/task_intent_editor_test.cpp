@@ -5,6 +5,7 @@
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
@@ -501,6 +502,43 @@ TEST(TaskIntentEditor, SequenceCheckIsSavedReplayOnlyAndOrderClearsOnSceneLoad) 
   ASSERT_TRUE(editor.save());
   ASSERT_TRUE(editor.load_scene(other.path(), helper()));
   EXPECT_EQ(order->count(), 0);  // A queue from another cell never carries over.
+}
+
+TEST(TaskIntentEditor, SequencePlaceIsChosenPerObjectFromPreviewOptions) {
+  application(); TaskIntentEditor editor;
+  auto * order = editor.findChild<QListWidget *>("taskSequenceOrder");
+  auto * place = editor.findChild<QComboBox *>("taskSequencePlace");
+  ASSERT_NE(order, nullptr); ASSERT_NE(place, nullptr);
+  EXPECT_FALSE(place->isEnabled());  // Nothing selected yet.
+  // As filled by the queue preview: object ID, the preview's place options, no choice.
+  QJsonArray options;
+  for (int k = 1; k <= 2; ++k)
+    options.append(QJsonObject{{"id", QString("place-%1").arg(k)}, {"label", QString("Place %1 of 2").arg(k)},
+                               {"local_pose", QJsonObject{{"xyz_m", QJsonArray{0.05 * k, 0.0, 0.01}},
+                                                          {"rpy_rad", QJsonArray{0.0, 0.0, 0.0}}}}});
+  for (const QString id : {"runtime::cup-01", "runtime::cup-02"}) {
+    auto * item = new QListWidgetItem(id, order);
+    item->setData(Qt::UserRole, id); item->setData(Qt::UserRole + 1, options);
+  }
+  auto * no_options = new QListWidgetItem("runtime::tall-box", order);  // Fits nowhere in the region.
+  no_options->setData(Qt::UserRole, "runtime::tall-box"); no_options->setData(Qt::UserRole + 1, QJsonArray());
+  order->setCurrentRow(1);
+  ASSERT_TRUE(place->isEnabled());
+  ASSERT_EQ(place->count(), 3);
+  EXPECT_EQ(place->itemText(0), "Automatic (next free place)");
+  place->setCurrentIndex(place->findData("place-2"));
+  EXPECT_EQ(order->item(1)->text(), "runtime::cup-02  →  Place 2 of 2");
+  EXPECT_EQ(order->item(1)->data(Qt::UserRole + 2).toString(), "place-2");
+  EXPECT_TRUE(editor.findChild<QLabel *>("taskSimulationBatchStatus")->text().contains("check the full sequence again"));
+  order->setCurrentRow(0);
+  EXPECT_EQ(place->currentIndex(), 0);  // Each object keeps its own choice.
+  EXPECT_EQ(order->item(0)->data(Qt::UserRole + 2).toString(), "");
+  order->setCurrentRow(1);
+  EXPECT_EQ(place->currentData().toString(), "place-2");
+  place->setCurrentIndex(0);
+  EXPECT_EQ(order->item(1)->text(), "runtime::cup-02  →  Automatic place");
+  order->setCurrentRow(2);
+  EXPECT_FALSE(place->isEnabled());  // No place fits: only Automatic, which reports why.
 }
 
 TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {

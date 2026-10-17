@@ -138,3 +138,21 @@ def test_future_or_expired_replayed_objects_never_enter_queue(tmp_path):
     result = preview_batch(scene, now=100.0)
     assert [item["object_id"] for item in result["queue"]] == ["runtime::bottle-02"]
     assert any(o["reason"] == "STALE_OR_FUTURE_OBSERVATION" for o in result["observed_objects"])
+
+
+def test_queue_lists_non_overlapping_places_the_operator_can_choose(tmp_path):
+    scene, _ = prepare(tmp_path, target="cup")
+    task_file = scene / "config/workcell_builder_task_intent.yaml"
+    task = yaml.safe_load(task_file.read_text())
+    task["place"]["placement"]["clearance_m"] = 0.0
+    task_file.write_text(yaml.safe_dump(task))
+    options = preview_batch(scene, now=100.0)["queue"][0]["place_options"]
+    assert [o["id"] for o in options] == ["place-1", "place-2", "place-3"]
+    assert [o["local_pose"]["xyz_m"] for o in options] == [
+        pytest.approx([-0.02, 0.0, 0.10]), pytest.approx([0.04, 0.0, 0.10]), pytest.approx([0.10, 0.0, 0.10])]
+    assert options[0]["label"] == "Place 1 of 3 (x -0.020, y +0.000 m)"
+
+
+def test_objects_too_tall_for_the_region_get_no_place_options(tmp_path):
+    scene, _ = prepare(tmp_path)  # 0.18 m bottles, 0.10 m tall drop region
+    assert all(q["place_options"] == [] for q in preview_batch(scene, now=100.0)["queue"])

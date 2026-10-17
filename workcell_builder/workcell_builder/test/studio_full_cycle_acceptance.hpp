@@ -250,7 +250,7 @@ public:
   // Feature 4B: Task tab -> Save -> Generate -> "Check plans (no motion)"; --reopen proves persistence + recheck.
   static void start_multiobject_plan_acceptance(MainWindow * window, QApplication * app,
       const QString & output, const QString & recording, bool reopen, bool skip_check = false,
-      const QString & sequence_order = QString()) {
+      const QString & sequence_order = QString(), const QString & sequence_places = QString()) {
     struct Session { int phase=0, ticks=0; QString scene; QJsonObject evidence; };
     auto s = std::make_shared<Session>(); QDir().mkpath(output);
     const QString tag = reopen ? "reopen" : "author";
@@ -300,6 +300,7 @@ public:
             require(mode->currentData().toString() == "replayed_snapshot" && path->text() == recording &&
                     target->text() == "cup" && !editor->dirty() &&
                     editor->findChild<QComboBox *>("taskGraspPolicy")->currentText() == "AUTO" &&
+                    editor->findChild<QComboBox *>("taskPlacePolicy")->currentText() == "AUTO" &&
                     std::abs(editor->findChild<QDoubleSpinBox *>("taskPlaceClearance")->value() - 0.005) < 1e-9 &&
                     std::abs(editor->findChild<QDoubleSpinBox *>("taskMaximumAge")->value() - 300.0) < 1e-9,
                     "saved task did not reopen identically");
@@ -315,6 +316,10 @@ public:
           require(policy && clearance, "grasp policy / placement clearance controls missing");
           policy->setCurrentText("AUTO");
           clearance->setValue(0.005);
+          // AUTO placement lets a multi-object sequence give each object its own free place.
+          auto * place_policy = editor->findChild<QComboBox *>("taskPlacePolicy");
+          require(place_policy, "placement policy control missing");
+          place_policy->setCurrentText("AUTO");
           // A static commissioning recording: allow time for every grasp candidate to be planned.
           auto * max_age = editor->findChild<QDoubleSpinBox *>("taskMaximumAge");
           require(max_age, "maximum observation age control missing");
@@ -346,6 +351,11 @@ public:
             auto * order = editor->findChild<QListWidget *>("taskSequenceOrder");
             auto * sequence = editor->findChild<QPushButton *>("taskSimulationSequenceCheck");
             require(order && sequence && sequence->isEnabled(), "sequence controls unavailable");
+            if (!sequence_places.isEmpty()) {  // Places come from the queue preview, as for a user.
+              auto * preview = editor->findChild<QPushButton *>("taskSimulationBatchPreview");
+              require(preview && preview->isEnabled(), "Preview queue is not enabled for the saved task");
+              order->clear(); preview->click(); s->phase = 7; s->ticks = 0; break;
+            }
             order->clear();
             for (const auto & id : sequence_order.split(',', Qt::SkipEmptyParts)) order->addItem(id);
             s->evidence["sequence_order"] = sequence_order;
@@ -379,6 +389,35 @@ public:
             if (window->scene_builder_inspector_tabs_->widget(i)->isAncestorOf(editor))
               window->scene_builder_inspector_tabs_->setCurrentIndex(i);
           s->phase = 6; s->ticks = 0; write(); break;
+        }
+        case 7: {  // Preview filled the sequence list: order it and choose each place in the Task tab.
+          auto * order = editor->findChild<QListWidget *>("taskSequenceOrder");
+          auto * place = editor->findChild<QComboBox *>("taskSequencePlace");
+          require(place != nullptr, "place control missing");
+          if (order->count() == 0) { require(s->ticks < 120, "Preview queue never filled the sequence"); return; }
+          const auto ids = sequence_order.split(',', Qt::SkipEmptyParts);
+          QList<QListWidgetItem *> items;
+          for (const auto & id : ids)
+            for (int i = 0; i < order->count(); ++i)
+              if (order->item(i)->data(Qt::UserRole).toString() == id) items << order->takeItem(i--);
+          require(items.size() == ids.size(), "sequence object missing from the preview queue");
+          order->clear();
+          for (auto * item : items) order->addItem(item);
+          QJsonObject chosen;
+          for (const auto & pair : sequence_places.split(',', Qt::SkipEmptyParts)) {
+            const auto id = pair.section('=', 0, 0), choice = pair.section('=', 1);
+            const int row = ids.indexOf(id);
+            require(row >= 0, "place chosen for an object not in the sequence");
+            order->setCurrentRow(row);
+            const int index = place->findData(choice);
+            require(place->isEnabled() && index >= 0, "place option not offered by the preview");
+            place->setCurrentIndex(index);
+            chosen[id] = order->item(row)->text();
+          }
+          s->evidence["sequence_order"] = sequence_order;
+          s->evidence["chosen_places"] = chosen;
+          editor->findChild<QPushButton *>("taskSimulationSequenceCheck")->click();
+          s->phase = 4; s->ticks = 0; break;
         }
         case 6: {  // Let the Task tab lay out before capturing it.
           if (s->ticks < 3) return;

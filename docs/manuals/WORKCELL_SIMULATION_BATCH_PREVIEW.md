@@ -42,6 +42,49 @@ observations are restamped only by the existing **explicit replay acquisition**
 function and labelled `explicit_commissioning_replay`; no result is represented
 as live perception or current Gazebo physics.
 
+## Full-sequence plan check and placement allocation
+
+**Task → Check full sequence (no motion)** plans the queued objects in the
+order shown, in one private fake-hardware MoveIt launch. Only a complete
+nine-stage plan advances the virtual scene: the object is moved to its
+predicted place and the next object is planned against that revision.
+Nothing is executed, no gripper contact is simulated, and the authored scene
+and task files are not changed.
+
+Each object needs its own place in the destination. With **Placement policy**
+set to **AUTO**, the check allocates free target-local places inside the
+authored placement region. It packs them from the region's −x edge, keeps each
+object's footprint plus **Placement clearance** clear of objects already
+there, and gives every place to the unchanged resolver and full-cycle planner
+as an EXACT placement. Up to three spaced places are tried per object. A place
+is accepted only when MoveIt plans the whole cycle with the earlier objects
+present. **PREFERRED** tries the free places nearest the requested local pose
+first. **EXACT** sends every object to the same authored pose, so a second
+object is reported as blocked by the first.
+
+**Choosing places yourself.** **Preview multi-object task queue** fills **Pick
+sequence** with the eligible objects. It also offers numbered places for each
+object: non-overlapping spots in the empty destination region, sized to that
+object, with **Placement clearance** included. Select an object in the list and
+choose its place under **Place for selected object**. **Automatic** (the
+default) uses the allocation above and leaves places chosen for later objects
+free. A chosen place is planned as given, regardless of the placement policy,
+and is never swapped for another one.
+
+Before starting MoveIt, the check refuses chosen places that lie outside the
+region or that overlap each other (`PLACE_OUTSIDE_REGION`, `PLACE_CONFLICT`).
+If an object already in place overlaps a chosen place, the result is
+`MISSING_DESTINATION` with `PLACE_OCCUPIED`. Chosen places and the order apply
+only to the check: they are not saved in the task. An object that fits nowhere
+in the region has no numbered places.
+
+The Task results list the target-local place chosen for every planned object.
+`MISSING_DESTINATION` with `DESTINATION_FULL` means that no free place for the
+object's footprint is left in the region. `COLLISION` with
+`blocked_by_virtually_placed` means MoveIt rejected every place it tried. The
+allocator does not model the gripper: finger clearance is checked only by
+MoveIt.
+
 ## Headless CLI
 
 ```bash
