@@ -236,3 +236,107 @@ def test_stale_handoff_and_missing_input_block_before_any_launch(tmp_path):
     process.communicate(timeout=60)
     report = json.loads((out2 / "batch_plan_check.json").read_text())
     assert report["status"] == "BLOCKED" and report["moveit_planning_attempted"] is False
+
+
+# ---------------------------------------------------------------- Feature 4C sequence
+PLANNED = {"result": "PLANNED", "revision_before": 0, "revision_after": 1}
+
+
+def test_sequence_entry_outcomes_reuse_4b_semantics():
+    assert batch.classify_sequence_entry(dict(PLANNED, object_id=OID))["outcome"] == "PLANNABLE"
+    timeout = {"object_id": OID, "result": "FAILED", "failure": "PREPLAN_TRANSFER_FAILED: x",
+               "candidate_attempts": [{"object_id": OID, "stages": [], "checks": [dict(
+                   status="FAIL", code="PREPLAN_TRANSFER", failure_kind="planning", moveit_code=-6,
+                   reason="MoveIt action failed: status=6, code=-6")]}]}
+    verdict = batch.classify_sequence_entry(timeout)
+    assert verdict["outcome"] == "BLOCKED" and verdict["reason"].startswith("PLANNER_INCONCLUSIVE")
+    assert batch.classify_sequence_entry({"object_id": OID, "result": "INVALID_INPUT", "reason": "x"})["outcome"] == "INVALID_INPUT"
+    assert batch.classify_sequence_entry({"object_id": OID, "result": "SEQUENCE_BLOCKED", "reason": "y"})["outcome"] == "SEQUENCE_BLOCKED"
+
+
+SEQ_STUB = textwrap.dedent("""
+    import json, signal, sys, time
+    from pathlib import Path
+    a = sys.argv; out = Path(a[a.index('--output-dir') + 1]); ids = a[a.index('--sequence-object-ids') + 1].split(',')
+    out.mkdir(parents=True)
+    mode = {MODE!r}
+    def stop(*_):
+        (out / 'acceptance.json').write_text(json.dumps({{'result': 'FAIL', 'failure': 'acceptance interrupted',
+            'shutdown_clean': True, 'execution_attempted': False}})); sys.exit(1)
+    signal.signal(signal.SIGTERM, stop)
+    print(json.dumps({{'stage': 'SEQUENCE_OBJECT_1'}}), flush=True)
+    if mode == 'hang':
+        time.sleep(600)
+    stages = {STAGES!r}
+    meta = [dict(stage=s, success=True, moveit_code=1, points=5) for s in stages]
+    seq = [dict(position=1, object_id=ids[0], result='PLANNED', revision_before=0, revision_after=1,
+                robot_start_matches_previous_end=True, placed_pose=[0.45, 0.22, 0.11, 0, 0, 0, 1],
+                grasp_strategy='top_2f', plan_metadata=meta, collision_objects_considered=[])]
+    for i, oid in enumerate(ids[1:], 2):
+        seq.append(dict(position=i, object_id=oid, result='FAILED', revision_before=1, robot_start_matches_previous_end=True,
+                        failure='PREPLAN_PLACE_FAILED: MoveIt action failed: status=6, code=-27',
+                        candidate_attempts=[{{'object_id': oid, 'stages': [], 'checks': [dict(status='FAIL',
+                            code='PREPLAN_PLACE', failure_kind='collision', moveit_code=-27, reason='MoveIt action failed',
+                            collision_objects=[ids[0], oid])]}}]))
+    result = 'FAIL' if mode == 'broken' else 'PASS'
+    (out / 'acceptance.json').write_text(json.dumps({{'result': result, 'sequence_planning_completed': True,
+        'execution_attempted': False, 'execution_action_goals': [], 'shutdown_clean': True, 'sequence': seq}}))
+""")
+
+
+def run_sequence(scene, tmp_path, mode, extra=()):
+    path = tmp_path / f"seq_stub_{mode}.py"
+    path.write_text(SEQ_STUB.format(MODE=mode, STAGES=STAGES))
+    out = tmp_path / f"seq_{mode}"
+    command = [sys.executable, str(ROOT / "scripts/simulation_batch_plan_check.py"), "--scene", str(scene),
+               "--sequence", "--output-dir", str(out), "--supervisor", str(path), "--per-object-timeout", "60", *extra]
+    return subprocess.Popen(command, stdout=subprocess.PIPE, text=True, cwd=ROOT), out
+
+
+def test_sequence_reports_revisions_and_occupied_destination(tmp_path):
+    scene = generated(tmp_path)
+    process, out = run_sequence(scene, tmp_path, "ok", ["--order", "runtime::bottle-02,runtime::bottle-01"])
+    process.communicate(timeout=60)
+    r = json.loads((out / "sequence_plan_check.json").read_text())
+    assert r["sequence_order"] == ["runtime::bottle-02", "runtime::bottle-01"]
+    first, second = r["objects"]
+    assert first["outcome"] == "PLANNABLE" and first["revision_before"] == 0 and first["revision_after"] == 1
+    assert second["outcome"] == "COLLISION" and second["revision_before"] == 1
+    assert second["blocked_by_virtually_placed"] == ["runtime::bottle-02"]
+    assert "single authored placement pose" in second["reason"]
+    assert r["sequence_status"] == "SEQUENCE_BLOCKED" and r["first_blocking"]["position"] == 2
+    assert r["virtual_scene"][0]["object_id"] == "runtime::bottle-02" and r["final_revision"] == 1
+    assert r["planned_not_executed"] is True and r["execution_attempted"] is False
+    assert [o["object_id"] for o in r["obstacles"]] == ["runtime::cup-01"]
+
+
+def test_sequence_never_plannable_when_supervisor_did_not_pass(tmp_path):
+    scene = generated(tmp_path)
+    process, out = run_sequence(scene, tmp_path, "broken")
+    process.communicate(timeout=60)
+    r = json.loads((out / "sequence_plan_check.json").read_text())
+    assert all(o["outcome"] != "PLANNABLE" for o in r["objects"])
+    assert r["sequence_status"] == "SEQUENCE_BLOCKED"
+
+
+def test_sequence_order_must_be_eligible_and_distinct(tmp_path):
+    scene = generated(tmp_path)
+    process, out = run_sequence(scene, tmp_path, "ok", ["--order", "runtime::cup-01,runtime::bottle-01"])
+    process.communicate(timeout=60)
+    r = json.loads((out / "sequence_plan_check.json").read_text())
+    assert r["status"] == "BLOCKED" and r["reason"].startswith("SEQUENCE_ORDER_INVALID")
+    assert not (out / "sequence").exists()
+
+
+def test_sequence_cancel_stops_owned_launch(tmp_path):
+    scene = generated(tmp_path)
+    process, out = run_sequence(scene, tmp_path, "hang")
+    for line in process.stdout:
+        if "SEQUENCE_OBJECT_1" in line:
+            break
+    process.send_signal(signal.SIGTERM)
+    process.communicate(timeout=90)
+    r = json.loads((out / "sequence_plan_check.json").read_text())
+    assert r["status"] == "CANCELLED"
+    assert all(o["outcome"] == "BLOCKED" for o in r["objects"])
+    assert r["sequence_status"] == "SEQUENCE_BLOCKED"

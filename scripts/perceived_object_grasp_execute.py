@@ -298,6 +298,10 @@ def translated_pose(pose, dx=0.0, dy=0.0, dz=0.0):
     return result
 
 
+STAGES = ['PREPLAN_APPROACH', 'PREPLAN_GRASP', 'PREPLAN_CLOSE_GRIPPER', 'PREPLAN_LIFT',
+          'PREPLAN_TRANSFER', 'PREPLAN_PLACE', 'PREPLAN_OPEN_GRIPPER', 'PREPLAN_RETREAT', 'PREPLAN_HOME']
+
+
 def candidate_indices(count, preferred=3):
     """Try a preferred orientation, followed by every remaining candidate."""
     if not 0 <= preferred < count:
@@ -587,11 +591,15 @@ def main():
     parser.add_argument('--start', action='store_true')
     parser.add_argument('--timeout', type=float, default=180.0, help='Total candidate search budget in seconds')
     parser.add_argument('--retreat-distance', type=float)
+    parser.add_argument('--sequence-object-ids', help='Plan-only sequence check: comma-separated eligible '
+                        'observation IDs, planned in order against validated virtual scene revisions.')
     parser.add_argument('--target-object-id', help='Plan-only batch check: restrict the pick target to this eligible '
                         'observation. Every observed object is still inserted as a PlanningScene obstacle.')
     args = parser.parse_args()
     if args.target_object_id is not None and (args.start or not args.resolve_task):
         parser.error('--target-object-id is plan-only and requires --resolve-task without --start')
+    if args.sequence_object_ids is not None and (args.start or not args.resolve_task or args.target_object_id):
+        parser.error('--sequence-object-ids is plan-only, requires --resolve-task and excludes --target-object-id')
     import yaml
     import xml.etree.ElementTree as ET
     import rclpy
@@ -951,6 +959,85 @@ def main():
             target_contact_matrix=target_contact_matrix, verify_selected_contacts=verify_selected_contacts,
             private_attachment=private_attachment, object_pose_after_motion=object_pose_after_motion,
             place_detachment_diff=place_detachment_diff, stage=stage)
+        if args.sequence_object_ids is not None:
+            # Sequential plan-only check. Each object is planned with the existing full-cycle
+            # preplanner from the current validated revision. Only a complete nine-stage cycle
+            # advances the revision, using that cycle's own predicted end scene (attach, transfer,
+            # detach and placement contracts). The revision is mirrored into this owned, throwaway
+            # sandbox launch so IK and contact diagnostics see it; nothing is executed.
+            from moveit_msgs.msg import CollisionObject
+            order = [oid for oid in args.sequence_object_ids.split(',') if oid]
+            by_id = {o['id']: o for o in objects}
+            eligible_ids = {o['id'] for o in eligible}
+            if not order or len(set(order)) != len(order):
+                raise ValueError('SEQUENCE_INVALID: object order must list distinct IDs')
+            revision, prev_end, entries = 0, None, []
+            moved = {}
+            budget = max(1.0, args.timeout / len(order))
+            for position, oid in enumerate(order, 1):
+                entry = dict(position=position, object_id=oid, class_id=by_id.get(oid, {}).get('class_id'),
+                             revision_before=revision, source_pose=by_id.get(oid, {}).get('pose'))
+                entries.append(entry)
+                stage(f'SEQUENCE_OBJECT_{position}')
+                if oid not in by_id or oid not in eligible_ids or oid in moved:
+                    entry.update(result='INVALID_INPUT', reason='not an eligible, unmoved observation under the saved task')
+                    continue
+                current = scene_now()
+                current.robot_state.is_diff = False
+                current.is_diff = True
+                entry['robot_start_matches_previous_end'] = True
+                if prev_end is not None:
+                    try:
+                        assert_joint_match(current.robot_state, prev_end.robot_state)
+                    except Exception as exc:
+                        entry.update(result='SEQUENCE_BLOCKED', robot_start_matches_previous_end=False,
+                                     reason=f'robot start state differs from previous predicted end: {exc}')
+                        continue
+                entry['collision_objects_considered'] = sorted(o.id for o in current.world.collision_objects)
+                initial = current  # plan_segment's IK/contact diagnostics compare against this sandbox state
+                per_object = dict(candidate_attempts=[])
+                try:
+                    cycle = plan_authored_cycle(initial_scene=current, intent=intent, environment=physical,
+                        cell=document, targets=[by_id[oid]], contract=contract, operations=operations,
+                        deadline=time.monotonic() + budget, summary=per_object, resolved=None)
+                except Exception as exc:
+                    entry.update(result='FAILED', failure=str(exc), candidate_attempts=per_object['candidate_attempts'],
+                                 task_intent_resolution=per_object.get('task_intent_resolution'))
+                    continue
+                assert_scene_match(scene_now(), current)  # planning never changed the sandbox
+                final = cycle['steps'][-1]['after']
+                placed = [o for o in final.world.collision_objects if o.id == oid]
+                if (len(placed) != 1 or final.robot_state.attached_collision_objects or
+                        [s['stage'] for s in cycle['steps'] if s['kind'] == 'motion'] != STAGES):
+                    entry.update(result='SEQUENCE_BLOCKED', reason='planned cycle did not end with the target '
+                                 'detached once in the world and the robot free; transition not derivable')
+                    continue
+                diff = PlanningScene(is_diff=True)
+                obj = copy.deepcopy(placed[0])
+                obj.operation = CollisionObject.ADD
+                diff.world.collision_objects.append(obj)
+                apply(diff)
+                try:
+                    assert_scene_match(scene_now(), final, oid)
+                except Exception as exc:
+                    entry.update(result='SEQUENCE_BLOCKED', reason=f'virtual revision could not be reproduced: {exc}')
+                    break
+                revision += 1
+                moved[oid] = collision_object_dict(placed[0])['pose']
+                prev_end = final
+                grasp = per_object['task_intent_resolution']['grasp_resolution']
+                entry.update(result='PLANNED', revision_after=revision, placed_pose=moved[oid],
+                             grasp_strategy=grasp.get('selected_strategy_ref'),
+                             grasp_candidate=grasp.get('selected_candidate_id'),
+                             destination=per_object['task_intent_resolution']['place_resolution']['destination']['id'],
+                             robot_end_matches_sandbox=True,
+                             plan_metadata=[s['metadata'] for s in cycle['steps'] if s['kind'] == 'motion'],
+                             candidate_attempts=per_object['candidate_attempts'])
+            summary.update(sequence=entries, sequence_order=order, final_revision=revision,
+                           virtual_moves=moved, result='PLAN_ONLY', sequence_planning_completed=True,
+                           prevalidation_left_live_scene_unchanged=None,
+                           virtual_revisions_applied_to_owned_sandbox_only=True)
+            return 0
         if authored:
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,

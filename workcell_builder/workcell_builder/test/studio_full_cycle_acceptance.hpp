@@ -249,7 +249,8 @@ public:
 
   // Feature 4B: Task tab -> Save -> Generate -> "Check plans (no motion)"; --reopen proves persistence + recheck.
   static void start_multiobject_plan_acceptance(MainWindow * window, QApplication * app,
-      const QString & output, const QString & recording, bool reopen) {
+      const QString & output, const QString & recording, bool reopen, bool skip_check = false,
+      const QString & sequence_order = QString()) {
     struct Session { int phase=0, ticks=0; QString scene; QJsonObject evidence; };
     auto s = std::make_shared<Session>(); QDir().mkpath(output);
     const QString tag = reopen ? "reopen" : "author";
@@ -341,6 +342,19 @@ public:
           if (s->ticks < 4) return;
           auto * check = editor->findChild<QPushButton *>("taskSimulationBatchPlanCheck");
           require(check && check->isEnabled(), "Check plans is not enabled for the saved task");
+          if (!sequence_order.isEmpty()) {  // 4C: operator order through the Task tab list, then full sequence.
+            auto * order = editor->findChild<QListWidget *>("taskSequenceOrder");
+            auto * sequence = editor->findChild<QPushButton *>("taskSimulationSequenceCheck");
+            require(order && sequence && sequence->isEnabled(), "sequence controls unavailable");
+            order->clear();
+            for (const auto & id : sequence_order.split(',', Qt::SkipEmptyParts)) order->addItem(id);
+            s->evidence["sequence_order"] = sequence_order;
+            sequence->click(); s->phase = 4; s->ticks = 0; break;
+          }
+          if (skip_check) {  // Lifecycle-only cycle: open, verify persisted Task, close.
+            s->evidence["result"] = "PASS"; s->evidence["plan_check_skipped"] = true; write();
+            timer->stop(); window->close(); app->exit(0); break;
+          }
           check->click(); s->phase = 4; s->ticks = 0; break;
         }
         case 4: {
@@ -352,11 +366,13 @@ public:
           s->evidence["final_status"] = status->text();
           s->evidence["final_details"] = details;
           const QString evidence_dir = details.section("Evidence: ", 1).trimmed();
-          QFile report(evidence_dir + "/batch_plan_check.json");
-          require(report.open(QIODevice::ReadOnly), "batch report missing");
+          const QString report_name = sequence_order.isEmpty() ? "/batch_plan_check.json" : "/sequence_plan_check.json";
+          QFile report(evidence_dir + report_name);
+          require(report.open(QIODevice::ReadOnly), "plan check report missing");
           const auto batch = QJsonDocument::fromJson(report.readAll()).object();
-          s->evidence["batch_report"] = evidence_dir + "/batch_plan_check.json";
+          s->evidence["batch_report"] = evidence_dir + report_name;
           s->evidence["outcome_counts"] = batch.value("outcome_counts");
+          s->evidence["sequence_status"] = batch.value("sequence_status");
           require(batch.value("status").toString() == "CHECKED", "batch did not complete");
           require(!batch.value("execution_attempted").toBool() && !batch.value("motion_commanded").toBool(), "motion observed");
           for (int i = 0; i < window->scene_builder_inspector_tabs_->count(); ++i)

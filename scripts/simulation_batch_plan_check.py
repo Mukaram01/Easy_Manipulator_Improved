@@ -33,7 +33,8 @@ from simulation_batch_preview import preview_batch  # noqa: E402
 
 SCHEMA = "workcell_simulation_batch_plan_check/v1"
 OUTCOMES = ("PLANNABLE", "UNREACHABLE", "COLLISION", "INVALID_GEOMETRY", "NO_VALID_GRASP",
-            "MISSING_DESTINATION", "STALE_INPUT", "BLOCKED")
+            "MISSING_DESTINATION", "STALE_INPUT", "BLOCKED", "INVALID_INPUT", "SEQUENCE_BLOCKED")
+SEQUENCE_SCHEMA = "workcell_simulation_sequence_plan_check/v1"
 STAGES = ["PREPLAN_APPROACH", "PREPLAN_GRASP", "PREPLAN_CLOSE_GRIPPER", "PREPLAN_LIFT",
           "PREPLAN_TRANSFER", "PREPLAN_PLACE", "PREPLAN_OPEN_GRIPPER", "PREPLAN_RETREAT",
           "PREPLAN_HOME"]
@@ -166,6 +167,52 @@ def _stop_group(process: subprocess.Popen, grace_s: float) -> bool:
         return False
 
 
+def _run_supervisor(command: list[str], run_dir: Path, timeout_s: float, cancel_flag: list[bool],
+                    label: str) -> tuple[dict, bool]:
+    """Run one owned plan-only supervisor; forward stage events; stop it cleanly on cancel/timeout."""
+    started = time.monotonic()
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                               start_new_session=True)
+    timed_out = cancelled = False
+
+    def forward(stream=process.stdout):
+        for line in stream:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict) and set(event) == {"stage"}:
+                _emit(dict(event="stage", object_id=label, stage=event["stage"]))
+    reader = threading.Thread(target=forward, daemon=True)
+    reader.start()
+    while process.poll() is None:
+        if cancel_flag[0]:
+            cancelled = True
+            break
+        if time.monotonic() - started > timeout_s + 45:  # supervisor cleanup budget
+            timed_out = True
+            break
+        time.sleep(0.1)
+    clean_stop = True
+    if cancelled or timed_out:
+        clean_stop = _stop_group(process, 45.0)
+    process.wait()
+    reader.join(timeout=5)
+    acceptance = run_dir / "acceptance.json"
+    audit = json.loads(acceptance.read_text()) if acceptance.is_file() else {}
+    if cancelled:
+        prior = audit.get("orchestration_failure") or audit.get("failure")
+        audit["orchestration_failure"] = "CANCELLED by operator" + (f" ({prior})" if prior else "")
+        audit["result"] = "FAIL"
+    if timed_out:
+        audit["orchestration_failure"] = f"PLANNER_TIMEOUT after {timeout_s:.0f} s"
+        audit["result"] = "FAIL"
+    if not audit:
+        audit = {"result": "FAIL", "orchestration_failure": f"supervisor exited {process.returncode} without evidence"}
+    audit["_clean_stop"] = clean_stop
+    return audit, clean_stop
+
+
 def check_batch(scene: Path, output_dir: Path, *, limit: int, per_object_timeout: float,
                 domain_id: int, supervisor: Path, cancel_flag: list[bool]) -> dict[str, Any]:
     preview = preview_batch(scene, limit=limit)
@@ -214,48 +261,12 @@ def check_batch(scene: Path, output_dir: Path, *, limit: int, per_object_timeout
             continue
         run_dir = output_dir / f"object_{item['order']:02d}"
         _emit(dict(event="object_start", order=item["order"], object_id=oid, class_id=item["class_id"]))
-        command = [sys.executable, str(supervisor), "--output-dir", str(run_dir), "--scene-dir", str(scene),
-                   "--target-object-id", oid, "--timeout", str(per_object_timeout),
-                   "--domain-id", str(domain_id + item["order"] - 1), "--stream-status"]
         started = time.monotonic()
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                   start_new_session=True)
-        timed_out = cancelled = False
-
-        def forward(stream=process.stdout, oid=oid):
-            for line in stream:
-                try:
-                    event = json.loads(line)
-                except ValueError:
-                    continue
-                if isinstance(event, dict) and set(event) == {"stage"}:
-                    _emit(dict(event="stage", object_id=oid, stage=event["stage"]))
-        reader = threading.Thread(target=forward, daemon=True)
-        reader.start()
-        while process.poll() is None:
-            if cancel_flag[0]:
-                cancelled = True
-                break
-            if time.monotonic() - started > per_object_timeout + 45:  # supervisor cleanup budget
-                timed_out = True
-                break
-            time.sleep(0.1)
-        clean_stop = True
-        if cancelled or timed_out:
-            clean_stop = _stop_group(process, 45.0)
-        process.wait()
-        reader.join(timeout=5)
-        acceptance = run_dir / "acceptance.json"
-        audit = json.loads(acceptance.read_text()) if acceptance.is_file() else {}
-        if cancelled:
-            prior = audit.get("orchestration_failure") or audit.get("failure")
-            audit["orchestration_failure"] = "CANCELLED by operator" + (f" ({prior})" if prior else "")
-            audit["result"] = "FAIL"
-        if timed_out:
-            audit["orchestration_failure"] = f"PLANNER_TIMEOUT after {per_object_timeout:.0f} s"
-            audit["result"] = "FAIL"
-        if not audit:
-            audit = {"result": "FAIL", "orchestration_failure": f"supervisor exited {process.returncode} without evidence"}
+        audit, clean_stop = _run_supervisor(
+            [sys.executable, str(supervisor), "--output-dir", str(run_dir), "--scene-dir", str(scene),
+             "--target-object-id", oid, "--timeout", str(per_object_timeout),
+             "--domain-id", str(domain_id + item["order"] - 1), "--stream-status"],
+            run_dir, per_object_timeout, cancel_flag, oid)
         verdict = classify(audit, oid)
         inserted = set(audit.get("inserted_object_ids") or [])
         entry.update(verdict, evidence_dir=str(run_dir), runtime_seconds=round(time.monotonic() - started, 1),
@@ -276,6 +287,126 @@ def check_batch(scene: Path, output_dir: Path, *, limit: int, per_object_timeout
     return report
 
 
+def _handoff_current(scene: Path) -> bool:
+    import yaml
+    from task_intent_resolver import context_hash, normalized_intent_hash, read_scene_task
+    intent, physical, document = read_scene_task(scene)
+    cell = yaml.safe_load((scene / "cell_definition.yaml").read_text())
+    return (cell.get("normalized_intent_sha256") == normalized_intent_hash(intent) and
+            cell.get("task_intent_resolution", {}).get("context_sha256") == context_hash(intent, physical, document))
+
+
+def classify_sequence_entry(entry: dict) -> dict[str, Any]:
+    """One sequence entry -> outcome. PLANNED was already checked for nine code-1 stages by the supervisor."""
+    result = entry.get("result")
+    if result == "PLANNED":
+        return dict(outcome="PLANNABLE", first_failed_stage=None, reason="all nine plan-only stages succeeded "
+                    f"from virtual revision {entry.get('revision_before')}", moveit_code=1,
+                    collision_objects=[], colliding_links=[])
+    if result == "INVALID_INPUT":
+        return dict(outcome="INVALID_INPUT", first_failed_stage=None, reason=entry.get("reason", ""),
+                    moveit_code=None, collision_objects=[], colliding_links=[])
+    if result == "SEQUENCE_BLOCKED":
+        return dict(outcome="SEQUENCE_BLOCKED", first_failed_stage=None, reason=entry.get("reason", ""),
+                    moveit_code=None, collision_objects=[], colliding_links=[])
+    audit = {"result": "FAIL", "failure": entry.get("failure"), "candidate_attempts": entry.get("candidate_attempts"),
+             "task_intent_resolution": entry.get("task_intent_resolution")}
+    return classify(audit, entry["object_id"])
+
+
+def check_sequence(scene: Path, output_dir: Path, *, order: list[str] | None, per_object_timeout: float,
+                   domain_id: int, supervisor: Path, cancel_flag: list[bool]) -> dict[str, Any]:
+    preview = preview_batch(scene, limit=100)
+    observed = {o["object_id"]: o for o in preview["observed_objects"]}
+    queue_ids = [q["object_id"] for q in preview["queue"]]
+    report: dict[str, Any] = {
+        "schema_version": SEQUENCE_SCHEMA, "scene": str(scene), "output_dir": str(output_dir),
+        "preview": {k: preview[k] for k in ("status", "reason", "source_path", "source_sha256",
+                                              "task_intent_sha256", "total_observed", "total_eligible",
+                                              "destination_region_ref")},
+        "objects": [], "obstacles": [o for o in preview["observed_objects"] if o["role"] != "PICK_CANDIDATE"],
+        "virtual_scene": [], "sequence_status": "SEQUENCE_BLOCKED", "first_blocking": None,
+        "planned_not_executed": True, "moveit_planning_attempted": False, "motion_commanded": False,
+        "execution_attempted": False, "epd_used": False, "simulator_live_connected": False,
+        "virtual_state_scope": "owned plan-only sandbox launch for this check; authored scene and task untouched",
+    }
+    if preview["status"] != "ELIGIBILITY_ONLY":
+        report.update(status="BLOCKED", reason=preview["reason"])
+        return report
+    if not _handoff_current(scene):
+        report.update(status="BLOCKED", reason="TASK_HANDOFF_STALE: Generate the saved task before checking plans")
+        return report
+    order = order or queue_ids
+    unknown = [oid for oid in order if oid not in queue_ids]
+    if unknown or len(set(order)) != len(order):
+        report.update(status="BLOCKED", reason=f"SEQUENCE_ORDER_INVALID: not eligible or duplicated: {unknown or order}")
+        return report
+    if per_object_timeout * len(order) > 3600:
+        report.update(status="BLOCKED", reason="SEQUENCE_TOO_LONG: per-object time x objects exceeds 3600 s")
+        return report
+    report.update(sequence_order=order, moveit_planning_attempted=True)
+    _emit(dict(event="batch_start", queued=len(order), observed=preview["total_observed"], mode="sequence"))
+    run_dir = output_dir / "sequence"
+    total = per_object_timeout * len(order)
+    audit, clean_stop = _run_supervisor(
+        [sys.executable, str(supervisor), "--output-dir", str(run_dir), "--scene-dir", str(scene),
+         "--sequence-object-ids", ",".join(order), "--timeout", str(total),
+         "--domain-id", str(domain_id), "--stream-status"], run_dir, total, cancel_flag, "sequence")
+    entries = {e["object_id"]: e for e in audit.get("sequence") or []}
+    supervisor_ok = audit.get("result") == "PASS" and audit.get("sequence_planning_completed") is True
+    report["execution_attempted"] = bool(audit.get("execution_attempted") or audit.get("execution_action_goals"))
+    report["shutdown_clean"] = bool(audit.get("shutdown_clean")) and clean_stop
+    report["evidence_dir"] = str(run_dir)
+    moves = []
+    for position, oid in enumerate(order, 1):
+        entry = entries.get(oid)
+        item = {"position": position, "object_id": oid, "class_id": observed[oid]["class_id"],
+                "source_pose": observed[oid]["world_pose"], "recorded_geometry": observed[oid]["dimensions_m"],
+                "destination_region_ref": preview["destination_region_ref"]}
+        if entry is None or not supervisor_ok:
+            why = (audit.get("orchestration_failure") or audit.get("failure") or "sequence evaluation incomplete")
+            item.update(outcome="BLOCKED" if entry is None else classify_sequence_entry(entry)["outcome"],
+                        reason=f"not proven: {why}", first_failed_stage=None)
+            if entry is not None and supervisor_ok is False:
+                item.update(outcome="BLOCKED")
+        else:
+            item.update(classify_sequence_entry(entry))
+            item.update(revision_before=entry.get("revision_before"), revision_after=entry.get("revision_after"),
+                        robot_start_matches_previous_end=entry.get("robot_start_matches_previous_end"),
+                        robot_end_matches_sandbox=entry.get("robot_end_matches_sandbox"),
+                        collision_objects_considered=entry.get("collision_objects_considered", []),
+                        grasp_strategy=entry.get("grasp_strategy"), grasp_candidate=entry.get("grasp_candidate"),
+                        destination=entry.get("destination"), placed_pose=entry.get("placed_pose"),
+                        objects_already_moved=[m["object_id"] for m in moves])
+            occupied = sorted(set(item.get("collision_objects") or []) & {m["object_id"] for m in moves})
+            if item["outcome"] == "COLLISION" and occupied:
+                item["blocked_by_virtually_placed"] = occupied
+                item["missing_prerequisite"] = ("destination provides a single authored placement pose; "
+                                                "allocating separate placements for several objects is not modelled")
+                item["reason"] = (f"destination occupied by {', '.join(occupied)} placed earlier in this sequence "
+                                  f"(virtual revision {item['revision_before']}); {item['missing_prerequisite']}. "
+                                  f"MoveIt: {item['reason']}")
+            if entry.get("result") == "PLANNED":
+                moves.append({"revision": entry["revision_after"], "object_id": oid,
+                              "from_pose": observed[oid]["world_pose"], "to_pose": entry["placed_pose"]})
+        if item["outcome"] != "PLANNABLE" and report["first_blocking"] is None:
+            report["first_blocking"] = {k: item.get(k) for k in ("position", "object_id", "outcome",
+                                                                 "first_failed_stage", "reason")}
+        report["objects"].append(item)
+        _emit(dict(event="object_result", order=position, object_id=oid, outcome=item["outcome"],
+                   first_failed_stage=item.get("first_failed_stage"), reason=item.get("reason", ""),
+                   revision_before=item.get("revision_before"), revision_after=item.get("revision_after")))
+    report["virtual_scene"] = moves
+    report["final_revision"] = len(moves)
+    counts = {o: sum(1 for e in report["objects"] if e.get("outcome") == o) for o in OUTCOMES}
+    all_planned = supervisor_ok and all(o["outcome"] == "PLANNABLE" for o in report["objects"])
+    report.update(outcome_counts=counts, sequence_status="SEQUENCE_PLANNED" if all_planned else "SEQUENCE_BLOCKED",
+                  status="CANCELLED" if cancel_flag[0] else "CHECKED")
+    if report["execution_attempted"]:
+        report.update(status="BLOCKED", reason="SAFETY: execution observed during plan-only sequence")
+    return report
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scene", type=Path, required=True)
@@ -283,6 +414,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--per-object-timeout", type=float, default=240.0)
     parser.add_argument("--domain-id", type=int, default=183)
+    parser.add_argument("--sequence", action="store_true",
+                        help="Plan the queue in order against validated virtual scene revisions (one owned launch)")
+    parser.add_argument("--order", help="Comma-separated eligible object IDs for --sequence (default: queue order)")
     parser.add_argument("--supervisor", type=Path,
                         help="Owned plan-only supervisor (default: the scene repository's scripts/, as Builder uses)")
     args = parser.parse_args(argv)
@@ -303,13 +437,18 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
     try:
-        report = check_batch(scene, out, limit=args.limit, per_object_timeout=args.per_object_timeout,
-                             domain_id=args.domain_id, supervisor=args.supervisor, cancel_flag=cancel)
+        if args.sequence:
+            report = check_sequence(scene, out, order=[o for o in (args.order or "").split(",") if o] or None,
+                                    per_object_timeout=args.per_object_timeout, domain_id=args.domain_id,
+                                    supervisor=args.supervisor, cancel_flag=cancel)
+        else:
+            report = check_batch(scene, out, limit=args.limit, per_object_timeout=args.per_object_timeout,
+                                 domain_id=args.domain_id, supervisor=args.supervisor, cancel_flag=cancel)
     except Exception as exc:  # fail closed with a readable reason
         report = {"schema_version": SCHEMA, "status": "BLOCKED", "reason": str(exc), "objects": [],
                   "moveit_planning_attempted": False, "motion_commanded": False,
                   "execution_attempted": False, "sequence_status": "SEQUENCE_NOT_VALIDATED"}
-    (out / "batch_plan_check.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    (out / ("sequence_plan_check.json" if args.sequence else "batch_plan_check.json")).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     _emit(dict(event="batch_result", report=report))
     return 0 if report["status"] == "CHECKED" else 1
 
