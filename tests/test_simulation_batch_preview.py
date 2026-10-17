@@ -148,11 +148,161 @@ def test_queue_lists_non_overlapping_places_the_operator_can_choose(tmp_path):
     task_file.write_text(yaml.safe_dump(task))
     options = preview_batch(scene, now=100.0)["queue"][0]["place_options"]
     assert [o["id"] for o in options] == ["place-1", "place-2", "place-3"]
+    # Evenly spread, size + clearance + planner tolerance apart and from the walls.
     assert [o["local_pose"]["xyz_m"] for o in options] == [
-        pytest.approx([-0.02, 0.0, 0.10]), pytest.approx([0.04, 0.0, 0.10]), pytest.approx([0.10, 0.0, 0.10])]
-    assert options[0]["label"] == "Place 1 of 3 (x -0.020, y +0.000 m)"
+        pytest.approx([-0.017, 0.0, 0.10]), pytest.approx([0.05, 0.0, 0.10]), pytest.approx([0.117, 0.0, 0.10])]
+    assert [o["label"] for o in options] == [
+        "Place 1 of 3 — near end", "Place 2 of 3 — middle", "Place 3 of 3 — far end"]
 
 
 def test_objects_too_tall_for_the_region_get_no_place_options(tmp_path):
     scene, _ = prepare(tmp_path)  # 0.18 m bottles, 0.10 m tall drop region
     assert all(q["place_options"] == [] for q in preview_batch(scene, now=100.0)["queue"])
+
+
+# ---------------------------------------------------------------- Feature 4E saved sequence
+from scripts.simulation_batch_preview import review_sequence  # noqa: E402
+from scripts.task_intent_v2 import validate_intent  # noqa: E402
+
+
+def sequence_scene(tmp_path, cups=2):
+    """Saved task with `cups` eligible 0.10 m cups; zero clearance so they fit the 0.10 m tall drop region."""
+    scene, recording = prepare(tmp_path, source_mode="replayed_snapshot", target="cup")
+    recording["objects"] = [dict(recording["objects"][0], object_id=f"cup-0{k}",
+                                 pose={"frame_id": "world", "xyz": [0.2 + 0.1 * k, -0.1, 0.05], "rpy": [0, 0, 0]})
+                            for k in range(1, cups + 1)]
+    (scene / "commissioning.yaml").write_text(yaml.safe_dump(recording))
+    task_file = scene / "config/workcell_builder_task_intent.yaml"
+    task = yaml.safe_load(task_file.read_text())
+    task["place"]["placement"]["clearance_m"] = 0.0
+    task_file.write_text(yaml.safe_dump(task))
+    return scene, task
+
+
+def save_sequence(scene, task, places):
+    """What the Task tab writes: queue bindings plus each object's placement (None = AUTO)."""
+    preview = preview_batch(scene, now=100.0)
+    observed = {o["object_id"]: o for o in preview["observed_objects"]}
+    target = task["place"]["target"]
+    items = []
+    for oid, local in places:
+        obj = observed[oid]
+        placement = {"mode": "AUTO"} if local is None else {
+            "mode": "MANUAL", "asset_ref": target["asset_ref"], "region_ref": target["region_ref"], "local_pose": local}
+        items.append({"object_id": oid, "class_id": obj["class_id"], "observed_xyz_m": obj["world_pose"][:3],
+                      "dimensions_m": obj["dimensions_m"], "placement": placement})
+    task["sequence"] = {"source_sha256": preview["source_sha256"], "items": items}
+    (scene / "config/workcell_builder_task_intent.yaml").write_text(yaml.safe_dump(task))
+    return task
+
+
+NEAR = {"xyz_m": [-0.017, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+MID = {"xyz_m": [0.05, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+FAR = {"xyz_m": [0.117, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+C1, C2, C3, C4 = (f"runtime::cup-0{k}" for k in range(1, 5))
+
+
+def test_no_saved_sequence_keeps_queue_order_and_automatic_places(tmp_path):
+    scene, task = sequence_scene(tmp_path)
+    review = preview_batch(scene, now=100.0)["sequence_review"]
+    assert review["status"] == "NOT_CONFIGURED" and review["order"] == [] and review["placements"] == {}
+
+
+def test_saved_sequence_reopens_with_order_bindings_and_reserved_manual_place(tmp_path):
+    scene, task = sequence_scene(tmp_path)
+    task = save_sequence(scene, task, [(C2, None), (C1, NEAR)])  # Reordered; cup-01 manual.
+    assert validate_intent(task) == []
+    review = review_sequence(scene, task, now=100.0)
+    assert review["status"] == "READY", review["summary"]
+    assert review["order"] == [C2, C1] and review["placements"] == {C1: NEAR}
+    auto, manual = review["items"]
+    assert manual["place_label"] == "Place 1 of 3 — near end"
+    # cup-02 comes first, yet keeps clear of the near end reserved for cup-01.
+    assert auto["expected_local_pose"]["xyz_m"][0] > NEAR["xyz_m"][0] + 0.06
+    assert auto["place_label"] in ("Automatic (expected: middle)", "Automatic (next free place)")
+
+
+def test_changed_recording_blocks_instead_of_rebinding(tmp_path):
+    scene, task = sequence_scene(tmp_path)
+    task = save_sequence(scene, task, [(C1, FAR), (C2, NEAR)])
+    recording = yaml.safe_load((scene / "commissioning.yaml").read_text())
+    recording["objects"][0]["pose"]["xyz"][1] = -0.12  # Same IDs, different detections.
+    (scene / "commissioning.yaml").write_text(yaml.safe_dump(recording))
+    review = review_sequence(scene, task, now=100.0)
+    assert review["status"] == "BLOCKED"
+    assert all(i["message"].startswith("SEQUENCE_SOURCE_CHANGED") for i in review["items"])
+    assert review["placements"] == {C1: FAR, C2: NEAR}  # Saved choices are reported, never replaced.
+    assert [i["place_label"] for i in review["items"]] == ["Place 3 of 3 — far end", "Place 1 of 3 — near end"]
+
+
+def test_unavailable_object_and_bad_places_need_review(tmp_path):
+    scene, task = sequence_scene(tmp_path)
+    task = save_sequence(scene, task, [(C1, NEAR), (C2, NEAR)])
+    review = review_sequence(scene, task, now=100.0)
+    assert review["status"] == "NEEDS_REVIEW" and review["items"][1]["message"].startswith("PLACE_CONFLICT")
+    task["sequence"]["items"][1]["placement"]["local_pose"] = {"xyz_m": [0.13, 0.0, 0.10], "rpy_rad": [0, 0, 0]}
+    review = review_sequence(scene, task, now=100.0)
+    assert review["items"][1]["status"] == "NEEDS_REVIEW"
+    assert review["items"][1]["message"].startswith("PLACE_OUTSIDE_REGION")
+    task["sequence"]["items"][1]["placement"]["region_ref"] = "other_region"
+    assert review_sequence(scene, task, now=100.0)["items"][1]["message"].startswith("DESTINATION_CHANGED")
+    task["pick"]["selection"]["object_filter"]["class_id"] = "bottle"  # The saved cups are no longer picked.
+    review = review_sequence(scene, task, now=100.0)
+    assert review["items"][0]["message"].startswith("OBJECT_NOT_ELIGIBLE")
+
+
+def test_destination_geometry_change_needs_review(tmp_path):
+    scene, task = sequence_scene(tmp_path)
+    task = save_sequence(scene, task, [(C1, FAR), (C2, None)])
+    environment = yaml.safe_load((scene / "environment.yaml").read_text())
+    drop = next(z for z in environment["task_zones"] if z["id"] == "drop")
+    drop["placement_local"]["dimensions"][0] = drop["dimensions"][0] = 0.12  # Region shrunk around its centre.
+    (scene / "environment.yaml").write_text(yaml.safe_dump(environment))
+    review = review_sequence(scene, task, now=100.0)
+    assert review["status"] == "NEEDS_REVIEW" and review["items"][0]["message"].startswith("PLACE_OUTSIDE_REGION")
+
+
+def test_insufficient_capacity_is_reported_and_never_relaxed(tmp_path):
+    scene, task = sequence_scene(tmp_path, cups=4)
+    task = save_sequence(scene, task, [(C1, None), (C2, None), (C3, None), (C4, None)])
+    review = review_sequence(scene, task, now=100.0)
+    assert review["status"] == "BLOCKED"
+    assert [i["status"] for i in review["items"]] == ["READY", "READY", "READY", "BLOCKED"]
+    assert review["items"][3]["message"].startswith("INSUFFICIENT_CAPACITY")
+    assert task["place"]["placement"]["clearance_m"] == 0.0  # Unchanged by the review.
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda s: s.update(source_sha256="abc"),
+    lambda s: s.update(items=[]),
+    lambda s: s["items"].append(copy.deepcopy(s["items"][0])),
+    lambda s: s["items"][0]["placement"].update(mode="EXACT"),
+    lambda s: s["items"][0]["placement"].update(mode="MANUAL"),
+    lambda s: s["items"][0].update(label="Place 1"),
+])
+def test_malformed_saved_sequence_is_an_authoring_error(tmp_path, mutate):
+    scene, task = sequence_scene(tmp_path)
+    task = save_sequence(scene, task, [(C1, None)])
+    mutate(task["sequence"])
+    assert [e["code"] for e in validate_intent(task)] == ["SEQUENCE_INVALID"]
+
+
+def test_exact_policy_sharing_one_place_needs_review_and_null_sequence_is_none(tmp_path):
+    scene, task = sequence_scene(tmp_path)
+    task["place"]["placement"]["policy"] = "EXACT"
+    task["place"]["placement"]["requested_local_pose"] = MID
+    task = save_sequence(scene, task, [(C1, None), (C2, None)])
+    review = review_sequence(scene, task, now=100.0)
+    assert [i["status"] for i in review["items"]] == ["READY", "NEEDS_REVIEW"]
+    assert review["items"][1]["message"].startswith("EXACT_PLACE_SHARED")
+    task["sequence"] = None
+    assert validate_intent(task) == [] and review_sequence(scene, task)["status"] == "NOT_CONFIGURED"
+
+
+def test_custom_place_at_the_region_wall_needs_review(tmp_path):
+    scene, task = sequence_scene(tmp_path)
+    wall = {"xyz_m": [0.12, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}  # Fits, but leaves no placement tolerance.
+    task = save_sequence(scene, task, [(C1, wall)])
+    item = review_sequence(scene, task, now=100.0)["items"][0]
+    assert item["status"] == "NEEDS_REVIEW" and "placement tolerance" in item["message"]
+    assert item["place_label"] == "Custom place (x +0.120, y +0.000 m)"

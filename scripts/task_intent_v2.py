@@ -233,7 +233,57 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
         errors.append({"code": "INSTALLED_TOOL_IN_INTENT", "message": "installed tool identity belongs to environment"})
     if any(key in model.get("safety", {}) for key in ("runtime_io_applied", "motion_started", "ros_launch_started")):
         errors.append({"code": "DYNAMIC_SAFETY_IN_INTENT", "message": "dynamic runtime state is not authored intent"})
+    if model.get("sequence") is not None:  # null: no saved sequence
+        errors.extend(_sequence_errors(model))
     return errors
+
+
+def _sequence_errors(model: dict[str, Any]) -> list[dict[str, str]]:
+    """Structure of the optional saved pick sequence (multi-object plan-only check).
+
+    Each item binds one recorded observation by its stable ID plus the class,
+    observed position and size it had when saved; `source_sha256` names the exact
+    recording. Placement is AUTO (allocated at check time) or MANUAL, a
+    target-asset-local pose in the task's own destination. Geometry and recording
+    provenance are reviewed against the scene by simulation_batch_preview.
+    """
+    def error(message: str) -> list[dict[str, str]]:
+        return [{"code": "SEQUENCE_INVALID", "message": "sequence: " + message}]
+
+    def finite(values: Any, size: int = 3) -> bool:
+        return (isinstance(values, list) and len(values) == size and
+                all(not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v) for v in values))
+
+    sequence = model["sequence"]
+    if not isinstance(sequence, dict) or set(sequence) - {"source_sha256", "items"}:
+        return error("expected a mapping with source_sha256 and items")
+    sha = sequence.get("source_sha256")
+    if not isinstance(sha, str) or len(sha) != 64 or set(sha) - set("0123456789abcdef"):
+        return error("source_sha256 must be the 64-character SHA-256 of the saved recording")
+    items = sequence.get("items")
+    if not isinstance(items, list) or not items:
+        return error("items must list at least one object")
+    seen: set[str] = set()
+    for index, item in enumerate(items, 1):
+        if not isinstance(item, dict) or set(item) - {"object_id", "class_id", "observed_xyz_m", "dimensions_m", "placement"}:
+            return error(f"item {index} has unexpected fields")
+        oid = item.get("object_id")
+        if not isinstance(oid, str) or not oid or oid in seen:
+            return error(f"item {index} needs a unique object_id")
+        seen.add(oid)
+        if not isinstance(item.get("class_id"), str) or not finite(item.get("observed_xyz_m")) or not finite(item.get("dimensions_m")):
+            return error(f"{oid}: class_id, observed_xyz_m and dimensions_m record which observation was saved")
+        placement = item.get("placement")
+        mode = placement.get("mode") if isinstance(placement, dict) else None
+        if mode == "AUTO" and set(placement) == {"mode"}:
+            continue
+        if mode != "MANUAL" or set(placement) != {"mode", "asset_ref", "region_ref", "local_pose"}:
+            return error(f"{oid}: placement is AUTO, or MANUAL with asset_ref, region_ref and local_pose")
+        if not _valid_pose(placement["local_pose"]) or set(placement["local_pose"]) != {"xyz_m", "rpy_rad"}:
+            return error(f"{oid}: MANUAL local_pose needs finite xyz_m and rpy_rad in the target asset frame")
+        if not all(isinstance(placement[k], str) and placement[k] for k in ("asset_ref", "region_ref")):
+            return error(f"{oid}: MANUAL placement names its destination asset_ref and region_ref")
+    return []
 
 
 def write_without_rewrite(path: Path) -> dict[str, Any]:

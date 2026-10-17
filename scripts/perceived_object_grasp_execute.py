@@ -492,7 +492,7 @@ def sequence_place_poses(intent, environment, occupied, dimensions, max_slots=3,
     unchanged resolver and full-cycle preplanner as an EXACT placement; nothing here proves
     feasibility.
     """
-    from physical_destination import place_conflicts, placement_slots, resolve_destination
+    from physical_destination import PLACEMENT_TOLERANCE_M, place_conflicts, placement_slots, resolve_destination
     placement = intent['place']['placement']
     allocation = {'authored_policy': placement['policy'], 'objects_checked_for_overlap': len(occupied)}
     destination = resolve_destination(environment, intent['place']['target']['region_ref'])
@@ -503,7 +503,9 @@ def sequence_place_poses(intent, environment, occupied, dimensions, max_slots=3,
     if placement['policy'] == 'EXACT':
         return [None], dict(allocation, applied=False,
                             reason='EXACT placement: every object is planned to the one authored pose')
-    slots = placement_slots(destination, dimensions, placement['clearance_m'], list(occupied) + list(reserved))
+    # Neighbours keep the planner's placement tolerance too, as the saved-sequence review assumes.
+    slots = placement_slots(destination, dimensions, placement['clearance_m'], list(occupied) + list(reserved),
+                            separation=PLACEMENT_TOLERANCE_M)
     if placement['policy'] == 'PREFERRED':
         wanted = placement['requested_local_pose']['xyz_m']
         slots.sort(key=lambda slot: math.dist(slot['xyz_m'], wanted))

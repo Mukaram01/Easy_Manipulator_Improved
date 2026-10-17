@@ -298,8 +298,8 @@ def _handoff_current(scene: Path) -> bool:
 
 def validate_placements(scene: Path, placements: dict, order: list[str], dimensions: dict) -> str:
     """First reason chosen places cannot be checked, or "" (fail before any launch)."""
-    from physical_destination import (check_object_containment, local_to_world_pose, place_conflicts,
-                                      resolve_local_destination)
+    from physical_destination import (PLACEMENT_TOLERANCE_M, check_object_containment, local_to_world_pose,
+                                      place_conflicts, resolve_local_destination, wall_margin_ok)
     from task_intent_resolver import read_scene_task
     if not isinstance(placements, dict) or not set(placements) <= set(order):
         return "PLACEMENTS_INVALID: places can only be chosen for objects in the sequence order"
@@ -314,10 +314,12 @@ def validate_placements(scene: Path, placements: dict, order: list[str], dimensi
             place = resolve_local_destination(physical, target["asset_ref"], target["region_ref"], placements[oid])
             world = local_to_world_pose(place, placements[oid])
             check_object_containment(place, world, dimensions[oid], clearance)
+            if not wall_margin_ok(place, placements[oid], dimensions[oid], clearance, PLACEMENT_TOLERANCE_M):
+                raise ValueError("closer to the region edge than the planner's placement tolerance allows")
         except (ValueError, TypeError, KeyError) as exc:
             return f"PLACE_OUTSIDE_REGION: {oid}: the chosen place does not fit in {target['region_ref']}: {exc}"
         hits = place_conflicts(place, placements[oid], dimensions[oid], clearance,
-                               [(pose, dims) for _, pose, dims in checked])
+                               [(pose, dims) for _, pose, dims in checked], separation=PLACEMENT_TOLERANCE_M)
         if hits:
             return f"PLACE_CONFLICT: {checked[hits[0]][0]} and {oid} were given overlapping places"
         checked.append((oid, world, dimensions[oid]))
@@ -362,6 +364,18 @@ def check_sequence(scene: Path, output_dir: Path, *, order: list[str] | None, pe
     if preview["status"] != "ELIGIBILITY_ONLY":
         report.update(status="BLOCKED", reason=preview["reason"])
         return report
+    if order is None and placements is None:
+        # The saved task decides: the sequence the operator saved, or (none saved) the queue, all automatic.
+        review = preview["sequence_review"]
+        report.update(sequence_source="saved_task" if review["status"] != "NOT_CONFIGURED" else "queue_order",
+                      sequence_review={k: review[k] for k in ("status", "summary")})
+        if review["status"] not in ("READY", "NOT_CONFIGURED"):
+            report.update(status="BLOCKED", reason=f"SEQUENCE_{review['status']}: {review['summary']}")
+            return report
+        if review["status"] == "READY":
+            order, placements = review["order"], review["placements"]
+    else:
+        report["sequence_source"] = "command_line"
     if not _handoff_current(scene):
         report.update(status="BLOCKED", reason="TASK_HANDOFF_STALE: Generate the saved task before checking plans")
         return report
