@@ -1,0 +1,109 @@
+{
+  "batch_report": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T233626Z/sequence_plan_check.json",
+  "chosen_places": {
+    "runtime::cup-01": "1. cup-01 (cup)  \u2192  Place 2 of 2 \u2014 far end",
+    "runtime::cup-02": "2. cup-02 (cup)  \u2192  Place 1 of 2 \u2014 near end"
+  },
+  "edited_sequence": [
+    "1. cup-01 (cup)  \u2192  Place 2 of 2 \u2014 far end",
+    "2. cup-02 (cup)  \u2192  Place 1 of 2 \u2014 near end",
+    "\u2014 cup-03 (cup)  (not in the sequence)"
+  ],
+  "edited_summary": "Unsaved changes \u2014 Saved sequence: 2 object(s), 2 chosen place(s), 0 automatic. Ready for the full-sequence check.",
+  "final_details": "PLANNED \u2014 NOT EXECUTED. Virtual scene only; no robot or simulated motion.\n1. runtime::cup-01 [cup] \u2192 default_drop_zone: PLANNABLE  (scene rev 0\u21921, robot start consistent)\n   grasp top_2f; virtually placed in default_drop_zone at target-local (0.062, 0.000, 0.010) m (your chosen place)\n2. runtime::cup-02 [cup] \u2192 default_drop_zone: PLANNABLE  (scene rev 1\u21922, robot start consistent)\n   grasp top_2f; virtually placed in default_drop_zone at target-local (-0.062, 0.000, 0.010) m (your chosen place)\nVirtual scene rev 1: runtime::cup-01 moved (0.260, -0.080, 0.051) \u2192 (0.512, 0.220, 0.110)\nVirtual scene rev 2: runtime::cup-02 moved (0.450, -0.120, 0.051) \u2192 (0.388, 0.220, 0.110)\nObstacle throughout (not picked): runtime::bottle-e [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::bottle-n [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::bottle-s [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::bottle-w [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle throughout (not picked): runtime::cup-04 [cup] \u2014 OUTSIDE_PICK_VOLUME\nEvidence: /ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T233626Z",
+  "final_status": "PLANNED \u2014 NOT EXECUTED: the full 2-object sequence plans in MoveIt. No robot motion.",
+  "generate_wait_ticks": 36,
+  "last_progress": "Sequence: planning object 2 of 2 against the current virtual scene. No motion. \u2014 PREPLAN_OPEN_GRIPPER. No motion.",
+  "outcome_counts": {
+    "BLOCKED": 0,
+    "COLLISION": 0,
+    "INVALID_GEOMETRY": 0,
+    "INVALID_INPUT": 0,
+    "MISSING_DESTINATION": 0,
+    "NO_VALID_GRASP": 0,
+    "PLANNABLE": 2,
+    "SEQUENCE_BLOCKED": 0,
+    "STALE_INPUT": 0,
+    "UNREACHABLE": 0
+  },
+  "phase": "author",
+  "preview_summary_before": "NEEDS REVIEW: 1 of 2 saved object(s) need attention. runtime::cup-02: PLACE_OUTSIDE_REGION: the chosen place no longer fits default_drop_zone with 0.005 m clearance and the planner's 0.003 m placement tolerance (closer to the region edge than the planner's placement tolerance allows). Choose its place again.",
+  "progress": {
+    "has_selected_scene": true,
+    "load_watcher_running": false,
+    "phase": 6,
+    "ticks": 1
+  },
+  "result": "PASS",
+  "robot_motion_commanded": false,
+  "saved_sequence": {
+    "items": [
+      {
+        "class_id": "cup",
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "object_id": "runtime::cup-01",
+        "observed_xyz_m": [
+          0.26,
+          -0.08,
+          0.051
+        ],
+        "placement": {
+          "asset_ref": "target_bin_default",
+          "local_pose": {
+            "rpy_rad": [
+              0,
+              0,
+              0
+            ],
+            "xyz_m": [
+              0.062,
+              0,
+              0.01
+            ]
+          },
+          "mode": "MANUAL",
+          "region_ref": "default_drop_zone"
+        }
+      },
+      {
+        "class_id": "cup",
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "object_id": "runtime::cup-02",
+        "observed_xyz_m": [
+          0.45,
+          -0.12,
+          0.051
+        ],
+        "placement": {
+          "asset_ref": "target_bin_default",
+          "local_pose": {
+            "rpy_rad": [
+              0,
+              0,
+              0
+            ],
+            "xyz_m": [
+              -0.062,
+              0,
+              0.01
+            ]
+          },
+          "mode": "MANUAL",
+          "region_ref": "default_drop_zone"
+        }
+      }
+    ],
+    "source_sha256": "bc94da59df646fa2ebc42bcc9b8fe0d720b5c6a192f742c0bf7d29fdac3c3ca5"
+  },
+  "sequence_order": "runtime::cup-01,runtime::cup-02",
+  "sequence_status": "SEQUENCE_PLANNED",
+  "status": "CHECKED"
+}

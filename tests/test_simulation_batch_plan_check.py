@@ -408,8 +408,8 @@ def two_cup_scene(tmp_path):
 
 
 ORDER = ["runtime::cup-01", "runtime::cup-02"]
-LEFT = {"xyz_m": [-0.02, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
-MIDDLE = {"xyz_m": [0.04, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+LEFT = {"xyz_m": [-0.017, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
+MIDDLE = {"xyz_m": [0.05, 0.0, 0.10], "rpy_rad": [0.0, 0.0, 0.0]}
 DIMS = {oid: [0.06, 0.06, 0.10] for oid in ORDER}
 
 
@@ -459,3 +459,42 @@ def test_chosen_place_collision_and_occupied_place_are_explained():
                 "failure": "PLACE_OCCUPIED: the chosen place overlaps runtime::cup-01 (with placement clearance)"}
     verdict = batch.classify_sequence_entry(occupied)
     assert verdict["outcome"] == "MISSING_DESTINATION" and "PLACE_OCCUPIED" in verdict["reason"]
+
+
+def regenerate(scene):
+    intent, physical, document = read_scene_task(scene)
+    (scene / "cell_definition.yaml").write_text(yaml.safe_dump({
+        "normalized_intent_sha256": normalized_intent_hash(intent),
+        "task_intent_resolution": {"context_sha256": context_hash(intent, physical, document)}}))
+
+
+def test_full_sequence_check_plans_the_saved_sequence_and_refuses_one_needing_review(tmp_path):
+    from test_simulation_batch_preview import save_sequence
+    scene = two_cup_scene(tmp_path)
+    task = yaml.safe_load((scene / "config/workcell_builder_task_intent.yaml").read_text())
+    save_sequence(scene, task, [(ORDER[1], None), (ORDER[0], LEFT)])
+    regenerate(scene)
+    stub = tmp_path / "echo_stub.py"
+    stub.write_text(textwrap.dedent("""
+        import json, sys
+        from pathlib import Path
+        a = sys.argv; out = Path(a[a.index('--output-dir') + 1]); out.mkdir(parents=True)
+        (out / 'argv.json').write_text(json.dumps(a))
+        (out / 'acceptance.json').write_text(json.dumps({'result': 'FAIL', 'failure': 'stub', 'shutdown_clean': True,
+            'execution_attempted': False, 'sequence': []}))
+    """))
+    common = [sys.executable, str(ROOT / "scripts/simulation_batch_plan_check.py"), "--scene", str(scene), "--sequence",
+              "--supervisor", str(stub), "--per-object-timeout", "60"]
+    subprocess.run(common + ["--output-dir", str(tmp_path / "saved")], cwd=ROOT, capture_output=True, timeout=60)
+    argv = json.loads((tmp_path / "saved/sequence/argv.json").read_text())
+    assert argv[argv.index("--sequence-object-ids") + 1] == f"{ORDER[1]},{ORDER[0]}"
+    assert json.loads(argv[argv.index("--sequence-placements") + 1]) == {ORDER[0]: LEFT}
+    report = json.loads((tmp_path / "saved/sequence_plan_check.json").read_text())
+    assert report["sequence_source"] == "saved_task" and report["sequence_review"]["status"] == "READY"
+    task = yaml.safe_load((scene / "config/workcell_builder_task_intent.yaml").read_text())
+    save_sequence(scene, task, [(ORDER[1], LEFT), (ORDER[0], LEFT)])  # Both in one place.
+    regenerate(scene)
+    subprocess.run(common + ["--output-dir", str(tmp_path / "review")], cwd=ROOT, capture_output=True, timeout=60)
+    report = json.loads((tmp_path / "review/sequence_plan_check.json").read_text())
+    assert report["status"] == "BLOCKED" and report["reason"].startswith("SEQUENCE_NEEDS_REVIEW")
+    assert "PLACE_CONFLICT" in report["reason"] and not (tmp_path / "review/sequence").exists()

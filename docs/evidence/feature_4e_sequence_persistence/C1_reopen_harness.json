@@ -1,0 +1,29 @@
+{
+  "batch_report": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234121Z/sequence_plan_check.json",
+  "final_details": "No complete plan check. No robot motion was performed.\nEvidence: /ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234121Z",
+  "final_status": "BLOCKED \u2014 SEQUENCE_BLOCKED: BLOCKED: 2 of 2 saved object(s) need attention. runtime::cup-01: SEQUENCE_SOURCE_CHANGED: the observation recording changed since this sequence was saved, so its objects may be different detections. Preview the queue and save the sequence again.",
+  "phase": "reopen",
+  "progress": {
+    "has_selected_scene": true,
+    "load_watcher_running": false,
+    "phase": 6,
+    "ticks": 1
+  },
+  "reason": "SEQUENCE_BLOCKED: BLOCKED: 2 of 2 saved object(s) need attention. runtime::cup-01: SEQUENCE_SOURCE_CHANGED: the observation recording changed since this sequence was saved, so its objects may be different detections. Preview the queue and save the sequence again.",
+  "reopened_fields": {
+    "dirty": false,
+    "mode": "replayed_snapshot",
+    "replay_path": "/ws/src/easy_manipulation_deployment/tests/fixtures/multiobject_plan_check_ur5_2f_test.yaml",
+    "target_class": "cup"
+  },
+  "reopened_sequence": [
+    "\u26a0 1. cup-01 (cup)  \u2192  Automatic  \u2014  BLOCKED",
+    "\u26a0 2. cup-02 (cup)  \u2192  Place 1 of 2 \u2014 near end  \u2014  BLOCKED"
+  ],
+  "reopened_sequence_summary": "BLOCKED: 2 of 2 saved object(s) need attention. runtime::cup-01: SEQUENCE_SOURCE_CHANGED: the observation recording changed since this sequence was saved, so its objects may be different detections. Preview the queue and save the sequence again.",
+  "result": "PASS",
+  "robot_motion_commanded": false,
+  "sequence_order": "runtime::cup-01,runtime::cup-02",
+  "sequence_status": "SEQUENCE_BLOCKED",
+  "status": "BLOCKED"
+}

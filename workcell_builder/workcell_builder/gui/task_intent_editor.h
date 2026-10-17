@@ -63,4 +63,16 @@ private:
   int plan_check_total_{0};
   bool plan_check_sequence_{false};
   void clear_sequence_results(const QString & why);
+  // Feature 4E: the pick sequence saved in the task (sequence block), edited in the Task tab.
+  void rebuild_sequence(const QJsonObject & report);
+  void apply_sequence_review(const QJsonObject & review);
+  void refresh_sequence_texts();
+  void show_selected_place();
+  void write_sequence();
+  void update_dirty_ui();
+public:
+  void revert();
+private:
+  QString sequence_source_sha_;
+  bool sequence_loading_{false}, sequence_rebind_pending_{false};
 };

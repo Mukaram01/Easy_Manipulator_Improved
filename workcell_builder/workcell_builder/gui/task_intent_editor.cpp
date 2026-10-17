@@ -1,5 +1,7 @@
 #include "task_intent_editor.h"
+#include <QBrush>
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -19,6 +21,7 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -26,10 +29,13 @@
 #include <cmath>
 
 namespace {
-// Sequence list items keep the object ID and the preview's place options; the text only shows them.
+// Pick-sequence list items carry the saved binding of one recorded object and its placement;
+// the item text is only a description of them. The saved task is the authority (sequence_json).
 constexpr int kObjectIdRole = Qt::UserRole;
 constexpr int kPlaceOptionsRole = Qt::UserRole + 1;
-constexpr int kChosenPlaceRole = Qt::UserRole + 2;
+constexpr int kManualPoseRole = Qt::UserRole + 2;     // target-local pose, empty object = Automatic
+constexpr int kBindingRole = Qt::UserRole + 3;        // class_id, observed_xyz_m, dimensions_m
+constexpr int kReviewRole = Qt::UserRole + 4;         // status, message, place_label from the review
 
 QString sequence_object_id(const QListWidgetItem * item)
 {
@@ -37,19 +43,55 @@ QString sequence_object_id(const QListWidgetItem * item)
   return id.isEmpty() ? item->text() : id;
 }
 
-QJsonObject chosen_place(const QListWidgetItem * item)
+bool same_pose(const QJsonObject & a, const QJsonObject & b)
 {
-  const QString chosen = item->data(kChosenPlaceRole).toString();
-  for (const auto & value : item->data(kPlaceOptionsRole).toJsonArray())
-    if (value.toObject().value("id").toString() == chosen) return value.toObject();
-  return {};
+  for (const auto & key : {"xyz_m", "rpy_rad"}) {
+    const auto x = a.value(key).toArray(), y = b.value(key).toArray();
+    if (x.size() != 3 || y.size() != 3) return false;
+    for (int i = 0; i < 3; ++i) if (std::abs(x[i].toDouble() - y[i].toDouble()) > 1e-6) return false;
+  }
+  return true;
 }
 
-void show_sequence_item(QListWidgetItem * item)
+// The offered place matching the item's manual pose ("" = Automatic, "custom" = no offered place matches).
+QString chosen_place_id(const QListWidgetItem * item)
 {
-  const QJsonObject place = chosen_place(item);
-  item->setText(sequence_object_id(item) + "  →  " +
-                (place.isEmpty() ? QString("Automatic place") : place.value("label").toString()));
+  const auto pose = item->data(kManualPoseRole).toJsonObject();
+  if (pose.isEmpty()) return QString();
+  for (const auto & value : item->data(kPlaceOptionsRole).toJsonArray())
+    if (same_pose(value.toObject().value("local_pose").toObject(), pose)) return value.toObject().value("id").toString();
+  return "custom";
+}
+
+QString place_description(const QListWidgetItem * item)
+{
+  const auto pose = item->data(kManualPoseRole).toJsonObject();
+  const auto review = item->data(kReviewRole).toJsonObject();
+  if (pose.isEmpty()) return review.value("place_label").toString().startsWith("Automatic")
+                             ? review.value("place_label").toString() : QString("Automatic");
+  const QString id = chosen_place_id(item);
+  for (const auto & value : item->data(kPlaceOptionsRole).toJsonArray())
+    if (value.toObject().value("id").toString() == id) return value.toObject().value("label").toString();
+  const auto xyz = pose.value("xyz_m").toArray();
+  return QString("Custom place (x %1, y %2 m)").arg(xyz[0].toDouble(), 0, 'f', 3).arg(xyz[1].toDouble(), 0, 'f', 3);
+}
+
+void show_sequence_item(QListWidgetItem * item, int position)
+{
+  QString id = sequence_object_id(item);
+  if (id.startsWith("runtime::")) id = id.mid(9);
+  const auto binding = item->data(kBindingRole).toJsonObject();
+  const auto review = item->data(kReviewRole).toJsonObject();
+  const QString status = review.value("status").toString();
+  const bool included = item->checkState() == Qt::Checked;
+  QString text = included ? QString("%1. %2").arg(position).arg(id) : QString("— %1").arg(id);
+  if (binding.contains("class_id")) text += " (" + binding.value("class_id").toString() + ")";
+  text += included ? "  →  " + place_description(item) : QString("  (not in the sequence)");
+  if (included && (status == "NEEDS_REVIEW" || status == "BLOCKED")) text = "⚠ " + text + "  —  " + QString(status).replace('_', ' ');
+  item->setText(text);
+  item->setForeground(!included ? QBrush(Qt::gray) : status == "BLOCKED" ? QBrush(QColor("#b3261e"))
+                      : status == "NEEDS_REVIEW" ? QBrush(QColor("#9a5b00")) : QBrush());
+  item->setToolTip(review.value("message").toString());
 }
 }  // namespace
 
@@ -179,15 +221,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
           .arg(report.value("total_observed").toInt()));
       QStringList details;
       const auto queue = report.value("queue").toArray();
-      auto * order_list = findChild<QListWidget *>("taskSequenceOrder");
-      order_list->clear();
-      for (const auto & entry : queue) {
-        auto * item = new QListWidgetItem(order_list);
-        item->setData(kObjectIdRole, entry.toObject().value("object_id").toString());
-        item->setData(kPlaceOptionsRole, entry.toObject().value("place_options").toArray());
-        show_sequence_item(item);
-      }
-      if (order_list->count()) order_list->setCurrentRow(0);
+      rebuild_sequence(report);
       for (const auto & entry : queue) {
         const auto item = entry.toObject();
         details << QString("Queue %1: %2 [%3] → %4")
@@ -224,48 +258,58 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   check_help->setWordWrap(true);
   perception->addRow(check_help);
   connect(check_button, &QPushButton::clicked, this, [this] { start_plan_check(false); });
-  auto * order_label = new QLabel("Pick sequence (drag to reorder; filled by Preview queue):", this);
+  auto * order_label = new QLabel("Pick sequence — tick the objects to pick, drag to set the order, and choose "
+                                  "where each one goes. Saved with the task.", this);
   order_label->setWordWrap(true);
   perception->addRow(order_label);
   auto * order = new QListWidget(this);
   order->setObjectName("taskSequenceOrder");
   order->setDragDropMode(QAbstractItemView::InternalMove);
-  order->setMaximumHeight(110);
+  order->setDefaultDropAction(Qt::MoveAction);
+  order->setMaximumHeight(130);
   perception->addRow(order);
   auto * sequence_place = new QComboBox(this);
   sequence_place->setObjectName("taskSequencePlace");
   sequence_place->setEnabled(false);
-  sequence_place->setToolTip("Where the selected object is put in the destination. Automatic gives it the next free place. "
-                    "Numbered places are free spots in the empty destination region, measured in the target's frame; "
-                    "the full-sequence check plans them, nothing moves.");
+  sequence_place->setToolTip("Automatic gives the object the next free place when the sequence is checked, after "
+                             "places chosen for other objects are reserved. A numbered place is a fixed spot in the "
+                             "destination with room for this object, its clearance and the planner's placement tolerance.");
   perception->addRow("Place for selected object:", sequence_place);
-  connect(order, &QListWidget::currentItemChanged, this, [sequence_place](QListWidgetItem * item) {
-    const QSignalBlocker block(sequence_place);
-    sequence_place->clear();
-    sequence_place->addItem("Automatic (next free place)", QString());
-    const auto options = item ? item->data(kPlaceOptionsRole).toJsonArray() : QJsonArray();
-    for (const auto & value : options)
-      sequence_place->addItem(value.toObject().value("label").toString(), value.toObject().value("id").toString());
-    sequence_place->setCurrentIndex(item ? std::max(0, sequence_place->findData(item->data(kChosenPlaceRole).toString())) : 0);
-    sequence_place->setEnabled(item && !options.isEmpty());
-  });
-  connect(sequence_place, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, order, sequence_place](int) {
+  auto * place_detail = new QLabel(this);
+  place_detail->setObjectName("taskSequencePlaceDetail");
+  place_detail->setWordWrap(true);
+  place_detail->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  perception->addRow(place_detail);
+  auto * summary = new QLabel("Preview the queue to build a pick sequence.", this);
+  summary->setObjectName("taskSequenceSummary");
+  summary->setWordWrap(true);
+  perception->addRow(summary);
+  connect(order, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *) { show_selected_place(); });
+  connect(sequence_place, qOverload<int>(&QComboBox::activated), this, [this, order, sequence_place](int) {
     auto * item = order->currentItem();
-    if (!item) return;
-    item->setData(kChosenPlaceRole, sequence_place->currentData().toString());
-    show_sequence_item(item);
-    findChild<QLabel *>("taskSimulationBatchStatus")->setText("Places changed — check the full sequence again.");
+    if (!item || sequence_loading_) return;
+    const QString id = sequence_place->currentData().toString();
+    if (id == "custom") return;  // Keeps the saved custom place.
+    QJsonObject pose;
+    for (const auto & value : item->data(kPlaceOptionsRole).toJsonArray())
+      if (value.toObject().value("id").toString() == id) pose = value.toObject().value("local_pose").toObject();
+    item->setData(kManualPoseRole, pose);
+    item->setData(kReviewRole, QJsonObject());  // Re-reviewed on validation.
+    write_sequence();
+  });
+  connect(order, &QListWidget::itemChanged, this, [this](QListWidgetItem * item) {
+    if (sequence_loading_ || item->data(Qt::UserRole + 5).toBool() == (item->checkState() == Qt::Checked)) return;
+    item->setData(Qt::UserRole + 5, item->checkState() == Qt::Checked);
+    write_sequence();
   });
   auto * sequence_button = new QPushButton("Check full sequence (no motion)", this);
   sequence_button->setObjectName("taskSimulationSequenceCheck");
   sequence_button->setEnabled(false);
-  sequence_button->setToolTip("Plans the objects in this order. Each complete plan virtually places the object "
+  sequence_button->setToolTip("Plans the saved sequence in order. Each complete plan virtually places the object "
                               "before the next one is planned. PLANNED — NOT EXECUTED.");
   perception->addRow(sequence_button);
   connect(sequence_button, &QPushButton::clicked, this, [this] { start_plan_check(true); });
-  connect(order->model(), &QAbstractItemModel::rowsMoved, this, [this] {
-    findChild<QLabel *>("taskSimulationBatchStatus")->setText("Sequence order changed — check the full sequence again.");
-  });
+  connect(order->model(), &QAbstractItemModel::rowsMoved, this, [this] { write_sequence(); });
   connect(cancel_button, &QPushButton::clicked, this, [this, cancel_button] {
     if (!plan_check_) return;
     cancel_button->setEnabled(false);
@@ -325,8 +369,12 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   auto * buttons = new QHBoxLayout;
   auto * save_button = new QPushButton("Save task", this); save_button->setObjectName("taskSave");
   auto * validate_button = new QPushButton("Validate task", this); validate_button->setObjectName("taskValidate");
-  buttons->addWidget(save_button); buttons->addWidget(validate_button); layout->addLayout(buttons);
+  auto * revert_button = new QPushButton("Revert", this); revert_button->setObjectName("taskRevert");
+  revert_button->setToolTip("Discard unsaved task changes and reload the saved task.");
+  revert_button->setEnabled(false);
+  buttons->addWidget(save_button); buttons->addWidget(revert_button); buttons->addWidget(validate_button); layout->addLayout(buttons);
   connect(save_button, &QPushButton::clicked, this, [this] { save(); });
+  connect(revert_button, &QPushButton::clicked, this, [this] { revert(); });
   connect(validate_button, &QPushButton::clicked, this, &TaskIntentEditor::validate_now);
   validation_timer_ = new QTimer(this); validation_timer_->setSingleShot(true);
   connect(validation_timer_, &QTimer::timeout, this, &TaskIntentEditor::validate_now);
@@ -395,6 +443,7 @@ void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
   findChild<QPushButton *>("taskSimulationSequenceCheck")->setEnabled(false);
   clear_sequence_results("Task changed — earlier plan results no longer apply.");
   status_->setText("Unsaved task — validate and save before planning.");
+  update_dirty_ui();
   validation_timer_->start(250); emit edited();
 }
 void TaskIntentEditor::refresh_fields()
@@ -448,7 +497,8 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
   findChild<QLabel *>("taskSimulationBatchStatus")->setText(
       "Select an explicit commissioning recording and Save Task to preview the queue.");
   findChild<QPlainTextEdit *>("taskSimulationBatchDetails")->setPlainText("No batch preview has been run.");
-  findChild<QListWidget *>("taskSequenceOrder")->clear();
+  sequence_loading_ = true; findChild<QListWidget *>("taskSequenceOrder")->clear(); sequence_loading_ = false;
+  sequence_rebind_pending_ = false;
   validation_timer_->stop(); model_ = {};
   try {
     QFile file(scene_ + "/config/workcell_builder_task_intent.yaml");
@@ -462,7 +512,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     }
     regions_->clear(); regions_->addItems(report["regions"].toObject().keys());
     strategies_->setEditable(false);
-    refresh_fields(); setEnabled(true); apply_report(report); return true;
+    refresh_fields(); setEnabled(true); apply_report(report); rebuild_sequence(report); update_dirty_ui(); return true;
   } catch (const std::exception & exc) {
     error_ = QString::fromUtf8(exc.what()); status_->setText("BLOCKED — " + error_); return false;
   }
@@ -482,6 +532,11 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
   const auto status = (error_.isEmpty() && input_blocker_.isEmpty()) ? (report["warnings"].toArray().isEmpty() ? "Authoring valid" : "WARNING") : "BLOCKED";
   status_->setText(QString("%1%2\n%3\nIntent hash: %4\nPlanning still requires complete-cycle validation.")
     .arg(status, dirty_ ? " — unsaved" : "", messages.join("\n"), report["normalized_intent_sha256"].toString("unavailable")));
+  if (report.contains("sequence_review")) apply_sequence_review(report["sequence_review"].toObject());
+  else if (auto * summary = findChild<QLabel *>("taskSequenceSummary"); summary && dirty_ &&
+           summary->text().startsWith("Unsaved changes — checking"))
+    summary->setText("Unsaved changes — no sequence: the check will use the whole queue, all automatic.");
+  update_dirty_ui();
 }
 void TaskIntentEditor::validate_now()
 {
@@ -507,6 +562,7 @@ bool TaskIntentEditor::save(QString * error)
   try {
     if (!input_errors_.isEmpty()) throw std::runtime_error(input_errors_.first().toStdString());
     if (model_.authored_yaml.empty()) throw std::runtime_error("No task loaded. Configure or reopen the task.");
+    if (sequence_rebind_pending_) write_sequence();  // Explicit Save after the changed-recording warning.
     auto report = request(true);
     const auto normalized = report["task_intent"].toObject();
     const QByteArray bytes = QJsonDocument(normalized).toJson(QJsonDocument::Indented);
@@ -563,6 +619,194 @@ bool TaskIntentEditor::stop_plan_check(int wait_ms)
   return clean;
 }
 
+void TaskIntentEditor::rebuild_sequence(const QJsonObject & report)
+{
+  auto * order = findChild<QListWidget *>("taskSequenceOrder");
+  const auto review = report.value("sequence_review").toObject();
+  const bool saved = !review.isEmpty() && review.value("status").toString() != "NOT_CONFIGURED";
+  const bool preview = report.contains("queue");
+  QMap<QString, QJsonObject> observed;
+  for (const auto & value : report.value("observed_objects").toArray())
+    observed[value.toObject().value("object_id").toString()] = value.toObject();
+  const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(model_.to_yaml()))).object();
+  const QString saved_sha = value_at(root, "sequence/source_sha256").toString();
+  sequence_source_sha_ = preview ? report.value("source_sha256").toString() : saved_sha;
+  sequence_rebind_pending_ = saved && preview && sequence_source_sha_ != saved_sha;
+  sequence_loading_ = true;
+  order->clear();
+  QSet<QString> listed;
+  auto add = [&](const QString & id, const QJsonObject & binding, const QJsonArray & options,
+                 const QJsonObject & manual, bool included, const QJsonObject & item_review) {
+    auto * item = new QListWidgetItem(order);
+    item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsDragEnabled);
+    item->setCheckState(included ? Qt::Checked : Qt::Unchecked);
+    item->setData(Qt::UserRole + 5, included);
+    item->setData(kObjectIdRole, id);
+    item->setData(kBindingRole, binding);
+    item->setData(kPlaceOptionsRole, options);
+    item->setData(kManualPoseRole, manual);
+    item->setData(kReviewRole, item_review);
+    listed.insert(id);
+  };
+  auto current_binding = [&](const QString & id) {
+    const auto o = observed.value(id);
+    const auto pose = o.value("world_pose").toArray();
+    return QJsonObject{{"class_id", o.value("class_id")}, {"observed_xyz_m", QJsonArray{pose[0], pose[1], pose[2]}},
+                       {"dimensions_m", o.value("dimensions_m")}};
+  };
+  QMap<QString, QJsonArray> queue_options;
+  for (const auto & value : report.value("queue").toArray())
+    queue_options[value.toObject().value("object_id").toString()] = value.toObject().value("place_options").toArray();
+  if (saved) {
+    for (const auto & value : review.value("items").toArray()) {
+      const auto item = value.toObject();
+      const QString id = item.value("object_id").toString();
+      // A changed recording is re-read only into the list; Save binds it (see sequence_rebind_pending_).
+      const auto binding = sequence_rebind_pending_ && observed.contains(id) ? current_binding(id)
+          : QJsonObject{{"class_id", item.value("class_id")}, {"observed_xyz_m", item.value("observed_xyz_m")},
+                        {"dimensions_m", item.value("dimensions_m")}};
+      const auto options = item.value("place_options").toArray().isEmpty() ? queue_options.value(id)
+                                                                            : item.value("place_options").toArray();
+      add(id, binding, options, item.value("mode").toString() == "MANUAL" ? item.value("local_pose").toObject()
+                                                                          : QJsonObject(), true, item);
+    }
+  }
+  for (const auto & value : report.value("queue").toArray()) {
+    const QString id = value.toObject().value("object_id").toString();
+    if (!listed.contains(id)) add(id, current_binding(id), queue_options.value(id), {}, !saved, {});
+  }
+  sequence_loading_ = false;
+  refresh_sequence_texts();
+  if (order->count()) order->setCurrentRow(0);
+  auto * summary = findChild<QLabel *>("taskSequenceSummary");
+  if (sequence_rebind_pending_) {
+    summary->setText("The observation recording changed since this sequence was saved, so the saved objects may be "
+                     "different detections. They are shown as read from the current recording: check each object "
+                     "and place, then Save to bind the sequence to this recording.");
+  } else if (saved) {
+    apply_sequence_review(review);
+  } else if (preview) {
+    summary->setText(QString("No saved sequence: the check uses all %1 eligible object(s) in queue order with "
+                             "automatic places. Untick, reorder or choose places, then Save, to keep a sequence.")
+                       .arg(order->count()));
+  } else {
+    summary->setText("No saved sequence. Preview the queue to choose objects, order and places.");
+  }
+  show_selected_place();
+}
+
+void TaskIntentEditor::apply_sequence_review(const QJsonObject & review)
+{
+  auto * order = findChild<QListWidget *>("taskSequenceOrder");
+  auto * summary = findChild<QLabel *>("taskSequenceSummary");
+  if (!order || review.isEmpty()) return;
+  QMap<QString, QJsonObject> items;
+  for (const auto & value : review.value("items").toArray()) items[value.toObject().value("object_id").toString()] = value.toObject();
+  sequence_loading_ = true;
+  for (int i = 0; i < order->count(); ++i) {
+    auto * item = order->item(i);
+    const auto reviewed = items.value(sequence_object_id(item));
+    item->setData(kReviewRole, item->checkState() == Qt::Checked ? reviewed : QJsonObject());
+    if (item->data(kPlaceOptionsRole).toJsonArray().isEmpty() && !reviewed.value("place_options").toArray().isEmpty())
+      item->setData(kPlaceOptionsRole, reviewed.value("place_options").toArray());
+  }
+  sequence_loading_ = false;
+  refresh_sequence_texts();
+  if (!sequence_rebind_pending_)
+    summary->setText((dirty_ ? QString("Unsaved changes — ") : QString()) + review.value("summary").toString());
+  show_selected_place();
+}
+
+void TaskIntentEditor::refresh_sequence_texts()
+{
+  auto * order = findChild<QListWidget *>("taskSequenceOrder");
+  const bool was = sequence_loading_;
+  sequence_loading_ = true;
+  int position = 0;
+  for (int i = 0; i < order->count(); ++i)
+    show_sequence_item(order->item(i), order->item(i)->checkState() == Qt::Checked ? ++position : 0);
+  sequence_loading_ = was;
+}
+
+void TaskIntentEditor::show_selected_place()
+{
+  auto * order = findChild<QListWidget *>("taskSequenceOrder");
+  auto * place = findChild<QComboBox *>("taskSequencePlace");
+  auto * detail = findChild<QLabel *>("taskSequencePlaceDetail");
+  auto * item = order->currentItem();
+  const QSignalBlocker block(place);
+  place->clear();
+  place->addItem("Automatic (next free place)", QString());
+  if (!item) { place->setEnabled(false); detail->clear(); return; }
+  for (const auto & value : item->data(kPlaceOptionsRole).toJsonArray())
+    place->addItem(value.toObject().value("label").toString(), value.toObject().value("id").toString());
+  const QString chosen = chosen_place_id(item);
+  if (chosen == "custom") place->addItem(place_description(item), "custom");
+  place->setCurrentIndex(std::max(0, place->findData(chosen)));
+  const bool included = item->checkState() == Qt::Checked;
+  place->setEnabled(included && place->count() > 1);
+  const auto review = item->data(kReviewRole).toJsonObject();
+  QStringList lines;
+  const auto manual = item->data(kManualPoseRole).toJsonObject();
+  const auto expected = review.value("expected_local_pose").toObject();
+  auto coordinates = [](const QJsonObject & pose) {
+    const auto xyz = pose.value("xyz_m").toArray();
+    return QString("x %1, y %2, z %3 m").arg(xyz[0].toDouble(), 0, 'f', 3).arg(xyz[1].toDouble(), 0, 'f', 3)
+                                        .arg(xyz[2].toDouble(), 0, 'f', 3);
+  };
+  if (!included) lines << "Not in the sequence: tick it to pick this object.";
+  else if (!manual.isEmpty()) lines << QString("Chosen place, in the %1 frame: %2.").arg(
+      QString::fromStdString(model_.place.asset_ref), coordinates(manual));
+  else if (!expected.isEmpty()) lines << QString("Automatic: allocated when the sequence is checked (expected %1, "
+                                                 "in the %2 frame).").arg(coordinates(expected),
+                                                 QString::fromStdString(model_.place.asset_ref));
+  else lines << "Automatic: allocated when the sequence is checked, after chosen places are reserved.";
+  if (included && item->data(kPlaceOptionsRole).toJsonArray().isEmpty())
+    lines << "No fixed place fits this object in the destination with the current clearance.";
+  if (included && !review.value("message").toString().isEmpty()) lines << review.value("message").toString();
+  detail->setText(lines.join("\n"));
+}
+
+void TaskIntentEditor::write_sequence()
+{
+  if (sequence_loading_ || model_.authored_yaml.empty()) return;
+  auto * order = findChild<QListWidget *>("taskSequenceOrder");
+  QJsonArray items;
+  for (int i = 0; i < order->count(); ++i) {
+    auto * row = order->item(i);
+    const auto binding = row->data(kBindingRole).toJsonObject();
+    if (row->checkState() != Qt::Checked || binding.isEmpty()) continue;
+    const auto pose = row->data(kManualPoseRole).toJsonObject();
+    const QJsonObject placement = pose.isEmpty() ? QJsonObject{{"mode", "AUTO"}} : QJsonObject{
+        {"mode", "MANUAL"}, {"asset_ref", QString::fromStdString(model_.place.asset_ref)},
+        {"region_ref", QString::fromStdString(model_.place.region_ref)}, {"local_pose", pose}};
+    items.append(QJsonObject{{"object_id", sequence_object_id(row)}, {"class_id", binding.value("class_id")},
+                             {"observed_xyz_m", binding.value("observed_xyz_m")},
+                             {"dimensions_m", binding.value("dimensions_m")}, {"placement", placement}});
+  }
+  sequence_rebind_pending_ = false;
+  // No ticked object: no saved sequence (the check falls back to the whole queue, all automatic).
+  set_field("sequence", items.isEmpty() ? QJsonValue() : QJsonValue(QJsonObject{
+      {"source_sha256", sequence_source_sha_}, {"items", items}}));
+  refresh_sequence_texts();
+  findChild<QLabel *>("taskSequenceSummary")->setText("Unsaved changes — checking the sequence…");
+  show_selected_place();
+}
+
+void TaskIntentEditor::update_dirty_ui()
+{
+  if (auto * revert = findChild<QPushButton *>("taskRevert")) revert->setEnabled(dirty_ && !plan_check_);
+}
+
+void TaskIntentEditor::revert()
+{
+  if (!dirty_ || scene_.isEmpty()) return;
+  dirty_ = false;
+  model_ = {};
+  load_scene(scene_, helper_);
+}
+
 void TaskIntentEditor::clear_sequence_results(const QString & why)
 {
   if (plan_check_) return;
@@ -606,20 +850,18 @@ void TaskIntentEditor::start_plan_check(bool sequence)
           [this](int code, QProcess::ExitStatus exit) { finish_plan_check(code, exit == QProcess::NormalExit); });
   QStringList args{script, "--scene", plan_check_scene_, "--limit", "10"};
   if (sequence) {
-    QStringList ids;
-    QJsonObject places;
+    // The checker reads the saved, generated task: the same sequence the CLI and a reopened Builder use.
+    args << "--sequence";
+    int automatic = 0, included = 0;
     auto * order = findChild<QListWidget *>("taskSequenceOrder");
     for (int i = 0; i < order->count(); ++i) {
-      ids << sequence_object_id(order->item(i));
-      const QJsonObject chosen = chosen_place(order->item(i));
-      if (!chosen.isEmpty()) places.insert(ids.back(), chosen.value("local_pose"));
+      if (order->item(i)->checkState() != Qt::Checked) continue;
+      ++included;
+      if (order->item(i)->data(kManualPoseRole).toJsonObject().isEmpty()) ++automatic;
     }
-    args << "--sequence";
-    if (!ids.isEmpty()) args << "--order" << ids.join(",");
-    if (!places.isEmpty()) args << "--placements" << QString::fromUtf8(QJsonDocument(places).toJson(QJsonDocument::Compact));
     QString text = "Checking full sequence — one private fake-hardware MoveIt scene, objects planned in order. No motion.";
     auto * place_policy = findChild<QComboBox *>("taskPlacePolicy");
-    if (place_policy && place_policy->currentText() == "EXACT" && ids.size() != 1) {
+    if (place_policy && place_policy->currentText() == "EXACT" && automatic > 1 && included > 1) {
       text += "\nPlacement policy is EXACT: every object is planned to the same place. "
               "Choose AUTO to give each object its own free place in the destination.";
     }
@@ -684,7 +926,8 @@ void TaskIntentEditor::finish_plan_check(int exit_code, bool normal_exit)
   if (state != "CHECKED" && state != "CANCELLED") {
     status->setText("BLOCKED — " + r.value("reason").toString(
       exit_code < 0 ? "plan check helper failed to start" : "plan check did not produce a result"));
-    details->setPlainText("No complete plan check. No robot motion was performed.");
+    details->setPlainText("No complete plan check. No robot motion was performed." +
+                          (r.contains("output_dir") ? "\nEvidence: " + r.value("output_dir").toString() : QString()));
     return;
   }
   if (plan_check_sequence_) {

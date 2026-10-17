@@ -344,20 +344,21 @@ def test_sequence_exact_placement_is_planned_unchanged():
 def test_sequence_auto_placement_skips_places_taken_by_earlier_objects():
     poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, [], CUP)
     assert allocation["applied"] is True and len(poses) == 3
-    assert poses[0]["xyz_m"] == pytest.approx([-0.065, 0, 0.01])
+    # Clearance plus the planner's 3 mm placement tolerance from the region wall.
+    assert poses[0]["xyz_m"] == pytest.approx([-0.062, 0, 0.01])
     assert all(MODULE.math.dist(a["xyz_m"], b["xyz_m"]) >= 0.02 for a in poses for b in poses if a is not b)
-    placed = [([0.385, 0.22, 0.11, 0, 0, 0, 1], CUP), ([0.45, 0.22, 0.11, 0, 0, 0, 1], CUP)]
+    placed = [([0.388, 0.22, 0.11, 0, 0, 0, 1], CUP)]
     poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, placed, CUP)
-    assert [p["xyz_m"] for p in poses] == [pytest.approx([0.065, 0, 0.01])]
-    assert allocation["objects_checked_for_overlap"] == 2 and allocation["free_slot_count"] == 5
-    placed.append(([0.515, 0.22, 0.11, 0, 0, 0, 1], CUP))
+    assert poses[0]["xyz_m"] == pytest.approx([0.006, 0, 0.01])  # Flush: size + clearance + tolerance apart.
+    assert allocation["objects_checked_for_overlap"] == 1
+    placed.append(([0.456, 0.22, 0.11, 0, 0, 0, 1], CUP))
     assert MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, placed, CUP)[0] == []
 
 
 def test_sequence_preferred_placement_tries_the_nearest_free_place_first():
     poses, _ = MODULE.sequence_place_poses(
-        sequence_intent("PREFERRED", {"xyz_m": [0.06, 0.0, 0.01], "rpy_rad": [0, 0, 0]}), SEQUENCE_ENVIRONMENT, [], CUP)
-    assert poses[0]["xyz_m"] == pytest.approx([0.06, 0, 0.01])
+        sequence_intent("PREFERRED", {"xyz_m": [0.05, 0.0, 0.01], "rpy_rad": [0, 0, 0]}), SEQUENCE_ENVIRONMENT, [], CUP)
+    assert poses[0]["xyz_m"] == pytest.approx([0.05, 0, 0.01])
 
 
 def test_furthest_attempt_reports_how_far_a_place_got():
@@ -384,6 +385,6 @@ def test_sequence_chosen_place_is_tried_alone_unless_already_occupied():
 
 
 def test_sequence_automatic_places_keep_clear_of_places_chosen_for_later_objects():
-    later = [([0.385, 0.22, 0.11, 0, 0, 0, 1], CUP)]  # Left end reserved for a later object.
+    later = [([0.388, 0.22, 0.11, 0, 0, 0, 1], CUP)]  # Near end reserved for a later object.
     poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, [], CUP, reserved=later)
-    assert poses[0]["xyz_m"] == pytest.approx([0.0, 0, 0.01]) and allocation["reserved_for_later_objects"] == 1
+    assert poses[0]["xyz_m"] == pytest.approx([0.006, 0, 0.01]) and allocation["reserved_for_later_objects"] == 1

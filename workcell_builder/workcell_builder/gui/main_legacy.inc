@@ -1244,7 +1244,7 @@ int main(int argc, char * argv[])
     MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
     TestMain::start_multiobject_plan_acceptance(&w, &a, output, recording, has_cli_flag(args, "--reopen"),
                                                 has_cli_flag(args, "--no-plan-check"), cli_value(args, "--sequence-order"),
-                                                cli_value(args, "--sequence-places"));
+                                                cli_value(args, "--sequence-places"), cli_value(args, "--expect-sequence"));
     return a.exec();
   }
   if (has_cli_flag(args, "--full-cycle-acceptance")) {

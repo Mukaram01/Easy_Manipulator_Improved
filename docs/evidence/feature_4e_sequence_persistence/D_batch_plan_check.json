@@ -1,0 +1,296 @@
+{
+  "epd_used": false,
+  "execution_attempted": false,
+  "initial_scene_policy": "fresh_fake_hardware_launch_per_object_all_observations_inserted",
+  "motion_commanded": false,
+  "moveit_planning_attempted": true,
+  "objects": [
+    {
+      "all_observations_in_planning_scene": true,
+      "class_id": "cup",
+      "colliding_links": [],
+      "collision_objects": [],
+      "destination_region_ref": "default_drop_zone",
+      "evidence_dir": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234322Z/object_01",
+      "execution_attempted": false,
+      "first_failed_stage": null,
+      "grasp_strategy_policy": "AUTO",
+      "moveit_code": 1,
+      "object_id": "runtime::cup-01",
+      "order": 1,
+      "outcome": "PLANNABLE",
+      "planning_scene_inserted_ids": [
+        "runtime::bottle-e",
+        "runtime::bottle-n",
+        "runtime::bottle-s",
+        "runtime::bottle-w",
+        "runtime::cup-01",
+        "runtime::cup-02",
+        "runtime::cup-03",
+        "runtime::cup-04"
+      ],
+      "reason": "all nine plan-only stages succeeded",
+      "recorded_geometry": {
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "world_pose": [
+          0.26,
+          -0.08,
+          0.051,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "runtime_seconds": 20.4,
+      "selected_grasp_strategy": "top_2f",
+      "shutdown_clean": true,
+      "source_zone_ref": "pick_zone_main"
+    },
+    {
+      "all_observations_in_planning_scene": true,
+      "class_id": "cup",
+      "colliding_links": [],
+      "collision_objects": [],
+      "destination_region_ref": "default_drop_zone",
+      "evidence_dir": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234322Z/object_02",
+      "execution_attempted": false,
+      "first_failed_stage": null,
+      "grasp_strategy_policy": "AUTO",
+      "moveit_code": 1,
+      "object_id": "runtime::cup-02",
+      "order": 2,
+      "outcome": "PLANNABLE",
+      "planning_scene_inserted_ids": [
+        "runtime::bottle-e",
+        "runtime::bottle-n",
+        "runtime::bottle-s",
+        "runtime::bottle-w",
+        "runtime::cup-01",
+        "runtime::cup-02",
+        "runtime::cup-03",
+        "runtime::cup-04"
+      ],
+      "reason": "all nine plan-only stages succeeded",
+      "recorded_geometry": {
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "world_pose": [
+          0.45,
+          -0.12,
+          0.051,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "runtime_seconds": 22.0,
+      "selected_grasp_strategy": "top_2f",
+      "shutdown_clean": true,
+      "source_zone_ref": "pick_zone_main"
+    },
+    {
+      "all_observations_in_planning_scene": true,
+      "attempt_failure_kinds": [
+        "collision",
+        "constraint",
+        "planning"
+      ],
+      "candidate_attempts": 13,
+      "class_id": "cup",
+      "colliding_links": [
+        "gripper_finger1_finger_tip_link",
+        "gripper_finger2_finger_tip_link"
+      ],
+      "collision_objects": [
+        "runtime::bottle-e",
+        "runtime::bottle-w"
+      ],
+      "destination_region_ref": "default_drop_zone",
+      "evidence_dir": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234322Z/object_03",
+      "execution_attempted": false,
+      "first_failed_stage": "PREPLAN_GRASP",
+      "grasp_strategy_policy": "AUTO",
+      "moveit_code": -27,
+      "object_id": "runtime::cup-03",
+      "order": 3,
+      "outcome": "COLLISION",
+      "planning_scene_inserted_ids": [
+        "runtime::bottle-e",
+        "runtime::bottle-n",
+        "runtime::bottle-s",
+        "runtime::bottle-w",
+        "runtime::cup-01",
+        "runtime::cup-02",
+        "runtime::cup-03",
+        "runtime::cup-04"
+      ],
+      "reason": "MoveIt action failed: status=6, code=-27",
+      "recorded_geometry": {
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "world_pose": [
+          0.38,
+          -0.25,
+          0.051,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "runtime_seconds": 21.6,
+      "selected_grasp_strategy": null,
+      "shutdown_clean": true,
+      "source_zone_ref": "pick_zone_main"
+    }
+  ],
+  "obstacles": [
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-e",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.448,
+        -0.25,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-n",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.38,
+        -0.182,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-s",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.38,
+        -0.318,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-w",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.312,
+        -0.25,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "cup",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "object_id": "runtime::cup-04",
+      "planning_scene_verified": false,
+      "reason": "OUTSIDE_PICK_VOLUME",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.565,
+        -0.34,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "outcome_counts": {
+    "BLOCKED": 0,
+    "COLLISION": 1,
+    "INVALID_GEOMETRY": 0,
+    "INVALID_INPUT": 0,
+    "MISSING_DESTINATION": 0,
+    "NO_VALID_GRASP": 0,
+    "PLANNABLE": 2,
+    "SEQUENCE_BLOCKED": 0,
+    "STALE_INPUT": 0,
+    "UNREACHABLE": 0
+  },
+  "output_dir": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234322Z",
+  "preview": {
+    "destination_region_ref": "default_drop_zone",
+    "queued": 3,
+    "reason": "",
+    "source_path": "/ws/src/easy_manipulation_deployment/tests/fixtures/multiobject_plan_check_ur5_2f_test.yaml",
+    "source_sha256": "bc94da59df646fa2ebc42bcc9b8fe0d720b5c6a192f742c0bf7d29fdac3c3ca5",
+    "status": "ELIGIBILITY_ONLY",
+    "task_intent_sha256": "fb005f760f7e2fc6258a8679741386da942b599a67b50b164a21e75472e014a8",
+    "total_eligible": 3,
+    "total_observed": 8
+  },
+  "scene": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+  "schema_version": "workcell_simulation_batch_plan_check/v1",
+  "sequence_note": "Each object was planned from the same recorded scene with every other object in place. Picking one object first is not simulated; a batch order is not validated.",
+  "sequence_status": "SEQUENCE_NOT_VALIDATED",
+  "simulator_live_connected": false,
+  "status": "CHECKED"
+}
