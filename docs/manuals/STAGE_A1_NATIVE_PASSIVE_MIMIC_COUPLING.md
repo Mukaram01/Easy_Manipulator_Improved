@@ -36,13 +36,25 @@ This is a simulation bound, not a measured motor torque.
 
 No 1000 N·m follower authority is introduced.
 
-## Evidence (workstation, 2026-10-04, stock-versus-native build `simulator_physics_stage_a1_20261004_passive_union`)
+## Evidence status
+
+The patch committed here matches the workstation overlay build
+`simulator_physics_stage_a1_20261004_final_build`. There is no physical Stage-A
+evidence on this exact patch yet.
+
+The 2026-10-04 stationary PASS was run on `simulator_physics_stage_a1_20261004_passive_union`,
+which was built from a later, uncommitted revision of `passive-joint-coupling.patch` (+188/−34 lines).
+That revision normalizes each follower's skeleton to its final contact-union root before grouping,
+because otherwise "separate groups can otherwise clear each other's solved coupling impulses".
+It also replaces BOX contact handling with double-precision geometry. Results on that build:
 
 - Measured coupling over 15,524 physics frames: maximum |q_f − m·q_l| is 6.26e-8 rad,
   against the unchanged 0.02 rad guard.
 - Stationary retention PASS, `runtime::part_06` grasp 1: 5.0 s simulated time,
   5,003 samples, 10.1 µm / 1.5e-4 rad tool-object motion, clean shutdown.
-- That run is stationary only. Lift, transfer, release and home are not yet
-  qualified on this coupling.
+
+These results do not qualify this PR's committed patch. Lift, transfer, release and
+home are unqualified on either revision. The uncommitted revision is preserved on the local
+branch `wip/stage-a-qual-20261018-workstation-snapshot` and needs its own review.
 
 No contact, slip, retention, freshness, coupling, ACM or pile threshold is changed.
