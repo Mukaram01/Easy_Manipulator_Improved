@@ -100,3 +100,30 @@ unchanged. A regression proves a later feasible catalogue candidate is reached
 instead of being stranded behind an empty reservation. Search remains bounded;
 this correction does not imply exhaustive catalogue coverage or resume every
 candidate after a failed retry.
+
+
+## Discovery continuation after spent retries
+
+The reservation correction was tested at `fdb752b9` in a fresh identity-admitted
+session. It considered 84 unique catalogue IDs (88 attempts), leaving 46 IDs
+untested. Failures were 58 clearance rejections, 15 explicit descent collisions,
+11 bounded IK code -31 outcomes, three uncertified approaches and one candidate
+slice exhaustion. No physical execution occurred; shutdown was clean with zero
+owned survivors. Exact evidence is retained under
+`/home/user/workcell_ws/diagnostics/stage-a-safe-search-20261018/`.
+
+A second scheduler limitation was demonstrated: top discovery paused with
+392.795 seconds left for three real retries, but those retries used only about
+132.4 seconds. The untested suffix was never resumed before fallback. After a
+reserved beam is spent unsuccessfully, discovery now resumes once through the
+same cache, candidate order and preplanner, using only the original remaining
+budget. No candidate is retried again by continuation, and newly discovered
+retryable failures do not receive a second beam. EXACT selection and resolved
+revalidation are unchanged. Evidence counts distinguish resumed discovery.
+
+Four regressions cover one/three failed retry slots and later safe/unsafe
+candidates. Safe fixtures must complete the actual full-cycle preplanner; unsafe
+fixtures remain rejected. Existing fallback-order checks require the resumed
+preferred-strategy suffix before fallback and count all retryable candidates.
+This improves coverage without claiming exhaustive search or changing any
+physical acceptance requirement.

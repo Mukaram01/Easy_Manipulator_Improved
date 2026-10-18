@@ -837,6 +837,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             phase_retryable = set()
             phase_discovered = []
             discovery_cutoff = {}
+            retry_beam_spent = False
 
             def discover(request, strategy=strategy):
                 key = request_key(request)
@@ -848,7 +849,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         strategy_phases.index(request['strategy_ref']) > phase_index))
                 if cached is not None:
                     return copy.deepcopy(cached)
-                if reserve_retry_budget and grasp_policy != 'EXACT' and phase_retryable:
+                if (reserve_retry_budget and not retry_beam_spent and
+                        grasp_policy != 'EXACT' and phase_retryable):
                     remaining = deadline - time.monotonic()
                     # Reserve only slots the current retry beam can actually
                     # consume. Empty slots must not starve untested candidates.
@@ -973,6 +975,27 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
             if resolution['readiness_status'] in ('READY', 'WARNING') or stop_all:
                 break
+
+            if discovery_cutoff and time.monotonic() < deadline:
+                # The bounded retry beam has now been spent. Reuse its unused
+                # time for the untested suffix before falling back, without
+                # repeating cached attempts or extending any planning budget.
+                retry_beam_spent = True
+                before_resume = len(phase_discovered)
+                resolution = resolve_task_intent(
+                    intent, environment, cell, targets, discover,
+                    now=resolution_reference_time, resolved=None)
+                phase_record.update(
+                    resumed_discovered_candidates=len(phase_discovered) - before_resume,
+                    discovered_candidates=len(phase_discovered),
+                    retryable_candidates=len(phase_retryable),
+                    resumed_status=resolution['readiness_status'],
+                    resumed_code=resolution['readiness']['primary_code'])
+                if resolution['readiness_status'] in ('READY', 'WARNING'):
+                    break
+                if resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED':
+                    stop_all = True
+                    break
 
         summary['candidate_search'] = {
             'mode': 'strategy_phased_progress_beam',

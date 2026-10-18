@@ -1004,14 +1004,17 @@ def test_reserved_discovery_reaches_fallback_and_reports_actual_failures(monkeyp
     else:
         with pytest.raises(RuntimeError,match='GRASP_GEOMETRY_INVALID'):
             runtime.plan_authored_cycle(**kwargs)
-    assert calls[:5]==[('discovery:top_2f','top_2f::000'),
+    assert calls[:11]==[('discovery:top_2f','top_2f::000'),
                        ('discovery:top_2f','top_2f::001'),
                        ('retry:top_2f','top_2f::000'),
-                       ('retry:top_2f','top_2f::001'),
+                       ('retry:top_2f','top_2f::001')]+[
+                       ('discovery:top_2f',f'top_2f::{i:03d}') for i in range(2,8)]+[
                        ('discovery:side_grip_basic','side_grip_basic::000')]
     search=kwargs['summary']['candidate_search']
     assert search['phases'][0]['discovery_stop_reason']=='RETRY_BUDGET_RESERVED'
     assert search['phases'][0]['retries'][0]['result_code']=='CANDIDATE_SLICE_EXHAUSTED'
+    assert search['phases'][0]['retryable_candidates']==8
+    assert search['phases'][0]['resumed_discovered_candidates']==6
     assert search['phases'][1]['discovered_candidates']>0
     result=kwargs['summary']['task_intent_resolution']
     actual_ids={cid for _,cid in calls}
@@ -1640,3 +1643,63 @@ def test_unused_retry_slots_cannot_hide_later_feasible_catalog_candidate(monkeyp
     assert clock[0]<kwargs['deadline']
     assert kwargs['summary']['candidate_search']['retry_candidate_wall_budget']==180.
     assert kwargs['summary']['candidate_search']['retry_pass_used'] is False
+
+
+@pytest.mark.parametrize('retry_count', [1, 3])
+@pytest.mark.parametrize('later_safe', [False, True])
+def test_discovery_resumes_after_failed_retries_without_repeating_candidates(
+        monkeypatch, retry_count, later_safe):
+    """Unused retry time must reach fresh candidates through every normal gate."""
+    import full_cycle_preplanner
+    kwargs, clock, _, _, _ = timed_authored_fixture(monkeypatch, 'PREFERRED')
+    grasp = kwargs['intent']['pick']['grasp']
+    grasp.update(strategy_ref='finger_pinch_basic',
+                 approach={'axis': 'tool_z', 'distance_m': .09})
+    grasp['orientation']['mode'] = 'tool_aligned'
+    kwargs.update(deadline=clock[0] + (300. if retry_count == 1 else 800.),
+                  discovery_candidate_budget=60., retry_candidate_budget=180.,
+                  reserve_retry_budget=True)
+    original = full_cycle_preplanner.preplan_full_cycle
+    calls = []
+
+    def controlled_failure_then_real_cycle(**arguments):
+        candidate = arguments['candidate']
+        phase = kwargs['contract']['_candidate_search_pass']
+        calls.append((phase, candidate.candidate_id))
+        index = int(candidate.candidate_id.rsplit('::', 1)[1])
+        if (candidate.strategy_ref == 'finger_pinch_basic' and
+                index < retry_count):
+            clock[0] += 100. if phase.startswith('discovery:') else 1.
+            kind, code, reason = 'planning', -6, 'PREPLAN_APPROACH_FAILED'
+        elif (later_safe and candidate.strategy_ref == 'finger_pinch_basic'
+              and index == retry_count):
+            return original(**arguments)
+        else:
+            kind, code, reason = 'collision', -2, 'PREPLAN_GRASP_FAILED'
+        return NS(success=False, candidate_id=candidate.candidate_id,
+                  reason_code=reason, reason='controlled feasibility outcome',
+                  cycle=None, extraction_attempts=[], stages=[], checks=[dict(
+                      code='PREPLAN_APPROACH', status='FAIL', failure_kind=kind,
+                      moveit_code=code)])
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle',
+                        controlled_failure_then_real_cycle)
+    if later_safe:
+        cycle = runtime.plan_authored_cycle(**kwargs)
+        assert cycle['full_cycle_prevalidated']
+        assert cycle['candidate'].candidate_id == f'finger_pinch_basic::{retry_count:03d}'
+    else:
+        with pytest.raises(RuntimeError):
+            runtime.plan_authored_cycle(**kwargs)
+    expected = [('discovery:finger_pinch_basic', f'finger_pinch_basic::{i:03d}')
+                for i in range(retry_count)]
+    expected += [('retry:finger_pinch_basic', f'finger_pinch_basic::{i:03d}')
+                 for i in range(retry_count)]
+    expected += [('discovery:finger_pinch_basic',
+                  f'finger_pinch_basic::{retry_count:03d}')]
+    assert calls[:len(expected)] == expected
+    assert len(calls) == len(set(calls))
+    assert clock[0] < kwargs['deadline']
+    phase = kwargs['summary']['candidate_search']['phases'][0]
+    assert phase['resumed_discovered_candidates'] >= 1
+    assert len(phase['retries']) == retry_count
