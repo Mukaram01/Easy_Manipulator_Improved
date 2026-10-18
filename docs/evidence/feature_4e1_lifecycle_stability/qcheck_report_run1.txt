@@ -1,0 +1,16 @@
+
+[qcheck] USE-AFTER-FREE WRITE: block 0x563feda87760 size 24 written at offset 8 after free; bytes: d5d5d5d5d5d5d5d5 0000000000000000 d500d5d5d5d5d5d5
+[qcheck] freed from call site 0x7ff1791ecef7 on thread 140674729000000
+/lib/x86_64-linux-gnu/libQt5WebEngineWidgets.so.5(_ZN14QWebEngineViewD1Ev+0x47)[0x7ff1791ecef7]
+[qcheck] detected on thread 140673961403968, backtrace:
+/emd/qcheck.so(+0x156f)[0x7ff178e0156f]
+/emd/qcheck.so(+0x1608)[0x7ff178e01608]
+/emd/qcheck.so(free+0x124)[0x7ff178e01864]
+/usr/lib/x86_64-linux-gnu/dri/swrast_dri.so(+0xc8066)[0x7ff160702066]
+/usr/lib/x86_64-linux-gnu/dri/swrast_dri.so(+0x443a6c)[0x7ff160a7da6c]
+/usr/lib/x86_64-linux-gnu/dri/swrast_dri.so(+0x29ec25)[0x7ff1608d8c25]
+/usr/lib/x86_64-linux-gnu/dri/swrast_dri.so(+0x172997)[0x7ff1607ac997]
+/usr/lib/x86_64-linux-gnu/dri/swrast_dri.so(+0xbbf33)[0x7ff1606f5f33]
+/lib/x86_64-linux-gnu/libGLX_mesa.so.0(+0x2fa53)[0x7ff1627d5a53]
+/lib/x86_64-linux-gnu/libGLX_mesa.so.0(+0x32009)[0x7ff1627d8009]
+/lib/x86_64-linux-gnu/libQt5WebEngineCore.so.5(+0x32c7f16)[0x7ff171932f16]
