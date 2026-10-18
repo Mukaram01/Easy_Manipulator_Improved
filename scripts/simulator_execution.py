@@ -434,6 +434,7 @@ class ContactGuard:
         self.phase='approach';self.last=None;self.min_clearance=math.inf;self.validate_current=None
         self.allowed={(a,b) for i,a in enumerate(baseline.entry_names) for j,b in enumerate(baseline.entry_names) if baseline.entry_values[i].enabled[j]}
         self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None;self.held_proof=None
+        self.held_mimic_error=0.
         self.pile_objects={};self.pile_collisions={};self.pile_certificate=None
         self.pile_expired=set();self.pile_origin=None;self.pile_height=0.;self.planning_attached=False
         self.ownership='UNHELD';self.release_goal=None;self.release_candidate=None;self.release_transition=None
@@ -686,7 +687,10 @@ class ContactGuard:
             mimic=j.find('mimic')
             if mimic is None:continue
             actual=joints[j.get('name')][0];parent=joints[mimic.get('joint')][0]
-            if abs(actual-parent*float(mimic.get('multiplier','1')))>.02:raise RuntimeError('measured mimic coupling error')
+            error=abs(actual-parent*float(mimic.get('multiplier','1')))
+            if error>.02:raise RuntimeError('measured mimic coupling error')
+            # Diagnostic only: loaded follower tracking while the grasp is carried.
+            if self.held and self.phase not in ('opening','released'):self.held_mimic_error=max(self.held_mimic_error,error)
         self.last=s
         if self.phase=='released':self.release_samples.append(s)
         self.m.record(self.phase,s)
@@ -713,7 +717,7 @@ class ContactGuard:
         if self.ownership!='UNHELD':raise RuntimeError('physical ownership cannot regress to carried')
         self.held=HeldObject(tool,obj,self.fingers,self.touch,joints[self.leader][0],self.open_position)
         self.ownership='CARRIED'
-        self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
+        self.held_start_sim_ns=s['sim_ns'];self.held_samples=1;self.held_mimic_error=0.
         self.held_proof=dict(run_id=s['run_id'],target=self.object,
             binding=copy.deepcopy(certificate['binding']),start_iteration=s['iteration'],
             start_sim_ns=s['sim_ns'],start_wall_ns=s['wall_ns'])
@@ -837,6 +841,7 @@ class ContactGuard:
         return dict(copy.deepcopy(proof),duration_sim_ns=duration,samples=self.held_samples,
             contact_links=sorted(self.fingers),required_contact_links=sorted(self.held.required),
             relative_translation_m=translation,relative_rotation_rad=rotation,
+            max_mimic_coupling_error_rad=self.held_mimic_error,
             closure_position_rad=joints[self.leader][0],open_position_rad=self.open_position,
             end_iteration=s['iteration'],end_sim_ns=s['sim_ns'],end_wall_ns=s['wall_ns'],
             final_iteration=s['iteration'],final_sim_ns=s['sim_ns'])
