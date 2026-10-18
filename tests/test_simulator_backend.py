@@ -35,7 +35,8 @@ def test_missing_unknown_or_contradictory_identity_rejected(key,value):
 
 
 def test_simulator_derives_followers_and_leaves_input_unchanged(tmp_path):
-    xml='''<robot name="r"><joint name="f"><mimic joint="g" multiplier="-1"/></joint>
+    xml='''<robot name="r"><joint name="g" type="revolute"><limit effort="10"/></joint>
+    <joint name="f" type="continuous"><limit effort="10"/><mimic joint="g" multiplier="-1"/></joint>
     <ros2_control name="hand" type="system"><hardware><plugin>mock_components/GenericSystem</plugin></hardware>
     <joint name="g"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint></ros2_control></robot>'''
     result=simulator_description(xml, str(tmp_path/'controllers.yaml'),'rsp')
@@ -46,6 +47,54 @@ def test_simulator_derives_followers_and_leaves_input_unchanged(tmp_path):
     assert len(root.findall("ros2_control/joint[@name='f']"))==1
     assert 'mock_components/GenericSystem' in xml
     assert 'ign_ros2_control/IgnitionSystem' in result
+
+ROBOTIQ_85_CHAIN='''<robot name="r">
+  <joint name="gripper_finger1_joint" type="revolute"><limit lower="0.0" upper="0.804" velocity="2.0" effort="1000"/></joint>
+  <joint name="gripper_finger2_joint" type="revolute"><limit lower="-3.14" upper="3.14" velocity="100.0" effort="1000"/><mimic joint="gripper_finger1_joint"/></joint>
+  <joint name="gripper_finger1_inner_knuckle_joint" type="continuous"><limit lower="-3.14" upper="3.14" velocity="100.0" effort="0.1"/><mimic joint="gripper_finger1_joint" offset="0"/></joint>
+  <joint name="gripper_finger1_finger_tip_joint" type="continuous"><limit lower="-3.14" upper="3.14" velocity="100.0" effort="0.1"/><mimic joint="gripper_finger1_joint" multiplier="-1"/></joint>
+  <ros2_control name="hand" type="system"><hardware><plugin>mock_components/GenericSystem</plugin></hardware>
+  <joint name="gripper_finger1_joint"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint></ros2_control></robot>'''
+
+
+def test_simulator_mimic_followers_carry_leader_transmission_authority(tmp_path):
+    # The Stage-A trace lost a fingertip at lift while every fingertip-bearing
+    # follower was a 0.1 N m velocity servo; the 1000 N m leader drives no pad.
+    import xml.etree.ElementTree as ET
+    from simulator_backend import mimic_follower_authority
+    root=ET.fromstring(simulator_description(ROBOTIQ_85_CHAIN,str(tmp_path/'c.yaml'),'rsp'))
+    effort={j.get('name'):float(j.find('limit').get('effort')) for j in root.findall('joint')}
+    assert effort=={'gripper_finger1_joint':1000.,'gripper_finger2_joint':1000.,
+                    'gripper_finger1_inner_knuckle_joint':1000.,'gripper_finger1_finger_tip_joint':1000.}
+    # Limits other than effort and the coupling itself are preserved.
+    tip=root.find("joint[@name='gripper_finger1_finger_tip_joint']")
+    assert tip.find('limit').get('velocity')=='100.0' and tip.find('mimic').get('multiplier')=='-1'
+    records=mimic_follower_authority(ET.fromstring(ROBOTIQ_85_CHAIN))
+    assert [(r['joint'],r['source_effort'],r['derived_effort']) for r in records]==[
+        ('gripper_finger2_joint',1000.,1000.),('gripper_finger1_inner_knuckle_joint',.1,1000.),
+        ('gripper_finger1_finger_tip_joint',.1,1000.)]
+    assert 'effort="0.1"' in ROBOTIQ_85_CHAIN
+
+
+def test_mimic_follower_authority_scales_by_multiplier_and_never_lowers():
+    import xml.etree.ElementTree as ET
+    from simulator_backend import mimic_follower_authority
+    root=ET.fromstring('<robot><joint name="l"><limit effort="10"/></joint>'
+        '<joint name="half"><limit effort="0.1"/><mimic joint="l" multiplier="0.5"/></joint>'
+        '<joint name="strong"><limit effort="50"/><mimic joint="l" multiplier="-1"/></joint></robot>')
+    assert {r['joint']:r['derived_effort'] for r in mimic_follower_authority(root)}=={'half':20.,'strong':50.}
+
+
+@pytest.mark.parametrize('robot',[
+    '<robot><joint name="l"/><joint name="f"><limit effort="1"/><mimic joint="l"/></joint></robot>',
+    '<robot><joint name="l"><limit effort="1"/></joint><joint name="f"><mimic joint="l"/></joint></robot>',
+    '<robot><joint name="l"><limit effort="nan"/></joint><joint name="f"><limit effort="1"/><mimic joint="l"/></joint></robot>',
+    '<robot><joint name="l"><limit effort="1"/></joint><joint name="f"><limit effort="1"/><mimic joint="l" multiplier="0"/></joint></robot>'])
+def test_mimic_follower_authority_fails_closed_without_reviewable_limits(robot):
+    import xml.etree.ElementTree as ET
+    from simulator_backend import mimic_follower_authority
+    with pytest.raises(ValueError):mimic_follower_authority(ET.fromstring(robot))
+
 
 @pytest.mark.parametrize('replacement',['RealSystem','unknown','ign_ros2_control/IgnitionSystem'])
 def test_derivation_requires_known_mock_source(replacement,tmp_path):

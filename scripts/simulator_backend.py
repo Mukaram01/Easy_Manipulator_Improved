@@ -80,6 +80,40 @@ def simulator_control_contract():
     return select_simulator_control_contract(prefixes)
 
 
+def mimic_follower_authority(root):
+    """Give each mimic follower the servo authority of its rigid transmission.
+
+    A URDF tree breaks closed linkages (for example the Robotiq 2F-85 four-bar),
+    so the fingertips hang off passive mimic followers rather than the actuated
+    leader. ros2_control simulators enforce a mimic with a velocity servo whose
+    force is bounded by the follower's own <limit effort>. Source descriptions
+    written for kinematic mimic plugins declare token follower efforts (0.1 N m),
+    which caps the contacting pads far below the leader's actuator and leaves no
+    reserve against lift loads. By virtual work a rigid coupling q_f=m*q_l carries
+    tau_f=tau_l/|m|. Efforts are only raised, never lowered; contact, slip and
+    coupling-error checks are unchanged.
+    """
+    joints={j.get('name'):j for j in root.findall('joint')}
+    records=[]
+    for name,joint in joints.items():
+        mimic=joint.find('mimic')
+        if mimic is None:continue
+        leader=joints.get(mimic.get('joint'))
+        multiplier=abs(float(mimic.get('multiplier','1')))
+        leader_limit=leader.find('limit') if leader is not None else None
+        limit=joint.find('limit')
+        if leader_limit is None or limit is None or multiplier==0:
+            raise ValueError('mimic follower authority requires leader/follower effort limits')
+        leader_effort=float(leader_limit.get('effort','0'));source=float(limit.get('effort','0'))
+        if not (math.isfinite(leader_effort) and leader_effort>0 and math.isfinite(source) and source>=0):
+            raise ValueError('invalid mimic leader/follower effort limit')
+        derived=max(source,leader_effort/multiplier)
+        if derived!=source:limit.set('effort',repr(derived))
+        records.append(dict(joint=name,leader=leader.get('name'),multiplier=multiplier,
+                            source_effort=source,derived_effort=derived))
+    return records
+
+
 def simulator_description(xml, controllers, publisher, control_contract=None):
     """Derive runtime interfaces from source URDF; followers never accept commands."""
     root=ET.fromstring(xml); controls=root.findall('ros2_control')
@@ -101,6 +135,7 @@ def simulator_description(xml, controllers, publisher, control_contract=None):
             owner[j.get('name')]=c
             for command in j.findall('command_interface'):
                 if command.get('name')!='position':j.remove(command)
+    mimic_follower_authority(root)
     for joint in root.findall('joint'):
         mimic=joint.find('mimic')
         if mimic is None:continue
@@ -256,7 +291,8 @@ def prepare(xml, controllers, world_path, publisher, output, *, collision_manife
               domain=os.environ.get('ROS_DOMAIN_ID','0'),partition=os.environ.get('IGN_PARTITION',''),
               description_sha256=digest(description),world_sha256=digest((output/'world.sdf').read_bytes()),
               controllers_sha256=digest(controller_path.read_bytes()),expected_controllers=controller_names,
-              support_geometry_binding=support_binding,measurement_pose_source=PHYSICS_POSE_METHOD)
+              support_geometry_binding=support_binding,measurement_pose_source=PHYSICS_POSE_METHOD,
+              mimic_follower_authority=mimic_follower_authority(ET.fromstring(xml)))
     if not spec['partition'] or spec['domain']=='0':raise ValueError('simulator requires explicit isolated ROS_DOMAIN_ID and IGN_PARTITION')
     bridges=[]
     for topic,ros,gz,lazy in [('/clock','rosgraph_msgs/msg/Clock','ignition.msgs.Clock',False),
