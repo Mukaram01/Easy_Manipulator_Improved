@@ -1653,8 +1653,12 @@ def main():
 
     def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
                      ik_binding=None, ik_seed=None, cartesian_corridor=None,
-                     initial_separation_object_ids=None, extraction_intent=None):
+                     initial_separation_object_ids=None, extraction_intent=None, closure_clearance=None):
         stage(name)
+        if closure_clearance is not None and (
+                args.backend != 'simulator' or name != 'PREPLAN_CLOSE_GRIPPER' or group != 'gripper' or
+                closure_clearance.get('accepted') is not True):
+            raise RuntimeError('closure-clearance evidence outside simulator closing context')
         if ik_seed is not None and (name != 'PREPLAN_TRANSFER' or isinstance(goal, dict)
                                    or (group is not None and group != contract['planning_group'])
                                    or ik_binding is not None or straight or cartesian_corridor is not None):
@@ -1905,6 +1909,12 @@ def main():
         goal_msg.planning_options.replan = False
         goal_msg.planning_options.look_around = False
         goal_msg.planning_options.planning_scene_diff = copy.deepcopy(view)
+        if closure_clearance is not None:
+            from closure_clearance import expanded_closure_scene
+            goal_msg.planning_options.planning_scene_diff = expanded_closure_scene(
+                view, closure_clearance['neighbor_inflation_m'])
+            closure_scene_sha256=sha256(json.dumps(message_to_ordereddict(
+                goal_msg.planning_options.planning_scene_diff),sort_keys=True).encode()).hexdigest()
         trace('move-group-goal', goal_msg)
         # OMPL can return an invalid sampled path or exhaust one stochastic
         # planning window for a feasible fixed goal. Retry that identical
@@ -1955,6 +1965,9 @@ def main():
                         planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
                         allowed_planning_time=planning_time, planning_attempts=planning_attempts,
                         max_velocity_scaling_factor=motion_scaling, max_acceleration_scaling_factor=motion_scaling,
+                        **({'closure_clearance':copy.deepcopy(closure_clearance),
+                            'closure_planning_scene_sha256':closure_scene_sha256}
+                           if closure_clearance is not None else {}),
                         **({'cartesian_planner':'workcell/StraightCartesianPath'}
                            if cartesian_corridor is not None else {}),
                         **({'approach_ik': copy.deepcopy(ik_binding) if ik_binding is not None else approach_ik_binding(goal, contract, values)}
@@ -2103,6 +2116,47 @@ def main():
             (root/'qualification.srdf').write_text(srdf)
             summary['qualification_model'] = dict(urdf_sha256=capture_model.sha256,
                 srdf_sha256=sha256(srdf.encode()).hexdigest(), meshes=capture_model.meshes)
+        def screen_closure(*, scene, observation):
+            from closure_clearance import screen_closure_neighbors
+            from grasp_capture import target_observation_agreement
+            sample=copy.deepcopy(measurements.fresh())
+            boxes={}
+            for obj in scene.world.collision_objects:
+                if not obj.id.startswith('runtime::'):continue
+                item=collision_object_dict(obj)
+                if (item is None or item['shape']!='BOX' or obj.id in boxes or
+                        obj.meshes or obj.planes or obj.mesh_poses or obj.plane_poses):
+                    raise RuntimeError('unsupported/duplicate dynamic closure geometry: '+obj.id)
+                boxes[obj.id]=item
+            if observation['id'] not in boxes or not observation_geometry_matches(
+                    observation,boxes[observation['id']]):
+                raise RuntimeError('closure target differs from bound observation')
+            target=boxes[observation['id']]
+            neighbors=[item for name,item in boxes.items() if name!=observation['id']]
+            by_physical={measurements.receipt['world']+'::'+item['id'].removeprefix('runtime::')+
+                         '::link::collision':item for item in [target,*neighbors]}
+            contacts={}
+            measured_poses={}
+            for item in [target,*neighbors]:
+                pose=measurements.object_pose(sample,item['id'].removeprefix('runtime::'))
+                measured_poses[item['id']]=pose
+                if not target_observation_agreement(pose,item['pose'])['accepted']:
+                    raise RuntimeError('closure neighbor changed since bound observation: '+item['id'])
+            physical=next(name for name,item in by_physical.items() if item['id']==target['id'])
+            if not set(by_physical).issubset(sample['collisions']):
+                raise RuntimeError('closure dynamic collision identity missing from simulator')
+            for contact in sample['contacts']:
+                if physical not in (contact['a'],contact['b']):continue
+                other=contact['b'] if contact['a']==physical else contact['a']
+                if other in by_physical:
+                    contacts.setdefault(by_physical[other]['id'],[]).extend(contact['points'])
+            result=screen_closure_neighbors(target,neighbors,contacts,contract.get('geometric_qualification'),
+                                           measured_poses=measured_poses)
+            result.update(run_id=sample['run_id'],iteration=sample['iteration'],sim_ns=sample['sim_ns'],
+                          observation_sha256=summary['observation_sha256'],
+                          receipt_sha256=summary['backend_identity']['receipt_sha256'])
+            return result
+
         def qualify_grasp(*, scene, observation, candidate, planned_open, planned_closed):
             from grasp_capture import qualify_capture, confirm_capture
             sample=copy.deepcopy(measurements.fresh())
@@ -2164,7 +2218,8 @@ def main():
             private_attachment=private_attachment, object_pose_after_motion=object_pose_after_motion,
             place_detachment_diff=place_detachment_diff, stage=stage,
             extraction_candidates=extraction_candidates if authored else None,
-            qualify_grasp=qualify_grasp if capture_model is not None else None)
+            qualify_grasp=qualify_grasp if capture_model is not None else None,
+            screen_closure=screen_closure if capture_model is not None else None)
         if authored:
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,
@@ -2274,6 +2329,13 @@ def main():
                     if not contact_guard.held:
                         apply(PlanningScene(is_diff=True,allowed_collision_matrix=step['before'].allowed_collision_matrix))
                     contact_guard.drain()
+                    if step['stage'] in ('PREPLAN_APPROACH','PREPLAN_CLOSE_GRIPPER'):
+                        from closure_clearance import check_closure_pose_bounds
+                        sample=measurements.fresh()
+                        evidence=check_closure_pose_bounds(objects,{obj['id']:measurements.object_pose(
+                            sample,obj['object_id']) for obj in objects})
+                        summary.setdefault('closure_pose_boundary_checks',[]).append(dict(
+                            stage=label,iteration=sample['iteration'],sim_ns=sample['sim_ns'],objects=evidence))
                     if step['stage']=='PREPLAN_LIFT':contact_guard.begin_pile_separation(measurements.fresh())
                     controlled_cancel=args.simulator_commission=='cancel' and step['stage']=='PREPLAN_APPROACH'
                     summary['execution_attempted']=True

@@ -54,6 +54,7 @@ class PreplanOperations:
     stage: Callable
     extraction_candidates: Callable | None = None
     qualify_grasp: Callable | None = None
+    screen_closure: Callable | None = None
 
 
 @dataclass
@@ -114,6 +115,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
     baseline = copy.deepcopy(initial_scene.allowed_collision_matrix)
     current_stage = None
     check_code = 'GENERATE_GRASPS'
+    closure_clearance = None
 
     def stage(name):
         nonlocal current_stage, check_code
@@ -134,6 +136,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if time.monotonic() > deadline:
             raise budget_failure()
         options = {}
+        if name == 'PREPLAN_CLOSE_GRIPPER' and closure_clearance is not None:
+            options['closure_clearance'] = copy.deepcopy(closure_clearance)
         if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
             options['ik_binding'] = contract['approach_ik']
         if (name == 'PREPLAN_TRANSFER' and contract.get('transfer_ik_seed') is not None
@@ -248,6 +252,15 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if any(a > b for a, b in zip(extents, destination['dimensions'])):
             raise RuntimeError('target exceeds destination bounds')
         original = next(o for o in view.world.collision_objects if o.id == observation['id'])
+        if contract.get('simulator_closure_reserve') is True:
+            stage('PREPLAN_CLOSURE_CLEARANCE')
+            if operations.screen_closure is None:
+                raise RuntimeError('missing conservative closure-clearance screening')
+            closure_clearance = operations.screen_closure(scene=view, observation=observation)
+            if closure_clearance.get('accepted') is not True:
+                raise RuntimeError('closure-clearance screen rejected candidate')
+            checks.append(dict(code='PREPLAN_CLOSURE_CLEARANCE',status='PASS',
+                               evidence=copy.deepcopy(closure_clearance)))
         retreat = contract['retreat_distance_m']
         place_approach = contract.get('place_approach_distance_m', retreat)
         place_retreat = contract.get('place_retreat_distance_m', retreat)

@@ -53,7 +53,7 @@ def fixture(fail_at=None, contacts=True):
     trace, goals, validity = [], [], []
     def stage(name):
         trace.append(name)
-    def segment(view, name, goal, group=None, straight=False):
+    def segment(view, name, goal, group=None, straight=False, **options):
         if name == fail_at:
             raise RuntimeError('injected obstacle')
         goals.append((name, copy.deepcopy(goal), group, straight))
@@ -171,7 +171,8 @@ def closure_fixture(contact_links_at):
         pairs=[NS(contact_body_1='observed-box', contact_body_2=link,
                   body_type_1=1, body_type_2=0, depth=.00001) for link in links]
         return NS(valid=not pairs, contacts=pairs)
-    kwargs['operations']=replace(kwargs['operations'], state_validity=state_validity)
+    kwargs['operations']=replace(kwargs['operations'], state_validity=state_validity,
+        screen_closure=lambda **kw:dict(accepted=True,neighbor_inflation_m={}))
     return kwargs, trace, goals, validity
 
 
@@ -313,7 +314,7 @@ def test_preplanner_operations_have_no_execution_capability():
         'plan_segment', 'fk', 'state_validity', 'updated_state', 'pose_message',
         'translated_pose', 'target_contact_matrix', 'verify_selected_contacts',
         'private_attachment', 'object_pose_after_motion', 'place_detachment_diff', 'stage',
-        'extraction_candidates', 'qualify_grasp'}
+        'extraction_candidates', 'qualify_grasp', 'screen_closure'}
 
 
 @pytest.mark.parametrize('change,reason', [
@@ -1567,3 +1568,37 @@ def test_simulator_geometric_rejection_prevents_attachment_and_reports_margins()
     assert not result.success
     assert 'ATTACH' not in trace
     assert '0.00001' in result.reason
+
+
+def test_unsafe_closure_candidate_cannot_plan_approach_close_or_attachment():
+    from dataclasses import replace
+    from closure_clearance import ClosureClearanceFailure
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,trace,goals,_=closure_fixture(lambda q:['left_tip','right_tip'] if q>=.012 else [])
+    def reject(**kw):
+        raise ClosureClearanceFailure('CLOSURE_NEIGHBOR_CLEARANCE',neighbor='arbitrary',gap_m=.000007)
+    kwargs['operations']=replace(kwargs['operations'],screen_closure=reject)
+    result=preplan_full_cycle(**kwargs)
+    assert not result.success
+    assert result.reason_code=='CLOSURE_CLEARANCE_REJECTED'
+    assert goals==[]
+    assert 'ATTACH' not in trace
+
+
+def test_closure_sweep_receives_clearance_evidence_and_other_motions_do_not():
+    from dataclasses import replace
+    from test_grasp_capture import case
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs,_,_,_=closure_fixture(lambda q:['left_tip','right_tip'] if q>=.012 else [])
+    qualify,data=case();original=kwargs['operations'].plan_segment;seen=[]
+    evidence={'accepted':True,'neighbor_inflation_m':{'neighbor':.003}}
+    def segment(*args,**options):
+        seen.append((args[1],copy.deepcopy(options)))
+        options.pop('closure_clearance',None)
+        return original(*args,**options)
+    kwargs['operations']=replace(kwargs['operations'],plan_segment=segment,
+        screen_closure=lambda **kw:copy.deepcopy(evidence),qualify_grasp=lambda **kw:qualify(**data))
+    result=preplan_full_cycle(**kwargs)
+    assert result.success,result.reason
+    assert [(name,opts['closure_clearance']) for name,opts in seen if 'closure_clearance' in opts]==[
+        ('PREPLAN_CLOSE_GRIPPER',evidence)]
