@@ -818,7 +818,7 @@ def test_retry_reservation_preserves_exact_first_candidate(monkeypatch):
     assert validity==[]
 
 
-@pytest.mark.parametrize('retry_budget,discovery_count',[(120.,12),(180.,8)])
+@pytest.mark.parametrize('retry_budget,discovery_count',[(120.,14),(180.,12)])
 def test_retry_reservation_leaves_time_for_deepest_candidate_and_complete_cycle(
         monkeypatch,retry_budget,discovery_count):
     """Unit replay of observed discovery costs; no runtime qualification claim.
@@ -903,8 +903,9 @@ def test_retry_reservation_leaves_time_for_deepest_candidate_and_complete_cycle(
     phase=kwargs['summary']['candidate_search']['phases'][0]
     assert phase['discovered_candidates']==discovery_count and phase['retryable_candidates']==2
     assert phase['discovery_stop_reason']=='RETRY_BUDGET_RESERVED'
-    assert phase['remaining_wall_seconds']==pytest.approx(900.-sum(durations[:discovery_count]))
-    assert phase['retry_reserved_wall_seconds']==3*retry_budget
+    discovery_elapsed=sum(durations[:discovery_count])+60.*max(0,discovery_count-len(durations))
+    assert phase['remaining_wall_seconds']==pytest.approx(900.-discovery_elapsed)
+    assert phase['retry_reserved_wall_seconds']==2*retry_budget
     assert phase['retry_priority'][0]['progress_passes']==7
     assert len(kwargs['summary']['candidate_search']['phases'])==1
     assert settings==[('retry:finger_pinch_basic',3,3.)]*9
@@ -1003,8 +1004,10 @@ def test_reserved_discovery_reaches_fallback_and_reports_actual_failures(monkeyp
     else:
         with pytest.raises(RuntimeError,match='GRASP_GEOMETRY_INVALID'):
             runtime.plan_authored_cycle(**kwargs)
-    assert calls[:3]==[('discovery:top_2f','top_2f::000'),
+    assert calls[:5]==[('discovery:top_2f','top_2f::000'),
+                       ('discovery:top_2f','top_2f::001'),
                        ('retry:top_2f','top_2f::000'),
+                       ('retry:top_2f','top_2f::001'),
                        ('discovery:side_grip_basic','side_grip_basic::000')]
     search=kwargs['summary']['candidate_search']
     assert search['phases'][0]['discovery_stop_reason']=='RETRY_BUDGET_RESERVED'
@@ -1602,3 +1605,38 @@ def test_closure_sweep_receives_clearance_evidence_and_other_motions_do_not():
     assert result.success,result.reason
     assert [(name,opts['closure_clearance']) for name,opts in seen if 'closure_clearance' in opts]==[
         ('PREPLAN_CLOSE_GRIPPER',evidence)]
+
+
+def test_unused_retry_slots_cannot_hide_later_feasible_catalog_candidate(monkeypatch):
+    """One actual retry cannot reserve three slots and strand fresh candidates."""
+    import full_cycle_preplanner
+    kwargs,clock,goals,validity,settings=timed_authored_fixture(monkeypatch,'PREFERRED')
+    grasp=kwargs['intent']['pick']['grasp']
+    grasp.update(strategy_ref='finger_pinch_basic',approach={'axis':'tool_z','distance_m':.09})
+    grasp['orientation']['mode']='tool_aligned'
+    kwargs.update(deadline=clock[0]+700.,discovery_candidate_budget=60.,
+                  retry_candidate_budget=180.,reserve_retry_budget=True)
+    original=full_cycle_preplanner.preplan_full_cycle
+    called=[]
+    def first_stochastic_then_existing_safe_cycle(**arguments):
+        candidate=arguments['candidate'];phase=kwargs['contract']['_candidate_search_pass']
+        called.append((phase,candidate.candidate_id))
+        if candidate.candidate_id=='finger_pinch_basic::001':
+            return original(**arguments)
+        if candidate.candidate_id=='finger_pinch_basic::000':
+            clock[0]+=100. if phase.startswith('discovery:') else 1.
+            kind,code,reason='planning',-6,'PREPLAN_APPROACH_FAILED'
+        else:
+            kind,code,reason='collision',-2,'PREPLAN_GRASP_FAILED'
+        return NS(success=False,candidate_id=candidate.candidate_id,reason_code=reason,
+            reason='controlled feasibility outcome',cycle=None,extraction_attempts=[],stages=[],
+            checks=[dict(code='PREPLAN_APPROACH',status='FAIL',failure_kind=kind,moveit_code=code)])
+    monkeypatch.setattr(full_cycle_preplanner,'preplan_full_cycle',first_stochastic_then_existing_safe_cycle)
+    cycle=runtime.plan_authored_cycle(**kwargs)
+    assert cycle['full_cycle_prevalidated']
+    assert cycle['candidate'].candidate_id=='finger_pinch_basic::001'
+    assert called==[('discovery:finger_pinch_basic','finger_pinch_basic::000'),
+                    ('discovery:finger_pinch_basic','finger_pinch_basic::001')]
+    assert clock[0]<kwargs['deadline']
+    assert kwargs['summary']['candidate_search']['retry_candidate_wall_budget']==180.
+    assert kwargs['summary']['candidate_search']['retry_pass_used'] is False

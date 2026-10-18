@@ -81,3 +81,22 @@ Evidence is retained at
 session/resolve reports, exact receipt and logs. The next blocker is a
 complete collision-valid approach/descent for a clearance-admissible candidate;
 it must be resolved without weakening this screen or the physical gates.
+
+## Search coverage correction
+
+The first screened attempt tested 77 unique catalogue IDs, with 53 `top_2f`
+IDs still untested. Its 11 IK code -31 results prove only that those bounded
+seeded calls returned no solution, not geometric unreachability. Eight descent
+failures have explicit collision contacts; one approach invalid-plan failure
+has no contact evidence and must not be labelled a proven collision.
+
+A concrete scheduler limitation stopped top-grasp discovery with approximately
+585 seconds left: one known retryable candidate reserved three 180-second
+slots. Reservation now uses the number of actual retryable candidates, capped
+at the existing beam width of three. Empty slots cannot starve untested
+candidates. Global/discovery/retry deadlines, candidate order, IK, gripper
+width, approach geometry, collision certificates and closure guards are
+unchanged. A regression proves a later feasible catalogue candidate is reached
+instead of being stranded behind an empty reservation. Search remains bounded;
+this correction does not imply exhaustive catalogue coverage or resume every
+candidate after a failed retry.

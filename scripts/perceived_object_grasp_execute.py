@@ -850,7 +850,9 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                     return copy.deepcopy(cached)
                 if reserve_retry_budget and grasp_policy != 'EXACT' and phase_retryable:
                     remaining = deadline - time.monotonic()
-                    reserve = retry_beam_width * retry_candidate_budget
+                    # Reserve only slots the current retry beam can actually
+                    # consume. Empty slots must not starve untested candidates.
+                    reserve = min(retry_beam_width, len(phase_retryable)) * retry_candidate_budget
                     # Keep discovery order, but stop starting another fair
                     # slice when it would consume the existing retry beam's
                     # allowance. An in-flight plan must still drain normally;
