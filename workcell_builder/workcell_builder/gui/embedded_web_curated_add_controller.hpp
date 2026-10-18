@@ -297,8 +297,14 @@ private:
     if (url_scene.isEmpty()) { if (add_button_) add_button_->setEnabled(false); return; }
     poll_pending_ = true;
     static const char kState[] = R"JS((() => { const a=window.__WORKCELL_EDITOR_API_V1__; if(!a)return {ready:false,dirty:true,sceneId:''}; const s=a.getState(); return {ready:Boolean(s.ready),dirty:Boolean(s.dirty),sceneId:String(s.sceneId||'')}; })())JS";
-    view_->page()->runJavaScript(QString::fromUtf8(kState), [this, url, url_scene](const QVariant & value) {
-      poll_pending_ = false; if (!view_ || view_->url() != url || busy_) return;
+    view_->page()->runJavaScript(QString::fromUtf8(kState),
+      [this, guard = QPointer<EmbeddedWebCuratedAddController>(this), url, url_scene](const QVariant & value) {
+      if (!guard) return;
+      poll_pending_ = false;
+      // QWebEnginePage delivers pending callbacks with an invalid value while it is being
+      // destroyed; the view must not be used then. QWebEngineView::url() calls page(), which
+      // would create a new page on the dying view and corrupt its already-freed private.
+      if (!value.isValid() || !view_ || view_->url() != url || busy_) return;
       const QVariantMap state = value.toMap();
       if (add_button_) add_button_->setEnabled(state.value(QStringLiteral("ready")).toBool() &&
         !state.value(QStringLiteral("dirty")).toBool() && state.value(QStringLiteral("sceneId")).toString() == url_scene);

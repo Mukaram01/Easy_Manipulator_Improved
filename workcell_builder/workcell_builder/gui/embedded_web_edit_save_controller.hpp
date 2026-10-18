@@ -734,7 +734,9 @@ private:
     view_->page()->runJavaScript(QString::fromUtf8(kStateScript), [this, guard = QPointer<EmbeddedWebEditSaveController>(this), poll_url](const QVariant & value) {
       if (!guard || !preview_ || !view_) return;
       state_poll_pending_ = false;
-      if (!view_ || view_->url() != poll_url || busy_) return;
+      // An invalid value means the page is being destroyed (see the curated-add controller):
+      // view_->url() would create a new page on the dying view.
+      if (!value.isValid() || !view_ || view_->url() != poll_url || busy_) return;
       const QVariantMap state = value.toMap();
       const bool ready = state.value(QStringLiteral("ready")).toBool();
       const bool dirty = state.value(QStringLiteral("dirty")).toBool();
