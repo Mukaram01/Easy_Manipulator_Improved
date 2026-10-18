@@ -325,7 +325,7 @@
    {
 --- /dev/null
 +++ b/dartsim/src/JointCouplingConstraint.hpp
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,87 @@
 +#pragma once
 +#include <dart/constraint/ConstraintBase.hpp>
 +#include <dart/constraint/JointConstraint.hpp>
@@ -358,7 +358,13 @@
 +  }
 +  bool isActive() const override {return true;}
 +  dart::dynamics::SkeletonPtr getRootSkeleton() const override {
-+    return dart::constraint::ConstraintBase::getRootSkeleton(follower_->getSkeleton());
++    // Native rows read the immediate representative of the contact union.
++    // Normalize this skeleton to the final root before grouping; separate
++    // groups can otherwise clear each other's solved coupling impulses.
++    auto skeleton=follower_->getSkeleton();
++    auto root=dart::constraint::ConstraintBase::getRootSkeleton(skeleton);
++    skeleton->mUnionRootSkeleton=root;
++    return root;
 +  }
 + protected:
 +  void update() override {
