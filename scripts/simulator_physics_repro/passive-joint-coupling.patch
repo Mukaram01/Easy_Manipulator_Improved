@@ -415,53 +415,169 @@
 +}
 --- /dev/null
 +++ b/dartsim/src/TouchingBulletContacts.hpp
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,165 @@
 +#pragma once
-+#include <dart/collision/bullet/BulletCollisionDetector.hpp>
-+#include <dart/collision/CollisionResult.hpp>
++#include <algorithm>
 +#include <cmath>
++#include <dart/collision/CollisionFilter.hpp>
++#include <dart/collision/CollisionResult.hpp>
++#include <dart/collision/bullet/BulletCollisionDetector.hpp>
++#include <dart/collision/bullet/BulletCollisionGroup.hpp>
++#include <dart/collision/bullet/BulletCollisionObject.hpp>
++#include <dart/collision/ode/OdeCollisionDetector.hpp>
++#include <dart/dynamics/BoxShape.hpp>
++#include <dart/dynamics/ShapeFrame.hpp>
 +#include <memory>
 +#include <stdexcept>
++#include <vector>
 +namespace workcell {
-+// Bullet retains manifold points across small positive separations. DART 6.12
-+// converts these to negative depths and excludes them from solver rows, but
-+// keeps them in its reported contacts. Physical telemetry must exclude them.
-+class TouchingBulletContacts : public dart::collision::BulletCollisionDetector {
++// Keep the original Bullet collision objects and filter semantics. BOX pairs
++// use double precision geometry; all other pairs retain Bullet manifolds.
++class PhysicalBulletGroup : public dart::collision::BulletCollisionGroup {
 + public:
-+  TouchingBulletContacts()=default;
-+  std::shared_ptr<dart::collision::CollisionDetector> cloneWithoutCollisionObjects() const override {
-+    return std::make_shared<TouchingBulletContacts>();
-+  }
-+  bool collide(dart::collision::CollisionGroup* group,const dart::collision::CollisionOption& option,dart::collision::CollisionResult* result) override {
-+    dart::collision::CollisionResult raw;
-+    if(result)result->clear();if(!option.maxNumContacts)return false;
-+    auto query=option;query.enableContact=true;
-+    BulletCollisionDetector::collide(group,query,&raw);
-+    return touching(raw,option.maxNumContacts,result);
-+  }
-+  bool collide(dart::collision::CollisionGroup*,dart::collision::CollisionGroup*,const dart::collision::CollisionOption&,dart::collision::CollisionResult*) override {
-+    // Stage-A physics queries one complete world group. DART 6.12's stock
-+    // two-group implementation retains a detector/group ownership cycle.
-+    // Reject this unsupported entry point instead of creating that cycle.
-+    throw std::logic_error("physical Bullet contacts require one complete world group");
-+  }
-+ private:
-+  static bool touching(const dart::collision::CollisionResult& raw,std::size_t maximum,dart::collision::CollisionResult* result){
-+    bool separated=false;
-+    for(const auto& c:raw.getContacts()){
-+      if(!std::isfinite(c.penetrationDepth)||!c.point.allFinite()||!c.normal.allFinite())
-+        throw std::runtime_error("nonfinite Bullet physical contact");
-+      separated=separated||c.penetrationDepth<0.;
++  using BulletCollisionGroup::BulletCollisionGroup;
++  std::vector<dart::collision::CollisionObject*> objects() const {
++    std::vector<dart::collision::CollisionObject*> result;
++    const auto& objects = getBulletCollisionWorld()->getCollisionObjectArray();
++    for (int i = 0; i < objects.size(); ++i) {
++      auto* object =
++          static_cast<dart::collision::BulletCollisionObject*>(objects[i]->getUserPointer());
++      if (!object || !hasShapeFrame(object->getShapeFrame()))
++        throw std::runtime_error("invalid physical Bullet group member");
++      result.push_back(object);
 +    }
-+    if(separated&&raw.getNumContacts()==maximum)
-+      throw std::runtime_error("physical Bullet contact query budget saturated by separated cache points");
-+    std::size_t kept=0;
-+    for(const auto& c:raw.getContacts()){
-+      if(c.penetrationDepth<0.)continue;
-+      if(result)result->addContact(c);
-+      ++kept;
-+    }
-+    return kept!=0;
++    return result;
 +  }
 +};
-+}
++class TouchingBulletContacts : public dart::collision::BulletCollisionDetector {
++ public:
++  TouchingBulletContacts() : ode(dart::collision::OdeCollisionDetector::create()) {
++    static_assert(sizeof(dReal) == sizeof(double), "physical BOX contacts require double ODE");
++  }
++  std::shared_ptr<dart::collision::CollisionDetector> cloneWithoutCollisionObjects()
++      const override {
++    return std::make_shared<TouchingBulletContacts>();
++  }
++  using BulletCollisionDetector::createCollisionGroup;
++  std::unique_ptr<dart::collision::CollisionGroup> createCollisionGroup() override {
++    return std::make_unique<PhysicalBulletGroup>(shared_from_this());
++  }
++  bool collide(dart::collision::CollisionGroup* group,
++               const dart::collision::CollisionOption& option,
++               dart::collision::CollisionResult* result) override {
++    dart::collision::CollisionResult raw, physical;
++    if (result) result->clear();
++    if (!option.maxNumContacts) return false;
++    auto* actual = dynamic_cast<PhysicalBulletGroup*>(group);
++    if (!actual || group->getCollisionDetector().get() != this)
++      throw std::logic_error("physical Bullet group ownership mismatch");
++    auto query = option;
++    query.enableContact = true;
++    query.collisionFilter = std::make_shared<MeshFilter>(option.collisionFilter);
++    BulletCollisionDetector::collide(group, query, &raw);
++    touching(raw, option.maxNumContacts, &physical);
++    addBoxes(*actual, option, physical);
++    if (result) *result = physical;
++    return physical.getNumContacts() != 0;
++  }
++  bool collide(dart::collision::CollisionGroup*, dart::collision::CollisionGroup*,
++               const dart::collision::CollisionOption&,
++               dart::collision::CollisionResult*) override {
++    throw std::logic_error("physical Bullet contacts require one complete world group");
++  }
++
++ private:
++  static const dart::dynamics::BoxShape* box(const dart::collision::CollisionObject* object) {
++    return dynamic_cast<const dart::dynamics::BoxShape*>(object->getShape().get());
++  }
++  struct MeshFilter : dart::collision::CollisionFilter {
++    std::shared_ptr<dart::collision::CollisionFilter> original;
++    explicit MeshFilter(std::shared_ptr<dart::collision::CollisionFilter> filter)
++        : original(std::move(filter)) {}
++    bool ignoresCollision(const dart::collision::CollisionObject* a,
++                          const dart::collision::CollisionObject* b) const override {
++      return (box(a) && box(b)) || (original && original->ignoresCollision(a, b));
++    }
++  };
++  struct GeomDestroy {
++    void operator()(dxGeom* geom) const { dGeomDestroy(geom); }
++  };
++  struct BoxObject {
++    dart::collision::CollisionObject* original;
++    std::unique_ptr<dxGeom, GeomDestroy> geom;
++  };
++  void addBoxes(const PhysicalBulletGroup& group, const dart::collision::CollisionOption& option,
++                dart::collision::CollisionResult& result) {
++    if (!dAllocateODEDataForThread(dAllocateMaskAll))
++      throw std::runtime_error("ODE collision thread allocation failed");
++    std::vector<BoxObject> boxes;
++    for (auto* object : group.objects()) {
++      const auto* shape = box(object);
++      if (!shape) continue;
++      const auto& size = shape->getSize();
++      const auto& t = object->getTransform();
++      if (!size.allFinite() || (size.array() <= 0).any() || !t.matrix().allFinite())
++        throw std::runtime_error("invalid physical BOX geometry");
++      std::unique_ptr<dxGeom, GeomDestroy> geom(dCreateBox(nullptr, size.x(), size.y(), size.z()));
++      if (!geom) throw std::runtime_error("ODE BOX geometry allocation failed");
++      dGeomSetPosition(geom.get(), t.translation().x(), t.translation().y(), t.translation().z());
++      dMatrix3 rotation{};
++      for (int r = 0; r < 3; ++r)
++        for (int c = 0; c < 3; ++c) rotation[r * 4 + c] = t.linear()(r, c);
++      dGeomSetRotation(geom.get(), rotation);
++      boxes.push_back({object, std::move(geom)});
++    }
++    for (std::size_t i = 0; i < boxes.size(); ++i)
++      for (std::size_t j = i + 1; j < boxes.size(); ++j) {
++        auto& a = boxes[i];
++        auto& b = boxes[j];
++        if (option.collisionFilter &&
++            option.collisionFilter->ignoresCollision(a.original, b.original))
++          continue;
++        if (result.getNumContacts() >= option.maxNumContacts) return;
++        dContactGeom contacts[MAX_COLLIDE_RETURNS];
++        const int count = dCollide(a.geom.get(), b.geom.get(), MAX_COLLIDE_RETURNS, contacts,
++                                   sizeof(dContactGeom));
++        if (count == MAX_COLLIDE_RETURNS)
++          throw std::runtime_error("physical BOX contact query budget exhausted");
++        const auto retained =
++            std::min(std::size_t(count), option.maxNumContacts - result.getNumContacts());
++        for (std::size_t k = 0; k < retained; ++k) {
++          const auto& c = contacts[k];
++          dart::collision::Contact contact;
++          contact.collisionObject1 = a.original;
++          contact.collisionObject2 = b.original;
++          contact.point = Eigen::Vector3d(c.pos[0], c.pos[1], c.pos[2]);
++          contact.normal = Eigen::Vector3d(c.normal[0], c.normal[1], c.normal[2]);
++          contact.penetrationDepth = c.depth;
++          if (!std::isfinite(c.depth) || c.depth < 0 || !contact.point.allFinite() ||
++              !contact.normal.allFinite())
++            throw std::runtime_error("invalid physical BOX contact");
++          result.addContact(contact);
++        }
++      }
++  }
++  static bool touching(const dart::collision::CollisionResult& raw, std::size_t maximum,
++                       dart::collision::CollisionResult* result) {
++    bool separated = false;
++    for (const auto& c : raw.getContacts()) {
++      if (!std::isfinite(c.penetrationDepth) || !c.point.allFinite() || !c.normal.allFinite())
++        throw std::runtime_error("nonfinite Bullet physical contact");
++      separated = separated || c.penetrationDepth < 0.;
++    }
++    if (separated && raw.getNumContacts() == maximum)
++      throw std::runtime_error(
++          "physical Bullet contact query budget saturated by separated cache points");
++    std::size_t kept = 0;
++    for (const auto& c : raw.getContacts()) {
++      if (c.penetrationDepth < 0.) continue;
++      if (result) result->addContact(c);
++      ++kept;
++    }
++    return kept != 0;
++  }
++  // Use DART's existing ODE initialization lifetime; no secondary groups or
++  // borrowed ODE collision objects. Returned contacts own no temporary geometry.
++  std::shared_ptr<dart::collision::OdeCollisionDetector> ode;
++};
++}  // namespace workcell
