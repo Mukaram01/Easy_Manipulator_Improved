@@ -1,0 +1,70 @@
+--- a/gz_ros2_control/src/gz_ros2_control_plugin.cpp
++++ b/gz_ros2_control/src/gz_ros2_control_plugin.cpp
+@@ -15,6 +15,7 @@
+ #include <unistd.h>
+ 
+ #include <chrono>
++#include <exception>
+ #include <map>
+ #include <memory>
+ #include <regex>
+@@ -86,6 +87,9 @@
+   /// \brief Executor to spin the controller
+   rclcpp::executors::MultiThreadedExecutor::SharedPtr executor_;
+ 
++  // Keep the collected entities available for release before controller plugins unload.
++  rclcpp::memory_strategy::MemoryStrategy::SharedPtr memory_strategy_;
++
+   /// \brief Timing
+   rclcpp::Duration control_period_ = rclcpp::Duration(1, 0);
+ 
+@@ -196,7 +200,7 @@
+       RCLCPP_ERROR(
+         node_->get_logger(), "Interrupted while waiting for %s service. Exiting.",
+         robot_description_node_.c_str());
+-      return 0;
++      return {};
+     }
+     RCLCPP_ERROR(
+       node_->get_logger(), "%s service not available, waiting again...",
+@@ -247,8 +251,25 @@
+ //////////////////////////////////////////////////
+ GazeboSimROS2ControlPlugin::~GazeboSimROS2ControlPlugin()
+ {
+-  this->dataPtr->executor_->cancel();
+-  this->dataPtr->thread_executor_spin_.join();
++  std::exception_ptr cancel_error;
++  if (this->dataPtr->executor_) {
++    try {
++      this->dataPtr->executor_->cancel();
++    } catch (...) {
++      cancel_error = std::current_exception();
++    }
++  }
++  if (this->dataPtr->thread_executor_spin_.joinable()) {
++    this->dataPtr->thread_executor_spin_.join();
++  }
++  // The last wait set may retain plugin-defined entities after SIGINT. Release
++  // those handles while the controller manager and its plugin loaders are alive.
++  if (this->dataPtr->memory_strategy_) {
++    this->dataPtr->memory_strategy_->clear_handles();
++  }
++  if (cancel_error) {
++    std::rethrow_exception(cancel_error);
++  }
+ }
+ 
+ //////////////////////////////////////////////////
+@@ -355,7 +376,11 @@
+ 
+   std::string node_name = "gz_ros2_control";
+   this->dataPtr->node_ = rclcpp::Node::make_shared(node_name, ns);
+-  this->dataPtr->executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
++  rclcpp::ExecutorOptions executor_options;
++  this->dataPtr->memory_strategy_ = executor_options.memory_strategy;
++  this->dataPtr->executor_ =
++    std::make_shared<rclcpp::executors::MultiThreadedExecutor>(
++      executor_options, 0, false, std::chrono::seconds(1));
+   this->dataPtr->executor_->add_node(this->dataPtr->node_);
+   auto spin = [this]()
+     {

@@ -1,0 +1,39 @@
+--- a/src/BulletCollision/CollisionDispatch/btBoxBoxDetector.cpp
++++ b/src/BulletCollision/CollisionDispatch/btBoxBoxDetector.cpp
+@@ -350,6 +350,10 @@
+ 	TST(dDOT41(R2 + 1, p), (A[0] * Q12 + A[1] * Q22 + A[2] * Q32 + B[1]), R2 + 1, 5);
+ 	TST(dDOT41(R2 + 2, p), (A[0] * Q13 + A[1] * Q23 + A[2] * Q33 + B[2]), R2 + 2, 6);
+ 
++	const btScalar face_s=s;
++	const btScalar* face_normal=normalR;
++	const int face_code=code, face_invert=invert_normal;
++
+ 	// note: cross product axes need to be scaled when s is computed.
+ 	// normal (n1,n2,n3) is relative to box 1.
+ #undef TST
+@@ -458,6 +462,12 @@
+ 		for (i = 0; i < 3; i++) pa[i] += ua[i] * alpha;
+ 		for (i = 0; i < 3; i++) pb[i] += ub[i] * beta;
+ 
++		// Infinite supporting lines may meet outside either finite box edge.
++		// Keep true finite edge contacts; otherwise generate the already-tested
++		// best face contact instead of reporting an off-surface support point.
++		const bool finite_edges = btFabs(dDOT(ua,pa-p1))<=A[(code-7)/3] &&
++		                          btFabs(dDOT(ub,pb-p2))<=B[(code-7)%3];
++		if (finite_edges)
+ 		{
+ 			//contact[0].pos[i] = btScalar(0.5)*(pa[i]+pb[i]);
+ 			//contact[0].depth = *depth;
+@@ -473,7 +483,11 @@
+ #endif  //
+ 			*return_code = code;
+ 		}
+-		return 1;
++		if (finite_edges) return 1;
++		code=face_code; s=face_s; normalR=face_normal;
++		for(int k=0;k<3;++k) normal[k]=normalR[4*k];
++		if(face_invert)normal=-normal;
++		*depth=-s;
+ 	}
+ 
+ 	// okay, we have a face-something intersection (because the separating

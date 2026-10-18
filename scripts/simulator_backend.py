@@ -71,7 +71,70 @@ def select_simulator_control_contract(prefixes):
     raise RuntimeError('no reviewed Fortress/gz ros2_control system plugin library is installed')
 
 
+
+def simulator_physics_contract():
+    """Locate explicitly selected built repairs; runtime gates qualify them."""
+    selected=os.environ.get('WORKCELL_SIMULATOR_PHYSICS_ROOT')
+    if not selected:return None
+    root=Path(selected).resolve();receipt=root/'artifacts.json'
+    data=json.loads(receipt.read_text())
+    from build_simulator_physics_overlay import LIBRARIES, PATCHES, SOURCES
+    proof=Path(__file__).resolve().parent/'simulator_physics_repro'
+    if (data.get('schema')!='workcell_simulator_physics_build/v1' or
+            data.get('build_script_sha256')!=digest((proof.parent/'build_simulator_physics_overlay.py').read_bytes()) or
+            set(data.get('artifacts',{}))!=set(LIBRARIES) or
+            data.get('control_build_sha256')!=digest((proof/'control.CMakeLists.txt').read_bytes())):
+        raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: native physics build source changed')
+    for name,patch in PATCHES.items():
+        source=data['sources'][name]
+        if (source['patch_sha256']!=digest((proof/patch).read_bytes()) or
+                (source.get('url'),source.get('archive_sha256'))!=SOURCES[name]):
+            raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: native physics source/patch changed')
+    for name,artifact in data['artifacts'].items():
+        library=(root/'lib'/name).resolve()
+        if (artifact['path']!=str(library) or not library.is_file() or
+                digest(library.read_bytes())!=artifact['sha256']):
+            raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: native physics library changed')
+    return dict(root=str(root),receipt=str(receipt),receipt_sha256=digest(receipt.read_bytes()),
+                artifacts=data['artifacts'])
+
+
+def native_simulator_description(output):
+    """Preserve authored flat mimic relations across the URDF-to-SDF boundary."""
+    output=Path(output);root=ET.parse(output/'robot.urdf').getroot()
+    converted=subprocess.run(['ign','sdf','-p',str(output/'robot.urdf')],capture_output=True,
+                             text=True,check=True,timeout=20)
+    (output/'urdf-conversion.log').write_text(converted.stderr)
+    sdf=ET.fromstring(converted.stdout);model=sdf.find('model')
+    if model is None:raise ValueError('native simulator requires one converted model')
+    relations=[]
+    for joint in root.findall('joint'):
+        mimic=joint.find('mimic')
+        if mimic is None:continue
+        driver=root.find(f"joint[@name='{mimic.get('joint')}']")
+        multiplier=float(mimic.get('multiplier','1'));offset=float(mimic.get('offset','0'))
+        # URDF continuous and revolute joints both convert to SDF revolute axes.
+        kind=lambda value:'revolute' if value=='continuous' else value
+        if (driver is None or driver.find('mimic') is not None or
+                kind(joint.get('type')) not in ('revolute','prismatic') or
+                kind(driver.get('type'))!=kind(joint.get('type')) or
+                multiplier not in (-1.,1.) or offset!=0.):
+            raise ValueError('native simulator requires authored flat single-axis +/-1 mimic relations')
+        axis=model.find(f"joint[@name='{joint.get('name')}']/axis")
+        if axis is None or axis.find('mimic') is not None:raise ValueError('native mimic conversion binding changed')
+        child=ET.SubElement(axis,'mimic',joint=mimic.get('joint'),axis='axis')
+        for key,value in (('multiplier',str(multiplier)),('offset','0'),('reference','0')):
+            ET.SubElement(child,key).text=value
+        relations.append(dict(follower=joint.get('name'),driver=mimic.get('joint'),multiplier=multiplier))
+    (output/'robot.sdf').write_text(ET.tostring(sdf,encoding='unicode'))
+    return relations
+
+
 def simulator_control_contract():
+    physics=simulator_physics_contract()
+    if physics:
+        return dict(DEFAULT_CONTROL_CONTRACT,
+                    plugin_library=physics['artifacts']['libign_ros2_control-system.so']['path'])
     from ament_index_python.packages import get_package_prefix
     prefixes=[]
     for package in ('gz_ros2_control','ign_ros2_control'):
@@ -257,6 +320,20 @@ def prepare(xml, controllers, world_path, publisher, output, *, collision_manife
               description_sha256=digest(description),world_sha256=digest((output/'world.sdf').read_bytes()),
               controllers_sha256=digest(controller_path.read_bytes()),expected_controllers=controller_names,
               support_geometry_binding=support_binding,measurement_pose_source=PHYSICS_POSE_METHOD)
+    physics=simulator_physics_contract()
+    if physics:
+        spec['native_physics']=physics
+        spec['native_mimics']=native_simulator_description(output)
+        spec['native_description_sha256']=digest((output/'robot.sdf').read_bytes())
+        derived=ET.parse(output/'world.sdf')
+        plugin=derived.getroot().find("world/plugin[@name='ignition::gazebo::systems::Physics']")
+        if plugin is None or plugin.find('engine') is not None:raise ValueError('native simulator requires one unbound physics engine')
+        ET.SubElement(ET.SubElement(plugin,'engine'),'filename').text=physics['artifacts']['libignition-physics5-dartsim-plugin.so']['path']
+        configured=derived.getroot().find('world/physics')
+        if configured is None or configured.find('dart') is not None:raise ValueError('native simulator collision engine already configured')
+        ET.SubElement(ET.SubElement(configured,'dart'),'collision_detector').text='bullet'
+        derived.write(output/'world.sdf',encoding='unicode')
+        spec['world_sha256']=digest((output/'world.sdf').read_bytes())
     if not spec['partition'] or spec['domain']=='0':raise ValueError('simulator requires explicit isolated ROS_DOMAIN_ID and IGN_PARTITION')
     bridges=[]
     for topic,ros,gz,lazy in [('/clock','rosgraph_msgs/msg/Clock','ignition.msgs.Clock',False),
@@ -305,7 +382,8 @@ def wait_world_model(world,model,timeout=10):
 def create_model(out,spec,max_attempts=3):
     """Create with bounded retries; never duplicate an accepted or observed model."""
     service=f"/world/{spec['world']}/create"
-    request=f'sdf_filename: "{out / "robot.urdf"}" name: "{spec["model"]}"'
+    model_file='robot.sdf' if spec.get('native_physics') else 'robot.urdf'
+    request=f'sdf_filename: "{out / model_file}" name: "{spec["model"]}"'
     attempts=[]
     for attempt in range(1,max_attempts+1):
         started=time.time_ns()
@@ -366,6 +444,18 @@ def verify_receipt_process(receipt):
             digest(control_library.read_bytes())!=r.get('control_plugin_sha256') or
             str(control_library.resolve()) not in process['libraries']):
         raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: ros2_control simulator plugin changed')
+    physics=r.get('native_physics')
+    current=simulator_physics_contract()
+    if bool(current)!=bool(physics):
+        raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: selected native/stock physics differs from runtime')
+    if physics:
+        if current!=physics:raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: native physics source/receipt changed')
+        mapped={line.split()[-1] for line in process['libraries'].splitlines() if line.split() and
+                any(name in line for name in ('libignition-physics5-dartsim-plugin.so','libign_ros2_control-system.so','libgz_ros2_control-system.so','libBulletCollision.so','libLinearMath.so'))}
+        expected={artifact['path'] for artifact in physics['artifacts'].values()}
+        if mapped!=expected:raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: wrong/ambiguous native physics libraries '+str(mapped))
+        if digest((out/'robot.sdf').read_bytes())!=r.get('native_description_sha256'):
+            raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: native model changed')
     expected_files=[('world.sdf','world_sha256'),('controllers.yaml','controllers_sha256'),('robot.urdf','description_sha256')]
     if any(digest((out/f).read_bytes())!=r[key] for f,key in expected_files):
         raise RuntimeError('SIMULATOR_IDENTITY_REJECTED: runtime input changed')
