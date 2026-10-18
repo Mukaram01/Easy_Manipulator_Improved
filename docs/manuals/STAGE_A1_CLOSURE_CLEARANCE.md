@@ -54,3 +54,30 @@ before approach/attachment, and forwarding clearance to the closing motion.
 The existing full-cycle, extraction, capture and execution suites cover the
 unchanged planning and physical guards. Runtime outcome is recorded in the
 workstation attempt evidence; offline success alone is not Stage A acceptance.
+
+## Fresh workstation attempt — 18 October 2026
+
+Code `094f0f98` ran once through the original fresh stationary-session setup.
+The known failed `part_06` / `finger_pinch_basic::001` candidate was rejected
+before motion for insufficient clearance to `part_07`. The existing generic
+search considered 77 candidates across 10 objects and three strategies, plus
+one retry: 58 clearance rejections, 12 approach failures and 8 grasp failures.
+Eleven approach failures returned IK code -31. A clearance-admissible
+`part_08` / `top_2f::001` descent was rejected for a predicted
+`gripper_finger1_finger_tip_link` / `part_09` collision, depth 3.972049 mm.
+
+No complete cycle was selected: `execution_attempted=false`. This attempt
+therefore sent no execution goals and did not prove physical closure,
+stationary retention or lift. The bounded search did not exhaust every
+possible catalog candidate; no claim is made that no safe grasp exists.
+The full closing-padding runtime path was not reached. All physical gates
+remain authoritative, real hardware stayed disabled, and shutdown was clean
+with zero owned survivors. Dependencies remained identity-admitted and were
+not rebuilt.
+
+Evidence is retained at
+`/home/user/workcell_ws/diagnostics/stage-a-closure-clearance-20261018/`:
+`REPORT.md`, `attempt-outcome.json`, `evidence-sha256.json`, the original
+session/resolve reports, exact receipt and logs. The next blocker is a
+complete collision-valid approach/descent for a clearance-admissible candidate;
+it must be resolved without weakening this screen or the physical gates.
