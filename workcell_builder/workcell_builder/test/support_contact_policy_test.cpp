@@ -1758,3 +1758,46 @@ TEST(ControllerCertificate, SupportDragBelowToleranceThenLiftCertifies) {
   EXPECT_EQ(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
   EXPECT_EQ(r.initial_contacts_expired,1U);
 }
+
+TEST(ControllerCertificate, RealSparseUr5SupportLiftCertifies) {
+  // Actual UR5 PREPLAN_LIFT spline and frozen scene from the 2026-10-19
+  // sparse commissioning run: part_04 (25 mm BOX, yaw 0.1) resting 0.12 um
+  // into the table. CDR cannot store DecideContactFn; restore exactly the
+  // adapter's SupportContact for this object and table (floor_z = top face).
+  const auto directory=std::filesystem::path(__FILE__).parent_path()/"evidence/stage_a0_sparse_support_lift_20261019";
+  auto model=controllerFixtureModel(directory);
+  moveit_msgs::msg::PlanningScene frozen;deserializeControllerFixture(directory,"scene.cdr",frozen);
+  moveit_msgs::msg::RobotTrajectory emitted;deserializeControllerFixture(directory,"trajectory.cdr",emitted);
+  auto scene_ptr=std::make_shared<planning_scene::PlanningScene>(model);auto& scene=*scene_ptr;
+  scene.setPlanningSceneMsg(frozen);
+  robot_trajectory::RobotTrajectory trajectory(model,"manipulator");
+  trajectory.setRobotTrajectoryMsg(scene.getCurrentState(),emitted);
+  for(const auto& name:emitted.joint_trajectory.joint_names)
+    ASSERT_EQ(model->getJointOfVariable(name)->getType(),moveit::core::JointModel::REVOLUTE);
+  auto first=trajectory.getFirstWayPoint();first.update();
+  std::vector<const moveit::core::AttachedBody*> attached;first.getAttachedBodies(attached);
+  ASSERT_EQ(attached.size(),1U);ASSERT_EQ(attached[0]->getName(),"runtime::part_04");
+  const std::string table="workcell::support_surface_table";
+  auto strict=scene_ptr->diff();strict->decoupleParent();strict->getAllowedCollisionMatrixNonConst().setEntry(attached[0]->getName(),table,false);
+  ASSERT_TRUE(strict->isStateColliding(first,""));   // genuinely resting in contact at t=0
+  collision_detection::DecideContactFn predicate=workcell::SupportContact{attached[0]->getName(),table,0.};
+  scene.getAllowedCollisionMatrixNonConst().setEntry(attached[0]->getName(),table,predicate);
+  const auto report=workcell::controller_certificate::certify(trajectory,scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+  EXPECT_EQ(report.reason,"ALL_INTERVALS_CERTIFIED");
+  EXPECT_EQ(report.initial_contacts_expired,1U);
+  EXPECT_GT(report.contact_timestamps,0U);
+}
+
+TEST(ControllerCertificate, SupportLiftOverhangingTableEdgeFailsClosed) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  // Shrink the table so the part's footprint overhangs its edge: the slab
+  // no-reentry proof does not apply and the crossing cannot be certified.
+  fixture.scene->getWorldNonConst()->removeObject("fixture");
+  Eigen::Isometry3d table=Eigen::Isometry3d::Identity();table.translation()=Eigen::Vector3d(.3-.5+.005,0,-.05);
+  fixture.scene->getWorldNonConst()->addToObject("fixture",shapes::ShapeConstPtr(new shapes::Box(1,1,.1)),table);
+  collision_detection::DecideContactFn predicate=workcell::SupportContact{"part","fixture",0.};
+  fixture.scene->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",predicate);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+}

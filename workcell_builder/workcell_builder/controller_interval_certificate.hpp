@@ -648,6 +648,50 @@ inline bool nominalBoxNoReentry(const planning_scene::PlanningScene& scene,
   return true;
 }
 
+// No-reentry for a carried BOX leaving a static support BOX. If every carried
+// corner stays strictly inside the support's top-face footprint and above its
+// bottom face throughout the leaf, the support is a slab over the carried BOX's
+// whole extent. The convex carried BOX then intersects it exactly when its
+// lowest corner is at or below the top plane. With every corner's nominal height
+// along the fixed top normal nondecreasing, that lowest height is nondecreasing,
+// so contact can end at most once in the leaf and never resume. Enclosures are
+// interval-valued over the leaf; anything else returns false (fail closed).
+inline bool nominalSupportNoReentry(const planning_scene::PlanningScene& scene,
+    const moveit::core::AttachedBody& body,const GeometryBody& fixed,
+    const Polynomials& p,const Polynomials& speeds) {
+  if(body.getShapes().size()!=1||body.getShapes()[0]->type!=shapes::BOX||!singleBox(fixed)) return false;
+  const auto origin=multiply(intervalMatrix(body.getPose()),intervalMatrix(body.getShapePoses()[0]));
+  IMatrix link;linkDerivative(body.getAttachedLink(),p,"",&link);
+  const auto a=multiply(link,origin),b=intervalMatrix(fixed.poses[0]);
+  auto ad=zeroMatrix();
+  for(const auto* joint:scene.getRobotModel()->getJointModels()) {
+    if(!joint->getVariableCount()||joint->getMimic()) continue;
+    const auto& name=joint->getVariableNames().at(0);const auto speed=hull(speeds.at(name));
+    if(speed.lower()==0.&&speed.upper()==0.) continue;
+    auto d=multiply(linkDerivative(body.getAttachedLink(),p,name),origin);
+    for(auto& row:d) for(auto& value:row) value*=speed;
+    ad=addMatrix(ad,d);
+  }
+  const auto& box=static_cast<const shapes::Box&>(*body.getShapes()[0]);
+  const auto& support=static_cast<const shapes::Box&>(*fixed.shapes[0]);
+  const auto av=boxCorners(a,box),adv=boxCorners(ad,box);
+  const auto top=column(b,2);  // support local +z (its top-face normal), fixed in time
+  for(const auto& corner:adv) {
+    Interval rate(0.);for(unsigned k=0;k<3;++k) rate+=top[k]*corner[k];
+    if(!(rate.lower()>=0.)) return false;
+  }
+  for(const auto& corner:av) {
+    // Corner in the support frame: R^T (corner - t).
+    for(unsigned axis=0;axis<3;++axis) {
+      Interval local(0.);
+      for(unsigned k=0;k<3;++k) local+=b[k][axis]*(corner[k]-b[k][3]);
+      const double half=support.size[axis]/2.;
+      if(axis<2? !(local.lower()>-half&&local.upper()<half) : !(local.lower()>-half)) return false;
+    }
+  }
+  return true;
+}
+
 inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& trajectory,
     const planning_scene::PlanningScene& scene,const ControllerAuditOptions& options={},
     DetachedAudit* detached=nullptr,std::size_t contact_cap=1000000) {
@@ -893,8 +937,9 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
             pair.contact_travel+=2.*travel;
           }
           const bool depth_bounded=(Interval(gap)-travel).lower()>=-support_contact_tolerance_m;
-          const auto nominal_clear=[&]() {return nominalBoxNoReentry(scene,
-            *anchor.getAttachedBody(pair.object),fixed,controls,speeds);};
+          const auto nominal_clear=[&]() {return pair.floor?
+            nominalSupportNoReentry(scene,*anchor.getAttachedBody(pair.object),fixed,controls,speeds):
+            nominalBoxNoReentry(scene,*anchor.getAttachedBody(pair.object),fixed,controls,speeds);};
           if(depth_bounded&&!pair.actual_expired&&boxContactInterior(moving,fixed,travel)&&
               (!pair.nominal_crossing||(hi!=end&&nominal_clear()))) {
             acm.setEntry(pair.object,pair.world,true);continue;
