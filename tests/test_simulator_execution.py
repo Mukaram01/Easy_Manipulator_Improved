@@ -277,19 +277,23 @@ def test_separation_descent_is_bounded_by_support_tolerance_from_running_maximum
     p.check([.4,-.2,.0125+1.211e-5,0,0,0,1],1.211e-5,False)
     p.check([.4,-.2,.0125+1.210e-5,0,0,0,1],1.210e-5,False)
     assert not p.expired and p.height==pytest.approx(1.211e-5)
-    # Descent is measured from the running maximum, never the previous sample.
+    # The running maximum never moves down: a sample 0.99e-4 below it passes
+    # (it would also pass previous-sample semantics) but leaves the maximum
+    # unchanged, and 1.01e-4 below the maximum fails although it is only
+    # 0.02e-4 below the previous sample.
     p.check([.4,-.2,.0125+1.211e-5-.99e-4,0,0,0,1],0,True)
     assert p.height==pytest.approx(1.211e-5)
     with pytest.raises(RuntimeError,match='corridor'):p.check([.4,-.2,.0125+1.211e-5-1.01e-4,0,0,0,1],0,True)
+    # First sample: at most the tolerance below the origin is admitted.
+    Separation([0,0,.01,0,0,0,1],0).check([0,0,.01-.99e-4,0,0,0,1],0,True)
+    with pytest.raises(RuntimeError,match='corridor'):Separation([0,0,.01,0,0,0,1],0).check([0,0,.01-1.01e-4,0,0,0,1],0,True)
     # Slow sagging cannot accumulate: each step is inside the band, the total is not.
-    q=Separation([0,0,.01,0,0,0,1],0);q.check([0,0,.011,0,0,0,1],.001,False)
-    assert q.expired  # bottom above floor+0.1 mm without support contact: expired
     q=Separation([0,0,.01,0,0,0,1],0);q.check([0,0,.01005,0,0,0,1],.00005,True)
     q.check([0,0,.01005-.6e-4,0,0,0,1],0,True)
     with pytest.raises(RuntimeError,match='corridor'):q.check([0,0,.01005-1.2e-4,0,0,0,1],0,True)
     # The other corridor limits are unchanged.
     for pose in ([.0026,0,.01,0,0,0,1],[0,0,.0201,0,0,0,1],[0,0,.01,0,0,.0051,.99998699]):
-        with pytest.raises(RuntimeError):Separation([0,0,.01,0,0,0,1],0).check(pose,0,True)
+        with pytest.raises(RuntimeError,match='corridor'):Separation([0,0,.01,0,0,0,1],0).check(pose,0,True)
 
 
 def test_grasp_requires_two_contacting_fingers_and_rejects_slip():

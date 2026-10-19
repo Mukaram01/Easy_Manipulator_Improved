@@ -110,7 +110,7 @@ def validate_sample(s,receipt,now,previous=None):
         raise StaleMeasurement('SIMULATOR_TELEMETRY_INVALID: stale measurement')
 
 
-# The certificate's support contact tolerance (controller_interval_certificate.hpp
+# The certificate's support contact tolerance (support_contact_policy.hpp
 # support_contact_tolerance_m): the deepest certified support penetration.
 SUPPORT_CONTACT_TOLERANCE_M=1e-4
 
