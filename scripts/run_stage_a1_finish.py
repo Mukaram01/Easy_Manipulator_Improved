@@ -27,6 +27,13 @@ import time
 import yaml
 
 SOURCE_WORLD_GIT_BLOB="b687b5bf3c48e4a731d87c86f99e6c3696b21599"
+# Separately pinned worlds. "pile" is the dense Stage-A benchmark; "sparse" is
+# the single-workpiece commissioning world used to qualify physical execution
+# apart from pile accessibility. Both use the same cell and gates.
+SOURCE_WORLDS={
+    "pile":("stage_a0.sdf",SOURCE_WORLD_GIT_BLOB),
+    "sparse":("stage_a0_sparse.sdf","507dcd8df852fa12b1de93bc3026d826a9e54df2"),
+}
 STAGES=[
     "PREPLAN_APPROACH","PREPLAN_GRASP","PREPLAN_CLOSE_GRIPPER",
     "PREPLAN_LIFT","PREPLAN_TRANSFER","PREPLAN_PLACE",
@@ -236,8 +243,11 @@ def git_blob(path:Path,repo:Path)->str:
     return subprocess.check_output(["git","hash-object",str(path)],cwd=repo,text=True).strip()
 
 
-def candidate_worlds(workspace:Path):
+def candidate_worlds(workspace:Path,profile:str="pile"):
     repo=Path(__file__).resolve().parents[1]
+    if profile!="pile":
+        yield repo/"scenes/ur5_2f_test/worlds"/SOURCE_WORLDS[profile][0]
+        return
     roots=[repo/"scenes/ur5_2f_test/worlds/stage_a0.sdf",
            Path("/tmp/stage-a01/full/world.sdf"),
            workspace/"a05-evidence-20260918/runtime/world.sdf"]
@@ -251,12 +261,13 @@ def candidate_worlds(workspace:Path):
         seen.add(key);yield path
 
 
-def discover_source_world(explicit:Path|None,workspace:Path)->Path:
+def discover_source_world(explicit:Path|None,workspace:Path,profile:str="pile")->Path:
     repo=Path(__file__).resolve().parents[1]
-    candidates=[explicit] if explicit is not None else list(candidate_worlds(workspace))
+    expected=SOURCE_WORLD_GIT_BLOB if profile=="pile" else SOURCE_WORLDS[profile][1]
+    candidates=[explicit] if explicit is not None else list(candidate_worlds(workspace,profile))
     for path in candidates:
         if path is None or not path.is_file():continue
-        if git_blob(path,repo)!=SOURCE_WORLD_GIT_BLOB:continue
+        if git_blob(path,repo)!=expected:continue
         text=path.read_text(errors="ignore").lower()
         if any(token in text for token in ("workcell::simulatormeasurements","workcell_measurements",
                 "gz_ros2_control","ign_ros2_control","attach","magnet","suction")):continue
@@ -574,6 +585,8 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-world",type=Path)
+    parser.add_argument("--world-profile",choices=sorted(SOURCE_WORLDS),default="pile",
+                        help="pinned physics world: dense pile benchmark (default) or sparse single-workpiece commissioning")
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--base-domain",type=int,default=201)
     parser.add_argument("--partition-prefix",default="stage_a1_finish")
@@ -594,7 +607,7 @@ def main(argv=None):
     overall={"status":"BLOCKED","gates":{},"preflight":None,
              "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time}
     try:
-        source_world=discover_source_world(args.source_world,workspace)
+        source_world=discover_source_world(args.source_world,workspace,args.world_profile)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
         bridge=active_bridge_overlay()
         args.bridge_overlay_identity=bridge_overlay_identity(bridge)
@@ -602,7 +615,8 @@ def main(argv=None):
         args.moveit_overlay_identity=moveit_overlay_identity(build["moveit_overlay"])
         overall["preflight"]={"repo_head":subprocess.check_output(["git","rev-parse","HEAD"],cwd=repo,text=True).strip(),
             "repo_dirty":bool(subprocess.check_output(["git","status","--porcelain"],cwd=repo,text=True).strip()),
-            "source_world":str(source_world),"source_world_git_blob":SOURCE_WORLD_GIT_BLOB,
+            "source_world":str(source_world),"world_profile":args.world_profile,
+            "source_world_git_blob":SOURCE_WORLDS[args.world_profile][1],
             "source_world_sha256":sha256(source_world),"commissioning_build":build,"bridge_overlay":bridge}
         prior={}
         selected=GATES[:GATES.index(args.through)+1]
