@@ -847,3 +847,82 @@ def test_stale_prearm_sample_does_not_hide_other_invalidity(patch,monkeypatch):
     assert m.error is not None
     m.update(N(data=json.dumps(dict(sample,iteration=3,sim_ns=3,wall_ns=1_998_000_000))))
     with pytest.raises(RuntimeError):m.fresh()
+
+
+def live_measurement_sample(i,wall_ns,run_id='r',pid=12):
+    from simulator_backend import PHYSICS_POSE_METHOD
+    return dict(run_id=run_id,pid=pid,iteration=i,sim_ns=i*1000000,wall_ns=wall_ns,publish_wall_ns=wall_ns+200000,
+        serialization_ns=100000,poses={'a0::part':[0,0,0,0,0,0,1],'a0::part::link':[0,0,0,0,0,0,1]},
+        joints={'a0::robot::leader':[.3,0.]},contacts=[],collisions=['a0::part::link::collision'],
+        pose_source=dict(method=PHYSICS_POSE_METHOD,frame='world',read_only=True,gazebo_version='6.16',
+            query_iteration=i,query_sim_ns=i*1000000),
+        pose_entities={'a0::part':dict(kind='model',entity=1,link_entity=2,query_entity=3),
+                       'a0::part::link':dict(kind='link',entity=2,link_entity=2,query_entity=3)})
+
+
+def test_live_acquisition_takes_every_sample_writes_source_text_and_latches_stale(tmp_path,monkeypatch):
+    """The wait-set acquisition loop must behave exactly like the executor it replaces:
+    every published sample reaches update() in order, armed samples queue for the
+    consumer, the evidence line is the simulator's own text, a stale sample still
+    latches the unchanged 250 ms guard, and shutdown leaves no thread behind."""
+    import os,threading,time
+    import rclpy
+    from std_msgs.msg import String
+    from rclpy.qos import QoSProfile,ReliabilityPolicy,HistoryPolicy
+    import simulator_execution
+    from simulator_backend import PHYSICS_POSE_METHOD
+    receipt=dict(world='a0',model='robot',run_id='r',pid=12,measurement_pose_source=PHYSICS_POSE_METHOD)
+    monkeypatch.setattr('simulator_backend.verify_receipt_process',lambda _:receipt)
+    monkeypatch.setattr(simulator_execution,'validate_publisher',lambda publishers:None)
+    (tmp_path/'robot.urdf').write_text('<robot name="r"><link name="base"/></robot>')
+    (tmp_path/'receipt.json').write_text(json.dumps(receipt))
+    monkeypatch.setenv('ROS_LOCALHOST_ONLY','1');monkeypatch.setenv('ROS_DOMAIN_ID',os.environ.get('ROS_DOMAIN_ID','201'))
+    rclpy.init();node=rclpy.create_node('live_acquisition_test')
+    pub=node.create_publisher(String,'/world/a0/workcell_measurements',
+        QoSProfile(depth=1000,reliability=ReliabilityPolicy.RELIABLE,history=HistoryPolicy.KEEP_LAST))
+    m=simulator_execution.Measurements(node,tmp_path/'receipt.json',tmp_path/'measurements.jsonl')
+    try:
+        assert m.acquisition.is_alive() and m.writer.is_alive()
+        published={}
+        def publish(i,wall_ns=None):
+            s=live_measurement_sample(i,time.time_ns() if wall_ns is None else wall_ns)
+            # One multi-line text proves the writer falls back to a single-line dump.
+            text=json.dumps(s,sort_keys=True,indent=1 if i==60 else None);published[i]=(s,text);pub.publish(String(data=text))
+        until=time.monotonic()+5
+        while pub.get_subscription_count()==0 and time.monotonic()<until:time.sleep(.01)
+        for i in range(1,51):publish(i);time.sleep(.002)
+        until=time.monotonic()+5
+        while (m.latest is None or m.latest['iteration']<50) and time.monotonic()<until:time.sleep(.005)
+        assert m.latest['iteration']==50 and m.error is None
+        m.fresh();m.arm()
+        # Main thread competes the way the executor does: spinning its own node.
+        for i in range(51,151):
+            publish(i);rclpy.spin_once(node,timeout_sec=.001)
+        until=time.monotonic()+5
+        while (m.latest['iteration']<150) and time.monotonic()<until:time.sleep(.005)
+        with m.lock:
+            pending=m.drain()
+        assert [s['iteration'] for s in pending]==list(range(51,151))
+        for s in pending:m.record('test',s)
+        receive=[e for e in m.timing if e['event']=='receive']
+        assert [e['iteration'] for e in receive]==list(range(1,151))
+        assert all('lock_wait_ns' in e and e['error'] is None for e in receive)
+        # A structurally valid but old sample latches the unchanged guard once armed.
+        publish(151,time.time_ns()-300000000)
+        until=time.monotonic()+5
+        while m.error is None and time.monotonic()<until:time.sleep(.005)
+        assert isinstance(m.error,simulator_execution.StaleMeasurement)
+        with pytest.raises(simulator_execution.StaleMeasurement):m.fresh()
+    finally:
+        m.close();node.destroy_node();rclpy.shutdown()
+    assert not m.acquisition.is_alive() and not m.writer.is_alive() and not m.watch.thread.is_alive()
+    lines=[json.loads(l) for l in (tmp_path/'measurements.jsonl').read_text().splitlines()]
+    assert [l['measurement']['iteration'] for l in lines]==list(range(51,151))
+    assert all(l['phase']=='test' and l['measurement']==published[l['measurement']['iteration']][0] for l in lines)
+    # The evidence line carries the simulator's own serialization, not a re-dump.
+    raw=(tmp_path/'measurements.jsonl').read_text().splitlines()[0]
+    assert raw=='{"phase": "test", "measurement": '+published[51][1]+'}'
+    assert len((tmp_path/'measurements.jsonl').read_text().splitlines())==100
+    timing=json.loads((tmp_path/'measurements.jsonl.timing.json'.replace('.jsonl.timing','.timing')).read_text())
+    assert {e['event'] for e in timing}>={'receive','fresh','consume_log','process_watch'}
+    assert all(w['threads'] for w in timing if w['event']=='process_watch')
