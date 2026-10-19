@@ -1,4 +1,5 @@
 import importlib.util
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1216,3 +1217,33 @@ def test_ik_winding_does_not_change_a_mimic_leader_or_follower():
     values={'leader':-.2,'follower':-.1}
     assert MODULE.nearest_ik_winding(values,{'leader':6.2,'follower':3.1},
         {j.get('name'):j for j in model.findall('joint')})==values
+
+
+def _support_box(z, height, quaternion=(0.0, 0.0, 0.0, 1.0), shape=1):
+    from moveit_msgs.msg import CollisionObject
+    from shape_msgs.msg import SolidPrimitive
+    from geometry_msgs.msg import Pose
+    obj = CollisionObject(); obj.id = 'workcell::support_surface_table'; obj.header.frame_id = 'world'
+    obj.pose.position.x, obj.pose.position.y, obj.pose.position.z = 0.51, 0.0023, z
+    obj.pose.orientation.x, obj.pose.orientation.y, obj.pose.orientation.z, obj.pose.orientation.w = quaternion
+    primitive = SolidPrimitive(); primitive.type = shape
+    primitive.dimensions = [1.2084, 0.8134, height] if shape == 1 else [0.1]
+    obj.primitives = [primitive]; obj.primitive_poses = [Pose()]; obj.primitive_poses[0].orientation.w = 1.0
+    return obj
+
+
+def test_support_plane_height_is_the_box_top_not_a_contact_point():
+    execute = MODULE
+    # Geometry from the 2026-10-19 sparse commissioning table: top face at z=0.
+    table = _support_box(-0.4531188535094261, 0.9062377070188522)
+    assert abs(execute.support_plane_height(table)) < 1e-15
+    yawed = _support_box(-0.45, 0.9, (0.0, 0.0, math.sin(0.2), math.cos(0.2)))
+    assert abs(execute.support_plane_height(yawed)) < 1e-15
+
+
+def test_support_plane_height_rejects_tilted_or_non_box_supports():
+    execute = MODULE
+    with pytest.raises(RuntimeError, match='SUPPORT_PLANE_UNSUPPORTED'):
+        execute.support_plane_height(_support_box(-0.45, 0.9, (math.sin(0.01), 0.0, 0.0, math.cos(0.01))))
+    with pytest.raises(RuntimeError, match='SUPPORT_PLANE_UNSUPPORTED'):
+        execute.support_plane_height(_support_box(-0.45, 0.9, shape=2))
