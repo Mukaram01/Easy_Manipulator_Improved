@@ -148,6 +148,31 @@ def test_source_world_discovery_accepts_only_frozen_git_blob(tmp_path,monkeypatc
         MODULE.discover_source_world(world,tmp_path)
 
 
+def test_sparse_commissioning_world_is_pinned_and_keeps_one_unchanged_pile_part():
+    import xml.etree.ElementTree as ET
+    repo=Path(__file__).parents[1]
+    worlds=repo/"scenes/ur5_2f_test/worlds"
+    name,blob=MODULE.SOURCE_WORLDS["sparse"]
+    assert MODULE.git_blob(worlds/name,repo)==blob
+    assert MODULE.discover_source_world(None,repo,"sparse")==(worlds/name).resolve()
+    sparse=ET.parse(worlds/name).getroot().find("world")
+    pile=ET.parse(worlds/"stage_a0.sdf").getroot().find("world")
+    dynamic=[m for m in sparse.findall("model") if m.findtext("static","false").lower()!="true"]
+    assert [m.get("name") for m in dynamic]==["part_04"]
+    def text(element):
+        element.tail=None
+        return ET.tostring(element)
+    original=[m for m in pile.findall("model") if m.get("name")=="part_04"][0]
+    assert text(dynamic[0])==text(original)
+    static=lambda w:[text(m) for m in w.findall("model") if m.findtext("static","false").lower()=="true"]
+    assert static(sparse)==static(pile)
+    assert text(sparse.find("physics"))==text(pile.find("physics"))
+
+
+def test_world_profile_default_remains_pile_benchmark():
+    assert MODULE.SOURCE_WORLDS["pile"]==("stage_a0.sdf",MODULE.SOURCE_WORLD_GIT_BLOB)
+
+
 def test_tracked_stage_a0_world_is_portable_and_has_ten_dynamic_parts():
     import xml.etree.ElementTree as ET
     world_path=Path(__file__).parents[1]/"scenes/ur5_2f_test/worlds/stage_a0.sdf"

@@ -466,6 +466,24 @@ def contacts_in_planned_scene(contacts, planned, live):
     return result
 
 
+def support_plane_height(obj):
+    """Top-face height of a level single-BOX support; other supports fail closed."""
+    geometry = collision_object_dict(obj)
+    if geometry is None:
+        raise RuntimeError('SUPPORT_PLANE_UNSUPPORTED: support must be one BOX primitive')
+    qx, qy, qz, qw = geometry['pose'][3:]
+    norm = qx * qx + qy * qy + qz * qz + qw * qw
+    if not math.isfinite(norm) or abs(norm - 1.0) > 1e-9:
+        raise RuntimeError('SUPPORT_PLANE_UNSUPPORTED: invalid support orientation')
+    # World z of the BOX's local z axis; a level top face keeps it at +1.
+    if abs((1.0 - 2.0 * (qx * qx + qy * qy)) - 1.0) > 1e-12:
+        raise RuntimeError('SUPPORT_PLANE_UNSUPPORTED: support top face is not level')
+    height = geometry['pose'][2] + geometry['dimensions'][2] / 2.0
+    if not math.isfinite(height):
+        raise RuntimeError('SUPPORT_PLANE_UNSUPPORTED: nonfinite support plane')
+    return height
+
+
 def legitimate_support_ids(observation, environment, manifest):
     """Bind only declared supports or the floor beneath reviewed usable space.
 
@@ -1840,8 +1858,14 @@ def main():
                 if floor_contacts and len({p[0] for p in floor_contacts}) == 1:
                     if 'workcell/InitialSupportContact' not in support_adapters.split():
                         raise RuntimeError('SUPPORT_CONTACT_ADAPTER_MISSING: regenerate and launch the current MoveIt configuration')
+                    support_object = next(o for o in initial.world.collision_objects
+                                          if o.id == floor_contacts[0][0])
+                    # The adapter certifies floor_z against the support's own top face
+                    # (1e-8). A measured contact point lies inside the resting overlap,
+                    # so bind the geometric plane; the contact only identifies the support.
                     support = dict(object_id=object_id, support_id=floor_contacts[0][0],
-                                   floor_z=floor_contacts[0][1], tool_link=contract['tool_link'])
+                                   floor_z=support_plane_height(support_object),
+                                   tool_link=contract['tool_link'])
             # Path constraints now encode the complete Cartesian tube, so one
             # constrained MoveGroup request is both stronger and dramatically
             # cheaper than chaining ~20 independent 5 mm OMPL requests. Keep an

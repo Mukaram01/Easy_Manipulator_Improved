@@ -1563,3 +1563,261 @@ TEST(ControllerCertificate, SavedTransferBodiesClearEveryConcaveBinTriangle) {
   }
   }
 }
+
+// Revolute support lift: a lever rotates about a horizontal axis, so the
+// carried BOX both translates and rotates. upwardBoxContact (identity
+// rotation, prismatic only) cannot apply; eligible single-BOX support pairs
+// must use the convex-BOX initial-contact proof with the SupportContact policy.
+namespace {
+struct RevoluteSupportFixture {
+  planning_scene::PlanningScenePtr scene;
+  explicit RevoluteSupportFixture(double penetration,double yaw=.1,bool box_support=true,
+                                  const std::string& policy_support="fixture") {
+    const std::string urdf=R"(<robot name="lever"><link name="base"/><link name="arm"/><link name="tool"/>
+      <joint name="pivot" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 1 0"/>
+      <origin xyz="0 0 .0125"/><limit lower="-1" upper="1" effort="10" velocity="1"/></joint>
+      <joint name="mount" type="fixed"><parent link="arm"/><child link="tool"/><origin xyz=".3 0 0"/></joint></robot>)";
+    auto robot=urdf::parseURDF(urdf);auto srdf=std::make_shared<srdf::Model>();
+    srdf->initString(*robot,"<robot name='lever'><group name='arm'><joint name='pivot'/></group></robot>");
+    auto model=std::make_shared<moveit::core::RobotModel>(robot,srdf);
+    scene=std::make_shared<planning_scene::PlanningScene>(model);
+    Eigen::Isometry3d table=Eigen::Isometry3d::Identity();table.translation()=Eigen::Vector3d(.3,0,-.05);
+    scene->getWorldNonConst()->addToObject("fixture",box_support?
+      shapes::ShapeConstPtr(new shapes::Box(1,1,.1)):shapes::ShapeConstPtr(new shapes::Cylinder(.5,.1)),table);
+    auto& state=scene->getCurrentStateNonConst();state.setToDefaultValues();
+    Eigen::Isometry3d part=Eigen::Isometry3d::Identity();
+    part.linear()=Eigen::AngleAxisd(yaw,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    part.translation().z()=-penetration;
+    state.attachBody("part",Eigen::Isometry3d::Identity(),{shapes::ShapeConstPtr(new shapes::Box(.025,.025,.025))},
+                     EigenSTL::vector_Isometry3d{part},std::set<std::string>{},"tool");
+    state.update();
+    collision_detection::DecideContactFn predicate=workcell::SupportContact{"part",policy_support,0.};
+    scene->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",predicate);
+  }
+  robot_trajectory::RobotTrajectory path(const std::vector<double>& angles) const {
+    robot_trajectory::RobotTrajectory trajectory(scene->getRobotModel(),"arm");
+    for(double angle:angles) {
+      auto state=scene->getCurrentState();state.setVariablePosition("pivot",angle);
+      state.setVariableVelocity("pivot",0.);state.setVariableAcceleration("pivot",0.);state.update();
+      trajectory.addSuffixWayPoint(state,trajectory.getWayPointCount()?.1:0.);
+    }
+    return trajectory;
+  }
+};
+}
+
+TEST(ControllerCertificate, RevoluteYawedSupportLiftCertifiesAndExpiresContact) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  ASSERT_FALSE(fixture.scene->isStateColliding());   // the conditional support policy admits the start
+  auto strict=fixture.scene->diff();strict->decoupleParent();
+  strict->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",false);
+  ASSERT_TRUE(strict->isStateColliding(fixture.scene->getCurrentState(),""));  // genuinely in contact at t=0
+  // Negative pivot raises the tool: 0.02 rad lifts the part about 6 mm.
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+  EXPECT_EQ(report.reason,"ALL_INTERVALS_CERTIFIED");
+  EXPECT_EQ(report.initial_contacts_expired,1U);
+}
+
+TEST(ControllerCertificate, RevoluteSupportMotionIntoTableRejects) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.certified,0U);
+}
+
+TEST(ControllerCertificate, RevoluteSupportLiftThenRecontactRejects) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02,0.}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_GT(report.certified,0U);
+  EXPECT_GE(report.failure_begin_ns,100000000);
+}
+
+TEST(ControllerCertificate, RevoluteSupportDepthAboveToleranceRejects) {
+  RevoluteSupportFixture fixture(.00010001);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.certified,0U);
+}
+
+TEST(ControllerCertificate, RevoluteSupportPolicyForDifferentSupportStaysUnproven) {
+  RevoluteSupportFixture fixture(1.2e-7,.1,true,"other_support");
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, RevoluteNonBoxSupportStaysUnproven) {
+  RevoluteSupportFixture fixture(1.2e-7,.1,false);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, RevoluteSupportPermissionCannotHideUnrelatedCollision) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  Eigen::Isometry3d obstacle=Eigen::Isometry3d::Identity();obstacle.translation()=Eigen::Vector3d(.3,0,.03);
+  fixture.scene->getWorldNonConst()->addToObject(
+    "unrelated",shapes::ShapeConstPtr(new shapes::Box(.005,.005,.005)),obstacle);
+  const auto trajectory=fixture.path({0.,-.02});
+  ASSERT_TRUE(fixture.scene->isStateColliding(trajectory.getLastWayPoint(),""));
+  const auto report=workcell::controller_certificate::certify(trajectory,*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, RevoluteSupportZeroTimestampBudgetFailsClosed) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  workcell::ControllerAuditOptions options;options.max_contact_timestamps=0;
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene,options);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.initial_contacts_expired,0U);
+}
+
+// Independent-review regressions (F1): motion that approaches or drags along the
+// support while still in initial contact must not certify, even within the
+// depth tolerance. Rig: prismatic lift, revolute swing (z), revolute pivot (y).
+namespace {
+struct RigSupportFixture {
+  planning_scene::PlanningScenePtr scene;
+  explicit RigSupportFixture(double penetration) {
+    const std::string urdf=R"(<robot name="rig"><link name="base"/><link name="l1"/><link name="l2"/><link name="arm"/><link name="tool"/>
+      <joint name="lift" type="prismatic"><parent link="base"/><child link="l1"/><axis xyz="0 0 1"/>
+      <limit lower="-.05" upper=".05" effort="10" velocity="1"/></joint>
+      <joint name="swing" type="revolute"><parent link="l1"/><child link="l2"/><axis xyz="0 0 1"/>
+      <limit lower="-1" upper="1" effort="10" velocity="1"/></joint>
+      <joint name="pivot" type="revolute"><parent link="l2"/><child link="arm"/><axis xyz="0 1 0"/>
+      <origin xyz="0 0 .0125"/><limit lower="-1" upper="1" effort="10" velocity="1"/></joint>
+      <joint name="mount" type="fixed"><parent link="arm"/><child link="tool"/><origin xyz=".3 0 0"/></joint></robot>)";
+    auto robot=urdf::parseURDF(urdf);auto srdf=std::make_shared<srdf::Model>();
+    srdf->initString(*robot,"<robot name='rig'><group name='arm'><joint name='lift'/><joint name='swing'/><joint name='pivot'/></group></robot>");
+    auto model=std::make_shared<moveit::core::RobotModel>(robot,srdf);
+    scene=std::make_shared<planning_scene::PlanningScene>(model);
+    Eigen::Isometry3d table=Eigen::Isometry3d::Identity();table.translation()=Eigen::Vector3d(.3,0,-.05);
+    scene->getWorldNonConst()->addToObject("fixture",shapes::ShapeConstPtr(new shapes::Box(1,1,.1)),table);
+    auto& state=scene->getCurrentStateNonConst();state.setToDefaultValues();
+    Eigen::Isometry3d part=Eigen::Isometry3d::Identity();
+    part.linear()=Eigen::AngleAxisd(.1,Eigen::Vector3d::UnitZ()).toRotationMatrix();part.translation().z()=-penetration;
+    state.attachBody("part",Eigen::Isometry3d::Identity(),{shapes::ShapeConstPtr(new shapes::Box(.025,.025,.025))},
+                     EigenSTL::vector_Isometry3d{part},std::set<std::string>{},"tool");
+    state.update();
+    collision_detection::DecideContactFn predicate=workcell::SupportContact{"part","fixture",0.};
+    scene->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",predicate);
+  }
+  robot_trajectory::RobotTrajectory path(const std::vector<std::array<double,3>>& points) const {
+    robot_trajectory::RobotTrajectory trajectory(scene->getRobotModel(),"arm");
+    for(const auto& q:points) {
+      auto state=scene->getCurrentState();
+      state.setVariablePosition("lift",q[0]);state.setVariablePosition("swing",q[1]);state.setVariablePosition("pivot",q[2]);
+      for(const char* n:{"lift","swing","pivot"}) {state.setVariableVelocity(n,0.);state.setVariableAcceleration(n,0.);}
+      state.update();trajectory.addSuffixWayPoint(state,trajectory.getWayPointCount()?.1:0.);
+    }
+    return trajectory;
+  }
+};
+}
+
+TEST(ControllerCertificate, RigRevoluteSupportLiftCertifies) {
+  RigSupportFixture f(1.2e-7);
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,0,-.02}}),*f.scene);
+  EXPECT_EQ(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_EQ(r.reason,"ALL_INTERVALS_CERTIFIED");EXPECT_EQ(r.initial_contacts_expired,1U);
+}
+
+TEST(ControllerCertificate, SupportPressWithinToleranceThenLiftRejects) {
+  RigSupportFixture f(1.2e-7);   // pivot +1e-4 rad presses the part ~30 um into the table
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,0,1e-4},{0,0,-.02}}),*f.scene);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_LT(r.failure_begin_ns,100000000);   // rejected within the press segment
+}
+
+TEST(ControllerCertificate, SupportLateralDragInContactThenLiftRejects) {
+  RigSupportFixture f(1.2e-7);   // swing 5e-4 rad drags the part ~0.15 mm along the table
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,.0005,0},{0,.0005,-.02}}),*f.scene);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_LT(r.failure_end_ns,100000001);
+}
+
+TEST(ControllerCertificate, SupportLongLateralDragRejects) {
+  RigSupportFixture f(1.2e-7);
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,.05,0}}),*f.scene);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+}
+
+TEST(ControllerCertificate, SupportDragBeyondToleranceRejectedByDragBoundNotBudget) {
+  RigSupportFixture f(1.2e-7);   // swing 5e-4 rad: ~0.15 mm drag, then lift
+  workcell::ControllerAuditOptions options;options.max_intervals=3000000;
+  const auto r=workcell::controller_certificate::certify(
+    f.path({{0,0,0},{0,.0005,0},{0,.0005,-.02}}),*f.scene,options);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_EQ(r.reason,"PRECISION_OR_DEPTH_LIMIT");   // the drag bound, not INTERVAL_LIMIT
+}
+
+TEST(ControllerCertificate, SupportDragBelowToleranceThenLiftCertifies) {
+  RigSupportFixture f(1.2e-7);   // swing 1e-4 rad: ~30 um drag, inside the 0.1 mm allowance
+  const auto r=workcell::controller_certificate::certify(
+    f.path({{0,0,0},{0,.0001,0},{0,.0001,-.02}}),*f.scene);
+  EXPECT_EQ(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_EQ(r.initial_contacts_expired,1U);
+}
+
+TEST(ControllerCertificate, RealSparseUr5SupportLiftCertifies) {
+  // Actual UR5 PREPLAN_LIFT spline and frozen scene from the 2026-10-19
+  // sparse commissioning run: part_04 (25 mm BOX, yaw 0.1) resting 0.12 um
+  // into the table. CDR cannot store DecideContactFn; restore exactly the
+  // adapter's SupportContact for this object and table (floor_z = top face).
+  const auto directory=std::filesystem::path(__FILE__).parent_path()/"evidence/stage_a0_sparse_support_lift_20261019";
+  auto model=controllerFixtureModel(directory);
+  moveit_msgs::msg::PlanningScene frozen;deserializeControllerFixture(directory,"scene.cdr",frozen);
+  moveit_msgs::msg::RobotTrajectory emitted;deserializeControllerFixture(directory,"trajectory.cdr",emitted);
+  auto scene_ptr=std::make_shared<planning_scene::PlanningScene>(model);auto& scene=*scene_ptr;
+  scene.setPlanningSceneMsg(frozen);
+  robot_trajectory::RobotTrajectory trajectory(model,"manipulator");
+  trajectory.setRobotTrajectoryMsg(scene.getCurrentState(),emitted);
+  for(const auto& name:emitted.joint_trajectory.joint_names)
+    ASSERT_EQ(model->getJointOfVariable(name)->getType(),moveit::core::JointModel::REVOLUTE);
+  auto first=trajectory.getFirstWayPoint();first.update();
+  std::vector<const moveit::core::AttachedBody*> attached;first.getAttachedBodies(attached);
+  ASSERT_EQ(attached.size(),1U);ASSERT_EQ(attached[0]->getName(),"runtime::part_04");
+  const std::string table="workcell::support_surface_table";
+  auto strict=scene_ptr->diff();strict->decoupleParent();strict->getAllowedCollisionMatrixNonConst().setEntry(attached[0]->getName(),table,false);
+  ASSERT_TRUE(strict->isStateColliding(first,""));   // genuinely resting in contact at t=0
+  collision_detection::DecideContactFn predicate=workcell::SupportContact{attached[0]->getName(),table,0.};
+  scene.getAllowedCollisionMatrixNonConst().setEntry(attached[0]->getName(),table,predicate);
+  const auto report=workcell::controller_certificate::certify(trajectory,scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+  EXPECT_EQ(report.reason,"ALL_INTERVALS_CERTIFIED");
+  EXPECT_EQ(report.initial_contacts_expired,1U);
+  EXPECT_GT(report.contact_timestamps,0U);
+}
+
+TEST(ControllerCertificate, SupportLiftOverhangingTableEdgeFailsClosed) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  // Shrink the table so the part's footprint overhangs its edge: the slab
+  // no-reentry proof does not apply and the crossing cannot be certified.
+  fixture.scene->getWorldNonConst()->removeObject("fixture");
+  Eigen::Isometry3d table=Eigen::Isometry3d::Identity();table.translation()=Eigen::Vector3d(.3-.5+.005,0,-.05);
+  fixture.scene->getWorldNonConst()->addToObject("fixture",shapes::ShapeConstPtr(new shapes::Box(1,1,.1)),table);
+  collision_detection::DecideContactFn predicate=workcell::SupportContact{"part","fixture",0.};
+  fixture.scene->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",predicate);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+}
+
+TEST(SupportAdapter, FullLiftContinuesStrictlyAfterSeparation) {
+  // A catalogue lift (here 50 mm) must not be capped by the initial-contact
+  // envelope once the part has strictly separated from the support.
+  SupportFixture f(1.44e-8); bool called=false;
+  EXPECT_TRUE(f.run({0.,.005,.05},&called)); EXPECT_TRUE(called);
+}
+TEST(SupportAdapter, LiftBeyondEnvelopeCertifiesButDescentAfterSeparationFails) {
+  // A single 20 mm stored step: interpolated samples separate within the
+  // envelope, then continue strictly. Descending after separation is
+  // still rejected by the never-descend rule.
+  SupportFixture f(1.44e-8);
+  EXPECT_TRUE(f.run({0.,.02}));
+  EXPECT_FALSE(f.run({0.,.05,.03}));
+}
+TEST(SupportAdapter, StrictCollisionAfterSeparationStillFails) {
+  SupportFixture f(1.44e-8); Eigen::Isometry3d p=Eigen::Isometry3d::Identity(); p.translation().z()=.04;
+  f.scene->getWorldNonConst()->addToObject("ceiling",shapes::ShapeConstPtr(new shapes::Box(.2,.2,.005)),p);
+  EXPECT_FALSE(f.run({0.,.005,.05}));
+}
