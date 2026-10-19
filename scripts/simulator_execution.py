@@ -350,6 +350,78 @@ def require_cancellation_acceptance(summary):
         raise RuntimeError('CANCELLATION_TRIAL_UNVERIFIED: movement, owned cancellation, stop or alive cleanup missing')
 
 
+class ProcessStallWatch:
+    """Diagnostic only. Samples this process's kernel scheduler, page-fault and
+    swap counters so a freshness failure can be attributed to CPU starvation,
+    major faults (swap-in) or blocking instead of guessed. It never touches a
+    measurement, a guard or a threshold; its records are kept beside the
+    acquisition timing evidence."""
+    FILES=dict(vmstat=('pswpin','pswpout','pgmajfault','allocstall_movable','allocstall_normal'),
+               status=('VmRSS','VmSwap','Threads'))
+    def __init__(self,period_s=.02,heartbeat_s=.25,stall_ms=20.):
+        import gc
+        self.period=period_s;self.heartbeat=heartbeat_s;self.stall_ms=stall_ms
+        self.events=[];self.stop_event=threading.Event()
+        self.gc_started=None;self._gc=self._gc_callback;gc.callbacks.append(self._gc)
+        self.thread=threading.Thread(target=self._run,name='process_stall_watch',daemon=True)
+    def start(self):self.thread.start()
+    def stop(self):
+        import gc
+        self.stop_event.set();self.thread.join(timeout=2)
+        if self._gc in gc.callbacks:gc.callbacks.remove(self._gc)
+    def _gc_callback(self,phase,info):
+        if phase=='start':self.gc_started=time.monotonic_ns();return
+        if self.gc_started is None:return
+        duration=time.monotonic_ns()-self.gc_started;self.gc_started=None
+        if info.get('generation')==2 or duration>=5000000:
+            self.events.append(dict(event='gc',wall_ns=time.time_ns(),generation=info.get('generation'),
+                collected=info.get('collected'),duration_ns=duration))
+    @staticmethod
+    def _read(path):
+        try:
+            with open(path) as f:return f.read()
+        except OSError:return ''
+    def sample(self,lateness_ms,reason):
+        names={t.native_id:t.name for t in threading.enumerate() if t.native_id is not None}
+        threads={}
+        for tid in _task_ids():
+            stat=self._read(f'/proc/self/task/{tid}/stat');sched=self._read(f'/proc/self/task/{tid}/schedstat').split()
+            if not stat or len(sched)<3:continue
+            rest=stat.rsplit(')',1)[1].split()
+            threads[tid]=dict(name=names.get(tid),state=rest[0],minflt=int(rest[7]),majflt=int(rest[9]),
+                utime=int(rest[11]),stime=int(rest[12]),run_ns=int(sched[0]),runqueue_wait_ns=int(sched[1]),slices=int(sched[2]))
+        vm={};system={}
+        for line in self._read('/proc/self/status').splitlines():
+            key=line.split(':',1)[0]
+            if key in self.FILES['status']:vm[key]=int(line.split()[1])
+        for line in self._read('/proc/vmstat').splitlines():
+            key,_,value=line.partition(' ')
+            if key in self.FILES['vmstat']:system[key]=int(value)
+        for resource in ('cpu','memory','io'):
+            for line in self._read(f'/proc/pressure/{resource}').splitlines():
+                kind,_,rest=line.partition(' ')
+                total=next((f.split('=')[1] for f in rest.split() if f.startswith('total=')),None)
+                if total is not None:system[f'psi_{resource}_{kind}_total_us']=int(total)
+        system['loadavg']=self._read('/proc/loadavg').split()[:3]
+        self.events.append(dict(event='process_watch',wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
+            reason=reason,lateness_ms=lateness_ms,threads=threads,vm=vm,system=system))
+    def _run(self):
+        self.sample(0.,'start');last_heartbeat=time.monotonic()
+        while not self.stop_event.is_set():
+            expected=time.monotonic()+self.period
+            self.stop_event.wait(self.period)
+            lateness_ms=(time.monotonic()-expected)*1e3
+            if lateness_ms>=self.stall_ms:self.sample(lateness_ms,'late');last_heartbeat=time.monotonic()
+            elif time.monotonic()-last_heartbeat>=self.heartbeat:self.sample(lateness_ms,'heartbeat');last_heartbeat=time.monotonic()
+        self.sample(0.,'stop')
+
+
+def _task_ids():
+    import os
+    try:return [int(t) for t in os.listdir('/proc/self/task')]
+    except OSError:return []
+
+
 class Measurements:
     def __init__(self,node,receipt,log):
         import yaml
@@ -374,6 +446,7 @@ class Measurements:
         self.parents={j.find('child').get('link'):j for j in self.robot.findall('joint')}
         self.writer=threading.Thread(target=self._write,name='measurement_evidence');self.writer.start()
         self.acquisition=threading.Thread(target=self.executor.spin,name='measurement_acquisition');self.acquisition.start()
+        self.watch=ProcessStallWatch();self.watch.start()
     def update(self,msg):
         received=time.time_ns();started=time.monotonic_ns();s={};sample_error=None
         with self.lock:
@@ -468,6 +541,7 @@ class Measurements:
         self.executor.shutdown();self.acquisition.join()
         self.node.destroy_node()
         self.log_queue.put(None);self.writer.join();self.log.close()
+        self.watch.stop();self.timing.extend(self.watch.events)
         self.log_path.with_suffix('.timing.json').write_text(json.dumps(self.timing))
 
 
