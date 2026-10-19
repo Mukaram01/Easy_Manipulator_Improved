@@ -110,6 +110,11 @@ def validate_sample(s,receipt,now,previous=None):
         raise StaleMeasurement('SIMULATOR_TELEMETRY_INVALID: stale measurement')
 
 
+# The certificate's support contact tolerance (support_contact_policy.hpp
+# support_contact_tolerance_m): the deepest certified support penetration.
+SUPPORT_CONTACT_TOLERANCE_M=1e-4
+
+
 class Separation:
     def __init__(self,origin,floor):
         self.origin=origin;self.floor=floor;self.expired=False;self.height=0.
@@ -118,9 +123,12 @@ class Separation:
             if support_contact:raise RuntimeError('support exception expired: recontact')
             return
         motion=[a-b for a,b in zip(pose[:3],self.origin[:3])]
-        if (math.hypot(*motion[:2])>.0025 or motion[2]<self.height-1e-9 or motion[2]>.01 or angle(pose,self.origin)>.01):
+        # Physics settles by ~1e-8 m while the part is held at rest, so descent is
+        # measured against the running maximum height and bounded by the certified
+        # support tolerance; the bound never accumulates sample to sample.
+        if (math.hypot(*motion[:2])>.0025 or motion[2]<self.height-SUPPORT_CONTACT_TOLERANCE_M or motion[2]>.01 or angle(pose,self.origin)>.01):
             raise RuntimeError('initial support separation leaves certified corridor')
-        self.height=motion[2]
+        self.height=max(self.height,motion[2])
         if not support_contact and bottom>self.floor+.0001:self.expired=True
 
 
@@ -350,6 +358,82 @@ def require_cancellation_acceptance(summary):
         raise RuntimeError('CANCELLATION_TRIAL_UNVERIFIED: movement, owned cancellation, stop or alive cleanup missing')
 
 
+class ProcessStallWatch:
+    """Diagnostic only. Samples this process's kernel scheduler, page-fault and
+    swap counters so a freshness failure can be attributed to CPU starvation,
+    major faults (swap-in) or blocking instead of guessed. It never touches a
+    measurement, a guard or a threshold; its records are kept beside the
+    acquisition timing evidence."""
+    FILES=dict(vmstat=('pswpin','pswpout','pgmajfault','allocstall_movable','allocstall_normal'),
+               status=('VmRSS','VmSwap','Threads'))
+    def __init__(self,period_s=.02,heartbeat_s=.25,stall_ms=20.):
+        import gc
+        self.period=period_s;self.heartbeat=heartbeat_s;self.stall_ms=stall_ms
+        self.events=[];self.stop_event=threading.Event()
+        self.gc_started=None;self._gc=self._gc_callback;gc.callbacks.append(self._gc)
+        self.thread=threading.Thread(target=self._run,name='process_stall_watch',daemon=True)
+    def start(self):self.thread.start()
+    def stop(self):
+        import gc
+        self.stop_event.set();self.thread.join(timeout=2)
+        if self._gc in gc.callbacks:gc.callbacks.remove(self._gc)
+    def _gc_callback(self,phase,info):
+        if phase=='start':self.gc_started=time.monotonic_ns();return
+        if self.gc_started is None:return
+        duration=time.monotonic_ns()-self.gc_started;self.gc_started=None
+        if info.get('generation')==2 or duration>=5000000:
+            self.events.append(dict(event='gc',wall_ns=time.time_ns(),generation=info.get('generation'),
+                collected=info.get('collected'),duration_ns=duration))
+    @staticmethod
+    def _read(path):
+        try:
+            with open(path) as f:return f.read()
+        except OSError:return ''
+    def sample(self,lateness_ms,reason):
+        names={t.native_id:t.name for t in threading.enumerate() if t.native_id is not None}
+        threads={}
+        for tid in _task_ids():
+            stat=self._read(f'/proc/self/task/{tid}/stat');sched=self._read(f'/proc/self/task/{tid}/schedstat').split()
+            if not stat or len(sched)<3:continue
+            rest=stat.rsplit(')',1)[1].split()
+            threads[tid]=dict(name=names.get(tid),state=rest[0],minflt=int(rest[7]),majflt=int(rest[9]),
+                utime=int(rest[11]),stime=int(rest[12]),run_ns=int(sched[0]),runqueue_wait_ns=int(sched[1]),slices=int(sched[2]))
+        vm={};system={}
+        for line in self._read('/proc/self/status').splitlines():
+            key=line.split(':',1)[0]
+            if key in self.FILES['status']:vm[key]=int(line.split()[1])
+        for line in self._read('/proc/vmstat').splitlines():
+            key,_,value=line.partition(' ')
+            if key in self.FILES['vmstat']:system[key]=int(value)
+        for resource in ('cpu','memory','io'):
+            for line in self._read(f'/proc/pressure/{resource}').splitlines():
+                kind,_,rest=line.partition(' ')
+                total=next((f.split('=')[1] for f in rest.split() if f.startswith('total=')),None)
+                if total is not None:system[f'psi_{resource}_{kind}_total_us']=int(total)
+        system['loadavg']=self._read('/proc/loadavg').split()[:3]
+        self.events.append(dict(event='process_watch',wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
+            reason=reason,lateness_ms=lateness_ms,threads=threads,vm=vm,system=system))
+    def _sample(self,lateness_ms,reason):
+        try:self.sample(lateness_ms,reason)
+        except Exception as exc:
+            self.events.append(dict(event='process_watch',wall_ns=time.time_ns(),reason=reason,lateness_ms=lateness_ms,error=str(exc)))
+    def _run(self):
+        self._sample(0.,'start');last_heartbeat=time.monotonic()
+        while not self.stop_event.is_set():
+            expected=time.monotonic()+self.period
+            self.stop_event.wait(self.period)
+            lateness_ms=(time.monotonic()-expected)*1e3
+            if lateness_ms>=self.stall_ms:self._sample(lateness_ms,'late');last_heartbeat=time.monotonic()
+            elif time.monotonic()-last_heartbeat>=self.heartbeat:self._sample(lateness_ms,'heartbeat');last_heartbeat=time.monotonic()
+        self._sample(0.,'stop')
+
+
+def _task_ids():
+    import os
+    try:return [int(t) for t in os.listdir('/proc/self/task')]
+    except OSError:return []
+
+
 class Measurements:
     def __init__(self,node,receipt,log):
         import yaml
@@ -360,23 +444,53 @@ class Measurements:
         if self.receipt.get('measurement_pose_source')!=PHYSICS_POSE_METHOD:
             raise RuntimeError('authoritative physics pose source required before acquisition')
         from rclpy.node import Node
-        from rclpy.executors import SingleThreadedExecutor
         self.node=Node('simulator_measurement_acquisition',context=node.context)
-        self.executor=SingleThreadedExecutor(context=node.context);self.executor.add_node(self.node)
         self.lock=threading.RLock();self.latest=None;self.pending=[];self.error=None;self.previous=None
         self.timing=[];self.armed_wall_ns=None;self.log_path=Path(log)
         self.log=Path(log).open('w');self.armed=False
-        self.log_queue=queue.Queue(maxsize=10000)
+        self.log_queue=queue.Queue(maxsize=10000);self.raw={}
         self.sub=self.node.create_subscription(String,f"/world/{self.receipt['world']}/workcell_measurements",self.update,
             QoSProfile(depth=1000,reliability=ReliabilityPolicy.RELIABLE,history=HistoryPolicy.KEEP_LAST))
+        self.stop_guard=self.node.create_guard_condition(lambda:None);self.stopping=False
         self.loader=yaml.CSafeLoader
         self.robot=ET.parse(self.receipt_path.parent/'robot.urdf').getroot()
         self.parents={j.find('child').get('link'):j for j in self.robot.findall('joint')}
         self.writer=threading.Thread(target=self._write,name='measurement_evidence');self.writer.start()
-        self.acquisition=threading.Thread(target=self.executor.spin,name='measurement_acquisition');self.acquisition.start()
+        self.acquisition=threading.Thread(target=self._acquire,name='measurement_acquisition');self.acquisition.start()
+        self.watch=ProcessStallWatch();self.watch.start()
+    def _acquire(self):
+        # One wait set built once, every available message taken per wake. The
+        # executor-based spin rebuilt its wait set per message, which measured
+        # 1.25 ms of CPU per 2 ms sample (0.44 ms of it the callback) and left
+        # the 500 Hz stream no headroom against consumer or evidence work.
+        # Every taken message still goes through the unchanged update() path.
+        from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+        from std_msgs.msg import String
+        context=self.node.context
+        try:
+            with self.sub.handle,self.stop_guard.handle,context.handle:
+                wait_set=_rclpy.WaitSet(1,1,0,0,0,0,context.handle)
+                while not self.stopping and context.ok():
+                    wait_set.clear_entities()
+                    wait_set.add_subscription(self.sub.handle);wait_set.add_guard_condition(self.stop_guard.handle)
+                    wait_set.wait(100000000)
+                    if self.stopping or not context.ok():break
+                    if not wait_set.is_ready('subscription',0):continue
+                    while not self.stopping:
+                        taken=self.sub.handle.take_message(String,False)
+                        if taken is None:break
+                        self.update(taken[0])
+        except Exception as exc:
+            with self.lock:
+                if self.error is None:self.error=RuntimeError(f'measurement acquisition stopped: {exc}')
+        finally:
+            if not self.stopping:
+                with self.lock:
+                    if self.error is None:self.error=RuntimeError('measurement acquisition stopped before close')
     def update(self,msg):
         received=time.time_ns();started=time.monotonic_ns();s={};sample_error=None
         with self.lock:
+            lock_wait_ns=time.monotonic_ns()-started
             try:
                 s=json.loads(msg.data)
                 if self.latest and s.get('sim_ns',0)<=self.latest['sim_ns']:raise RuntimeError('simulation time stopped/reversed')
@@ -385,6 +499,10 @@ class Measurements:
                 if self.armed:
                     if len(self.pending)>=10000:raise RuntimeError('measurement consumer queue overflow')
                     self.pending.append(s)
+                    # The simulator's own serialization is the evidence text; keep
+                    # it so the writer never re-serializes the parsed sample.
+                    if len(self.raw)>=10000:del self.raw[next(iter(self.raw))]
+                    self.raw[s['iteration']]=msg.data
             except StaleMeasurement as exc:
                 sample_error=exc
                 if self.armed and self.error is None:self.error=exc
@@ -394,7 +512,7 @@ class Measurements:
             self.timing.append(dict(event='receive',iteration=s.get('iteration'),sim_ns=s.get('sim_ns'),
                 source_wall_ns=s.get('wall_ns'),publish_wall_ns=s.get('publish_wall_ns'),
                 source_serialization_ns=s.get('serialization_ns'),receive_wall_ns=received,
-                callback_ns=time.monotonic_ns()-started,queue_depth=len(self.pending),
+                callback_ns=time.monotonic_ns()-started,lock_wait_ns=lock_wait_ns,queue_depth=len(self.pending),
                 error=str(self.error or sample_error) if self.error or sample_error else None))
     def fresh(self):
         waiting=time.monotonic_ns()
@@ -457,7 +575,10 @@ class Measurements:
             item=self.log_queue.get()
             if item is None:return
             phase,s,wall=item;begin=time.monotonic_ns()
-            try:self.log.write(json.dumps(dict(phase=phase,measurement=s))+'\n')
+            try:
+                with self.lock:text=self.raw.pop(s['iteration'],None)
+                if text is None or len(text.splitlines())!=1:text=json.dumps(s)
+                self.log.write('{"phase": '+json.dumps(phase)+', "measurement": '+text+'}\n')
             except Exception as exc:
                 with self.lock:
                     if self.error is None:self.error=exc
@@ -465,9 +586,10 @@ class Measurements:
                 self.timing.append(dict(event='consume_log',iteration=s['iteration'],consume_wall_ns=wall,
                     logging_ns=time.monotonic_ns()-begin,queue_depth=self.log_queue.qsize()))
     def close(self):
-        self.executor.shutdown();self.acquisition.join()
+        self.stopping=True;self.stop_guard.trigger();self.acquisition.join()
         self.node.destroy_node()
         self.log_queue.put(None);self.writer.join();self.log.close()
+        self.watch.stop();self.timing.extend(self.watch.events)
         self.log_path.with_suffix('.timing.json').write_text(json.dumps(self.timing))
 
 
