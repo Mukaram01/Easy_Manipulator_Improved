@@ -1774,3 +1774,45 @@ def test_deferred_pose_alias_keeps_its_own_successful_cycle_validation(monkeypat
     phase = kwargs['summary']['candidate_search']['phases'][0]
     assert phase['equivalent_candidates_evaluated'] == 2
     assert phase['discovered_candidates'] == 6
+
+
+def test_deferred_aliases_cannot_hide_a_later_objects_selected_retry(monkeypatch):
+    import full_cycle_preplanner
+    kwargs, clock, _, _, _ = timed_authored_fixture(monkeypatch, 'PREFERRED')
+    second = kwargs['targets'][0]
+    first = copy.deepcopy(second)
+    first['id'] = 'a-prior-box'
+    kwargs['targets'] = [first, second]
+    obj = copy.deepcopy(kwargs['initial_scene'].world.collision_objects[0])
+    obj.id = first['id']
+    kwargs['initial_scene'].world.collision_objects.append(obj)
+    kwargs.update(deadline=clock[0] + 1000., discovery_candidate_budget=60.,
+                  reserve_retry_budget=True)
+    original = full_cycle_preplanner.preplan_full_cycle
+    calls = []
+
+    def real_selected_retry(**arguments):
+        candidate = arguments['candidate']
+        phase = kwargs['contract']['_candidate_search_pass']
+        calls.append((arguments['observation']['id'], candidate.candidate_id, phase))
+        selected = (arguments['observation']['id'] == second['id'] and
+                    candidate.candidate_id == 'top_2f::000')
+        if selected and phase.startswith('retry:'):
+            return original(**arguments)
+        return NS(success=False, candidate_id=candidate.candidate_id,
+                  reason_code='PREPLAN_APPROACH_FAILED' if selected else 'PREPLAN_GRASP_FAILED',
+                  reason='controlled feasibility outcome', cycle=None,
+                  extraction_attempts=[], stages=[], checks=[dict(
+                      code='PREPLAN_APPROACH' if selected else 'PREPLAN_GRASP',
+                      status='FAIL', failure_kind='planning' if selected else 'collision',
+                      moveit_code=-6 if selected else -2)])
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle', real_selected_retry)
+    cycle = runtime.plan_authored_cycle(**kwargs)
+    assert cycle['object_id'] == second['id'] and cycle['full_cycle_prevalidated']
+    retries = [a for a in kwargs['summary']['candidate_attempts']
+               if a['search_pass'].startswith('retry:')]
+    assert len(retries) == 1
+    assert (retries[0]['object_id'], retries[0]['candidate_id']) == (second['id'], 'top_2f::000')
+    assert calls[-1] == (second['id'], 'top_2f::000', 'retry:top_2f')
+    assert len(kwargs['summary']['candidate_search']['phases'][0]['retries']) == 1

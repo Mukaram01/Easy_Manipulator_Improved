@@ -978,6 +978,10 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         return returned
                     if cached is not None:
                         return copy.deepcopy(cached)
+                    if key in deferred_equivalents:
+                        # Untested aliases before the selected candidate are
+                        # not the retry boundary; continue to its exact key.
+                        return phase_boundary(strategy, stop_search=False)
                     return phase_boundary(strategy, stop_search=(
                         strategy_phases.index(request['strategy_ref']) >= phase_index))
 

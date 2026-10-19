@@ -157,3 +157,22 @@ actually valid cycle and that an alias can independently pass all cycle checks
 after its representative failed. This changes scheduling only, never admissible
 geometry or execution rules. Runtime acceptance remains unproven until the
 fresh simulator gates pass.
+
+
+## Alias traversal correction
+
+The fresh `59987b6e` session evaluated all 40 distinct top-pose representatives
+and 16 deferred aliases. Of 96 actual checks, 65 rejected clearance, 15 reported
+explicit descent collisions, eight returned bounded IK no solution, five had
+uncertified approaches, two exhausted candidate slices and one exhausted the
+global budget. No motion occurred; shutdown was clean. Part05 top001/003 had
+explicit fingertip-neighbour descent contacts; top000/002 remained uncertified.
+
+The raw phase retry ledger incorrectly listed three selections as attempts:
+resolver traversal stopped at earlier deferred aliases and never invoked the
+selected retry (zero actual retry rows). The retry evaluator now traverses
+deferred aliases without evaluating them, then revalidates its exact selected
+candidate normally. A regression reproduces the cross-object barrier and
+requires a real full-cycle success plus an actual retry row. No acceptance,
+geometry or deadline requirement changes. Raw evidence is preserved with this
+caveat at `/home/user/workcell_ws/diagnostics/stage-a-distinct-poses-20261019/`.
