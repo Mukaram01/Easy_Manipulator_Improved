@@ -760,6 +760,95 @@ def test_simulator_plan_only_observed_slow_certificate_and_bounded_drain(monkeyp
     assert view==initial
 
 
+@pytest.mark.parametrize('attempts,first_status,first_code', [(3,6,-6),(1,6,-6),(3,5,-6),(3,6,1)])
+def test_drained_moveit_timeout_after_client_wait_uses_identical_request_policy(monkeypatch,attempts,
+                                                                             first_status,first_code):
+    """Virtual-clock unit test of real segment/action code, not runtime proof.
+
+    run-full-cycle-220343 revalidation PREPLAN_HOME: the 120 s result wait
+    expired, then the bounded drain received MoveGroup's own ABORTED/TIMED_OUT
+    (PLANNING_DEADLINE_EXCEEDED in the controller certificate). That owned
+    terminal result now reaches the existing retry policy unchanged.
+    """
+    import ast,copy
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    from full_cycle_preplanner import MotionFeasibilityFailure
+    context,view,target,seed,requests,goals=transfer_segment_fixture()
+    initial=copy.deepcopy(view)
+    clock=[1000.]
+    context['time']=SimpleNamespace(monotonic=lambda:clock[0])
+    context['deadline']=1900.
+    context['contract'].update(_candidate_wall_deadline=1800.,_candidate_planning_attempts=attempts)
+    context['args'].backend='simulator'
+    fixture_plan=context['action']
+    owned=[];cancellations=[];waits=[]
+    def send(goal):
+        index=len(owned)
+        # First owned goal: adapter allowance ends 120.1 s after acceptance.
+        # Identical retry: an ordinary certified plan after 25 s.
+        ends=clock[0]+(120.1 if index==0 else 25.)
+        planned=fixture_plan(None,goal,None)
+        if index==0:
+            planned=copy.deepcopy(planned);planned.error_code.val=first_code
+            planned.planned_trajectory.joint_trajectory.points=[]
+        ready=lambda:clock[0]>=ends
+        future=SimpleNamespace(done=ready,ends=ends,
+            result=lambda:SimpleNamespace(status=first_status if index==0 else 4,result=planned) if ready() else None)
+        def request_cancel():
+            cancellations.append((index,clock[0]))
+            return SimpleNamespace(done=lambda:True,
+                result=lambda:SimpleNamespace(return_code=1,goals_canceling=[]))
+        handle=SimpleNamespace(accepted=True,goal_id=SimpleNamespace(uuid=[index+5]*16),
+            get_result_async=lambda:future,cancel_goal_async=request_cancel)
+        owned.append(future)
+        return SimpleNamespace(done=lambda:True,result=lambda:handle)
+    client=SimpleNamespace(wait_for_server=lambda **kwargs:True,send_goal_async=send)
+    def spin(node,pending,timeout_sec):
+        assert 0.<timeout_sec<=120.
+        if pending in owned:
+            waits.append(timeout_sec)
+            clock[0]+=min(timeout_sec,max(0.,pending.ends-clock[0]))
+    context.update(plan_client=client,execute_client=object(),controlled_cancel=False,
+        controller_audit=None,node=object(),measurements=None,execution_monitor=None,
+        rclpy=SimpleNamespace(spin_until_future_complete=spin))
+    main=next(n for n in ast.parse(SCRIPT.read_text()).body
+              if isinstance(n,ast.FunctionDef) and n.name=='main')
+    action=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    exec(compile(ast.Module(body=[action],type_ignores=[]),'<actual-home-timeout-action>','exec'),context)
+    if (first_status,first_code)!=(6,-6):
+        # A late CANCELED or a terminal without MoveIt's failure is no owned
+        # planning verdict: it remains the unretried client timeout.
+        with pytest.raises(RuntimeError,match='action result timed out') as failure:
+            context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+        assert not isinstance(failure.value,MODULE.MoveItActionFailure)
+        assert len(goals)==1 and 'planning_retries' not in context['summary']
+        record,=context['summary']['interrupted_planning_goals']
+        assert record['terminal_status']==first_status and record['moveit_code']==first_code
+        return
+    if attempts==3:
+        planned=context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+        assert planned['metadata']['success'] and planned['metadata']['moveit_code']==1
+        assert len(goals)==2 and goals[0]==goals[1]  # identical request, scene and start
+        assert waits==[120.,120.,120.] and cancellations==[(0,1120.)]
+        assert context['summary']['planning_retries']==[dict(stage='PREPLAN_TRANSFER',moveit_code=-6,
+            attempt=1,retry_kind='timed_out',search_pass='normal')]
+        assert clock[0]==pytest.approx(1145.1)
+    else:
+        with pytest.raises(MotionFeasibilityFailure) as failure:
+            context['plan_segment'](view,'PREPLAN_TRANSFER',target,ik_seed=seed)
+        assert failure.value.details['failure_kind']=='planning' and failure.value.details['moveit_code']==-6
+        assert len(goals)==1 and 'planning_retries' not in context['summary']
+    # The original owned failure evidence is preserved, not replaced.
+    record=context['summary']['interrupted_planning_goals'][0]
+    assert record['terminal_status']==6 and record['moveit_code']==-6
+    assert record['cancel_accepted'] is False and record['terminal_wait_s']==120.
+    assert len(context['summary']['interrupted_planning_goals'])==1
+    assert goals[0].planning_options.plan_only
+    assert goals[0].planning_options.planning_scene_diff==initial
+    assert goals[0].request.start_state==initial.robot_state
+    assert view==initial
+
+
 @pytest.mark.parametrize('terminal', [None,4,5,6])
 def test_interrupted_plan_requires_owned_terminal_before_search_continues(terminal):
     from full_cycle_preplanner import PlanningLifecycleFailure

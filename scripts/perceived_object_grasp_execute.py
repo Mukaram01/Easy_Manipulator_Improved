@@ -1379,6 +1379,7 @@ def main():
                     terminal_timeout=timeout)
             raise
         motion_trial=None
+        result_timed_out=False
         if client is execute_client:
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
                 stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
@@ -1417,6 +1418,7 @@ def main():
                         if moved and sample['sim_ns']-cancel_start>200000000:
                             raise RuntimeError('CONTROLLED_CANCELLATION')
             if not future.done() or future.result() is None:
+                result_timed_out=True
                 raise RuntimeError('action result timed out')
             if controlled_cancel:
                 # A short/successful approach must never turn this bounded trial
@@ -1427,6 +1429,16 @@ def main():
                 finish_interrupted_plan(handle,future,owned_uuid,
                     lambda pending,seconds:rclpy.spin_until_future_complete(node,pending,timeout_sec=seconds),summary,
                     terminal_timeout=timeout)
+                # This wait starts before MoveGroup's owned 120 s adapter
+                # allowance, so it always expires first. When the drained owned
+                # goal then ends ABORTED with MoveIt's own failure (for example
+                # TIMED_OUT from an inconclusive certificate), report that
+                # terminal result so the existing identical-request policy
+                # decides; a late success or unknown terminal stays a timeout.
+                record=summary['interrupted_planning_goals'][-1]
+                if (result_timed_out and record['terminal_status']==6 and
+                        record.get('moveit_code') not in (None,1)):
+                    raise MoveItActionFailure(6,record['moveit_code']) from exc
                 raise
             if isinstance(exc,GraspRetentionLoss):begin_recovery(exc,during_action=True)
             if measurements:
