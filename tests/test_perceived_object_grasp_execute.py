@@ -1247,3 +1247,14 @@ def test_support_plane_height_rejects_tilted_or_non_box_supports():
         execute.support_plane_height(_support_box(-0.45, 0.9, (math.sin(0.01), 0.0, 0.0, math.cos(0.01))))
     with pytest.raises(RuntimeError, match='SUPPORT_PLANE_UNSUPPORTED'):
         execute.support_plane_height(_support_box(-0.45, 0.9, shape=2))
+
+
+def test_execution_boundary_refresh_precedes_unchanged_expiry_check():
+    """Live runs renew the observation only through the measured refresh, and the
+    existing age check still runs afterwards on the renewed timestamps."""
+    text=(Path(__file__).resolve().parents[1]/'scripts/perceived_object_grasp_execute.py').read_text()
+    start=text.index('refresh_at_execution_boundary(');expiry=text.index("'selected observation expired before execution'")
+    block=text[text.rindex('if measurements:',0,start):expiry]
+    assert start<expiry and 'measurements.joints(measurements.fresh())' in block
+    assert 'time.time()' not in block.split('fresh = select_observations')[0]
+    assert "select_observations(intent, physical, objects, time.time())" in text[start:expiry]
