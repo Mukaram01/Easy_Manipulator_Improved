@@ -91,6 +91,64 @@ def refresh_snapshot_geometry(bound,fresh,position_tolerance=1e-5,orientation_to
                         max_dimension_delta_m=max_dimension)
 
 
+def measured_snapshot(bound,measurements,sample=None):
+    """A fresh detected_objects/v1 snapshot from one validated live measurement.
+
+    The sample passes the executor's unchanged run/pid/pose-source/250 ms
+    validation (Measurements.fresh). Dimensions come from the launched world,
+    which must still match the receipt; poses are the authoritative physics
+    poses; the timestamp is the simulator's own measurement time. No class is
+    measured, so the bound class is carried for refresh to compare identity.
+    """
+    if sample is None:sample=measurements.fresh()
+    receipt_path=Path(measurements.receipt_path)
+    _,models=box_models(receipt_path)
+    classes={o.get('object_id'):o.get('class_id') for o in bound.get('objects',[])}
+    objects=[]
+    for name,size in sorted(models.items()):
+        try:p=measurements.object_pose(sample,name)
+        except KeyError:raise RuntimeError(f'measured pose missing for world object {name}')
+        objects.append(dict(object_id=name,class_id=classes.get(name),confidence=None,
+            timestamp=sample['wall_ns']/1e9,pose=dict(frame_id='world',xyz=list(p[:3]),rpy=rpy(p)),dimensions=list(size)))
+    snapshot=dict(schema_version='detected_objects/v1',source='Fortress measured model poses (execution boundary)',
+        simulator_receipt_sha256=digest(receipt_path.read_bytes()),objects=objects)
+    return snapshot,sample
+
+
+def refresh_at_execution_boundary(bound,objects,measurements,start_point,start_tolerance=0.005):
+    """Renew the bound observation from a live measurement immediately before execution.
+
+    Geometry, identity, class, dimensions and simulator run must match the
+    bound snapshot under refresh_snapshot_geometry's existing tolerances, and
+    the measured arm must stand where the certified trajectory starts. Only
+    then do the normalized objects take the genuinely measured timestamps.
+    Any failure rejects execution; nothing is re-stamped from the wall clock.
+    """
+    # One validated sample supplies both the object poses and the arm state.
+    sample=measurements.fresh();measured_joints=measurements.joints(sample)
+    fresh,_=measured_snapshot(bound,measurements,sample)
+    rebound,geometry=refresh_snapshot_geometry(bound,fresh)
+    renewed={o['object_id']:o['timestamp'] for o in rebound['objects']}
+    if {o['object_id'] for o in objects}!=set(renewed):
+        raise RuntimeError('normalized objects do not match the refreshed observation')
+    names=list(start_point['names']);positions=list(start_point['positions'])
+    if not names or len(names)!=len(positions):raise RuntimeError('certified trajectory start is incomplete')
+    deviations={}
+    for name,value in zip(names,positions):
+        measured=measured_joints.get(name)
+        if measured is None or not math.isfinite(measured[0]) or abs(measured[0]-value)>start_tolerance:
+            raise RuntimeError(f'measured start state diverged from certified trajectory: {name}, '
+                               f'certified={value}, measured={None if measured is None else measured[0]}')
+        deviations[name]=abs(measured[0]-value)
+    original={o['object_id']:o['timestamp'] for o in objects}
+    for obj in objects:obj['timestamp']=renewed[obj['object_id']]
+    return rebound,dict(iteration=sample['iteration'],sim_ns=sample['sim_ns'],wall_ns=sample['wall_ns'],
+        run_id=sample.get('run_id'),simulator_receipt_sha256=fresh['simulator_receipt_sha256'],
+        original_timestamps=original,renewed_timestamps=renewed,geometry=geometry,
+        start_state_max_deviation_rad=max(deviations.values()),
+        start_tolerance_rad=start_tolerance)
+
+
 def verify_snapshot_binding(snapshot, receipt_sha256):
     if snapshot.get('simulator_receipt_sha256') != receipt_sha256:
         raise RuntimeError('simulator observation belongs to an unknown/different simulator run')

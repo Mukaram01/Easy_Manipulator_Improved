@@ -2415,6 +2415,18 @@ def main():
                 while time.monotonic()<until:rclpy.spin_once(node,timeout_sec=.01)
         if args.backend == 'fake' and any(s.get('metadata', {}).get('initial_support_contact') for s in cycle['steps']):
             raise RuntimeError('SUPPORT_CONTACT_PLAN_ONLY: execution of initial support separation is not commissioned')
+        if measurements:
+            # The certified search may outlive the observation's age limit. Renew
+            # it only from a genuine live measurement that reproduces the bound
+            # identity and geometry and the certified start state; the age
+            # limit itself is then applied unchanged below.
+            from simulator_observations import refresh_at_execution_boundary
+            motion=[s for s in cycle['steps'] if s['kind']=='motion']
+            if not motion or not motion[0]['trajectory'].joint_trajectory.points:
+                raise RuntimeError('certified cycle has no motion start to verify against')
+            first=motion[0]['trajectory'].joint_trajectory
+            snapshot,summary['execution_observation_refresh']=refresh_at_execution_boundary(
+                snapshot,objects,measurements,dict(names=list(first.joint_names),positions=list(first.points[0].positions)))
         fresh = select_observations(intent, physical, objects, time.time()) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
