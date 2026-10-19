@@ -405,15 +405,19 @@ class ProcessStallWatch:
         system['loadavg']=self._read('/proc/loadavg').split()[:3]
         self.events.append(dict(event='process_watch',wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
             reason=reason,lateness_ms=lateness_ms,threads=threads,vm=vm,system=system))
+    def _sample(self,lateness_ms,reason):
+        try:self.sample(lateness_ms,reason)
+        except Exception as exc:
+            self.events.append(dict(event='process_watch',wall_ns=time.time_ns(),reason=reason,lateness_ms=lateness_ms,error=str(exc)))
     def _run(self):
-        self.sample(0.,'start');last_heartbeat=time.monotonic()
+        self._sample(0.,'start');last_heartbeat=time.monotonic()
         while not self.stop_event.is_set():
             expected=time.monotonic()+self.period
             self.stop_event.wait(self.period)
             lateness_ms=(time.monotonic()-expected)*1e3
-            if lateness_ms>=self.stall_ms:self.sample(lateness_ms,'late');last_heartbeat=time.monotonic()
-            elif time.monotonic()-last_heartbeat>=self.heartbeat:self.sample(lateness_ms,'heartbeat');last_heartbeat=time.monotonic()
-        self.sample(0.,'stop')
+            if lateness_ms>=self.stall_ms:self._sample(lateness_ms,'late');last_heartbeat=time.monotonic()
+            elif time.monotonic()-last_heartbeat>=self.heartbeat:self._sample(lateness_ms,'heartbeat');last_heartbeat=time.monotonic()
+        self._sample(0.,'stop')
 
 
 def _task_ids():
@@ -471,6 +475,10 @@ class Measurements:
         except Exception as exc:
             with self.lock:
                 if self.error is None:self.error=RuntimeError(f'measurement acquisition stopped: {exc}')
+        finally:
+            if not self.stopping:
+                with self.lock:
+                    if self.error is None:self.error=RuntimeError('measurement acquisition stopped before close')
     def update(self,msg):
         received=time.time_ns();started=time.monotonic_ns();s={};sample_error=None
         with self.lock:
@@ -485,7 +493,7 @@ class Measurements:
                     self.pending.append(s)
                     # The simulator's own serialization is the evidence text; keep
                     # it so the writer never re-serializes the parsed sample.
-                    if len(self.raw)>=20000:del self.raw[next(iter(self.raw))]
+                    if len(self.raw)>=10000:del self.raw[next(iter(self.raw))]
                     self.raw[s['iteration']]=msg.data
             except StaleMeasurement as exc:
                 sample_error=exc
@@ -561,7 +569,7 @@ class Measurements:
             phase,s,wall=item;begin=time.monotonic_ns()
             try:
                 with self.lock:text=self.raw.pop(s['iteration'],None)
-                if text is None or '\n' in text or '\r' in text:text=json.dumps(s)
+                if text is None or len(text.splitlines())!=1:text=json.dumps(s)
                 self.log.write('{"phase": '+json.dumps(phase)+', "measurement": '+text+'}\n')
             except Exception as exc:
                 with self.lock:
