@@ -127,3 +127,33 @@ fixtures remain rejected. Existing fallback-order checks require the resumed
 preferred-strategy suffix before fallback and count all retryable candidates.
 This improves coverage without claiming exhaustive search or changing any
 physical acceptance requirement.
+
+
+## Distinct poses before legacy aliases
+
+The continuation trial at `2da84a13` exercised seven resumed candidates before
+its unchanged global search budget expired. It evaluated 85 catalogue IDs in
+88 attempts: 54 clearance rejections, 20 explicit descent collisions, eight
+bounded IK no-solution calls, two uncertified approaches, three candidate slice
+expirations and one global expiration. No motion occurred, and shutdown was
+clean. Across retained screened runs 98 of 130 IDs were evaluated; the 32 top
+IDs for parts 00, 03, 04 and 05 were still untested. Thus no scene-inaccessibility
+claim is justified. Evidence is retained under
+`/home/user/workcell_ws/diagnostics/stage-a-search-continuation-20261018/`.
+
+The legacy eight top IDs contain four repeated physical poses: 004 equals 001,
+005 equals 000, 006 equals 003 and 007 equals 002, allowing quaternion sign.
+In budget-reserving discovery only, distinct poses across objects now precede
+these aliases. Equivalence requires the same strategy, object, destination and
+effective constraints plus matching grasp and approach poses (1e-12 numerical
+tolerance for ordering only). Deferred aliases remain eligible after distinct
+pose discovery and the original bounded retry beam; each receives its own
+preplanning and cycle validation. No collision, IK or successful trajectory
+result is inherited from another candidate. EXACT and resolved revalidation
+are unchanged. Evidence lists deferred aliases separately from actual attempts.
+
+Regressions prove that expensive repeated poses cannot strand a later object's
+actually valid cycle and that an alias can independently pass all cycle checks
+after its representative failed. This changes scheduling only, never admissible
+geometry or execution rules. Runtime acceptance remains unproven until the
+fresh simulator gates pass.

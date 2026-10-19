@@ -1014,7 +1014,8 @@ def test_reserved_discovery_reaches_fallback_and_reports_actual_failures(monkeyp
     assert search['phases'][0]['discovery_stop_reason']=='RETRY_BUDGET_RESERVED'
     assert search['phases'][0]['retries'][0]['result_code']=='CANDIDATE_SLICE_EXHAUSTED'
     assert search['phases'][0]['retryable_candidates']==8
-    assert search['phases'][0]['resumed_discovered_candidates']==6
+    assert search['phases'][0]['resumed_discovered_candidates']==2
+    assert search['phases'][0]['equivalent_candidates_evaluated']==4
     assert search['phases'][1]['discovered_candidates']>0
     result=kwargs['summary']['task_intent_resolution']
     actual_ids={cid for _,cid in calls}
@@ -1703,3 +1704,73 @@ def test_discovery_resumes_after_failed_retries_without_repeating_candidates(
     phase = kwargs['summary']['candidate_search']['phases'][0]
     assert phase['resumed_discovered_candidates'] >= 1
     assert len(phase['retries']) == retry_count
+
+
+def test_distinct_object_poses_precede_equivalent_catalogue_aliases(monkeypatch):
+    """Repeated poses cannot consume the budget before another object's first pose."""
+    import full_cycle_preplanner
+    kwargs, clock, _, _, _ = timed_authored_fixture(monkeypatch, 'PREFERRED')
+    second = kwargs['targets'][0]
+    first = copy.deepcopy(second)
+    first['id'] = 'a-prior-box'
+    kwargs['targets'] = [first, second]
+    obj = copy.deepcopy(kwargs['initial_scene'].world.collision_objects[0])
+    obj.id = first['id']
+    kwargs['initial_scene'].world.collision_objects.append(obj)
+    kwargs.update(deadline=clock[0] + 700., discovery_candidate_budget=60.,
+                  reserve_retry_budget=True)
+    original = full_cycle_preplanner.preplan_full_cycle
+    calls = []
+
+    def slow_first_object_then_real_safe_cycle(**arguments):
+        candidate = arguments['candidate']
+        calls.append((arguments['observation']['id'], candidate.candidate_id))
+        if arguments['observation']['id'] == second['id']:
+            return original(**arguments)
+        clock[0] += 100.
+        expired = clock[0] >= kwargs['deadline']
+        code = 'SEARCH_BUDGET_EXHAUSTED' if expired else 'PREPLAN_GRASP_FAILED'
+        return NS(success=False, candidate_id=candidate.candidate_id,
+                  reason_code=code, reason='controlled collision or expired budget',
+                  cycle=None, extraction_attempts=[], stages=[], checks=[dict(
+                      code='PREPLAN_GRASP', status='FAIL', failure_kind='budget' if expired else 'collision')])
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle',
+                        slow_first_object_then_real_safe_cycle)
+    cycle = runtime.plan_authored_cycle(**kwargs)
+    assert cycle['object_id'] == second['id']
+    assert cycle['full_cycle_prevalidated']
+    assert calls == [(first['id'], f'top_2f::{i:03d}') for i in range(4)] + [
+        (second['id'], 'top_2f::000')]
+    assert clock[0] < kwargs['deadline']
+    assert len(kwargs['summary']['candidate_search']['phases'][0][
+        'deferred_equivalent_candidates']) == 4
+
+
+def test_deferred_pose_alias_keeps_its_own_successful_cycle_validation(monkeypatch):
+    import full_cycle_preplanner
+    kwargs, clock, goals, _, _ = timed_authored_fixture(monkeypatch, 'PREFERRED')
+    kwargs.update(deadline=clock[0] + 700., discovery_candidate_budget=60.,
+                  reserve_retry_budget=True)
+    original = full_cycle_preplanner.preplan_full_cycle
+    calls = []
+
+    def failures_then_real_alias(**arguments):
+        candidate = arguments['candidate']
+        calls.append(candidate.candidate_id)
+        if candidate.candidate_id == 'top_2f::005':
+            return original(**arguments)
+        return NS(success=False, candidate_id=candidate.candidate_id,
+                  reason_code='PREPLAN_GRASP_FAILED', reason='controlled collision',
+                  cycle=None, extraction_attempts=[], stages=[], checks=[dict(
+                      code='PREPLAN_GRASP', status='FAIL', failure_kind='collision')])
+
+    monkeypatch.setattr(full_cycle_preplanner, 'preplan_full_cycle', failures_then_real_alias)
+    cycle = runtime.plan_authored_cycle(**kwargs)
+    assert calls == [f'top_2f::{i:03d}' for i in range(6)]
+    assert cycle['candidate'].candidate_id == 'top_2f::005'
+    assert cycle['full_cycle_prevalidated']
+    assert len(goals) == 9
+    phase = kwargs['summary']['candidate_search']['phases'][0]
+    assert phase['equivalent_candidates_evaluated'] == 2
+    assert phase['discovered_candidates'] == 6

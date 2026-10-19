@@ -838,6 +838,22 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             phase_discovered = []
             discovery_cutoff = {}
             retry_beam_spent = False
+            distinct_poses_first = reserve_retry_budget and grasp_policy != 'EXACT'
+            pose_representatives = []
+            deferred_equivalents = {}
+
+            def equivalent_evidence():
+                return [
+                    {'object_id': key[1], 'candidate_id': key[2],
+                     'representative_candidate_id': previous[2]}
+                    for key, previous in deferred_equivalents.items()]
+
+            def same_pose(a, b):
+                # This tolerance changes search order only. No feasibility or
+                # successful trajectory is ever copied between candidates.
+                return (math.dist(a[:3], b[:3]) <= 1e-12 and
+                        min(math.dist(a[3:], b[3:]),
+                            math.dist(a[3:], [-v for v in b[3:]])) <= 1e-12)
 
             def discover(request, strategy=strategy):
                 key = request_key(request)
@@ -849,6 +865,19 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         strategy_phases.index(request['strategy_ref']) > phase_index))
                 if cached is not None:
                     return copy.deepcopy(cached)
+                if distinct_poses_first:
+                    candidate = request['candidate']
+                    for previous_key, previous in pose_representatives:
+                        if (key[:2] == previous_key[:2] and key[3:] == previous_key[3:]
+                                and candidate.effective == previous.effective
+                                and same_pose(candidate.grasp_pose, previous.grasp_pose)
+                                and same_pose(candidate.approach_pose, previous.approach_pose)):
+                            if key != previous_key:
+                                deferred_equivalents[key] = previous_key
+                                return phase_boundary(strategy, stop_search=False)
+                            break
+                    else:
+                        pose_representatives.append((key, copy.deepcopy(candidate)))
                 if (reserve_retry_budget and not retry_beam_spent and
                         grasp_policy != 'EXACT' and phase_retryable):
                     remaining = deadline - time.monotonic()
@@ -890,6 +919,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 'discovery_code': resolution['readiness']['primary_code'],
                 'retry_priority': [],
                 'retries': [],
+                'deferred_equivalent_candidates': equivalent_evidence(),
             }
             phase_record.update(discovery_cutoff)
             phase_evidence.append(phase_record)
@@ -989,6 +1019,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                     resumed_discovered_candidates=len(phase_discovered) - before_resume,
                     discovered_candidates=len(phase_discovered),
                     retryable_candidates=len(phase_retryable),
+                    deferred_equivalent_candidates=equivalent_evidence(),
                     resumed_status=resolution['readiness_status'],
                     resumed_code=resolution['readiness']['primary_code'])
                 if resolution['readiness_status'] in ('READY', 'WARNING'):
@@ -996,6 +1027,28 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 if resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED':
                     stop_all = True
                     break
+
+            if deferred_equivalents and time.monotonic() < deadline:
+                # Distinct poses across objects get the first opportunity;
+                # aliases remain eligible afterward with their own full checks.
+                distinct_poses_first = False
+                retry_beam_spent = True
+                before_aliases = len(phase_discovered)
+                resolution = resolve_task_intent(
+                    intent, environment, cell, targets, discover,
+                    now=resolution_reference_time, resolved=None)
+                phase_record.update(
+                    equivalent_candidates_evaluated=len(phase_discovered) - before_aliases,
+                    discovered_candidates=len(phase_discovered),
+                    retryable_candidates=len(phase_retryable),
+                    equivalent_pass_status=resolution['readiness_status'],
+                    equivalent_pass_code=resolution['readiness']['primary_code'])
+                if resolution['readiness_status'] in ('READY', 'WARNING'):
+                    break
+                if resolution['readiness']['primary_code'] == 'SEARCH_BUDGET_EXHAUSTED':
+                    stop_all = True
+                    break
+
 
         summary['candidate_search'] = {
             'mode': 'strategy_phased_progress_beam',
