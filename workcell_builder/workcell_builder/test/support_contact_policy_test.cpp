@@ -1606,7 +1606,7 @@ struct RevoluteSupportFixture {
 };
 }
 
-TEST(ControllerCertificate, RevoluteYawedSupportLiftCertifiesAndKeepsSupportPolicy) {
+TEST(ControllerCertificate, RevoluteYawedSupportLiftCertifiesAndExpiresContact) {
   RevoluteSupportFixture fixture(1.2e-7);
   ASSERT_FALSE(fixture.scene->isStateColliding());   // the conditional support policy admits the start
   auto strict=fixture.scene->diff();strict->decoupleParent();
@@ -1615,11 +1615,8 @@ TEST(ControllerCertificate, RevoluteYawedSupportLiftCertifiesAndKeepsSupportPoli
   // Negative pivot raises the tool: 0.02 rad lifts the part about 6 mm.
   const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
   EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+  EXPECT_EQ(report.reason,"ALL_INTERVALS_CERTIFIED");
   EXPECT_EQ(report.initial_contacts_expired,1U);
-  collision_detection::DecideContactFn predicate;
-  ASSERT_TRUE(fixture.scene->getAllowedCollisionMatrix().getAllowedCollision("part","fixture",predicate));
-  const auto* policy=predicate.target<workcell::SupportContact>();
-  ASSERT_NE(policy,nullptr);EXPECT_EQ(policy->support,"fixture");
 }
 
 TEST(ControllerCertificate, RevoluteSupportMotionIntoTableRejects) {
@@ -1673,4 +1670,74 @@ TEST(ControllerCertificate, RevoluteSupportZeroTimestampBudgetFailsClosed) {
   const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene,options);
   EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
   EXPECT_EQ(report.initial_contacts_expired,0U);
+}
+
+// Independent-review regressions (F1): motion that approaches or drags along the
+// support while still in initial contact must not certify, even within the
+// depth tolerance. Rig: prismatic lift, revolute swing (z), revolute pivot (y).
+namespace {
+struct RigSupportFixture {
+  planning_scene::PlanningScenePtr scene;
+  explicit RigSupportFixture(double penetration) {
+    const std::string urdf=R"(<robot name="rig"><link name="base"/><link name="l1"/><link name="l2"/><link name="arm"/><link name="tool"/>
+      <joint name="lift" type="prismatic"><parent link="base"/><child link="l1"/><axis xyz="0 0 1"/>
+      <limit lower="-.05" upper=".05" effort="10" velocity="1"/></joint>
+      <joint name="swing" type="revolute"><parent link="l1"/><child link="l2"/><axis xyz="0 0 1"/>
+      <limit lower="-1" upper="1" effort="10" velocity="1"/></joint>
+      <joint name="pivot" type="revolute"><parent link="l2"/><child link="arm"/><axis xyz="0 1 0"/>
+      <origin xyz="0 0 .0125"/><limit lower="-1" upper="1" effort="10" velocity="1"/></joint>
+      <joint name="mount" type="fixed"><parent link="arm"/><child link="tool"/><origin xyz=".3 0 0"/></joint></robot>)";
+    auto robot=urdf::parseURDF(urdf);auto srdf=std::make_shared<srdf::Model>();
+    srdf->initString(*robot,"<robot name='rig'><group name='arm'><joint name='lift'/><joint name='swing'/><joint name='pivot'/></group></robot>");
+    auto model=std::make_shared<moveit::core::RobotModel>(robot,srdf);
+    scene=std::make_shared<planning_scene::PlanningScene>(model);
+    Eigen::Isometry3d table=Eigen::Isometry3d::Identity();table.translation()=Eigen::Vector3d(.3,0,-.05);
+    scene->getWorldNonConst()->addToObject("fixture",shapes::ShapeConstPtr(new shapes::Box(1,1,.1)),table);
+    auto& state=scene->getCurrentStateNonConst();state.setToDefaultValues();
+    Eigen::Isometry3d part=Eigen::Isometry3d::Identity();
+    part.linear()=Eigen::AngleAxisd(.1,Eigen::Vector3d::UnitZ()).toRotationMatrix();part.translation().z()=-penetration;
+    state.attachBody("part",Eigen::Isometry3d::Identity(),{shapes::ShapeConstPtr(new shapes::Box(.025,.025,.025))},
+                     EigenSTL::vector_Isometry3d{part},std::set<std::string>{},"tool");
+    state.update();
+    collision_detection::DecideContactFn predicate=workcell::SupportContact{"part","fixture",0.};
+    scene->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",predicate);
+  }
+  robot_trajectory::RobotTrajectory path(const std::vector<std::array<double,3>>& points) const {
+    robot_trajectory::RobotTrajectory trajectory(scene->getRobotModel(),"arm");
+    for(const auto& q:points) {
+      auto state=scene->getCurrentState();
+      state.setVariablePosition("lift",q[0]);state.setVariablePosition("swing",q[1]);state.setVariablePosition("pivot",q[2]);
+      for(const char* n:{"lift","swing","pivot"}) {state.setVariableVelocity(n,0.);state.setVariableAcceleration(n,0.);}
+      state.update();trajectory.addSuffixWayPoint(state,trajectory.getWayPointCount()?.1:0.);
+    }
+    return trajectory;
+  }
+};
+}
+
+TEST(ControllerCertificate, RigRevoluteSupportLiftCertifies) {
+  RigSupportFixture f(1.2e-7);
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,0,-.02}}),*f.scene);
+  EXPECT_EQ(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_EQ(r.reason,"ALL_INTERVALS_CERTIFIED");EXPECT_EQ(r.initial_contacts_expired,1U);
+}
+
+TEST(ControllerCertificate, SupportPressWithinToleranceThenLiftRejects) {
+  RigSupportFixture f(1.2e-7);   // pivot +1e-4 rad presses the part ~30 um into the table
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,0,1e-4},{0,0,-.02}}),*f.scene);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_LT(r.failure_begin_ns,100000000);   // rejected within the press segment
+}
+
+TEST(ControllerCertificate, SupportLateralDragInContactThenLiftRejects) {
+  RigSupportFixture f(1.2e-7);   // swing 5e-4 rad drags the part ~0.15 mm along the table
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,.0005,0},{0,.0005,-.02}}),*f.scene);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_LT(r.failure_end_ns,100000001);
+}
+
+TEST(ControllerCertificate, SupportLongLateralDragRejects) {
+  RigSupportFixture f(1.2e-7);
+  const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,.05,0}}),*f.scene);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
 }

@@ -704,6 +704,13 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
       // upward analytic proof fails, it uses the convex-BOX initial-contact
       // proof below, with SupportContact (not PileContact) as its predicate.
       bool convex=false;
+      // Summed motion bound of the carried BOX over certified leaves while this
+      // floor pair is still in contact; dragging is limited to the tolerance.
+      double contact_travel=0.;
+      // Full-shape SAT separation at t=0. While in contact the separation may
+      // never fall below it (no press into the support), apart from the
+      // numerical guard below.
+      double initial_gap=-INFINITY;
       bool convexProof() const {return !floor||convex;}
       bool admits(const collision_detection::Contact& contact) const {
         return floor?support(contact):PileContact{object,world}(contact);
@@ -737,6 +744,11 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         } else for(const auto& contact:found->second)
           if(!pair.admits(contact))
             throw std::runtime_error(pair.floor?"INITIAL_SUPPORT_CONTACT_INVALID":"INITIAL_PILE_CONTACT_INVALID");
+      }
+      const auto start_geometry=geometryBodies(scene,first,&shape_cache);
+      for(auto& pair:initial) if(pair.floor&&pair.convex&&!pair.retired) {
+        pair.initial_gap=boxGap(start_geometry.at(pair.object),start_geometry.at(pair.world));
+        if(!std::isfinite(pair.initial_gap)) throw std::runtime_error("INITIAL_SUPPORT_GEOMETRY_INVALID");
       }
     }
     joint_trajectory_controller::Trajectory jtc;
@@ -865,6 +877,17 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
             acm.setEntry(pair.object,pair.world,true);continue;
           }
           if(pair.retired) continue;
+          if(pair.floor) {
+            // Still in (or possibly in) support contact: no approach along the
+            // support normal and no more than the contact tolerance of total
+            // carried motion before expiry. Otherwise refine or fail closed.
+            constexpr double press_guard_m=1e-9;  // numerical only, far below the 1e-4 m tolerance
+            if(pair.contact_travel+travel>support_contact_tolerance_m||
+               (Interval(gap)-travel).lower()<pair.initial_gap-press_guard_m) {
+              initial_proven=false;continue;
+            }
+            pair.contact_travel+=travel;
+          }
           const bool depth_bounded=(Interval(gap)-travel).lower()>=-support_contact_tolerance_m;
           const auto nominal_clear=[&]() {return nominalBoxNoReentry(scene,
             *anchor.getAttachedBody(pair.object),fixed,controls,speeds);};
