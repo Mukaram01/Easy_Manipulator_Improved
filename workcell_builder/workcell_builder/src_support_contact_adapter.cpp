@@ -775,8 +775,13 @@ private:
         const auto* carried=state.getAttachedBody(policy.object);
         if (!carried || !state.satisfiesBounds()) return false;
         const auto motion=carried->getGlobalPose().translation()-origin.translation();
-        if (motion.head<2>().norm()>.0025 || motion.z() < last_height-1e-9 || motion.z()>.01 ||
-            Eigen::AngleAxisd(carried->getGlobalPose().rotation()*origin.rotation().transpose()).angle()>.01)
+        // Never descend. The initial-contact envelope (lateral, height and
+        // rotation) scopes only the support allowance: it applies until the
+        // original scene is strictly valid. After separation, every sample must
+        // remain strictly valid in that scene, like any other carried motion.
+        if (motion.z() < last_height-1e-9) return false;
+        if (!separated && (motion.head<2>().norm()>.0025 || motion.z()>.01 ||
+            Eigen::AngleAxisd(carried->getGlobalPose().rotation()*origin.rotation().transpose()).angle()>.01))
           return false;
         last_height=motion.z();
         const bool strict=scene->isStateValid(state,clean.path_constraints,"");

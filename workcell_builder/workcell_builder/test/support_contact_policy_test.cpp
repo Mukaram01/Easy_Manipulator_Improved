@@ -1801,3 +1801,23 @@ TEST(ControllerCertificate, SupportLiftOverhangingTableEdgeFailsClosed) {
   const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
   EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
 }
+
+TEST(SupportAdapter, FullLiftContinuesStrictlyAfterSeparation) {
+  // A catalogue lift (here 50 mm) must not be capped by the initial-contact
+  // envelope once the part has strictly separated from the support.
+  SupportFixture f(1.44e-8); bool called=false;
+  EXPECT_TRUE(f.run({0.,.005,.05},&called)); EXPECT_TRUE(called);
+}
+TEST(SupportAdapter, LiftBeyondEnvelopeCertifiesButDescentAfterSeparationFails) {
+  // A single 20 mm stored step: interpolated samples separate within the
+  // envelope, then continue strictly. Descending after separation is
+  // still rejected by the never-descend rule.
+  SupportFixture f(1.44e-8);
+  EXPECT_TRUE(f.run({0.,.02}));
+  EXPECT_FALSE(f.run({0.,.05,.03}));
+}
+TEST(SupportAdapter, StrictCollisionAfterSeparationStillFails) {
+  SupportFixture f(1.44e-8); Eigen::Isometry3d p=Eigen::Isometry3d::Identity(); p.translation().z()=.04;
+  f.scene->getWorldNonConst()->addToObject("ceiling",shapes::ShapeConstPtr(new shapes::Box(.2,.2,.005)),p);
+  EXPECT_FALSE(f.run({0.,.005,.05}));
+}
