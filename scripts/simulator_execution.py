@@ -110,6 +110,11 @@ def validate_sample(s,receipt,now,previous=None):
         raise StaleMeasurement('SIMULATOR_TELEMETRY_INVALID: stale measurement')
 
 
+# The certificate's support contact tolerance (controller_interval_certificate.hpp
+# support_contact_tolerance_m): the deepest certified support penetration.
+SUPPORT_CONTACT_TOLERANCE_M=1e-4
+
+
 class Separation:
     def __init__(self,origin,floor):
         self.origin=origin;self.floor=floor;self.expired=False;self.height=0.
@@ -118,9 +123,12 @@ class Separation:
             if support_contact:raise RuntimeError('support exception expired: recontact')
             return
         motion=[a-b for a,b in zip(pose[:3],self.origin[:3])]
-        if (math.hypot(*motion[:2])>.0025 or motion[2]<self.height-1e-9 or motion[2]>.01 or angle(pose,self.origin)>.01):
+        # Physics settles by ~1e-8 m while the part is held at rest, so descent is
+        # measured against the running maximum height and bounded by the certified
+        # support tolerance; the bound never accumulates sample to sample.
+        if (math.hypot(*motion[:2])>.0025 or motion[2]<self.height-SUPPORT_CONTACT_TOLERANCE_M or motion[2]>.01 or angle(pose,self.origin)>.01):
             raise RuntimeError('initial support separation leaves certified corridor')
-        self.height=motion[2]
+        self.height=max(self.height,motion[2])
         if not support_contact and bottom>self.floor+.0001:self.expired=True
 
 

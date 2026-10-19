@@ -269,6 +269,29 @@ def test_support_expiry_and_non_monotonic_separation():
         with pytest.raises(RuntimeError):Separation([0,0,.01,0,0,0,1],0).check(pose,0,True)
 
 
+def test_separation_descent_is_bounded_by_support_tolerance_from_running_maximum():
+    from simulator_execution import Separation,SUPPORT_CONTACT_TOLERANCE_M
+    assert SUPPORT_CONTACT_TOLERANCE_M==1e-4
+    # run-stationary-152227: the close lifted part_04 12.9 um, then it settled 1e-8 m.
+    p=Separation([.4,-.2,.0125,0,0,0,1],0)
+    p.check([.4,-.2,.0125+1.211e-5,0,0,0,1],1.211e-5,False)
+    p.check([.4,-.2,.0125+1.210e-5,0,0,0,1],1.210e-5,False)
+    assert not p.expired and p.height==pytest.approx(1.211e-5)
+    # Descent is measured from the running maximum, never the previous sample.
+    p.check([.4,-.2,.0125+1.211e-5-.99e-4,0,0,0,1],0,True)
+    assert p.height==pytest.approx(1.211e-5)
+    with pytest.raises(RuntimeError,match='corridor'):p.check([.4,-.2,.0125+1.211e-5-1.01e-4,0,0,0,1],0,True)
+    # Slow sagging cannot accumulate: each step is inside the band, the total is not.
+    q=Separation([0,0,.01,0,0,0,1],0);q.check([0,0,.011,0,0,0,1],.001,False)
+    assert q.expired  # bottom above floor+0.1 mm without support contact: expired
+    q=Separation([0,0,.01,0,0,0,1],0);q.check([0,0,.01005,0,0,0,1],.00005,True)
+    q.check([0,0,.01005-.6e-4,0,0,0,1],0,True)
+    with pytest.raises(RuntimeError,match='corridor'):q.check([0,0,.01005-1.2e-4,0,0,0,1],0,True)
+    # The other corridor limits are unchanged.
+    for pose in ([.0026,0,.01,0,0,0,1],[0,0,.0201,0,0,0,1],[0,0,.01,0,0,.0051,.99998699]):
+        with pytest.raises(RuntimeError):Separation([0,0,.01,0,0,0,1],0).check(pose,0,True)
+
+
 def test_grasp_requires_two_contacting_fingers_and_rejects_slip():
     from simulator_execution import HeldObject
     pose=[0,0,0,0,0,0,1]
