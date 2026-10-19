@@ -165,8 +165,8 @@ The fresh `59987b6e` session evaluated all 40 distinct top-pose representatives
 and 16 deferred aliases. Of 96 actual checks, 65 rejected clearance, 15 reported
 explicit descent collisions, eight returned bounded IK no solution, five had
 uncertified approaches, two exhausted candidate slices and one exhausted the
-global budget. No motion occurred; shutdown was clean. Part05 top001/003 had
-explicit fingertip-neighbour descent contacts; top000/002 remained uncertified.
+global budget. No motion occurred; shutdown was clean. Part05 top_2f::001/003 had
+explicit fingertip-neighbour descent contacts; top_2f::000/002 remained uncertified.
 
 The raw phase retry ledger incorrectly listed three selections as attempts:
 resolver traversal stopped at earlier deferred aliases and never invoked the
@@ -176,3 +176,28 @@ candidate normally. A regression reproduces the cross-object barrier and
 requires a real full-cycle success plus an actual retry row. No acceptance,
 geometry or deadline requirement changes. Raw evidence is preserved with this
 caveat at `/home/user/workcell_ws/diagnostics/stage-a-distinct-poses-20261019/`.
+
+
+## Corrected retry retake — 19 October 2026
+
+Code `c634d577` passed384 focused tests and independent review, then ran a fresh
+identity-admitted simulator session. All three selected retries were actually
+invoked and matched their ledger; all failed explicit descent contacts. The run
+performed93 attempts over 90 catalogue IDs:62 clearance rejections,17 explicit descent
+collisions,eight bounded IK no-solution calls,four precision/depth-limit approach
+certificates,one action/native planning timeout andone global budget expiration.
+
+All 40 distinct top-pose representatives were evaluated. Across retained runs,
+114 of 130 IDs were tested;16 equivalent-pose aliases remain untested. Part05 top_2f::001,
+002and003 have explicit fingertip-neighbour contacts. Top000 remains unresolved:
+native certification hit its existing planning deadline after 119.794241 seconds.
+This is not a proof that the scene is inaccessible. No safety threshold or
+scene/tool geometry was changed to admit it.
+
+The terminal block was SEARCH_BUDGET_EXHAUSTED at part_09/top_2f::005 PREPLAN_GRASP.
+No physical execution was attempted; closure, retention, lift and later gates
+were not reached. Shutdown was clean with zero owned survivors; all protected
+work, saved-file hashes and qualified native artifacts remained unchanged.
+Exact per-candidate classifications, contacts, timestamp-bound native certificate
+records, and the next focused diagnostic are retained in
+`/home/user/workcell_ws/diagnostics/stage-a-alias-retry-20261019/REPORT.md`.
