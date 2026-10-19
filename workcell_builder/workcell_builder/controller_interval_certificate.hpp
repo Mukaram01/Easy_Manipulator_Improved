@@ -704,8 +704,9 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
       // upward analytic proof fails, it uses the convex-BOX initial-contact
       // proof below, with SupportContact (not PileContact) as its predicate.
       bool convex=false;
-      // Summed motion bound of the carried BOX over certified leaves while this
-      // floor pair is still in contact; dragging is limited to the tolerance.
+      // Summed motion bound (2*travel per leaf) of the carried BOX over
+      // certified leaves while this floor pair is still in contact; dragging
+      // is limited to support_contact_tolerance_m.
       double contact_travel=0.;
       // Full-shape SAT separation at t=0. While in contact the separation may
       // never fall below it (no press into the support), apart from the
@@ -882,11 +883,14 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
             // support normal and no more than the contact tolerance of total
             // carried motion before expiry. Otherwise refine or fail closed.
             constexpr double press_guard_m=1e-9;  // numerical only, far below the 1e-4 m tolerance
-            if(pair.contact_travel+travel>support_contact_tolerance_m||
+            // travel bounds displacement from the leaf midpoint, so motion within
+            // the leaf is at most 2*travel. By design, up to the contact
+            // tolerance of drag and a 1 nm (numerical) press are accepted.
+            if(pair.contact_travel+2.*travel>support_contact_tolerance_m||
                (Interval(gap)-travel).lower()<pair.initial_gap-press_guard_m) {
               initial_proven=false;continue;
             }
-            pair.contact_travel+=travel;
+            pair.contact_travel+=2.*travel;
           }
           const bool depth_bounded=(Interval(gap)-travel).lower()>=-support_contact_tolerance_m;
           const auto nominal_clear=[&]() {return nominalBoxNoReentry(scene,

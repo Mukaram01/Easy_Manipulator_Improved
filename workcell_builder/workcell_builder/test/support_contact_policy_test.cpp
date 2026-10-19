@@ -1741,3 +1741,20 @@ TEST(ControllerCertificate, SupportLongLateralDragRejects) {
   const auto r=workcell::controller_certificate::certify(f.path({{0,0,0},{0,.05,0}}),*f.scene);
   EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
 }
+
+TEST(ControllerCertificate, SupportDragBeyondToleranceRejectedByDragBoundNotBudget) {
+  RigSupportFixture f(1.2e-7);   // swing 5e-4 rad: ~0.15 mm drag, then lift
+  workcell::ControllerAuditOptions options;options.max_intervals=3000000;
+  const auto r=workcell::controller_certificate::certify(
+    f.path({{0,0,0},{0,.0005,0},{0,.0005,-.02}}),*f.scene,options);
+  EXPECT_NE(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_EQ(r.reason,"PRECISION_OR_DEPTH_LIMIT");   // the drag bound, not INTERVAL_LIMIT
+}
+
+TEST(ControllerCertificate, SupportDragBelowToleranceThenLiftCertifies) {
+  RigSupportFixture f(1.2e-7);   // swing 1e-4 rad: ~30 um drag, inside the 0.1 mm allowance
+  const auto r=workcell::controller_certificate::certify(
+    f.path({{0,0,0},{0,.0001,0},{0,.0001,-.02}}),*f.scene);
+  EXPECT_EQ(r.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<r.reason;
+  EXPECT_EQ(r.initial_contacts_expired,1U);
+}
