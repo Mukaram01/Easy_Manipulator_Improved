@@ -1563,3 +1563,114 @@ TEST(ControllerCertificate, SavedTransferBodiesClearEveryConcaveBinTriangle) {
   }
   }
 }
+
+// Revolute support lift: a lever rotates about a horizontal axis, so the
+// carried BOX both translates and rotates. upwardBoxContact (identity
+// rotation, prismatic only) cannot apply; eligible single-BOX support pairs
+// must use the convex-BOX initial-contact proof with the SupportContact policy.
+namespace {
+struct RevoluteSupportFixture {
+  planning_scene::PlanningScenePtr scene;
+  explicit RevoluteSupportFixture(double penetration,double yaw=.1,bool box_support=true,
+                                  const std::string& policy_support="fixture") {
+    const std::string urdf=R"(<robot name="lever"><link name="base"/><link name="arm"/><link name="tool"/>
+      <joint name="pivot" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 1 0"/>
+      <origin xyz="0 0 .0125"/><limit lower="-1" upper="1" effort="10" velocity="1"/></joint>
+      <joint name="mount" type="fixed"><parent link="arm"/><child link="tool"/><origin xyz=".3 0 0"/></joint></robot>)";
+    auto robot=urdf::parseURDF(urdf);auto srdf=std::make_shared<srdf::Model>();
+    srdf->initString(*robot,"<robot name='lever'><group name='arm'><joint name='pivot'/></group></robot>");
+    auto model=std::make_shared<moveit::core::RobotModel>(robot,srdf);
+    scene=std::make_shared<planning_scene::PlanningScene>(model);
+    Eigen::Isometry3d table=Eigen::Isometry3d::Identity();table.translation()=Eigen::Vector3d(.3,0,-.05);
+    scene->getWorldNonConst()->addToObject("fixture",box_support?
+      shapes::ShapeConstPtr(new shapes::Box(1,1,.1)):shapes::ShapeConstPtr(new shapes::Cylinder(.5,.1)),table);
+    auto& state=scene->getCurrentStateNonConst();state.setToDefaultValues();
+    Eigen::Isometry3d part=Eigen::Isometry3d::Identity();
+    part.linear()=Eigen::AngleAxisd(yaw,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    part.translation().z()=-penetration;
+    state.attachBody("part",Eigen::Isometry3d::Identity(),{shapes::ShapeConstPtr(new shapes::Box(.025,.025,.025))},
+                     EigenSTL::vector_Isometry3d{part},std::set<std::string>{},"tool");
+    state.update();
+    collision_detection::DecideContactFn predicate=workcell::SupportContact{"part",policy_support,0.};
+    scene->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",predicate);
+  }
+  robot_trajectory::RobotTrajectory path(const std::vector<double>& angles) const {
+    robot_trajectory::RobotTrajectory trajectory(scene->getRobotModel(),"arm");
+    for(double angle:angles) {
+      auto state=scene->getCurrentState();state.setVariablePosition("pivot",angle);
+      state.setVariableVelocity("pivot",0.);state.setVariableAcceleration("pivot",0.);state.update();
+      trajectory.addSuffixWayPoint(state,trajectory.getWayPointCount()?.1:0.);
+    }
+    return trajectory;
+  }
+};
+}
+
+TEST(ControllerCertificate, RevoluteYawedSupportLiftCertifiesAndKeepsSupportPolicy) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  ASSERT_FALSE(fixture.scene->isStateColliding());   // the conditional support policy admits the start
+  auto strict=fixture.scene->diff();strict->decoupleParent();
+  strict->getAllowedCollisionMatrixNonConst().setEntry("part","fixture",false);
+  ASSERT_TRUE(strict->isStateColliding(fixture.scene->getCurrentState(),""));  // genuinely in contact at t=0
+  // Negative pivot raises the tool: 0.02 rad lifts the part about 6 mm.
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR)<<report.reason;
+  EXPECT_EQ(report.initial_contacts_expired,1U);
+  collision_detection::DecideContactFn predicate;
+  ASSERT_TRUE(fixture.scene->getAllowedCollisionMatrix().getAllowedCollision("part","fixture",predicate));
+  const auto* policy=predicate.target<workcell::SupportContact>();
+  ASSERT_NE(policy,nullptr);EXPECT_EQ(policy->support,"fixture");
+}
+
+TEST(ControllerCertificate, RevoluteSupportMotionIntoTableRejects) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.certified,0U);
+}
+
+TEST(ControllerCertificate, RevoluteSupportLiftThenRecontactRejects) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02,0.}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_GT(report.certified,0U);
+  EXPECT_GE(report.failure_begin_ns,100000000);
+}
+
+TEST(ControllerCertificate, RevoluteSupportDepthAboveToleranceRejects) {
+  RevoluteSupportFixture fixture(.00010001);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.certified,0U);
+}
+
+TEST(ControllerCertificate, RevoluteSupportPolicyForDifferentSupportStaysUnproven) {
+  RevoluteSupportFixture fixture(1.2e-7,.1,true,"other_support");
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, RevoluteNonBoxSupportStaysUnproven) {
+  RevoluteSupportFixture fixture(1.2e-7,.1,false);
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, RevoluteSupportPermissionCannotHideUnrelatedCollision) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  Eigen::Isometry3d obstacle=Eigen::Isometry3d::Identity();obstacle.translation()=Eigen::Vector3d(.3,0,.03);
+  fixture.scene->getWorldNonConst()->addToObject(
+    "unrelated",shapes::ShapeConstPtr(new shapes::Box(.005,.005,.005)),obstacle);
+  const auto trajectory=fixture.path({0.,-.02});
+  ASSERT_TRUE(fixture.scene->isStateColliding(trajectory.getLastWayPoint(),""));
+  const auto report=workcell::controller_certificate::certify(trajectory,*fixture.scene);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+}
+
+TEST(ControllerCertificate, RevoluteSupportZeroTimestampBudgetFailsClosed) {
+  RevoluteSupportFixture fixture(1.2e-7);
+  workcell::ControllerAuditOptions options;options.max_contact_timestamps=0;
+  const auto report=workcell::controller_certificate::certify(fixture.path({0.,-.02}),*fixture.scene,options);
+  EXPECT_NE(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR);
+  EXPECT_EQ(report.initial_contacts_expired,0U);
+}

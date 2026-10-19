@@ -700,28 +700,43 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
     struct Conditional {
       std::string object,world;SupportContact support;bool floor=false;
       bool actual_expired=false, nominal_crossing=false, retired=false;
+      // Floor pair whose attached body and support are single BOXes: if the
+      // upward analytic proof fails, it uses the convex-BOX initial-contact
+      // proof below, with SupportContact (not PileContact) as its predicate.
+      bool convex=false;
+      bool convexProof() const {return !floor||convex;}
+      bool admits(const collision_detection::Contact& contact) const {
+        return floor?support(contact):PileContact{object,world}(contact);
+      }
     };
     std::vector<Conditional> initial;
     std::vector<const moveit::core::AttachedBody*> attached;first.getAttachedBodies(attached);
     for(const auto* body:attached) for(const auto& id:scene.getWorld()->getObjectIds()) {
       collision_detection::DecideContactFn fn;
       if(!scene.getAllowedCollisionMatrix().getAllowedCollision(body->getName(),id,fn)) continue;
-      if(const auto* policy=fn.target<SupportContact>()) initial.push_back({body->getName(),id,*policy,true});
+      if(const auto* policy=fn.target<SupportContact>()) {
+        initial.push_back({body->getName(),id,*policy,true});
+        const auto owner=scene.getWorld()->getObject(id);
+        initial.back().convex=body->getShapes().size()==1&&body->getShapes()[0]->type==shapes::BOX&&
+          owner&&owner->shapes_.size()==1&&owner->shapes_[0]->type==shapes::BOX&&
+          policy->object==body->getName()&&policy->support==id;
+      }
       else if(fn.target<PileContact>()) initial.push_back({body->getName(),id,{},false});
     }
     auto contact_acm=scene.getAllowedCollisionMatrix();
     bool has_pile=false;
-    for(const auto& pair:initial) if(!pair.floor) {
+    for(const auto& pair:initial) if(pair.convexProof()) {
       contact_acm.setEntry(pair.object,pair.world,false);has_pile=true;
     }
     if(has_pile) {
       const auto contacts=completeContacts(scene,first,contact_cap,&contact_acm);
-      for(auto& pair:initial) if(!pair.floor) {
+      for(auto& pair:initial) if(pair.convexProof()) {
         const auto found=contacts.contacts.find(pairKey(pair.object,pair.world));
         if(found==contacts.contacts.end()) {
           pair.actual_expired=pair.retired=true;
         } else for(const auto& contact:found->second)
-          if(!PileContact{pair.object,pair.world}(contact)) throw std::runtime_error("INITIAL_PILE_CONTACT_INVALID");
+          if(!pair.admits(contact))
+            throw std::runtime_error(pair.floor?"INITIAL_SUPPORT_CONTACT_INVALID":"INITIAL_PILE_CONTACT_INVALID");
       }
     }
     joint_trajectory_controller::Trajectory jtc;
@@ -823,54 +838,58 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
         auto proposed_initial=initial;
         bool initial_proven=true, enumerate_crossing=false;
         for(auto& pair:proposed_initial) {
-          if(!pair.floor) {
-            acm.setEntry(pair.object,pair.world,false);
-            const auto& moving=geometry.at(pair.object);const auto& fixed=geometry.at(pair.world);
-            const double travel=movement.at(pair.object);
-            const double gap=boxGap(moving,fixed);
-            // A strict interval encloses both nominal and actual geometry. Once
-            // retired, the ordinary collision certificate must prove every
-            // subsequent interval, including both sides of stored waypoints.
-            if(gap>(Interval(travel)+1e-12).upper()) {
-              pair.retired=pair.actual_expired=true;
-              acm.setEntry(pair.object,pair.world,true);continue;
+          if(pair.floor) {
+            bool boundary_monotone=true;
+            if(hi==end) {
+              const auto prior=evaluate(end-1),terminal=evaluate(end);
+              boundary_monotone=terminal.getAttachedBody(pair.object)->getGlobalPose().translation().z()>=
+                                prior.getAttachedBody(pair.object)->getGlobalPose().translation().z();
             }
-            if(pair.retired) continue;
-            const bool depth_bounded=(Interval(gap)-travel).lower()>=-support_contact_tolerance_m;
-            const auto nominal_clear=[&]() {return nominalBoxNoReentry(scene,
-              *anchor.getAttachedBody(pair.object),fixed,controls,speeds);};
-            if(depth_bounded&&!pair.actual_expired&&boxContactInterior(moving,fixed,travel)&&
-                (!pair.nominal_crossing||(hi!=end&&nominal_clear()))) {
-              acm.setEntry(pair.object,pair.world,true);continue;
+            if(upwardBoxContact(scene,start,controls,pair.object,pair.world,&pair.support,
+                errors,hi-lo,boundary_monotone)) {
+              acm.setEntry(pair.object,pair.world,true);continue; // distance query only; separate analytic proof above
             }
-            // Prefer subdivision while an interior witness survives the numeric
-            // error floor. Exhaustive work is reserved for the crossing region,
-            // rather than consuming its bounded budget on ordinary contact.
-            Polynomials constant;
-            for(const auto& item:controls) constant[item.first]={Interval(anchor.getVariablePosition(item.first))};
-            const double error_floor=bodyDisplacements(scene,anchor,constant,errors,&shape_cache).at(pair.object);
-            const bool can_refine=hi-lo>options.min_interval_ns&&
-              ((!pair.actual_expired&&boxContactInterior(moving,fixed,error_floor))||
-               gap>(Interval(error_floor)+1e-12).upper());
-            // No crossing-mode handoff at a stored waypoint: the final leaf
-            // must instead have strict clearance covering its nominal limit,
-            // stored endpoint and FK/evaluation bounds. The next segment is
-            // checked with its own bounds by the retired-pair ordinary proof.
-            if(depth_bounded&&!can_refine&&hi!=end&&hi-lo<=4096&&nominal_clear()) {
-              pair.nominal_crossing=true;enumerate_crossing=true;
-              acm.setEntry(pair.object,pair.world,true);continue;
-            }
-            initial_proven=false;continue;
+            // Unsupported floor geometry keeps its conditional entry and therefore
+            // still requires the ordinary strict distance proof (fail closed).
+            if(!pair.convex) continue;
           }
-          bool boundary_monotone=true;
-          if(hi==end) {
-            const auto prior=evaluate(end-1),terminal=evaluate(end);
-            boundary_monotone=terminal.getAttachedBody(pair.object)->getGlobalPose().translation().z()>=
-                              prior.getAttachedBody(pair.object)->getGlobalPose().translation().z();
+          acm.setEntry(pair.object,pair.world,false);
+          const auto& moving=geometry.at(pair.object);const auto& fixed=geometry.at(pair.world);
+          const double travel=movement.at(pair.object);
+          const double gap=boxGap(moving,fixed);
+          // A strict interval encloses both nominal and actual geometry. Once
+          // retired, the ordinary collision certificate must prove every
+          // subsequent interval, including both sides of stored waypoints.
+          if(gap>(Interval(travel)+1e-12).upper()) {
+            pair.retired=pair.actual_expired=true;
+            acm.setEntry(pair.object,pair.world,true);continue;
           }
-          if(upwardBoxContact(scene,start,controls,pair.object,pair.world,pair.floor?&pair.support:nullptr,
-              errors,hi-lo,boundary_monotone))
-            acm.setEntry(pair.object,pair.world,true); // distance query only; separate analytic proof above
+          if(pair.retired) continue;
+          const bool depth_bounded=(Interval(gap)-travel).lower()>=-support_contact_tolerance_m;
+          const auto nominal_clear=[&]() {return nominalBoxNoReentry(scene,
+            *anchor.getAttachedBody(pair.object),fixed,controls,speeds);};
+          if(depth_bounded&&!pair.actual_expired&&boxContactInterior(moving,fixed,travel)&&
+              (!pair.nominal_crossing||(hi!=end&&nominal_clear()))) {
+            acm.setEntry(pair.object,pair.world,true);continue;
+          }
+          // Prefer subdivision while an interior witness survives the numeric
+          // error floor. Exhaustive work is reserved for the crossing region,
+          // rather than consuming its bounded budget on ordinary contact.
+          Polynomials constant;
+          for(const auto& item:controls) constant[item.first]={Interval(anchor.getVariablePosition(item.first))};
+          const double error_floor=bodyDisplacements(scene,anchor,constant,errors,&shape_cache).at(pair.object);
+          const bool can_refine=hi-lo>options.min_interval_ns&&
+            ((!pair.actual_expired&&boxContactInterior(moving,fixed,error_floor))||
+             gap>(Interval(error_floor)+1e-12).upper());
+          // No crossing-mode handoff at a stored waypoint: the final leaf
+          // must instead have strict clearance covering its nominal limit,
+          // stored endpoint and FK/evaluation bounds. The next segment is
+          // checked with its own bounds by the retired-pair ordinary proof.
+          if(depth_bounded&&!can_refine&&hi!=end&&hi-lo<=4096&&nominal_clear()) {
+            pair.nominal_crossing=true;enumerate_crossing=true;
+            acm.setEntry(pair.object,pair.world,true);continue;
+          }
+          initial_proven=false;continue;
         }
         if(initial_proven&&enumerate_crossing) {
           // Every integer timestamp is checked, without a stride. The budget
@@ -886,17 +905,17 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
             const auto contacts=completeContacts(scene,state,contact_cap,&contact_acm);
             for(const auto& item:contacts.contacts) {
               auto pair=std::find_if(proposed_initial.begin(),proposed_initial.end(),[&](const auto& candidate) {
-                return !candidate.floor&&pairKey(candidate.object,candidate.world)==item.first;
+                return candidate.convexProof()&&pairKey(candidate.object,candidate.world)==item.first;
               });
               if(pair==proposed_initial.end()||pair->actual_expired) {
                 report.result=ControllerCertificate::COLLISION;report.reason="INITIAL_CONTACT_NEW_OR_EXPIRED";return false;
               }
-              for(const auto& contact:item.second) if(!PileContact{pair->object,pair->world}(contact)) {
+              for(const auto& contact:item.second) if(!pair->admits(contact)) {
                 report.result=ControllerCertificate::COLLISION;report.reason="INITIAL_CONTACT_DEPTH_OR_IDENTITY";return false;
               }
             }
             const auto bodies=geometryBodies(scene,state,&shape_cache);
-            for(auto& pair:proposed_initial) if(!pair.floor&&!pair.retired&&pair.nominal_crossing) {
+            for(auto& pair:proposed_initial) if(pair.convexProof()&&!pair.retired&&pair.nominal_crossing) {
               if(!contacts.contacts.count(pairKey(pair.object,pair.world))) {
                 // FCL absence alone cannot establish separation at its numeric
                 // termination boundary. Require full-shape positive clearance.
