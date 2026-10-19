@@ -705,13 +705,14 @@ def _boundary_fixture(tmp_path,monkeypatch,**overrides):
 def test_execution_boundary_refresh_renews_only_measured_timestamps(tmp_path,monkeypatch):
     from simulator_observations import refresh_at_execution_boundary
     bound,objects,m,start,sample=_boundary_fixture(tmp_path,monkeypatch,dz=-1e-6,pan=1.572)
-    rebound,evidence=refresh_at_execution_boundary(bound,objects,m,start,m.joints(sample))
+    rebound,evidence=refresh_at_execution_boundary(bound,objects,m,start)
     assert objects[0]['timestamp']==sample['wall_ns']/1e9==rebound['objects'][0]['timestamp']
     assert rebound['objects'][0]['pose']==bound['objects'][0]['pose']   # bound geometry kept, not re-measured
     assert evidence['iteration']==5 and evidence['run_id']=='r' and evidence['geometry']['max_position_delta_m']>0
     assert evidence['start_state_max_deviation_rad']==pytest.approx(.002)
-    # Nothing came from the wall clock.
-    import time;assert abs(objects[0]['timestamp']-time.time())>1e6
+    assert evidence['original_timestamps']=={'part_04':1000.}
+    # The renewed stamp is the sample's own measurement time, not the wall clock.
+    import time;assert objects[0]['timestamp']==2000. and abs(2000.-time.time())>1e6
 
 
 @pytest.mark.parametrize('change,match',[
@@ -724,16 +725,49 @@ def test_execution_boundary_refresh_rejects_changes(tmp_path,monkeypatch,change,
     from simulator_observations import refresh_at_execution_boundary
     bound,objects,m,start,sample=_boundary_fixture(tmp_path,monkeypatch,**change)
     if change.get('bound_class'):
-        # A class that no longer matches the measured world's bound class: build the
-        # measured snapshot with the mismatching class to prove refresh rejects it.
+        # No class is measured in simulation (capture also stamps it from --class-id),
+        # so production carries the bound class by identity. This exercises the
+        # library contract that a differing class is still rejected.
         import simulator_observations
         original=simulator_observations.measured_snapshot
-        def mismatched(b,mm):
-            snap,s=original(b,mm);snap['objects'][0]['class_id']='part';return snap,s
+        def mismatched(b,mm,sample=None):
+            snap,s=original(b,mm,sample);snap['objects'][0]['class_id']='part';return snap,s
         monkeypatch.setattr(simulator_observations,'measured_snapshot',mismatched);match='class changed'
     with pytest.raises(RuntimeError,match=match):
-        refresh_at_execution_boundary(bound,objects,m,start,m.joints(sample))
+        refresh_at_execution_boundary(bound,objects,m,start)
     assert objects[0]['timestamp']==1000.   # rejection never renews
+
+
+def test_execution_boundary_refresh_uses_real_world_geometry_gate(tmp_path,monkeypatch):
+    """Without the box_models monkeypatch: dimensions come from the launched world and a
+    changed world.sdf (sha mismatch with the receipt) fails closed."""
+    import json
+    from simulator_backend import digest
+    from simulator_observations import refresh_at_execution_boundary
+    bound,objects,m,start,sample=_boundary_fixture(tmp_path,monkeypatch)
+    monkeypatch.undo()
+    world='<sdf><world name="a0"><model name="part_04"><link name="l"><collision name="c"><geometry><box><size>0.025 0.025 0.025</size></box></geometry></collision></link></model></world></sdf>'
+    (tmp_path/'world.sdf').write_text(world)
+    (tmp_path/'receipt.json').write_text(json.dumps(dict(world='a0',run_id='r',world_sha256=digest(world.encode()))))
+    bound['simulator_receipt_sha256']=digest((tmp_path/'receipt.json').read_bytes())
+    rebound,evidence=refresh_at_execution_boundary(bound,objects,m,start)
+    assert objects[0]['timestamp']==2000.
+    (tmp_path/'world.sdf').write_text(world.replace('0.025 0.025 0.025','0.025 0.025 0.030'))
+    objects[0]['timestamp']=1000.
+    with pytest.raises(ValueError,match='world changed'):refresh_at_execution_boundary(bound,objects,m,start)
+    assert objects[0]['timestamp']==1000.
+
+
+def test_execution_boundary_refresh_rejects_missing_or_nonfinite_joints(tmp_path,monkeypatch):
+    from simulator_observations import refresh_at_execution_boundary
+    bound,objects,m,start,sample=_boundary_fixture(tmp_path,monkeypatch)
+    with pytest.raises(RuntimeError,match='start state diverged'):
+        refresh_at_execution_boundary(bound,objects,m,dict(names=['wrist_9_joint'],positions=[0.]))
+    sample['joints']['a0::robot::shoulder_pan_joint']=[float('nan'),0.]
+    with pytest.raises(RuntimeError,match='start state diverged'):refresh_at_execution_boundary(bound,objects,m,start)
+    bound,objects,m,start,sample=_boundary_fixture(tmp_path,monkeypatch)
+    objects[0]['object_id']='part_09'
+    with pytest.raises(RuntimeError,match='do not match the refreshed observation'):refresh_at_execution_boundary(bound,objects,m,start)
 
 
 def test_execution_boundary_refresh_requires_every_world_object_measured(tmp_path,monkeypatch):
@@ -741,7 +775,7 @@ def test_execution_boundary_refresh_requires_every_world_object_measured(tmp_pat
     bound,objects,m,start,sample=_boundary_fixture(tmp_path,monkeypatch)
     del sample['poses']['a0::part_04']
     with pytest.raises(RuntimeError,match='measured pose missing'):
-        refresh_at_execution_boundary(bound,objects,m,start,m.joints(sample))
+        refresh_at_execution_boundary(bound,objects,m,start)
     bound,objects,m,start,sample=_boundary_fixture(tmp_path,monkeypatch)
     with pytest.raises(RuntimeError,match='start is incomplete'):
-        refresh_at_execution_boundary(bound,objects,m,dict(names=[],positions=[]),m.joints(sample))
+        refresh_at_execution_boundary(bound,objects,m,dict(names=[],positions=[]))

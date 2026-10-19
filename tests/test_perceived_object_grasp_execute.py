@@ -1255,6 +1255,6 @@ def test_execution_boundary_refresh_precedes_unchanged_expiry_check():
     text=(Path(__file__).resolve().parents[1]/'scripts/perceived_object_grasp_execute.py').read_text()
     start=text.index('refresh_at_execution_boundary(');expiry=text.index("'selected observation expired before execution'")
     block=text[text.rindex('if measurements:',0,start):expiry]
-    assert start<expiry and 'measurements.joints(measurements.fresh())' in block
+    assert start<expiry and 'if not motion or not motion[0]' in block
     assert 'time.time()' not in block.split('fresh = select_observations')[0]
     assert "select_observations(intent, physical, objects, time.time())" in text[start:expiry]

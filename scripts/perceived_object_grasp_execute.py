@@ -2421,10 +2421,12 @@ def main():
             # identity and geometry and the certified start state; the age
             # limit itself is then applied unchanged below.
             from simulator_observations import refresh_at_execution_boundary
-            first=next(s for s in cycle['steps'] if s['kind']=='motion')['trajectory'].joint_trajectory
+            motion=[s for s in cycle['steps'] if s['kind']=='motion']
+            if not motion or not motion[0]['trajectory'].joint_trajectory.points:
+                raise RuntimeError('certified cycle has no motion start to verify against')
+            first=motion[0]['trajectory'].joint_trajectory
             snapshot,summary['execution_observation_refresh']=refresh_at_execution_boundary(
-                snapshot,objects,measurements,dict(names=list(first.joint_names),positions=list(first.points[0].positions)),
-                measurements.joints(measurements.fresh()))
+                snapshot,objects,measurements,dict(names=list(first.joint_names),positions=list(first.points[0].positions)))
         fresh = select_observations(intent, physical, objects, time.time()) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
