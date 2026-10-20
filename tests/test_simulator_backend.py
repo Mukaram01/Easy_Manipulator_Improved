@@ -832,3 +832,11 @@ def test_sparse_world_bin_floor_sits_at_the_authored_destination_origin():
     binding=bind_destination_geometry((repo/'scenes/ur5_2f_test/worlds/stage_a0_sparse.sdf').read_text(),
                                       repo/'scenes/ur5_2f_test/config/moveit_collision_objects.yaml')
     assert binding['floor_z']==pytest.approx(.1) and binding['object_id']=='workcell::target_bin_default'
+
+
+def test_prepare_rejects_destination_floor_pose_with_frame_attributes(tmp_path,monkeypatch):
+    from simulator_backend import prepare
+    world,manifest,controllers,_=destination_prepare_inputs(tmp_path,monkeypatch)
+    world.write_text(world.read_text().replace('<collision name="floor"><pose>','<collision name="floor"><pose relative_to="bin_link">'))
+    with pytest.raises(ValueError,match='destination floor pose'):
+        prepare('<robot/>',controllers,world,'rsp',tmp_path/'runtime',collision_manifest_path=manifest)

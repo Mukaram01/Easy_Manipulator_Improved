@@ -303,6 +303,39 @@ def test_destination_floor_contact_is_admitted_only_in_place_opening_released(tm
     with pytest.raises(RuntimeError,match='not on the bound floor'):guard.check(sample)
 
 
+def test_finger_contact_with_the_destination_floor_stays_unpermitted_while_opening(tmp_path,monkeypatch):
+    guard,sample,advance=destination_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish();advance()
+    sample['contacts']=[c for c in sample['contacts'] if 'part_07' not in c['b']];guard.pile_expired.add('runtime::part_07')
+    sample['contacts'].append(dict(a=BIN_FLOOR,b='a0::workcell_robot::left::collision',points=[[.44,.21,.1]]))
+    guard.phase='opening'
+    with pytest.raises(RuntimeError,match='unpermitted physical contact'):guard.check(sample)
+
+
+def test_pile_contacts_skip_the_destination_floor_in_place_phase_only(tmp_path,monkeypatch):
+    guard,sample,advance=destination_guard(tmp_path,monkeypatch)
+    sample['contacts'].append(dict(a=BIN_FLOOR,b='a0::part_06::link::collision',points=[[.44,.21,.1]]))
+    guard.phase='place'
+    assert 'workcell::target_bin_default' not in guard.pile_contacts(sample)
+    guard.phase='lift'
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::target_bin_default'):guard.pile_contacts(sample)
+
+
+def test_compiled_predicate_rejects_destination_wall_normal_contact(tmp_path,monkeypatch):
+    from simulator_execution import validate_measured_contacts
+    from types import SimpleNamespace as N
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    dest=dict(object_id=guard.object,support_id='workcell::target_bin_default',floor_z=.1)
+    def contact(normal,z=.1):  # MoveIt reports the support first; the planner predicate's normal points support -> part
+        return N(contact_body_1='workcell::target_bin_default',contact_body_2=guard.object,body_type_1=1,body_type_2=2,
+                 position=N(x=.45,y=.22,z=z),normal=N(x=normal[0],y=normal[1],z=normal[2]),depth=.00001)
+    validate_measured_contacts(N(valid=False,contacts=[contact((0.,0.,1.))]),None,True,guard.predicate,destination=dest)
+    with pytest.raises(RuntimeError,match='destination contact rejected'):
+        validate_measured_contacts(N(valid=False,contacts=[contact((1.,0.,0.))]),None,True,guard.predicate,destination=dest)
+    with pytest.raises(RuntimeError,match='destination contact rejected'):
+        validate_measured_contacts(N(valid=False,contacts=[contact((0.,0.,1.),z=.1003)]),None,True,guard.predicate,destination=dest)
+
+
 def test_contact_guard_refuses_acm_allowance_between_touch_links_and_destination(tmp_path,monkeypatch):
     from types import SimpleNamespace as N
     from simulator_execution import ContactGuard

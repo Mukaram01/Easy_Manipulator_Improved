@@ -318,7 +318,10 @@ def bind_destination_geometry(xml, manifest_path):
             raise ValueError('unsupported destination model/link')
         link=links[0];floors=link.findall("collision[@name='floor']")
         if len(floors)!=1 or link.find('pose') is not None:raise ValueError('ambiguous destination floor collision')
-        floor=floors[0];fp=[float(v) for v in (floor.findtext('pose') or '0 0 0 0 0 0').split()]
+        floor=floors[0];pose_element=floor.find('pose')
+        if pose_element is not None and pose_element.attrib:
+            raise ValueError('destination floor pose must be expressed in the world frame without attributes')
+        fp=[float(v) for v in (floor.findtext('pose') or '0 0 0 0 0 0').split()]
         size=[float(v) for v in floor.findtext('geometry/box/size','').split()]
         if len(fp)!=6 or any(abs(v)>1e-12 for v in fp[3:]) or len(size)!=3 or min(size)<=0:
             raise ValueError('destination floor must be an axis-aligned box')
