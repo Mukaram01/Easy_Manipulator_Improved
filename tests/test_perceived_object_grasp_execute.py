@@ -1351,3 +1351,42 @@ def test_execution_boundary_refresh_precedes_unchanged_expiry_check():
     assert start<expiry and 'if not motion or not motion[0]' in block
     assert 'time.time()' not in block.split('fresh = select_observations')[0]
     assert "select_observations(intent, physical, objects, time.time())" in text[start:expiry]
+
+
+# ---------------------------------------------------------------- carried-step owned execution wait
+def _traj(duration_s):
+    from moveit_msgs.msg import RobotTrajectory
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+    from builtin_interfaces.msg import Duration
+    pts=[JointTrajectoryPoint(positions=[0.]),JointTrajectoryPoint(positions=[.1],time_from_start=Duration(sec=int(duration_s),nanosec=int((duration_s%1)*1e9)))]
+    return RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'],points=pts))
+
+
+def test_measured_real_time_factor_requires_a_second_of_wall_time_and_forward_sim():
+    f=MODULE.measured_real_time_factor
+    assert f(None,{'wall_ns':0,'sim_ns':0}) is None
+    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(.5e9),'sim_ns':int(.1e9)}) is None
+    assert f({'wall_ns':0,'sim_ns':int(5e9)},{'wall_ns':int(10e9),'sim_ns':int(5e9)}) is None
+    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(67.5e9),'sim_ns':int(5.8e9)})==pytest.approx(5.8/67.5)
+    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(100e9),'sim_ns':int(.1e9)})==.02  # floor
+
+
+def test_carried_execution_wait_follows_plan_and_rtf_within_bounds():
+    w=MODULE.carried_execution_wait
+    assert w(_traj(10.8),None)==120.                       # no measured RTF: unchanged base wait
+    assert w(_traj(0.),.08)==120.
+    assert w(_traj(4.1),.5)==120.                          # fast simulation never shortens the base
+    assert w(_traj(10.8),.086)==pytest.approx(10.8/.086*1.5+30)   # run-135626 lift-window RTF: ~218 s
+    assert w(_traj(54.),.08)==600.                         # cap
+    assert w(_traj(10.8),.086,cap=150.)==150.
+
+
+def test_execution_loop_derives_the_wait_only_for_carried_steps():
+    source=SCRIPT.read_text()
+    assert "wait=carried_execution_wait(step['trajectory'],rtf)" in source
+    assert "if step['stage'] in CARRIED_STAGES:" in source
+    assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)" in source
+    assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)" not in source
+    assert MODULE.CARRIED_STAGES==('PREPLAN_LIFT','PREPLAN_TRANSFER','PREPLAN_PLACE')
+    # the release trajectory and all non-carried steps keep their fixed waits
+    assert "ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)" in source

@@ -466,6 +466,35 @@ def contacts_in_planned_scene(contacts, planned, live):
     return result
 
 
+CARRIED_STAGES = ('PREPLAN_LIFT', 'PREPLAN_TRANSFER', 'PREPLAN_PLACE')
+
+
+def measured_real_time_factor(previous, current, *, floor=.02, min_wall_s=1.):
+    """Simulation seconds per wall second between two measured samples; None when unusable."""
+    if not previous or not current:
+        return None
+    wall = (current['wall_ns'] - previous['wall_ns']) / 1e9
+    sim = (current['sim_ns'] - previous['sim_ns']) / 1e9
+    if wall < min_wall_s or sim <= 0.:
+        return None
+    return max(floor, sim / wall)
+
+
+def carried_execution_wait(trajectory, rtf, *, base=120., factor=1.5, margin=30., cap=600.):
+    """Owned result wait for a carried step: planned duration over the measured RTF, bounded.
+
+    The fixed 120 s wait was sized for 20 % motions. Carried phases are planned slower,
+    so the wait follows the plan (last time_from_start) scaled by the live real-time
+    factor with margin; it never drops below the base nor exceeds the cap. Freshness,
+    stop and retention guards run unchanged inside the wait.
+    """
+    points = trajectory.joint_trajectory.points
+    duration = (points[-1].time_from_start.sec + points[-1].time_from_start.nanosec * 1e-9) if points else 0.
+    if rtf is None or duration <= 0.:
+        return base
+    return min(cap, max(base, duration / rtf * factor + margin))
+
+
 def support_plane_height(obj):
     """Top-face height of a level single-BOX support; other supports fail closed."""
     geometry = collision_object_dict(obj)
@@ -2448,6 +2477,7 @@ def main():
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
         expected = initial
+        execution_mark=None  # measured sample at the previous executed step's start (live RTF source)
         for step in cycle['steps']:
             if args.simulator_commission in ('cancel','telemetry') and step['stage']!='PREPLAN_APPROACH':
                 raise RuntimeError(f'{args.simulator_commission} trial cannot advance beyond the approach')
@@ -2474,7 +2504,16 @@ def main():
                     if step['stage']=='PREPLAN_LIFT':contact_guard.begin_pile_separation(measurements.fresh())
                     controlled_cancel=args.simulator_commission=='cancel' and step['stage']=='PREPLAN_APPROACH'
                     summary['execution_attempted']=True
-                    result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)
+                    wait=120.
+                    start_sample=measurements.fresh()
+                    if step['stage'] in CARRIED_STAGES:
+                        rtf=measured_real_time_factor(execution_mark,start_sample)
+                        wait=carried_execution_wait(step['trajectory'],rtf)
+                        last=step['trajectory'].joint_trajectory.points[-1].time_from_start
+                        summary.setdefault('owned_execution_waits',[]).append(dict(stage=label,
+                            planned_duration_s=last.sec+last.nanosec*1e-9,measured_rtf=rtf,wait_s=wait))
+                    execution_mark=start_sample
+                    result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)
                     if step['stage']=='PREPLAN_CLOSE_GRIPPER':summary['close_terminal_wall_ns']=time.time_ns()
                     controlled_cancel=False
                     contact_guard.drain()
