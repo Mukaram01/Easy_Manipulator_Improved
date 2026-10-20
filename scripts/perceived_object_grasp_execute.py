@@ -1419,6 +1419,9 @@ def main():
             raise RuntimeError('PlanningScene rejected transition')
     def action(client, goal, timeout):
         from simulator_execution import GraspRetentionLoss
+        if client is execute_client and apply_client not in exchanged_clients:
+            # The in-motion guard applies a scene diff on every tick; none may be a first exchange.
+            raise RuntimeError('planning scene service not yet exchanged before owned execution')
         if client is execute_client and summary.get('grasp_recovery'):
             raise RuntimeError('RECOVERY_EXECUTION_INVALIDATED: fresh recovery continuation is unqualified')
         opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
@@ -2499,8 +2502,6 @@ def main():
                 if math.dist(actual[:3],obj['pose'][:3])>.001:
                     raise RuntimeError('measured object moved since authoritative resolution')
             contact_guard.check(measurements.fresh());measurements.arm()
-            # The in-motion guard's scene update must already be past its first-exchange retry.
-            if apply_client not in exchanged_clients:raise RuntimeError('planning scene service not yet exchanged before owned execution')
             contact_guard.validate_current=measured_fcl
             execution_monitor=contact_guard.drain
             if args.simulator_commission=='cancel':

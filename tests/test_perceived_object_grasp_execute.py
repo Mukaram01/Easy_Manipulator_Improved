@@ -1057,6 +1057,7 @@ def test_owned_execution_evidence_preserves_exact_command_trajectory():
     summary = {'current_stage': 'EXECUTE_APPROACH'}
     context = dict(vars(MODULE), summary=summary, controlled_cancel=False, controller_audit=None,
         execute_client=client, measurements=None, execution_monitor=None, node=object(),
+        apply_client=(scene:=object()), exchanged_clients={scene},
         rclpy=SimpleNamespace(spin_until_future_complete=lambda *a, **kw: None))
     exec(compile(ast.Module(body=[boundary], type_ignores=[]), '<actual-owned-action>', 'exec'), context)
     context['action'](client, goal, 5)
@@ -1080,7 +1081,7 @@ def test_trajectory_serialization_failure_occurs_before_goal_submission(monkeypa
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=send)
     def broken(message):raise RuntimeError('serialization failed')
     monkeypatch.setattr(convert,'message_to_ordereddict',broken)
-    context=dict(vars(MODULE),execute_client=client,controlled_cancel=False,controller_audit=None,
+    context=dict(vars(MODULE),execute_client=client,controlled_cancel=False,controller_audit=None,apply_client=(scene:=object()),exchanged_clients={scene},
                  node=object(),summary={},rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-owned-action>','exec'),context)
     with pytest.raises(RuntimeError,match='serialization failed'):
@@ -1491,9 +1492,28 @@ def test_service_call_prompt_reply_and_raised_result_need_no_retry():
 def test_executor_service_calls_use_the_first_reply_retry_and_record_retries_in_the_summary():
     source=SCRIPT.read_text()
     assert "return call_service(node, client, request, spin=rclpy.spin_until_future_complete, exchanged=exchanged_clients," in source
-    # the in-motion guard is armed only after apply_client's first exchange, so its per-tick apply() is never retried
-    assert "if apply_client not in exchanged_clients:raise RuntimeError('planning scene service not yet exchanged before owned execution')" in source
-    assert source.index("if apply_client not in exchanged_clients")<source.index("contact_guard.validate_current=measured_fcl")
+    # no owned execution goal is sent before apply_client's first exchange, so the in-motion guard's
+    # per-tick apply() is never retried; the check sits in action() (the gate executor may insert
+    # nothing, so arming time is too early), after the baseline ACM apply that precedes APPROACH
+    assert "if client is execute_client and apply_client not in exchanged_clients:" in source
+    guard=source.index("if client is execute_client and apply_client not in exchanged_clients:")
+    assert "raise RuntimeError('planning scene service not yet exchanged before owned execution')" in source[guard:guard+300]
+    assert source.index("def action(client, goal, timeout):")<guard<source.index("sent = client.send_goal_async(goal)")
+    assert "if apply_client not in exchanged_clients:raise" not in source
+    import ast
+    tree=ast.parse(source); main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    def refuse(**kw):raise AssertionError('goal path reached before the exchange check')
+    client=SimpleNamespace(wait_for_server=refuse,send_goal_async=refuse)
+    context=dict(vars(MODULE),execute_client=client,apply_client=object(),exchanged_clients=set(),summary={})
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-exchange-check>','exec'),context)
+    from moveit_msgs.action import ExecuteTrajectory
+    goal=ExecuteTrajectory.Goal()
+    with pytest.raises(RuntimeError,match='planning scene service not yet exchanged before owned execution'):
+        context['action'](client,goal,1)
+    context['exchanged_clients'].add(context['apply_client'])           # once exchanged, the check lets the goal path proceed
+    with pytest.raises(AssertionError,match='goal path reached'):
+        context['action'](client,goal,1)
     assert "on_retry=lambda record: summary.setdefault('service_retries', []).append(" in source
     assert "dict(record, stage=summary.get('current_stage'))))" in source
     assert "rclpy.spin_until_future_complete(node, future, timeout_sec=10)" not in source   # the single-attempt path is gone

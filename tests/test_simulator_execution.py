@@ -621,6 +621,7 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
     summary={};events=[]
     context=dict(time=time,node=None,summary=summary,measurements=N(fresh=lambda:sample,joints=lambda s:{'arm':[0.,0.]}),
         execute_client=client,plan_client=object(),controlled_cancel=True,controller_audit=None,contract={'home_joint_names':['arm']},
+        apply_client=(scene:=object()),exchanged_clients={scene},
         rclpy=N(spin_until_future_complete=lambda *args,**kw:None),execution_monitor=lambda:None,
         wait_stopped=lambda:True,apply=lambda diff:events.append('revoke'),PlanningScene=N,baseline=N(),
         measured_reconcile=lambda:events.append('reconcile'))
