@@ -1090,9 +1090,13 @@ def test_trajectory_serialization_failure_occurs_before_goal_submission(monkeypa
 
 @pytest.mark.parametrize('backend,stage_name,expected',[
     ('simulator','PREPLAN_LIFT',.02),('fake','PREPLAN_LIFT',.2),
-    ('simulator','PREPLAN_APPROACH',.2),('simulator','PREPLAN_TRANSFER',.2),
-    ('simulator','PREPLAN_CLOSE_GRIPPER',.2)])
-def test_physical_lift_uses_conservative_scaling_without_changing_request_geometry(backend,stage_name,expected):
+    # Carried transfer/place at 10 %: the 20 % transfer pivoted the held part 0.69 deg
+    # in the pinch at ~1 g (run-full-cycle-135626); 2 % would exceed the 120 s wait.
+    ('simulator','PREPLAN_TRANSFER',.1),('simulator','PREPLAN_PLACE',.1),
+    ('fake','PREPLAN_TRANSFER',.2),('fake','PREPLAN_PLACE',.2),
+    ('simulator','PREPLAN_APPROACH',.2),('simulator','PREPLAN_RETREAT',.2),('simulator','PREPLAN_HOME',.2),
+    ('simulator','PREPLAN_CLOSE_GRIPPER',.2),('simulator','PREPLAN_OPEN_GRIPPER',.2)])
+def test_physical_carried_phases_use_conservative_scaling_without_changing_request_geometry(backend,stage_name,expected):
     import ast
     import copy
     import time

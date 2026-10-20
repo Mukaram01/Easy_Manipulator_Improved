@@ -1794,10 +1794,15 @@ def main():
             raise wall_budget_failure()
         planning_time = min(planning_time, args.segment_planning_time, remaining)
         before = copy.deepcopy(view)
-        # Physical initial pile separation needs a conservative dynamic profile:
-        # measured tracking and grasp slip can consume micron-scale side gaps.
-        # Keep the same Cartesian path, collision policy and execution deadline.
-        motion_scaling = .02 if getattr(args, 'backend', 'fake') == 'simulator' and name == 'PREPLAN_LIFT' else .2
+        # Physical carried phases need conservative dynamics while keeping the same
+        # paths, collision policy and owned deadlines. The initial pile separation
+        # stays at 2 %: measured tracking and grasp slip can consume micron-scale
+        # side gaps. The 20 % transfer accelerated the held part at ~1 g and pivoted
+        # it 0.69 deg in the pinch (run-full-cycle-135626); 10 % quarters that
+        # acceleration while the trajectory still fits the 120 s execution wait.
+        simulator = getattr(args, 'backend', 'fake') == 'simulator'
+        motion_scaling = (.02 if name == 'PREPLAN_LIFT' else
+                          .1 if name in ('PREPLAN_TRANSFER', 'PREPLAN_PLACE') else .2) if simulator else .2
         request = MotionPlanRequest(group_name=group or contract['planning_group'],
             start_state=copy.deepcopy(view.robot_state), num_planning_attempts=1,
             allowed_planning_time=planning_time, max_velocity_scaling_factor=motion_scaling,
