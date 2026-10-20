@@ -344,6 +344,10 @@ def _launch_setup(context):
             LaunchConfiguration("simulator_world").perform(context),
             f"{scene_pkg}_robot_state_publisher", output,
             collision_manifest_path=collision_manifest_path)
+        # Destination (bin floor) binding for the contact guard; kept outside the
+        # evidence-bound simulator_backend module. Fails closed on a floor mismatch.
+        import destination_binding
+        simulator_spec['destination_geometry_binding'] = destination_binding.augment_spec(output, collision_manifest_path)
         simulator_actions = [
             ExecuteProcess(cmd=[sys.executable, simulator_backend.__file__, output], output='screen',
                            additional_env={'LIBGL_ALWAYS_SOFTWARE': '1'}),
