@@ -603,6 +603,12 @@ class ContactGuard:
         self.touch=set(touch_links);self.support=support;self.tool=tool;self.held=None;self.separation=None
         self.phase='approach';self.last=None;self.min_clearance=math.inf;self.validate_current=None
         self.allowed={(a,b) for i,a in enumerate(baseline.entry_names) for j,b in enumerate(baseline.entry_names) if baseline.entry_values[i].enabled[j]}
+        # Touch links against the bound support are judged here by measured points on the
+        # certified floor, never by a planning-scene allowance: refuse an ACM that would
+        # let `(a,b) in self.allowed` admit a finger/support contact.
+        if support:
+            exposed=sorted(t for t in self.touch if (t,support['support_id']) in self.allowed or (support['support_id'],t) in self.allowed)
+            if exposed:raise RuntimeError('SUPPORT_CONTACT_POLICY: touch links ACM-allowed against the bound support: '+', '.join(exposed))
         self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None;self.held_proof=None
         self.pile_objects={};self.pile_collisions={};self.pile_certificate=None
         self.pile_expired=set();self.pile_origin=None;self.pile_height=0.;self.planning_attached=False
@@ -799,7 +805,8 @@ class ContactGuard:
         # receipt (sparse world: model pick_support, collision object support_surface_table).
         # Only the exact bound link/collision maps; other geometry of that model stays unmapped.
         binding=self.m.receipt.get('support_geometry_binding')
-        if binding and fields[1:4]==[binding.get('model'),binding.get('link'),binding.get('collision')]:
+        if (binding and binding.get('object_id') and len(fields)==4 and
+                fields[1:4]==[binding.get('model'),binding.get('link'),binding.get('collision')]):
             return binding['object_id']
         return link if model==self.m.receipt['model'] else ('runtime::'+model if model==self.name else 'workcell::'+model)
     def bottom(self,p):

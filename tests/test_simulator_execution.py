@@ -222,6 +222,48 @@ def test_pile_contacts_exempt_the_resting_contact_on_the_bound_support(tmp_path,
         guard.pile_contacts(sample)
 
 
+def test_identity_binding_requires_object_id_and_exact_depth(tmp_path,monkeypatch):
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['support_geometry_binding']={k:v for k,v in SUPPORT_BINDING.items() if k!='object_id'}
+    assert guard.identity('a0::pick_support::support_link::support_collision')=='workcell::pick_support'
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    assert guard.identity('a0::pick_support::support_link::support_collision::extra')=='workcell::pick_support'
+
+
+def test_carried_part_resting_on_bound_support_is_admitted_only_on_the_certified_floor(tmp_path,monkeypatch):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    guard.support=dict(object_id='runtime::part_06',support_id='workcell::support_surface_table',floor_z=-.0125,tool_link='tool')
+    guard.begin_pile_admission();guard.establish();advance()
+    support='a0::pick_support::support_link::support_collision'
+    sample['collisions'].append(support)
+    rest=dict(a=support,b='a0::part_06::link::collision',points=[[0,0,-.0125],[.01,0,-.01251]])
+    sample['contacts'].append(rest)
+    guard.check(sample)  # held, both fingers, resting on the bound support at floor_z
+    advance();rest['points'][1][2]=-.0123  # 0.2 mm above the certified floor
+    with pytest.raises(RuntimeError,match='not on certified floor'):guard.check(sample)
+    assert guard.pile_certificate['rejected']  # a rejection poisons the certificate: use a fresh guard below
+    # Binding present but the planner bound a different support: the resting contact is not exempt.
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    guard.support=dict(object_id='runtime::part_06',support_id='workcell::other_support',floor_z=-.0125,tool_link='tool')
+    guard.begin_pile_admission();guard.establish();advance()
+    sample['collisions'].append(support);sample['contacts'].append(dict(a=support,b='a0::part_06::link::collision',points=[[0,0,-.0125]]))
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::support_surface_table'):guard.check(sample)
+
+
+def test_contact_guard_refuses_acm_allowance_between_touch_links_and_bound_support(tmp_path,monkeypatch):
+    from types import SimpleNamespace as N
+    from simulator_execution import ContactGuard
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    names=['left','workcell::support_surface_table']
+    acm=N(entry_names=names,entry_values=[N(enabled=[False,True]),N(enabled=[True,False])])
+    support=dict(object_id='runtime::part_06',support_id='workcell::support_surface_table',floor_z=0.,tool_link='tool')
+    with pytest.raises(RuntimeError,match='SUPPORT_CONTACT_POLICY.*left'):
+        ContactGuard(guard.m,'runtime::part_06',[.025]*3,['left','right'],support,acm,'tool')
+    ContactGuard(guard.m,'runtime::part_06',[.025]*3,['left','right'],None,acm,'tool')  # no bound support: unchanged
+
+
 def test_pile_certificate_rejects_unknown_identity_stale_or_deep_contact(tmp_path,monkeypatch):
     guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
     for change in ('unknown','stale','deep','point','preclose'):
