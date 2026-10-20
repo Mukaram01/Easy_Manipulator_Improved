@@ -40,10 +40,13 @@ STAGES=[
     "PREPLAN_OPEN_GRIPPER","PREPLAN_RETREAT","PREPLAN_HOME",
 ]
 GATES=("resolve","cancel","telemetry","stationary","contact-release","full-cycle")
+# First-reply service retries (perceived_object_grasp_execute.SERVICE_RETRY_ALLOWANCE_S):
+# 11 clients x 2 retries x 10 s may precede or interleave the search in every session.
+SERVICE_RETRY_ALLOWANCE_S=220
 # Execution gates: the executor's owned waits (carried steps up to 300 s each, fixed 120 s
-# steps, release, holds) may total ~1.7 ks after the search; the last-resort subprocess
-# kill must come after the executor's own cancellation, never before it.
-EXECUTION_GATE_MARGIN_S=1800
+# steps, release, holds, service retries) may total ~2 ks after the search; the last-resort
+# subprocess kill must come after the executor's own cancellation, never before it.
+EXECUTION_GATE_MARGIN_S=2100
 EXPECTED_RESULTS={
     "cancel":"CANCELLATION_TRIAL_PASS",
     "telemetry":"MOTION_TELEMETRY_PASS",
@@ -537,7 +540,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         resolve_summary=session/"resolve/summary.json"
         run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,
                 resolve=True,search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120)
+            env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
         resolved=json.loads(resolve_summary.read_text());assert_plan(resolved,require_resolved=True)
 
         # The search may be long. Re-measure the same geometry and renew only
@@ -547,7 +550,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         plan_summary=session/"revalidate/summary.json"
         run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time,
                 search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120)
+            env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
         planned=json.loads(plan_summary.read_text());assert_plan(planned,require_resolved=True)
         report.update(selected_object_id=planned.get("selected_object_id"),
             selected_grasp_index=planned.get("selected_grasp_index"),

@@ -1380,7 +1380,8 @@ def test_carried_execution_wait_follows_plan_and_rtf_within_bounds():
     assert w(_traj(54.),.08)==300.                         # cap
     assert w(_traj(10.8),.086,cap=150.)==150.
     assert MODULE.planned_duration_s(_traj(2.25))==pytest.approx(2.25)
-    assert MODULE.MAX_OWNED_EXECUTION_S==3*300+6*120+30+90
+    assert MODULE.SERVICE_RETRY_ALLOWANCE_S==11*2*10
+    assert MODULE.MAX_OWNED_EXECUTION_S==3*300+6*120+30+90+220
 
 
 def test_execution_loop_derives_the_wait_only_for_carried_steps():
@@ -1398,3 +1399,107 @@ def test_execution_loop_derives_the_wait_only_for_carried_steps():
 def test_measured_fcl_passes_the_destination_only_while_carried_in_destination_phases():
     source=SCRIPT.read_text()
     assert "destination=contact_guard.destination if carried and contact_guard.phase in DESTINATION_PHASES else None" in source
+
+
+class _Client:
+    """Request/response client whose replies are scripted: None stands for a dropped reply."""
+    srv_name='/move_group/get_parameters'
+    def __init__(self,replies,available=True):
+        self.replies=list(replies); self.available=available; self.requests=[]; self.abandoned=[]
+    def wait_for_service(self,timeout_sec):
+        return self.available
+    def call_async(self,request):
+        self.requests.append(request)
+        reply=self.replies.pop(0)
+        if isinstance(reply,Exception):
+            def result():raise reply
+            return SimpleNamespace(done=lambda:True,result=result)
+        return SimpleNamespace(done=lambda:reply is not None,result=lambda:reply)
+    def remove_pending_request(self,future):
+        self.abandoned.append(future)
+
+
+def _spin():
+    calls=[]
+    def spin(node,future,timeout_sec):calls.append(timeout_sec)
+    spin.calls=calls
+    return spin
+
+
+def test_service_call_resends_the_identical_request_after_one_dropped_reply_and_reports_it():
+    client=_Client([None,'reply']); retries=[]; exchanged=set(); spin=_spin()
+    assert MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)=='reply'
+    assert client.requests==['request','request'] and len(client.abandoned)==1   # the dropped attempt is removed from the pending table
+    assert len(retries)==1 and retries[0]['service']==client.srv_name and retries[0]['attempt']==1
+    assert retries[0]['wall_ns']>0 and retries[0]['monotonic_ns']>0
+    assert spin.calls==[10.,10.]                           # each attempt keeps the existing 10 s wait
+    assert exchanged=={client}
+
+
+def test_service_call_is_bounded_and_fails_closed_after_the_last_attempt():
+    client=_Client([None,None,None]); retries=[]
+    with pytest.raises(RuntimeError,match=r'service timeout: /move_group/get_parameters \(3 attempts\)$'):
+        MODULE.call_service(None,client,'request',spin=_spin(),exchanged=set(),on_retry=retries.append)
+    assert len(client.requests)==3 and [r['attempt'] for r in retries]==[1,2]   # no retry record after the final failure
+    assert MODULE.SERVICE_ATTEMPTS==3 and MODULE.SERVICE_WAIT_S==10.
+
+
+def test_service_call_never_retries_a_client_after_its_first_exchange():
+    """The discovery race is per response reader: in-motion guard calls keep the single bounded wait."""
+    client=_Client(['first',None]); retries=[]; exchanged=set(); spin=_spin()
+    assert MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)=='first'
+    with pytest.raises(RuntimeError,match=r'service timeout: /move_group/get_parameters$'):
+        MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)
+    assert client.requests==['request','request'] and retries==[] and spin.calls==[10.,10.]
+    other=_Client([None,'reply'])                          # a new client (new response reader) gets its own first-reply retry
+    assert MODULE.call_service(None,other,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)=='reply'
+    assert len(retries)==1 and exchanged=={client,other}
+
+
+def test_service_call_spends_the_retry_budget_on_the_first_exchange_whatever_its_outcome():
+    client=_Client([None,None,None,None]); retries=[]; exchanged=set(); spin=_spin()
+    with pytest.raises(RuntimeError,match=r'\(3 attempts\)$'):
+        MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)
+    with pytest.raises(RuntimeError,match=r'service timeout: /move_group/get_parameters$'):   # later calls: one attempt only
+        MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)
+    assert len(client.requests)==4 and len(retries)==2 and exchanged=={client}
+
+
+def test_service_retry_client_count_matches_the_executor_source():
+    source=SCRIPT.read_text()
+    assert source.count('create_client(')==MODULE.SERVICE_RETRY_CLIENTS   # 7 long-lived + 4 inline controller_manager clients
+    assert MODULE.SERVICE_RETRY_ALLOWANCE_S==MODULE.SERVICE_RETRY_CLIENTS*(MODULE.SERVICE_ATTEMPTS-1)*MODULE.SERVICE_WAIT_S
+
+
+def test_service_call_does_not_send_when_the_service_is_unavailable():
+    missing=_Client(['reply'],available=False)
+    with pytest.raises(RuntimeError,match='service unavailable'):
+        MODULE.call_service(None,missing,'request',spin=_spin(),exchanged=set())
+    assert missing.requests==[]
+
+
+def test_service_call_prompt_reply_and_raised_result_need_no_retry():
+    prompt=_Client(['reply']); retries=[]
+    assert MODULE.call_service(None,prompt,'request',spin=_spin(),exchanged=set(),on_retry=retries.append)=='reply'
+    assert prompt.requests==['request'] and retries==[] and prompt.abandoned==[]
+    failing=_Client([ValueError('serialization'),'reply'])
+    with pytest.raises(ValueError,match='serialization'):               # a raised result propagates at once, as before
+        MODULE.call_service(None,failing,'request',spin=_spin(),exchanged=set(),on_retry=retries.append)
+    assert failing.requests==['request'] and retries==[]
+
+
+def test_executor_service_calls_use_the_first_reply_retry_and_record_retries_in_the_summary():
+    source=SCRIPT.read_text()
+    assert "return call_service(node, client, request, spin=rclpy.spin_until_future_complete, exchanged=exchanged_clients," in source
+    # the in-motion guard is armed only after apply_client's first exchange, so its per-tick apply() is never retried
+    assert "if apply_client not in exchanged_clients:raise RuntimeError('planning scene service not yet exchanged before owned execution')" in source
+    assert source.index("if apply_client not in exchanged_clients")<source.index("contact_guard.validate_current=measured_fcl")
+    assert "on_retry=lambda record: summary.setdefault('service_retries', []).append(" in source
+    assert "dict(record, stage=summary.get('current_stage'))))" in source
+    assert "rclpy.spin_until_future_complete(node, future, timeout_sec=10)" not in source   # the single-attempt path is gone
+    summary={'current_stage':'FILTER_TARGETS'}; exchanged=set()
+    on_retry=lambda record: summary.setdefault('service_retries', []).append(dict(record, stage=summary.get('current_stage')))
+    MODULE.call_service(None,_Client([None,'reply']),'request',spin=_spin(),exchanged=exchanged,on_retry=on_retry)
+    assert [(r['service'],r['attempt'],r['stage']) for r in summary['service_retries']]==[('/move_group/get_parameters',1,'FILTER_TARGETS')]
+    MODULE.call_service(None,_Client(['reply']),'request',spin=_spin(),exchanged=exchanged,on_retry=on_retry)
+    assert len(summary['service_retries'])==1                 # untouched when no retry happens

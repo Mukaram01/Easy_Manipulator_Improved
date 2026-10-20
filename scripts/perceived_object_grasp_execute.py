@@ -466,6 +466,41 @@ def contacts_in_planned_scene(contacts, planned, live):
     return result
 
 
+SERVICE_WAIT_S = 10.
+SERVICE_ATTEMPTS = 3
+# Distinct request/response clients one run creates (7 long-lived, 4 inline controller_manager
+# clients); only a client's first reply is retried, so this bounds the added service waiting.
+SERVICE_RETRY_CLIENTS = 11
+SERVICE_RETRY_ALLOWANCE_S = SERVICE_RETRY_CLIENTS * (SERVICE_ATTEMPTS - 1) * SERVICE_WAIT_S
+
+
+def call_service(node, client, request, *, spin, exchanged, attempts=SERVICE_ATTEMPTS, timeout_s=SERVICE_WAIT_S, on_retry=None):
+    """Request/response call for the MoveIt and ros2_control services, retried only on a client's first exchange.
+
+    rmw_fastrtps can drop a client's first reply ('failed to send response ... client will not
+    receive response' on the server side) because the client's response reader is not matched
+    yet. The race is per response reader, so only a client's first exchange may be re-sent;
+    afterwards, whatever its outcome, the client keeps the single bounded wait, so calls made
+    while a goal executes (the in-motion contact guard applies a scene diff on every tick) are
+    never lengthened. Every request re-sent here is an idempotent read or a declarative scene
+    update (attachment_diff(remove_world=True) is not, and is never applied through this path);
+    each retry is reported through on_retry as evidence.
+    """
+    if not client.wait_for_service(timeout_sec=timeout_s):
+        raise RuntimeError(f'service unavailable: {client.srv_name}')
+    budget = 1 if client in exchanged else attempts
+    exchanged.add(client)
+    for attempt in range(1, budget + 1):
+        future = client.call_async(request)
+        spin(node, future, timeout_sec=timeout_s)
+        if future.done() and future.result() is not None:
+            return future.result()
+        client.remove_pending_request(future)
+        if attempt < budget and on_retry is not None:
+            on_retry(dict(service=client.srv_name, attempt=attempt, wall_ns=time.time_ns(), monotonic_ns=time.monotonic_ns()))
+    raise RuntimeError(f'service timeout: {client.srv_name}' + (f' ({budget} attempts)' if budget > 1 else ''))
+
+
 CARRIED_STAGES = ('PREPLAN_LIFT', 'PREPLAN_TRANSFER', 'PREPLAN_PLACE')
 
 
@@ -483,9 +518,10 @@ def measured_real_time_factor(previous, current, *, floor=.02, min_wall_s=1.):
 EXECUTION_WAIT_BASE_S = 120.
 CARRIED_WAIT_CAP_S = 300.
 # Largest owned execution span of one cycle (3 carried caps, 6 fixed motion waits, the
-# release wait and hold/monitor windows): the runner's subprocess timeout must exceed
-# search_timeout plus this, so the executor's owned cancellation always fires first.
-MAX_OWNED_EXECUTION_S = 3 * CARRIED_WAIT_CAP_S + 6 * EXECUTION_WAIT_BASE_S + 30. + 90.
+# release wait, hold/monitor windows and the first-reply service retries): the runner's
+# subprocess timeout must exceed search_timeout plus this, so the executor's owned
+# cancellation always fires first.
+MAX_OWNED_EXECUTION_S = 3 * CARRIED_WAIT_CAP_S + 6 * EXECUTION_WAIT_BASE_S + 30. + 90. + SERVICE_RETRY_ALLOWANCE_S
 
 
 def planned_duration_s(trajectory):
@@ -1369,14 +1405,11 @@ def main():
                       message=message_to_ordereddict(message))
         (args.planning_trace/f'{trace_sequence:05d}-{label}.json').write_text(json.dumps(record, indent=2)+'\n')
         trace_sequence += 1
+    exchanged_clients = set()
     def call(client, request):
-        if not client.wait_for_service(timeout_sec=10):
-            raise RuntimeError(f'service unavailable: {client.srv_name}')
-        future = client.call_async(request)
-        rclpy.spin_until_future_complete(node, future, timeout_sec=10)
-        if not future.done() or future.result() is None:
-            raise RuntimeError(f'service timeout: {client.srv_name}')
-        return future.result()
+        return call_service(node, client, request, spin=rclpy.spin_until_future_complete, exchanged=exchanged_clients,
+                            on_retry=lambda record: summary.setdefault('service_retries', []).append(
+                                dict(record, stage=summary.get('current_stage'))))
     def scene_now():
         req = GetPlanningScene.Request()
         req.components.components = 1023
@@ -2466,6 +2499,8 @@ def main():
                 if math.dist(actual[:3],obj['pose'][:3])>.001:
                     raise RuntimeError('measured object moved since authoritative resolution')
             contact_guard.check(measurements.fresh());measurements.arm()
+            # The in-motion guard's scene update must already be past its first-exchange retry.
+            if apply_client not in exchanged_clients:raise RuntimeError('planning scene service not yet exchanged before owned execution')
             contact_guard.validate_current=measured_fcl
             execution_monitor=contact_guard.drain
             if args.simulator_commission=='cancel':

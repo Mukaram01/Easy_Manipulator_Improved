@@ -664,3 +664,7 @@ def test_execution_gate_timeout_outlasts_the_executors_maximal_owned_waits():
     margin=int(source.split("EXECUTION_GATE_MARGIN_S=")[1].split()[0])
     # The runner's last-resort kill must come after the executor's own owned cancellation.
     assert margin>=executor.MAX_OWNED_EXECUTION_S
+    # Resolve/revalidate sessions carry the same first-reply service-retry allowance as the executor.
+    allowance=int(source.split("SERVICE_RETRY_ALLOWANCE_S=")[1].split()[0])
+    assert allowance==executor.SERVICE_RETRY_ALLOWANCE_S
+    assert source.count("timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)")==2
