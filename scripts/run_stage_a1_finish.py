@@ -26,13 +26,13 @@ import time
 
 import yaml
 
-SOURCE_WORLD_GIT_BLOB="b687b5bf3c48e4a731d87c86f99e6c3696b21599"
+SOURCE_WORLD_GIT_BLOB="b533d6de2b454939f0ebedbcfb3aed5ccb16051b"
 # Separately pinned worlds. "pile" is the dense Stage-A benchmark; "sparse" is
 # the single-workpiece commissioning world used to qualify physical execution
 # apart from pile accessibility. Both use the same cell and gates.
 SOURCE_WORLDS={
     "pile":("stage_a0.sdf",SOURCE_WORLD_GIT_BLOB),
-    "sparse":("stage_a0_sparse.sdf","507dcd8df852fa12b1de93bc3026d826a9e54df2"),
+    "sparse":("stage_a0_sparse.sdf","73484f0b45b6239843720fb3370c0754bf02ebd3"),
 }
 STAGES=[
     "PREPLAN_APPROACH","PREPLAN_GRASP","PREPLAN_CLOSE_GRIPPER",

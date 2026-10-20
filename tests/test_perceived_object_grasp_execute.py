@@ -1393,3 +1393,8 @@ def test_execution_loop_derives_the_wait_only_for_carried_steps():
     assert MODULE.CARRIED_STAGES==('PREPLAN_LIFT','PREPLAN_TRANSFER','PREPLAN_PLACE')
     # the release trajectory and all non-carried steps keep their fixed waits
     assert "ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)" in source
+
+
+def test_measured_fcl_passes_the_destination_only_while_carried_in_destination_phases():
+    source=SCRIPT.read_text()
+    assert "destination=contact_guard.destination if carried and contact_guard.phase in DESTINATION_PHASES else None" in source

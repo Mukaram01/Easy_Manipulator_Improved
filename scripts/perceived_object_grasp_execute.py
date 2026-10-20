@@ -1618,9 +1618,11 @@ def main():
         rclpy.spin_until_future_complete(node,future,timeout_sec=.2)
         if not future.done() or not future.result():raise RuntimeError('measured collision query timed out')
         try:
+            from simulator_execution import DESTINATION_PHASES
             validate_measured_contacts(future.result(),contact_guard.support if carried else None,
                 bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate,
-                pile_guard=contact_guard if carried else None)
+                pile_guard=contact_guard if carried else None,
+                destination=contact_guard.destination if carried and contact_guard.phase in DESTINATION_PHASES else None)
         except RuntimeError:
             from rosidl_runtime_py.convert import message_to_ordereddict
             # Preserve the exact rejected query before cancellation changes the

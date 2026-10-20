@@ -174,7 +174,7 @@ that gate is allowed to move.
 
 The portable Stage-A physics world is tracked at
 `scenes/ur5_2f_test/worlds/stage_a0.sdf` and pinned by Git blob identity:
-`b687b5bf3c48e4a731d87c86f99e6c3696b21599`.
+`b533d6de2b454939f0ebedbcfb3aed5ccb16051b`.
 The runner also records its local SHA256 in the evidence report, but admission
 uses the Git blob identity so the check is reproducible across workstations.
 It contains a static support plane, a physical destination-bin floor/walls and

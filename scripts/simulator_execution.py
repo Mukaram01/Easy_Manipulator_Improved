@@ -593,6 +593,9 @@ class Measurements:
         self.log_path.with_suffix('.timing.json').write_text(json.dumps(self.timing))
 
 
+DESTINATION_PHASES=('place','opening','released')
+
+
 class ContactGuard:
     def __init__(self,measurements,object_id,dimensions,touch_links,support,baseline,tool):
         from ament_index_python.packages import get_package_prefix
@@ -606,8 +609,13 @@ class ContactGuard:
         # Touch links against the bound support are judged here by measured points on the
         # certified floor, never by a planning-scene allowance: refuse an ACM that would
         # let `(a,b) in self.allowed` admit a finger/support contact.
-        if support:
-            exposed=sorted(t for t in self.touch if (t,support['support_id']) in self.allowed or (support['support_id'],t) in self.allowed)
+        # The destination floor (receipt binding) is admitted the same way during place/opening/released.
+        binding=(getattr(measurements,'receipt',None) or {}).get('destination_geometry_binding')
+        self.destination=(dict(object_id=object_id,support_id=binding['object_id'],floor_z=float(binding['floor_z']))
+                          if binding and binding.get('object_id') and binding.get('floor_z') is not None else None)
+        for bound in (support,self.destination):
+            if not bound:continue
+            exposed=sorted(t for t in self.touch if (t,bound['support_id']) in self.allowed or (bound['support_id'],t) in self.allowed)
             if exposed:raise RuntimeError('SUPPORT_CONTACT_POLICY: touch links ACM-allowed against the bound support: '+', '.join(exposed))
         self.fingers=set();self.release_samples=[];self.held_samples=0;self.held_start_sim_ns=None;self.held_proof=None
         self.pile_objects={};self.pile_collisions={};self.pile_certificate=None
@@ -671,6 +679,7 @@ class ContactGuard:
             if self.object not in (a,b):continue
             neighbor=b if a==self.object else a
             if neighbor in self.touch or (self.support and neighbor==self.support['support_id']):continue
+            if self.destination and neighbor==self.destination['support_id'] and self.phase in DESTINATION_PHASES:continue
             if neighbor not in self.pile_objects:raise RuntimeError('uncertified target contact identity '+neighbor)
             if neighbor in result:raise RuntimeError('ambiguous duplicate pile contact '+neighbor)
             if not c.get('points') or any(len(p)!=3 or not all(math.isfinite(x) for x in p) for p in c['points']):
@@ -804,10 +813,11 @@ class ContactGuard:
         # The bound support's physics model carries the planning identity recorded in the
         # receipt (sparse world: model pick_support, collision object support_surface_table).
         # Only the exact bound link/collision maps; other geometry of that model stays unmapped.
-        binding=self.m.receipt.get('support_geometry_binding')
-        if (binding and binding.get('object_id') and len(fields)==4 and
-                fields[1:4]==[binding.get('model'),binding.get('link'),binding.get('collision')]):
-            return binding['object_id']
+        for key in ('support_geometry_binding','destination_geometry_binding'):
+            binding=self.m.receipt.get(key)
+            if (binding and binding.get('object_id') and len(fields)==4 and
+                    fields[1:4]==[binding.get('model'),binding.get('link'),binding.get('collision')]):
+                return binding['object_id']
         return link if model==self.m.receipt['model'] else ('runtime::'+model if model==self.name else 'workcell::'+model)
     def bottom(self,p):
         return min(p[2]+rotate_vector(p[3:],[x*self.dimensions[0]/2,y*self.dimensions[1]/2,z*self.dimensions[2]/2])[2] for x in (-1,1) for y in (-1,1) for z in (-1,1))
@@ -855,6 +865,12 @@ class ContactGuard:
                 if any(abs(p[2]-self.support['floor_z'])>.0001 for p in contact['points']):
                     raise RuntimeError('physical support point is not on certified floor')
                 support_contact=True;continue
+            if (selected and self.held and self.destination and self.phase in DESTINATION_PHASES and
+                    pair=={self.object,self.destination['support_id']}):
+                # The placed part may rest on the bound destination floor only (same floor-height rule).
+                if any(abs(p[2]-self.destination['floor_z'])>.0001 for p in contact['points']):
+                    raise RuntimeError('physical destination point is not on the bound floor')
+                continue
             raise RuntimeError('unpermitted physical contact: '+a+' / '+b)
         self.fingers=fingers
         if self.held and self.phase not in ('opening','released'):
@@ -1121,12 +1137,12 @@ def verify_settled_release(guard,held_sample):
         final_pose=p,settled=True,sim_ns=s['sim_ns'],samples=len(recent)))
 
 
-def validate_measured_contacts(response,support,expired,predicate=None,pile_guard=None):
+def validate_measured_contacts(response,support,expired,predicate=None,pile_guard=None,destination=None):
     """Use actual MoveIt contact geometry; never synthesize missing physics normals."""
     if response.valid:return
     if not response.contacts:
         raise RuntimeError('measured carried/robot collision or invalid state')
-    if support and predicate is None:
+    if (support or destination) and predicate is None:
         from ament_index_python.packages import get_package_prefix
         lib=ctypes.CDLL(str(Path(get_package_prefix('workcell_builder'))/'lib/libworkcell_support_contact.so'))
         predicate=lib.workcell_support_contact_valid
@@ -1141,6 +1157,11 @@ def validate_measured_contacts(response,support,expired,predicate=None,pile_guar
             if (types.get(target)==2 and types.get(neighbor)==1 and neighbor in allowed and
                 pile_guard.pile_predicate(target.encode(),neighbor.encode(),c.contact_body_1.encode(),
                     c.contact_body_2.encode(),(ctypes.c_double*7)(*point))):continue
+        if destination and types.get(destination['object_id'])==2 and types.get(destination['support_id'])==1:
+            # Carried part resting on the bound destination floor (place/opening/released only).
+            if predicate(destination['object_id'].encode(),destination['support_id'].encode(),c.contact_body_1.encode(),
+                         c.contact_body_2.encode(),destination['floor_z'],(ctypes.c_double*7)(*point)):continue
+            raise RuntimeError('measured FCL destination contact rejected: pair/normal/depth/position')
         if not support or expired:
             raise RuntimeError('measured carried/robot collision or invalid state')
         if types.get(support['object_id'])!=2 or types.get(support['support_id'])!=1:
