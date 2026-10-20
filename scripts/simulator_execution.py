@@ -795,6 +795,12 @@ class ContactGuard:
         if 'runtime::'+model in self.pile_objects:
             if collision not in self.pile_collisions:raise RuntimeError('unknown pile collision identity '+collision)
             return self.pile_collisions[collision]
+        # The bound support's physics model carries the planning identity recorded in the
+        # receipt (sparse world: model pick_support, collision object support_surface_table).
+        # Only the exact bound link/collision maps; other geometry of that model stays unmapped.
+        binding=self.m.receipt.get('support_geometry_binding')
+        if binding and fields[1:4]==[binding.get('model'),binding.get('link'),binding.get('collision')]:
+            return binding['object_id']
         return link if model==self.m.receipt['model'] else ('runtime::'+model if model==self.name else 'workcell::'+model)
     def bottom(self,p):
         return min(p[2]+rotate_vector(p[3:],[x*self.dimensions[0]/2,y*self.dimensions[1]/2,z*self.dimensions[2]/2])[2] for x in (-1,1) for y in (-1,1) for z in (-1,1))

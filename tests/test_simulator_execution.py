@@ -187,6 +187,41 @@ def test_recorded_five_neighbor_certificate_uses_measured_geometry(tmp_path,monk
         guard.identity('a0::part_00::other_link::collision')
 
 
+SUPPORT_BINDING=dict(object_id='workcell::support_surface_table',model='pick_support',link='support_link',collision='support_collision')
+
+
+def test_identity_maps_only_the_bound_support_collision_to_its_planning_object(tmp_path,monkeypatch):
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    assert guard.identity('a0::pick_support::support_link::support_collision')=='workcell::pick_support'
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    assert guard.identity('a0::pick_support::support_link::support_collision')=='workcell::support_surface_table'
+    # Other geometry of the bound model, and other models, keep the conventional identity.
+    assert guard.identity('a0::pick_support::support_link::other_collision')=='workcell::pick_support'
+    assert guard.identity('a0::pick_support::other_link::support_collision')=='workcell::pick_support'
+    assert guard.identity('a0::target_bin_physics::bin_link::floor')=='workcell::target_bin_physics'
+
+
+def test_pile_contacts_exempt_the_resting_contact_on_the_bound_support(tmp_path,monkeypatch):
+    # run-full-cycle-130349/04-stationary: part_04 pinched by both fingertips while still resting on
+    # pick_support was rejected as 'uncertified target contact identity workcell::pick_support'.
+    guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.support=dict(object_id='runtime::part_06',support_id='workcell::support_surface_table',floor_z=0.,tool_link='tool0')
+    support='a0::pick_support::support_link::support_collision'
+    sample['collisions']+= [support,'a0::workcell_robot::left::collision','a0::workcell_robot::right::collision']
+    sample['contacts']=[dict(a=support,b='a0::part_06::link::collision',points=[[0.41,-0.19,-6e-7],[0.41,-0.21,-3e-5]]),
+        dict(a='a0::part_06::link::collision',b='a0::workcell_robot::left::collision',points=[[0,0,0]]),
+        dict(a='a0::part_06::link::collision',b='a0::workcell_robot::right::collision',points=[[0,0,0]])]
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::pick_support'):
+        guard.pile_contacts(sample)
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    assert guard.pile_contacts(sample)=={}
+    # An unbound neighbor is still rejected with the binding present.
+    sample['contacts'].append(dict(a='a0::part_06::link::collision',b='a0::target_bin_physics::bin_link::floor',points=[[0,0,0]]))
+    sample['collisions'].append('a0::target_bin_physics::bin_link::floor')
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::target_bin_physics'):
+        guard.pile_contacts(sample)
+
+
 def test_pile_certificate_rejects_unknown_identity_stale_or_deep_contact(tmp_path,monkeypatch):
     guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
     for change in ('unknown','stale','deep','point','preclose'):
