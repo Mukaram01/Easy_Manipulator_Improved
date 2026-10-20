@@ -40,6 +40,10 @@ STAGES=[
     "PREPLAN_OPEN_GRIPPER","PREPLAN_RETREAT","PREPLAN_HOME",
 ]
 GATES=("resolve","cancel","telemetry","stationary","contact-release","full-cycle")
+# Execution gates: the executor's owned waits (carried steps up to 300 s each, fixed 120 s
+# steps, release, holds) may total ~1.7 ks after the search; the last-resort subprocess
+# kill must come after the executor's own cancellation, never before it.
+EXECUTION_GATE_MARGIN_S=1800
 EXPECTED_RESULTS={
     "cancel":"CANCELLATION_TRIAL_PASS",
     "telemetry":"MOTION_TELEMETRY_PASS",
@@ -562,7 +566,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         gate_summary=session/f"{gate}/summary.json"
         run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
                 gate=gate,evidence=evidence,search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+300)
+            env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+EXECUTION_GATE_MARGIN_S)
         result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity)
         report.update(status="PASS",result=result["result"],selected_object_id=result.get("selected_object_id"),
                       selected_grasp_index=result.get("selected_grasp_index"))

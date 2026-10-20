@@ -1377,8 +1377,10 @@ def test_carried_execution_wait_follows_plan_and_rtf_within_bounds():
     assert w(_traj(0.),.08)==120.
     assert w(_traj(4.1),.5)==120.                          # fast simulation never shortens the base
     assert w(_traj(10.8),.086)==pytest.approx(10.8/.086*1.5+30)   # run-135626 lift-window RTF: ~218 s
-    assert w(_traj(54.),.08)==600.                         # cap
+    assert w(_traj(54.),.08)==300.                         # cap
     assert w(_traj(10.8),.086,cap=150.)==150.
+    assert MODULE.planned_duration_s(_traj(2.25))==pytest.approx(2.25)
+    assert MODULE.MAX_OWNED_EXECUTION_S==3*300+6*120+30+90
 
 
 def test_execution_loop_derives_the_wait_only_for_carried_steps():
@@ -1387,6 +1389,7 @@ def test_execution_loop_derives_the_wait_only_for_carried_steps():
     assert "if step['stage'] in CARRIED_STAGES:" in source
     assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)" in source
     assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)" not in source
+    assert "previous_start=stamp(execution_mark),start=stamp(start_sample)" in source
     assert MODULE.CARRIED_STAGES==('PREPLAN_LIFT','PREPLAN_TRANSFER','PREPLAN_PLACE')
     # the release trajectory and all non-carried steps keep their fixed waits
     assert "ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)" in source

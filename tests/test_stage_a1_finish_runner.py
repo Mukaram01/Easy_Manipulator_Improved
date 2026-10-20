@@ -653,3 +653,14 @@ time.sleep(30)
             finally:os.close(child_fd)
             if process.poll() is None:process.send_signal(signal.SIGINT)
             process.wait(timeout=3)
+
+
+def test_execution_gate_timeout_outlasts_the_executors_maximal_owned_waits():
+    import importlib.util
+    spec=importlib.util.spec_from_file_location("executor_under_test",SCRIPT.parent/"perceived_object_grasp_execute.py")
+    executor=importlib.util.module_from_spec(spec);spec.loader.exec_module(executor)
+    source=SCRIPT.read_text()
+    assert "timeout=args.search_timeout+EXECUTION_GATE_MARGIN_S" in source
+    margin=int(source.split("EXECUTION_GATE_MARGIN_S=")[1].split()[0])
+    # The runner's last-resort kill must come after the executor's own owned cancellation.
+    assert margin>=executor.MAX_OWNED_EXECUTION_S

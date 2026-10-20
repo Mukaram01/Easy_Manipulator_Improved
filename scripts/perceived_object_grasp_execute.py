@@ -480,7 +480,20 @@ def measured_real_time_factor(previous, current, *, floor=.02, min_wall_s=1.):
     return max(floor, sim / wall)
 
 
-def carried_execution_wait(trajectory, rtf, *, base=120., factor=1.5, margin=30., cap=600.):
+EXECUTION_WAIT_BASE_S = 120.
+CARRIED_WAIT_CAP_S = 300.
+# Largest owned execution span of one cycle (3 carried caps, 6 fixed motion waits, the
+# release wait and hold/monitor windows): the runner's subprocess timeout must exceed
+# search_timeout plus this, so the executor's owned cancellation always fires first.
+MAX_OWNED_EXECUTION_S = 3 * CARRIED_WAIT_CAP_S + 6 * EXECUTION_WAIT_BASE_S + 30. + 90.
+
+
+def planned_duration_s(trajectory):
+    points = trajectory.joint_trajectory.points
+    return (points[-1].time_from_start.sec + points[-1].time_from_start.nanosec * 1e-9) if points else 0.
+
+
+def carried_execution_wait(trajectory, rtf, *, base=EXECUTION_WAIT_BASE_S, factor=1.5, margin=30., cap=CARRIED_WAIT_CAP_S):
     """Owned result wait for a carried step: planned duration over the measured RTF, bounded.
 
     The fixed 120 s wait was sized for 20 % motions. Carried phases are planned slower,
@@ -488,8 +501,7 @@ def carried_execution_wait(trajectory, rtf, *, base=120., factor=1.5, margin=30.
     factor with margin; it never drops below the base nor exceeds the cap. Freshness,
     stop and retention guards run unchanged inside the wait.
     """
-    points = trajectory.joint_trajectory.points
-    duration = (points[-1].time_from_start.sec + points[-1].time_from_start.nanosec * 1e-9) if points else 0.
+    duration = planned_duration_s(trajectory)
     if rtf is None or duration <= 0.:
         return base
     return min(cap, max(base, duration / rtf * factor + margin))
@@ -1828,7 +1840,7 @@ def main():
         # stays at 2 %: measured tracking and grasp slip can consume micron-scale
         # side gaps. The 20 % transfer accelerated the held part at ~1 g and pivoted
         # it 0.69 deg in the pinch (run-full-cycle-135626); 10 % quarters that
-        # acceleration while the trajectory still fits the 120 s execution wait.
+        # acceleration; the owned execution wait follows the planned duration.
         simulator = getattr(args, 'backend', 'fake') == 'simulator'
         motion_scaling = (.02 if name == 'PREPLAN_LIFT' else
                           .1 if name in ('PREPLAN_TRANSFER', 'PREPLAN_PLACE') else .2) if simulator else .2
@@ -2504,14 +2516,15 @@ def main():
                     if step['stage']=='PREPLAN_LIFT':contact_guard.begin_pile_separation(measurements.fresh())
                     controlled_cancel=args.simulator_commission=='cancel' and step['stage']=='PREPLAN_APPROACH'
                     summary['execution_attempted']=True
-                    wait=120.
+                    wait=EXECUTION_WAIT_BASE_S
                     start_sample=measurements.fresh()
                     if step['stage'] in CARRIED_STAGES:
                         rtf=measured_real_time_factor(execution_mark,start_sample)
                         wait=carried_execution_wait(step['trajectory'],rtf)
-                        last=step['trajectory'].joint_trajectory.points[-1].time_from_start
+                        stamp=lambda smp:{k:smp[k] for k in ('iteration','sim_ns','wall_ns')} if smp else None
                         summary.setdefault('owned_execution_waits',[]).append(dict(stage=label,
-                            planned_duration_s=last.sec+last.nanosec*1e-9,measured_rtf=rtf,wait_s=wait))
+                            planned_duration_s=planned_duration_s(step['trajectory']),measured_rtf=rtf,wait_s=wait,
+                            previous_start=stamp(execution_mark),start=stamp(start_sample)))
                     execution_mark=start_sample
                     result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)
                     if step['stage']=='PREPLAN_CLOSE_GRIPPER':summary['close_terminal_wall_ns']=time.time_ns()
