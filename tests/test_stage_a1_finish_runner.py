@@ -668,3 +668,181 @@ def test_execution_gate_timeout_outlasts_the_executors_maximal_owned_waits():
     allowance=int(source.split("SERVICE_RETRY_ALLOWANCE_S=")[1].split()[0])
     assert allowance==executor.SERVICE_RETRY_ALLOWANCE_S
     assert source.count("timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)")==2
+
+
+# --- execution modes: full, targeted, fast -----------------------------------------------------
+
+@pytest.fixture
+def stubbed_preflight(monkeypatch,bridge_preflight):
+    monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
+    calls=[]
+    def build(*args):
+        calls.append('build');return {'sha256':'test','moveit_overlay':{'library':{'sha256':'test-tem'}}}
+    monkeypatch.setattr(MODULE,'build_commissioning',build)
+    import simulator_backend
+    monkeypatch.setattr(simulator_backend,'moveit_overlay_identity',lambda data:data,raising=False)
+    return calls
+
+
+def record_sessions(monkeypatch,fail_at=None,interrupt_at=None):
+    seen=[]
+    def session(args,repo,world,sha,gate,index,prior):
+        seen.append((gate,index,dict(prior)))
+        directory=args.output/f'{index:02d}-{gate}';directory.mkdir()
+        (directory/'session-report.json').write_text(json.dumps({'gate':gate,'status':'BLOCKED','shutdown':{'clean':True}}))
+        if gate==fail_at:raise RuntimeError(f'{gate} gate returned FAIL')
+        if gate==interrupt_at:raise KeyboardInterrupt()
+        path=directory/'summary.json';path.write_text('{}');return path
+    monkeypatch.setattr(MODULE,'one_session',session)
+    return seen
+
+
+@pytest.mark.parametrize('gate',['resolve','cancel','telemetry','stationary','contact-release'])
+def test_targeted_mode_runs_exactly_the_selected_gate_in_its_own_session(tmp_path,monkeypatch,stubbed_preflight,gate):
+    seen=record_sessions(monkeypatch)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','targeted','--gate',gate])==0
+    index=MODULE.GATES.index(gate)+1
+    assert seen==[(gate,index,{})]                       # same session index (domain, partition) as in the sequence
+    assert stubbed_preflight==['build']                  # the same preflight build and C++ tests run first
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['status']=='PASS' and report['mode']=='targeted' and report['gate']==gate
+    assert report['stage_a_acceptance'] is False and report['scope']=='DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE'
+    assert list(report['gates'])==[gate] and report['gates'][gate]['status']=='PASS'
+    assert not (output/'stage-a1-final-report.json').exists()      # never written where acceptance is read
+    assert report['duration_s']>=0 and report['gates'][gate]['duration_s']>=0
+
+
+def test_targeted_full_cycle_is_refused_because_it_needs_same_run_prerequisite_evidence(tmp_path,monkeypatch,stubbed_preflight,capsys):
+    seen=record_sessions(monkeypatch)
+    with pytest.raises(SystemExit):
+        MODULE.main(['--output',str(tmp_path/'evidence'),'--mode','targeted','--gate','full-cycle'])
+    assert 'cannot run alone' in capsys.readouterr().err
+    assert seen==[] and stubbed_preflight==[] and not (tmp_path/'evidence').exists()
+
+
+@pytest.mark.parametrize('argv,message',[
+    (['--mode','targeted'],'targeted mode requires --gate'),
+    (['--gate','telemetry'],'use --mode targeted'),
+    (['--mode','targeted','--gate','telemetry','--through','telemetry'],'full sequence only'),
+    (['--mode','fast','--gate','telemetry'],'fast mode runs no gate'),
+    (['--mode','fast','--through','resolve'],'full sequence only'),
+    (['--mode','fast','--gil-watchdog-ms','100'],'fast mode runs none'),
+    (['--mode','targeted','--gate','resolve','--gil-watchdog-ms','10'],'within [50, 1000] ms'),
+])
+def test_mode_arguments_that_could_blur_scope_are_rejected_before_anything_runs(tmp_path,monkeypatch,stubbed_preflight,capsys,argv,message):
+    seen=record_sessions(monkeypatch)
+    with pytest.raises(SystemExit):
+        MODULE.main(['--output',str(tmp_path/'evidence'),*argv])
+    assert message in capsys.readouterr().err
+    assert seen==[] and stubbed_preflight==[] and not (tmp_path/'evidence').exists()
+
+
+def test_targeted_gate_failure_is_reported_failed_and_blocked_with_its_session_shutdown(tmp_path,monkeypatch,stubbed_preflight):
+    record_sessions(monkeypatch,fail_at='stationary')
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','targeted','--gate','stationary'])==1
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['status']=='BLOCKED' and report['stage_a_acceptance'] is False
+    gate=report['gates']['stationary']
+    assert gate['status']=='FAILED' and 'stationary gate returned FAIL' in gate['failure']
+    assert gate['session_report']=='04-stationary/session-report.json' and gate['shutdown']=={'clean':True}
+
+
+def test_failed_preflight_blocks_targeted_run_before_any_session(tmp_path,monkeypatch,bridge_preflight):
+    monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
+    def build(*args):raise RuntimeError('commissioning library does not match its build manifest')
+    monkeypatch.setattr(MODULE,'build_commissioning',build)
+    seen=record_sessions(monkeypatch)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','targeted','--gate','telemetry'])==1
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['status']=='BLOCKED' and report['gates']=={} and seen==[]
+    assert report['failure']=='commissioning library does not match its build manifest'
+
+
+def test_operator_interrupt_records_the_gate_and_blocked_report_then_propagates(tmp_path,monkeypatch,stubbed_preflight):
+    record_sessions(monkeypatch,interrupt_at='telemetry')
+    output=tmp_path/'evidence'
+    with pytest.raises(KeyboardInterrupt):
+        MODULE.main(['--output',str(output),'--mode','targeted','--gate','telemetry'])
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['status']=='BLOCKED' and report['failure']=='interrupted: KeyboardInterrupt'
+    assert report['gates']['telemetry']['status']=='FAILED'
+    assert report['gates']['telemetry']['failure']=='interrupted: KeyboardInterrupt'
+
+
+def test_full_mode_keeps_the_cumulative_sequence_and_only_a_complete_pass_is_acceptance(tmp_path,monkeypatch,stubbed_preflight):
+    seen=record_sessions(monkeypatch)
+    output=tmp_path/'full'
+    assert MODULE.main(['--output',str(output)])==0
+    assert [(gate,index) for gate,index,_ in seen]==list(zip(MODULE.GATES,range(1,7)))
+    assert set(seen[-1][2])=={'resolve','cancel','telemetry','stationary','contact-release'}   # prerequisites flow to full-cycle
+    report=json.loads((output/'stage-a1-final-report.json').read_text())
+    assert report['status']=='PASS' and report['mode']=='full' and report['through']=='full-cycle'
+    assert report['stage_a_acceptance'] is True and report['scope']=='STAGE_A_ACCEPTANCE_SEQUENCE'
+    partial=tmp_path/'partial';seen.clear()
+    assert MODULE.main(['--output',str(partial),'--through','stationary'])==0
+    report=json.loads((partial/'stage-a1-final-report.json').read_text())
+    assert report['status']=='PASS' and report['stage_a_acceptance'] is False   # a passing prefix is not acceptance
+    failed=tmp_path/'failed';record_sessions(monkeypatch,fail_at='full-cycle')
+    assert MODULE.main(['--output',str(failed)])==1
+    assert json.loads((failed/'stage-a1-final-report.json').read_text())['stage_a_acceptance'] is False
+
+
+def test_fast_mode_runs_build_and_focused_tests_without_any_session_or_world(tmp_path,monkeypatch,stubbed_preflight):
+    seen=record_sessions(monkeypatch)
+    def no_world(*args):pytest.fail('fast mode must not resolve a simulator world')
+    monkeypatch.setattr(MODULE,'discover_source_world',no_world)
+    calls=[]
+    def fake_run(command,*,env,cwd,log,timeout,check=True):
+        assert 'WORKCELL_SIMULATOR_PHYSICS_ROOT' not in env                        # unit suites run hermetically
+        calls.append((command,env.get('ROS_DOMAIN_ID'),timeout,check))
+        Path(log).write_text('........\n724 passed in 27.76s\n')
+        return type('Completed',(),{'returncode':0})()
+    monkeypatch.setattr(MODULE,'run',fake_run)
+    monkeypatch.setenv('WORKCELL_SIMULATOR_PHYSICS_ROOT','/qualified/physics')   # runtime-only selection
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','fast'])==0
+    assert seen==[] and stubbed_preflight==['build']
+    (command,domain,timeout,check),=calls
+    assert command[1:5]==['-m','pytest','-q','-p'] and tuple(command[6:])==MODULE.FAST_TEST_FILES
+    assert domain=='200' and timeout==MODULE.FAST_TEST_TIMEOUT_S and check is False
+    report=json.loads((output/'stage-a1-fast-report.json').read_text())
+    assert report['status']=='PASS' and report['mode']=='fast' and report['stage_a_acceptance'] is False
+    assert report['fast_tests']['counts']=={'passed':724} and report['gates']=={}
+    assert report['fast_tests']['env_excluded']==['WORKCELL_SIMULATOR_PHYSICS_ROOT']
+    assert not (output/'stage-a1-final-report.json').exists()
+
+
+@pytest.mark.parametrize('tail,returncode',[('3 failed, 721 passed in 27s',1),('1 error in 9.6s',2),('',0),('no tests ran in 0.01s',5)])
+def test_fast_mode_reports_failed_tests_as_blocked(tmp_path,monkeypatch,stubbed_preflight,tail,returncode):
+    def fake_run(command,*,env,cwd,log,timeout,check=True):
+        Path(log).write_text(tail+'\n');return type('Completed',(),{'returncode':returncode})()
+    monkeypatch.setattr(MODULE,'run',fake_run)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','fast'])==1
+    report=json.loads((output/'stage-a1-fast-report.json').read_text())
+    assert report['status']=='BLOCKED' and 'focused Stage-A tests failed' in report['failure']
+
+
+def test_fast_test_list_exists_and_covers_the_runner_and_executor_suites():
+    repo=SCRIPT.parents[1]
+    assert all((repo/name).is_file() for name in MODULE.FAST_TEST_FILES)
+    for name in ('tests/test_stage_a1_finish_runner.py','tests/test_perceived_object_grasp_execute.py',
+                 'tests/test_simulator_execution.py','tests/test_grasp_recovery_runtime.py'):
+        assert name in MODULE.FAST_TEST_FILES
+
+
+def test_gil_watchdog_flag_reaches_executor_sessions_only_when_requested(tmp_path,monkeypatch,stubbed_preflight):
+    import os
+    observed=[]
+    def session(args,repo,world,sha,gate,index,prior):
+        observed.append(os.environ.get(MODULE.GIL_WATCHDOG_ENV))
+        path=args.output/'summary.json';path.write_text('{}');return path
+    monkeypatch.setattr(MODULE,'one_session',session)
+    monkeypatch.setenv(MODULE.GIL_WATCHDOG_ENV,'999')                # an inherited value is never used implicitly
+    assert MODULE.main(['--output',str(tmp_path/'a'),'--mode','targeted','--gate','resolve'])==0
+    assert MODULE.main(['--output',str(tmp_path/'b'),'--mode','targeted','--gate','resolve','--gil-watchdog-ms','100'])==0
+    assert observed==[None,'100.0']
+    assert json.loads((tmp_path/'b'/'stage-a1-targeted-report.json').read_text())['gil_watchdog_ms']==100.0

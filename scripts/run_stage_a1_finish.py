@@ -6,6 +6,15 @@ fresh simulator-locked TaskIntent scene from the tracked canonical UR5+2F scene,
 rebuilds/tests the opt-in commissioning capability, re-qualifies cancellation
 on the current binary, and then advances only through measured gates that pass.
 It never targets real hardware and never replays an old trajectory.
+
+Modes (--mode):
+  full      the six-gate acceptance sequence (default; --through stops early).
+            Only a full run through full-cycle can report Stage-A acceptance.
+  targeted  one gate (--gate) in its own fresh, owned session with the same
+            preflight, isolation, resolve, revalidation, gate checks and owned
+            cleanup as in a full run. Diagnostic only: never acceptance.
+  fast      no ROS launch: the commissioning build with its C++ unit tests and
+            the focused Stage-A Python tests. Diagnostic only: never acceptance.
 """
 from __future__ import annotations
 
@@ -47,6 +56,30 @@ SERVICE_RETRY_ALLOWANCE_S=220
 # steps, release, holds, service retries) may total ~2 ks after the search; the last-resort
 # subprocess kill must come after the executor's own cancellation, never before it.
 EXECUTION_GATE_MARGIN_S=2100
+MODES=("full","targeted","fast")
+# full-cycle consumes the cancel, telemetry, stationary and contact-release
+# evidence of the same run (executor --commission-evidence); it cannot run alone.
+TARGETABLE_GATES=GATES[:-1]
+REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-report.json",
+              "fast":"stage-a1-fast-report.json"}
+# Focused Stage-A Python suites: every test that imports the Stage-A executor,
+# simulator, runner, destination or recovery code. None launches ROS or Gazebo.
+FAST_TEST_FILES=(
+    "tests/test_closure_clearance.py","tests/test_destination_binding.py",
+    "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
+    "tests/test_grasp_recovery_boundary.py","tests/test_grasp_recovery_runtime.py",
+    "tests/test_perceived_object_grasp_execute.py","tests/test_physical_destination.py",
+    "tests/test_retention_cancel_fault.py","tests/test_runtime_pick_inputs.py",
+    "tests/test_simulator_backend.py","tests/test_simulator_box_motion.py",
+    "tests/test_simulator_execution.py","tests/test_stage_a1_finish_runner.py",
+    "tests/test_task_intent_resolver.py","tests/test_transactional_pick_cycle.py",
+)
+FAST_TEST_TIMEOUT_S=600
+# Runtime-only selections the launch consumes. Unit fixtures build their own mock
+# worlds; a test that needs one of these sets it itself (monkeypatch).
+FAST_TEST_ENV_EXCLUDED=("WORKCELL_SIMULATOR_PHYSICS_ROOT","WORKCELL_GIL_WATCHDOG_MS","WORKCELL_PLANNING_TRACE_DIR")
+# Opt-in executor diagnostic (simulator_execution.GilHoldWatch); bounds match its own check.
+GIL_WATCHDOG_ENV="WORKCELL_GIL_WATCHDOG_MS"
 EXPECTED_RESULTS={
     "cancel":"CANCELLATION_TRIAL_PASS",
     "telemetry":"MOTION_TELEMETRY_PASS",
@@ -589,6 +622,26 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             raise RuntimeError(shutdown_failure)
 
 
+def run_fast_tests(repo:Path,output:Path,env:dict)->dict:
+    """Run the focused Stage-A Python suites; a failure or a missing suite is FAILED."""
+    missing=[name for name in FAST_TEST_FILES if not (repo/name).is_file()]
+    if missing:raise RuntimeError("focused Stage-A test files missing: "+", ".join(missing))
+    log=output/"fast-tests.log";started=time.monotonic()
+    test_env={key:value for key,value in env.items() if key not in FAST_TEST_ENV_EXCLUDED}
+    test_env.update(ROS_DOMAIN_ID="200",ROS_LOCALHOST_ONLY="1",ROS2CLI_DISABLE_DAEMON="1")
+    completed=run([sys.executable,"-m","pytest","-q","-p","no:cacheprovider",*FAST_TEST_FILES],
+        env=test_env,cwd=repo,log=log,timeout=FAST_TEST_TIMEOUT_S,check=False)
+    lines=[line for line in log.read_text(errors="replace").splitlines() if line.strip()]
+    counts={key:int(value) for value,key in re.findall(r"(\d+) (passed|failed|errors?|skipped)",lines[-1] if lines else "")}
+    result={"status":"PASS" if completed.returncode==0 and counts.get("passed",0)>0 and not counts.get("failed")
+                and not counts.get("error") and not counts.get("errors") else "FAILED",
+            "returncode":completed.returncode,"counts":counts,"files":list(FAST_TEST_FILES),
+            "env_excluded":sorted(key for key in FAST_TEST_ENV_EXCLUDED if key in env),
+            "log":str(log.relative_to(output)),"duration_s":round(time.monotonic()-started,1)}
+    if result["status"]!="PASS":raise RuntimeError(f"focused Stage-A tests failed: {counts or lines[-1:] }; log={log}")
+    return result
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-world",type=Path)
@@ -601,7 +654,13 @@ def main(argv=None):
     parser.add_argument("--segment-planning-time",type=float,default=3.0)
     parser.add_argument("--search-timeout",type=float,default=300.,
         help="Bounded candidate search time in seconds, including continuous collision certification")
-    parser.add_argument("--through",choices=GATES,default="full-cycle")
+    parser.add_argument("--through",choices=GATES,
+        help="full mode only: last gate of the sequence (default full-cycle)")
+    parser.add_argument("--mode",choices=MODES,default="full",
+        help="full: six-gate acceptance; targeted: one gate in its own session; fast: no ROS launch")
+    parser.add_argument("--gate",choices=GATES,help="targeted mode only: the single gate to run")
+    parser.add_argument("--gil-watchdog-ms",type=float,
+        help="opt-in executor diagnostic: dump every thread's stack when one holds the GIL this long")
     args=parser.parse_args(argv)
 
     repo=Path(__file__).resolve().parents[1];workspace=repo.parent.parent
@@ -610,11 +669,34 @@ def main(argv=None):
     if not 0<args.segment_planning_time<=10:parser.error("segment planning time must be in (0,10]")
     if not math.isfinite(args.search_timeout) or args.search_timeout<=0:
         parser.error("search timeout must be finite and positive")
+    if args.mode=="full":
+        if args.gate is not None:parser.error("--gate selects a targeted run; use --mode targeted")
+        args.through=args.through or "full-cycle"
+    else:
+        if args.through is not None:parser.error("--through applies to the full sequence only")
+        if args.mode=="fast" and args.gate is not None:parser.error("fast mode runs no gate")
+        if args.mode=="targeted":
+            if args.gate is None:parser.error("targeted mode requires --gate")
+            if args.gate not in TARGETABLE_GATES:
+                parser.error("full-cycle consumes the cancel, telemetry, stationary and contact-release "
+                             "evidence of the same run and cannot run alone; use --mode full")
+    if args.gil_watchdog_ms is not None:
+        if args.mode=="fast":parser.error("the GIL watchdog observes executor sessions; fast mode runs none")
+        if not math.isfinite(args.gil_watchdog_ms) or not 50<=args.gil_watchdog_ms<=1000:
+            parser.error("GIL watchdog threshold must be within [50, 1000] ms")
+        os.environ[GIL_WATCHDOG_ENV]=str(args.gil_watchdog_ms)
+    else:os.environ.pop(GIL_WATCHDOG_ENV,None)
     args.output.mkdir(parents=True)
-    overall={"status":"BLOCKED","gates":{},"preflight":None,
+    started_wall_ns=time.time_ns();started=time.monotonic()
+    overall={"status":"BLOCKED","mode":args.mode,"stage_a_acceptance":False,
+             "scope":"STAGE_A_ACCEPTANCE_SEQUENCE" if args.mode=="full" else "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE",
+             "gates":{},"preflight":None,"started_wall_ns":started_wall_ns,
              "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time}
+    if args.mode=="full":overall["through"]=args.through
+    if args.mode=="targeted":overall["gate"]=args.gate
+    if args.gil_watchdog_ms is not None:overall["gil_watchdog_ms"]=args.gil_watchdog_ms
     try:
-        source_world=discover_source_world(args.source_world,workspace,args.world_profile)
+        if args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
         bridge=active_bridge_overlay()
         args.bridge_overlay_identity=bridge_overlay_identity(bridge)
@@ -622,16 +704,26 @@ def main(argv=None):
         args.moveit_overlay_identity=moveit_overlay_identity(build["moveit_overlay"])
         overall["preflight"]={"repo_head":subprocess.check_output(["git","rev-parse","HEAD"],cwd=repo,text=True).strip(),
             "repo_dirty":bool(subprocess.check_output(["git","status","--porcelain"],cwd=repo,text=True).strip()),
-            "source_world":str(source_world),"world_profile":args.world_profile,
-            "source_world_git_blob":SOURCE_WORLDS[args.world_profile][1],
-            "source_world_sha256":sha256(source_world),"commissioning_build":build,"bridge_overlay":bridge}
+            "commissioning_build":build,"bridge_overlay":bridge,
+            "duration_s":round(time.monotonic()-started,1)}
+        if args.mode=="fast":
+            overall["fast_tests"]=run_fast_tests(repo,args.output,dict(os.environ))
+            overall["status"]="PASS";return 0
+        overall["preflight"].update(source_world=str(source_world),world_profile=args.world_profile,
+            source_world_git_blob=SOURCE_WORLDS[args.world_profile][1],source_world_sha256=sha256(source_world))
         prior={}
-        selected=GATES[:GATES.index(args.through)+1]
-        for index,gate in enumerate(selected,1):
+        # A targeted gate keeps its full-run session index, so it gets the same
+        # ROS domain and partition as in the sequence and its own fresh session.
+        selected=[(GATES.index(args.gate)+1,args.gate)] if args.mode=="targeted" else \
+            list(enumerate(GATES[:GATES.index(args.through)+1],1))
+        last=selected[-1][1]
+        for index,gate in selected:
+            began=time.monotonic()
             try:
                 path=one_session(args,repo,source_world,build["sha256"],gate,index,prior)
-            except Exception as exc:
-                failed={"status":"FAILED","failure":str(exc)}
+            except BaseException as exc:
+                failed={"status":"FAILED","failure":str(exc) if isinstance(exc,Exception) else f"interrupted: {type(exc).__name__}",
+                        "duration_s":round(time.monotonic()-began,1)}
                 session_report=args.output/f"{index:02d}-{gate}"/"session-report.json"
                 if session_report.is_file():
                     failed["session_report"]=str(session_report.relative_to(args.output))
@@ -640,14 +732,18 @@ def main(argv=None):
                         if key in recorded:failed[key]=recorded[key]
                 overall["gates"][gate]=failed
                 raise
-            prior[gate]=path;overall["gates"][gate]={"status":"PASS","summary":str(path.relative_to(args.output))}
-            overall["status"]="PASS" if gate==args.through else "IN_PROGRESS"
+            prior[gate]=path;overall["gates"][gate]={"status":"PASS","summary":str(path.relative_to(args.output)),
+                                                     "duration_s":round(time.monotonic()-began,1)}
+            overall["status"]="PASS" if gate==last else "IN_PROGRESS"
+        overall["stage_a_acceptance"]=args.mode=="full" and args.through=="full-cycle" and overall["status"]=="PASS"
         return 0
     except Exception as exc:
         overall["status"]="BLOCKED";overall["failure"]=str(exc);return 1
+    except BaseException as exc:
+        overall["status"]="BLOCKED";overall["failure"]=f"interrupted: {type(exc).__name__}";raise
     finally:
-        overall["finished_wall_ns"]=time.time_ns()
-        (args.output/"stage-a1-final-report.json").write_text(json.dumps(overall,indent=2)+"\n")
+        overall["finished_wall_ns"]=time.time_ns();overall["duration_s"]=round(time.monotonic()-started,1)
+        (args.output/REPORT_NAMES[args.mode]).write_text(json.dumps(overall,indent=2)+"\n")
         print(json.dumps(overall,indent=2))
 
 

@@ -428,6 +428,56 @@ class ProcessStallWatch:
         self._sample(0.,'stop')
 
 
+GIL_WATCHDOG_ENV='WORKCELL_GIL_WATCHDOG_MS'
+
+
+class GilHoldWatch:
+    """Diagnostic only, opt-in (WORKCELL_GIL_WATCHDOG_MS). Names the code that holds
+    the interpreter lock during a stall. A heartbeat thread re-arms CPython's
+    faulthandler watchdog every period; the watchdog is a native thread that needs no
+    GIL, so if no Python thread can run for the threshold (one thread is inside a call
+    that keeps the GIL) it writes every thread's Python stack to the dump file. The
+    heartbeat records each overrun so dumps can be matched to the timing evidence.
+    It never touches a measurement, a guard or a threshold."""
+    PERIOD_S=.025
+    def __init__(self,path,threshold_ms):
+        threshold_ms=float(threshold_ms)
+        if not math.isfinite(threshold_ms) or not 50<=threshold_ms<=1000:
+            raise RuntimeError('GIL watchdog threshold must be within [50, 1000] ms')
+        self.path=Path(path);self.threshold=threshold_ms/1e3;self.events=[];self.file=None
+        self.stop_event=threading.Event()
+        self.thread=threading.Thread(target=self._run,name='gil_hold_watch',daemon=True)
+    @classmethod
+    def from_environment(cls,path):
+        import os
+        value=os.environ.get(GIL_WATCHDOG_ENV)
+        return cls(path,value) if value else None
+    def start(self):
+        self.file=self.path.open('w');self.thread.start()
+    def _run(self):
+        import faulthandler
+        overruns=0;last=time.monotonic()
+        try:
+            while not self.stop_event.is_set():
+                faulthandler.dump_traceback_later(self.threshold,repeat=False,file=self.file)
+                self.stop_event.wait(self.PERIOD_S)
+                now=time.monotonic();gap=now-last;last=now
+                if gap>self.threshold:
+                    overruns+=1
+                    self.events.append(dict(event='gil_hold',wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
+                        gap_ms=gap*1e3,overrun=overruns))
+        finally:
+            faulthandler.cancel_dump_traceback_later()
+    def stop(self):
+        self.stop_event.set();self.thread.join(timeout=2)
+        if self.file is None:return
+        self.file.close()
+        dumps=self.path.read_text(errors='replace').count('Timeout (')
+        self.events.append(dict(event='gil_watch_summary',wall_ns=time.time_ns(),threshold_ms=self.threshold*1e3,
+            period_ms=self.PERIOD_S*1e3,overruns=sum(1 for e in self.events if e['event']=='gil_hold'),dumps=dumps,
+            dump_file=self.path.name))
+
+
 def _task_ids():
     import os
     try:return [int(t) for t in os.listdir('/proc/self/task')]
@@ -458,6 +508,8 @@ class Measurements:
         self.writer=threading.Thread(target=self._write,name='measurement_evidence');self.writer.start()
         self.acquisition=threading.Thread(target=self._acquire,name='measurement_acquisition');self.acquisition.start()
         self.watch=ProcessStallWatch();self.watch.start()
+        self.gil_watch=GilHoldWatch.from_environment(self.log_path.with_suffix('.gil-holds.txt'))
+        if self.gil_watch is not None:self.gil_watch.start()
     def _acquire(self):
         # One wait set built once, every available message taken per wake. The
         # executor-based spin rebuilt its wait set per message, which measured
@@ -590,6 +642,7 @@ class Measurements:
         self.node.destroy_node()
         self.log_queue.put(None);self.writer.join();self.log.close()
         self.watch.stop();self.timing.extend(self.watch.events)
+        if self.gil_watch is not None:self.gil_watch.stop();self.timing.extend(self.gil_watch.events)
         self.log_path.with_suffix('.timing.json').write_text(json.dumps(self.timing))
 
 

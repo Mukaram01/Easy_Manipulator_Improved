@@ -1154,3 +1154,53 @@ def test_live_acquisition_takes_every_sample_writes_source_text_and_latches_stal
     timing=json.loads((tmp_path/'measurements.jsonl.timing.json'.replace('.jsonl.timing','.timing')).read_text())
     assert {e['event'] for e in timing}>={'receive','fresh','consume_log','process_watch'}
     assert all(w['threads'] for w in timing if w['event']=='process_watch')
+
+
+def _hold_gil(seconds):
+    """A single C call that keeps the interpreter lock (builtin sum over a range)."""
+    import time as _time
+    started=_time.perf_counter();n=10**6
+    while _time.perf_counter()-started<seconds/4:sum(range(n));n*=2
+    started=_time.perf_counter();sum(range(n*4))
+    return _time.perf_counter()-started
+
+
+def test_gil_hold_watch_names_the_thread_holding_the_lock_and_records_the_overrun(tmp_path):
+    import time
+    from simulator_execution import GilHoldWatch
+    watch=GilHoldWatch(tmp_path/'summary.measurements.gil-holds.txt',100)
+    watch.start()
+    try:
+        time.sleep(.3)                                   # idle: the heartbeat keeps re-arming, nothing is dumped
+        quiet=[e for e in watch.events if e['event']=='gil_hold']
+        held=_hold_gil(.4)
+        time.sleep(.2)
+    finally:
+        watch.stop()
+    assert quiet==[] and held>=.15
+    text=(tmp_path/'summary.measurements.gil-holds.txt').read_text()
+    assert 'Timeout (0:00:00.100000)!' in text and 'in _hold_gil' in text   # the holder's Python stack is in the dump
+    overruns=[e for e in watch.events if e['event']=='gil_hold']
+    assert overruns and all(e['gap_ms']>100 for e in overruns) and overruns[0]['overrun']==1
+    summary,=[e for e in watch.events if e['event']=='gil_watch_summary']
+    assert summary['dumps']>=1 and summary['overruns']==len(overruns) and summary['threshold_ms']==100
+    assert summary['dump_file']=='summary.measurements.gil-holds.txt'
+
+
+@pytest.mark.parametrize('value',['10','2000','nan','inf'])
+def test_gil_hold_watch_rejects_thresholds_outside_its_bounds(tmp_path,value):
+    from simulator_execution import GilHoldWatch
+    with pytest.raises(RuntimeError,match=r'within \[50, 1000\] ms'):GilHoldWatch(tmp_path/'x.txt',value)
+
+
+def test_gil_hold_watch_is_opt_in_and_wired_beside_the_stall_watch(tmp_path,monkeypatch):
+    from simulator_execution import GIL_WATCHDOG_ENV,GilHoldWatch
+    monkeypatch.delenv(GIL_WATCHDOG_ENV,raising=False)
+    assert GilHoldWatch.from_environment(tmp_path/'x.txt') is None             # default: no watchdog, no file
+    assert not (tmp_path/'x.txt').exists()
+    monkeypatch.setenv(GIL_WATCHDOG_ENV,'150')
+    assert GilHoldWatch.from_environment(tmp_path/'x.txt').threshold==.15
+    source=(Path(__file__).parents[1]/'scripts/simulator_execution.py').read_text()
+    assert "self.gil_watch=GilHoldWatch.from_environment(self.log_path.with_suffix('.gil-holds.txt'))" in source
+    assert "if self.gil_watch is not None:self.gil_watch.stop();self.timing.extend(self.gil_watch.events)" in source
+    assert source.index("if self.gil_watch is not None:self.gil_watch.stop()")<source.index("with_suffix('.timing.json').write_text")

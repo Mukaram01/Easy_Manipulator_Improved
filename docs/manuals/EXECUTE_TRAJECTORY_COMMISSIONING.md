@@ -260,6 +260,61 @@ capability binary and both qualified MoveIt overlay binaries. Build the local
 source overlay using [the dependency instructions](MOVEIT_HUMBLE_TEARDOWN_OVERLAY.md)
 first. Real hardware remains locked throughout.
 
+### Execution modes: full, targeted and fast
+
+The same runner has three modes. Only `--mode full` (the default) through
+`full-cycle` can report Stage-A acceptance; its report is
+`stage-a1-final-report.json` and carries `"stage_a_acceptance": true` only when
+all six gates pass. A passing `--through` prefix records `false`.
+
+```bash
+# FAST: no ROS launch. Commissioning build + its C++ unit tests + the 16 focused
+# Stage-A Python suites (runtime-only selections such as
+# WORKCELL_SIMULATOR_PHYSICS_ROOT are removed from the unit-test environment).
+python3 scripts/run_stage_a1_finish.py --output <new dir> --mode fast
+
+# TARGETED: one gate in its own fresh owned session.
+python3 scripts/run_stage_a1_finish.py --output <new dir> --world-profile sparse \
+  --search-timeout 900 --mode targeted --gate contact-release
+```
+
+A targeted gate runs the same preflight (world and bridge identity, commissioning
+build and C++ tests), keeps the session index, ROS domain and partition it has in
+the full sequence, and inside that session performs the same fresh Resolve,
+observation refresh, nine-stage revalidation, gate execution, gate assertions and
+owned shutdown checks as a full run. Nothing is skipped inside a gate; only the
+*earlier gates* are not run. `resolve`, `cancel`, `telemetry`, `stationary` and
+`contact-release` can be targeted. `full-cycle` cannot: the executor admits it
+only with the cancellation, telemetry, retention and contact-release evidence of
+the same run, so it is available only in full mode. Targeted and fast reports
+are written as `stage-a1-targeted-report.json` / `stage-a1-fast-report.json`
+with `"scope": "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE"` and
+`"stage_a_acceptance": false`; they never replace the full acceptance sequence,
+and a targeted motion gate does not re-qualify cancellation on the current
+binary (only the cancel gate does).
+
+`--gil-watchdog-ms N` (targeted/full, 50–1000 ms, off by default) arms an
+executor diagnostic: when no Python thread can run for N ms, CPython's
+`faulthandler` watchdog writes every thread's stack to
+`<summary>.measurements.gil-holds.txt` and the overrun is recorded in the timing
+evidence (`gil_hold`, `gil_watch_summary`). The dump does not mark which thread
+held the lock; read it together with the `gc` and `receive` events of the same
+timing file. It changes no measurement, guard or threshold.
+
+Measured on the sparse world (2026-10-21, one workstation; full-mode figures
+from Trials 20–22):
+
+| Mode | Measured wall time | Contents |
+|---|---|---|
+| fast | 126 s | build check 22 s, C++ action + support/Cartesian tests 75 s, 754 Python tests 34 s |
+| targeted `resolve` | 695 s | preflight 97 s + one plan-only session 598 s |
+| targeted `telemetry` | 776 s | preflight 97 s + one session 681 s (approach motion) |
+| full through `full-cycle` | 2885–4240 s | preflight + six sessions of 391–1367 s each |
+
+A session's time is dominated by its own fresh Resolve candidate search
+(89–936 s observed) and revalidation (56–372 s); the gate itself took
+65–263 s. Targeted `stationary` and `contact-release` were not measured.
+
 On a measured collision rejection, the executor preserves the first rejected
 measurement, exact queried robot state and full MoveIt validity response before
 cancellation or reconciliation. The owned goal record also retains its exact
