@@ -1523,3 +1523,48 @@ def test_executor_service_calls_use_the_first_reply_retry_and_record_retries_in_
     assert [(r['service'],r['attempt'],r['stage']) for r in summary['service_retries']]==[('/move_group/get_parameters',1,'FILTER_TARGETS')]
     MODULE.call_service(None,_Client(['reply']),'request',spin=_spin(),exchanged=exchanged,on_retry=on_retry)
     assert len(summary['service_retries'])==1                 # untouched when no retry happens
+
+
+class _Collector:
+    """gc stand-in that records the order of calls."""
+    def __init__(self):
+        self.calls=[]; self.threshold=(700,10,10); self.frozen=0
+    def get_threshold(self):return self.threshold
+    def collect(self):self.calls.append('collect');return 17
+    def freeze(self):self.calls.append('freeze');self.frozen=4321
+    def get_freeze_count(self):return self.frozen
+    def set_threshold(self,*t):self.calls.append(('set_threshold',t));self.threshold=t
+
+
+def test_freeze_planning_heap_collects_then_freezes_then_raises_only_the_generation_2_threshold():
+    collector=_Collector()
+    evidence=MODULE.freeze_planning_heap(collector)
+    assert collector.calls==['collect','freeze',('set_threshold',(700,10,100))]   # a full pass first, so no garbage is frozen
+    assert evidence['collected']==17 and evidence['frozen']==4321
+    assert evidence['start_wall_ns']<=evidence['wall_ns'] and evidence['collect_ns']>=0   # the boundary pass is identifiable in the timing evidence
+    assert evidence['thresholds_before']==[700,10,10] and evidence['thresholds_after']==[700,10,100]
+    collector=_Collector(); collector.threshold=(500,7,10)
+    assert MODULE.freeze_planning_heap(collector)['thresholds_after']==[500,7,100]   # young generations keep their running values
+    assert MODULE.GC_EXECUTION_GENERATION_2_THRESHOLD==100
+
+
+def test_freeze_planning_heap_works_on_the_real_collector_and_is_reversible_for_the_test():
+    import gc
+    before=gc.get_threshold(); frozen_before=gc.get_freeze_count()
+    try:
+        evidence=MODULE.freeze_planning_heap()
+        assert gc.get_freeze_count()>frozen_before and evidence['frozen']==gc.get_freeze_count()
+        assert gc.get_threshold()==(before[0],before[1],100) and gc.isenabled()  # the collector stays enabled
+    finally:
+        gc.unfreeze(); gc.set_threshold(*before)
+    assert gc.get_freeze_count()==frozen_before and gc.get_threshold()==before
+
+
+def test_executor_freezes_the_planning_heap_only_with_live_telemetry_and_before_the_first_executed_step():
+    source=SCRIPT.read_text()
+    call="summary['gc_policy']=freeze_planning_heap()"
+    assert source.count(call)==1 and source.count('freeze_planning_heap(')==2        # definition and one call
+    at=source.index(call)
+    assert source.rindex("if measurements:",0,at)>source.index("refresh_at_execution_boundary(")   # after the boundary refresh
+    assert source.index("selected observation expired before execution")<at<source.index("execution_mark=None")
+    assert at<source.index("for step in cycle['steps']:")

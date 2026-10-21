@@ -3,6 +3,7 @@
 
 import argparse
 import copy
+import gc
 import importlib.util
 import json
 import math
@@ -499,6 +500,34 @@ def call_service(node, client, request, *, spin, exchanged, attempts=SERVICE_ATT
         if attempt < budget and on_retry is not None:
             on_retry(dict(service=client.srv_name, attempt=attempt, wall_ns=time.time_ns(), monotonic_ns=time.monotonic_ns()))
     raise RuntimeError(f'service timeout: {client.srv_name}' + (f' ({budget} attempts)' if budget > 1 else ''))
+
+
+# Generation-2 threshold during owned execution: the default 10 ran a full pass every ~8 s
+# of Trial 20's execution; 100 leaves one or two per cycle. Generations 0 and 1 keep their
+# running values.
+GC_EXECUTION_GENERATION_2_THRESHOLD = 100
+
+
+def freeze_planning_heap(collector=gc, generation_2=GC_EXECUTION_GENERATION_2_THRESHOLD):
+    """Move the planning-phase heap out of the cyclic collector before owned execution.
+
+    The executor's own stall watch recorded generation-2 passes of 40-121 ms that collected
+    nothing yet held the GIL while the 1 kHz measurement subscription had to run; one such
+    pass preceded Trial 20's stale measurement in the transfer. One full collection, then
+    freezing the surviving planning objects (~60 ms of each pass), removes that heap from
+    every later pass, and the raised generation-2 threshold makes those passes rare. They
+    are not eliminated: the evidence writer's queued samples are allocated after the freeze
+    and a pass landing on a transfer backlog can still take some tens of milliseconds. No
+    measurement, guard or freshness rule is touched; the evidence is returned for the summary.
+    """
+    before = collector.get_threshold()
+    started = time.time_ns()
+    collected = collector.collect()
+    collect_ns = time.time_ns() - started
+    collector.freeze()
+    collector.set_threshold(before[0], before[1], generation_2)
+    return dict(start_wall_ns=started, collect_ns=collect_ns, wall_ns=time.time_ns(), collected=collected,
+                frozen=collector.get_freeze_count(), thresholds_before=list(before), thresholds_after=list(collector.get_threshold()))
 
 
 CARRIED_STAGES = ('PREPLAN_LIFT', 'PREPLAN_TRANSFER', 'PREPLAN_PLACE')
@@ -2527,6 +2556,9 @@ def main():
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
         expected = initial
+        if measurements:
+            # Planning is over and the telemetry consumer is live: keep collector passes off its path.
+            summary['gc_policy']=freeze_planning_heap()
         execution_mark=None  # measured sample at the previous executed step's start (live RTF source)
         for step in cycle['steps']:
             if args.simulator_commission in ('cancel','telemetry') and step['stage']!='PREPLAN_APPROACH':
