@@ -862,6 +862,8 @@ def test_fast_test_list_covers_every_suite_of_the_modules_the_runner_and_executo
 
 def test_gil_watchdog_flag_reaches_executor_sessions_only_when_requested(tmp_path,monkeypatch,stubbed_preflight):
     import os
+    for key in (MODULE.GIL_PROBE_LIB_ENV,MODULE.GIL_PROBE_MS_ENV,MODULE.GIL_PROBE_NATIVE_PC_ENV,MODULE.GIL_WATCHDOG_ENV):
+        monkeypatch.delenv(key,raising=False)                         # main() sets them: restored after the test
     observed=[]
     def session(args,repo,world,sha,gate,index,prior):
         observed.append(os.environ.get(MODULE.GIL_WATCHDOG_ENV))
@@ -893,6 +895,8 @@ def test_session_reports_carry_the_run_mode_and_scope(tmp_path,monkeypatch):
 
 def test_gil_probe_flag_builds_the_probe_into_the_evidence_and_reaches_sessions(tmp_path,monkeypatch,stubbed_preflight):
     import os,shutil
+    for key in (MODULE.GIL_PROBE_LIB_ENV,MODULE.GIL_PROBE_MS_ENV,MODULE.GIL_PROBE_NATIVE_PC_ENV,MODULE.GIL_WATCHDOG_ENV):
+        monkeypatch.delenv(key,raising=False)                         # main() sets them: restored after the test
     if shutil.which('cc') is None:pytest.skip('no C compiler')
     observed=[]
     def session(args,repo,world,sha,gate,index,prior):
@@ -913,6 +917,8 @@ def test_gil_probe_flag_builds_the_probe_into_the_evidence_and_reaches_sessions(
 
 def test_gil_probe_native_pc_is_a_separate_opt_in_that_reaches_sessions(tmp_path,monkeypatch,stubbed_preflight):
     import os,shutil
+    for key in (MODULE.GIL_PROBE_LIB_ENV,MODULE.GIL_PROBE_MS_ENV,MODULE.GIL_PROBE_NATIVE_PC_ENV,MODULE.GIL_WATCHDOG_ENV):
+        monkeypatch.delenv(key,raising=False)                         # main() sets them: restored after the test
     if shutil.which('cc') is None:pytest.skip('no C compiler')
     observed=[]
     def session(args,repo,world,sha,gate,index,prior):

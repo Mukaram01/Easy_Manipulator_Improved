@@ -38,7 +38,8 @@ def symbol_quality(path, cache={}):
     quality = 'exported only'
     if path.startswith('/'):
         try:
-            if 'no symbols' not in subprocess.run(['nm', path], capture_output=True, text=True, timeout=30).stderr:
+            sections = subprocess.run(['readelf', '-S', '-W', path], capture_output=True, text=True, timeout=30).stdout
+            if ' .symtab ' in sections:
                 quality = 'symbols'
             else:
                 note = subprocess.run(['readelf', '-n', path], capture_output=True, text=True, timeout=30).stdout
@@ -108,7 +109,8 @@ def report(session):
         out['holds'].append(dict(
             start_wall_ns=start, hold_ms=hold['hold_ms'], thread=hold.get('thread'), attribution=hold.get('attribution'),
             native_id=hold.get('native_id'), holder_proc_data=hold.get('holder_proc_data'),
-            overlaps_probe_late=hold.get('overlaps_probe_late'), holder_cpu=hold.get('holder_cpu'),
+            overlaps_probe_late=hold.get('overlaps_probe_late'), max_poll_gap_ms=hold.get('max_poll_gap_ms'),
+            holder_cpu=hold.get('holder_cpu'),
             holder_syscall=hold.get('holder_syscall'),
             native_pc=dict(samples=len(pcs), leaf=leaf.most_common(8), stack_scan_heuristic=callers.most_common(8),
                            delivery_us_max=max((p['delivery_us'] for p in pcs), default=None)),
@@ -117,8 +119,10 @@ def report(session):
             loop_slow=[dict(call=e['call'], thread=e['thread'], duration_ms=e['duration_ns'] / 1e6,
                             offset_ms=(e['start_wall_ns'] - start) / 1e6) for e in slow
                        if e['start_wall_ns'] <= end and e['start_wall_ns'] + e['duration_ns'] >= start],
+            # a gc record is stamped at its end: it overlaps the hold when it ends after the start
+            # and began (end - duration) before the hold's end
             gc=[dict(generation=e['generation'], duration_ms=e['duration_ns'] / 1e6) for e in gcs
-                if start - e['duration_ns'] <= e['wall_ns'] <= end + 5_000_000],
+                if e['wall_ns'] >= start and e['wall_ns'] - e['duration_ns'] <= end],
             telemetry=gap))
     return out
 

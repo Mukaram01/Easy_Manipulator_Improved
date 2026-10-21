@@ -11,29 +11,37 @@
  *   every 20 ms, so a hold this long is contended; the sampler records its own waits.
  *
  * Holder identity
- *   Python threads register (thread-state pointer, kernel tid) themselves while they
- *   hold the GIL (gil_probe_register). A holder that never registered is tid -1.
+ *   Python threads register themselves while they hold the GIL (gil_probe_register):
+ *   thread-state pointer, CPython's never-reused thread-state id, kernel tid and the
+ *   GIL switch number at registration. The probe maps the holder's pointer to the
+ *   latest registration's tid; the Python side confirms it with the id (address reuse).
  *
  * During a long hold, and only then, for the holder's kernel thread
  *   - /proc/self/task/<tid>/stat and schedstat at the threshold crossing and at the end
  *     (run state, user/system ticks, faults, on-CPU and run-queue time);
  *   - /proc/self/task/<tid>/syscall every 5 ms: "running", or the syscall it is blocked
  *     in with its user-space PC;
- *   - optional native PC samples (pc_enable): one signal at a time, sent only while the
- *     holder is running (not in a syscall), at most every 2 ms. The handler copies the
- *     interrupted RIP/RSP and up to 4 KiB of the holder's own stack with
- *     process_vm_readv (fault-safe): no unwinding, no allocation, no Python. Stack words
- *     pointing into executable mappings are reported as candidate return addresses
- *     (a heuristic: stale words can appear). The handler stays installed until exit and
- *     ignores any signal it did not request, so a late delivery is never fatal.
+ *   - optional native PC samples (pc_enable): one signal at a time, at most every 2 ms,
+ *     each sent only right after the holder's syscall file read "running"; after any
+ *     reading that is not "running" no further signal is sent for that hold, so a holder
+ *     that makes syscalls is not interrupted (its PC is in the sys record). A residual
+ *     race of microseconds remains between that read and delivery; SA_RESTART restarts
+ *     the restartable calls. The handler copies the interrupted RIP/RSP and up to 4 KiB
+ *     of the holder's own stack with process_vm_readv (fault-safe): no unwinding, no
+ *     allocation, no Python. Stack words pointing into executable mappings (read once
+ *     at start) are reported as candidate return addresses (a heuristic: stale words
+ *     can appear). The handler stays installed until exit, claims a request atomically
+ *     and ignores any signal it did not request; if another component later takes the
+ *     signal, sampling stops.
  *
  * Under the GIL (ctypes.PyDLL), for the Python sampler
- *   gil_probe_snapshot() appends every thread's Python frames, the live thread-state ->
- *   thread ident map and the current switch number in one native call, so no thread
- *   runs while they are read; the map confirms (or corrects) a registration.
+ *   gil_probe_snapshot() appends every thread's Python frames and the live
+ *   thread-state -> (thread ident, thread-state id) map in one native call, with the
+ *   cyclic GC disabled for its duration and the switch number read at both ends: equal
+ *   values prove no other thread ran while the frames were read.
  *
  * Records (one per line, written with write(2)):
- *   hold <start_wall_ns> <end_wall_ns> <hold_ms> <tstate> <switch_number> <tid>
+ *   hold <start_wall_ns> <end_wall_ns> <hold_ms> <tstate> <switch_number> <tid> <max_poll_gap_ms>
  *   cpu  <hold_start_wall_ns> <tid> <begin|end> <state> <utime> <stime> <minflt> <majflt> <run_ns> <wait_ns> <slices>
  *   sys  <hold_start_wall_ns> <wall_ns> <first line of /proc/self/task/<tid>/syscall>
  *   pc   <hold_start_wall_ns> <sent_wall_ns> <delivery_us> <tid> <rip> <rsp> <stack_bytes> <n> <addr>...
@@ -46,6 +54,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -64,6 +73,7 @@ const char gil_probe_python_version[] = PY_VERSION;
 #define SYS_PERIOD_NS 5000000LL
 #define PC_PERIOD_NS 2000000LL
 #define PC_TIMEOUT_NS 50000000LL
+#define PC_ABANDON_NS 1000000000LL
 #define STACK_BYTES 4096
 #define STACK_CHUNK 512
 #define MAX_RANGES 1024
@@ -74,15 +84,16 @@ static int probe_running;
 static int probe_fd = -1;
 static long long probe_threshold_ns;
 static long long probe_holds, probe_lates, probe_unmapped, probe_proc_failures;
-static long long pc_sent, pc_received, pc_lost, pc_send_failures, pc_skipped_in_syscall;
+static long long pc_sent, pc_received, pc_lost, pc_send_failures, pc_skipped_in_syscall, pc_handler_lost;
 static int pc_enabled, pc_signal, pc_installed;
 static pid_t probe_pid;
 
 static struct { uintptr_t tstate; int tid; } registry[MAX_THREADS];
 static int registry_count;
 
-/* One outstanding PC request at a time; written by the handler, read by the probe. */
-static unsigned long pc_pending, pc_done;
+/* One outstanding PC request at a time. The handler claims it by swapping pc_pending
+ * to 0, fills pc_slot, then publishes pc_done; the sequence never repeats in a process. */
+static unsigned long pc_pending, pc_done, pc_sequence;
 static struct {
     int tid;
     long long received_ns;
@@ -93,7 +104,7 @@ static struct {
 
 static struct { uintptr_t start, end; } ranges[MAX_RANGES];
 static int range_count;
-static char maps_buffer[1 << 19];
+static char maps_buffer[1 << 20];
 
 static long long now_ns(clockid_t clock) {
     struct timespec ts;
@@ -168,21 +179,25 @@ static void emit_cpu(long long hold_start_wall, int tid, const char *phase, cons
          s->run_ns, s->wait_ns, s->slices), sizeof line);
 }
 
-/* Returns 1 when the thread is running (not inside a syscall), 0 otherwise. */
+/* Reads the holder's syscall file; records it when hold_start_wall is non-zero.
+ * Returns 1 when the thread is running (not inside a syscall), 0 otherwise. */
 static int sample_syscall(int tid, long long hold_start_wall, long long wall) {
     char path[64], text[512], line[640];
     snprintf(path, sizeof path, "/proc/self/task/%d/syscall", tid);
     if (read_file(path, text, sizeof text) <= 0) {
         probe_proc_failures++;
-        emit(line, snprintf(line, sizeof line, "sys %lld %lld unavailable\n", hold_start_wall, wall), sizeof line);
+        if (hold_start_wall)
+            emit(line, snprintf(line, sizeof line, "sys %lld %lld unavailable\n", hold_start_wall, wall), sizeof line);
         return 0;
     }
     char *newline = strchr(text, '\n');
     if (newline) *newline = 0;
-    emit(line, snprintf(line, sizeof line, "sys %lld %lld %s\n", hold_start_wall, wall, text), sizeof line);
+    if (hold_start_wall)
+        emit(line, snprintf(line, sizeof line, "sys %lld %lld %s\n", hold_start_wall, wall, text), sizeof line);
     return strncmp(text, "running", 7) == 0;
 }
 
+/* Once, at start: reading /proc/self/maps takes the mm read lock, never during a hold. */
 static void load_exec_ranges(void) {
     range_count = 0;
     if (read_file("/proc/self/maps", maps_buffer, sizeof maps_buffer) <= 0) { probe_proc_failures++; return; }
@@ -211,8 +226,9 @@ static void pc_handler(int signo, siginfo_t *info, void *context) {
     (void)signo;
     int saved_errno = errno;
     unsigned long want = __atomic_load_n(&pc_pending, __ATOMIC_ACQUIRE);
+    /* Claim the request: exactly one handler can swap it to 0, so pc_slot has one writer. */
     if (info && info->si_code == SI_TKILL && info->si_pid == probe_pid && want &&
-        __atomic_load_n(&pc_done, __ATOMIC_ACQUIRE) != want) {
+        __atomic_compare_exchange_n(&pc_pending, &want, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
         ucontext_t *uc = (ucontext_t *)context;
         pc_slot.tid = (int)syscall(SYS_gettid);
         pc_slot.received_ns = now_ns(CLOCK_MONOTONIC);
@@ -231,6 +247,12 @@ static void pc_handler(int signo, siginfo_t *info, void *context) {
         __atomic_store_n(&pc_done, want, __ATOMIC_RELEASE);
     }
     errno = saved_errno;
+}
+
+static int pc_handler_owned(void) {
+    struct sigaction current;
+    return sigaction(pc_signal, NULL, &current) == 0 && (current.sa_flags & SA_SIGINFO) &&
+           current.sa_sigaction == pc_handler;
 }
 
 static void emit_pc(long long hold_start_wall, long long sent_wall, long long sent_mono, int tid) {
@@ -257,10 +279,11 @@ static void *probe_main(void *unused) {
     (void)unused;
     struct _gil_runtime_state *gil = &_PyRuntime.ceval.gil;
     uintptr_t holder = 0;
-    unsigned long holder_switch = 0, pc_sequence = 0;
-    long long hold_start = 0, hold_start_wall = 0, last_poll = now_ns(CLOCK_MONOTONIC);
+    unsigned long holder_switch = 0, request = 0;
+    long long hold_start = 0, hold_start_wall = 0, last_poll = now_ns(CLOCK_MONOTONIC), max_gap = 0;
     long long next_sys = 0, next_pc = 0, pc_sent_mono = 0, pc_sent_wall = 0;
-    int long_hold = 0, tid = -1, running = 0, outstanding = 0;
+    int long_hold = 0, tid = -1, pc_this_hold = 0;
+    enum { IDLE, SENT, ABANDONED } pc_state = IDLE;
     struct cpu_sample begin;
     char line[256];
     struct timespec period = {0, 1000000};
@@ -268,45 +291,64 @@ static void *probe_main(void *unused) {
         nanosleep(&period, NULL);
         if (__atomic_load_n(&_PyRuntime._finalizing._value, __ATOMIC_ACQUIRE)) break;
         long long mono = now_ns(CLOCK_MONOTONIC), wall = now_ns(CLOCK_REALTIME);
-        if (mono - last_poll >= probe_threshold_ns) {
+        long long gap = mono - last_poll;
+        if (gap >= probe_threshold_ns) {
             probe_lates++;
-            emit(line, snprintf(line, sizeof line, "late %lld %lld %.3f\n",
-                 wall - (mono - last_poll), wall, (mono - last_poll) / 1e6), sizeof line);
+            emit(line, snprintf(line, sizeof line, "late %lld %lld %.3f\n", wall - gap, wall, gap / 1e6), sizeof line);
         }
         last_poll = mono;
         int locked = __atomic_load_n(&gil->locked._value, __ATOMIC_ACQUIRE);
         unsigned long switches = __atomic_load_n(&gil->switch_number, __ATOMIC_RELAXED);
         uintptr_t tstate = __atomic_load_n(&_PyRuntime.gilstate.tstate_current._value, __ATOMIC_ACQUIRE);
-        if (outstanding && __atomic_load_n(&pc_done, __ATOMIC_ACQUIRE) == pc_sequence) {
-            outstanding = 0;
-            if (pc_slot.tid == tid && long_hold) { pc_received++; emit_pc(hold_start_wall, pc_sent_wall, pc_sent_mono, tid); }
-            else pc_lost++;
-        } else if (outstanding && mono - pc_sent_mono > PC_TIMEOUT_NS) {
-            outstanding = 0;
-            pc_lost++;
-            __atomic_store_n(&pc_pending, 0, __ATOMIC_RELEASE);   /* a late delivery is then ignored */
+        if (pc_state != IDLE) {
+            if (__atomic_load_n(&pc_done, __ATOMIC_ACQUIRE) == request) {
+                pc_state = IDLE;
+                if (pc_slot.tid == tid && long_hold) { pc_received++; emit_pc(hold_start_wall, pc_sent_wall, pc_sent_mono, tid); }
+                else pc_lost++;
+            } else if (pc_state == SENT && mono - pc_sent_mono > PC_TIMEOUT_NS) {
+                unsigned long expected = request;
+                /* Revoke it; if a handler already claimed it, wait for its pc_done instead. */
+                if (__atomic_compare_exchange_n(&pc_pending, &expected, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                    pc_state = IDLE;
+                    pc_lost++;
+                } else if (mono - pc_sent_mono > PC_ABANDON_NS) {
+                    pc_state = ABANDONED;      /* a claimed request never completed: stop sampling */
+                    pc_enabled = 0;
+                    pc_lost++;
+                }
+            }
         }
         if (locked == 1 && tstate && tstate == holder && switches == holder_switch) {
+            if (gap > max_gap) max_gap = gap;
             if (!long_hold && mono - hold_start >= probe_threshold_ns) {
                 long_hold = 1;
                 tid = lookup_tid(holder);
                 if (tid > 0) read_cpu(tid, &begin); else memset(&begin, 0, sizeof begin);
                 next_sys = mono;
                 next_pc = mono;
-                if (pc_enabled) load_exec_ranges();
+                pc_this_hold = pc_enabled && tid > 0;
+                if (pc_this_hold && !pc_handler_owned()) { pc_handler_lost++; pc_enabled = 0; pc_this_hold = 0; }
             }
             if (long_hold && tid > 0) {
-                if (mono >= next_sys) { running = sample_syscall(tid, hold_start_wall, wall); next_sys = mono + SYS_PERIOD_NS; }
-                if (pc_enabled && !outstanding && mono >= next_pc) {
+                if (mono >= next_sys) {
+                    if (!sample_syscall(tid, hold_start_wall, wall) && pc_this_hold) { pc_this_hold = 0; pc_skipped_in_syscall++; }
+                    next_sys = mono + SYS_PERIOD_NS;
+                }
+                if (pc_this_hold && pc_state == IDLE && mono >= next_pc) {
                     next_pc = mono + PC_PERIOD_NS;
-                    if (!running) pc_skipped_in_syscall++;
+                    /* Re-read immediately before signalling; any syscall ends PC sampling for this hold. */
+                    if (!sample_syscall(tid, 0, 0)) { pc_this_hold = 0; pc_skipped_in_syscall++; }
                     else {
-                        pc_sequence++;
-                        __atomic_store_n(&pc_pending, pc_sequence, __ATOMIC_RELEASE);
+                        request = ++pc_sequence;
+                        __atomic_store_n(&pc_pending, request, __ATOMIC_RELEASE);
                         pc_sent_mono = now_ns(CLOCK_MONOTONIC);
                         pc_sent_wall = now_ns(CLOCK_REALTIME);
-                        if (syscall(SYS_tgkill, probe_pid, tid, pc_signal) == 0) { outstanding = 1; pc_sent++; }
-                        else { pc_send_failures++; __atomic_store_n(&pc_pending, 0, __ATOMIC_RELEASE); }
+                        if (syscall(SYS_tgkill, probe_pid, tid, pc_signal) == 0) { pc_state = SENT; pc_sent++; }
+                        else {
+                            unsigned long expected = request;
+                            __atomic_compare_exchange_n(&pc_pending, &expected, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+                            pc_send_failures++;
+                        }
                     }
                 }
             }
@@ -315,8 +357,8 @@ static void *probe_main(void *unused) {
         if (long_hold) {
             probe_holds++;
             if (tid <= 0) probe_unmapped++;
-            emit(line, snprintf(line, sizeof line, "hold %lld %lld %.3f %#lx %lu %d\n", hold_start_wall, wall,
-                 (mono - hold_start) / 1e6, (unsigned long)holder, holder_switch, tid), sizeof line);
+            emit(line, snprintf(line, sizeof line, "hold %lld %lld %.3f %#lx %lu %d %.3f\n", hold_start_wall, wall,
+                 (mono - hold_start) / 1e6, (unsigned long)holder, holder_switch, tid, max_gap / 1e6), sizeof line);
             if (tid > 0) {
                 struct cpu_sample end;
                 read_cpu(tid, &end);
@@ -328,16 +370,23 @@ static void *probe_main(void *unused) {
         holder_switch = switches;
         hold_start = mono;
         hold_start_wall = wall;
+        max_gap = 0;
         long_hold = 0;
         tid = -1;
-        running = 0;
+        pc_this_hold = 0;
     }
     return NULL;
 }
 
-/* Called with the GIL held, from the registering thread itself (ctypes.PyDLL). */
-int gil_probe_register(unsigned long tstate, int tid) {
-    if (!tstate || tid <= 0) return -1;
+/* Called with the GIL held, from the registering thread itself (ctypes.PyDLL): records its
+ * own thread state, CPython's thread-state id (never reused) and the switch number now. */
+int gil_probe_register(int tid, unsigned long *tstate_out, unsigned long long *id_out, unsigned long *switch_out) {
+    PyThreadState *current = PyThreadState_Get();
+    uintptr_t tstate = (uintptr_t)current;
+    *tstate_out = (unsigned long)tstate;
+    *id_out = (unsigned long long)PyThreadState_GetID(current);
+    *switch_out = __atomic_load_n(&_PyRuntime.ceval.gil.switch_number, __ATOMIC_RELAXED);
+    if (tid <= 0) return -1;
     int count = __atomic_load_n(&registry_count, __ATOMIC_ACQUIRE);
     for (int i = 0; i < count; i++)
         if (__atomic_load_n(&registry[i].tstate, __ATOMIC_ACQUIRE) == tstate) {
@@ -346,13 +395,13 @@ int gil_probe_register(unsigned long tstate, int tid) {
         }
     if (count >= MAX_THREADS) return -2;
     __atomic_store_n(&registry[count].tid, tid, __ATOMIC_RELAXED);
-    __atomic_store_n(&registry[count].tstate, (uintptr_t)tstate, __ATOMIC_RELEASE);
+    __atomic_store_n(&registry[count].tstate, tstate, __ATOMIC_RELEASE);
     __atomic_store_n(&registry_count, count + 1, __ATOMIC_RELEASE);
     return 0;
 }
 
 static int install_pc_handler(void) {
-    if (pc_installed) return 0;
+    if (pc_installed) return pc_handler_owned() ? 0 : -5;
     int signo = SIGRTMAX - 3;
     struct sigaction old;
     if (sigaction(signo, NULL, &old) != 0) return -4;
@@ -376,13 +425,15 @@ int gil_probe_start(const char *path, long long threshold_ns, int pc_enable) {
     if (pc_enable) {
         int rc = install_pc_handler();
         if (rc) return rc;
+        load_exec_ranges();
     }
     probe_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (probe_fd < 0) return -2;
     probe_threshold_ns = threshold_ns;
     probe_holds = probe_lates = probe_unmapped = probe_proc_failures = 0;
-    pc_sent = pc_received = pc_lost = pc_send_failures = pc_skipped_in_syscall = 0;
+    pc_sent = pc_received = pc_lost = pc_send_failures = pc_skipped_in_syscall = pc_handler_lost = 0;
     pc_enabled = pc_enable ? 1 : 0;
+    __atomic_store_n(&pc_pending, 0, __ATOMIC_RELEASE);
     __atomic_store_n(&probe_running, 1, __ATOMIC_RELEASE);
     if (pthread_create(&probe_thread, NULL, probe_main, NULL) != 0) {
         __atomic_store_n(&probe_running, 0, __ATOMIC_RELEASE);
@@ -408,7 +459,7 @@ long long gil_probe_stop(void) {
 /* Counters, in a fixed order, for the Python summary. */
 int gil_probe_counters(long long *out, int size) {
     long long values[] = {probe_holds, probe_lates, probe_unmapped, probe_proc_failures,
-                          pc_sent, pc_received, pc_lost, pc_send_failures, pc_skipped_in_syscall};
+                          pc_sent, pc_received, pc_lost, pc_send_failures, pc_skipped_in_syscall, pc_handler_lost};
     int n = (int)(sizeof values / sizeof values[0]);
     for (int i = 0; i < n && i < size; i++) out[i] = values[i];
     return n;
@@ -417,50 +468,56 @@ int gil_probe_counters(long long *out, int size) {
 int gil_probe_pc_signal(void) { return pc_installed ? pc_signal : 0; }
 
 /* Called with the GIL held (ctypes.PyDLL) by the Python sampler. Appends one tuple
- * (switch_number, wall_ns, monotonic_ns, {thread ident: [(filename, name, firstlineno,
- * lasti_bytes, lineno), ... innermost first]}, {thread-state pointer: thread ident}) to
- * out. No bytecode runs and the GIL is not released during the call, so no thread can
- * move while its frames are read. The thread-state list is walked exactly as CPython's
- * own _PyThread_CurrentFrames walks it: GIL held, under the runtime's head lock, and
- * only into a fixed C array (no allocation while the lock is held). */
+ * (switch_at_start, switch_at_end, wall_ns, monotonic_ns,
+ *  {thread ident: [(filename, name, firstlineno, lasti_bytes, lineno), ... innermost first]},
+ *  {thread-state pointer: (thread ident, thread-state id)}) to out.
+ * The cyclic GC is disabled for the call (restored after), so no collection and no gc
+ * callback can run Python here; equal switch numbers prove no other thread ran in between.
+ * The thread-state list is walked exactly as CPython's own _PyThread_CurrentFrames walks
+ * it: GIL held, under the runtime's head lock, and only into a fixed C array. */
 #define MAX_TSTATES 512
 int gil_probe_snapshot(PyObject *out, int max_depth) {
     if (!PyList_Check(out) || max_depth <= 0) {
         PyErr_SetString(PyExc_TypeError, "gil_probe_snapshot needs a list and a positive depth");
         return -1;
     }
-    unsigned long switches = __atomic_load_n(&_PyRuntime.ceval.gil.switch_number, __ATOMIC_RELAXED);
+    int gc_was_enabled = PyGC_Disable();
+    int rc = -1;
+    PyObject *tstates = NULL, *frames = NULL, *threads = NULL;
+    unsigned long switch_start = __atomic_load_n(&_PyRuntime.ceval.gil.switch_number, __ATOMIC_RELAXED);
     long long wall = now_ns(CLOCK_REALTIME), mono = now_ns(CLOCK_MONOTONIC);
     static uintptr_t live_tstate[MAX_TSTATES];
     static unsigned long live_ident[MAX_TSTATES];
+    static unsigned long long live_id[MAX_TSTATES];
     int live = 0;
     PyThread_acquire_lock(_PyRuntime.interpreters.mutex, WAIT_LOCK);
     for (PyThreadState *t = PyInterpreterState_ThreadHead(PyInterpreterState_Main()); t && live < MAX_TSTATES;
          t = PyThreadState_Next(t)) {
         live_tstate[live] = (uintptr_t)t;
         live_ident[live] = t->thread_id;
+        live_id[live] = (unsigned long long)t->id;
         live++;
     }
     PyThread_release_lock(_PyRuntime.interpreters.mutex);
-    PyObject *tstates = PyDict_New();
-    if (!tstates) return -1;
+    tstates = PyDict_New();
+    if (!tstates) goto done;
     for (int i = 0; i < live; i++) {
         PyObject *key = PyLong_FromUnsignedLong((unsigned long)live_tstate[i]);
-        PyObject *value = PyLong_FromUnsignedLong(live_ident[i]);
-        int rc = (key && value) ? PyDict_SetItem(tstates, key, value) : -1;
+        PyObject *value = Py_BuildValue("(kK)", live_ident[i], live_id[i]);
+        int set = (key && value) ? PyDict_SetItem(tstates, key, value) : -1;
         Py_XDECREF(key);
         Py_XDECREF(value);
-        if (rc < 0) { Py_DECREF(tstates); return -1; }
+        if (set < 0) goto done;
     }
-    PyObject *frames = _PyThread_CurrentFrames();
-    if (!frames) { Py_DECREF(tstates); return -1; }
-    PyObject *threads = PyDict_New();
-    if (!threads) { Py_DECREF(frames); Py_DECREF(tstates); return -1; }
+    frames = _PyThread_CurrentFrames();
+    if (!frames) goto done;
+    threads = PyDict_New();
+    if (!threads) goto done;
     Py_ssize_t position = 0;
     PyObject *ident, *top;
     while (PyDict_Next(frames, &position, &ident, &top)) {
         PyObject *stack = PyList_New(0);
-        if (!stack) goto fail;
+        if (!stack) goto done;
         PyFrameObject *frame = (PyFrameObject *)top;
         Py_INCREF(frame);
         for (int depth = 0; frame && depth < max_depth; depth++) {
@@ -470,27 +527,27 @@ int gil_probe_snapshot(PyObject *out, int max_depth) {
                                                              code->co_firstlineno, lasti, PyFrame_GetLineNumber(frame)) : NULL;
             Py_XDECREF(code);
             Py_XDECREF(lasti);
-            if (!item || PyList_Append(stack, item) < 0) { Py_XDECREF(item); Py_DECREF(frame); Py_DECREF(stack); goto fail; }
+            if (!item || PyList_Append(stack, item) < 0) { Py_XDECREF(item); Py_DECREF(frame); Py_DECREF(stack); goto done; }
             Py_DECREF(item);
             PyFrameObject *back = PyFrame_GetBack(frame);
             Py_DECREF(frame);
             frame = back;
         }
         Py_XDECREF(frame);
-        if (PyDict_SetItem(threads, ident, stack) < 0) { Py_DECREF(stack); goto fail; }
+        if (PyDict_SetItem(threads, ident, stack) < 0) { Py_DECREF(stack); goto done; }
         Py_DECREF(stack);
     }
-    Py_DECREF(frames);
-    PyObject *record = Py_BuildValue("(kLLNN)", switches, wall, mono, threads, tstates);
-    if (!record) return -1;
-    int rc = PyList_Append(out, record);
+    unsigned long switch_end = __atomic_load_n(&_PyRuntime.ceval.gil.switch_number, __ATOMIC_RELAXED);
+    PyObject *record = Py_BuildValue("(kkLLOO)", switch_start, switch_end, wall, mono, threads, tstates);
+    if (!record) goto done;
+    rc = PyList_Append(out, record);
     Py_DECREF(record);
+done:
+    Py_XDECREF(threads);
+    Py_XDECREF(frames);
+    Py_XDECREF(tstates);
+    if (gc_was_enabled) PyGC_Enable();
     return rc;
-fail:
-    Py_DECREF(threads);
-    Py_DECREF(frames);
-    Py_DECREF(tstates);
-    return -1;
 }
 
 /* Test only (never called by the executor): spins without releasing the GIL when called
@@ -500,4 +557,22 @@ __attribute__((noinline)) unsigned long long gil_probe_selftest_spin(long long d
     long long end = now_ns(CLOCK_MONOTONIC) + duration_ns;
     while (now_ns(CLOCK_MONOTONIC) < end) count++;
     return count;
+}
+
+/* Test only: keeps the GIL (PyDLL) while alternating spin_ns of CPU with a sleep_ms poll()
+ * (use_poll) or nanosleep(); returns how many of those calls failed with EINTR. */
+int gil_probe_selftest_mixed(long long duration_ns, long long spin_ns, int sleep_ms, int use_poll, int *calls) {
+    int eintr = 0, n = 0;
+    long long end = now_ns(CLOCK_MONOTONIC) + duration_ns;
+    while (now_ns(CLOCK_MONOTONIC) < end) {
+        long long until = now_ns(CLOCK_MONOTONIC) + spin_ns;
+        while (now_ns(CLOCK_MONOTONIC) < until) {}
+        int result;
+        if (use_poll) result = poll(NULL, 0, sleep_ms);
+        else { struct timespec ts = {0, sleep_ms * 1000000L}; result = nanosleep(&ts, NULL); }
+        n++;
+        if (result < 0 && errno == EINTR) eintr++;
+    }
+    *calls = n;
+    return eintr;
 }

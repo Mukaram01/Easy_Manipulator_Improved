@@ -1368,7 +1368,10 @@ def _sampler_running(probe):
     # A hold that starts before the sampler's first loop has no waiting sampler to snapshot it
     # (documented limit); the executor starts the probe long before planning or motion.
     import time
-    while probe.sampler_wakes<3:time.sleep(.01)
+    deadline=time.monotonic()+5
+    while probe.sampler_wakes<3:
+        assert time.monotonic()<deadline,'GIL probe sampler did not start'
+        time.sleep(.01)
 
 
 def test_gil_probe_attributes_a_native_hold_with_cpu_syscall_and_exact_release_frames(tmp_path,built_gil_probe):
@@ -1470,6 +1473,75 @@ def test_gil_probe_release_frames_are_exact_when_the_sampler_is_the_only_waiter(
     assert set(statuses)<={'exact','holder may have run again'} and statuses.count('exact')>=3
 
 
+def test_gil_probe_native_pc_never_interrupts_a_holder_that_makes_syscalls(tmp_path,built_gil_probe):
+    import ctypes,threading
+    from simulator_execution import GilProbe
+    mixed=ctypes.PyDLL(str(built_gil_probe)).gil_probe_selftest_mixed
+    mixed.argtypes=[ctypes.c_longlong,ctypes.c_longlong,ctypes.c_int,ctypes.c_int,ctypes.POINTER(ctypes.c_int)];mixed.restype=ctypes.c_int
+    results=[]
+    for use_poll in (0,1):
+        probe=GilProbe(built_gil_probe,tmp_path/f'm{use_poll}.txt',80,native_pc=True);probe.start()
+        try:
+            _sampler_running(probe)
+            calls=ctypes.c_int()
+            def worker():results.append((mixed(400_000_000,3_000_000,2,use_poll,ctypes.byref(calls)),calls.value))
+            t=threading.Thread(target=worker,name='mixed');t.start();t.join()
+        finally:
+            probe.stop()
+        summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
+        hold=max(_probe_holds(probe),key=lambda h:h['hold_ms'])
+        assert hold['thread']=='mixed' and hold['holder_syscall']['in_syscall']        # its sys records show the calls
+        assert summary['pc_skipped_in_syscall']>=1 and summary['pc_sent']<=3           # sampling stopped at the first syscall
+    # before the fix about 30 % of these calls failed with EINTR; one remains possible (microsecond race)
+    assert sum(e for e,_ in results)<=1 and all(n>=50 for _,n in results)
+
+
+def test_gil_probe_snapshot_runs_no_gc_and_reports_a_switch_during_it(built_gil_probe):
+    import ctypes,gc,threading,time
+    snap=ctypes.PyDLL(str(built_gil_probe)).gil_probe_snapshot
+    snap.argtypes=[ctypes.py_object,ctypes.c_int];snap.restype=ctypes.c_int
+    calls=[];stop=threading.Event()
+    def callback(phase,info):calls.append(time.monotonic_ns())
+    def spinner():
+        while not stop.is_set():sum(range(200))
+    workers=[threading.Thread(target=spinner,daemon=True) for _ in range(2)];[w.start() for w in workers]
+    gc.callbacks.append(callback);before=gc.get_threshold()
+    try:
+        for _ in range(3):
+            gc.disable();junk=[[i] for i in range(300_000)]                           # a large young generation
+            gc.set_threshold(gc.get_count()[0]+2);gc.enable();calls.clear()
+            out=[];started=time.monotonic_ns();snap(out,24);ended=time.monotonic_ns()
+            switch_start,switch_end,_,_,threads,tstates=out[0]
+            assert not [t for t in calls if started<=t<=ended]                          # no collection ran inside
+            assert switch_start==switch_end and gc.isenabled()                         # nothing ran; GC restored
+            assert len(threads)>=3 and len(tstates)>=3
+            del junk
+    finally:
+        gc.callbacks.remove(callback);gc.set_threshold(*before);stop.set();[w.join() for w in workers]
+
+
+def test_gil_probe_never_names_a_later_thread_that_reused_the_holders_address(tmp_path,built_gil_probe):
+    import ctypes,threading,time
+    from simulator_execution import GilProbe
+    spin=ctypes.PyDLL(str(built_gil_probe)).gil_probe_selftest_spin
+    spin.argtypes=[ctypes.c_longlong];spin.restype=ctypes.c_ulonglong
+    labels=[]
+    for attempt in range(8):
+        probe=GilProbe(built_gil_probe,tmp_path/f'r{attempt}.txt',80);probe.start()
+        try:
+            _sampler_running(probe)
+            t=threading.Thread(target=spin,args=(120_000_000,),name='short_lived');t.start();t.join()   # holds, then exits
+            n=threading.Thread(target=time.sleep,args=(.05,),name='next_worker');n.start()            # may reuse its address and ident
+            time.sleep(.1);n.join()
+        finally:
+            probe.stop()
+        for h in _probe_holds(probe):
+            labels.append((h['thread'],h['attribution']))
+            assert h['thread']!='next_worker'
+            if h['attribution']=='verified':assert h['thread']=='short_lived'
+    assert any(label==('short_lived','verified') for label in labels)
+
+
 def test_gil_probe_reports_a_holder_that_never_registered_without_guessing(tmp_path,built_gil_probe):
     import threading,time
     from simulator_execution import GilProbe
@@ -1508,42 +1580,53 @@ def test_gil_probe_releasing_native_calls_and_python_loops_are_not_holds(tmp_pat
     assert _probe_holds(probe)==[]
 
 
-def test_gil_probe_parse_distinguishes_verified_stale_and_inexact_attribution():
+def test_gil_probe_parse_labels_identity_and_frames_only_as_far_as_the_evidence_goes():
     from simulator_execution import GilProbe
-    registry={0x10:[dict(ident=1,native_id=11,name='early',registered_wall_ns=0),
-                    dict(ident=2,native_id=12,name='later',registered_wall_ns=92_000_000)],
-              0x20:[dict(ident=3,native_id=13,name='gone',registered_wall_ns=0)]}
-    snap=lambda wall,switch,tstates,waited=50_000_000:dict(event='gil_frame_snapshot',wall_ns=wall,switch_number=switch,
-        monotonic_ns=10**12,asked_monotonic_ns=10**12-waited,
-        tstates={str(k):v for k,v in tstates.items()},threads={'1':[dict(file='a.py',function='f',firstlineno=1,lasti=4,line=2)],
-        '2':[dict(file='b.py',function='g',firstlineno=1,lasti=6,line=3)],'4':[]})
-    text=('hold 1000 90000000 89.000 0x10 5 11\n'          # first registration in force, confirmed, frames exact
+    reg=lambda ident,tid,name,tstate_id,switch:dict(ident=ident,native_id=tid,name=name,tstate_id=tstate_id,switch_number=switch,registered_wall_ns=0)
+    # address 0x10 is reused: 'early' (id 1) registered at switch 1, 'later' (id 2) at switch 9 after it exited
+    registry={0x10:[reg(1,11,'early',1,1),reg(1,12,'later',2,9)],0x20:[reg(3,13,'gone',3,2)],0x40:[reg(5,15,'reused',5,2)]}
+    def snap(wall,switch,tstates,end=None,waited=50_000_000,names=None):
+        return dict(event='gil_frame_snapshot',wall_ns=wall,switch_number=switch,switch_number_end=switch if end is None else end,
+            monotonic_ns=10**12,asked_monotonic_ns=10**12-waited,tstates={str(k):list(v) for k,v in tstates.items()},
+            names=names or {'1':'early','4':'native','6':'creator'},
+            threads={'1':[dict(file='a.py',function='f',firstlineno=1,lasti=4,line=2)],'4':[dict(file='n.py',function='n',firstlineno=1,lasti=2,line=1)],
+                     '6':[dict(file='c.py',function='c',firstlineno=1,lasti=2,line=1)]})
+    text=('hold 1000 90000000 89.000 0x10 5 11 1.100\n'           # early's own hold, confirmed by its id
           'cpu 1000 11 begin R 10 1 5 0 100 0 3\n'
           'cpu 1000 11 end R 18 1 6 0 9000000 1000000 9\n'
           'sys 1000 2000 running\n'
           'sys 1000 7000 202 0x1 0x2 0x3 0x4 0x5 0x6 0x7ffd 0x7f00\n'
           'pc 1000 3000 25 11 0x401000 0x7ffd00 4096 2 0x401100 0x402000\n'
-          'hold 95000000 190000000 95.000 0x10 9 12\n'     # a later registration, the live map says otherwise
-          'hold 200000000 300000000 100.000 0x20 20 13\n'   # its thread is gone from the snapshot
-          'hold 600000000 700000000 100.000 0x20 40 13\n'   # the next sampler was not waiting during it
-          'hold 400000000 500000000 100.000 0x30 30 -1\n'   # never registered, live map names it
+          'hold 95000000 190000000 95.000 0x10 6 11 1.000\n'      # 'later' registered after it: early again, but frames moved
+          'hold 200000000 300000000 100.000 0x20 20 13 1.0\n'     # its thread is gone from the snapshot
+          'hold 400000000 500000000 100.000 0x30 30 -1 1.0\n'     # never registered, the live map names it
+          'hold 600000000 700000000 100.000 0x20 40 13 1.0\n'     # the next sampler was not waiting during it
+          'hold 710000000 800000000 90.000 0x40 50 15 1.0\n'      # address now holds another thread state (id 9)
+          'hold 810000000 900000000 90.000 0x50 60 -1 1.0\n'      # a starting thread carries its creator's ident
+          'hold 910000000 999000000 89.000 0x10 70 12 1.0\n'      # a thread ran during the snapshot itself
           'late 50000000 60000000 10.000\n'
           'garbage line\n')
-    snaps=[snap(90_500_000,6,{0x10:1}),snap(190_500_000,13,{0x10:1}),snap(300_400_000,21,{}),snap(500_200_000,31,{0x30:4}),
-           snap(800_000_000,41,{0x20:3},waited=10_000_000)]
-    holds={h['start_wall_ns']:h for h in GilProbe.parse(text,registry,{1:'early',2:'later',4:'native'},snaps) if h['event']=='gil_probe_hold'}
+    snaps=[snap(90_500_000,6,{0x10:(1,1)}),snap(190_500_000,9,{0x10:(1,1)}),snap(300_400_000,21,{}),
+           snap(500_200_000,31,{0x30:(4,4)}),snap(705_000_000,41,{0x20:(3,3)},waited=1_000_000),
+           snap(800_300_000,51,{0x40:(5,9)}),snap(900_300_000,61,{0x50:(6,10),0x60:(6,6)}),
+           snap(999_300_000,71,{0x10:(1,2)},end=72)]
+    holds={h['start_wall_ns']:h for h in GilProbe.parse(text,registry,{},snaps) if h['event']=='gil_probe_hold'}
     first=holds[1000]
     assert (first['thread'],first['attribution'],first['release_frames_status'],first['overlaps_probe_late'])==('early','verified','exact',True)
+    assert first['holder_proc_data']=='holder' and first['max_poll_gap_ms']==1.1
     assert first['holder_cpu']['utime_ticks']==8 and abs(first['holder_cpu']['on_cpu_ms']-8.9999)<1e-9
     assert first['holder_syscall']==dict(samples=2,running=1,unavailable=0,in_syscall=['202'])
     assert first['native_pc'][0]['rip']==0x401000 and first['native_pc'][0]['candidates']==[0x401100,0x402000]
-    stale=holds[95000000]
-    assert (stale['attribution'],stale['thread_id'],stale['holder_proc_data'])==('registry stale',1,'stale registration: not the holder')
-    assert stale['release_frames_status']=='holder may have run again' and stale['release_snapshot_switches_after']==4
-    assert (holds[200000000]['attribution'],holds[200000000]['release_frames_status'])==('registered, unconfirmed','holder not in snapshot')
-    assert (holds[600000000]['attribution'],holds[600000000]['release_frames_status'])==('registered, unconfirmed','no snapshot')
-    native=holds[400000000]
-    assert (native['attribution'],native['thread'],native['holder_proc_data'],native['holder_cpu'])==('snapshot only','native','none',None)
+    second=holds[95000000]
+    assert (second['thread'],second['attribution'],second['release_frames_status'])==('early','verified','holder may have run again')
+    assert (holds[200000000]['attribution'],holds[200000000]['thread'],holds[200000000]['release_frames_status'])==('registered, unconfirmed','gone','holder not attributable')
+    assert (holds[400000000]['attribution'],holds[400000000]['thread'],holds[400000000]['holder_proc_data'])==('snapshot only','native','none')
+    assert holds[600000000]['release_frames_status']=='no snapshot'
+    reused=holds[710000000]
+    assert (reused['attribution'],reused['thread'],reused['release_frames'],reused['holder_proc_data'])==('address reused, ambiguous',None,None,'not attributable to the holder')
+    assert (holds[810000000]['attribution'],holds[810000000]['thread'])==('ambiguous (thread starting)',None)
+    moving=holds[910000000]
+    assert (moving['thread'],moving['attribution'],moving['release_frames_status'])==('later','verified','holder may have run again')
 
 
 def test_gil_probe_refuses_a_pc_signal_that_is_already_in_use(tmp_path,built_gil_probe):

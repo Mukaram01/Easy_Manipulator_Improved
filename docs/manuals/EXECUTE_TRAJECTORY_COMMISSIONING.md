@@ -316,18 +316,24 @@ least N ms in each executor session:
 - its native thread reads only static `_PyRuntime` fields (GIL locked flag,
   switch number, holder thread-state pointer) and never dereferences an
   interpreter object, thread state or frame;
-- Python threads register their own thread state and kernel tid under the GIL; a
-  sampler thread asks for the GIL every 20 ms, and after a wait of at least N/2 ms
-  takes one native snapshot of every thread's Python frames and of the live
-  thread-state map (under the GIL and CPython's head lock), so each hold gets the
-  holder's identity (`verified`, `snapshot only`, `registry stale`,
-  `registered, unconfirmed`, `unattributed`) and its frames at the release
-  (`exact` only when at most one other thread ran in between);
+- Python threads register themselves under the GIL (thread-state pointer, CPython's
+  never-reused thread-state id, kernel tid, GIL switch number); a sampler thread asks
+  for the GIL every 20 ms, and after a wait of at least N/2 ms takes one native
+  snapshot (GC disabled, GIL kept, switch number read at both ends) of every thread's
+  Python frames and of the live thread-state -> (ident, id) map under CPython's head
+  lock. Each hold gets the holder's identity — `verified` only when the live id at
+  its address is the id of the registration in force at the hold's switch;
+  otherwise `snapshot only`, `registered, unconfirmed`, `address reused, ambiguous`,
+  `ambiguous (thread starting)` or `unattributed` — and its frames at the release
+  (`exact` only when no thread ran during the snapshot and at most one between the
+  release and it);
 - during a hold it reads the holder's `/proc/self/task/<tid>` CPU, run state and
   syscall (`running` or the blocking call and its PC);
 - `--gil-probe-native-pc` also samples the holder's native PC during long holds
-  only, one signal at a time while the holder is running, copying registers and
-  4 KiB of its stack (no unwinding); `scripts/gil_probe_report.py <session>`
+  only: one signal at a time, each sent right after the holder's syscall file read
+  `running`, and none for the rest of a hold once it is seen inside a syscall (a
+  microsecond race remains); the handler copies registers and 4 KiB of its stack (no
+  unwinding); `scripts/gil_probe_report.py <session>`
   symbolizes them from the session's maps snapshot. Libraries without symbols
   (the stripped `python3.10`, `_json`) are named by library, and their
   "nearest exported symbol" is marked unreliable; libc resolves through
@@ -338,8 +344,10 @@ least N ms in each executor session:
 Limits: a hold that begins before the sampler's first loop (probe start) gets
 no snapshot; about 2 % of offline release snapshots are `holder may have run
 again`; the native thread costs about 1.5 % of one core and the sampler about
-0.5 %, with no measured change to telemetry latency under the release-phase
-replay load. A hold is evidence of *where* the GIL was kept, not proof of why.
+0.5 %, with no measured change to callback latency or throughput under the
+release-phase replay load (one of 15 replays with native PC had a single 103 ms
+sample age with no hold recorded; not reproduced, cause unknown). A hold is
+evidence of *where* the GIL was kept, not proof of why.
 
 Measured on the sparse world (2026-10-21, one workstation; full-mode figures
 from Trials 20–22):
