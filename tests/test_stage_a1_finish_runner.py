@@ -902,7 +902,7 @@ def test_gil_probe_flag_builds_the_probe_into_the_evidence_and_reaches_sessions(
     assert observed==[(None,None),(probe['library'],'80.0')]
     assert Path(probe['library'])==tmp_path/'b'/'gil_probe.so' and Path(probe['library']).is_file()
     assert probe['threshold_ms']==80 and len(probe['source_sha256'])==64 and len(probe['library_sha256'])==64
-    assert probe['command'][:2]==['cc','-O2'] and '-Werror' in probe['command']
+    assert probe['command'][:2]==['cc','-O2'] and '-Werror' in probe['command'] and probe['compiler']
 
 
 @pytest.mark.parametrize('argv,message',[

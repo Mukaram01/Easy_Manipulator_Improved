@@ -1386,6 +1386,7 @@ def test_gil_probe_names_the_thread_keeping_a_contended_gil_and_ignores_normal_s
     assert all(h['end_wall_ns']<=busy_start+20_000_000 for h in holds)
     summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
     assert summary['holds']==len(holds) and summary['threshold_ms']==80 and summary['file']=='summary.measurements.gil-probe.txt'
+    assert len(summary['library_sha256'])==64 and summary['python_version'] and all('overlaps_probe_late' in h for h in holds)
 
 
 def test_gil_probe_is_opt_in_bounded_and_needs_both_settings(tmp_path,monkeypatch,built_gil_probe):
@@ -1408,3 +1409,40 @@ def test_gil_probe_is_validated_before_and_stopped_beside_the_other_diagnostics(
     assert init<source.index("self.writer=threading.Thread(target=self._write")
     assert "if self.gil_probe is not None:self.gil_probe.stop();self.timing.extend(self.gil_probe.events)" in source
     assert source.index("self.gil_probe.stop()")<source.index("with_suffix('.timing.json').write_text")
+
+
+def test_gil_probe_refuses_a_library_built_for_another_python_and_records_what_it_loaded(tmp_path,monkeypatch,built_gil_probe):
+    import hashlib,platform
+    from simulator_execution import GilProbe
+    probe=GilProbe(built_gil_probe,tmp_path/'p.txt',80)
+    assert probe.python_version==platform.python_version()
+    assert probe.library_sha256==hashlib.sha256(built_gil_probe.read_bytes()).hexdigest()
+    monkeypatch.setattr(platform,'python_version',lambda:'3.10.99')
+    with pytest.raises(RuntimeError,match='compiled for Python'):GilProbe(built_gil_probe,tmp_path/'q.txt',80)
+
+
+def test_gil_probe_failed_start_raises_and_writes_nothing(tmp_path,built_gil_probe):
+    from simulator_execution import GilProbe
+    probe=GilProbe(built_gil_probe,tmp_path/'missing-dir'/'p.txt',80)
+    with pytest.raises(RuntimeError,match='failed to start'):probe.start()
+    assert probe.started is False and probe.events==[]
+    probe.stop()                                                     # still a no-op
+
+
+def test_gil_probe_starts_before_the_measurement_threads_and_names_them_after():
+    source=(Path(__file__).parents[1]/'scripts/simulator_execution.py').read_text()
+    start=source.index("if self.gil_probe is not None:self.gil_probe.start()")
+    assert start<source.index("self.writer=threading.Thread(target=self._write")
+    assert source.index("self.acquisition=threading.Thread(target=self._acquire")<source.index("if self.gil_probe is not None:self.gil_probe.capture_names()")
+
+
+def test_gil_probe_flags_holds_that_overlap_the_probes_own_lateness():
+    from simulator_execution import GilProbe
+    text=('hold 1000 2000 100.000 7 3\n'          # overlaps the late window below
+          'hold 5000 6000 100.000 8 4\n'          # does not
+          'late 1500 1800 90.000\n'
+          'garbage line\n')
+    events=GilProbe.parse(text,{7:'MainThread'})
+    holds=[e for e in events if e['event']=='gil_probe_hold'];lates=[e for e in events if e['event']=='gil_probe_late']
+    assert [(h['thread'],h['overlaps_probe_late']) for h in holds]==[('MainThread',True),(None,False)]
+    assert len(lates)==1 and lates[0]['late_ms']==90.0

@@ -5,6 +5,7 @@ No trajectory producer, simulator mutation, or autonomous recovery lives here.
 """
 import copy
 import ctypes
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -438,16 +439,25 @@ class GilProbe:
     native gil_probe (scripts/gil_probe.c, built by the runner) whose own pthread reads
     CPython 3.10's GIL state without the GIL and records every hold of at least the
     threshold during which another thread was waiting, plus its own scheduling lateness.
-    Holder ids are mapped to thread names. It never touches a measurement, a guard or a
+    Holder ids are mapped to thread names; a hold that overlaps the probe's own
+    lateness (the probe thread itself not scheduled) is flagged, since then the holder
+    may simply have been descheduled too. It never touches a measurement, a guard or a
     threshold."""
     def __init__(self,library,path,threshold_ms):
         import ctypes,sys
         threshold_ms=float(threshold_ms)
         if not math.isfinite(threshold_ms) or not 20<=threshold_ms<=1000:
             raise RuntimeError('GIL probe threshold must be within [20, 1000] ms')
+        import platform
         if sys.version_info[:2]!=(3,10):
             raise RuntimeError('GIL probe reads the CPython 3.10 runtime layout only')
-        self.lib=ctypes.CDLL(str(library));self.path=Path(path);self.threshold_ms=threshold_ms
+        self.library=Path(library);self.library_sha256=hashlib.sha256(self.library.read_bytes()).hexdigest()
+        self.lib=ctypes.CDLL(str(self.library));self.path=Path(path);self.threshold_ms=threshold_ms
+        # A const char[] in the library: read the bytes in place (it is not a char* pointer).
+        built=ctypes.string_at(ctypes.addressof(ctypes.c_char.in_dll(self.lib,'gil_probe_python_version'))).decode()
+        if built!=platform.python_version():
+            raise RuntimeError(f'GIL probe was compiled for Python {built!r}, not {platform.python_version()}')
+        self.python_version=built
         self.lib.gil_probe_start.argtypes=[ctypes.c_char_p,ctypes.c_longlong];self.lib.gil_probe_start.restype=ctypes.c_int
         self.lib.gil_probe_stop.restype=ctypes.c_longlong;self.lib.gil_probe_lates.restype=ctypes.c_longlong
         self.events=[];self.started=False;self.names={}
@@ -459,25 +469,35 @@ class GilProbe:
         if not library or not threshold:raise RuntimeError('GIL probe needs both its library and its threshold')
         return cls(library,path,threshold)
     def start(self):
-        # Names are captured now, while the acquisition, writer and watch threads are alive;
-        # close() joins them before stop() runs.
-        self.names={t.ident:t.name for t in threading.enumerate()}
         rc=self.lib.gil_probe_start(str(self.path).encode(),int(self.threshold_ms*1e6))
         if rc:raise RuntimeError(f'GIL probe failed to start ({rc})')
-        self.started=True
+        self.started=True;self.capture_names()
+        import atexit
+        atexit.register(self.stop)            # never left polling into interpreter finalization
+    def capture_names(self):
+        # close() joins the acquisition and writer threads before stop(): keep their names now.
+        self.names.update((t.ident,t.name) for t in threading.enumerate())
     def stop(self):
         if not self.started:return
         holds=self.lib.gil_probe_stop();lates=self.lib.gil_probe_lates();self.started=False
-        names=dict(self.names);names.update((t.ident,t.name) for t in threading.enumerate())
-        for line in self.path.read_text(errors='replace').splitlines():
+        self.capture_names()
+        self.events.extend(self.parse(self.path.read_text(errors='replace'),self.names))
+        self.events.append(dict(event='gil_probe_summary',wall_ns=time.time_ns(),threshold_ms=self.threshold_ms,
+            holds=holds,lates=lates,file=self.path.name,library=str(self.library),library_sha256=self.library_sha256,
+            python_version=self.python_version))
+    @staticmethod
+    def parse(text,names):
+        holds=[];lates=[]
+        for line in text.splitlines():
             fields=line.split()
             if fields[:1]==['hold'] and len(fields)==6:
-                self.events.append(dict(event='gil_probe_hold',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),
+                holds.append(dict(event='gil_probe_hold',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),
                     hold_ms=float(fields[3]),thread_id=int(fields[4]),thread=names.get(int(fields[4])),switch_number=int(fields[5])))
             elif fields[:1]==['late'] and len(fields)==4:
-                self.events.append(dict(event='gil_probe_late',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),late_ms=float(fields[3])))
-        self.events.append(dict(event='gil_probe_summary',wall_ns=time.time_ns(),threshold_ms=self.threshold_ms,
-            holds=holds,lates=lates,file=self.path.name))
+                lates.append(dict(event='gil_probe_late',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),late_ms=float(fields[3])))
+        for hold in holds:
+            hold['overlaps_probe_late']=any(l['start_wall_ns']<hold['end_wall_ns'] and l['end_wall_ns']>hold['start_wall_ns'] for l in lates)
+        return holds+lates
 
 
 class TimedRLock:
@@ -598,14 +618,16 @@ class Measurements:
         self.loader=yaml.CSafeLoader
         self.robot=ET.parse(self.receipt_path.parent/'robot.urdf').getroot()
         self.parents={j.find('child').get('link'):j for j in self.robot.findall('joint')}
-        # Validated before any thread starts, so a bad value cannot strand them.
+        # Validated (and the native probe started) before any thread starts, so a bad
+        # value or a failed start cannot strand them.
         self.gil_watch=GilHoldWatch.from_environment(self.log_path.with_suffix('.gil-holds.txt'))
         self.gil_probe=GilProbe.from_environment(self.log_path.with_suffix('.gil-probe.txt'))
+        if self.gil_probe is not None:self.gil_probe.start()
         self.writer=threading.Thread(target=self._write,name='measurement_evidence');self.writer.start()
         self.acquisition=threading.Thread(target=self._acquire,name='measurement_acquisition');self.acquisition.start()
         self.watch=ProcessStallWatch();self.watch.start()
         if self.gil_watch is not None:self.gil_watch.start()
-        if self.gil_probe is not None:self.gil_probe.start()
+        if self.gil_probe is not None:self.gil_probe.capture_names()
     def _acquire(self):
         # One wait set built once, every available message taken per wake. The
         # executor-based spin rebuilt its wait set per message, which measured

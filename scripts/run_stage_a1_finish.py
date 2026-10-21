@@ -641,8 +641,10 @@ def build_gil_probe(repo:Path,output:Path)->dict:
     command=["cc","-O2","-Wall","-Wextra","-Werror","-shared","-fPIC","-I"+sysconfig.get_paths()["include"],
              "-o",str(library),str(source)]
     run(command,env=dict(os.environ),cwd=repo,log=output/"gil-probe-build.log",timeout=120)
+    compiler=subprocess.run(["cc","--version"],capture_output=True,text=True,timeout=30).stdout.splitlines()[:1]
     return {"source":str(source),"source_sha256":sha256(source),"library":str(library),
-            "library_sha256":sha256(library),"command":command,"python":sys.version.split()[0]}
+            "library_sha256":sha256(library),"command":command,"compiler":compiler[0] if compiler else None,
+            "python":sys.version.split()[0]}
 
 
 def run_fast_tests(repo:Path,output:Path,env:dict)->dict:

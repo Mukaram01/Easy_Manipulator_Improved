@@ -6,8 +6,10 @@
  *   - interp->ceval.gil_drop_request (another thread has asked for the GIL).
  * A hold is reported when one thread state kept the GIL, without a switch, for
  * at least the threshold while a drop request was seen. The probe also reports
- * its own lateness: if it was not scheduled for the threshold, the whole
- * process or machine paused and no GIL holder can be blamed.
+ * its own lateness: if the probe thread itself was not scheduled for the
+ * threshold (CPU or machine contention), a hold overlapping it cannot be
+ * attributed to the holder alone. The loop ends once the interpreter starts
+ * finalizing, so it never reads a deleted interpreter state.
  *
  * Records (one per line, written with write(2)):
  *   hold <start_wall_ns> <end_wall_ns> <hold_ms> <thread_id> <switch_number>
@@ -22,13 +24,17 @@
 
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/uio.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 
+/* The CPython version whose internal layout this library was compiled against. */
+const char gil_probe_python_version[] = PY_VERSION;
+
 static pthread_t probe_thread;
-static volatile int probe_running;
+static int probe_running;
 static int probe_fd = -1;
 static long long probe_threshold_ns;
 static long long probe_holds, probe_lates;
@@ -39,7 +45,8 @@ static long long now_ns(clockid_t clock) {
     return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 
-static void emit(const char *line, int length) {
+static void emit(const char *line, int length, size_t size) {
+    if (length > (int)size - 1) length = (int)size - 1;
     if (probe_fd >= 0 && length > 0) {
         ssize_t ignored = write(probe_fd, line, (size_t)length);
         (void)ignored;
@@ -56,13 +63,14 @@ static void *probe_main(void *unused) {
     int contended = 0;
     char line[160];
     struct timespec period = {0, 1000000};
-    while (probe_running) {
+    while (__atomic_load_n(&probe_running, __ATOMIC_ACQUIRE)) {
         nanosleep(&period, NULL);
+        if (__atomic_load_n(&_PyRuntime._finalizing._value, __ATOMIC_ACQUIRE)) break;
         long long mono = now_ns(CLOCK_MONOTONIC), wall = now_ns(CLOCK_REALTIME);
         if (mono - last_poll >= probe_threshold_ns) {
             probe_lates++;
             emit(line, snprintf(line, sizeof line, "late %lld %lld %.3f\n",
-                 wall - (mono - last_poll), wall, (mono - last_poll) / 1e6));
+                 wall - (mono - last_poll), wall, (mono - last_poll) / 1e6), sizeof line);
         }
         last_poll = mono;
         int locked = __atomic_load_n(&gil->locked._value, __ATOMIC_ACQUIRE);
@@ -71,7 +79,11 @@ static void *probe_main(void *unused) {
         int drop = interp ? __atomic_load_n(&interp->ceval.gil_drop_request._value, __ATOMIC_RELAXED) : 0;
         unsigned long tid = 0;
         if (tstate) {
-            tid = ((PyThreadState *)tstate)->thread_id;
+            /* A thread state is freed after its thread drops the GIL on exit: read the id
+             * through process_vm_readv so a stale pointer yields EFAULT, never a fault. */
+            struct iovec local = {&tid, sizeof tid};
+            struct iovec remote = {&((PyThreadState *)tstate)->thread_id, sizeof tid};
+            if (process_vm_readv(getpid(), &local, 1, &remote, 1, 0) != (ssize_t)sizeof tid) tstate = 0;
             /* Only trust the id if the holder did not change while it was read. */
             if (__atomic_load_n(&_PyRuntime.gilstate.tstate_current._value, __ATOMIC_ACQUIRE) != tstate) tstate = 0;
         }
@@ -82,7 +94,7 @@ static void *probe_main(void *unused) {
         if (holder && contended && mono - hold_start >= probe_threshold_ns) {
             probe_holds++;
             emit(line, snprintf(line, sizeof line, "hold %lld %lld %.3f %lu %lu\n",
-                 hold_start_wall, wall, (mono - hold_start) / 1e6, holder_id, holder_switch));
+                 hold_start_wall, wall, (mono - hold_start) / 1e6, holder_id, holder_switch), sizeof line);
         }
         holder = (locked == 1) ? tstate : 0;
         holder_id = tid;
@@ -96,14 +108,14 @@ static void *probe_main(void *unused) {
 
 /* Returns 0 on success. Called with the GIL held (ctypes); the probe thread itself never takes it. */
 int gil_probe_start(const char *path, long long threshold_ns) {
-    if (probe_running || !path || threshold_ns <= 0) return -1;
+    if (__atomic_load_n(&probe_running, __ATOMIC_ACQUIRE) || !path || threshold_ns <= 0) return -1;
     probe_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (probe_fd < 0) return -2;
     probe_threshold_ns = threshold_ns;
     probe_holds = probe_lates = 0;
-    probe_running = 1;
+    __atomic_store_n(&probe_running, 1, __ATOMIC_RELEASE);
     if (pthread_create(&probe_thread, NULL, probe_main, NULL) != 0) {
-        probe_running = 0;
+        __atomic_store_n(&probe_running, 0, __ATOMIC_RELEASE);
         close(probe_fd);
         probe_fd = -1;
         return -3;
@@ -113,8 +125,8 @@ int gil_probe_start(const char *path, long long threshold_ns) {
 
 /* Stops and joins the probe thread; returns the number of hold records written. */
 long long gil_probe_stop(void) {
-    if (!probe_running) return -1;
-    probe_running = 0;
+    if (!__atomic_load_n(&probe_running, __ATOMIC_ACQUIRE)) return -1;
+    __atomic_store_n(&probe_running, 0, __ATOMIC_RELEASE);
     pthread_join(probe_thread, NULL);
     close(probe_fd);
     probe_fd = -1;
