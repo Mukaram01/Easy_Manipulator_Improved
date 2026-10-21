@@ -476,7 +476,10 @@ class GilHoldWatch:
         # The timer is process-global: cancel it here too, so no late dump can reach a
         # reused file descriptor; keep the file open while the heartbeat could re-arm.
         faulthandler.cancel_dump_traceback_later()
-        if self.file is None or self.thread.is_alive():return
+        if self.file is None:return
+        if self.thread.is_alive():
+            self.events.append(dict(event='gil_watch_summary',wall_ns=time.time_ns(),thread_alive=True,
+                dump_file=self.path.name));return
         self.file.close()
         dumps=self.path.read_text(errors='replace').count('Timeout (')
         self.events.append(dict(event='gil_watch_summary',wall_ns=time.time_ns(),threshold_ms=self.threshold*1e3,

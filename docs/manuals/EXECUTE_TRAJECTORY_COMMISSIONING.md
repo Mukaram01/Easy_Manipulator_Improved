@@ -311,7 +311,7 @@ from Trials 20–22):
 
 | Mode | Measured wall time | Contents |
 |---|---|---|
-| fast | 126 s | build check 22 s, C++ action + support/Cartesian tests 75 s, 754 Python tests 34 s (16 suites then; 22 now) |
+| fast | 145 s | preflight 96 s (build check, C++ action + support/Cartesian tests), 974 Python tests in 22 suites 49 s |
 | targeted `resolve` | 695 s | preflight 97 s + one plan-only session 598 s |
 | targeted `telemetry` | 776 s | preflight 97 s + one session 681 s (approach motion) |
 | full through `full-cycle` | 2885–4240 s | preflight + six sessions of 391–1367 s each |

@@ -1219,9 +1219,11 @@ def test_gil_hold_watch_stop_cancels_the_process_timer_and_never_closes_under_a_
     live=watch.thread;watch.thread=Stuck()
     watch.stop()
     assert cancelled and not watch.file.closed           # timer cancelled; file kept open for the live thread
-    assert not any(e['event']=='gil_watch_summary' for e in watch.events)
+    incomplete,=[e for e in watch.events if e['event']=='gil_watch_summary']
+    assert incomplete['thread_alive'] is True           # the evidence shows the teardown was incomplete
     watch.thread=live;watch.stop()
-    assert watch.file.closed and any(e['event']=='gil_watch_summary' for e in watch.events)
+    final=[e for e in watch.events if e['event']=='gil_watch_summary'][-1]
+    assert watch.file.closed and 'thread_alive' not in final and final['dumps']==0
 
 
 def test_bad_watchdog_value_fails_before_any_measurement_thread_starts():
