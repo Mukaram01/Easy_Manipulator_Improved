@@ -9,7 +9,7 @@ import json
 import math
 import signal
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 
@@ -528,6 +528,60 @@ def freeze_planning_heap(collector=gc, generation_2=GC_EXECUTION_GENERATION_2_TH
     collector.set_threshold(before[0], before[1], generation_2)
     return dict(start_wall_ns=started, collect_ns=collect_ns, wall_ns=time.time_ns(), collected=collected,
                 frozen=collector.get_freeze_count(), thresholds_before=list(before), thresholds_after=list(collector.get_threshold()))
+
+
+class PlanningCrossCheckGate:
+    """Defers the MoveIt FCL cross-check while a MoveGroup planning goal is in flight.
+
+    move_group answers GetStateValidity only after its planning callback returns (0.18-0.26 s
+    for the release plan in Trials 15-21) and the held-phase guard bounds that query at 0.2 s,
+    so Trial 21 failed 'measured collision query timed out' with the arm at rest. Nothing is
+    commanded while a plan is computed and the guard's physical contact and retention checks
+    keep running every tick, so the cross-check is deferred and has to pass again before the
+    next execution goal is sent. Every deferral window is recorded in the summary with its
+    first and last deferred sample and the check that cleared it.
+    """
+    def __init__(self, summary):
+        self.summary = summary; self.planning = False; self.window = None; self.clearing = None; self.cross_check = None
+
+    @property
+    def pending(self):
+        return self.window is not None and self.window.get('cleared') is None
+
+    @contextmanager
+    def planning_goal(self):
+        self.planning = True
+        try:
+            yield
+        finally:
+            self.planning = False
+
+    def defer(self, stamp):
+        """Record one deferred cross-check (stamp: wall_ns and sim_ns of the current sample)."""
+        if not self.pending:
+            self.window = dict(stage=self.summary.get('current_stage'), count=0, first=dict(stamp), last=None, cleared=None)
+            self.summary.setdefault('deferred_measured_collision_checks', []).append(self.window)
+        self.window['count'] += 1
+        self.window['last'] = dict(stamp)
+
+    def passed(self, check):
+        """A cross-check passed (check: sim_ns, wall_ns, valid, contacts); it clears a pending window."""
+        if self.pending:
+            self.window['cleared'] = dict(by=self.clearing or 'monitor', **check)
+
+    def require_clear(self):
+        """Before an execution goal, run a deferred cross-check now; it fails closed."""
+        if not self.pending:
+            return
+        if self.cross_check is None:
+            raise RuntimeError('deferred measured collision check has no cross-check to run')
+        self.clearing = 'require_clear'
+        try:
+            self.cross_check()
+        finally:
+            self.clearing = None
+        if self.pending:
+            raise RuntimeError('deferred measured collision check did not pass before execution')
 
 
 CARRIED_STAGES = ('PREPLAN_LIFT', 'PREPLAN_TRANSFER', 'PREPLAN_PLACE')
@@ -1435,6 +1489,7 @@ def main():
         (args.planning_trace/f'{trace_sequence:05d}-{label}.json').write_text(json.dumps(record, indent=2)+'\n')
         trace_sequence += 1
     exchanged_clients = set()
+    cross_check_gate = PlanningCrossCheckGate(summary)
     def call(client, request):
         return call_service(node, client, request, spin=rclpy.spin_until_future_complete, exchanged=exchanged_clients,
                             on_retry=lambda record: summary.setdefault('service_retries', []).append(
@@ -1453,6 +1508,8 @@ def main():
             raise RuntimeError('planning scene service not yet exchanged before owned execution')
         if client is execute_client and summary.get('grasp_recovery'):
             raise RuntimeError('RECOVERY_EXECUTION_INVALIDATED: fresh recovery continuation is unqualified')
+        if client is execute_client:
+            cross_check_gate.require_clear()   # last precondition: a cross-check deferred during planning must pass now
         opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
         held_before_open=contact_guard.checked_current() if opening_action else None
         if client is execute_client:
@@ -1514,15 +1571,16 @@ def main():
                 rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
             else:
                 until=time.monotonic()+timeout
-                while not future.done() and time.monotonic()<until:
-                    rclpy.spin_once(node,timeout_sec=.005)
-                    execution_monitor()
-                    if controlled_cancel:
-                        sample=measurements.fresh()
-                        moved=motion_trial.observe(sample,measurements.joints(sample))
-                        summary['cancellation_movement_verified']=moved
-                        if moved and sample['sim_ns']-cancel_start>200000000:
-                            raise RuntimeError('CONTROLLED_CANCELLATION')
+                with cross_check_gate.planning_goal() if client is plan_client else nullcontext():
+                    while not future.done() and time.monotonic()<until:
+                        rclpy.spin_once(node,timeout_sec=.005)
+                        execution_monitor()
+                        if controlled_cancel:
+                            sample=measurements.fresh()
+                            moved=motion_trial.observe(sample,measurements.joints(sample))
+                            summary['cancellation_movement_verified']=moved
+                            if moved and sample['sim_ns']-cancel_start>200000000:
+                                raise RuntimeError('CONTROLLED_CANCELLATION')
             if not future.done() or future.result() is None:
                 result_timed_out=True
                 raise RuntimeError('action result timed out')
@@ -1658,6 +1716,8 @@ def main():
     def measured_fcl():
         from simulator_execution import validate_measured_contacts,measured_attachment
         s=measurements.fresh()
+        if cross_check_gate.planning:
+            cross_check_gate.defer(dict(wall_ns=time.time_ns(),sim_ns=s['sim_ns']));return
         state=copy.deepcopy(initial.robot_state)
         measured=measurements.joints(s)
         state=updated_state(state,{k:v[0] for k,v in measured.items()}, {})
@@ -1698,6 +1758,7 @@ def main():
             raise
         measurements.fresh()
         summary['last_measured_collision_check']=dict(sim_ns=s['sim_ns'],valid=future.result().valid,contacts=len(future.result().contacts))
+        cross_check_gate.passed(dict(summary['last_measured_collision_check'],wall_ns=time.time_ns()))
     def reconcile_retention_loss():
         from hashlib import sha256
         from rosidl_runtime_py.convert import message_to_ordereddict
@@ -2532,6 +2593,7 @@ def main():
                     raise RuntimeError('measured object moved since authoritative resolution')
             contact_guard.check(measurements.fresh());measurements.arm()
             contact_guard.validate_current=measured_fcl
+            cross_check_gate.cross_check=contact_guard.drain   # physical checks on any backlog, then the cross-check
             execution_monitor=contact_guard.drain
             if args.simulator_commission=='cancel':
                 from simulator_execution import ControllerCancellationAudit

@@ -611,6 +611,8 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
     from types import SimpleNamespace as N
     tree=ast.parse((Path(__file__).parents[1]/'scripts/perceived_object_grasp_execute.py').read_text())
     main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    from contextlib import nullcontext
+    from perceived_object_grasp_execute import PlanningCrossCheckGate
     owner=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
     def future(result):return N(done=lambda:True,result=lambda:result)
     terminal=future(N(status=4,result=N(error_code=N(val=1))))
@@ -622,6 +624,7 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
     context=dict(time=time,node=None,summary=summary,measurements=N(fresh=lambda:sample,joints=lambda s:{'arm':[0.,0.]}),
         execute_client=client,plan_client=object(),controlled_cancel=True,controller_audit=None,contract={'home_joint_names':['arm']},
         apply_client=(scene:=object()),exchanged_clients={scene},
+        cross_check_gate=PlanningCrossCheckGate({}),nullcontext=nullcontext,
         rclpy=N(spin_until_future_complete=lambda *args,**kw:None),execution_monitor=lambda:None,
         wait_stopped=lambda:True,apply=lambda diff:events.append('revoke'),PlanningScene=N,baseline=N(),
         measured_reconcile=lambda:events.append('reconcile'))
