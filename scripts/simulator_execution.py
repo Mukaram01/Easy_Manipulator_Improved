@@ -432,18 +432,33 @@ class ProcessStallWatch:
 GIL_WATCHDOG_ENV='WORKCELL_GIL_WATCHDOG_MS'
 GIL_PROBE_LIB_ENV='WORKCELL_GIL_PROBE_LIB'
 GIL_PROBE_MS_ENV='WORKCELL_GIL_PROBE_MS'
+GIL_PROBE_NATIVE_PC_ENV='WORKCELL_GIL_PROBE_NATIVE_PC'
 
 
 class GilProbe:
     """Diagnostic only, opt-in (WORKCELL_GIL_PROBE_LIB + WORKCELL_GIL_PROBE_MS): loads the
-    native gil_probe (scripts/gil_probe.c, built by the runner) whose own pthread reads
-    CPython 3.10's GIL state without the GIL and records every hold of at least the
-    threshold during which another thread was waiting, plus its own scheduling lateness.
-    Holder ids are mapped to thread names; a hold that overlaps the probe's own
-    lateness (the probe thread itself not scheduled) is flagged, since then the holder
-    may simply have been descheduled too. It never touches a measurement, a guard or a
-    threshold."""
-    def __init__(self,library,path,threshold_ms):
+    native gil_probe (scripts/gil_probe.c, built by the runner). Its own pthread reads only
+    the static _PyRuntime GIL fields, never an interpreter object, and records every hold
+    of at least the threshold; while a hold lasts it reads the holder's /proc CPU and
+    syscall state and, with WORKCELL_GIL_PROBE_NATIVE_PC=1, samples its native PC.
+
+    Attribution is done under the GIL with supported interfaces only:
+      * every Python thread registers its own thread state (PyThreadState_Get) and kernel
+        tid: the constructing thread at start(), later threads through a one-shot
+        threading.setprofile hook. A holder that never registered stays unattributed.
+      * a sampler thread asks for the GIL every SAMPLER_PERIOD_S, so a hold this long is
+        contended. When it waited at least half the threshold it takes one native
+        snapshot of every thread's Python frames (gil_probe_snapshot, no bytecode, GIL
+        kept), with the GIL switch number: the holder's frames are exactly those at the
+        release when at most one other thread ran in between (switches <= hold's + 2).
+    Every unavailable or inconclusive observation is counted and reported as such. It
+    never touches a measurement, a guard or a threshold."""
+    SAMPLER_PERIOD_S=.02
+    FRAME_DEPTH=24
+    LOOP_SLOW_NS=20_000_000
+    COUNTERS=('holds','lates','unmapped_holds','proc_read_failures','pc_sent','pc_received','pc_lost',
+              'pc_send_failures','pc_skipped_in_syscall')
+    def __init__(self,library,path,threshold_ms,native_pc=False):
         import ctypes,sys
         threshold_ms=float(threshold_ms)
         if not math.isfinite(threshold_ms) or not 20<=threshold_ms<=1000:
@@ -452,52 +467,170 @@ class GilProbe:
         if sys.version_info[:2]!=(3,10):
             raise RuntimeError('GIL probe reads the CPython 3.10 runtime layout only')
         self.library=Path(library);self.library_sha256=hashlib.sha256(self.library.read_bytes()).hexdigest()
-        self.lib=ctypes.CDLL(str(self.library));self.path=Path(path);self.threshold_ms=threshold_ms
+        # CDLL releases the GIL around start/stop; PyDLL keeps it for register and snapshot.
+        self.lib=ctypes.CDLL(str(self.library));self.pylib=ctypes.PyDLL(str(self.library))
+        self.path=Path(path);self.threshold_ms=threshold_ms;self.native_pc=bool(native_pc)
         # A const char[] in the library: read the bytes in place (it is not a char* pointer).
         built=ctypes.string_at(ctypes.addressof(ctypes.c_char.in_dll(self.lib,'gil_probe_python_version'))).decode()
         if built!=platform.python_version():
             raise RuntimeError(f'GIL probe was compiled for Python {built!r}, not {platform.python_version()}')
         self.python_version=built
-        self.lib.gil_probe_start.argtypes=[ctypes.c_char_p,ctypes.c_longlong];self.lib.gil_probe_start.restype=ctypes.c_int
-        self.lib.gil_probe_stop.restype=ctypes.c_longlong;self.lib.gil_probe_lates.restype=ctypes.c_longlong
-        self.lib.gil_probe_read_failures.restype=ctypes.c_longlong
-        self.events=[];self.started=False;self.names={}
+        self.lib.gil_probe_start.argtypes=[ctypes.c_char_p,ctypes.c_longlong,ctypes.c_int];self.lib.gil_probe_start.restype=ctypes.c_int
+        self.lib.gil_probe_stop.restype=ctypes.c_longlong
+        self.lib.gil_probe_counters.argtypes=[ctypes.POINTER(ctypes.c_longlong),ctypes.c_int];self.lib.gil_probe_counters.restype=ctypes.c_int
+        self.lib.gil_probe_pc_signal.restype=ctypes.c_int
+        self.pylib.gil_probe_register.argtypes=[ctypes.c_ulong,ctypes.c_int];self.pylib.gil_probe_register.restype=ctypes.c_int
+        self.pylib.gil_probe_snapshot.argtypes=[ctypes.py_object,ctypes.c_int];self.pylib.gil_probe_snapshot.restype=ctypes.c_int
+        self._tstate=ctypes.pythonapi.PyThreadState_Get;self._tstate.restype=ctypes.c_void_p
+        self.events=[];self.snapshots=[];self.started=False;self.names={};self.registry={}
+        self.registration_failures=[];self.unregistered_at_start=[];self.hook_installed=False
+        self.sampler_wakes=0;self.snapshot_failures=0;self.sampler_stop=threading.Event();self.sampler=None
     @classmethod
     def from_environment(cls,path):
         import os
         library=os.environ.get(GIL_PROBE_LIB_ENV);threshold=os.environ.get(GIL_PROBE_MS_ENV)
         if not library and not threshold:return None
         if not library or not threshold:raise RuntimeError('GIL probe needs both its library and its threshold')
-        return cls(library,path,threshold)
+        return cls(library,path,threshold,native_pc=os.environ.get(GIL_PROBE_NATIVE_PC_ENV)=='1')
+    @property
+    def loop_slow_ns(self):return self.LOOP_SLOW_NS if self.started else 0
+    def register_current(self):
+        t=threading.current_thread();tstate=self._tstate();tid=threading.get_native_id()
+        rc=self.pylib.gil_probe_register(tstate,tid)
+        if rc:self.registration_failures.append(dict(thread=t.name,rc=rc));return
+        # A thread state's address is reused after its thread exits: keep every registration.
+        self.registry.setdefault(tstate,[]).append(dict(ident=t.ident,native_id=tid,name=t.name,registered_wall_ns=time.time_ns()))
+        self.names[t.ident]=t.name
+    def _thread_hook(self,frame,event,arg):
+        import sys
+        sys.setprofile(None)                  # one-shot: this thread is never profiled again
+        try:self.register_current()
+        except Exception as exc:self.registration_failures.append(dict(thread=threading.current_thread().name,error=str(exc)))
     def start(self):
-        rc=self.lib.gil_probe_start(str(self.path).encode(),int(self.threshold_ms*1e6))
+        rc=self.lib.gil_probe_start(str(self.path).encode(),int(self.threshold_ms*1e6),int(self.native_pc))
         if rc:raise RuntimeError(f'GIL probe failed to start ({rc})')
-        self.started=True;self.capture_names()
+        self.started=True
         import atexit
         atexit.register(self.stop)            # never left polling into interpreter finalization
+        if threading.getprofile() is None:threading.setprofile(self._thread_hook);self.hook_installed=True
+        self.register_current()
+        self.unregistered_at_start=sorted(t.name for t in threading.enumerate() if t is not threading.current_thread())
+        self.capture_names()
+        self.sampler=threading.Thread(target=self._sample,name='gil_frame_sampler',daemon=True);self.sampler.start()
     def capture_names(self):
         # close() joins the acquisition and writer threads before stop(): keep their names now.
         self.names.update((t.ident,t.name) for t in threading.enumerate())
+    def _sample(self):
+        # The wait is measured from the end of the previous iteration, so the GIL being kept
+        # from this thread anywhere in its loop (not only inside sleep) is seen.
+        period_ns=int(self.SAMPLER_PERIOD_S*1e9);snapshot_ns=self.threshold_ms*5e5
+        last=time.monotonic_ns()
+        while not self.sampler_stop.is_set():
+            time.sleep(self.SAMPLER_PERIOD_S);got=time.monotonic_ns()
+            self.sampler_wakes+=1;wait_ns=got-last-period_ns
+            if wait_ns<snapshot_ns:last=time.monotonic_ns();continue
+            out=[]
+            try:self.pylib.gil_probe_snapshot(out,self.FRAME_DEPTH)
+            except Exception as exc:
+                self.snapshot_failures+=1
+                self.snapshots.append(dict(event='gil_frame_snapshot_failed',wall_ns=time.time_ns(),wait_ms=wait_ns/1e6,error=str(exc)))
+                last=time.monotonic_ns();continue
+            switch_number,wall_ns,monotonic_ns,threads,tstates=out[0]
+            # asked: the sampler's last moment with the GIL; acquired: its first one again.
+            self.snapshots.append(dict(event='gil_frame_snapshot',wall_ns=wall_ns,monotonic_ns=monotonic_ns,
+                asked_monotonic_ns=last,acquired_monotonic_ns=got,wait_ms=wait_ns/1e6,switch_number=switch_number,
+                threads={str(ident):[dict(file=f,function=n,firstlineno=fl,lasti=la,line=ln) for f,n,fl,la,ln in stack]
+                         for ident,stack in threads.items()},
+                tstates={str(tstate):ident for tstate,ident in tstates.items()}))
+            last=time.monotonic_ns()
+    def note_slow(self,timing,call,started_ns,ended_ns):
+        """Executor loop timing (diagnostic): one record per call that took at least LOOP_SLOW_NS."""
+        timing.append(dict(event='loop_slow',call=call,thread=threading.current_thread().name,
+            start_wall_ns=time.time_ns()-(time.monotonic_ns()-started_ns),duration_ns=ended_ns-started_ns))
     def stop(self):
+        import ctypes
         if not self.started:return
-        holds=self.lib.gil_probe_stop();lates=self.lib.gil_probe_lates();read_failures=self.lib.gil_probe_read_failures();self.started=False
+        sampler_alive=bool(self.sampler and self.sampler.is_alive())
+        self.sampler_stop.set()
+        if self.sampler is not None:self.sampler.join(timeout=2)
+        if self.hook_installed and threading.getprofile()==self._thread_hook:threading.setprofile(None)
+        holds=self.lib.gil_probe_stop();self.started=False
+        values=(ctypes.c_longlong*len(self.COUNTERS))();self.lib.gil_probe_counters(values,len(values))
+        counters=dict(zip(self.COUNTERS,values))
+        maps=self.path.with_suffix('.maps')
+        try:maps.write_text(Path('/proc/self/maps').read_text())
+        except OSError:maps=None
         self.capture_names()
-        self.events.extend(self.parse(self.path.read_text(errors='replace'),self.names))
+        self.events.extend(self.parse(self.path.read_text(errors='replace'),self.registry,self.names,self.snapshots))
+        self.events.extend(self.snapshots)
         self.events.append(dict(event='gil_probe_summary',wall_ns=time.time_ns(),threshold_ms=self.threshold_ms,
-            holds=holds,lates=lates,read_failures=read_failures,file=self.path.name,library=str(self.library),library_sha256=self.library_sha256,
-            python_version=self.python_version))
+            holds=holds,**{k:v for k,v in counters.items() if k!='holds'},file=self.path.name,maps_file=maps.name if maps else None,
+            library=str(self.library),library_sha256=self.library_sha256,python_version=self.python_version,
+            native_pc=self.native_pc,pc_signal=self.lib.gil_probe_pc_signal() or None,
+            sampler_period_ms=self.SAMPLER_PERIOD_S*1e3,sampler_wakes=self.sampler_wakes,
+            sampler_alive_before_stop=sampler_alive,snapshots=sum(1 for s in self.snapshots if s['event']=='gil_frame_snapshot'),
+            snapshot_failures=self.snapshot_failures,registered_threads=sorted({e['name'] for v in self.registry.values() for e in v}),
+            registration_failures=self.registration_failures,unregistered_at_start=self.unregistered_at_start,
+            thread_hook=self.hook_installed))
     @staticmethod
-    def parse(text,names):
-        holds=[];lates=[]
+    def parse(text,registry,names,snapshots=()):
+        holds=[];lates=[];detail={}
+        snapshots=sorted((s for s in snapshots if s.get('event')=='gil_frame_snapshot'),key=lambda s:s['wall_ns'])
         for line in text.splitlines():
             fields=line.split()
-            if fields[:1]==['hold'] and len(fields)==6:
+            if fields[:1]==['hold'] and len(fields)==7:
                 holds.append(dict(event='gil_probe_hold',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),
-                    hold_ms=float(fields[3]),thread_id=int(fields[4]),thread=names.get(int(fields[4])),switch_number=int(fields[5])))
+                    hold_ms=float(fields[3]),tstate=int(fields[4],0),switch_number=int(fields[5]),native_id=int(fields[6])))
             elif fields[:1]==['late'] and len(fields)==4:
                 lates.append(dict(event='gil_probe_late',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),late_ms=float(fields[3])))
+            elif fields[:1] in (['cpu'],['sys'],['pc']) and len(fields)>=3:
+                detail.setdefault(int(fields[1]),[]).append(fields)
         for hold in holds:
             hold['overlaps_probe_late']=any(l['start_wall_ns']<hold['end_wall_ns'] and l['end_wall_ns']>hold['start_wall_ns'] for l in lates)
+            # Identity: the snapshot of the sampler that was already waiting when the hold ended
+            # maps the live thread state to its ident (taken under the GIL); a registration
+            # alone is reported as unconfirmed. The probe sees the release one poll (~1.1 ms) late;
+            # no snapshot can fall inside a hold (it needs the GIL) and one before it is >= 80 ms earlier.
+            snap=next((s for s in snapshots if s['wall_ns']>=hold['end_wall_ns']-5_000_000 and
+                       s['wall_ns']-(s['monotonic_ns']-s['asked_monotonic_ns'])<=hold['end_wall_ns']),None)
+            live=snap['tstates'].get(str(hold['tstate'])) if snap else None
+            # the registration in force when the hold ended (an address is reused after a thread exits);
+            # one made during the hold is the holder's own: only the GIL holder runs Python then
+            entry=max((e for e in registry.get(hold['tstate'],()) if e['registered_wall_ns']<=hold['end_wall_ns']),
+                      key=lambda e:e['registered_wall_ns'],default=None)
+            if live is not None:
+                ident=live;attribution='verified' if entry and entry['ident']==live else ('registry stale' if entry else 'snapshot only')
+            elif entry:ident=entry['ident'];attribution='registered, unconfirmed'
+            else:ident=None;attribution='unattributed'
+            # idents are reused too: a verified hold takes the name of the registration it matched
+            name=entry['name'] if attribution=='verified' else (names.get(ident) if ident is not None else None)
+            hold.update(thread_id=ident,thread=name,attribution=attribution,
+                # /proc and PC data were read for the registered tid: another thread when the registration was stale
+                holder_proc_data='none' if hold['native_id']<=0 else ('stale registration: not the holder' if attribution=='registry stale' else 'holder'))
+            records=detail.get(hold['start_wall_ns'],[])
+            cpu={f[3]:f[4:] for f in records if f[0]=='cpu'}
+            if len(cpu.get('begin',[]))==8 and len(cpu.get('end',[]))==8:
+                b,e=cpu['begin'],cpu['end']
+                hold['holder_cpu']=dict(state_begin=b[0],state_end=e[0],utime_ticks=int(e[1])-int(b[1]),stime_ticks=int(e[2])-int(b[2]),
+                    minflt=int(e[3])-int(b[3]),majflt=int(e[4])-int(b[4]),on_cpu_ms=(int(e[5])-int(b[5]))/1e6,
+                    runqueue_ms=(int(e[6])-int(b[6]))/1e6,window='threshold crossing to end')
+            else:hold['holder_cpu']=None
+            sys_samples=[' '.join(f[3:]) for f in records if f[0]=='sys']
+            hold['holder_syscall']=dict(samples=len(sys_samples),running=sum(1 for s in sys_samples if s=='running'),
+                unavailable=sum(1 for s in sys_samples if s=='unavailable'),
+                in_syscall=sorted({s.split()[0] for s in sys_samples if s not in ('running','unavailable')}))
+            hold['native_pc']=[dict(sent_wall_ns=int(f[2]),delivery_us=int(f[3]),tid=int(f[4]),rip=int(f[5],0),rsp=int(f[6],0),
+                stack_bytes=int(f[7]),candidates=[int(a,0) for a in f[9:9+int(f[8])]]) for f in records if f[0]=='pc' and len(f)>=9]
+            # The holder's frames at the release: exact when at most one other thread ran in between.
+            if snap is None:hold.update(release_frames=None,release_frames_status='no snapshot')
+            elif ident is None:hold.update(release_frames=None,release_frames_status='holder unattributed')
+            else:
+                frames=snap['threads'].get(str(ident))
+                hold.update(release_frames=frames,
+                    release_frames_status='holder not in snapshot' if frames is None else
+                        ('exact' if snap['switch_number']-hold['switch_number']<=2 else 'holder may have run again'),
+                    release_snapshot_switches_after=snap['switch_number']-hold['switch_number'],
+                    release_snapshot_delay_ms=(snap['wall_ns']-hold['end_wall_ns'])/1e6)
         return holds+lates
 
 
@@ -638,17 +771,23 @@ class Measurements:
         from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
         from std_msgs.msg import String
         context=self.node.context
+        timer=self.loop_timer()     # GIL probe only: which native call of this loop was slow
         try:
             with self.sub.handle,self.stop_guard.handle,context.handle:
                 wait_set=_rclpy.WaitSet(1,1,0,0,0,0,context.handle)
                 while not self.stopping and context.ok():
+                    started=time.monotonic_ns() if timer else 0
                     wait_set.clear_entities()
                     wait_set.add_subscription(self.sub.handle);wait_set.add_guard_condition(self.stop_guard.handle)
+                    if timer:rebuilt=time.monotonic_ns();timer('wait_set_rebuild',started,rebuilt)
                     wait_set.wait(100000000)
+                    if timer:timer('wait_set_wait',rebuilt,time.monotonic_ns())
                     if self.stopping or not context.ok():break
                     if not wait_set.is_ready('subscription',0):continue
                     while not self.stopping:
+                        started=time.monotonic_ns() if timer else 0
                         taken=self.sub.handle.take_message(String,False)
+                        if timer:timer('take_message',started,time.monotonic_ns())
                         if taken is None:break
                         self.update(taken[0])
         except Exception as exc:
@@ -692,6 +831,17 @@ class Measurements:
                 source_serialization_ns=s.get('serialization_ns'),receive_wall_ns=received,
                 callback_ns=time.monotonic_ns()-started,parse_ns=parse_ns,lock_wait_ns=lock_wait_ns,queue_depth=len(self.pending),
                 error=str(self.error or sample_error) if self.error or sample_error else None))
+    def loop_timer(self):
+        """GIL probe only: a recorder of loop calls that took at least its LOOP_SLOW_NS, else None."""
+        probe=getattr(self,'gil_probe',None)
+        slow=probe.loop_slow_ns if probe is not None else 0
+        if not slow:return None
+        def record(call,started_ns,ended_ns):
+            if ended_ns-started_ns<slow:return
+            try:
+                with self.lock:probe.note_slow(self.timing,call,started_ns,ended_ns)
+            except Exception:pass              # a diagnostic record never fails the caller
+        return record
     def fresh(self):
         # Error, latest sample and read time are taken together under the lock;
         # the unchanged validation of that same immutable sample at that same

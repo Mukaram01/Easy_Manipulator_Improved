@@ -730,6 +730,11 @@ def test_targeted_full_cycle_is_refused_because_it_needs_same_run_prerequisite_e
     (['--mode','fast','--through','resolve'],'full sequence only'),
     (['--mode','fast','--gil-watchdog-ms','100'],'fast mode runs none'),
     (['--mode','targeted','--gate','resolve','--gil-watchdog-ms','10'],'within [50, 1000] ms'),
+    # Trial 26: the watchdog itself held the GIL for 400 ms; it never observes a gate that moves the robot
+    *[(['--mode','targeted','--gate',gate,'--gil-watchdog-ms','100'],'never runs during motion')
+      for gate in ('cancel','telemetry','stationary','contact-release')],
+    (['--gil-watchdog-ms','100'],'never runs during motion'),
+    (['--mode','targeted','--gate','resolve','--gil-probe-native-pc'],'needs --gil-probe-ms'),
 ])
 def test_mode_arguments_that_could_blur_scope_are_rejected_before_anything_runs(tmp_path,monkeypatch,stubbed_preflight,capsys,argv,message):
     seen=record_sessions(monkeypatch)
@@ -903,6 +908,23 @@ def test_gil_probe_flag_builds_the_probe_into_the_evidence_and_reaches_sessions(
     assert Path(probe['library'])==tmp_path/'b'/'gil_probe.so' and Path(probe['library']).is_file()
     assert probe['threshold_ms']==80 and len(probe['source_sha256'])==64 and len(probe['library_sha256'])==64
     assert probe['command'][:2]==['cc','-O2'] and '-Werror' in probe['command'] and probe['compiler']
+    assert probe['native_pc'] is False
+
+
+def test_gil_probe_native_pc_is_a_separate_opt_in_that_reaches_sessions(tmp_path,monkeypatch,stubbed_preflight):
+    import os,shutil
+    if shutil.which('cc') is None:pytest.skip('no C compiler')
+    observed=[]
+    def session(args,repo,world,sha,gate,index,prior):
+        observed.append(os.environ.get(MODULE.GIL_PROBE_NATIVE_PC_ENV))
+        path=args.output/'summary.json';path.write_text('{}');return path
+    monkeypatch.setattr(MODULE,'one_session',session)
+    monkeypatch.setenv(MODULE.GIL_PROBE_NATIVE_PC_ENV,'1')               # never inherited implicitly
+    assert MODULE.main(['--output',str(tmp_path/'a'),'--mode','targeted','--gate','resolve','--gil-probe-ms','80'])==0
+    assert MODULE.main(['--output',str(tmp_path/'b'),'--mode','targeted','--gate','resolve','--gil-probe-ms','80',
+                        '--gil-probe-native-pc'])==0
+    assert observed==[None,'1']
+    assert json.loads((tmp_path/'b'/'stage-a1-targeted-report.json').read_text())['gil_probe']['native_pc'] is True
 
 
 @pytest.mark.parametrize('argv,message',[

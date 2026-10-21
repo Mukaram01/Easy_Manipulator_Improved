@@ -297,14 +297,49 @@ and a targeted motion gate does not re-qualify cancellation on the current
 binary (only the cancel gate does; the report records
 `"cancellation_qualified_this_run"`).
 
-`--gil-watchdog-ms N` (targeted/full, 50–1000 ms, off by default) arms an
+`--gil-watchdog-ms N` (targeted `resolve` only, 50–1000 ms, off by default) arms an
 executor diagnostic: when its heartbeat thread cannot run for about N − 25 ms
 (a GIL-holding call, a garbage collection, or CPU starvation), CPython's
 `faulthandler` watchdog writes every thread's stack to
 `<summary>.measurements.gil-holds.txt` and the overrun is recorded in the timing
 evidence (`gil_hold`, `gil_watch_summary`). The dump does not mark which thread
 held the lock; read it together with the `gc` and `receive` events of the same
-timing file. It changes no measurement, guard or threshold.
+timing file. It changes no measurement, guard or threshold. Its own re-arm held
+the GIL for 400 ms in Trial 26 and failed a lift, so the runner refuses it for
+every gate that moves the robot and for full mode.
+
+`--gil-probe-ms N` (targeted/full, 20–1000 ms, off by default) builds
+`scripts/gil_probe.c` into the evidence directory (source and library hashes,
+compiler and Python version are recorded) and attributes every GIL hold of at
+least N ms in each executor session:
+
+- its native thread reads only static `_PyRuntime` fields (GIL locked flag,
+  switch number, holder thread-state pointer) and never dereferences an
+  interpreter object, thread state or frame;
+- Python threads register their own thread state and kernel tid under the GIL; a
+  sampler thread asks for the GIL every 20 ms, and after a wait of at least N/2 ms
+  takes one native snapshot of every thread's Python frames and of the live
+  thread-state map (under the GIL and CPython's head lock), so each hold gets the
+  holder's identity (`verified`, `snapshot only`, `registry stale`,
+  `registered, unconfirmed`, `unattributed`) and its frames at the release
+  (`exact` only when at most one other thread ran in between);
+- during a hold it reads the holder's `/proc/self/task/<tid>` CPU, run state and
+  syscall (`running` or the blocking call and its PC);
+- `--gil-probe-native-pc` also samples the holder's native PC during long holds
+  only, one signal at a time while the holder is running, copying registers and
+  4 KiB of its stack (no unwinding); `scripts/gil_probe_report.py <session>`
+  symbolizes them from the session's maps snapshot. Libraries without symbols
+  (the stripped `python3.10`, `_json`) are named by library, and their
+  "nearest exported symbol" is marked unreliable; libc resolves through
+  `libc6-dbg`. Stack-scan callers are heuristic;
+- the executor and acquisition loops record calls that took ≥ 20 ms
+  (`loop_slow`: `spin_once`, `execution_monitor`, `wait_set_*`, `take_message`).
+
+Limits: a hold that begins before the sampler's first loop (probe start) gets
+no snapshot; about 2 % of offline release snapshots are `holder may have run
+again`; the native thread costs about 1.5 % of one core and the sampler about
+0.5 %, with no measured change to telemetry latency under the release-phase
+replay load. A hold is evidence of *where* the GIL was kept, not proof of why.
 
 Measured on the sparse world (2026-10-21, one workstation; full-mode figures
 from Trials 20–22):

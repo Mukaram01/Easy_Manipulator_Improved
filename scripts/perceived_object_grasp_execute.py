@@ -1571,10 +1571,16 @@ def main():
                 rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
             else:
                 until=time.monotonic()+timeout
+                timer=getattr(measurements,'loop_timer',lambda:None)() if measurements else None   # GIL probe only
                 with cross_check_gate.planning_goal() if client is plan_client else nullcontext():
                     while not future.done() and time.monotonic()<until:
+                        started=time.monotonic_ns()
                         rclpy.spin_once(node,timeout_sec=.005)
-                        execution_monitor()
+                        spun=time.monotonic_ns()
+                        if timer:timer('spin_once',started,spun)
+                        try:execution_monitor()
+                        finally:
+                            if timer:timer('execution_monitor',spun,time.monotonic_ns())
                         if controlled_cancel:
                             sample=measurements.fresh()
                             moved=motion_trial.observe(sample,measurements.joints(sample))

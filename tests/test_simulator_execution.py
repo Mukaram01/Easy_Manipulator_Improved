@@ -1349,45 +1349,236 @@ def test_measurements_use_the_timed_lock_and_write_its_profile_into_the_timing_e
     assert source.index("self.timing.append(self.lock.profile())")<source.index("with_suffix('.timing.json').write_text")
 
 
-@pytest.fixture
-def built_gil_probe(tmp_path):
+@pytest.fixture(scope='session')
+def built_gil_probe(tmp_path_factory):
+    # One build per test process: a process loads the probe (and its PC signal handler) once, as the executor does.
     import shutil,subprocess,sysconfig
     if shutil.which('cc') is None:pytest.skip('no C compiler')
-    library=tmp_path/'gil_probe.so'
+    library=tmp_path_factory.mktemp('gil_probe')/'gil_probe.so'
     subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror','-shared','-fPIC','-I'+sysconfig.get_paths()['include'],
                     '-o',str(library),str(Path(__file__).parents[1]/'scripts/gil_probe.c')],check=True)
     return library
 
 
-def test_gil_probe_names_the_thread_keeping_a_contended_gil_and_ignores_normal_switching(tmp_path,built_gil_probe):
+def _probe_holds(probe):
+    return [e for e in probe.events if e['event']=='gil_probe_hold']
+
+
+def _sampler_running(probe):
+    # A hold that starts before the sampler's first loop has no waiting sampler to snapshot it
+    # (documented limit); the executor starts the probe long before planning or motion.
+    import time
+    while probe.sampler_wakes<3:time.sleep(.01)
+
+
+def test_gil_probe_attributes_a_native_hold_with_cpu_syscall_and_exact_release_frames(tmp_path,built_gil_probe):
     import threading,time
     from simulator_execution import GilProbe
-    holder={};go=threading.Event()
-    def worker():go.wait();holder['seconds']=_hold_gil(.4)
-    t=threading.Thread(target=worker,name='measurement_acquisition');t.start()   # alive before the probe starts, as in Measurements
     probe=GilProbe(built_gil_probe,tmp_path/'summary.measurements.gil-probe.txt',80);probe.start()
+    holder={};held=threading.Event();done=threading.Event()
+    def worker():
+        holder['seconds']=_hold_gil(.4);held.set();done.wait(5)   # alive afterwards: its /proc end sample exists
+    t=threading.Thread(target=worker,name='measurement_acquisition')
     try:
-        go.set();time.sleep(.02)
-        end=time.time()+.6
-        while time.time()<end:time.sleep(.002)                 # main keeps asking for the GIL
-        t.join();busy_start=time.time_ns()
+        _sampler_running(probe)
+        t.start();held.wait(5)              # blocked, not polling: the sampler is the only waiter, as in the executor
+        time.sleep(.1);busy_start=time.time_ns()
         def busy():
             stop=time.perf_counter()+.3;x=0
             while time.perf_counter()<stop:x+=1
         u=threading.Thread(target=busy,name='busy');u.start();busy();u.join()   # pure-Python contention switches every 5 ms
+        time.sleep(.05)
     finally:
-        probe.stop()
-    holds=[e for e in probe.events if e['event']=='gil_probe_hold']
-    # _hold_gil's calibration calls are C calls too; any of them may exceed 80 ms. All holds are the worker's.
-    assert holds and all(h['thread']=='measurement_acquisition' and h['thread_id']==t.ident for h in holds)
+        done.set();t.join();probe.stop()
+    holds=_probe_holds(probe)
+    # _hold_gil's calibration calls are C calls too; any may exceed 80 ms. All holds are the worker's.
+    assert holds and all(h['thread']=='measurement_acquisition' and h['attribution']=='verified' for h in holds)
+    assert all(h['thread_id']==t.ident and h['native_id']==t.native_id and h['holder_proc_data']=='holder' for h in holds)
     longest=max(holds,key=lambda h:h['hold_ms'])
-    assert longest['hold_ms']>=holder['seconds']*1e3*.8 and longest['end_wall_ns']>longest['start_wall_ns']
-    # nothing during pure-Python contention (a hold's end is the first 1 ms poll after it)
-    assert all(h['end_wall_ns']<=busy_start+20_000_000 for h in holds)
+    assert longest['hold_ms']>=holder['seconds']*1e3*.8
+    assert all(h['end_wall_ns']<=busy_start+20_000_000 for h in holds)       # nothing during pure-Python contention
+    cpu=longest['holder_cpu']
+    assert cpu and cpu['state_begin']=='R' and cpu['on_cpu_ms']>=(longest['hold_ms']-80)*.5 and cpu['majflt']==0
+    assert longest['holder_syscall']['samples']>=5 and longest['holder_syscall']['running']>=longest['holder_syscall']['samples']-1
+    # exact unless another waiter let the holder run before the sampler (see the exactness test)
+    assert longest['release_frames_status'] in ('exact','holder may have run again')
+    if longest['release_frames_status']=='exact':assert longest['release_frames'][0]['function']=='_hold_gil'
+    assert longest['native_pc']==[]                                    # native PC sampling is a separate opt-in
     summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
     assert summary['holds']==len(holds) and summary['threshold_ms']==80 and summary['file']=='summary.measurements.gil-probe.txt'
-    assert len(summary['library_sha256'])==64 and summary['python_version'] and all('overlaps_probe_late' in h for h in holds)
-    assert summary['read_failures']==0                                 # holder ids were readable on this host
+    assert summary['unmapped_holds']==0 and summary['snapshot_failures']==0 and summary['snapshots']>=1
+    assert summary['sampler_alive_before_stop'] and summary['sampler_wakes']>10 and summary['thread_hook']
+    assert {'MainThread','measurement_acquisition','gil_frame_sampler','busy'}<=set(summary['registered_threads'])
+    assert summary['native_pc'] is False and summary['pc_sent']==0 and len(summary['library_sha256'])==64
+    assert (tmp_path/'summary.measurements.gil-probe.maps').read_text().count('\n')>10
+
+
+def test_gil_probe_native_pc_samples_land_in_the_native_function_that_keeps_the_gil(tmp_path,built_gil_probe):
+    import ctypes,threading,time
+    from simulator_execution import GilProbe
+    from gil_probe_report import report
+    probe=GilProbe(built_gil_probe,tmp_path/'summary.measurements.gil-probe.txt',80,native_pc=True);probe.start()
+    spin=ctypes.PyDLL(str(built_gil_probe)).gil_probe_selftest_spin
+    spin.argtypes=[ctypes.c_longlong];spin.restype=ctypes.c_ulonglong
+    done=threading.Event()
+    def worker():spin(300_000_000);done.wait(5)
+    t=threading.Thread(target=worker,name='spinner')
+    try:
+        _sampler_running(probe)
+        t.start();time.sleep(.45)
+    finally:
+        done.set();t.join();probe.stop()
+    hold,=_probe_holds(probe)
+    assert hold['thread']=='spinner' and hold['attribution']=='verified' and hold['hold_ms']>=250
+    assert hold['release_frames_status'] in ('exact','holder may have run again')
+    if hold['release_frames_status']=='exact':assert hold['release_frames'][0]['function']=='worker'
+    pcs=hold['native_pc']
+    assert len(pcs)>=40 and all(p['tid']==t.native_id and p['stack_bytes']>0 for p in pcs)
+    assert max(p['delivery_us'] for p in pcs)<50_000
+    summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
+    assert summary['native_pc'] and summary['pc_signal'] and summary['pc_received']==len(pcs)
+    (tmp_path/'summary.measurements.timing.json').write_text(json.dumps(probe.events))
+    row,=report(tmp_path)['holds']
+    # the spin loop itself or the clock it reads; the stack scan finds the spinning function as a caller
+    leaf=[name for name,_ in row['native_pc']['leaf']]
+    assert leaf and all(n.startswith(('gil_probe.so','[vdso]')) or (n.startswith('libc.so.6:') and 'clock_gettime' in n) for n in leaf)
+    assert any(name.startswith('gil_probe.so:gil_probe_selftest_spin') for name,_ in row['native_pc']['stack_scan_heuristic']+row['native_pc']['leaf'])
+
+
+def test_gil_probe_release_frames_are_exact_when_the_sampler_is_the_only_waiter(tmp_path,built_gil_probe):
+    import ctypes,threading,time
+    from simulator_execution import GilProbe
+    spin=ctypes.PyDLL(str(built_gil_probe)).gil_probe_selftest_spin
+    spin.argtypes=[ctypes.c_longlong];spin.restype=ctypes.c_ulonglong
+    statuses=[]
+    for attempt in range(5):
+        probe=GilProbe(built_gil_probe,tmp_path/f'p{attempt}.txt',80);probe.start()
+        done=threading.Event()
+        def worker():spin(120_000_000);done.wait(5)
+        t=threading.Thread(target=worker,name='spinner')
+        try:
+            _sampler_running(probe)
+            t.start();time.sleep(.2)
+        finally:
+            done.set();t.join();probe.stop()
+        hold,=_probe_holds(probe)
+        statuses.append(hold['release_frames_status'])
+        assert hold['attribution']=='verified' and hold['thread']=='spinner'
+        if hold['release_frames_status']=='exact':
+            assert hold['release_frames'][0]['function']=='worker' and hold['release_snapshot_switches_after']<=2
+    # offline: 116 of 120 exact, the rest labelled 'holder may have run again', none missing
+    assert set(statuses)<={'exact','holder may have run again'} and statuses.count('exact')>=3
+
+
+def test_gil_probe_reports_a_holder_that_never_registered_without_guessing(tmp_path,built_gil_probe):
+    import threading,time
+    from simulator_execution import GilProbe
+    go=threading.Event();held=threading.Event();done=threading.Event()
+    def worker():go.wait(5);_hold_gil(.3);held.set();done.wait(5)   # alive after its hold, as executor threads are
+    t=threading.Thread(target=worker,name='started_before_probe');t.start()   # no registration hook for it
+    probe=GilProbe(built_gil_probe,tmp_path/'p.txt',80);probe.start()
+    try:
+        _sampler_running(probe)
+        go.set();held.wait(5);time.sleep(.05)
+    finally:
+        done.set();t.join();probe.stop()
+    holds=_probe_holds(probe)
+    assert holds and all(h['native_id']==-1 and h['holder_cpu'] is None and h['holder_proc_data']=='none' for h in holds)
+    # the snapshot taken under the GIL right after the release still names it, marked as such
+    assert all(h['attribution'] in ('snapshot only','unattributed') for h in holds)
+    assert any(h['attribution']=='snapshot only' and h['thread']=='started_before_probe' for h in holds)
+    summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
+    assert summary['unmapped_holds']==len(holds) and 'started_before_probe' in summary['unregistered_at_start']
+
+
+def test_gil_probe_releasing_native_calls_and_python_loops_are_not_holds(tmp_path,built_gil_probe):
+    import ctypes,threading,time
+    from simulator_execution import GilProbe
+    probe=GilProbe(built_gil_probe,tmp_path/'p.txt',80);probe.start()
+    try:
+        libc=ctypes.CDLL(None)                                    # CDLL releases the GIL around the call
+        sleeper=threading.Thread(target=libc.usleep,args=(300000,),name='releaser');sleeper.start()
+        def loop():
+            stop=time.perf_counter()+.3;x=0
+            while time.perf_counter()<stop:x+=1
+        workers=[threading.Thread(target=loop,name=f'loop{i}') for i in range(2)];[w.start() for w in workers]
+        loop();[w.join() for w in workers];sleeper.join();time.sleep(.05)
+    finally:
+        probe.stop()
+    assert _probe_holds(probe)==[]
+
+
+def test_gil_probe_parse_distinguishes_verified_stale_and_inexact_attribution():
+    from simulator_execution import GilProbe
+    registry={0x10:[dict(ident=1,native_id=11,name='early',registered_wall_ns=0),
+                    dict(ident=2,native_id=12,name='later',registered_wall_ns=92_000_000)],
+              0x20:[dict(ident=3,native_id=13,name='gone',registered_wall_ns=0)]}
+    snap=lambda wall,switch,tstates,waited=50_000_000:dict(event='gil_frame_snapshot',wall_ns=wall,switch_number=switch,
+        monotonic_ns=10**12,asked_monotonic_ns=10**12-waited,
+        tstates={str(k):v for k,v in tstates.items()},threads={'1':[dict(file='a.py',function='f',firstlineno=1,lasti=4,line=2)],
+        '2':[dict(file='b.py',function='g',firstlineno=1,lasti=6,line=3)],'4':[]})
+    text=('hold 1000 90000000 89.000 0x10 5 11\n'          # first registration in force, confirmed, frames exact
+          'cpu 1000 11 begin R 10 1 5 0 100 0 3\n'
+          'cpu 1000 11 end R 18 1 6 0 9000000 1000000 9\n'
+          'sys 1000 2000 running\n'
+          'sys 1000 7000 202 0x1 0x2 0x3 0x4 0x5 0x6 0x7ffd 0x7f00\n'
+          'pc 1000 3000 25 11 0x401000 0x7ffd00 4096 2 0x401100 0x402000\n'
+          'hold 95000000 190000000 95.000 0x10 9 12\n'     # a later registration, the live map says otherwise
+          'hold 200000000 300000000 100.000 0x20 20 13\n'   # its thread is gone from the snapshot
+          'hold 600000000 700000000 100.000 0x20 40 13\n'   # the next sampler was not waiting during it
+          'hold 400000000 500000000 100.000 0x30 30 -1\n'   # never registered, live map names it
+          'late 50000000 60000000 10.000\n'
+          'garbage line\n')
+    snaps=[snap(90_500_000,6,{0x10:1}),snap(190_500_000,13,{0x10:1}),snap(300_400_000,21,{}),snap(500_200_000,31,{0x30:4}),
+           snap(800_000_000,41,{0x20:3},waited=10_000_000)]
+    holds={h['start_wall_ns']:h for h in GilProbe.parse(text,registry,{1:'early',2:'later',4:'native'},snaps) if h['event']=='gil_probe_hold'}
+    first=holds[1000]
+    assert (first['thread'],first['attribution'],first['release_frames_status'],first['overlaps_probe_late'])==('early','verified','exact',True)
+    assert first['holder_cpu']['utime_ticks']==8 and abs(first['holder_cpu']['on_cpu_ms']-8.9999)<1e-9
+    assert first['holder_syscall']==dict(samples=2,running=1,unavailable=0,in_syscall=['202'])
+    assert first['native_pc'][0]['rip']==0x401000 and first['native_pc'][0]['candidates']==[0x401100,0x402000]
+    stale=holds[95000000]
+    assert (stale['attribution'],stale['thread_id'],stale['holder_proc_data'])==('registry stale',1,'stale registration: not the holder')
+    assert stale['release_frames_status']=='holder may have run again' and stale['release_snapshot_switches_after']==4
+    assert (holds[200000000]['attribution'],holds[200000000]['release_frames_status'])==('registered, unconfirmed','holder not in snapshot')
+    assert (holds[600000000]['attribution'],holds[600000000]['release_frames_status'])==('registered, unconfirmed','no snapshot')
+    native=holds[400000000]
+    assert (native['attribution'],native['thread'],native['holder_proc_data'],native['holder_cpu'])==('snapshot only','native','none',None)
+
+
+def test_gil_probe_refuses_a_pc_signal_that_is_already_in_use(tmp_path,built_gil_probe):
+    import subprocess,sys
+    code=('import signal,sys\n'
+          f'sys.path.insert(0,{str(Path(__file__).parents[1]/"scripts")!r})\n'
+          'from simulator_execution import GilProbe\n'
+          'signal.signal(signal.SIGRTMAX-3,lambda *a:None)\n'
+          f'p=GilProbe({str(built_gil_probe)!r},{str(tmp_path/"p.txt")!r},80,native_pc=True)\n'
+          'try:p.start()\n'
+          'except RuntimeError as e:print(e)\n')
+    out=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True,timeout=60)
+    assert 'GIL probe failed to start (-5)' in out.stdout,out.stderr
+
+
+def test_loop_timer_records_slow_calls_only_while_the_probe_runs():
+    from simulator_execution import Measurements,TimedRLock
+    m=Measurements.__new__(Measurements);m.lock=TimedRLock();m.timing=[]
+    m.gil_probe=None
+    assert m.loop_timer() is None
+    class Probe:
+        loop_slow_ns=20_000_000
+        def note_slow(self,timing,call,a,b):timing.append(dict(event='loop_slow',call=call,duration_ns=b-a))
+    m.gil_probe=Probe();timer=m.loop_timer()
+    timer('spin_once',0,19_999_999);timer('take_message',0,25_000_000)
+    assert m.timing==[dict(event='loop_slow',call='take_message',duration_ns=25_000_000)]
+    m.gil_probe.note_slow=lambda *a:1/0;timer=m.loop_timer();timer('spin_once',0,30_000_000)   # never fails the caller
+
+
+def test_executor_and_acquisition_loops_time_their_native_calls_only_through_the_probe_timer():
+    execute=(Path(__file__).parents[1]/'scripts/perceived_object_grasp_execute.py').read_text()
+    assert "timer=getattr(measurements,'loop_timer',lambda:None)() if measurements else None" in execute
+    assert "if timer:timer('spin_once',started,spun)" in execute and "if timer:timer('execution_monitor',spun,time.monotonic_ns())" in execute
+    source=(Path(__file__).parents[1]/'scripts/simulator_execution.py').read_text()
+    for call in ('wait_set_rebuild','wait_set_wait','take_message'):assert f"timer('{call}'" in source
 
 
 def test_gil_probe_is_opt_in_bounded_and_needs_both_settings(tmp_path,monkeypatch,built_gil_probe):
@@ -1437,13 +1628,3 @@ def test_gil_probe_starts_before_the_measurement_threads_and_names_them_after():
     assert source.index("self.acquisition=threading.Thread(target=self._acquire")<source.index("if self.gil_probe is not None:self.gil_probe.capture_names()")
 
 
-def test_gil_probe_flags_holds_that_overlap_the_probes_own_lateness():
-    from simulator_execution import GilProbe
-    text=('hold 1000 2000 100.000 7 3\n'          # overlaps the late window below
-          'hold 5000 6000 100.000 8 4\n'          # does not
-          'late 1500 1800 90.000\n'
-          'garbage line\n')
-    events=GilProbe.parse(text,{7:'MainThread'})
-    holds=[e for e in events if e['event']=='gil_probe_hold'];lates=[e for e in events if e['event']=='gil_probe_late']
-    assert [(h['thread'],h['overlaps_probe_late']) for h in holds]==[('MainThread',True),(None,False)]
-    assert len(lates)==1 and lates[0]['late_ms']==90.0
