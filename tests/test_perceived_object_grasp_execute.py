@@ -728,7 +728,7 @@ def test_simulator_plan_only_observed_slow_certificate_and_bounded_drain(monkeyp
         if pending is future:
             waits.append(timeout_sec)
             clock[0]+=min(timeout_sec,max(0.,1000.+completion_seconds-clock[0]))
-    context.update(plan_client=client,execute_client=object(),controlled_cancel=False,
+    context.update(plan_client=client,cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),controlled_cancel=False,
         controller_audit=None,node=object(),measurements=None,execution_monitor=None,
         rclpy=SimpleNamespace(spin_until_future_complete=spin))
     main=next(n for n in ast.parse(SCRIPT.read_text()).body
@@ -808,7 +808,7 @@ def test_drained_moveit_timeout_after_client_wait_uses_identical_request_policy(
         if pending in owned:
             waits.append(timeout_sec)
             clock[0]+=min(timeout_sec,max(0.,pending.ends-clock[0]))
-    context.update(plan_client=client,execute_client=object(),controlled_cancel=False,
+    context.update(plan_client=client,cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),controlled_cancel=False,
         controller_audit=None,node=object(),measurements=None,execution_monitor=None,
         rclpy=SimpleNamespace(spin_until_future_complete=spin))
     main=next(n for n in ast.parse(SCRIPT.read_text()).body
@@ -880,7 +880,7 @@ def test_unknown_plan_acceptance_stops_search_and_cancels_late_acceptance():
     callbacks=[];cancelled=[]
     sent=SimpleNamespace(done=lambda:False,add_done_callback=callbacks.append)
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
-    context=dict(vars(MODULE),execute_client=object(),plan_client=client,controlled_cancel=False,
+    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
         controller_audit=None,node=object(),summary={},
         rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
@@ -904,7 +904,7 @@ def test_accepted_plan_without_result_future_stops_search():
         cancel_goal_async=lambda:cancelled.append(True))
     sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
-    context=dict(vars(MODULE),execute_client=object(),plan_client=client,controlled_cancel=False,
+    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
         controller_audit=None,node=object(),summary={},
         rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
@@ -1008,7 +1008,7 @@ def test_measured_fcl_preserves_first_rejected_query_before_cancellation(with_co
         requests.append(copy.deepcopy(request))
         return SimpleNamespace(done=lambda: True, result=lambda: response)
     summary = {'last_measured_collision_check': {'sim_ns': 69387000000, 'valid': True, 'contacts': 0}}
-    context = dict(vars(MODULE), copy=copy,
+    context = dict(vars(MODULE), cross_check_gate=MODULE.PlanningCrossCheckGate({}), copy=copy,
         measurements=SimpleNamespace(fresh=lambda: sample, joints=lambda s: s['joints']),
         initial=PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'], position=[0.0]))),
         contact_guard=SimpleNamespace(planning_attached=False, held=False, phase='approach',
@@ -1056,7 +1056,8 @@ def test_owned_execution_evidence_preserves_exact_command_trajectory():
     client = SimpleNamespace(wait_for_server=lambda **kw: True, send_goal_async=lambda g: sent)
     summary = {'current_stage': 'EXECUTE_APPROACH'}
     context = dict(vars(MODULE), summary=summary, controlled_cancel=False, controller_audit=None,
-        execute_client=client, measurements=None, execution_monitor=None, node=object(),
+        cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=client, measurements=None, execution_monitor=None, node=object(),
+        apply_client=(scene:=object()), exchanged_clients={scene},
         rclpy=SimpleNamespace(spin_until_future_complete=lambda *a, **kw: None))
     exec(compile(ast.Module(body=[boundary], type_ignores=[]), '<actual-owned-action>', 'exec'), context)
     context['action'](client, goal, 5)
@@ -1080,7 +1081,7 @@ def test_trajectory_serialization_failure_occurs_before_goal_submission(monkeypa
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=send)
     def broken(message):raise RuntimeError('serialization failed')
     monkeypatch.setattr(convert,'message_to_ordereddict',broken)
-    context=dict(vars(MODULE),execute_client=client,controlled_cancel=False,controller_audit=None,
+    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=client,controlled_cancel=False,controller_audit=None,apply_client=(scene:=object()),exchanged_clients={scene},
                  node=object(),summary={},rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-owned-action>','exec'),context)
     with pytest.raises(RuntimeError,match='serialization failed'):
@@ -1090,9 +1091,13 @@ def test_trajectory_serialization_failure_occurs_before_goal_submission(monkeypa
 
 @pytest.mark.parametrize('backend,stage_name,expected',[
     ('simulator','PREPLAN_LIFT',.02),('fake','PREPLAN_LIFT',.2),
-    ('simulator','PREPLAN_APPROACH',.2),('simulator','PREPLAN_TRANSFER',.2),
-    ('simulator','PREPLAN_CLOSE_GRIPPER',.2)])
-def test_physical_lift_uses_conservative_scaling_without_changing_request_geometry(backend,stage_name,expected):
+    # Carried transfer/place at 10 %: the 20 % transfer pivoted the held part 0.69 deg
+    # in the pinch at ~1 g (run-full-cycle-135626); 2 % would exceed the 120 s wait.
+    ('simulator','PREPLAN_TRANSFER',.1),('simulator','PREPLAN_PLACE',.1),
+    ('fake','PREPLAN_TRANSFER',.2),('fake','PREPLAN_PLACE',.2),
+    ('simulator','PREPLAN_APPROACH',.2),('simulator','PREPLAN_RETREAT',.2),('simulator','PREPLAN_HOME',.2),
+    ('simulator','PREPLAN_CLOSE_GRIPPER',.2),('simulator','PREPLAN_OPEN_GRIPPER',.2)])
+def test_physical_carried_phases_use_conservative_scaling_without_changing_request_geometry(backend,stage_name,expected):
     import ast
     import copy
     import time
@@ -1229,7 +1234,7 @@ def test_plan_only_action_does_not_read_cancellation_motion_measurement():
     sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
     def unexpected():raise AssertionError('PLAN_ONLY has no cancellation motion start')
-    context=dict(vars(MODULE),execute_client=object(),plan_client=client,controlled_cancel=False,
+    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
         controller_audit=None,node=object(),summary={},measurements=SimpleNamespace(fresh=unexpected),
         execution_monitor=None,rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
@@ -1347,3 +1352,350 @@ def test_execution_boundary_refresh_precedes_unchanged_expiry_check():
     assert start<expiry and 'if not motion or not motion[0]' in block
     assert 'time.time()' not in block.split('fresh = select_observations')[0]
     assert "select_observations(intent, physical, objects, time.time())" in text[start:expiry]
+
+
+# ---------------------------------------------------------------- carried-step owned execution wait
+def _traj(duration_s):
+    from moveit_msgs.msg import RobotTrajectory
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+    from builtin_interfaces.msg import Duration
+    pts=[JointTrajectoryPoint(positions=[0.]),JointTrajectoryPoint(positions=[.1],time_from_start=Duration(sec=int(duration_s),nanosec=int((duration_s%1)*1e9)))]
+    return RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'],points=pts))
+
+
+def test_measured_real_time_factor_requires_a_second_of_wall_time_and_forward_sim():
+    f=MODULE.measured_real_time_factor
+    assert f(None,{'wall_ns':0,'sim_ns':0}) is None
+    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(.5e9),'sim_ns':int(.1e9)}) is None
+    assert f({'wall_ns':0,'sim_ns':int(5e9)},{'wall_ns':int(10e9),'sim_ns':int(5e9)}) is None
+    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(67.5e9),'sim_ns':int(5.8e9)})==pytest.approx(5.8/67.5)
+    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(100e9),'sim_ns':int(.1e9)})==.02  # floor
+
+
+def test_carried_execution_wait_follows_plan_and_rtf_within_bounds():
+    w=MODULE.carried_execution_wait
+    assert w(_traj(10.8),None)==120.                       # no measured RTF: unchanged base wait
+    assert w(_traj(0.),.08)==120.
+    assert w(_traj(4.1),.5)==120.                          # fast simulation never shortens the base
+    assert w(_traj(10.8),.086)==pytest.approx(10.8/.086*1.5+30)   # run-135626 lift-window RTF: ~218 s
+    assert w(_traj(54.),.08)==300.                         # cap
+    assert w(_traj(10.8),.086,cap=150.)==150.
+    assert MODULE.planned_duration_s(_traj(2.25))==pytest.approx(2.25)
+    assert MODULE.SERVICE_RETRY_ALLOWANCE_S==11*2*10
+    assert MODULE.MAX_OWNED_EXECUTION_S==3*300+6*120+30+90+220
+
+
+def test_execution_loop_derives_the_wait_only_for_carried_steps():
+    source=SCRIPT.read_text()
+    assert "wait=carried_execution_wait(step['trajectory'],rtf)" in source
+    assert "if step['stage'] in CARRIED_STAGES:" in source
+    assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)" in source
+    assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)" not in source
+    assert "previous_start=stamp(execution_mark),start=stamp(start_sample)" in source
+    assert MODULE.CARRIED_STAGES==('PREPLAN_LIFT','PREPLAN_TRANSFER','PREPLAN_PLACE')
+    # the release trajectory and all non-carried steps keep their fixed waits
+    assert "ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)" in source
+
+
+def test_measured_fcl_passes_the_destination_only_while_carried_in_destination_phases():
+    source=SCRIPT.read_text()
+    assert "destination=contact_guard.destination if carried and contact_guard.phase in DESTINATION_PHASES else None" in source
+
+
+class _Client:
+    """Request/response client whose replies are scripted: None stands for a dropped reply."""
+    srv_name='/move_group/get_parameters'
+    def __init__(self,replies,available=True):
+        self.replies=list(replies); self.available=available; self.requests=[]; self.abandoned=[]
+    def wait_for_service(self,timeout_sec):
+        return self.available
+    def call_async(self,request):
+        self.requests.append(request)
+        reply=self.replies.pop(0)
+        if isinstance(reply,Exception):
+            def result():raise reply
+            return SimpleNamespace(done=lambda:True,result=result)
+        return SimpleNamespace(done=lambda:reply is not None,result=lambda:reply)
+    def remove_pending_request(self,future):
+        self.abandoned.append(future)
+
+
+def _spin():
+    calls=[]
+    def spin(node,future,timeout_sec):calls.append(timeout_sec)
+    spin.calls=calls
+    return spin
+
+
+def test_service_call_resends_the_identical_request_after_one_dropped_reply_and_reports_it():
+    client=_Client([None,'reply']); retries=[]; exchanged=set(); spin=_spin()
+    assert MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)=='reply'
+    assert client.requests==['request','request'] and len(client.abandoned)==1   # the dropped attempt is removed from the pending table
+    assert len(retries)==1 and retries[0]['service']==client.srv_name and retries[0]['attempt']==1
+    assert retries[0]['wall_ns']>0 and retries[0]['monotonic_ns']>0
+    assert spin.calls==[10.,10.]                           # each attempt keeps the existing 10 s wait
+    assert exchanged=={client}
+
+
+def test_service_call_is_bounded_and_fails_closed_after_the_last_attempt():
+    client=_Client([None,None,None]); retries=[]
+    with pytest.raises(RuntimeError,match=r'service timeout: /move_group/get_parameters \(3 attempts\)$'):
+        MODULE.call_service(None,client,'request',spin=_spin(),exchanged=set(),on_retry=retries.append)
+    assert len(client.requests)==3 and [r['attempt'] for r in retries]==[1,2]   # no retry record after the final failure
+    assert MODULE.SERVICE_ATTEMPTS==3 and MODULE.SERVICE_WAIT_S==10.
+
+
+def test_service_call_never_retries_a_client_after_its_first_exchange():
+    """The discovery race is per response reader: in-motion guard calls keep the single bounded wait."""
+    client=_Client(['first',None]); retries=[]; exchanged=set(); spin=_spin()
+    assert MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)=='first'
+    with pytest.raises(RuntimeError,match=r'service timeout: /move_group/get_parameters$'):
+        MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)
+    assert client.requests==['request','request'] and retries==[] and spin.calls==[10.,10.]
+    other=_Client([None,'reply'])                          # a new client (new response reader) gets its own first-reply retry
+    assert MODULE.call_service(None,other,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)=='reply'
+    assert len(retries)==1 and exchanged=={client,other}
+
+
+def test_service_call_spends_the_retry_budget_on_the_first_exchange_whatever_its_outcome():
+    client=_Client([None,None,None,None]); retries=[]; exchanged=set(); spin=_spin()
+    with pytest.raises(RuntimeError,match=r'\(3 attempts\)$'):
+        MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)
+    with pytest.raises(RuntimeError,match=r'service timeout: /move_group/get_parameters$'):   # later calls: one attempt only
+        MODULE.call_service(None,client,'request',spin=spin,exchanged=exchanged,on_retry=retries.append)
+    assert len(client.requests)==4 and len(retries)==2 and exchanged=={client}
+
+
+def test_service_retry_client_count_matches_the_executor_source():
+    source=SCRIPT.read_text()
+    assert source.count('create_client(')==MODULE.SERVICE_RETRY_CLIENTS   # 7 long-lived + 4 inline controller_manager clients
+    assert MODULE.SERVICE_RETRY_ALLOWANCE_S==MODULE.SERVICE_RETRY_CLIENTS*(MODULE.SERVICE_ATTEMPTS-1)*MODULE.SERVICE_WAIT_S
+
+
+def test_service_call_does_not_send_when_the_service_is_unavailable():
+    missing=_Client(['reply'],available=False)
+    with pytest.raises(RuntimeError,match='service unavailable'):
+        MODULE.call_service(None,missing,'request',spin=_spin(),exchanged=set())
+    assert missing.requests==[]
+
+
+def test_service_call_prompt_reply_and_raised_result_need_no_retry():
+    prompt=_Client(['reply']); retries=[]
+    assert MODULE.call_service(None,prompt,'request',spin=_spin(),exchanged=set(),on_retry=retries.append)=='reply'
+    assert prompt.requests==['request'] and retries==[] and prompt.abandoned==[]
+    failing=_Client([ValueError('serialization'),'reply'])
+    with pytest.raises(ValueError,match='serialization'):               # a raised result propagates at once, as before
+        MODULE.call_service(None,failing,'request',spin=_spin(),exchanged=set(),on_retry=retries.append)
+    assert failing.requests==['request'] and retries==[]
+
+
+def test_executor_service_calls_use_the_first_reply_retry_and_record_retries_in_the_summary():
+    source=SCRIPT.read_text()
+    assert "return call_service(node, client, request, spin=rclpy.spin_until_future_complete, exchanged=exchanged_clients," in source
+    # no owned execution goal is sent before apply_client's first exchange, so the in-motion guard's
+    # per-tick apply() is never retried; the check sits in action() (the gate executor may insert
+    # nothing, so arming time is too early), after the baseline ACM apply that precedes APPROACH
+    assert "if client is execute_client and apply_client not in exchanged_clients:" in source
+    guard=source.index("if client is execute_client and apply_client not in exchanged_clients:")
+    assert "raise RuntimeError('planning scene service not yet exchanged before owned execution')" in source[guard:guard+300]
+    assert source.index("def action(client, goal, timeout):")<guard<source.index("sent = client.send_goal_async(goal)")
+    assert "if apply_client not in exchanged_clients:raise" not in source
+    import ast
+    tree=ast.parse(source); main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
+    def refuse(**kw):raise AssertionError('goal path reached before the exchange check')
+    client=SimpleNamespace(wait_for_server=refuse,send_goal_async=refuse)
+    context=dict(vars(MODULE),execute_client=client,apply_client=object(),exchanged_clients=set(),summary={},cross_check_gate=MODULE.PlanningCrossCheckGate({}))
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-exchange-check>','exec'),context)
+    from moveit_msgs.action import ExecuteTrajectory
+    goal=ExecuteTrajectory.Goal()
+    with pytest.raises(RuntimeError,match='planning scene service not yet exchanged before owned execution'):
+        context['action'](client,goal,1)
+    context['exchanged_clients'].add(context['apply_client'])           # once exchanged, the check lets the goal path proceed
+    with pytest.raises(AssertionError,match='goal path reached'):
+        context['action'](client,goal,1)
+    assert "on_retry=lambda record: summary.setdefault('service_retries', []).append(" in source
+    assert "dict(record, stage=summary.get('current_stage'))))" in source
+    assert "rclpy.spin_until_future_complete(node, future, timeout_sec=10)" not in source   # the single-attempt path is gone
+    summary={'current_stage':'FILTER_TARGETS'}; exchanged=set()
+    on_retry=lambda record: summary.setdefault('service_retries', []).append(dict(record, stage=summary.get('current_stage')))
+    MODULE.call_service(None,_Client([None,'reply']),'request',spin=_spin(),exchanged=exchanged,on_retry=on_retry)
+    assert [(r['service'],r['attempt'],r['stage']) for r in summary['service_retries']]==[('/move_group/get_parameters',1,'FILTER_TARGETS')]
+    MODULE.call_service(None,_Client(['reply']),'request',spin=_spin(),exchanged=exchanged,on_retry=on_retry)
+    assert len(summary['service_retries'])==1                 # untouched when no retry happens
+
+
+class _Collector:
+    """gc stand-in that records the order of calls."""
+    def __init__(self):
+        self.calls=[]; self.threshold=(700,10,10); self.frozen=0
+    def get_threshold(self):return self.threshold
+    def collect(self):self.calls.append('collect');return 17
+    def freeze(self):self.calls.append('freeze');self.frozen=4321
+    def get_freeze_count(self):return self.frozen
+    def set_threshold(self,*t):self.calls.append(('set_threshold',t));self.threshold=t
+
+
+def test_freeze_planning_heap_collects_then_freezes_then_raises_only_the_generation_2_threshold():
+    collector=_Collector()
+    evidence=MODULE.freeze_planning_heap(collector)
+    assert collector.calls==['collect','freeze',('set_threshold',(700,10,100))]   # a full pass first, so no garbage is frozen
+    assert evidence['collected']==17 and evidence['frozen']==4321
+    assert evidence['start_wall_ns']<=evidence['wall_ns'] and evidence['collect_ns']>=0   # the boundary pass is identifiable in the timing evidence
+    assert evidence['thresholds_before']==[700,10,10] and evidence['thresholds_after']==[700,10,100]
+    collector=_Collector(); collector.threshold=(500,7,10)
+    assert MODULE.freeze_planning_heap(collector)['thresholds_after']==[500,7,100]   # young generations keep their running values
+    assert MODULE.GC_EXECUTION_GENERATION_2_THRESHOLD==100
+
+
+def test_freeze_planning_heap_works_on_the_real_collector_and_is_reversible_for_the_test():
+    import gc
+    before=gc.get_threshold(); frozen_before=gc.get_freeze_count()
+    try:
+        evidence=MODULE.freeze_planning_heap()
+        assert gc.get_freeze_count()>frozen_before and evidence['frozen']==gc.get_freeze_count()
+        assert gc.get_threshold()==(before[0],before[1],100) and gc.isenabled()  # the collector stays enabled
+    finally:
+        gc.unfreeze(); gc.set_threshold(*before)
+    assert gc.get_freeze_count()==frozen_before and gc.get_threshold()==before
+
+
+def test_executor_freezes_the_planning_heap_only_with_live_telemetry_and_before_the_first_executed_step():
+    source=SCRIPT.read_text()
+    call="summary['gc_policy']=freeze_planning_heap()"
+    assert source.count(call)==1 and source.count('freeze_planning_heap(')==2        # definition and one call
+    at=source.index(call)
+    assert source.rindex("if measurements:",0,at)>source.index("refresh_at_execution_boundary(")   # after the boundary refresh
+    assert source.index("selected observation expired before execution")<at<source.index("execution_mark=None")
+    assert at<source.index("for step in cycle['steps']:")
+
+
+def test_cross_check_gate_records_each_deferral_window_and_what_cleared_it():
+    summary={'current_stage':'COMMISSION_RELEASE'}; gate=MODULE.PlanningCrossCheckGate(summary)
+    assert gate.pending is False and gate.planning is False
+    with gate.planning_goal():
+        gate.defer(dict(wall_ns=10,sim_ns=100)); gate.defer(dict(wall_ns=20,sim_ns=200))
+    assert gate.planning is False and gate.pending is True
+    gate.passed(dict(sim_ns=300,wall_ns=30,valid=True,contacts=0))            # a monitor tick cleared it
+    assert gate.pending is False
+    with gate.planning_goal():gate.defer(dict(wall_ns=40,sim_ns=400))
+    gate.cross_check=lambda:gate.passed(dict(sim_ns=500,wall_ns=50,valid=True,contacts=1))
+    gate.require_clear()
+    assert summary['deferred_measured_collision_checks']==[
+        dict(stage='COMMISSION_RELEASE',count=2,first=dict(wall_ns=10,sim_ns=100),last=dict(wall_ns=20,sim_ns=200),
+             cleared=dict(by='monitor',sim_ns=300,wall_ns=30,valid=True,contacts=0)),
+        dict(stage='COMMISSION_RELEASE',count=1,first=dict(wall_ns=40,sim_ns=400),last=dict(wall_ns=40,sim_ns=400),
+             cleared=dict(by='require_clear',sim_ns=500,wall_ns=50,valid=True,contacts=1))]
+    gate.passed(dict(sim_ns=600,wall_ns=60,valid=True,contacts=0))            # passes with nothing pending record nothing
+    assert len(summary['deferred_measured_collision_checks'])==2
+
+
+def test_cross_check_gate_planning_flag_is_cleared_when_the_goal_raises():
+    gate=MODULE.PlanningCrossCheckGate({})
+    with pytest.raises(RuntimeError):
+        with gate.planning_goal():
+            assert gate.planning
+            raise RuntimeError('action result timed out')
+    assert gate.planning is False
+
+
+def test_cross_check_gate_requires_a_deferred_check_to_pass_before_an_execution_goal():
+    gate=MODULE.PlanningCrossCheckGate({}); runs=[]
+    gate.require_clear()                                   # nothing deferred: nothing to do, no cross-check needed
+    stamp=dict(wall_ns=1,sim_ns=1)
+    with gate.planning_goal():gate.defer(stamp)
+    with pytest.raises(RuntimeError,match='has no cross-check to run'):gate.require_clear()   # armed path only
+    def passing():runs.append('check');gate.passed(dict(sim_ns=2,wall_ns=2,valid=True,contacts=0))
+    gate.cross_check=passing; gate.require_clear(); assert runs==['check'] and gate.pending is False
+    with gate.planning_goal():gate.defer(stamp)
+    def rejecting():runs.append('reject');raise RuntimeError('unpermitted measured contact')
+    gate.cross_check=rejecting
+    with pytest.raises(RuntimeError,match='unpermitted measured contact'):gate.require_clear()   # fails closed with the check's reason
+    assert gate.pending and gate.clearing is None
+    def silent():runs.append('silent')                      # a check that returns without passing must not clear the gate
+    gate.cross_check=silent
+    with pytest.raises(RuntimeError,match='did not pass before execution'):gate.require_clear()
+    assert runs==['check','reject','silent']
+
+
+def _action_closure():
+    import ast
+    tree=ast.parse(SCRIPT.read_text()); main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    return ast.Module(body=[next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')],type_ignores=[])
+
+
+def test_executor_defers_the_fcl_cross_check_during_planning_goals_and_clears_it_before_execution():
+    source=SCRIPT.read_text()
+    fcl=source.index("    def measured_fcl():")
+    assert source.index("if cross_check_gate.planning:",fcl)<source.index("state=copy.deepcopy(initial.robot_state)",fcl)
+    assert "cross_check_gate.defer(dict(wall_ns=time.time_ns(),sim_ns=s['sim_ns']));return" in source
+    assert source.index("cross_check_gate.passed(dict(summary['last_measured_collision_check'],wall_ns=time.time_ns()))",fcl)>source.index("summary['last_measured_collision_check']=",fcl)
+    assert "contact_guard.validate_current=measured_fcl\n            cross_check_gate.cross_check=contact_guard.drain" in source
+    assert "with cross_check_gate.planning_goal() if client is plan_client else nullcontext():" in source
+    action=source.index("def action(client, goal, timeout):")
+    clear=source.index("cross_check_gate.require_clear()")
+    assert action<source.index("RECOVERY_EXECUTION_INVALIDATED")<clear<source.index("sent = client.send_goal_async(goal)")   # last precondition
+    # the real action() closure: the gate is in planning state exactly while a plan_client goal is awaited
+    gate=MODULE.PlanningCrossCheckGate({}); seen=[]; ticks=[0]
+    class _Future:
+        def done(self):return ticks[0]>=3
+        def result(self):return SimpleNamespace(status=4,result=SimpleNamespace(error_code=SimpleNamespace(val=1)))
+    future=_Future()
+    handle=SimpleNamespace(accepted=True,goal_id=SimpleNamespace(uuid=[1]*16),get_result_async=lambda:future)
+    sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
+    plan=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
+    def monitor():ticks[0]+=1;seen.append(gate.planning)
+    context=dict(vars(MODULE),plan_client=plan,execute_client=object(),controlled_cancel=False,controller_audit=None,
+                 summary={},node=None,measurements=None,cross_check_gate=gate,execution_monitor=monitor,
+                 rclpy=SimpleNamespace(spin_once=lambda *a,**k:None,spin_until_future_complete=lambda *a,**k:None),time=__import__('time'))
+    exec(compile(_action_closure(),'<actual-planning-gate>','exec'),context)
+    assert gate.planning is False
+    context['action'](plan,SimpleNamespace(),5)
+    assert seen==[True,True,True] and gate.planning is False
+
+
+@pytest.mark.parametrize('outcome',['rejecting','silent'])
+def test_real_action_refuses_an_execute_goal_whose_deferred_cross_check_does_not_pass(outcome):
+    from moveit_msgs.action import ExecuteTrajectory
+    gate=MODULE.PlanningCrossCheckGate({}); runs=[]
+    with gate.planning_goal():gate.defer(dict(wall_ns=1,sim_ns=1))
+    def rejecting():runs.append('reject');raise RuntimeError('unpermitted measured contact')
+    def silent():runs.append('silent')
+    gate.cross_check=rejecting if outcome=='rejecting' else silent
+    def refuse(**kw):raise AssertionError('goal path reached with a pending deferred cross-check')
+    client=SimpleNamespace(wait_for_server=refuse,send_goal_async=refuse)
+    context=dict(vars(MODULE),execute_client=client,apply_client=(scene:=object()),exchanged_clients={scene},summary={},
+                 cross_check_gate=gate,controlled_cancel=False,controller_audit=None,node=None,measurements=None,execution_monitor=None)
+    exec(compile(_action_closure(),'<actual-execute-refusal>','exec'),context)
+    message='unpermitted measured contact' if outcome=='rejecting' else 'did not pass before execution'
+    with pytest.raises(RuntimeError,match=message):
+        context['action'](client,ExecuteTrajectory.Goal(),1)
+    assert runs==[outcome.replace('ing','')] if outcome=='rejecting' else runs==['silent']
+    gate.passed(dict(sim_ns=2,wall_ns=2,valid=True,contacts=0))              # once cleared the goal path is reached
+    with pytest.raises(AssertionError,match='goal path reached'):
+        context['action'](client,ExecuteTrajectory.Goal(),1)
+
+
+def test_real_measured_fcl_returns_before_any_scene_or_validity_traffic_while_planning():
+    import ast,copy
+    from moveit_msgs.msg import PlanningScene, RobotState
+    from moveit_msgs.srv import GetStateValidity
+    from sensor_msgs.msg import JointState
+    tree=ast.parse(SCRIPT.read_text()); main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='measured_fcl')
+    sample={'sim_ns':69389000000,'iteration':69389,'wall_ns':1000,'joints':{'arm':[0.2,0.0]}}
+    summary={'current_stage':'COMMISSION_RELEASE'}; gate=MODULE.PlanningCrossCheckGate(summary); traffic=[]
+    def refuse(*a,**k):traffic.append(a);raise AssertionError('MoveIt traffic during planning')
+    context=dict(vars(MODULE),cross_check_gate=gate,copy=copy,
+        measurements=SimpleNamespace(fresh=lambda:sample,joints=lambda s:s['joints']),
+        initial=PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'],position=[0.0]))),
+        contact_guard=SimpleNamespace(planning_attached=False,held=True,phase='lift',separation=None,predicate=None,pile_objects={}),
+        PlanningScene=PlanningScene,GetStateValidity=GetStateValidity,apply=refuse,
+        validity_client=SimpleNamespace(call_async=refuse),node=object(),summary=summary,
+        rclpy=SimpleNamespace(spin_until_future_complete=refuse))
+    exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-measured-fcl-deferral>','exec'),context)
+    with gate.planning_goal():
+        context['measured_fcl']()
+    assert traffic==[] and gate.pending
+    window,=summary['deferred_measured_collision_checks']
+    assert window['count']==1 and window['first']['sim_ns']==69389000000 and window['cleared'] is None and window['stage']=='COMMISSION_RELEASE'

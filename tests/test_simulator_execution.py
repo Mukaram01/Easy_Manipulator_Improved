@@ -187,6 +187,189 @@ def test_recorded_five_neighbor_certificate_uses_measured_geometry(tmp_path,monk
         guard.identity('a0::part_00::other_link::collision')
 
 
+SUPPORT_BINDING=dict(object_id='workcell::support_surface_table',model='pick_support',link='support_link',collision='support_collision')
+
+
+def test_identity_maps_only_the_bound_support_collision_to_its_planning_object(tmp_path,monkeypatch):
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    assert guard.identity('a0::pick_support::support_link::support_collision')=='workcell::pick_support'
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    assert guard.identity('a0::pick_support::support_link::support_collision')=='workcell::support_surface_table'
+    # Other geometry of the bound model, and other models, keep the conventional identity.
+    assert guard.identity('a0::pick_support::support_link::other_collision')=='workcell::pick_support'
+    assert guard.identity('a0::pick_support::other_link::support_collision')=='workcell::pick_support'
+    assert guard.identity('a0::target_bin_physics::bin_link::floor')=='workcell::target_bin_physics'
+
+
+def test_pile_contacts_exempt_the_resting_contact_on_the_bound_support(tmp_path,monkeypatch):
+    # run-full-cycle-130349/04-stationary: part_04 pinched by both fingertips while still resting on
+    # pick_support was rejected as 'uncertified target contact identity workcell::pick_support'.
+    guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.support=dict(object_id='runtime::part_06',support_id='workcell::support_surface_table',floor_z=0.,tool_link='tool0')
+    support='a0::pick_support::support_link::support_collision'
+    sample['collisions']+= [support,'a0::workcell_robot::left::collision','a0::workcell_robot::right::collision']
+    sample['contacts']=[dict(a=support,b='a0::part_06::link::collision',points=[[0.41,-0.19,-6e-7],[0.41,-0.21,-3e-5]]),
+        dict(a='a0::part_06::link::collision',b='a0::workcell_robot::left::collision',points=[[0,0,0]]),
+        dict(a='a0::part_06::link::collision',b='a0::workcell_robot::right::collision',points=[[0,0,0]])]
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::pick_support'):
+        guard.pile_contacts(sample)
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    assert guard.pile_contacts(sample)=={}
+    # An unbound neighbor is still rejected with the binding present.
+    sample['contacts'].append(dict(a='a0::part_06::link::collision',b='a0::target_bin_physics::bin_link::floor',points=[[0,0,0]]))
+    sample['collisions'].append('a0::target_bin_physics::bin_link::floor')
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::target_bin_physics'):
+        guard.pile_contacts(sample)
+
+
+def test_identity_binding_requires_object_id_and_exact_depth(tmp_path,monkeypatch):
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['support_geometry_binding']={k:v for k,v in SUPPORT_BINDING.items() if k!='object_id'}
+    assert guard.identity('a0::pick_support::support_link::support_collision')=='workcell::pick_support'
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    assert guard.identity('a0::pick_support::support_link::support_collision::extra')=='workcell::pick_support'
+
+
+def test_carried_part_resting_on_bound_support_is_admitted_only_on_the_certified_floor(tmp_path,monkeypatch):
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    guard.support=dict(object_id='runtime::part_06',support_id='workcell::support_surface_table',floor_z=-.0125,tool_link='tool')
+    guard.begin_pile_admission();guard.establish();advance()
+    support='a0::pick_support::support_link::support_collision'
+    sample['collisions'].append(support)
+    rest=dict(a=support,b='a0::part_06::link::collision',points=[[0,0,-.0125],[.01,0,-.01251]])
+    sample['contacts'].append(rest)
+    guard.check(sample)  # held, both fingers, resting on the bound support at floor_z
+    advance();rest['points'][1][2]=-.0123  # 0.2 mm above the certified floor
+    with pytest.raises(RuntimeError,match='not on certified floor'):guard.check(sample)
+    assert guard.pile_certificate['rejected']  # a rejection poisons the certificate: use a fresh guard below
+    # Binding present but the planner bound a different support: the resting contact is not exempt.
+    guard,sample,advance,_=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['support_geometry_binding']=dict(SUPPORT_BINDING)
+    guard.support=dict(object_id='runtime::part_06',support_id='workcell::other_support',floor_z=-.0125,tool_link='tool')
+    guard.begin_pile_admission();guard.establish();advance()
+    sample['collisions'].append(support);sample['contacts'].append(dict(a=support,b='a0::part_06::link::collision',points=[[0,0,-.0125]]))
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::support_surface_table'):guard.check(sample)
+
+
+def test_contact_guard_refuses_acm_allowance_between_touch_links_and_bound_support(tmp_path,monkeypatch):
+    from types import SimpleNamespace as N
+    from simulator_execution import ContactGuard
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    names=['left','workcell::support_surface_table']
+    acm=N(entry_names=names,entry_values=[N(enabled=[False,True]),N(enabled=[True,False])])
+    support=dict(object_id='runtime::part_06',support_id='workcell::support_surface_table',floor_z=0.,tool_link='tool')
+    with pytest.raises(RuntimeError,match='SUPPORT_CONTACT_POLICY.*left'):
+        ContactGuard(guard.m,'runtime::part_06',[.025]*3,['left','right'],support,acm,'tool')
+    ContactGuard(guard.m,'runtime::part_06',[.025]*3,['left','right'],None,acm,'tool')  # no bound support: unchanged
+
+
+DESTINATION_BINDING=dict(object_id='workcell::target_bin_default',model='target_bin_physics',link='bin_link',collision='floor',floor_z=.1)
+BIN_FLOOR='a0::target_bin_physics::bin_link::floor'
+
+
+def destination_guard(tmp_path,monkeypatch):
+    guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['destination_geometry_binding']=dict(DESTINATION_BINDING)
+    guard.destination=dict(object_id=guard.object,support_id='workcell::target_bin_default',floor_z=.1)
+    sample['collisions'].append(BIN_FLOOR)
+    return guard,sample,advance
+
+
+def test_identity_maps_the_bound_destination_floor_only(tmp_path,monkeypatch):
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    assert guard.identity(BIN_FLOOR)=='workcell::target_bin_physics'
+    guard.m.receipt['destination_geometry_binding']=dict(DESTINATION_BINDING)
+    assert guard.identity(BIN_FLOOR)=='workcell::target_bin_default'
+    assert guard.identity('a0::target_bin_physics::bin_link::wall_x_minus')=='workcell::target_bin_physics'
+
+
+def test_destination_floor_contact_is_admitted_only_in_place_opening_released(tmp_path,monkeypatch):
+    # run-full-cycle-160944: the placed part settled on the bin floor while the fingers opened and was
+    # rejected as 'uncertified target contact identity workcell::target_bin_physics'.
+    guard,sample,advance=destination_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish();advance()
+    rest=dict(a=BIN_FLOOR,b='a0::part_06::link::collision',points=[[.44,.21,.1],[.46,.23,.09999]])
+    def carried_away(guard,sample):  # the initial pile neighbour has separated, as it must before transfer
+        sample['contacts']=[c for c in sample['contacts'] if 'part_07' not in c['b']];guard.pile_expired.add('runtime::part_07')
+    carried_away(guard,sample);sample['contacts'].append(rest)
+    guard.phase='transfer'
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::target_bin_default'):guard.check(sample)
+    guard,sample,advance=destination_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish();advance()
+    carried_away(guard,sample);sample['contacts'].append(rest);guard.phase='opening'
+    guard.check(sample)  # resting on the bound destination floor while the fingers still touch
+    advance();rest['points'][1][2]=.1002  # 0.2 mm above the bound floor
+    with pytest.raises(RuntimeError,match='not on the bound floor'):guard.check(sample)
+
+
+def test_finger_contact_with_the_destination_floor_stays_unpermitted_while_opening(tmp_path,monkeypatch):
+    guard,sample,advance=destination_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();guard.establish();advance()
+    sample['contacts']=[c for c in sample['contacts'] if 'part_07' not in c['b']];guard.pile_expired.add('runtime::part_07')
+    sample['contacts'].append(dict(a=BIN_FLOOR,b='a0::workcell_robot::left::collision',points=[[.44,.21,.1]]))
+    guard.phase='opening'
+    with pytest.raises(RuntimeError,match='unpermitted physical contact'):guard.check(sample)
+
+
+def test_pile_contacts_skip_the_destination_floor_in_place_phase_only(tmp_path,monkeypatch):
+    guard,sample,advance=destination_guard(tmp_path,monkeypatch)
+    sample['contacts'].append(dict(a=BIN_FLOOR,b='a0::part_06::link::collision',points=[[.44,.21,.1]]))
+    guard.phase='place'
+    assert 'workcell::target_bin_default' not in guard.pile_contacts(sample)
+    guard.phase='lift'
+    with pytest.raises(RuntimeError,match='uncertified target contact identity workcell::target_bin_default'):guard.pile_contacts(sample)
+
+
+def test_compiled_predicate_rejects_destination_wall_normal_contact(tmp_path,monkeypatch):
+    from simulator_execution import validate_measured_contacts
+    from types import SimpleNamespace as N
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    dest=dict(object_id=guard.object,support_id='workcell::target_bin_default',floor_z=.1)
+    def contact(normal,z=.1):  # MoveIt reports the support first; the planner predicate's normal points support -> part
+        return N(contact_body_1='workcell::target_bin_default',contact_body_2=guard.object,body_type_1=1,body_type_2=2,
+                 position=N(x=.45,y=.22,z=z),normal=N(x=normal[0],y=normal[1],z=normal[2]),depth=.00001)
+    validate_measured_contacts(N(valid=False,contacts=[contact((0.,0.,1.))]),None,True,guard.predicate,destination=dest)
+    with pytest.raises(RuntimeError,match='destination contact rejected'):
+        validate_measured_contacts(N(valid=False,contacts=[contact((1.,0.,0.))]),None,True,guard.predicate,destination=dest)
+    with pytest.raises(RuntimeError,match='destination contact rejected'):
+        validate_measured_contacts(N(valid=False,contacts=[contact((0.,0.,1.),z=.1003)]),None,True,guard.predicate,destination=dest)
+
+
+def test_contact_guard_refuses_acm_allowance_between_touch_links_and_destination(tmp_path,monkeypatch):
+    from types import SimpleNamespace as N
+    from simulator_execution import ContactGuard
+    guard,_,_=recorded_pile_guard(tmp_path,monkeypatch)
+    guard.m.receipt['destination_geometry_binding']=dict(DESTINATION_BINDING)
+    names=['right','workcell::target_bin_default']
+    acm=N(entry_names=names,entry_values=[N(enabled=[False,True]),N(enabled=[True,False])])
+    with pytest.raises(RuntimeError,match='SUPPORT_CONTACT_POLICY.*right'):
+        ContactGuard(guard.m,'runtime::part_06',[.025]*3,['left','right'],None,acm,'tool')
+    clean=N(entry_names=names,entry_values=[N(enabled=[False,False]),N(enabled=[False,False])])
+    g=ContactGuard(guard.m,'runtime::part_06',[.025]*3,['left','right'],None,clean,'tool')
+    assert g.destination==dict(object_id='runtime::part_06',support_id='workcell::target_bin_default',floor_z=.1)
+
+
+def test_measured_fcl_destination_contact_uses_the_compiled_floor_predicate(tmp_path,monkeypatch):
+    from simulator_execution import validate_measured_contacts
+    from types import SimpleNamespace as N
+    calls=[]
+    def predicate(obj,sup,b1,b2,floor,point):
+        calls.append((obj,sup,b1,b2,floor,list(point)));return floor==.1 and abs(point[2]-.1)<1e-4
+    dest=dict(object_id='runtime::part_06',support_id='workcell::target_bin_default',floor_z=.1)
+    def contact(z=.1,kind=2):
+        return N(contact_body_1='runtime::part_06',contact_body_2='workcell::target_bin_default',body_type_1=kind,body_type_2=1,
+                 position=N(x=.45,y=.22,z=z),normal=N(x=0.,y=0.,z=1.),depth=.00001)
+    validate_measured_contacts(N(valid=False,contacts=[contact()]),None,True,predicate,destination=dest)
+    assert calls[0][:2]==(b'runtime::part_06',b'workcell::target_bin_default') and calls[0][4]==.1
+    with pytest.raises(RuntimeError,match='destination contact rejected'):
+        validate_measured_contacts(N(valid=False,contacts=[contact(z=.105)]),None,True,predicate,destination=dest)
+    with pytest.raises(RuntimeError,match='measured carried/robot collision'):
+        validate_measured_contacts(N(valid=False,contacts=[contact()]),None,True,predicate,destination=None)
+    with pytest.raises(RuntimeError,match='measured carried/robot collision'):
+        validate_measured_contacts(N(valid=False,contacts=[contact(kind=1)]),None,True,predicate,destination=dest)
+
+
 def test_pile_certificate_rejects_unknown_identity_stale_or_deep_contact(tmp_path,monkeypatch):
     guard,sample,_=recorded_pile_guard(tmp_path,monkeypatch)
     for change in ('unknown','stale','deep','point','preclose'):
@@ -428,6 +611,8 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
     from types import SimpleNamespace as N
     tree=ast.parse((Path(__file__).parents[1]/'scripts/perceived_object_grasp_execute.py').read_text())
     main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    from contextlib import nullcontext
+    from perceived_object_grasp_execute import PlanningCrossCheckGate
     owner=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
     def future(result):return N(done=lambda:True,result=lambda:result)
     terminal=future(N(status=4,result=N(error_code=N(val=1))))
@@ -438,6 +623,8 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
     summary={};events=[]
     context=dict(time=time,node=None,summary=summary,measurements=N(fresh=lambda:sample,joints=lambda s:{'arm':[0.,0.]}),
         execute_client=client,plan_client=object(),controlled_cancel=True,controller_audit=None,contract={'home_joint_names':['arm']},
+        apply_client=(scene:=object()),exchanged_clients={scene},
+        cross_check_gate=PlanningCrossCheckGate({}),nullcontext=nullcontext,
         rclpy=N(spin_until_future_complete=lambda *args,**kw:None),execution_monitor=lambda:None,
         wait_stopped=lambda:True,apply=lambda diff:events.append('revoke'),PlanningScene=N,baseline=N(),
         measured_reconcile=lambda:events.append('reconcile'))

@@ -26,13 +26,13 @@ import time
 
 import yaml
 
-SOURCE_WORLD_GIT_BLOB="b687b5bf3c48e4a731d87c86f99e6c3696b21599"
+SOURCE_WORLD_GIT_BLOB="b533d6de2b454939f0ebedbcfb3aed5ccb16051b"
 # Separately pinned worlds. "pile" is the dense Stage-A benchmark; "sparse" is
 # the single-workpiece commissioning world used to qualify physical execution
 # apart from pile accessibility. Both use the same cell and gates.
 SOURCE_WORLDS={
     "pile":("stage_a0.sdf",SOURCE_WORLD_GIT_BLOB),
-    "sparse":("stage_a0_sparse.sdf","507dcd8df852fa12b1de93bc3026d826a9e54df2"),
+    "sparse":("stage_a0_sparse.sdf","73484f0b45b6239843720fb3370c0754bf02ebd3"),
 }
 STAGES=[
     "PREPLAN_APPROACH","PREPLAN_GRASP","PREPLAN_CLOSE_GRIPPER",
@@ -40,6 +40,13 @@ STAGES=[
     "PREPLAN_OPEN_GRIPPER","PREPLAN_RETREAT","PREPLAN_HOME",
 ]
 GATES=("resolve","cancel","telemetry","stationary","contact-release","full-cycle")
+# First-reply service retries (perceived_object_grasp_execute.SERVICE_RETRY_ALLOWANCE_S):
+# 11 clients x 2 retries x 10 s may precede or interleave the search in every session.
+SERVICE_RETRY_ALLOWANCE_S=220
+# Execution gates: the executor's owned waits (carried steps up to 300 s each, fixed 120 s
+# steps, release, holds, service retries) may total ~2 ks after the search; the last-resort
+# subprocess kill must come after the executor's own cancellation, never before it.
+EXECUTION_GATE_MARGIN_S=2100
 EXPECTED_RESULTS={
     "cancel":"CANCELLATION_TRIAL_PASS",
     "telemetry":"MOTION_TELEMETRY_PASS",
@@ -533,7 +540,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         resolve_summary=session/"resolve/summary.json"
         run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,
                 resolve=True,search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120)
+            env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
         resolved=json.loads(resolve_summary.read_text());assert_plan(resolved,require_resolved=True)
 
         # The search may be long. Re-measure the same geometry and renew only
@@ -543,7 +550,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         plan_summary=session/"revalidate/summary.json"
         run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time,
                 search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120)
+            env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
         planned=json.loads(plan_summary.read_text());assert_plan(planned,require_resolved=True)
         report.update(selected_object_id=planned.get("selected_object_id"),
             selected_grasp_index=planned.get("selected_grasp_index"),
@@ -562,7 +569,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         gate_summary=session/f"{gate}/summary.json"
         run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
                 gate=gate,evidence=evidence,search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+300)
+            env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+EXECUTION_GATE_MARGIN_S)
         result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity)
         report.update(status="PASS",result=result["result"],selected_object_id=result.get("selected_object_id"),
                       selected_grasp_index=result.get("selected_grasp_index"))

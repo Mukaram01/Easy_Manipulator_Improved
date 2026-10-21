@@ -79,7 +79,10 @@ def action_fixture(*, accepted_cancel=True, terminal=True, stopped=True):
     def apply(_diff):
         events.append('revoke')
 
+    scene = object()
     context = dict(summary=summary, cycle=cycle, execute_client=client,
+                   apply_client=scene, exchanged_clients={scene}, plan_client=object(),
+                   cross_check_gate=executor.PlanningCrossCheckGate(summary),
                    contact_guard=None, controlled_cancel=False, controller_audit=None,
                    measurements=N(fresh=lambda: sample), execution_monitor=monitor,
                    rclpy=N(spin_until_future_complete=lambda *a, **kw: None,

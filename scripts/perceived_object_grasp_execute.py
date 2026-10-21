@@ -3,12 +3,13 @@
 
 import argparse
 import copy
+import gc
 import importlib.util
 import json
 import math
 import signal
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 
@@ -464,6 +465,165 @@ def contacts_in_planned_scene(contacts, planned, live):
         if not allowed:
             result.append(contact)
     return result
+
+
+SERVICE_WAIT_S = 10.
+SERVICE_ATTEMPTS = 3
+# Distinct request/response clients one run creates (7 long-lived, 4 inline controller_manager
+# clients); only a client's first reply is retried, so this bounds the added service waiting.
+SERVICE_RETRY_CLIENTS = 11
+SERVICE_RETRY_ALLOWANCE_S = SERVICE_RETRY_CLIENTS * (SERVICE_ATTEMPTS - 1) * SERVICE_WAIT_S
+
+
+def call_service(node, client, request, *, spin, exchanged, attempts=SERVICE_ATTEMPTS, timeout_s=SERVICE_WAIT_S, on_retry=None):
+    """Request/response call for the MoveIt and ros2_control services, retried only on a client's first exchange.
+
+    rmw_fastrtps can drop a client's first reply ('failed to send response ... client will not
+    receive response' on the server side) because the client's response reader is not matched
+    yet. The race is per response reader, so only a client's first exchange may be re-sent;
+    afterwards, whatever its outcome, the client keeps the single bounded wait, so calls made
+    while a goal executes (the in-motion contact guard applies a scene diff on every tick) are
+    never lengthened. Every request re-sent here is an idempotent read or a declarative scene
+    update (attachment_diff(remove_world=True) is not, and is never applied through this path);
+    each retry is reported through on_retry as evidence.
+    """
+    if not client.wait_for_service(timeout_sec=timeout_s):
+        raise RuntimeError(f'service unavailable: {client.srv_name}')
+    budget = 1 if client in exchanged else attempts
+    exchanged.add(client)
+    for attempt in range(1, budget + 1):
+        future = client.call_async(request)
+        spin(node, future, timeout_sec=timeout_s)
+        if future.done() and future.result() is not None:
+            return future.result()
+        client.remove_pending_request(future)
+        if attempt < budget and on_retry is not None:
+            on_retry(dict(service=client.srv_name, attempt=attempt, wall_ns=time.time_ns(), monotonic_ns=time.monotonic_ns()))
+    raise RuntimeError(f'service timeout: {client.srv_name}' + (f' ({budget} attempts)' if budget > 1 else ''))
+
+
+# Generation-2 threshold during owned execution: the default 10 ran a full pass every ~8 s
+# of Trial 20's execution; 100 leaves one or two per cycle. Generations 0 and 1 keep their
+# running values.
+GC_EXECUTION_GENERATION_2_THRESHOLD = 100
+
+
+def freeze_planning_heap(collector=gc, generation_2=GC_EXECUTION_GENERATION_2_THRESHOLD):
+    """Move the planning-phase heap out of the cyclic collector before owned execution.
+
+    The executor's own stall watch recorded generation-2 passes of 40-121 ms that collected
+    nothing yet held the GIL while the 1 kHz measurement subscription had to run; one such
+    pass preceded Trial 20's stale measurement in the transfer. One full collection, then
+    freezing the surviving planning objects (~60 ms of each pass), removes that heap from
+    every later pass, and the raised generation-2 threshold makes those passes rare. They
+    are not eliminated: the evidence writer's queued samples are allocated after the freeze
+    and a pass landing on a transfer backlog can still take some tens of milliseconds. No
+    measurement, guard or freshness rule is touched; the evidence is returned for the summary.
+    """
+    before = collector.get_threshold()
+    started = time.time_ns()
+    collected = collector.collect()
+    collect_ns = time.time_ns() - started
+    collector.freeze()
+    collector.set_threshold(before[0], before[1], generation_2)
+    return dict(start_wall_ns=started, collect_ns=collect_ns, wall_ns=time.time_ns(), collected=collected,
+                frozen=collector.get_freeze_count(), thresholds_before=list(before), thresholds_after=list(collector.get_threshold()))
+
+
+class PlanningCrossCheckGate:
+    """Defers the MoveIt FCL cross-check while a MoveGroup planning goal is in flight.
+
+    move_group answers GetStateValidity only after its planning callback returns (0.18-0.26 s
+    for the release plan in Trials 15-21) and the held-phase guard bounds that query at 0.2 s,
+    so Trial 21 failed 'measured collision query timed out' with the arm at rest. Nothing is
+    commanded while a plan is computed and the guard's physical contact and retention checks
+    keep running every tick, so the cross-check is deferred and has to pass again before the
+    next execution goal is sent. Every deferral window is recorded in the summary with its
+    first and last deferred sample and the check that cleared it.
+    """
+    def __init__(self, summary):
+        self.summary = summary; self.planning = False; self.window = None; self.clearing = None; self.cross_check = None
+
+    @property
+    def pending(self):
+        return self.window is not None and self.window.get('cleared') is None
+
+    @contextmanager
+    def planning_goal(self):
+        self.planning = True
+        try:
+            yield
+        finally:
+            self.planning = False
+
+    def defer(self, stamp):
+        """Record one deferred cross-check (stamp: wall_ns and sim_ns of the current sample)."""
+        if not self.pending:
+            self.window = dict(stage=self.summary.get('current_stage'), count=0, first=dict(stamp), last=None, cleared=None)
+            self.summary.setdefault('deferred_measured_collision_checks', []).append(self.window)
+        self.window['count'] += 1
+        self.window['last'] = dict(stamp)
+
+    def passed(self, check):
+        """A cross-check passed (check: sim_ns, wall_ns, valid, contacts); it clears a pending window."""
+        if self.pending:
+            self.window['cleared'] = dict(by=self.clearing or 'monitor', **check)
+
+    def require_clear(self):
+        """Before an execution goal, run a deferred cross-check now; it fails closed."""
+        if not self.pending:
+            return
+        if self.cross_check is None:
+            raise RuntimeError('deferred measured collision check has no cross-check to run')
+        self.clearing = 'require_clear'
+        try:
+            self.cross_check()
+        finally:
+            self.clearing = None
+        if self.pending:
+            raise RuntimeError('deferred measured collision check did not pass before execution')
+
+
+CARRIED_STAGES = ('PREPLAN_LIFT', 'PREPLAN_TRANSFER', 'PREPLAN_PLACE')
+
+
+def measured_real_time_factor(previous, current, *, floor=.02, min_wall_s=1.):
+    """Simulation seconds per wall second between two measured samples; None when unusable."""
+    if not previous or not current:
+        return None
+    wall = (current['wall_ns'] - previous['wall_ns']) / 1e9
+    sim = (current['sim_ns'] - previous['sim_ns']) / 1e9
+    if wall < min_wall_s or sim <= 0.:
+        return None
+    return max(floor, sim / wall)
+
+
+EXECUTION_WAIT_BASE_S = 120.
+CARRIED_WAIT_CAP_S = 300.
+# Largest owned execution span of one cycle (3 carried caps, 6 fixed motion waits, the
+# release wait, hold/monitor windows and the first-reply service retries): the runner's
+# subprocess timeout must exceed search_timeout plus this, so the executor's owned
+# cancellation always fires first.
+MAX_OWNED_EXECUTION_S = 3 * CARRIED_WAIT_CAP_S + 6 * EXECUTION_WAIT_BASE_S + 30. + 90. + SERVICE_RETRY_ALLOWANCE_S
+
+
+def planned_duration_s(trajectory):
+    points = trajectory.joint_trajectory.points
+    return (points[-1].time_from_start.sec + points[-1].time_from_start.nanosec * 1e-9) if points else 0.
+
+
+def carried_execution_wait(trajectory, rtf, *, base=EXECUTION_WAIT_BASE_S, factor=1.5, margin=30., cap=CARRIED_WAIT_CAP_S):
+    """Owned result wait for a carried step: planned duration over the measured RTF, bounded.
+
+    The fixed 120 s wait was sized for 20 % motions. Carried phases are planned slower,
+    so the wait follows the plan (last time_from_start) scaled by the live real-time
+    factor with margin; it never drops below the base nor exceeds the cap. Freshness,
+    stop and retention guards run unchanged inside the wait.
+    """
+    duration = planned_duration_s(trajectory)
+    if rtf is None or duration <= 0.:
+        return base
+    return min(cap, max(base, duration / rtf * factor + margin))
 
 
 def support_plane_height(obj):
@@ -1328,14 +1488,12 @@ def main():
                       message=message_to_ordereddict(message))
         (args.planning_trace/f'{trace_sequence:05d}-{label}.json').write_text(json.dumps(record, indent=2)+'\n')
         trace_sequence += 1
+    exchanged_clients = set()
+    cross_check_gate = PlanningCrossCheckGate(summary)
     def call(client, request):
-        if not client.wait_for_service(timeout_sec=10):
-            raise RuntimeError(f'service unavailable: {client.srv_name}')
-        future = client.call_async(request)
-        rclpy.spin_until_future_complete(node, future, timeout_sec=10)
-        if not future.done() or future.result() is None:
-            raise RuntimeError(f'service timeout: {client.srv_name}')
-        return future.result()
+        return call_service(node, client, request, spin=rclpy.spin_until_future_complete, exchanged=exchanged_clients,
+                            on_retry=lambda record: summary.setdefault('service_retries', []).append(
+                                dict(record, stage=summary.get('current_stage'))))
     def scene_now():
         req = GetPlanningScene.Request()
         req.components.components = 1023
@@ -1345,8 +1503,13 @@ def main():
             raise RuntimeError('PlanningScene rejected transition')
     def action(client, goal, timeout):
         from simulator_execution import GraspRetentionLoss
+        if client is execute_client and apply_client not in exchanged_clients:
+            # The in-motion guard applies a scene diff on every tick; none may be a first exchange.
+            raise RuntimeError('planning scene service not yet exchanged before owned execution')
         if client is execute_client and summary.get('grasp_recovery'):
             raise RuntimeError('RECOVERY_EXECUTION_INVALIDATED: fresh recovery continuation is unqualified')
+        if client is execute_client:
+            cross_check_gate.require_clear()   # last precondition: a cross-check deferred during planning must pass now
         opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
         held_before_open=contact_guard.checked_current() if opening_action else None
         if client is execute_client:
@@ -1408,15 +1571,16 @@ def main():
                 rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
             else:
                 until=time.monotonic()+timeout
-                while not future.done() and time.monotonic()<until:
-                    rclpy.spin_once(node,timeout_sec=.005)
-                    execution_monitor()
-                    if controlled_cancel:
-                        sample=measurements.fresh()
-                        moved=motion_trial.observe(sample,measurements.joints(sample))
-                        summary['cancellation_movement_verified']=moved
-                        if moved and sample['sim_ns']-cancel_start>200000000:
-                            raise RuntimeError('CONTROLLED_CANCELLATION')
+                with cross_check_gate.planning_goal() if client is plan_client else nullcontext():
+                    while not future.done() and time.monotonic()<until:
+                        rclpy.spin_once(node,timeout_sec=.005)
+                        execution_monitor()
+                        if controlled_cancel:
+                            sample=measurements.fresh()
+                            moved=motion_trial.observe(sample,measurements.joints(sample))
+                            summary['cancellation_movement_verified']=moved
+                            if moved and sample['sim_ns']-cancel_start>200000000:
+                                raise RuntimeError('CONTROLLED_CANCELLATION')
             if not future.done() or future.result() is None:
                 result_timed_out=True
                 raise RuntimeError('action result timed out')
@@ -1552,6 +1716,8 @@ def main():
     def measured_fcl():
         from simulator_execution import validate_measured_contacts,measured_attachment
         s=measurements.fresh()
+        if cross_check_gate.planning:
+            cross_check_gate.defer(dict(wall_ns=time.time_ns(),sim_ns=s['sim_ns']));return
         state=copy.deepcopy(initial.robot_state)
         measured=measurements.joints(s)
         state=updated_state(state,{k:v[0] for k,v in measured.items()}, {})
@@ -1577,9 +1743,11 @@ def main():
         rclpy.spin_until_future_complete(node,future,timeout_sec=.2)
         if not future.done() or not future.result():raise RuntimeError('measured collision query timed out')
         try:
+            from simulator_execution import DESTINATION_PHASES
             validate_measured_contacts(future.result(),contact_guard.support if carried else None,
                 bool(contact_guard.separation and contact_guard.separation.expired),contact_guard.predicate,
-                pile_guard=contact_guard if carried else None)
+                pile_guard=contact_guard if carried else None,
+                destination=contact_guard.destination if carried and contact_guard.phase in DESTINATION_PHASES else None)
         except RuntimeError:
             from rosidl_runtime_py.convert import message_to_ordereddict
             # Preserve the exact rejected query before cancellation changes the
@@ -1590,6 +1758,7 @@ def main():
             raise
         measurements.fresh()
         summary['last_measured_collision_check']=dict(sim_ns=s['sim_ns'],valid=future.result().valid,contacts=len(future.result().contacts))
+        cross_check_gate.passed(dict(summary['last_measured_collision_check'],wall_ns=time.time_ns()))
     def reconcile_retention_loss():
         from hashlib import sha256
         from rosidl_runtime_py.convert import message_to_ordereddict
@@ -1794,10 +1963,15 @@ def main():
             raise wall_budget_failure()
         planning_time = min(planning_time, args.segment_planning_time, remaining)
         before = copy.deepcopy(view)
-        # Physical initial pile separation needs a conservative dynamic profile:
-        # measured tracking and grasp slip can consume micron-scale side gaps.
-        # Keep the same Cartesian path, collision policy and execution deadline.
-        motion_scaling = .02 if getattr(args, 'backend', 'fake') == 'simulator' and name == 'PREPLAN_LIFT' else .2
+        # Physical carried phases need conservative dynamics while keeping the same
+        # paths, collision policy and owned deadlines. The initial pile separation
+        # stays at 2 %: measured tracking and grasp slip can consume micron-scale
+        # side gaps. The 20 % transfer accelerated the held part at ~1 g and pivoted
+        # it 0.69 deg in the pinch (run-full-cycle-135626); 10 % quarters that
+        # acceleration; the owned execution wait follows the planned duration.
+        simulator = getattr(args, 'backend', 'fake') == 'simulator'
+        motion_scaling = (.02 if name == 'PREPLAN_LIFT' else
+                          .1 if name in ('PREPLAN_TRANSFER', 'PREPLAN_PLACE') else .2) if simulator else .2
         request = MotionPlanRequest(group_name=group or contract['planning_group'],
             start_state=copy.deepcopy(view.robot_state), num_planning_attempts=1,
             allowed_planning_time=planning_time, max_velocity_scaling_factor=motion_scaling,
@@ -2419,6 +2593,7 @@ def main():
                     raise RuntimeError('measured object moved since authoritative resolution')
             contact_guard.check(measurements.fresh());measurements.arm()
             contact_guard.validate_current=measured_fcl
+            cross_check_gate.cross_check=contact_guard.drain   # physical checks on any backlog, then the cross-check
             execution_monitor=contact_guard.drain
             if args.simulator_commission=='cancel':
                 from simulator_execution import ControllerCancellationAudit
@@ -2443,6 +2618,10 @@ def main():
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
         expected = initial
+        if measurements:
+            # Planning is over and the telemetry consumer is live: keep collector passes off its path.
+            summary['gc_policy']=freeze_planning_heap()
+        execution_mark=None  # measured sample at the previous executed step's start (live RTF source)
         for step in cycle['steps']:
             if args.simulator_commission in ('cancel','telemetry') and step['stage']!='PREPLAN_APPROACH':
                 raise RuntimeError(f'{args.simulator_commission} trial cannot advance beyond the approach')
@@ -2469,7 +2648,17 @@ def main():
                     if step['stage']=='PREPLAN_LIFT':contact_guard.begin_pile_separation(measurements.fresh())
                     controlled_cancel=args.simulator_commission=='cancel' and step['stage']=='PREPLAN_APPROACH'
                     summary['execution_attempted']=True
-                    result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)
+                    wait=EXECUTION_WAIT_BASE_S
+                    start_sample=measurements.fresh()
+                    if step['stage'] in CARRIED_STAGES:
+                        rtf=measured_real_time_factor(execution_mark,start_sample)
+                        wait=carried_execution_wait(step['trajectory'],rtf)
+                        stamp=lambda smp:{k:smp[k] for k in ('iteration','sim_ns','wall_ns')} if smp else None
+                        summary.setdefault('owned_execution_waits',[]).append(dict(stage=label,
+                            planned_duration_s=planned_duration_s(step['trajectory']),measured_rtf=rtf,wait_s=wait,
+                            previous_start=stamp(execution_mark),start=stamp(start_sample)))
+                    execution_mark=start_sample
+                    result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)
                     if step['stage']=='PREPLAN_CLOSE_GRIPPER':summary['close_terminal_wall_ns']=time.time_ns()
                     controlled_cancel=False
                     contact_guard.drain()
