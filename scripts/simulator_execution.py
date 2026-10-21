@@ -431,6 +431,41 @@ class ProcessStallWatch:
 GIL_WATCHDOG_ENV='WORKCELL_GIL_WATCHDOG_MS'
 
 
+class TimedRLock:
+    """Reentrant lock that keeps per-thread wait/hold totals per wall-clock second.
+
+    Diagnostic only: it behaves exactly like threading.RLock for `with` use and
+    records, for the outermost acquisition of each thread, how long it waited and
+    how long it held the lock, so the evidence names which thread blocks telemetry
+    acquisition. Totals are aggregated (no per-acquisition records)."""
+    def __init__(self):
+        self._lock=threading.RLock();self._local=threading.local();self.stats={}
+    def __enter__(self):
+        waiting=time.monotonic_ns();self._lock.acquire();entered=time.monotonic_ns()
+        depth=getattr(self._local,'depth',0);self._local.depth=depth+1
+        if depth==0:self._local.entered=entered;self._local.wait=entered-waiting
+        return self
+    def __exit__(self,*exc):
+        depth=self._local.depth-1;self._local.depth=depth
+        try:
+            if depth==0:
+                hold=time.monotonic_ns()-self._local.entered;wait=self._local.wait
+                key=(threading.current_thread().name,time.time_ns()//1_000_000_000)
+                entry=self.stats.get(key)
+                if entry is None:entry=self.stats[key]=[0,0,0,0,0]
+                entry[0]+=1;entry[1]+=wait;entry[2]=max(entry[2],wait);entry[3]+=hold;entry[4]=max(entry[4],hold)
+        finally:
+            self._lock.release()
+        return False
+    def held_by_current_thread(self):
+        return getattr(self._local,'depth',0)>0
+    def profile(self):
+        with self:
+            rows=[dict(thread=name,second=second,count=c,wait_ms=w/1e6,wait_max_ms=wm/1e6,hold_ms=h/1e6,hold_max_ms=hm/1e6)
+                  for (name,second),(c,w,wm,h,hm) in sorted(self.stats.items(),key=lambda item:(item[0][1],item[0][0]))]
+        return dict(event='lock_profile',wall_ns=time.time_ns(),rows=rows)
+
+
 class GilHoldWatch:
     """Diagnostic only, opt-in (WORKCELL_GIL_WATCHDOG_MS). Names the code that holds
     the interpreter lock during a stall. A heartbeat thread re-arms CPython's
@@ -504,7 +539,7 @@ class Measurements:
             raise RuntimeError('authoritative physics pose source required before acquisition')
         from rclpy.node import Node
         self.node=Node('simulator_measurement_acquisition',context=node.context)
-        self.lock=threading.RLock();self.latest=None;self.pending=[];self.error=None;self.previous=None
+        self.lock=TimedRLock();self.latest=None;self.pending=[];self.error=None;self.previous=None
         self.timing=[];self.armed_wall_ns=None;self.log_path=Path(log)
         self.log=Path(log).open('w');self.armed=False
         self.log_queue=queue.Queue(maxsize=10000);self.raw={}
@@ -551,10 +586,17 @@ class Measurements:
                     if self.error is None:self.error=RuntimeError('measurement acquisition stopped before close')
     def update(self,msg):
         received=time.time_ns();started=time.monotonic_ns();s={};sample_error=None
+        # Parsing touches no shared state; keep it out of the lock that fresh(),
+        # drain() and the evidence writer contend for. A parse failure is raised
+        # inside the lock exactly where json.loads used to raise it.
+        try:parsed=json.loads(msg.data);parse_error=None
+        except Exception as exc:parsed=None;parse_error=exc
+        waiting=time.monotonic_ns();parse_ns=waiting-started
         with self.lock:
-            lock_wait_ns=time.monotonic_ns()-started
+            lock_wait_ns=time.monotonic_ns()-waiting
             try:
-                s=json.loads(msg.data)
+                if parse_error is not None:raise parse_error
+                s=parsed
                 if self.latest and s.get('sim_ns',0)<=self.latest['sim_ns']:raise RuntimeError('simulation time stopped/reversed')
                 validate_sample(s,self.receipt,time.time(),self.previous if self.armed else None)
                 self.previous=s['iteration'];self.latest=s
@@ -574,30 +616,40 @@ class Measurements:
             self.timing.append(dict(event='receive',iteration=s.get('iteration'),sim_ns=s.get('sim_ns'),
                 source_wall_ns=s.get('wall_ns'),publish_wall_ns=s.get('publish_wall_ns'),
                 source_serialization_ns=s.get('serialization_ns'),receive_wall_ns=received,
-                callback_ns=time.monotonic_ns()-started,lock_wait_ns=lock_wait_ns,queue_depth=len(self.pending),
+                callback_ns=time.monotonic_ns()-started,parse_ns=parse_ns,lock_wait_ns=lock_wait_ns,queue_depth=len(self.pending),
                 error=str(self.error or sample_error) if self.error or sample_error else None))
     def fresh(self):
+        # Error, latest sample and read time are taken together under the lock;
+        # the unchanged validation of that same immutable sample at that same
+        # time then runs outside it (inside it when the caller already holds it).
         waiting=time.monotonic_ns()
         with self.lock:
-            entered=time.monotonic_ns();now_ns=time.time_ns()
-            if self.error:
+            entered=time.monotonic_ns();now_ns=time.time_ns();error=self.error;latest=self.latest
+            if error:
                 self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,
-                    lock_wait_ns=entered-waiting,error=str(self.error)));raise self.error
-            if self.latest is None:
+                    lock_wait_ns=entered-waiting,error=str(error)));raise error
+            if latest is None:
                 self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,
                     lock_wait_ns=entered-waiting,error='no simulator measurement'))
                 raise RuntimeError('no simulator measurement')
-            age_ns=now_ns-self.latest['wall_ns']
-            try:validate_sample(self.latest,self.receipt,now_ns/1e9)
-            except Exception as exc:
-                self.timing.append(dict(event='fresh',iteration=self.latest.get('iteration'),read_wall_ns=now_ns,
-                    age_ns=age_ns,lock_wait_ns=entered-waiting,error=str(exc)));raise
-            self.timing.append(dict(event='fresh',iteration=self.latest['iteration'],read_wall_ns=now_ns,
-                age_ns=age_ns,lock_wait_ns=entered-waiting,error=None))
-            return self.latest
-    def drain(self):
+        age_ns=now_ns-latest['wall_ns']
+        try:validate_sample(latest,self.receipt,now_ns/1e9)
+        except Exception as exc:
+            with self.lock:
+                self.timing.append(dict(event='fresh',iteration=latest.get('iteration'),read_wall_ns=now_ns,
+                    age_ns=age_ns,lock_wait_ns=entered-waiting,error=str(exc)))
+            raise
         with self.lock:
-            self.fresh()
+            self.timing.append(dict(event='fresh',iteration=latest['iteration'],read_wall_ns=now_ns,
+                age_ns=age_ns,lock_wait_ns=entered-waiting,error=None))
+        return latest
+    def drain(self):
+        self.fresh()
+        with self.lock:
+            # An error latched after that read still prevents consumption.
+            if self.error:
+                self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=time.time_ns(),
+                    lock_wait_ns=0,error=str(self.error)));raise self.error
             pending,self.pending=self.pending,[]
             return pending
     def arm(self):
@@ -653,6 +705,7 @@ class Measurements:
         self.log_queue.put(None);self.writer.join();self.log.close()
         self.watch.stop();self.timing.extend(self.watch.events)
         if self.gil_watch is not None:self.gil_watch.stop();self.timing.extend(self.gil_watch.events)
+        if isinstance(self.lock,TimedRLock):self.timing.append(self.lock.profile())
         self.log_path.with_suffix('.timing.json').write_text(json.dumps(self.timing))
 
 

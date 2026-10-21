@@ -1232,3 +1232,118 @@ def test_bad_watchdog_value_fails_before_any_measurement_thread_starts():
     assert init<source.index("self.writer=threading.Thread(target=self._write")
     assert init<source.index("self.acquisition=threading.Thread(target=self._acquire")
     assert init<source.index("self.watch=ProcessStallWatch();self.watch.start()")
+
+
+def _timed_measurements(module):
+    m=module.Measurements.__new__(module.Measurements)
+    m.lock=module.TimedRLock();m.receipt=dict(run_id='r',pid=12)
+    m.latest=None;m.pending=[];m.previous=None;m.armed=True;m.error=None;m.timing=[];m.raw={}
+    return m
+
+
+def _plain_sample(i,wall_ns):
+    return dict(run_id='r',pid=12,iteration=i,sim_ns=i,wall_ns=wall_ns,
+        poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c'])
+
+
+def test_update_parses_outside_the_lock_and_still_validates_inside_it(monkeypatch):
+    import json,time
+    from types import SimpleNamespace as N
+    import simulator_execution as module
+    m=_timed_measurements(module);seen=[]
+    real_loads=json.loads;real_validate=module.validate_sample
+    monkeypatch.setattr(module,'json',N(loads=lambda text:(seen.append(('parse',m.lock.held_by_current_thread())),real_loads(text))[1],
+                                        dumps=json.dumps))
+    monkeypatch.setattr(module,'validate_sample',lambda *a,**k:(seen.append(('validate',m.lock.held_by_current_thread())),real_validate(*a,**k))[1])
+    m.update(N(data=json.dumps(_plain_sample(1,time.time_ns()))))
+    assert seen==[('parse',False),('validate',True)]        # order and lock scope; checks unchanged
+    assert m.latest['iteration']==1 and len(m.pending)==1 and m.timing[-1]['error'] is None
+    assert m.timing[-1]['lock_wait_ns']>=0 and m.timing[-1]['parse_ns']>=0
+    assert m.timing[-1]['callback_ns']>=m.timing[-1]['parse_ns']+m.timing[-1]['lock_wait_ns']   # callback still spans parse + wait
+
+
+def test_update_parse_failure_still_latches_and_records_the_receive():
+    from types import SimpleNamespace as N
+    import simulator_execution as module
+    m=_timed_measurements(module)
+    m.update(N(data='{not json'))
+    assert m.error is not None and m.latest is None and m.pending==[]
+    assert m.timing[-1]['event']=='receive' and m.timing[-1]['error']
+    with pytest.raises(type(m.error)):m.fresh()
+
+
+def test_fresh_validates_its_locked_snapshot_outside_the_lock_unless_the_caller_holds_it(monkeypatch):
+    import json,time
+    from types import SimpleNamespace as N
+    import simulator_execution as module
+    m=_timed_measurements(module);m.update(N(data=json.dumps(_plain_sample(1,time.time_ns()))))
+    held=[];real_validate=module.validate_sample
+    def validate(sample,*args):
+        held.append(m.lock.held_by_current_thread())
+        if sample['iteration']==1 and len(held)==1:              # a newer sample arrives during validation
+            m.update(N(data=json.dumps(_plain_sample(2,time.time_ns()))))
+        return real_validate(sample,*args)
+    monkeypatch.setattr(module,'validate_sample',validate)
+    assert m.fresh()['iteration']==1                            # the snapshot read under the lock is returned
+    assert held[0] is False and m.fresh()['iteration']==2
+    with m.lock:                                                # e.g. ContactGuard.checked_current
+        m.fresh()
+    assert held[-1] is True
+    events=[e for e in m.timing if e['event']=='fresh']
+    assert [e['iteration'] for e in events]==[1,2,2] and all(e['error'] is None for e in events)
+
+
+def test_fresh_rejection_outside_the_lock_is_recorded_and_raised(monkeypatch):
+    import json,time
+    from types import SimpleNamespace as N
+    import simulator_execution as module
+    m=_timed_measurements(module);wall=time.time_ns();m.update(N(data=json.dumps(_plain_sample(1,wall))))
+    monkeypatch.setattr(module.time,'time_ns',lambda:wall+300_000_000)
+    with pytest.raises(module.StaleMeasurement):m.fresh()
+    assert m.timing[-1]['event']=='fresh' and 'stale' in m.timing[-1]['error'] and m.timing[-1]['age_ns']==300_000_000
+
+
+def test_drain_refuses_to_consume_when_an_error_latches_after_its_fresh_read(monkeypatch):
+    import json,time
+    from types import SimpleNamespace as N
+    import simulator_execution as module
+    m=_timed_measurements(module);m.update(N(data=json.dumps(_plain_sample(1,time.time_ns()))))
+    real_validate=module.validate_sample
+    def validate(*args):
+        real_validate(*args);m.error=RuntimeError('SIMULATOR_TELEMETRY_INVALID: skipped measurement')   # acquisition latches now
+    monkeypatch.setattr(module,'validate_sample',validate)
+    with pytest.raises(RuntimeError,match='skipped'):m.drain()
+    assert len(m.pending)==1                                    # nothing consumed
+    assert m.timing[-1]['event']=='fresh' and 'skipped' in m.timing[-1]['error']   # the refusal is in the evidence
+    monkeypatch.setattr(module,'validate_sample',real_validate);m.error=None
+    assert [s['iteration'] for s in m.drain()]==[1] and m.pending==[]
+
+
+def test_timed_rlock_is_reentrant_and_accounts_each_thread_once_per_outer_hold():
+    import threading,time
+    from simulator_execution import TimedRLock
+    lock=TimedRLock()
+    with lock:
+        with lock:assert lock.held_by_current_thread()
+        time.sleep(.01)
+    assert not lock.held_by_current_thread()
+    entered=threading.Event()
+    def contender():
+        entered.set()
+        with lock:pass
+    with lock:
+        t=threading.Thread(target=contender,name='measurement_acquisition');t.start();entered.wait();time.sleep(.02)
+    t.join()
+    rows=lock.profile()['rows']
+    main=[r for r in rows if r['thread']==threading.current_thread().name]
+    acq=[r for r in rows if r['thread']=='measurement_acquisition']
+    assert sum(r['count'] for r in main)==2 and max(r['hold_max_ms'] for r in main)>=10    # nested hold counted once
+    assert sum(r['count'] for r in acq)==1 and acq[0]['wait_ms']>=15                       # waited for the main hold
+    assert all(isinstance(r['second'],int) for r in rows)
+
+
+def test_measurements_use_the_timed_lock_and_write_its_profile_into_the_timing_evidence():
+    source=(Path(__file__).parents[1]/'scripts/simulator_execution.py').read_text()
+    assert "self.lock=TimedRLock();self.latest=None" in source
+    assert "if isinstance(self.lock,TimedRLock):self.timing.append(self.lock.profile())" in source
+    assert source.index("self.timing.append(self.lock.profile())")<source.index("with_suffix('.timing.json').write_text")
