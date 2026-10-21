@@ -87,10 +87,15 @@ def report(session):
     maps, bases = load_maps(maps_file) if maps_file.is_file() else ([], {})
     summary = next((e for e in timing if e['event'] == 'gil_probe_summary'), None)
     holds = [e for e in timing if e['event'] == 'gil_probe_hold']
+    brief = [e for e in timing if e['event'] in ('gil_probe_brief_hold', 'gil_probe_open_hold')]
     receives = sorted((e for e in timing if e['event'] == 'receive' and e.get('receive_wall_ns')), key=lambda e: e['receive_wall_ns'])
     slow = [e for e in timing if e['event'] == 'loop_slow']
     gcs = [e for e in timing if e['event'] == 'gc']
-    out = dict(session=str(session), probe=summary, holds=[])
+    out = dict(session=str(session), probe=summary, holds=[], brief_holds=[
+        dict(kind=e['event'].removeprefix('gil_probe_'), start_wall_ns=e['start_wall_ns'], hold_ms=e['hold_ms'],
+             thread=e.get('thread'), attribution=e.get('attribution'), release_frames_status=e.get('release_frames_status'),
+             top_frame=(f"{e['release_frames'][0]['file']}:{e['release_frames'][0]['line']} {e['release_frames'][0]['function']}"
+                        if e.get('release_frames') else None)) for e in brief])
     for hold in holds:
         start, end = hold['start_wall_ns'], hold['end_wall_ns']
         pcs = hold.get('native_pc') or []
@@ -139,6 +144,10 @@ def main(argv=None):
           f"lates {probe.get('lates')}, unmapped {probe.get('unmapped_holds')}, proc failures {probe.get('proc_read_failures')}, "
           f"pc sent/received/lost {probe.get('pc_sent')}/{probe.get('pc_received')}/{probe.get('pc_lost')}, "
           f"snapshots {probe.get('snapshots')} (failed {probe.get('snapshot_failures')}), sampler wakes {probe.get('sampler_wakes')}")
+    if result['brief_holds']:
+        print(f"  {len(result['brief_holds'])} brief/open hold(s) >= half the threshold:")
+        for b in result['brief_holds']:
+            print(f"    {b['kind']} {b['hold_ms']:.1f} ms by {b['thread']} [{b['attribution']}] {b['release_frames_status']}: {b['top_frame']}")
     for h in result['holds']:
         print(f"- {h['hold_ms']:.1f} ms by {h['thread']} [{h['attribution']}], frames {h['release_frames_status']}: "
               f"{h['release_frames'][0] if h['release_frames'] else '-'}")

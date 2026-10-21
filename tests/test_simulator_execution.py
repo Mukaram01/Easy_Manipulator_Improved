@@ -1563,6 +1563,28 @@ def test_gil_probe_reports_a_holder_that_never_registered_without_guessing(tmp_p
     assert summary['unmapped_holds']==len(holds) and 'started_before_probe' in summary['unregistered_at_start']
 
 
+def test_gil_probe_records_holds_of_half_the_threshold_as_brief_holds(tmp_path,built_gil_probe):
+    import ctypes,threading,time
+    from simulator_execution import GilProbe
+    spin=ctypes.PyDLL(str(built_gil_probe)).gil_probe_selftest_spin
+    spin.argtypes=[ctypes.c_longlong];spin.restype=ctypes.c_ulonglong
+    probe=GilProbe(built_gil_probe,tmp_path/'b.txt',80);probe.start()
+    done=threading.Event()
+    def worker():spin(55_000_000);done.wait(5)
+    t=threading.Thread(target=worker,name='brief_holder')
+    try:
+        _sampler_running(probe)
+        t.start();time.sleep(.2)
+    finally:
+        done.set();t.join();probe.stop()
+    assert _probe_holds(probe)==[]                                            # below the 80 ms threshold
+    brief=[e for e in probe.events if e['event']=='gil_probe_brief_hold']
+    assert brief and all(b['thread']=='brief_holder' and b['attribution']=='verified' for b in brief)
+    assert max(b['hold_ms'] for b in brief)>=50 and all(b['native_pc']==[] and b['holder_cpu'] is None for b in brief)
+    summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
+    assert summary['brief_holds']==len(brief) and summary['holds']==0
+
+
 def test_gil_probe_releasing_native_calls_and_python_loops_are_not_holds(tmp_path,built_gil_probe):
     import ctypes,threading,time
     from simulator_execution import GilProbe
@@ -1578,6 +1600,7 @@ def test_gil_probe_releasing_native_calls_and_python_loops_are_not_holds(tmp_pat
     finally:
         probe.stop()
     assert _probe_holds(probe)==[]
+    assert not [e for e in probe.events if e['event']=='gil_probe_brief_hold' and e['thread'] in ('releaser','loop0','loop1')]
 
 
 def test_gil_probe_parse_labels_identity_and_frames_only_as_far_as_the_evidence_goes():
@@ -1604,13 +1627,20 @@ def test_gil_probe_parse_labels_identity_and_frames_only_as_far_as_the_evidence_
           'hold 710000000 800000000 90.000 0x40 50 15 1.0\n'      # address now holds another thread state (id 9)
           'hold 810000000 900000000 90.000 0x50 60 -1 1.0\n'      # a starting thread carries its creator's ident
           'hold 910000000 999000000 89.000 0x10 70 12 1.0\n'      # a thread ran during the snapshot itself
+          'brief 1100000000 1150000000 50.000 0x10 80 1.0\n'      # >= threshold/2: identity and frames only
+          'open 1200000000 1300000000 100.000 0x10 90 12\n'       # still held at stop: no snapshot after it
           'late 50000000 60000000 10.000\n'
           'garbage line\n')
     snaps=[snap(90_500_000,6,{0x10:(1,1)}),snap(190_500_000,9,{0x10:(1,1)}),snap(300_400_000,21,{}),
            snap(500_200_000,31,{0x30:(4,4)}),snap(705_000_000,41,{0x20:(3,3)},waited=1_000_000),
            snap(800_300_000,51,{0x40:(5,9)}),snap(900_300_000,61,{0x50:(6,10),0x60:(6,6)}),
-           snap(999_300_000,71,{0x10:(1,2)},end=72)]
-    holds={h['start_wall_ns']:h for h in GilProbe.parse(text,registry,{},snaps) if h['event']=='gil_probe_hold'}
+           snap(999_300_000,71,{0x10:(1,2)},end=72),snap(1_150_300_000,81,{0x10:(1,2)})]
+    events=GilProbe.parse(text,registry,{},snaps)
+    holds={h['start_wall_ns']:h for h in events if h['event']=='gil_probe_hold'}
+    brief,=[h for h in events if h['event']=='gil_probe_brief_hold']
+    assert (brief['thread'],brief['attribution'],brief['release_frames_status'],brief['holder_proc_data'])==('later','verified','exact','none')
+    opened,=[h for h in events if h['event']=='gil_probe_open_hold']
+    assert (opened['attribution'],opened['release_frames_status'],opened['hold_ms'])==('registered, unconfirmed','no snapshot',100.0)
     first=holds[1000]
     assert (first['thread'],first['attribution'],first['release_frames_status'],first['overlaps_probe_late'])==('early','verified','exact',True)
     assert first['holder_proc_data']=='holder' and first['max_poll_gap_ms']==1.1

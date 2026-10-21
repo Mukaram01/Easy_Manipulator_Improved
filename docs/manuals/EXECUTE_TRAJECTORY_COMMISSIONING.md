@@ -318,7 +318,7 @@ least N ms in each executor session:
   interpreter object, thread state or frame;
 - Python threads register themselves under the GIL (thread-state pointer, CPython's
   never-reused thread-state id, kernel tid, GIL switch number); a sampler thread asks
-  for the GIL every 20 ms, and after a wait of at least N/2 ms takes one native
+  for the GIL every 20 ms, and after a wait of at least N/4 ms takes one native
   snapshot (GC disabled, GIL kept, switch number read at both ends) of every thread's
   Python frames and of the live thread-state -> (ident, id) map under CPython's head
   lock. Each hold gets the holder's identity — `verified` only when the live id at
@@ -331,15 +331,21 @@ least N ms in each executor session:
   syscall (`running` or the blocking call and its PC);
 - `--gil-probe-native-pc` also samples the holder's native PC during long holds
   only: one signal at a time, each sent right after the holder's syscall file read
-  `running`, and none for the rest of a hold once it is seen inside a syscall (a
-  microsecond race remains); the handler copies registers and 4 KiB of its stack (no
-  unwinding); `scripts/gil_probe_report.py <session>`
+  `running`, and none for the rest of a hold once it is seen inside a syscall
+  (`running` is the kernel's TASK_RUNNING, which includes the not-yet-sleeping part of
+  a syscall, so the first signals of a hold can still meet one); the handler copies
+  registers and 4 KiB of its stack (no unwinding); stack-scan candidates cover only
+  the libraries mapped when the probe started; `scripts/gil_probe_report.py <session>`
   symbolizes them from the session's maps snapshot. Libraries without symbols
   (the stripped `python3.10`, `_json`) are named by library, and their
   "nearest exported symbol" is marked unreliable; libc resolves through
   `libc6-dbg`. Stack-scan callers are heuristic;
 - the executor and acquisition loops record calls that took ≥ 20 ms
   (`loop_slow`: `spin_once`, `execution_monitor`, `wait_set_*`, `take_message`).
+
+Holds of at least N/2 ms are also recorded (`gil_probe_brief_hold`: identity and
+frames only), and a hold still in progress when the probe stops is recorded as
+`gil_probe_open_hold`, so back-to-back shorter tenures are visible too.
 
 Limits: a hold that begins before the sampler's first loop (probe start) gets
 no snapshot; about 2 % of offline release snapshots are `holder may have run

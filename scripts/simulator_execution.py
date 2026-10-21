@@ -447,7 +447,7 @@ class GilProbe:
         kernel tid, GIL switch number): the constructing thread at start(), later threads
         through a one-shot threading.setprofile hook.
       * a sampler thread asks for the GIL every SAMPLER_PERIOD_S, so a hold this long is
-        contended. When it waited at least half the threshold it takes one native
+        contended. When it waited at least a quarter of the threshold it takes one native
         snapshot (gil_probe_snapshot: GC off, GIL kept) of every thread's Python frames
         and of the live thread-state -> (ident, id) map, with the switch number at both
         ends. A hold is 'verified' only when the live id at the holder's address is the id
@@ -460,7 +460,7 @@ class GilProbe:
     LOOP_SLOW_NS=20_000_000
     MAX_SNAPSHOTS=2000
     COUNTERS=('holds','lates','unmapped_holds','proc_read_failures','pc_sent','pc_received','pc_lost',
-              'pc_send_failures','pc_skipped_in_syscall','pc_handler_lost')
+              'pc_send_failures','pc_skipped_in_syscall','pc_handler_lost','brief_holds')
     def __init__(self,library,path,threshold_ms,native_pc=False):
         import ctypes,sys
         threshold_ms=float(threshold_ms)
@@ -531,7 +531,9 @@ class GilProbe:
     def _sample(self):
         # The wait is measured from the end of the previous iteration, so the GIL being kept
         # from this thread anywhere in its loop (not only inside sleep) is seen.
-        period_ns=int(self.SAMPLER_PERIOD_S*1e9);snapshot_ns=self.threshold_ms*5e5
+        # A quarter of the threshold: with the 20 ms period, every hold of at least half the
+        # threshold (brief holds included) keeps this thread waiting at least that long.
+        period_ns=int(self.SAMPLER_PERIOD_S*1e9);snapshot_ns=self.threshold_ms*2.5e5
         last=time.monotonic_ns()
         while not self.sampler_stop.is_set():
             time.sleep(self.SAMPLER_PERIOD_S);got=time.monotonic_ns()
@@ -594,6 +596,14 @@ class GilProbe:
                 holds.append(dict(event='gil_probe_hold',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),
                     hold_ms=float(fields[3]),tstate=int(fields[4],0),switch_number=int(fields[5]),native_id=int(fields[6]),
                     max_poll_gap_ms=float(fields[7])))
+            elif fields[:1]==['brief'] and len(fields)==7:     # >= threshold/2: identity and frames only
+                holds.append(dict(event='gil_probe_brief_hold',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),
+                    hold_ms=float(fields[3]),tstate=int(fields[4],0),switch_number=int(fields[5]),native_id=-1,
+                    max_poll_gap_ms=float(fields[6])))
+            elif fields[:1]==['open'] and len(fields)==7:      # still held when the probe stopped
+                holds.append(dict(event='gil_probe_open_hold',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),
+                    hold_ms=float(fields[3]),tstate=int(fields[4],0),switch_number=int(fields[5]),native_id=int(fields[6]),
+                    max_poll_gap_ms=None))
             elif fields[:1]==['late'] and len(fields)==4:
                 lates.append(dict(event='gil_probe_late',start_wall_ns=int(fields[1]),end_wall_ns=int(fields[2]),late_ms=float(fields[3])))
             elif fields[:1] in (['cpu'],['sys'],['pc']) and len(fields)>=3:
@@ -652,7 +662,7 @@ class GilProbe:
                 steady=snap.get('switch_number_end',snap['switch_number'])==snap['switch_number']
                 hold.update(release_frames=frames,
                     release_frames_status='holder has no Python frame' if frames is None else
-                        ('exact' if steady and after<=2 else 'holder may have run again'),
+                        ('exact' if steady and 1<=after<=2 else 'holder may have run again'),
                     release_snapshot_switches_after=after,release_snapshot_delay_ms=(snap['wall_ns']-hold['end_wall_ns'])/1e6)
         return holds+lates
 

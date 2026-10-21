@@ -24,9 +24,10 @@
  *   - optional native PC samples (pc_enable): one signal at a time, at most every 2 ms,
  *     each sent only right after the holder's syscall file read "running"; after any
  *     reading that is not "running" no further signal is sent for that hold, so a holder
- *     that makes syscalls is not interrupted (its PC is in the sys record). A residual
- *     race of microseconds remains between that read and delivery; SA_RESTART restarts
- *     the restartable calls. The handler copies the interrupted RIP/RSP and up to 4 KiB
+ *     that makes syscalls is not interrupted (its PC is in the sys record). "running" is
+ *     the kernel's TASK_RUNNING, which includes the not-yet-sleeping part of a syscall, so
+ *     the first signals of a hold can still meet a syscall; SA_RESTART restarts the
+ *     restartable calls. The handler copies the interrupted RIP/RSP and up to 4 KiB
  *     of the holder's own stack with process_vm_readv (fault-safe): no unwinding, no
  *     allocation, no Python. Stack words pointing into executable mappings (read once
  *     at start) are reported as candidate return addresses (a heuristic: stale words
@@ -42,6 +43,10 @@
  *
  * Records (one per line, written with write(2)):
  *   hold <start_wall_ns> <end_wall_ns> <hold_ms> <tstate> <switch_number> <tid> <max_poll_gap_ms>
+ *   brief <start_wall_ns> <end_wall_ns> <hold_ms> <tstate> <switch_number> <max_poll_gap_ms>
+ *        (a hold of at least half the threshold: identity and frames only, no /proc, no PC)
+ *   open <start_wall_ns> <wall_ns> <held_ms> <tstate> <switch_number> <tid>
+ *        (a hold of at least half the threshold still in progress when the probe stopped)
  *   cpu  <hold_start_wall_ns> <tid> <begin|end> <state> <utime> <stime> <minflt> <majflt> <run_ns> <wait_ns> <slices>
  *   sys  <hold_start_wall_ns> <wall_ns> <first line of /proc/self/task/<tid>/syscall>
  *   pc   <hold_start_wall_ns> <sent_wall_ns> <delivery_us> <tid> <rip> <rsp> <stack_bytes> <n> <addr>...
@@ -83,7 +88,7 @@ static pthread_t probe_thread;
 static int probe_running;
 static int probe_fd = -1;
 static long long probe_threshold_ns;
-static long long probe_holds, probe_lates, probe_unmapped, probe_proc_failures;
+static long long probe_holds, probe_lates, probe_unmapped, probe_proc_failures, probe_brief;
 static long long pc_sent, pc_received, pc_lost, pc_send_failures, pc_skipped_in_syscall, pc_handler_lost;
 static int pc_enabled, pc_signal, pc_installed;
 static pid_t probe_pid;
@@ -314,6 +319,7 @@ static void *probe_main(void *unused) {
                 } else if (mono - pc_sent_mono > PC_ABANDON_NS) {
                     pc_state = ABANDONED;      /* a claimed request never completed: stop sampling */
                     pc_enabled = 0;
+                    pc_this_hold = 0;
                     pc_lost++;
                 }
             }
@@ -346,13 +352,21 @@ static void *probe_main(void *unused) {
                         if (syscall(SYS_tgkill, probe_pid, tid, pc_signal) == 0) { pc_state = SENT; pc_sent++; }
                         else {
                             unsigned long expected = request;
-                            __atomic_compare_exchange_n(&pc_pending, &expected, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+                            /* if the revoke fails a stale queued signal claimed it: wait for its pc_done */
+                            if (!__atomic_compare_exchange_n(&pc_pending, &expected, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+                                pc_state = SENT;
                             pc_send_failures++;
                         }
                     }
                 }
             }
             continue;
+        }
+        if (holder && gap > max_gap) max_gap = gap;   /* the poll that saw the end lags it too */
+        if (!long_hold && holder && 2 * (mono - hold_start) >= probe_threshold_ns) {
+            probe_brief++;
+            emit(line, snprintf(line, sizeof line, "brief %lld %lld %.3f %#lx %lu %.3f\n", hold_start_wall, wall,
+                 (mono - hold_start) / 1e6, (unsigned long)holder, holder_switch, max_gap / 1e6), sizeof line);
         }
         if (long_hold) {
             probe_holds++;
@@ -375,6 +389,10 @@ static void *probe_main(void *unused) {
         tid = -1;
         pc_this_hold = 0;
     }
+    long long mono = now_ns(CLOCK_MONOTONIC);
+    if (holder && 2 * (mono - hold_start) >= probe_threshold_ns)
+        emit(line, snprintf(line, sizeof line, "open %lld %lld %.3f %#lx %lu %d\n", hold_start_wall,
+             now_ns(CLOCK_REALTIME), (mono - hold_start) / 1e6, (unsigned long)holder, holder_switch, tid), sizeof line);
     return NULL;
 }
 
@@ -430,7 +448,7 @@ int gil_probe_start(const char *path, long long threshold_ns, int pc_enable) {
     probe_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (probe_fd < 0) return -2;
     probe_threshold_ns = threshold_ns;
-    probe_holds = probe_lates = probe_unmapped = probe_proc_failures = 0;
+    probe_holds = probe_lates = probe_unmapped = probe_proc_failures = probe_brief = 0;
     pc_sent = pc_received = pc_lost = pc_send_failures = pc_skipped_in_syscall = pc_handler_lost = 0;
     pc_enabled = pc_enable ? 1 : 0;
     __atomic_store_n(&pc_pending, 0, __ATOMIC_RELEASE);
@@ -459,7 +477,8 @@ long long gil_probe_stop(void) {
 /* Counters, in a fixed order, for the Python summary. */
 int gil_probe_counters(long long *out, int size) {
     long long values[] = {probe_holds, probe_lates, probe_unmapped, probe_proc_failures,
-                          pc_sent, pc_received, pc_lost, pc_send_failures, pc_skipped_in_syscall, pc_handler_lost};
+                          pc_sent, pc_received, pc_lost, pc_send_failures, pc_skipped_in_syscall, pc_handler_lost,
+                          probe_brief};
     int n = (int)(sizeof values / sizeof values[0]);
     for (int i = 0; i < n && i < size; i++) out[i] = values[i];
     return n;
