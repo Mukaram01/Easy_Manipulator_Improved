@@ -94,8 +94,11 @@ def test_old_trajectory_alias_cannot_be_submitted_after_invalidation():
     summary = {'grasp_recovery': {'state': 'RECOVERY_BLOCKED'}}
     submissions = []
     client = N(wait_for_server=lambda **kw: True, send_goal_async=lambda g: submissions.append(g))
+    scene = object()
     action = nested('action', dict(summary=summary, execute_client=client, contact_guard=None,
-                                   controlled_cancel=False, measurements=None, controller_audit=None))
+                                   controlled_cancel=False, measurements=None, controller_audit=None,
+                                   apply_client=scene, exchanged_clients={scene},
+                                   cross_check_gate=executor.PlanningCrossCheckGate(summary)))
     with pytest.raises(RuntimeError, match='RECOVERY_EXECUTION_INVALIDATED'):
         action(client, object(), 1)
     assert submissions == []
