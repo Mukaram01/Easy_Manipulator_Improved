@@ -460,6 +460,7 @@ class GilProbe:
         self.python_version=built
         self.lib.gil_probe_start.argtypes=[ctypes.c_char_p,ctypes.c_longlong];self.lib.gil_probe_start.restype=ctypes.c_int
         self.lib.gil_probe_stop.restype=ctypes.c_longlong;self.lib.gil_probe_lates.restype=ctypes.c_longlong
+        self.lib.gil_probe_read_failures.restype=ctypes.c_longlong
         self.events=[];self.started=False;self.names={}
     @classmethod
     def from_environment(cls,path):
@@ -479,11 +480,11 @@ class GilProbe:
         self.names.update((t.ident,t.name) for t in threading.enumerate())
     def stop(self):
         if not self.started:return
-        holds=self.lib.gil_probe_stop();lates=self.lib.gil_probe_lates();self.started=False
+        holds=self.lib.gil_probe_stop();lates=self.lib.gil_probe_lates();read_failures=self.lib.gil_probe_read_failures();self.started=False
         self.capture_names()
         self.events.extend(self.parse(self.path.read_text(errors='replace'),self.names))
         self.events.append(dict(event='gil_probe_summary',wall_ns=time.time_ns(),threshold_ms=self.threshold_ms,
-            holds=holds,lates=lates,file=self.path.name,library=str(self.library),library_sha256=self.library_sha256,
+            holds=holds,lates=lates,read_failures=read_failures,file=self.path.name,library=str(self.library),library_sha256=self.library_sha256,
             python_version=self.python_version))
     @staticmethod
     def parse(text,names):

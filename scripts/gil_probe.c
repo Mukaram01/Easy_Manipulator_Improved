@@ -37,7 +37,7 @@ static pthread_t probe_thread;
 static int probe_running;
 static int probe_fd = -1;
 static long long probe_threshold_ns;
-static long long probe_holds, probe_lates;
+static long long probe_holds, probe_lates, probe_read_failures;
 
 static long long now_ns(clockid_t clock) {
     struct timespec ts;
@@ -83,7 +83,7 @@ static void *probe_main(void *unused) {
              * through process_vm_readv so a stale pointer yields EFAULT, never a fault. */
             struct iovec local = {&tid, sizeof tid};
             struct iovec remote = {&((PyThreadState *)tstate)->thread_id, sizeof tid};
-            if (process_vm_readv(getpid(), &local, 1, &remote, 1, 0) != (ssize_t)sizeof tid) tstate = 0;
+            if (process_vm_readv(getpid(), &local, 1, &remote, 1, 0) != (ssize_t)sizeof tid) { tstate = 0; probe_read_failures++; }
             /* Only trust the id if the holder did not change while it was read. */
             if (__atomic_load_n(&_PyRuntime.gilstate.tstate_current._value, __ATOMIC_ACQUIRE) != tstate) tstate = 0;
         }
@@ -112,7 +112,7 @@ int gil_probe_start(const char *path, long long threshold_ns) {
     probe_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (probe_fd < 0) return -2;
     probe_threshold_ns = threshold_ns;
-    probe_holds = probe_lates = 0;
+    probe_holds = probe_lates = probe_read_failures = 0;
     __atomic_store_n(&probe_running, 1, __ATOMIC_RELEASE);
     if (pthread_create(&probe_thread, NULL, probe_main, NULL) != 0) {
         __atomic_store_n(&probe_running, 0, __ATOMIC_RELEASE);
@@ -134,3 +134,6 @@ long long gil_probe_stop(void) {
 }
 
 long long gil_probe_lates(void) { return probe_lates; }
+
+/* Holder-id reads that failed (e.g. a sandbox denying process_vm_readv): non-zero means holds may be missing. */
+long long gil_probe_read_failures(void) { return probe_read_failures; }

@@ -1387,6 +1387,7 @@ def test_gil_probe_names_the_thread_keeping_a_contended_gil_and_ignores_normal_s
     summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
     assert summary['holds']==len(holds) and summary['threshold_ms']==80 and summary['file']=='summary.measurements.gil-probe.txt'
     assert len(summary['library_sha256'])==64 and summary['python_version'] and all('overlaps_probe_late' in h for h in holds)
+    assert summary['read_failures']==0                                 # holder ids were readable on this host
 
 
 def test_gil_probe_is_opt_in_bounded_and_needs_both_settings(tmp_path,monkeypatch,built_gil_probe):
