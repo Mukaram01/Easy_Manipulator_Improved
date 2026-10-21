@@ -57,27 +57,34 @@ SERVICE_RETRY_ALLOWANCE_S=220
 # subprocess kill must come after the executor's own cancellation, never before it.
 EXECUTION_GATE_MARGIN_S=2100
 MODES=("full","targeted","fast")
-# full-cycle consumes the cancel, telemetry, stationary and contact-release
-# evidence of the same run (executor --commission-evidence); it cannot run alone.
+# full-cycle needs passing cancel, telemetry, stationary and contact-release
+# evidence on the same binaries (executor --commission-evidence); the runner only
+# ever builds that file from the sessions of the same full run, so it cannot run alone.
 TARGETABLE_GATES=GATES[:-1]
 REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-report.json",
               "fast":"stage-a1-fast-report.json"}
-# Focused Stage-A Python suites: every test that imports the Stage-A executor,
-# simulator, runner, destination or recovery code. None launches ROS or Gazebo.
+# Focused Stage-A Python suites: the suites of the runner, the executor and every
+# local module they import (checked by a test), plus the recovery/runtime suites
+# that exercise the executor's closures. None launches ROS or Gazebo.
 FAST_TEST_FILES=(
+    "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
-    "tests/test_grasp_recovery_boundary.py","tests/test_grasp_recovery_runtime.py",
-    "tests/test_perceived_object_grasp_execute.py","tests/test_physical_destination.py",
+    "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
+    "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",
+    "tests/test_perceived_object_grasp_execute.py","tests/test_perceived_object_grasp_plan.py",
+    "tests/test_physical_destination.py","tests/test_pile_extraction.py",
     "tests/test_retention_cancel_fault.py","tests/test_runtime_pick_inputs.py",
     "tests/test_simulator_backend.py","tests/test_simulator_box_motion.py",
     "tests/test_simulator_execution.py","tests/test_stage_a1_finish_runner.py",
-    "tests/test_task_intent_resolver.py","tests/test_transactional_pick_cycle.py",
+    "tests/test_task_intent_resolver.py","tests/test_task_intent_v2.py",
+    "tests/test_transactional_pick_cycle.py",
 )
 FAST_TEST_TIMEOUT_S=600
 # Runtime-only selections the launch consumes. Unit fixtures build their own mock
 # worlds; a test that needs one of these sets it itself (monkeypatch).
-FAST_TEST_ENV_EXCLUDED=("WORKCELL_SIMULATOR_PHYSICS_ROOT","WORKCELL_GIL_WATCHDOG_MS","WORKCELL_PLANNING_TRACE_DIR")
+# The qualified physics-root path itself is exercised only by runtime sessions.
+FAST_TEST_ENV_EXCLUDED=("WORKCELL_SIMULATOR_PHYSICS_ROOT","WORKCELL_PLANNING_TRACE_DIR")
 # Opt-in executor diagnostic (simulator_execution.GilHoldWatch); bounds match its own check.
 GIL_WATCHDOG_ENV="WORKCELL_GIL_WATCHDOG_MS"
 EXPECTED_RESULTS={
@@ -545,7 +552,9 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
     if not 1<=domain<=232:raise RuntimeError("ROS domain range exhausted")
     env=dict(os.environ,ROS_DOMAIN_ID=str(domain),IGN_PARTITION=f"{args.partition_prefix}_{gate}",
              ROS_LOCALHOST_ONLY="1",ROS2CLI_DISABLE_DAEMON="1",PYTHONUNBUFFERED="1")
-    report={"gate":gate,"domain":domain,"partition":env["IGN_PARTITION"],"status":"BLOCKED"}
+    report={"gate":gate,"domain":domain,"partition":env["IGN_PARTITION"],"status":"BLOCKED",
+            "mode":getattr(args,"mode","full"),
+            "scope":"STAGE_A_ACCEPTANCE_SEQUENCE" if getattr(args,"mode","full")=="full" else "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE"}
     launch=None;launch_log=None
     try:
         assert_domain_free(env,repo)
@@ -632,7 +641,9 @@ def run_fast_tests(repo:Path,output:Path,env:dict)->dict:
     completed=run([sys.executable,"-m","pytest","-q","-p","no:cacheprovider",*FAST_TEST_FILES],
         env=test_env,cwd=repo,log=log,timeout=FAST_TEST_TIMEOUT_S,check=False)
     lines=[line for line in log.read_text(errors="replace").splitlines() if line.strip()]
-    counts={key:int(value) for value,key in re.findall(r"(\d+) (passed|failed|errors?|skipped)",lines[-1] if lines else "")}
+    # pytest's final summary ("N passed[, M failed] in S"); later output is ignored.
+    summary=next((line for line in reversed(lines) if re.search(r"\b(passed|failed|errors?|no tests ran)\b.* in [\d.]+s",line)),"")
+    counts={key:int(value) for value,key in re.findall(r"(\d+) (passed|failed|errors?|skipped)",summary)}
     result={"status":"PASS" if completed.returncode==0 and counts.get("passed",0)>0 and not counts.get("failed")
                 and not counts.get("error") and not counts.get("errors") else "FAILED",
             "returncode":completed.returncode,"counts":counts,"files":list(FAST_TEST_FILES),
@@ -693,7 +704,9 @@ def main(argv=None):
              "gates":{},"preflight":None,"started_wall_ns":started_wall_ns,
              "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time}
     if args.mode=="full":overall["through"]=args.through
-    if args.mode=="targeted":overall["gate"]=args.gate
+    if args.mode=="targeted":
+        # Only a cancel gate in this run qualifies cancellation on the current binary.
+        overall.update(gate=args.gate,cancellation_qualified_this_run=False)
     if args.gil_watchdog_ms is not None:overall["gil_watchdog_ms"]=args.gil_watchdog_ms
     try:
         if args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
@@ -722,7 +735,8 @@ def main(argv=None):
             try:
                 path=one_session(args,repo,source_world,build["sha256"],gate,index,prior)
             except BaseException as exc:
-                failed={"status":"FAILED","failure":str(exc) if isinstance(exc,Exception) else f"interrupted: {type(exc).__name__}",
+                failed={"status":"FAILED" if isinstance(exc,Exception) else "INTERRUPTED",
+                        "failure":str(exc) if isinstance(exc,Exception) else f"interrupted: {type(exc).__name__}",
                         "duration_s":round(time.monotonic()-began,1)}
                 session_report=args.output/f"{index:02d}-{gate}"/"session-report.json"
                 if session_report.is_file():
@@ -732,6 +746,7 @@ def main(argv=None):
                         if key in recorded:failed[key]=recorded[key]
                 overall["gates"][gate]=failed
                 raise
+            if args.mode=="targeted" and gate=="cancel":overall["cancellation_qualified_this_run"]=True
             prior[gate]=path;overall["gates"][gate]={"status":"PASS","summary":str(path.relative_to(args.output)),
                                                      "duration_s":round(time.monotonic()-began,1)}
             overall["status"]="PASS" if gate==last else "IN_PROGRESS"

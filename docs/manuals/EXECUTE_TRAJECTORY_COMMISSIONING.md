@@ -268,7 +268,7 @@ The same runner has three modes. Only `--mode full` (the default) through
 all six gates pass. A passing `--through` prefix records `false`.
 
 ```bash
-# FAST: no ROS launch. Commissioning build + its C++ unit tests + the 16 focused
+# FAST: no ROS launch. Commissioning build + its C++ unit tests + the 22 focused
 # Stage-A Python suites (runtime-only selections such as
 # WORKCELL_SIMULATOR_PHYSICS_ROOT are removed from the unit-test environment).
 python3 scripts/run_stage_a1_finish.py --output <new dir> --mode fast
@@ -285,16 +285,21 @@ observation refresh, nine-stage revalidation, gate execution, gate assertions an
 owned shutdown checks as a full run. Nothing is skipped inside a gate; only the
 *earlier gates* are not run. `resolve`, `cancel`, `telemetry`, `stationary` and
 `contact-release` can be targeted. `full-cycle` cannot: the executor admits it
-only with the cancellation, telemetry, retention and contact-release evidence of
-the same run, so it is available only in full mode. Targeted and fast reports
+only with passing cancellation, telemetry, retention and contact-release evidence
+bound to the same binaries, and the runner builds that evidence only from the
+sessions of the same full run, so it is available only in full mode. Targeted
+session reports carry `mode` and `scope` too; never hand-assemble targeted
+summaries into `--commission-evidence`. Targeted and fast reports
 are written as `stage-a1-targeted-report.json` / `stage-a1-fast-report.json`
 with `"scope": "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE"` and
 `"stage_a_acceptance": false`; they never replace the full acceptance sequence,
 and a targeted motion gate does not re-qualify cancellation on the current
-binary (only the cancel gate does).
+binary (only the cancel gate does; the report records
+`"cancellation_qualified_this_run"`).
 
 `--gil-watchdog-ms N` (targeted/full, 50–1000 ms, off by default) arms an
-executor diagnostic: when no Python thread can run for N ms, CPython's
+executor diagnostic: when its heartbeat thread cannot run for about N − 25 ms
+(a GIL-holding call, a garbage collection, or CPU starvation), CPython's
 `faulthandler` watchdog writes every thread's stack to
 `<summary>.measurements.gil-holds.txt` and the overrun is recorded in the timing
 evidence (`gil_hold`, `gil_watch_summary`). The dump does not mark which thread
@@ -306,7 +311,7 @@ from Trials 20–22):
 
 | Mode | Measured wall time | Contents |
 |---|---|---|
-| fast | 126 s | build check 22 s, C++ action + support/Cartesian tests 75 s, 754 Python tests 34 s |
+| fast | 126 s | build check 22 s, C++ action + support/Cartesian tests 75 s, 754 Python tests 34 s (16 suites then; 22 now) |
 | targeted `resolve` | 695 s | preflight 97 s + one plan-only session 598 s |
 | targeted `telemetry` | 776 s | preflight 97 s + one session 681 s (approach motion) |
 | full through `full-cycle` | 2885–4240 s | preflight + six sessions of 391–1367 s each |

@@ -1204,3 +1204,29 @@ def test_gil_hold_watch_is_opt_in_and_wired_beside_the_stall_watch(tmp_path,monk
     assert "self.gil_watch=GilHoldWatch.from_environment(self.log_path.with_suffix('.gil-holds.txt'))" in source
     assert "if self.gil_watch is not None:self.gil_watch.stop();self.timing.extend(self.gil_watch.events)" in source
     assert source.index("if self.gil_watch is not None:self.gil_watch.stop()")<source.index("with_suffix('.timing.json').write_text")
+
+
+def test_gil_hold_watch_stop_cancels_the_process_timer_and_never_closes_under_a_live_heartbeat(tmp_path,monkeypatch):
+    import faulthandler
+    from simulator_execution import GilHoldWatch
+    watch=GilHoldWatch(tmp_path/'d.txt',100);watch.start()
+    cancelled=[]
+    real_cancel=faulthandler.cancel_dump_traceback_later
+    monkeypatch.setattr(faulthandler,'cancel_dump_traceback_later',lambda:(cancelled.append(1),real_cancel()))
+    class Stuck:                                         # a heartbeat that did not stop within the join bound
+        def join(self,timeout):pass
+        def is_alive(self):return True
+    live=watch.thread;watch.thread=Stuck()
+    watch.stop()
+    assert cancelled and not watch.file.closed           # timer cancelled; file kept open for the live thread
+    assert not any(e['event']=='gil_watch_summary' for e in watch.events)
+    watch.thread=live;watch.stop()
+    assert watch.file.closed and any(e['event']=='gil_watch_summary' for e in watch.events)
+
+
+def test_bad_watchdog_value_fails_before_any_measurement_thread_starts():
+    source=(Path(__file__).parents[1]/'scripts/simulator_execution.py').read_text()
+    init=source.index("self.gil_watch=GilHoldWatch.from_environment(")
+    assert init<source.index("self.writer=threading.Thread(target=self._write")
+    assert init<source.index("self.acquisition=threading.Thread(target=self._acquire")
+    assert init<source.index("self.watch=ProcessStallWatch();self.watch.start()")

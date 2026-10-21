@@ -708,6 +708,7 @@ def test_targeted_mode_runs_exactly_the_selected_gate_in_its_own_session(tmp_pat
     report=json.loads((output/'stage-a1-targeted-report.json').read_text())
     assert report['status']=='PASS' and report['mode']=='targeted' and report['gate']==gate
     assert report['stage_a_acceptance'] is False and report['scope']=='DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE'
+    assert report['cancellation_qualified_this_run'] is (gate=='cancel')
     assert list(report['gates'])==[gate] and report['gates'][gate]['status']=='PASS'
     assert not (output/'stage-a1-final-report.json').exists()      # never written where acceptance is read
     assert report['duration_s']>=0 and report['gates'][gate]['duration_s']>=0
@@ -768,7 +769,7 @@ def test_operator_interrupt_records_the_gate_and_blocked_report_then_propagates(
         MODULE.main(['--output',str(output),'--mode','targeted','--gate','telemetry'])
     report=json.loads((output/'stage-a1-targeted-report.json').read_text())
     assert report['status']=='BLOCKED' and report['failure']=='interrupted: KeyboardInterrupt'
-    assert report['gates']['telemetry']['status']=='FAILED'
+    assert report['gates']['telemetry']['status']=='INTERRUPTED'
     assert report['gates']['telemetry']['failure']=='interrupted: KeyboardInterrupt'
 
 
@@ -815,7 +816,8 @@ def test_fast_mode_runs_build_and_focused_tests_without_any_session_or_world(tmp
     assert not (output/'stage-a1-final-report.json').exists()
 
 
-@pytest.mark.parametrize('tail,returncode',[('3 failed, 721 passed in 27s',1),('1 error in 9.6s',2),('',0),('no tests ran in 0.01s',5)])
+@pytest.mark.parametrize('tail,returncode',[('3 failed, 721 passed in 27s',1),('1 error in 9.6s',2),('',0),('no tests ran in 0.01s',5),
+                                             ('5 passed in 1.0s',1),('collected 0 items',0)])
 def test_fast_mode_reports_failed_tests_as_blocked(tmp_path,monkeypatch,stubbed_preflight,tail,returncode):
     def fake_run(command,*,env,cwd,log,timeout,check=True):
         Path(log).write_text(tail+'\n');return type('Completed',(),{'returncode':returncode})()
@@ -826,12 +828,31 @@ def test_fast_mode_reports_failed_tests_as_blocked(tmp_path,monkeypatch,stubbed_
     assert report['status']=='BLOCKED' and 'focused Stage-A tests failed' in report['failure']
 
 
-def test_fast_test_list_exists_and_covers_the_runner_and_executor_suites():
+def test_fast_mode_reads_the_pytest_summary_even_when_output_follows_it(tmp_path,monkeypatch,stubbed_preflight):
+    def fake_run(command,*,env,cwd,log,timeout,check=True):
+        Path(log).write_text('....\n754 passed in 34.1s\nException ignored in atexit callback\n')
+        return type('Completed',(),{'returncode':0})()
+    monkeypatch.setattr(MODULE,'run',fake_run)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','fast'])==0
+    assert json.loads((output/'stage-a1-fast-report.json').read_text())['fast_tests']['counts']=={'passed':754}
+
+
+def test_fast_test_list_covers_every_suite_of_the_modules_the_runner_and_executor_import():
+    import ast
     repo=SCRIPT.parents[1]
     assert all((repo/name).is_file() for name in MODULE.FAST_TEST_FILES)
-    for name in ('tests/test_stage_a1_finish_runner.py','tests/test_perceived_object_grasp_execute.py',
-                 'tests/test_simulator_execution.py','tests/test_grasp_recovery_runtime.py'):
-        assert name in MODULE.FAST_TEST_FILES
+    imported=set()
+    for script in ('run_stage_a1_finish','perceived_object_grasp_execute','simulator_execution'):
+        imported.add(script)
+        for node in ast.walk(ast.parse((repo/'scripts'/f'{script}.py').read_text())):
+            names=[a.name for a in node.names] if isinstance(node,ast.Import) else [node.module] if isinstance(node,ast.ImportFrom) and node.module else []
+            imported.update(name.split('.')[0] for name in names)
+    suites={f'tests/test_{name}.py' for name in imported if (repo/'scripts'/f'{name}.py').is_file() and (repo/'tests'/f'test_{name}.py').is_file()}
+    assert suites and suites<=set(MODULE.FAST_TEST_FILES), sorted(suites-set(MODULE.FAST_TEST_FILES))
+    assert 'tests/test_grasp_capture.py' in suites and 'tests/test_task_intent_v2.py' in suites
+    # suites not named after a module: the runner's own and the preflight's bridge identity
+    assert {'tests/test_stage_a1_finish_runner.py','tests/test_bridge_shutdown_overlay.py'}<=set(MODULE.FAST_TEST_FILES)
 
 
 def test_gil_watchdog_flag_reaches_executor_sessions_only_when_requested(tmp_path,monkeypatch,stubbed_preflight):
@@ -846,3 +867,20 @@ def test_gil_watchdog_flag_reaches_executor_sessions_only_when_requested(tmp_pat
     assert MODULE.main(['--output',str(tmp_path/'b'),'--mode','targeted','--gate','resolve','--gil-watchdog-ms','100'])==0
     assert observed==[None,'100.0']
     assert json.loads((tmp_path/'b'/'stage-a1-targeted-report.json').read_text())['gil_watchdog_ms']==100.0
+
+
+def test_session_reports_carry_the_run_mode_and_scope(tmp_path,monkeypatch):
+    import types
+    source=SCRIPT.read_text()
+    assert '"mode":getattr(args,"mode","full"),' in source
+    assert '"scope":"STAGE_A_ACCEPTANCE_SEQUENCE" if getattr(args,"mode","full")=="full" else "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE"}' in source
+    # the real one_session writes them even when its very first step fails
+    monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,destination,class_id:destination)
+    def busy(env,cwd):raise RuntimeError('ROS domain 203 is not isolated')
+    monkeypatch.setattr(MODULE,'assert_domain_free',busy)
+    args=types.SimpleNamespace(output=tmp_path,class_id='part',base_domain=201,partition_prefix='p',mode='targeted')
+    with pytest.raises(RuntimeError,match='not isolated'):
+        MODULE.one_session(args,SCRIPT.parents[1],SCRIPT,'sha','telemetry',3,{})
+    report=json.loads((tmp_path/'03-telemetry'/'session-report.json').read_text())
+    assert report['mode']=='targeted' and report['scope']=='DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE'
+    assert report['status']=='BLOCKED' and report['domain']==203

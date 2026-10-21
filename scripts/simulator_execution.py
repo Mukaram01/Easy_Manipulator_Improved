@@ -435,9 +435,11 @@ class GilHoldWatch:
     """Diagnostic only, opt-in (WORKCELL_GIL_WATCHDOG_MS). Names the code that holds
     the interpreter lock during a stall. A heartbeat thread re-arms CPython's
     faulthandler watchdog every period; the watchdog is a native thread that needs no
-    GIL, so if no Python thread can run for the threshold (one thread is inside a call
-    that keeps the GIL) it writes every thread's Python stack to the dump file. The
-    heartbeat records each overrun so dumps can be matched to the timing evidence.
+    GIL, so if the heartbeat cannot run for about threshold - period (one thread is
+    inside a call that keeps the GIL, a garbage collection, or the process is starved
+    of CPU) it writes every thread's Python stack to the dump file. The dump does not
+    mark the GIL holder; read it with the gc and receive events of the same timing
+    file. The heartbeat records each overrun so dumps can be matched to that evidence.
     It never touches a measurement, a guard or a threshold."""
     PERIOD_S=.025
     def __init__(self,path,threshold_ms):
@@ -469,8 +471,12 @@ class GilHoldWatch:
         finally:
             faulthandler.cancel_dump_traceback_later()
     def stop(self):
+        import faulthandler
         self.stop_event.set();self.thread.join(timeout=2)
-        if self.file is None:return
+        # The timer is process-global: cancel it here too, so no late dump can reach a
+        # reused file descriptor; keep the file open while the heartbeat could re-arm.
+        faulthandler.cancel_dump_traceback_later()
+        if self.file is None or self.thread.is_alive():return
         self.file.close()
         dumps=self.path.read_text(errors='replace').count('Timeout (')
         self.events.append(dict(event='gil_watch_summary',wall_ns=time.time_ns(),threshold_ms=self.threshold*1e3,
@@ -505,10 +511,11 @@ class Measurements:
         self.loader=yaml.CSafeLoader
         self.robot=ET.parse(self.receipt_path.parent/'robot.urdf').getroot()
         self.parents={j.find('child').get('link'):j for j in self.robot.findall('joint')}
+        # Validated before any thread starts, so a bad value cannot strand them.
+        self.gil_watch=GilHoldWatch.from_environment(self.log_path.with_suffix('.gil-holds.txt'))
         self.writer=threading.Thread(target=self._write,name='measurement_evidence');self.writer.start()
         self.acquisition=threading.Thread(target=self._acquire,name='measurement_acquisition');self.acquisition.start()
         self.watch=ProcessStallWatch();self.watch.start()
-        self.gil_watch=GilHoldWatch.from_environment(self.log_path.with_suffix('.gil-holds.txt'))
         if self.gil_watch is not None:self.gil_watch.start()
     def _acquire(self):
         # One wait set built once, every available message taken per wake. The
