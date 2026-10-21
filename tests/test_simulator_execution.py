@@ -1347,3 +1347,64 @@ def test_measurements_use_the_timed_lock_and_write_its_profile_into_the_timing_e
     assert "self.lock=TimedRLock();self.latest=None" in source
     assert "if isinstance(self.lock,TimedRLock):self.timing.append(self.lock.profile())" in source
     assert source.index("self.timing.append(self.lock.profile())")<source.index("with_suffix('.timing.json').write_text")
+
+
+@pytest.fixture
+def built_gil_probe(tmp_path):
+    import shutil,subprocess,sysconfig
+    if shutil.which('cc') is None:pytest.skip('no C compiler')
+    library=tmp_path/'gil_probe.so'
+    subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror','-shared','-fPIC','-I'+sysconfig.get_paths()['include'],
+                    '-o',str(library),str(Path(__file__).parents[1]/'scripts/gil_probe.c')],check=True)
+    return library
+
+
+def test_gil_probe_names_the_thread_keeping_a_contended_gil_and_ignores_normal_switching(tmp_path,built_gil_probe):
+    import threading,time
+    from simulator_execution import GilProbe
+    holder={};go=threading.Event()
+    def worker():go.wait();holder['seconds']=_hold_gil(.4)
+    t=threading.Thread(target=worker,name='measurement_acquisition');t.start()   # alive before the probe starts, as in Measurements
+    probe=GilProbe(built_gil_probe,tmp_path/'summary.measurements.gil-probe.txt',80);probe.start()
+    try:
+        go.set();time.sleep(.02)
+        end=time.time()+.6
+        while time.time()<end:time.sleep(.002)                 # main keeps asking for the GIL
+        t.join();busy_start=time.time_ns()
+        def busy():
+            stop=time.perf_counter()+.3;x=0
+            while time.perf_counter()<stop:x+=1
+        u=threading.Thread(target=busy,name='busy');u.start();busy();u.join()   # pure-Python contention switches every 5 ms
+    finally:
+        probe.stop()
+    holds=[e for e in probe.events if e['event']=='gil_probe_hold']
+    # _hold_gil's calibration calls are C calls too; any of them may exceed 80 ms. All holds are the worker's.
+    assert holds and all(h['thread']=='measurement_acquisition' and h['thread_id']==t.ident for h in holds)
+    longest=max(holds,key=lambda h:h['hold_ms'])
+    assert longest['hold_ms']>=holder['seconds']*1e3*.8 and longest['end_wall_ns']>longest['start_wall_ns']
+    # nothing during pure-Python contention (a hold's end is the first 1 ms poll after it)
+    assert all(h['end_wall_ns']<=busy_start+20_000_000 for h in holds)
+    summary,=[e for e in probe.events if e['event']=='gil_probe_summary']
+    assert summary['holds']==len(holds) and summary['threshold_ms']==80 and summary['file']=='summary.measurements.gil-probe.txt'
+
+
+def test_gil_probe_is_opt_in_bounded_and_needs_both_settings(tmp_path,monkeypatch,built_gil_probe):
+    from simulator_execution import GIL_PROBE_LIB_ENV,GIL_PROBE_MS_ENV,GilProbe
+    monkeypatch.delenv(GIL_PROBE_LIB_ENV,raising=False);monkeypatch.delenv(GIL_PROBE_MS_ENV,raising=False)
+    assert GilProbe.from_environment(tmp_path/'p.txt') is None and not (tmp_path/'p.txt').exists()
+    monkeypatch.setenv(GIL_PROBE_MS_ENV,'80')
+    with pytest.raises(RuntimeError,match='both its library and its threshold'):GilProbe.from_environment(tmp_path/'p.txt')
+    for bad in ('10','2000','nan'):
+        with pytest.raises(RuntimeError,match=r'within \[20, 1000\] ms'):GilProbe(built_gil_probe,tmp_path/'p.txt',bad)
+    monkeypatch.setenv(GIL_PROBE_LIB_ENV,str(built_gil_probe))
+    probe=GilProbe.from_environment(tmp_path/'p.txt');assert probe.threshold_ms==80
+    probe.stop()                                                   # never started: nothing written
+    assert probe.events==[]
+
+
+def test_gil_probe_is_validated_before_and_stopped_beside_the_other_diagnostics():
+    source=(Path(__file__).parents[1]/'scripts/simulator_execution.py').read_text()
+    init=source.index("self.gil_probe=GilProbe.from_environment(self.log_path.with_suffix('.gil-probe.txt'))")
+    assert init<source.index("self.writer=threading.Thread(target=self._write")
+    assert "if self.gil_probe is not None:self.gil_probe.stop();self.timing.extend(self.gil_probe.events)" in source
+    assert source.index("self.gil_probe.stop()")<source.index("with_suffix('.timing.json').write_text")

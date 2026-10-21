@@ -884,3 +884,41 @@ def test_session_reports_carry_the_run_mode_and_scope(tmp_path,monkeypatch):
     report=json.loads((tmp_path/'03-telemetry'/'session-report.json').read_text())
     assert report['mode']=='targeted' and report['scope']=='DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE'
     assert report['status']=='BLOCKED' and report['domain']==203
+
+
+def test_gil_probe_flag_builds_the_probe_into_the_evidence_and_reaches_sessions(tmp_path,monkeypatch,stubbed_preflight):
+    import os,shutil
+    if shutil.which('cc') is None:pytest.skip('no C compiler')
+    observed=[]
+    def session(args,repo,world,sha,gate,index,prior):
+        observed.append((os.environ.get(MODULE.GIL_PROBE_LIB_ENV),os.environ.get(MODULE.GIL_PROBE_MS_ENV)))
+        path=args.output/'summary.json';path.write_text('{}');return path
+    monkeypatch.setattr(MODULE,'one_session',session)
+    monkeypatch.setenv(MODULE.GIL_PROBE_MS_ENV,'999')                    # never inherited implicitly
+    assert MODULE.main(['--output',str(tmp_path/'a'),'--mode','targeted','--gate','resolve'])==0
+    assert MODULE.main(['--output',str(tmp_path/'b'),'--mode','targeted','--gate','resolve','--gil-probe-ms','80'])==0
+    report=json.loads((tmp_path/'b'/'stage-a1-targeted-report.json').read_text())
+    probe=report['gil_probe']
+    assert observed==[(None,None),(probe['library'],'80.0')]
+    assert Path(probe['library'])==tmp_path/'b'/'gil_probe.so' and Path(probe['library']).is_file()
+    assert probe['threshold_ms']==80 and len(probe['source_sha256'])==64 and len(probe['library_sha256'])==64
+    assert probe['command'][:2]==['cc','-O2'] and '-Werror' in probe['command']
+
+
+@pytest.mark.parametrize('argv,message',[
+    (['--mode','fast','--gil-probe-ms','80'],'fast mode runs none'),
+    (['--mode','targeted','--gate','resolve','--gil-probe-ms','5'],'within [20, 1000] ms'),
+])
+def test_gil_probe_arguments_are_bounded(tmp_path,monkeypatch,stubbed_preflight,capsys,argv,message):
+    with pytest.raises(SystemExit):MODULE.main(['--output',str(tmp_path/'e'),*argv])
+    assert message in capsys.readouterr().err and not (tmp_path/'e').exists()
+
+
+def test_failed_gil_probe_build_blocks_before_any_session(tmp_path,monkeypatch,stubbed_preflight):
+    seen=record_sessions(monkeypatch)
+    def broken(repo,output):raise RuntimeError('command failed (1): cc ... gil_probe.c')
+    monkeypatch.setattr(MODULE,'build_gil_probe',broken)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','targeted','--gate','telemetry','--gil-probe-ms','80'])==1
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['status']=='BLOCKED' and 'gil_probe.c' in report['failure'] and seen==[] and stubbed_preflight==[]

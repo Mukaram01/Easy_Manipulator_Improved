@@ -87,6 +87,9 @@ FAST_TEST_TIMEOUT_S=600
 FAST_TEST_ENV_EXCLUDED=("WORKCELL_SIMULATOR_PHYSICS_ROOT","WORKCELL_PLANNING_TRACE_DIR")
 # Opt-in executor diagnostic (simulator_execution.GilHoldWatch); bounds match its own check.
 GIL_WATCHDOG_ENV="WORKCELL_GIL_WATCHDOG_MS"
+# Opt-in native GIL-holder probe (scripts/gil_probe.c, simulator_execution.GilProbe).
+GIL_PROBE_LIB_ENV="WORKCELL_GIL_PROBE_LIB"
+GIL_PROBE_MS_ENV="WORKCELL_GIL_PROBE_MS"
 EXPECTED_RESULTS={
     "cancel":"CANCELLATION_TRIAL_PASS",
     "telemetry":"MOTION_TELEMETRY_PASS",
@@ -631,6 +634,17 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             raise RuntimeError(shutdown_failure)
 
 
+def build_gil_probe(repo:Path,output:Path)->dict:
+    """Compile the opt-in GIL probe for this interpreter into the evidence directory."""
+    import sysconfig
+    source=repo/"scripts/gil_probe.c";library=output/"gil_probe.so"
+    command=["cc","-O2","-Wall","-Wextra","-Werror","-shared","-fPIC","-I"+sysconfig.get_paths()["include"],
+             "-o",str(library),str(source)]
+    run(command,env=dict(os.environ),cwd=repo,log=output/"gil-probe-build.log",timeout=120)
+    return {"source":str(source),"source_sha256":sha256(source),"library":str(library),
+            "library_sha256":sha256(library),"command":command,"python":sys.version.split()[0]}
+
+
 def run_fast_tests(repo:Path,output:Path,env:dict)->dict:
     """Run the focused Stage-A Python suites; a failure or a missing suite is FAILED."""
     missing=[name for name in FAST_TEST_FILES if not (repo/name).is_file()]
@@ -672,6 +686,8 @@ def main(argv=None):
     parser.add_argument("--gate",choices=GATES,help="targeted mode only: the single gate to run")
     parser.add_argument("--gil-watchdog-ms",type=float,
         help="opt-in executor diagnostic: dump every thread's stack when one holds the GIL this long")
+    parser.add_argument("--gil-probe-ms",type=float,
+        help="opt-in executor diagnostic: native probe naming the thread that keeps a contended GIL this long")
     args=parser.parse_args(argv)
 
     repo=Path(__file__).resolve().parents[1];workspace=repo.parent.parent
@@ -697,6 +713,11 @@ def main(argv=None):
             parser.error("GIL watchdog threshold must be within [50, 1000] ms")
         os.environ[GIL_WATCHDOG_ENV]=str(args.gil_watchdog_ms)
     else:os.environ.pop(GIL_WATCHDOG_ENV,None)
+    if args.gil_probe_ms is not None:
+        if args.mode=="fast":parser.error("the GIL probe observes executor sessions; fast mode runs none")
+        if not math.isfinite(args.gil_probe_ms) or not 20<=args.gil_probe_ms<=1000:
+            parser.error("GIL probe threshold must be within [20, 1000] ms")
+    for key in (GIL_PROBE_LIB_ENV,GIL_PROBE_MS_ENV):os.environ.pop(key,None)
     args.output.mkdir(parents=True)
     started_wall_ns=time.time_ns();started=time.monotonic()
     overall={"status":"BLOCKED","mode":args.mode,"stage_a_acceptance":False,
@@ -709,6 +730,9 @@ def main(argv=None):
         overall.update(gate=args.gate,cancellation_qualified_this_run=False)
     if args.gil_watchdog_ms is not None:overall["gil_watchdog_ms"]=args.gil_watchdog_ms
     try:
+        if args.gil_probe_ms is not None:
+            overall["gil_probe"]=dict(build_gil_probe(repo,args.output),threshold_ms=args.gil_probe_ms)
+            os.environ[GIL_PROBE_LIB_ENV]=overall["gil_probe"]["library"];os.environ[GIL_PROBE_MS_ENV]=str(args.gil_probe_ms)
         if args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
         bridge=active_bridge_overlay()
