@@ -923,3 +923,19 @@ TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExisting
   EXPECT_FALSE(focus_block.contains(QStringLiteral("scene_builder_log_panel_->setVisible")));
   EXPECT_FALSE(focus_block.contains(QStringLiteral("request_embedded_web_product_view_refresh")));
 }
+
+TEST(ScenePreviewPreparationFailure, ShowsStderrCauseBeforeCommandDetail)
+{
+  const QString detail = QStringLiteral(
+    "prepare command failed with exit code 3; old output is rejected even if present; executable=python3 "
+    "arguments='scripts/ensure_workcell_studio_web_scene_fresh.py' '--scene' '/ws/scenes/ur5_airpick4_test' "
+    "'--output' 'build/x' working_directory=/ws exit_status=normal exit_code=3 stderr=error: command failed with "
+    "exit code 3: /usr/bin/python3 scripts/export_workcell_studio_web_scene.py\n"
+    "error: task/physical destination: destination zone 'place_zone_main' missing or ambiguous");
+  const QString concise = concise_preparation_error(detail);
+  EXPECT_TRUE(concise.contains(QStringLiteral("destination zone 'place_zone_main' missing or ambiguous")));
+  EXPECT_FALSE(concise.contains(QStringLiteral("executable=")));
+  // Without stderr the summary falls back to the leading detail, bounded in length.
+  const QString fallback = concise_preparation_error(QString(400, QLatin1Char('x')));
+  EXPECT_EQ(fallback.size(), 320);
+}

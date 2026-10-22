@@ -1632,6 +1632,22 @@ main{max-width:42rem;padding:2rem}h1{font-size:1.3rem}code{color:#93c5fd}</style
 #endif
 }
 
+QString concise_preparation_error(const QString & detail)
+{
+  // The preparation chain reports the real blocker on stderr as "error: ..." lines
+  // after a long command summary; show those first so the user sees the cause.
+  const int stderr_at = detail.indexOf(QStringLiteral(" stderr="));
+  QStringList causes;
+  if (stderr_at >= 0) {
+    for (const QString & raw : detail.mid(stderr_at + 8).split('\n', Qt::SkipEmptyParts)) {
+      const QString line = raw.trimmed();
+      if (line.startsWith(QStringLiteral("error:"), Qt::CaseInsensitive) && !causes.contains(line)) causes << line;
+    }
+  }
+  if (!causes.isEmpty()) return causes.join(QStringLiteral("\n")).left(600);
+  return detail.trimmed().left(320);
+}
+
 void ScenePreviewWidget::show_embedded_web_preparation_failure(
   const EmbeddedWebRequestIdentity & identity, const QString & detail)
 {
@@ -1643,15 +1659,17 @@ void ScenePreviewWidget::show_embedded_web_preparation_failure(
     return;
   }
   native_compatibility_fallback_active_ = false;
-  const QString concise_error = detail.trimmed().left(320).toHtmlEscaped();
+  const QString concise_error = concise_preparation_error(detail).toHtmlEscaped();
+  const QString full_detail = detail.trimmed().left(1600).toHtmlEscaped();
   const QString scene = identity.scene_id.toHtmlEscaped();
   const QString html = QStringLiteral(R"HTML(<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;background:#0f172a;color:#e2e8f0;font:15px sans-serif;display:grid;place-items:center;height:100vh}
 main{max-width:46rem;padding:2rem}h1{color:#fca5a5}code{color:#93c5fd}.error{background:#1e293b;padding:1rem;border-radius:.5rem}
 </style></head>
 <body><main><h1>Product View preparation failed</h1><p>Scene: <code>%1</code></p><p class="error">%2</p>
-<p>Correct the scene-authoring blockers (required scene files, metadata, and referenced assets), then use Retry in the Product View toolbar.</p>
-</main></body></html>)HTML").arg(scene, concise_error);
+<p>Fix the problem above in the scene (environment, task or referenced assets), then use Retry in the Product View toolbar.</p>
+<details><summary>Technical details</summary><p class="error"><small>%3</small></p></details>
+</main></body></html>)HTML").arg(scene, concise_error, full_detail);
   set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
   embedded_web_view_->setVisible(true);
   if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(false);

@@ -18,6 +18,7 @@
 #include <QSettings>
 #include <QSizePolicy>
 #include <QSplitter>
+#include <QStyle>
 #include <QStringList>
 #include <QTabBar>
 #include <QTabWidget>
@@ -286,6 +287,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     if (!button) continue;
     button->show();
     button->setMinimumHeight(32);
+    button->setMinimumWidth(64);          // never collapse to "ele/ov/ota" at 1366 px
     button->setProperty("editModeSegment", true);
     edit_mode_layout->addWidget(button);
   }
@@ -295,6 +297,17 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   add_existing(add_object);
   add_existing(fit);
   layout->addStretch(1);
+  // Undo/Redo as compact icon buttons so the toolbar fits a 1366 px display;
+  // the text stays as tooltip and accessible name.
+  for (auto * button : {undo, redo}) {
+    if (!button) continue;
+    const bool is_undo = button == undo;
+    button->setIcon(host->style()->standardIcon(is_undo ? QStyle::SP_ArrowBack : QStyle::SP_ArrowForward));
+    button->setToolTip(is_undo ? QStringLiteral("Undo (Ctrl+Z)") : QStringLiteral("Redo (Ctrl+Shift+Z)"));
+    button->setAccessibleName(button->text());
+    button->setText(QString());
+    button->setFixedWidth(40);
+  }
   add_existing(undo);
   add_existing(redo);
   layout->addSpacing(8);

@@ -35,6 +35,9 @@ class Scene3DViewportWidget;
 class QWebEngineView;
 #endif
 
+// The user-facing cause of a failed Product View preparation (stderr "error:" lines first).
+QString concise_preparation_error(const QString & detail);
+
 class ScenePreviewWidget : public QWidget
 {
   Q_OBJECT

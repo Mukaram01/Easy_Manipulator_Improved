@@ -143,7 +143,7 @@ private:
   void setup_studio_shell();
   void build_studio_header_actions();
   void apply_studio_theme();
-  void show_workflow_feedback(const QString & kind, const QString & text);
+  Q_INVOKABLE void show_workflow_feedback(const QString & kind, const QString & text);
   void append_studio_log(
     const QString & message,
     workcell_builder::StudioLogSeverity severity = workcell_builder::StudioLogSeverity::Info,

@@ -3310,6 +3310,7 @@ void MainWindow::setup_studio_shell()
   scene_builder_issue_count_label_->setVisible(false);
   scene_builder_issue_count_label_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   bottom_status_layout->addWidget(scene_builder_status_message_label_, 1);
+  bottom_status_layout->addWidget(scene_builder_issue_count_label_, 0);   // was parented but never laid out: it painted over the activity text
   center_panel_layout->addWidget(bottom_status_bar, 0);
 
   auto * right_layout = new QVBoxLayout(right_panel);
@@ -3493,6 +3494,8 @@ void MainWindow::setup_studio_shell()
   metadata_form->addRow("Name", inspector_display_name_);
   inspector_semantic_role_ = new QComboBox(scene_builder);
   inspector_semantic_role_->setObjectName("sceneBuilderSemanticRoleCombo");
+  inspector_semantic_role_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  inspector_semantic_role_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
   const std::vector<std::pair<const char *, const char *>> semantic_roles = {
     {"Generic asset", "asset"}, {"Pick object", "pick_object"},
     {"Target bin", "target_bin"}, {"Fixture", "fixture"},
@@ -8235,11 +8238,20 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
       }
     }
     auto * canvas = find_canvas_item_by_stable_id(id);
-    if (!canvas || canvas->data(RoleLocked).toBool() ||
+    if (!canvas) {
+      // The browser also reports derived records that follow an authored item
+      // (for example the task destination zone anchored to the target bin).
+      // They have no authored layout entry, so there is nothing to persist;
+      // failing the whole save here blocked every edit of ur5_2f_test.
+      append_studio_log(QStringLiteral(
+        "Save Layout: ignored browser transform for '%1'; it is not an authored layout item (derived record).").arg(id));
+      continue;
+    }
+    if (canvas->data(RoleLocked).toBool() ||
         canvas->data(RoleSourceLayer).toString().trimmed() != QStringLiteral("editable_layout") ||
         deleted_layout_item_ids_.contains(id)) {
       if (error) *error = QStringLiteral(
-        "Persisted item '%1' is missing, locked, deleted, or outside editable_layout. No file was written; the unified authored session remains dirty.").arg(id);
+        "Persisted item '%1' is locked, deleted, or outside editable_layout. No file was written; the unified authored session remains dirty.").arg(id);
       return false;
     }
     validated.push_back({canvas, id, xyz.value("x").toDouble(), xyz.value("y").toDouble(),
