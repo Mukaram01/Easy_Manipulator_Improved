@@ -278,3 +278,48 @@ def test_a_completed_motion_also_invalidates_the_earlier_stop():
     action(client, ExecuteTrajectory.Goal(), 1)
     assert 'cancel' not in events
     assert_uncertified(summary)
+
+
+def failure_handler():
+    """The executor's real top-level failure statements, up to the recovery_required decision."""
+    import ast
+    from test_grasp_recovery_boundary import SCRIPT
+    main = next(n for n in ast.parse(SCRIPT.read_text()).body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    handler = next(h for t in ast.walk(main) if isinstance(t, ast.Try) for h in t.handlers
+                   if 'KeyboardInterrupt' in ast.unparse(h.type) and 'recovery_required' in ast.unparse(h))
+    end = next(i for i, s in enumerate(handler.body) if 'recovery_required' in ast.unparse(s)) + 1
+    fn = ast.parse('def handle(exc):\n    pass\n').body[0]
+    fn.body = handler.body[:end]
+    def run(summary, exc):
+        namespace = dict(vars(executor), summary=summary, begin_recovery=lambda e: None,
+                         stage=lambda name: summary.update(current_stage=name))
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[])), str(SCRIPT), 'exec'), namespace)
+        namespace['handle'](exc)
+        return summary
+    return run
+
+
+@pytest.mark.parametrize('case', ['stale_stop', 'cancel_rejected', 'verified_stop', 'repeated'])
+def test_interrupted_motion_failure_always_requires_recovery(case):
+    handle = failure_handler()
+    action, client, summary, events, measured = stale_interruption(
+        stop='stale' if case in ('stale_stop', 'repeated') else 'fresh', accepted_cancel=case != 'cancel_rejected')
+    if case == 'repeated':                          # an earlier interruption with a verified, reconciled stop
+        summary.update(motion_stop_verified=True, cancellation_confirmed=True, stopped_measurement=dict(OLD_STOP))
+    summary['execution_attempted'] = True           # set by the executor before every owned send
+    interrupt(action, client)
+    handle(summary, guards.StaleMeasurement(STALE))
+    assert summary['recovery_required'] is True and summary['current_stage'] == 'FAILED'
+    assert summary['failure'] == STALE and summary['failed_stage'] == 'EXECUTE_LIFT'
+    if case == 'verified_stop':                     # a measured stop alone never clears recovery
+        assert summary['motion_stop_verified'] is True and summary['cancellation_confirmed'] is True
+    elif case == 'cancel_rejected':                 # sending the cancel never confirms it
+        assert summary['cancellation_accepted'] is False and summary['cancellation_confirmed'] is False
+    else:                                           # the earlier stop never certifies the new failure
+        assert summary['motion_stop_verified'] is False and 'stopped_measurement' not in summary
+
+
+def test_failure_before_any_owned_motion_does_not_require_recovery():
+    summary = {'current_stage': 'PREPLAN_LIFT', 'execution_attempted': False}
+    failure_handler()(summary, RuntimeError('planning failed'))
+    assert summary['recovery_required'] is False
