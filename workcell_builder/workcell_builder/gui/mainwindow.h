@@ -143,6 +143,14 @@ private:
   void setup_studio_shell();
   void build_studio_header_actions();
   void apply_studio_theme();
+  Q_INVOKABLE void show_workflow_feedback(const QString & kind, const QString & text);
+  void run_scene_validation_truthfully(const QString & label);
+  QSet<QString> scene_task_destination_ids() const;
+  void set_validation_state(const QString & state, const QString & detail);
+  void set_validation_lists(const QStringList & blockers, const QStringList & warnings);
+  QString validation_state_{QStringLiteral("not_validated")};
+  QString validation_state_detail_;
+  QString validation_state_text() const;
   void append_studio_log(
     const QString & message,
     workcell_builder::StudioLogSeverity severity = workcell_builder::StudioLogSeverity::Info,

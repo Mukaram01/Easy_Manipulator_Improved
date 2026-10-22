@@ -16,6 +16,11 @@
 // limitations under the License.
 
 #include "gui/mainwindow.h"
+#include "inspector_spin_config.hpp"
+#include "readiness_pack_command.hpp"
+#include "save_projection_failure.hpp"
+#include "gui/web_edit_policy.hpp"
+#include "gui/semantic_role_edit.hpp"
 #include "studio_page_navigation.hpp"
 #include "gui/layout_item_serializer.hpp"
 #include "gui/environment_task_editor.hpp"
@@ -52,6 +57,9 @@
 #include <QToolBar>
 #include <QToolTip>
 #include <QApplication>
+#include <QPointer>
+#include <QTimer>
+#include <QStyle>
 #include <QClipboard>
 #include <QDir>
 #include <QUrl>
@@ -1858,7 +1866,7 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
 {
   ui->setupUi(this);
   workcell_builder::applyCompactDialogDefaults(this);
-  setWindowTitle("Workcell Studio - Workcell Builder");
+  setWindowTitle("Workcell Studio - Workcell Builder[*]");
   ui->next->setDisabled(true);
   ui->change_workcell->setDisabled(true);
   ui->quick_start_label->hide();
@@ -1953,41 +1961,55 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
 
 void MainWindow::apply_studio_theme()
 {
-  setStyleSheet(
-    "QWidget#workcellStudioDashboardPage { background: #F5F7FA; color: #1F2933; }"
-    "QFrame#studioCard, QFrame#studioHomeHeroCard, QFrame#studioHomeDetailsCard, QFrame#studioPanel {"
-    " background: #FFFFFF; border: 1px solid #D0D7DE; border-radius: 8px; }"
-    "QLabel#dashboardTitleLabel { color: #1F2933; font-size: 24px; font-weight: 700; }"
-    "QLabel#dashboardSubtitleLabel, QLabel#dashboardSummaryLabel, QLabel#studioHomeSummaryCard { color: #5B6775; }"
-    "QTableWidget#studioHomeSceneTable { background: #FFFFFF; color: #1F2933; gridline-color: #D0D7DE; }"
-    "QHeaderView::section { background: #F5F7FA; color: #1F2933; border: 1px solid #D0D7DE; padding: 4px; }"
-    "QPushButton#studioHomePrimaryButton { background: #2563EB; color: white; border: 1px solid #1D4ED8; border-radius: 6px; padding: 6px 10px; font-weight: 600; }"
-    "QPushButton#studioHomeSecondaryButton { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; border-radius: 6px; padding: 6px 10px; }"
-    "QPushButton#studioHomeDangerButton { background: #FFFFFF; color: #B91C1C; border: 1px solid #FCA5A5; border-radius: 6px; padding: 6px 10px; }"
-    "QLabel#studioHomeSafetyPill { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 2px 8px; }"
-    "QTextEdit#studioHomeLog { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; }"
-    "QWidget#workcellStudioSceneBuilderPage { background: #F4F7FA; color: #17212B; }"
-    "QWidget#sceneBuilderWorkspace { background: #E8EEF4; border: 1px solid #CAD4DF; border-radius: 10px; }"
-    "QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background: #F8FAFC; border: 0; }"
-    "QFrame#sceneBuilderProductViewPanel { background: #EEF2F6; border: 0; }"
-    "QFrame#sceneBuilderBottomStatusBar { background: #FFFFFF; border: 1px solid #D8E0E8; border-radius: 7px; }"
-    "QLabel#sceneBuilderCompactSceneIdentity { color: #5B6775; font-size: 12px; }"
-    "QLabel#sceneBuilderInspectorLabel { color: #17212B; font-size: 15px; font-weight: 650; }"
-    "QLabel#sceneBuilderIssueCount { background: #FFF1F2; color: #B42332; border: 1px solid #FECDD3; border-radius: 9px; padding: 2px 7px; }"
-    "QTabWidget::pane { border: 1px solid #D8E0E8; border-radius: 8px; background: #FFFFFF; top: -1px; }"
-    "QTabBar::tab { background: transparent; color: #617083; padding: 7px 11px; border: 0; border-bottom: 2px solid transparent; }"
-    "QTabBar::tab:selected { color: #155EEF; border-bottom: 2px solid #155EEF; font-weight: 650; }"
-    "QPushButton, QToolButton { min-height: 28px; border: 1px solid #C9D3DE; border-radius: 7px; padding: 3px 9px; background: #FFFFFF; color: #243447; }"
-    "QPushButton:hover, QToolButton:hover { border-color: #84ADFF; background: #F1F6FF; }"
-    "QPushButton:checked, QToolButton:checked { border-color: #155EEF; background: #EAF1FF; color: #0B4CC1; font-weight: 650; }"
-    "QPushButton[role=\"primary\"] { background: #155EEF; color: #FFFFFF; border-color: #155EEF; font-weight: 650; min-height: 32px; }"
-    "QPushButton[role=\"primary\"]:hover { background: #0B4CC1; border-color: #0B4CC1; }"
-    "QLineEdit, QComboBox, QDoubleSpinBox { min-height: 27px; border: 1px solid #C9D3DE; border-radius: 6px; background: #FFFFFF; padding: 2px 6px; selection-background-color: #DCE8FF; }"
-    "QGroupBox { border: 1px solid #D8E0E8; border-radius: 8px; margin-top: 8px; padding-top: 8px; font-weight: 600; }"
-    "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #344054; }"
-    "QScrollArea { border: 0; background: transparent; }");
-  append_studio_log("Loaded Workcell Studio light theme.");
-  statusBar()->showMessage("Workcell Studio light theme loaded.");
+  // Page-level rules on top of the application sheet; all colours are tokens.
+  setStyleSheet(workcell_builder::studioQss(QStringLiteral(R"QSS(
+    QWidget#workcellStudioDashboardPage { background: @bg; color: @text; }
+    QFrame#studioCard, QFrame#studioHomeHeroCard, QFrame#studioHomeDetailsCard, QFrame#studioPanel { background: @surface; border: 1px solid @border; border-radius: @radiusM; }
+    QLabel#dashboardTitleLabel { color: @text; font-size: 24px; font-weight: 700; }
+    QLabel#dashboardSubtitleLabel, QLabel#dashboardSummaryLabel, QLabel#studioHomeSummaryCard { color: @textSecondary; }
+    QTableWidget#studioHomeSceneTable { background: @surface; color: @text; gridline-color: @border; }
+    QPushButton#studioHomePrimaryButton { background: @accent; color: @accentText; border: 1px solid @accent; border-radius: @radiusS; padding: 6px 12px; font-weight: 650; }
+    QPushButton#studioHomePrimaryButton:hover { background: @accentHover; border-color: @accentHover; }
+    QPushButton#studioHomeSecondaryButton { background: @surface; color: @text; border: 1px solid @borderStrong; border-radius: @radiusS; padding: 6px 12px; }
+    QPushButton#studioHomeDangerButton { background: @surface; color: @danger; border: 1px solid @danger; border-radius: @radiusS; padding: 6px 12px; }
+    QLabel#studioHomeSafetyPill { background: @accentSoft; color: @accent; border: 1px solid @border; border-radius: 10px; padding: 2px 8px; }
+    QTextEdit#studioHomeLog { background: @surface; color: @text; border: 1px solid @border; }
+    QWidget#workcellStudioSceneBuilderPage { background: @bg; color: @text; }
+    QWidget#sceneBuilderWorkspace { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background: @surface; border: 0; }
+    QFrame#sceneBuilderProductViewPanel { background: @surfaceSunken; border: 0; }
+    QFrame#sceneBuilderBottomStatusBar { background: @surface; border: 1px solid @border; border-radius: @radiusS; }
+    QLabel#sceneBuilderCompactSceneIdentity { color: @textSecondary; font-size: 12px; }
+    QLabel#sceneBuilderInspectorLabel { color: @text; font-size: 15px; font-weight: 650; }
+    QLabel#sceneBuilderIssueCount { background: @dangerSoft; color: @danger; border: 1px solid @danger; border-radius: 9px; padding: 2px 7px; }
+  )QSS")));
+  const bool dark = workcell_builder::studioAppearance() == workcell_builder::StudioAppearance::Dark;
+  append_studio_log(dark ? "Loaded Workcell Studio dark appearance." : "Loaded Workcell Studio light appearance.");
+  statusBar()->showMessage(dark ? "Workcell Studio dark appearance loaded." : "Workcell Studio light appearance loaded.");
+}
+
+void MainWindow::show_workflow_feedback(const QString & kind, const QString & text)
+{
+  // Non-blocking outcome banner in the contextual top bar (the status bar is
+  // hidden by the product shell). Errors stay until replaced; success fades.
+  auto * label = findChild<QLabel *>(QStringLiteral("studioContextFeedback"));
+  if (!label) return;
+  const QString prefix = kind == QStringLiteral("error") ? QStringLiteral("✕  ")
+    : kind == QStringLiteral("warning") ? QStringLiteral("!  ") : QStringLiteral("✓  ");
+  label->setToolTip(text);
+  label->setText(label->fontMetrics().elidedText(prefix + text, Qt::ElideRight, 620));
+  label->setProperty("kind", kind);
+  label->style()->unpolish(label);
+  label->style()->polish(label);
+  label->show();
+  const int generation = label->property("feedbackGeneration").toInt() + 1;
+  label->setProperty("feedbackGeneration", generation);
+  if (kind != QStringLiteral("error")) {
+    QPointer<QLabel> safe(label);
+    QTimer::singleShot(9000, this, [safe, generation]() {
+      if (safe && safe->property("feedbackGeneration").toInt() == generation) safe->hide();
+    });
+  }
 }
 
 void MainWindow::toggle_full_screen()
@@ -2711,10 +2733,16 @@ void MainWindow::setup_studio_shell()
   scene_files_tree_->setAlternatingRowColors(true);
   files_card_layout->addWidget(scene_files_tree_, 1);
 
-  auto * files_actions_layout = new QHBoxLayout();
+  auto * files_actions_layout = new QVBoxLayout();
+  files_actions_layout->setSpacing(6);
+  // Stacked full-width actions: the left panel is only ~200 px at 1366 px, so a
+  // horizontal row of three buttons always clipped its labels.
   auto * open_scene_folder_button = new QPushButton("Open Scene Folder", files_card);
   auto * copy_scene_path_button = new QPushButton("Copy Scene Path", files_card);
   auto * refresh_scene_files_button = new QPushButton("Refresh Files", files_card);
+  for (auto * button : {open_scene_folder_button, copy_scene_path_button, refresh_scene_files_button}) {
+    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  }
 
   files_actions_layout->addWidget(open_scene_folder_button);
   files_actions_layout->addWidget(copy_scene_path_button);
@@ -3293,6 +3321,7 @@ void MainWindow::setup_studio_shell()
   scene_builder_issue_count_label_->setVisible(false);
   scene_builder_issue_count_label_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
   bottom_status_layout->addWidget(scene_builder_status_message_label_, 1);
+  bottom_status_layout->addWidget(scene_builder_issue_count_label_, 0);   // was parented but never laid out: it painted over the activity text
   center_panel_layout->addWidget(bottom_status_bar, 0);
 
   auto * right_layout = new QVBoxLayout(right_panel);
@@ -3476,6 +3505,8 @@ void MainWindow::setup_studio_shell()
   metadata_form->addRow("Name", inspector_display_name_);
   inspector_semantic_role_ = new QComboBox(scene_builder);
   inspector_semantic_role_->setObjectName("sceneBuilderSemanticRoleCombo");
+  inspector_semantic_role_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  inspector_semantic_role_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
   const std::vector<std::pair<const char *, const char *>> semantic_roles = {
     {"Generic asset", "asset"}, {"Pick object", "pick_object"},
     {"Target bin", "target_bin"}, {"Fixture", "fixture"},
@@ -3505,14 +3536,16 @@ void MainWindow::setup_studio_shell()
   selected_item_card_layout->addWidget(transform_title);
   auto * pose_grid = new QGridLayout();
   pose_grid->setHorizontalSpacing(6);
-  auto configure_spin = [](QDoubleSpinBox *sb) { sb->setMinimumWidth(76); sb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed); };
+  auto configure_spin = [](QDoubleSpinBox *sb) { workcell_builder::configure_inspector_spin_geometry(sb); };
   inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("X "); configure_spin(inspector_x_); pose_grid->addWidget(inspector_x_, 0, 0);
   inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("Y "); configure_spin(inspector_y_); pose_grid->addWidget(inspector_y_, 0, 1);
   inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("Z "); configure_spin(inspector_z_); pose_grid->addWidget(inspector_z_, 0, 2);
-  for (auto * position_spin : {inspector_x_, inspector_y_, inspector_z_}) position_spin->setRange(-1000.0, 1000.0);
+  // 0.01 m steps, millimetre precision, symmetric range (was: default 1.0 m step).
+  for (auto * position_spin : {inspector_x_, inspector_y_, inspector_z_}) workcell_builder::configure_inspector_translation_spin(position_spin);
   inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("Roll "); configure_spin(inspector_roll_); pose_grid->addWidget(inspector_roll_, 1, 0);
   inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("Pitch "); configure_spin(inspector_pitch_); pose_grid->addWidget(inspector_pitch_, 1, 1);
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("Yaw "); configure_spin(inspector_yaw_); pose_grid->addWidget(inspector_yaw_, 1, 2);
+  for (auto * angle_spin : {inspector_roll_, inspector_pitch_, inspector_yaw_}) workcell_builder::configure_inspector_rotation_spin(angle_spin);
   selected_item_card_layout->addLayout(pose_grid);
   auto * transform_actions = new QGridLayout();
   inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_, 0, 0);
@@ -4205,8 +4238,13 @@ bool MainWindow::save_authored_environment_from_layout(QString * error)
     return false;
   }
   if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-    const QString detail = QString::fromUtf8(process.readAllStandardError()) + QString::fromUtf8(process.readAllStandardOutput());
-    if (error) *error = "Save failed: authored layout projection: " + detail.left(1600);
+    const QString stderr_text = QString::fromUtf8(process.readAllStandardError());
+    const QString stdout_text = QString::fromUtf8(process.readAllStandardOutput());
+    // The user gets the reason; the full traceback goes to the Studio Log.
+    append_studio_log(QStringLiteral("Authored layout projection failed (exit %1): %2")
+      .arg(process.exitCode()).arg((stderr_text + stdout_text).trimmed().left(1600)),
+      workcell_builder::StudioLogSeverity::Error, QStringLiteral("save_authored_projection"));
+    if (error) *error = workcell_builder::projection_failure_message(stderr_text, stdout_text);
     return false;
   }
   append_studio_log("Save committed physical assets, camera and semantic zones into environment.yaml.");
@@ -4528,22 +4566,35 @@ void MainWindow::validate_generated_scene_for_selected_scene() {
   if (!helper_script_exists("validate_builder_generated_scene.py", &script)) {
     append_studio_log("Validate Generated Scene: script missing. Searched: " +
       helper_script_search_paths("validate_builder_generated_scene.py").join(" | "));
+    show_workflow_feedback("error", "Validation could not run: the validator script is missing. See the log for the searched paths.");
     return;
   }
   const auto plan = workcell_builder::build_validate_generated_scene_command_plan(
     script, QString::fromStdString(sc.scene_dir.string()));
   if (!plan.ready()) {
     append_studio_log("Validate Generated Scene: " + plan.missing_fields_message());
+    show_workflow_feedback("error", "Validation could not run: " + plan.missing_fields_message());
     return;
   }
   QProcess process;
   process.start("python3", QStringList() << plan.script_path << plan.arguments);
   if (!process.waitForFinished(120000)) {
     append_studio_log("Validate Generated Scene: timed out while waiting for helper script.");
+    show_workflow_feedback("error", "Validation timed out after 120 s. Check the log, then run Validate again.");
     return;
   }
-  validation_stale_ = false;
   append_studio_log("Validate Generated Scene: " + plan.display_command());
+  const bool validator_ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+  validation_stale_ = !validator_ok;   // only a verified pass clears the stale flag
+  validation_state_ = validator_ok ? QStringLiteral("passed") : QStringLiteral("failed");
+  validation_state_detail_ = validator_ok ? QStringLiteral("generated scene validator passed") : QStringLiteral("generated scene validator exit code %1").arg(process.exitCode());
+  if (!validator_ok) {
+    const QString tail = QString::fromUtf8(process.readAllStandardError()).trimmed().section('\n', -1).left(200);
+    append_studio_log(QStringLiteral("Validate Generated Scene: validator exited with code %1. %2").arg(process.exitCode()).arg(tail));
+  }
+  show_workflow_feedback(validator_ok ? "success" : "error", validator_ok
+    ? QStringLiteral("Validation finished for the generated scene. Open Checks to review the report.")
+    : QStringLiteral("Validation reported problems (exit code %1). Open Checks, fix the listed items, then Generate and Validate again.").arg(process.exitCode()));
   refresh_new_cell_checklist();
 }
 void MainWindow::copy_build_launch_commands_for_selected_scene() {
@@ -6113,7 +6164,8 @@ void MainWindow::refresh_preview_launch_ui()
     const auto metadata = selected_scene_metadata_summary(s);
     if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Cell: %1</b><br/>%2 · %3")
       .arg(metadata.scene_name.toHtmlEscaped(), metadata.robot.toHtmlEscaped(), metadata.end_effector.toHtmlEscaped()));
-    if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2").arg(QString::fromStdString(s.scene_name), readiness));
+    if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2<br/>Validation: <b>%3</b>")
+      .arg(QString::fromStdString(s.scene_name), readiness, validation_state_text()));
   }
   const auto current = selected_scene_readiness();
   if (preview_status_label_) preview_status_label_->setText(QString("<b>Readiness</b><br/>Saved: %1 · Generated: %2 · Validated: %3<br/>%4")
@@ -6140,8 +6192,106 @@ void MainWindow::refresh_preview_launch_ui()
   if (stop_preview_button_) { stop_preview_button_->setVisible(busy); stop_preview_button_->setEnabled(busy && !preview_stop_requested_); }
 }
 
-void MainWindow::run_offline_validation() { validation_stale_ = false; append_studio_log("Full offline validation completed"); open_selected_scene_artifact("run_acceptance"); refresh_new_cell_checklist(); }
-void MainWindow::run_layout_validation_only() { validation_stale_ = false; append_studio_log("Layout validation completed"); open_selected_scene_artifact("run_acceptance"); }
+// Validation is only "current" when the validator actually ran and passed.
+// Both buttons used to clear the stale flag before running anything.
+void MainWindow::run_offline_validation() { run_scene_validation_truthfully(QStringLiteral("Offline validation")); refresh_new_cell_checklist(); }
+void MainWindow::run_layout_validation_only() { run_scene_validation_truthfully(QStringLiteral("Layout validation")); }
+
+void MainWindow::run_scene_validation_truthfully(const QString & label)
+{
+  if (!has_selected_scene()) {
+    set_validation_state(QStringLiteral("unavailable"), QStringLiteral("%1 cannot run: no scene is selected.").arg(label));
+    return;
+  }
+  if (layout_dirty_) {
+    set_validation_lists({QStringLiteral("The layout has unsaved edits. Save Layout, then validate again.")}, {});
+    set_validation_state(QStringLiteral("blocked"), QStringLiteral("%1 is blocked: the layout has unsaved edits. Save Layout first.").arg(label));
+    return;
+  }
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  QString script;
+  if (!helper_script_exists("validate_workcell_studio_generated_scene.py", &script)) {
+    set_validation_state(QStringLiteral("unavailable"), QStringLiteral("%1 cannot run: validate_workcell_studio_generated_scene.py was not found. Searched: %2")
+      .arg(label, helper_script_search_paths("validate_workcell_studio_generated_scene.py").join(" | ")));
+    return;
+  }
+  set_validation_state(QStringLiteral("running"), QStringLiteral("%1 is running…").arg(label));
+  QApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+  const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path merge_report = s.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
+  if (fs::exists(layout_file) && (!fs::exists(merge_report) || fs::last_write_time(layout_file) > fs::last_write_time(merge_report))) {
+    append_studio_log("Validation: running safe offline layout merge first");
+    workcell_builder::merge_workcell_studio_layout(s.scene_dir);
+  }
+  const QString executable = QStringLiteral("python3");
+  const QStringList arguments{script, QString::fromStdString(s.scene_dir.string()), QStringLiteral("--json")};
+  const QString working_directory = QFileInfo(script).dir().absolutePath() + QStringLiteral("/..");
+  const WorkcellCommandResult result = run_workcell_command_checked(executable, arguments, working_directory);
+  // The validator prints one JSON object with "blockers" and "warnings"; show
+  // them on the page so a failed run never reads "Blockers: -".
+  const QJsonObject report = QJsonDocument::fromJson(result.stdout_text.trimmed().toUtf8()).object();
+  QStringList reported_blockers, reported_warnings;
+  for (const QJsonValue & value : report.value(QStringLiteral("blockers")).toArray()) reported_blockers << value.toString();
+  for (const QJsonValue & value : report.value(QStringLiteral("warnings")).toArray()) reported_warnings << value.toString();
+  if (workcell_command_succeeded(result)) {
+    set_validation_lists({}, reported_warnings);
+    validation_stale_ = false;
+    set_validation_state(QStringLiteral("passed"), QStringLiteral("%1 passed for %2.").arg(label, QString::fromStdString(s.scene_name)));
+  } else if (!result.started || result.timed_out) {
+    const QString unavailable_detail = QStringLiteral("%1 could not finish: %2").arg(label,
+      result.timed_out ? QStringLiteral("the validator timed out after 120 s.") : QStringLiteral("the validator did not start (%1).").arg(result.error_string));
+    set_validation_lists({unavailable_detail}, {});
+    set_validation_state(QStringLiteral("unavailable"), unavailable_detail);
+    append_studio_log(QStringLiteral("Validation unavailable: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
+  } else {
+    const QString cause = result.stderr_text.trimmed().section('\n', -1).left(220);
+    if (reported_blockers.isEmpty()) {
+      reported_blockers << QStringLiteral("%1 exited with code %2%3").arg(label).arg(result.exit_code)
+        .arg(cause.isEmpty() ? QString() : QStringLiteral(": %1").arg(cause));
+    }
+    set_validation_lists(reported_blockers, reported_warnings);
+    set_validation_state(QStringLiteral("failed"), QStringLiteral("%1 found problems (exit code %2)%3 Open the validation report, fix the listed items, then validate again.")
+      .arg(label).arg(result.exit_code).arg(cause.isEmpty() ? QStringLiteral(".") : QStringLiteral(": %1.").arg(cause)));
+    append_studio_log(QStringLiteral("Validation failed: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
+  }
+  refresh_scene_browser_ui();
+}
+
+QString MainWindow::validation_state_text() const
+{
+  const QString & state = validation_state_;
+  const QString shown = state == QStringLiteral("passed") ? QStringLiteral("passed")
+    : state == QStringLiteral("failed") ? QStringLiteral("failed")
+    : state == QStringLiteral("running") ? QStringLiteral("running")
+    : state == QStringLiteral("blocked") ? QStringLiteral("blocked")
+    : state == QStringLiteral("unavailable") ? QStringLiteral("unavailable") : QStringLiteral("not validated");
+  return validation_state_detail_.isEmpty() ? shown : QStringLiteral("%1</b> — %2<b>").arg(shown, validation_state_detail_.toHtmlEscaped());
+}
+
+void MainWindow::set_validation_lists(const QStringList & blockers, const QStringList & warnings)
+{
+  const auto render = [](const QString & title, const QStringList & items, const QString & empty_text) {
+    QStringList escaped;
+    for (const QString & item : items) if (!item.trimmed().isEmpty()) escaped << QStringLiteral("• %1").arg(item.trimmed().toHtmlEscaped());
+    return QStringLiteral("<b>%1</b><br/>%2").arg(title, escaped.isEmpty() ? empty_text : escaped.join(QStringLiteral("<br/>")));
+  };
+  if (validation_blockers_label_) validation_blockers_label_->setText(render(QStringLiteral("Blockers"), blockers, QStringLiteral("None reported")));
+  if (validation_warnings_label_) validation_warnings_label_->setText(render(QStringLiteral("Warnings"), warnings, QStringLiteral("None reported")));
+}
+
+void MainWindow::set_validation_state(const QString & state, const QString & detail)
+{
+  validation_state_ = state;
+  validation_state_detail_ = detail;
+  if (state != QStringLiteral("passed")) validation_stale_ = true;   // only a verified pass clears the stale flag
+  append_studio_log(QStringLiteral("Validation state: %1 — %2").arg(state, detail));
+  if (validation_summary_label_) {
+    validation_summary_label_->setText(QStringLiteral("<b>Validation Summary</b><br/>Scene: %1<br/>Validation: <b>%2</b>")
+      .arg(selected_scene_name().toHtmlEscaped(), validation_state_text()));
+  }
+  if (state == QStringLiteral("running")) return;
+  show_workflow_feedback(state == QStringLiteral("passed") ? "success" : state == QStringLiteral("failed") ? "error" : "warning", detail);
+}
 void MainWindow::check_canvas_generated_parity()
 {
   QString user_warning;
@@ -6171,15 +6321,45 @@ void MainWindow::check_canvas_generated_parity()
 void MainWindow::open_validation_report() { open_selected_scene_artifact("smoke"); }
 void MainWindow::copy_validation_summary() { QApplication::clipboard()->setText(validation_summary_label_ ? validation_summary_label_->text() : QString("Validation Summary unavailable")); }
 void MainWindow::generate_readiness_pack() {
-  if (!has_selected_scene()) return;
+  if (!has_selected_scene()) {
+    show_workflow_feedback(QStringLiteral("warning"), QStringLiteral("Generate Readiness Pack: select a workcell first."));
+    return;
+  }
   const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  const QString executable = QStringLiteral("python3");
-  const QStringList arguments{QStringLiteral("scripts/generate_workcell_studio_readiness_pack.py"), QString::fromStdString(s.scene_dir.string())};
-  const QString working_directory = QString::fromStdString(workcell_path.string());
-  append_studio_log(QStringLiteral("Generate Readiness Pack: %1 %2").arg(executable, workcell_command_arguments_for_log(arguments)));
-  const WorkcellCommandResult result = run_workcell_command_checked(executable, arguments, working_directory);
-  append_studio_log(workcell_command_succeeded(result) ? QStringLiteral("Generate Readiness Pack: completed.") :
-    QStringLiteral("Generate Readiness Pack: failed: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
+  QString script;
+  if (!helper_script_exists("generate_workcell_studio_readiness_pack.py", &script)) {
+    const QString detail = QStringLiteral("Generate Readiness Pack cannot run: generate_workcell_studio_readiness_pack.py was not found. Searched: %1")
+      .arg(helper_script_search_paths("generate_workcell_studio_readiness_pack.py").join(" | "));
+    append_studio_log(detail);
+    show_workflow_feedback(QStringLiteral("error"), detail);
+    return;
+  }
+  const auto command = workcell_builder::readiness_pack_command(
+    script, QString::fromStdString(s.scene_dir.string()), QString::fromStdString(s.scene_name));
+  const QString working_directory = QFileInfo(script).dir().absolutePath() + QStringLiteral("/..");
+  constexpr int kTimeoutSeconds = 180;
+  append_studio_log(QStringLiteral("Generate Readiness Pack: %1 %2 (cwd %3)")
+    .arg(command.program, workcell_command_arguments_for_log(command.arguments), working_directory));
+  show_workflow_feedback(QStringLiteral("warning"), QStringLiteral("Generating readiness pack for %1… this can take a minute.")
+    .arg(QString::fromStdString(s.scene_name)));
+  QApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+  const QDateTime started_at = QDateTime::currentDateTimeUtc().addSecs(-1);
+  const WorkcellCommandResult result = run_workcell_command_checked(
+    command.program, command.arguments, working_directory, kTimeoutSeconds * 1000);
+  // Success needs the artefact: a manifest written by this run, not merely a started process.
+  const QFileInfo manifest(command.manifest_path);
+  const bool manifest_written = manifest.exists() && manifest.lastModified().toUTC() >= started_at;
+  const auto outcome = workcell_builder::classify_readiness_pack_outcome(
+    result.started, result.timed_out, result.exit_status == QProcess::NormalExit, result.exit_code,
+    result.stdout_text, result.stderr_text, manifest_written, command.manifest_path, kTimeoutSeconds);
+  append_studio_log(outcome.success
+    ? QStringLiteral("Generate Readiness Pack: completed (%1). Manifest: %2").arg(outcome.result, command.manifest_path)
+    : QStringLiteral("Generate Readiness Pack: failed: %1").arg(workcell_command_failure_summary(command.program, command.arguments, working_directory, result)),
+    outcome.success ? workcell_builder::StudioLogSeverity::Info : workcell_builder::StudioLogSeverity::Error,
+    QStringLiteral("generate_readiness_pack"));
+  show_workflow_feedback(outcome.kind, outcome.message);
+  populate_scene_files_tab();
+  refresh_scene_browser_ui();
 }
 void MainWindow::open_readiness_dashboard() { open_selected_scene_artifact("demo_dashboard"); }
 QString MainWindow::canvas_generated_parity_state_text(CanvasGeneratedParityState state) const
@@ -6718,6 +6898,30 @@ QString MainWindow::selected_scene_path() const
   return selected_scene_state_.path;
 }
 
+// Task destination zones are declared in scene_manifest.yaml (task.destinations[].id).
+// The Product View renders them anchored to their target bin, so a bin move also
+// reports them as moved; they are derived records with no authored layout entry.
+QSet<QString> MainWindow::scene_task_destination_ids() const
+{
+  QSet<QString> ids;
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return ids;
+  const fs::path manifest = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir / "scene_manifest.yaml";
+  if (!fs::exists(manifest)) return ids;
+  try {
+    const YAML::Node root = YAML::LoadFile(manifest.string());
+    for (const YAML::Node & parent : {root["task"], root}) {
+      if (!parent || !parent["destinations"] || !parent["destinations"].IsSequence()) continue;
+      for (const auto & destination : parent["destinations"]) {
+        if (destination["id"]) ids.insert(QString::fromStdString(destination["id"].as<std::string>()).trimmed());
+      }
+    }
+  } catch (const std::exception & exc) {
+    const_cast<MainWindow *>(this)->append_studio_log(QStringLiteral("Save Layout: scene_manifest.yaml could not be read for destination zones: %1").arg(exc.what()));
+  }
+  ids.remove(QString());
+  return ids;
+}
+
 bool MainWindow::has_selected_scene() const
 {
   return selected_scene_state_.valid;
@@ -6951,9 +7155,18 @@ void MainWindow::populate_scene_files_tab()
     return;
   }
   scene_files_tree_->clear();
-  scene_files_tree_->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+  // Narrow left panel (240 px at 1366 px): artifact name takes the space, the
+  // path is elided in the middle and shown in full in the tooltip, status fits
+  // its text.
+  // The left panel is only ~200 px at 1366 px (340 px at most): show the
+  // artifact name and its status, keep the relative path in the tooltip, so
+  // the table never needs a horizontal scrollbar.
+  scene_files_tree_->header()->setStretchLastSection(false);
+  scene_files_tree_->header()->setMinimumSectionSize(24);
   scene_files_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-  scene_files_tree_->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+  scene_files_tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+  scene_files_tree_->setColumnHidden(1, true);
+  scene_files_tree_->setTextElideMode(Qt::ElideRight);
   if (!has_selected_scene()) {
     return;
   }
@@ -6984,6 +7197,7 @@ void MainWindow::populate_scene_files_tab()
     auto * item = new QTreeWidgetItem(scene_files_tree_);
     item->setText(0, artifact.first);
     item->setText(1, artifact.second);
+    for (int column = 0; column < 3; ++column) item->setToolTip(column, QStringLiteral("%1 — %2 — %3").arg(artifact.first, artifact.second, exists ? QStringLiteral("present") : QStringLiteral("missing")));
     item->setText(2, exists ? "present" : "missing");
     item->setForeground(2, exists ? QBrush(QColor("#15803D")) : QBrush(QColor("#B91C1C")));
   }
@@ -7835,6 +8049,7 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   if (save_layout_button_) save_layout_button_->setEnabled(true);
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", true);
+    setWindowModified(true);
     save_layout_button_->style()->unpolish(save_layout_button_);
     save_layout_button_->style()->polish(save_layout_button_);
   }
@@ -7845,11 +8060,13 @@ void MainWindow::mark_layout_dirty(const QString & reason)
 
 void MainWindow::capture_active_editable_layout_session()
 {
-  const QString scene_name = selected_scene_name().trimmed();
-  if (scene_name.isEmpty()) return;
-  if (editable_layout_session_scene_name_ != scene_name) {
+  // Keyed by canonical scene path, not display name: two checkouts can hold a
+  // cell with the same name, and the retained session must never leak across.
+  const QString scene_key = selected_scene_path().trimmed();
+  if (scene_key.isEmpty()) return;
+  if (editable_layout_session_scene_name_ != scene_key) {
     editable_layout_session_items_.clear();
-    editable_layout_session_scene_name_ = scene_name;
+    editable_layout_session_scene_name_ = scene_key;
   }
 
   editable_layout_session_items_.clear();
@@ -7902,7 +8119,7 @@ void MainWindow::merge_active_editable_layout_session(
   workcell_builder::WorkcellStudioCanvasModel * model) const
 {
   if (!model || !layout_dirty_ ||
-      editable_layout_session_scene_name_ != selected_scene_name().trimmed()) return;
+      editable_layout_session_scene_name_ != selected_scene_path().trimmed()) return;
   std::vector<workcell_builder::WorkcellStudioCanvasItem> session_items;
   for (const auto & item : editable_layout_session_items_) {
     if (deleted_layout_item_ids_.contains(item.id)) continue;
@@ -8146,7 +8363,7 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
 void MainWindow::save_layout_changes(){
   if (environment_task_editor_ && environment_task_editor_->scene() == selected_scene_path() && environment_task_editor_->dirty()) {
     QString error;
-    if (!environment_task_editor_->save(&error)) { append_studio_log("Save blocked: " + error); return; }
+    if (!environment_task_editor_->save(&error)) { append_studio_log("Save blocked: " + error); show_workflow_feedback("error", "Save blocked: " + error); return; }
   }
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
     scene_preview_widget_->request_authoring_save();
@@ -8166,6 +8383,7 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
   };
   QVector<ValidatedTransform> validated;
   QSet<QString> seen_ids;
+  const QSet<QString> task_destination_ids = scene_task_destination_ids();
   const QJsonArray edits = web_patch.value(QStringLiteral("edits")).toArray();
   for (const auto & value : edits) {
     const QJsonObject edit = value.toObject();
@@ -8204,12 +8422,25 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
       }
     }
     auto * canvas = find_canvas_item_by_stable_id(id);
-    if (!canvas || canvas->data(RoleLocked).toBool() ||
-        canvas->data(RoleSourceLayer).toString().trimmed() != QStringLiteral("editable_layout") ||
-        deleted_layout_item_ids_.contains(id)) {
-      if (error) *error = QStringLiteral(
-        "Persisted item '%1' is missing, locked, deleted, or outside editable_layout. No file was written; the unified authored session remains dirty.").arg(id);
-      return false;
+    workcell_builder::WebEditFacts facts;
+    facts.item_id = id;
+    facts.canvas_found = canvas != nullptr;
+    facts.locked = canvas && canvas->data(RoleLocked).toBool();
+    facts.source_layer = canvas ? canvas->data(RoleSourceLayer).toString() : QString();
+    facts.deleted = deleted_layout_item_ids_.contains(id);
+    facts.known_derived = !canvas && task_destination_ids.contains(id);
+    QString disposition_reason;
+    switch (workcell_builder::classify_web_edit(facts, &disposition_reason)) {
+      case workcell_builder::WebEditDisposition::SkipDerived:
+        // Positively identified: the scene's task destination zone follows its
+        // target bin in the Product View and has no authored layout entry.
+        append_studio_log(disposition_reason);
+        continue;
+      case workcell_builder::WebEditDisposition::Reject:
+        if (error) *error = disposition_reason;
+        return false;
+      case workcell_builder::WebEditDisposition::Persist:
+        break;
     }
     validated.push_back({canvas, id, xyz.value("x").toDouble(), xyz.value("y").toDouble(),
       xyz.value("z").toDouble(), rpy.value("x").toDouble(), rpy.value("y").toDouble(),
@@ -8260,6 +8491,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
       .arg(target)
       .arg(blocker);
     append_studio_log(detail);
+    show_workflow_feedback("error", QStringLiteral("Save failed: %1 No file was written; your edits are still in the editor.").arg(blocker));
   };
 
   QString selected_preview_id;
@@ -8694,8 +8926,74 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
       "Save Layout persisted authored YAML only; generated collision/scene artifacts remain stale until explicit Generate/Validate."));
   }
   if (!save_environment_task_editor(error) || !save_authored_environment_from_layout(error)) {
+    // The authored YAML was already written atomically above. A rejected
+    // projection must not leave it ahead of environment.yaml (every later Save
+    // of the scene would then fail the same way): roll it back to the
+    // pre-save backup so nothing on disk changed and the edits stay in the editor.
+    QString rollback_note = QStringLiteral(" Nothing was written; your edits are still in the editor.");
+    if (existing_layout_file) {
+      boost::system::error_code rollback_ec;
+      fs::copy_file(layout_backup, effective_layout_path, fs::copy_option::overwrite_if_exists, rollback_ec);
+      if (rollback_ec) {
+        rollback_note = QStringLiteral(" The authored layout file could NOT be restored (%1); restore it from %2 before saving again.")
+          .arg(QString::fromStdString(rollback_ec.message()), QString::fromStdString(layout_backup.string()));
+      } else {
+        append_studio_log(QStringLiteral("Save Layout rolled back %1 to %2 after the projection failure.")
+          .arg(QString::fromStdString(effective_layout_path.string()), QString::fromStdString(layout_backup.string())));
+        rollback_note = QStringLiteral(" The authored layout file was restored from its backup, so nothing on disk changed; your edits are still in the editor.");
+      }
+    }
+    if (error) *error += rollback_note;
     emit_save_layout_failure(error ? *error : QStringLiteral("Authored environment save failed"), QString::fromStdString(effective_layout_path.string()));
     return false;
+  }
+  // Projection can move target-local destination regions with their physical
+  // target. Rebase the retained editor from the committed layout before the
+  // next Save; otherwise its old world pose looks like an independent zone
+  // edit and is converted into an unintended target-local offset.
+  QVector<ScenePreviewWidget::PreviewItem> projected_destinations;
+  try {
+    const auto committed = YAML::LoadFile(effective_layout_path.string());
+    for (const auto & item : committed["items"]) {
+      if (!item["target_ref"] || !item["placement_local"]) continue;
+      const QString id = QString::fromStdString(item["id"].as<std::string>());
+      for (const auto & existing : all_scene_preview_items_) {
+        if (existing.id != id) continue;
+        auto projected = existing;
+        const auto xyz = item["pose"]["xyz"], rpy = item["pose"]["rpy"];
+        projected.x = xyz[0].as<double>(); projected.y = xyz[1].as<double>(); projected.z = xyz[2].as<double>();
+        projected.roll = rpy[0].as<double>(); projected.pitch = rpy[1].as<double>(); projected.yaw = rpy[2].as<double>();
+        projected.sx = item["dimensions"][0].as<double>();
+        projected.sy = item["dimensions"][1].as<double>();
+        projected.sz = item["dimensions"][2].as<double>();
+        projected_destinations.push_back(projected);
+        break;
+      }
+    }
+  } catch (const std::exception & exc) {
+    const QString message = QStringLiteral("Physical layout was saved, but the committed destination projection could not be read: %1. Reopen the scene before saving again.")
+      .arg(QString::fromUtf8(exc.what()));
+    if (error) *error = message;
+    append_studio_log(message);
+    show_workflow_feedback("error", message);
+    return false;
+  }
+  for (const auto & projected : projected_destinations) {
+    for (auto & existing : all_scene_preview_items_) {
+      if (existing.id == projected.id) { existing = projected; break; }
+    }
+    if (auto * canvas = find_canvas_item_by_stable_id(projected.id)) {
+      workcell_builder::set_authored_canvas_position(canvas, QPointF(projected.x * 100., projected.y * 100.));
+      canvas->setData(RolePoseZ, projected.z);
+      canvas->setData(RoleRoll, projected.roll); canvas->setData(RolePitch, projected.pitch); canvas->setData(RoleYaw, projected.yaw);
+      canvas->setData(RoleWidth, projected.sx); canvas->setData(RoleDepth, projected.sy); canvas->setData(RoleHeight, projected.sz);
+    }
+    // Web3D already carries/rebases target-local dependents. A bridge command
+    // here could overwrite a newer browser edit made during the save request.
+    if (scene_preview_widget_ && !scene_preview_widget_->embedded_web_authoring_active()) {
+      scene_preview_widget_->set_authoring_item_pose(
+        projected.id, projected.x, projected.y, projected.z, projected.roll, projected.pitch, projected.yaw);
+    }
   }
   deleted_layout_item_ids_.clear();
   for (auto * canvas : editable_canvas_items) {
@@ -8704,6 +9002,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
   layout_dirty_ = false;
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);
+    setWindowModified(false);
     save_layout_button_->style()->unpolish(save_layout_button_);
     save_layout_button_->style()->polish(save_layout_button_);
   }
@@ -8721,14 +9020,19 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
   } else {
     append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(effective_layout_path.string())));
   }
+  show_workflow_feedback(editable_saved_count == 0 ? "warning" : "success",
+    editable_saved_count == 0
+      ? QStringLiteral("Saved layout metadata only: no editable items yet. Add an item or create an editable layout from the preview.")
+      : QStringLiteral("Saved %1 editable item(s) to %2. Generated outputs are now stale: run Generate, then Validate.")
+          .arg(QString::number(static_cast<int>(editable_saved_count)), QFileInfo(QString::fromStdString(effective_layout_path.string())).fileName()));
 
   append_studio_log(QString("Save Layout: serialized %1 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.")
     .arg(static_cast<int>(editable_saved_count)));
   append_studio_log(QString("Save Layout: live authored session retained without Product View regeneration (selection id='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(scene_dir, "save_layout");
-  capture_active_editable_layout_session();
   refresh_scene_hierarchy_tree_from_current_items();
+  capture_active_editable_layout_session();
   populate_scene_files_tab();
   if (!stable_selected_id_before_refresh.isEmpty()) {
     apply_scene_selection(stable_selected_id_before_refresh, QStringLiteral("unknown"), false, false);
@@ -8925,6 +9229,7 @@ void MainWindow::revert_layout_changes()
   layout_dirty_ = false;
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);
+    setWindowModified(false);
     save_layout_button_->style()->unpolish(save_layout_button_);
     save_layout_button_->style()->polish(save_layout_button_);
   }
@@ -9353,7 +9658,11 @@ void MainWindow::apply_inspector_pose_to_item()
     }
     if (inspector_semantic_role_) {
       const QString chosen_role = inspector_semantic_role_->currentData().toString().trimmed();
-      if (!chosen_role.isEmpty() && chosen_role != i->data(RoleRole).toString().trimmed()) {
+      const QString authored_role = i->data(RoleRole).toString().trimmed();
+      // Apply used to treat the displayed alias ("place_target_bin" for an
+      // authored "target_bin") as a user edit and rewrote the authored role.
+      if (workcell_builder::semantic_role_actually_changed(chosen_role, authored_role,
+            canonical_scene_hierarchy_role(authored_role, i->data(RoleCategory).toString(), QString()))) {
         updated_semantic_role = chosen_role;
         i->setData(RoleRole, updated_semantic_role);
         metadata_changed = true;

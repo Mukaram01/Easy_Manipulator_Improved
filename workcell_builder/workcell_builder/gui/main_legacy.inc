@@ -1218,7 +1218,20 @@ int main(int argc, char * argv[])
     return report.value("pass").toBool() ? 0 : 1;
   }
 
-  a.setStyleSheet(workcell_builder::workcellStudioStyleSheet());
+  workcell_builder::applyStudioApplicationAppearance(&a);
+
+  if (has_cli_flag(args, "--repeat-save-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene-path");
+    // This acceptance may only edit a disposable fixture below its output directory.
+    if (output.isEmpty() || QFileInfo(scene).canonicalFilePath() !=
+        QFileInfo(output + "/scenes/ur5_2f_test").canonicalFilePath() ||
+        !QFileInfo::exists(scene + "/environment.yaml")) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_repeat_save_acceptance(&w, &a, output, scene,
+      cli_value(args, "--axis") == "y", has_cli_flag(args, "--reopen"));
+    return a.exec();
+  }
 
   if (has_cli_flag(args, "--persistence-only")) {
     const QString output = cli_value(args, "--smoke-output");

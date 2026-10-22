@@ -24,6 +24,164 @@
 
 class TestMain {
 public:
+  static void start_repeat_save_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & scene, bool y_axis, bool reopen) {
+    struct Session {
+      int phase=0, ticks=0;
+      QByteArray layout, environment;
+      QJsonObject evidence{{"result", "FAIL"}};
+    };
+    auto s = std::make_shared<Session>();
+    const QString layout = scene + "/layout/workcell_studio_layout.yaml";
+    const QString environment = scene + "/environment.yaml";
+    const int axis = y_axis ? 1 : 0;
+    const double original = y_axis ? .22 : .45;
+    auto require = [](bool value, const char * message) {
+      if (!value) throw std::runtime_error(message);
+    };
+    auto bytes = [=](const QString & path) {
+      QFile file(path); require(file.open(QIODevice::ReadOnly), "cannot read authored file");
+      return file.readAll();
+    };
+    auto record = [=](const QString & phase) {
+      const auto root = YAML::Load(bytes(environment).toStdString());
+      QJsonObject state;
+      for (const auto & collection : {"assets", "task_zones"}) {
+        for (const auto & item : root["environment"][collection]) {
+          const auto id = item["id"].as<std::string>();
+          if (id != "target_bin_default" && id != "default_drop_zone" && id != "place_zone_default") continue;
+          state[QString::fromStdString(id)] = QString::fromStdString(YAML::Dump(item));
+        }
+      }
+      for (const auto & id : {QString("target_bin_default"), QString("place_zone_default")}) {
+        window->apply_scene_selection(id, "", false, false);
+        const auto live = window->current_selected_scene_item();
+        state[id + "_live_xyz"] = QJsonArray{live.pose_x, live.pose_y, live.pose_z};
+      }
+      s->evidence[phase] = state;
+    };
+    auto verify = [=](int moves, bool live_editor) {
+      const auto root = YAML::Load(bytes(environment).toStdString());
+      for (const auto & zone : root["environment"]["task_zones"]) {
+        if (zone["target_ref"].as<std::string>("") != "target_bin_default") continue;
+        require(zone["layout_item_ref"].as<std::string>() == "place_zone_default", "semantic layout reference changed");
+        require(std::abs(zone["pose_xyz"][axis].as<double>() - (original + moves*.01)) < 1e-8,
+          "destination world projection did not follow bin");
+        require(std::abs(zone["placement_local"]["pose_xyz"][axis].as<double>()) < 1e-8,
+          "bin-only edit changed destination-local placement");
+      }
+      const auto authored = YAML::Load(bytes(layout).toStdString());
+      for (const auto & item : authored["items"]) {
+        const auto id = item["id"].as<std::string>();
+        if (id != "target_bin_default" && id != "place_zone_default") continue;
+        require(std::abs(item["pose"]["xyz"][axis].as<double>() - (original + moves*.01)) < 1e-8,
+          "disk layout pose differs from requested projection");
+        if (!live_editor) continue;
+        window->apply_scene_selection(QString::fromStdString(id), "", false, false);
+        const auto live = window->current_selected_scene_item();
+        require(std::abs((y_axis ? live.pose_y : live.pose_x) - (original + moves*.01)) < 1e-8,
+          "retained editor pose differs from committed projection");
+      }
+    };
+    auto write = [=]() {
+      s->evidence["studio_log"] = window->studio_log_->toPlainText();
+      QFile f(output + (reopen ? "/reopen.json" : "/repeat-save.json"));
+      if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson());
+    };
+    auto * timer = new QTimer(window); timer->setInterval(250);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
+      require(++s->ticks < 400, "repeat-save GUI acceptance timed out");
+      if (window->load_watcher_ && window->load_watcher_->isRunning()) return;
+      switch (s->phase) {
+        case 0: {
+          if (s->ticks < 5) return;
+          QSettings().setValue("startup/last_scene_output_root", output + "/scenes");
+          window->refresh_scene_browser_ui();
+          QStringList blockers; QJsonObject diagnostics;
+          const bool loaded = window->load_scene_for_scene3d_smoke("ur5_2f_test", scene, &blockers, &diagnostics);
+          s->evidence["load_diagnostics"] = diagnostics;
+          s->evidence["load_blockers"] = QJsonArray::fromStringList(blockers);
+          require(loaded, "fixture did not open");
+          window->show_studio_page(MainWindow::StudioPage::SceneBuilderPage);
+          s->phase=1; s->ticks=0; break;
+        }
+        case 1: {
+          if (s->ticks < 16) return;
+          const bool native = window->scene_preview_widget_->is_native_product_view_backend();
+          require(native == (qEnvironmentVariable("WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND") == "native_scene3d"),
+            "Product View backend differs from requested acceptance backend");
+          s->evidence["backend"] = native ? "native_scene3d" : "embedded_web3d";
+          if (!window->scene_preview_widget_->is_native_product_view_backend() &&
+              !window->scene_preview_widget_->embedded_web_authoring_active()) return;
+          if (reopen) {
+            verify(2, true); s->evidence["reopen_consistent"] = true; s->phase=5; break;
+          }
+          record("before_save_1"); s->phase=2; s->ticks=0; break;
+        }
+        case 2: {
+          const int moves = s->evidence.contains("after_save_1") ? 2 : 1;
+          window->apply_scene_selection("target_bin_default", "", false, false);
+          require(window->inspector_apply_button_->isEnabled(), "Inspector Apply disabled");
+          auto * spin = y_axis ? window->inspector_y_ : window->inspector_x_;
+          spin->setValue(original + moves*.01);
+          window->inspector_apply_button_->click();
+          require(window->layout_dirty_, "Apply did not mark layout dirty");
+          if (moves == 2) record("before_save_2");
+          window->save_layout_button_->click();
+          s->phase=3; s->ticks=0; break;
+        }
+        case 3: {
+          if (s->ticks < 12) return;
+          require(!window->layout_dirty_, "valid save rejected or remained dirty");
+          const int moves = s->evidence.contains("after_save_1") ? 2 : 1;
+          record(moves == 1 ? "after_save_1" : "after_save_2");
+          verify(moves, moves == 2);
+          if (moves == 1) { s->phase=2; s->ticks=0; break; }
+          window->grab().save(output + "/two-saves.png");
+          s->layout=bytes(layout); s->environment=bytes(environment);
+          window->apply_scene_selection("place_zone_default", "", false, false);
+          // This is an actual independent region edit beyond the reviewed usable box.
+          window->inspector_y_->setValue(.27);
+          window->inspector_apply_button_->click();
+          window->save_layout_button_->click();
+          s->phase=4; s->ticks=0; break;
+        }
+        case 4: {
+          if (s->ticks < 12) return;
+          require(window->layout_dirty_, "out-of-bounds region was accepted");
+          require(bytes(layout) == s->layout && bytes(environment) == s->environment,
+            "rejected save corrupted previously committed authored data");
+          bool retained = false;
+          for (const auto & item : window->editable_layout_session_items_)
+            if (item.id == "place_zone_default") retained = std::abs(item.y - .27) < 1e-8;
+          require(retained, "rejected save discarded the pending region edit");
+          require(window->studio_log_->toPlainText().contains("outside target usable placement geometry"),
+            "invalid save failed for an unexpected reason");
+          s->evidence["invalid_rejected_without_corruption"] = true;
+          window->grab().save(output + "/invalid-rejected.png");
+          s->phase=5; break;
+        }
+        case 5: {
+          s->evidence["result"]="PASS"; write(); timer->stop();
+          // Discard only the intentionally rejected test edit when shutting down.
+          window->layout_dirty_=false; window->close(); app->exit(0); break;
+        }
+      }
+    } catch (const std::exception & error) {
+      s->evidence["failure"] = QString::fromUtf8(error.what()); write();
+      window->grab().save(output + "/failure.png"); timer->stop();
+      window->layout_dirty_=false; window->close(); app->exit(1);
+    }});
+    // Failure dialogs would otherwise block the timer and hide the result.
+    auto * dialogs = new QTimer(window); dialogs->setInterval(100);
+    QObject::connect(dialogs, &QTimer::timeout, window, []() {
+      for (auto * widget : QApplication::topLevelWidgets())
+        if (auto * message = qobject_cast<QMessageBox *>(widget))
+          if (message->isVisible()) message->reject();
+    });
+    dialogs->start(); timer->start();
+  }
+
   static void start_mounting_acceptance(MainWindow * window, QApplication * app,
       const QString & output, const QString & scene_name, bool reopen, bool task_mode=false, const QString & observations={}) {
     struct Session { int phase=0, ticks=0; QString scene, support, camera; QJsonArray baseline, moved; QJsonObject evidence; };
