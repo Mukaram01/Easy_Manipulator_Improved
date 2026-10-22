@@ -1,0 +1,147 @@
+{
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "gui_generation_invoked": true,
+    "hierarchy": [
+        "Camera Stand [camera_01]",
+        "  Fixed RealSense D435i [realsense_overhead] · mounted at top",
+        "Industrial Workbench [support_surface_table]",
+        "  Destination Bin [target_bin_default] · bottom flush on surface"
+    ],
+    "readiness_blockers": [
+        "TASK_INPUT_UNAVAILABLE: choose a commissioning replay or normalized live snapshot in Task settings."
+    ],
+    "readiness_ready": false,
+    "relations_match_disk": true,
+    "reopened": [
+        {
+            "catalog_asset_id": "camera_stand",
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ]
+            },
+            "mounting_yaml": "mounting_anchors:\n  top:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - 0.6\n    pose_rpy:\n      - 0.0\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Top mounting face (normal points up)\n    source: catalog:camera_stand",
+            "pose_rpy": [
+                0,
+                0,
+                0.2617993877991494
+            ],
+            "pose_xyz": [
+                0.25,
+                -0.5,
+                0.6
+            ],
+            "role": "camera"
+        },
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "parent_object: camera_01\nparent_link: top\njoint_type: fixed\norigin:\n  x: 0.15\n  y: 0.09\n  z: 0.05\n  roll: 0.0\n  pitch: 1.5707963267948966\n  yaw: -0.0",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0.2617993877991494
+            ],
+            "pose_xyz": [
+                0.3715951598841334,
+                -0.37424381886860575,
+                1.25
+            ],
+            "role": "camera"
+        },
+        {
+            "catalog_asset_id": "table_standard_1200",
+            "category": "environment",
+            "id": "support_surface_table",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "surface_z_m: 0.0",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.7609999999999999,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "catalog_asset_id": "bin_standard",
+            "category": "environment",
+            "id": "target_bin_default",
+            "mesh": {
+                "origin_offset": [
+                    -0.173899436593,
+                    0,
+                    -0.1
+                ],
+                "rpy": [
+                    1.5707963267948966,
+                    0,
+                    1.5707963267948966
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "parent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.3002054639628551\n  y: 0.3114596298169776\n  z: -1.951563910473908e-18\n  roll: 0.0\n  pitch: -0.0\n  yaw: 0.0\nmounting_anchors:\n  bottom:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - -0.1\n    pose_rpy:\n      - 3.141592653589793\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Bottom face (normal points down)\n    source: catalog:bin_standard\nmate:\n  child_datum: bottom\n  alignment: flush",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.37237367356433265,
+                -0.010000000000000035,
+                0.09910000050067902
+            ],
+            "role": "place_target_bin"
+        }
+    ],
+    "result": "PASS",
+    "scene_path": "/home/user/datum-accept-ws/src/easy_manipulation_deployment/scenes/datum_mating_native",
+    "selection_keeps_layout_clean": true,
+    "selection_relation_text": "Mated: bottom flush (face to face) to Industrial Workbench · surface\nOffset X -0.300 · Y 0.311 · Z 0.000 m\nRoll 0.0° · pitch 0.0° · yaw 0.0°",
+    "studio_log_tail": "sal_robot/ur_description/meshes/ur5/visual/upperarm.dae\nUR5_BAKED_MATRIX_HANDOFF link=forearm_link source=generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append\nUR5_FINAL_APPEND appended link=forearm_link mesh=/home/user/wcb-mate-wt/assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae\nUR5_BAKED_MATRIX_HANDOFF link=wrist_1_link source=generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append\nUR5_FINAL_APPEND appended link=wrist_1_link mesh=/home/user/wcb-mate-wt/assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae\nUR5_BAKED_MATRIX_HANDOFF link=wrist_2_link source=generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append\nUR5_FINAL_APPEND appended link=wrist_2_link mesh=/home/user/wcb-mate-wt/assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae\nUR5_BAKED_MATRIX_HANDOFF link=wrist_3_link source=generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append\nUR5_FINAL_APPEND appended link=wrist_3_link mesh=/home/user/wcb-mate-wt/assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae\nUR5_FINAL_APPEND final_required_count=6\nPreviewContext resolved: scene_id=datum_mating_native repo_root=/home/user/wcb-mate-wt scene_dir=/home/user/wcb-mate-wt/scenes/datum_mating_native\nScene3D diagnostic: selection-owner registry unavailable or malformed; retained usable preview state (/home/user/wcb-mate-wt/build/workcell_studio_web_scene/datum_mating_native.web_scene.json).\nScene3D base_link_inertia trace: stage=visible/filter result=visible item_id=generated_urdf::base_link_inertia::visual_0::0 source_layer=locked_generated_urdf_visual active_visual_source=mesh_preview\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcb-mate-wt/build/workcell_studio_web_scene/datum_mating_native.web_scene.json\nScene3D full payload committed: scene=datum_mating_native total=20 visible=20 mesh=19 locked=16\nScene3D canvas: scene=datum_mating_native received=23 cached=23 visible=23 rendered=23 selectable=23 mesh=16 fallback=0 locked=18 skipped=10\nScene3D base_link_inertia trace: stage=visible/filter result=visible item_id=generated_urdf::base_link_inertia::visual_0::0 source_layer=locked_generated_urdf_visual active_visual_source=mesh_preview\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcb-mate-wt/build/workcell_studio_web_scene/datum_mating_native.web_scene.json\nScene3D base_link_inertia trace: stage=visible/filter result=visible item_id=generated_urdf::base_link_inertia::visual_0::0 source_layer=locked_generated_urdf_visual active_visual_source=mesh_preview\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcb-mate-wt/build/workcell_studio_web_scene/datum_mating_native.web_scene.json\nStudio navigation settled: requested_page=1 nav_row=1 page_index=1 scene_id=datum_mating_native\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=datum_mating_native id=target_bin_default editable=true locked=false source_layer=editable_layout\nSelected item: target_bin_default (unknown) type=place_target_bin source=editable_layout editable=true locked=false\nCheck Canvas/RViz Parity command: python3 '/home/user/datum-accept-ws/src/easy_manipulation_deployment/scripts/validate_scene_builder_canvas_generated_parity.py' '/home/user/wcb-mate-wt/scenes/datum_mating_native' --json --output '/home/user/wcb-mate-wt/scenes/datum_mating_native/smoke/scene_builder_canvas_generated_parity_report.json' --mode pre_generation\nCheck Canvas/RViz Parity mode: pre_generation\nCheck Canvas/RViz Parity exit status: 0\nCheck Canvas/RViz Parity report path: /home/user/wcb-mate-wt/scenes/datum_mating_native/smoke/scene_builder_canvas_generated_parity_report.json\nCheck Canvas/RViz Parity summary: mismatches=3 warnings=1 blockers=0\nCheck Canvas/RViz Parity recommendation: Run Generate Scene Package for strict parity.\nGenerate ROS Scene Package pre-generation parity: Pre-generation parity warnings (mismatches=3, warnings=1).\nGenerated YAML from the saved task and current physical resolution.\nLoaded 10 scenes from /home/user/wcb-mate-wt/scenes\nAsset support preflight: unsupported placed asset id='camera_01' type='camera_sensor'. Expected behavior: generator keeps metadata and may skip geometry/runtime wiring for this item.\nGenerate ROS Scene Package: python3 '/home/user/datum-accept-ws/src/easy_manipulation_deployment/scripts/generate_workcell_from_cell_definition.py' '/home/user/wcb-mate-wt/scenes/datum_mating_native/cell_definition.yaml' '--output-dir' '/home/user/wcb-mate-wt/scenes' '--package-name' 'datum_mating_native' '--existing-package-dir' '/home/user/wcb-mate-wt/scenes/datum_mating_native'\nGenerated package location: /home/user/wcb-mate-wt/scenes/datum_mating_native\nNext: colcon build --symlink-install --packages-select datum_mating_native\nNext: source install/setup.bash\nNext: ros2 launch datum_mating_native demo.launch.py use_fake_hardware:=true launch_rviz:=true\nstdout: WARN: generated package at /home/user/wcb-mate-wt/scenes/datum_mating_native\nPASS: package.xml -> /home/user/wcb-mate-wt/scenes/datum_mating_native/package.xml\nPASS: CMakeLists.txt -> /home/user/wcb-mate-wt/scenes/datum_mating_native/CMakeLists.txt\nPASS: environment.yaml -> /home/user/wcb-mate-wt/scenes/datum_mating_native/environment.yaml\nPASS: cell_definition.yaml -> /home/user/wcb-mate-wt/scene\nLoaded 10 scenes from /home/user/wcb-mate-wt/scenes\nGenerated package created, but final generated/Product View parity could not be established: refresh unavailable.\nValidate Generated Scene: python3 '/home/user/datum-accept-ws/src/easy_manipulation_deployment/scripts/validate_builder_generated_scene.py' '/home/user/wcb-mate-wt/scenes/datum_mating_native' '--json'"
+}

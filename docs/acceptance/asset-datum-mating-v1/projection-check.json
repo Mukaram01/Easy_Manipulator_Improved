@@ -1,0 +1,117 @@
+{
+  "scene": "scenes/datum_mating_acceptance",
+  "relations": {
+    "target_bin_default": {
+      "parent": "support_surface_table",
+      "parent_datum": "surface",
+      "child_datum": "bottom",
+      "alignment": "flush",
+      "offset": {
+        "x": -0.3002054639628551,
+        "y": 0.3114596298169776,
+        "z": -1.951563910473908e-18,
+        "roll": 0.0,
+        "pitch": -0.0,
+        "yaw": 0.0
+      },
+      "world_xyz": [
+        0.37237367356433265,
+        -0.010000000000000035,
+        0.09910000050067902
+      ],
+      "world_rpy": [
+        0,
+        0,
+        0.3490658503988659
+      ],
+      "datum_frame_error": 5.553824967135427e-17
+    },
+    "realsense_overhead": {
+      "parent": "camera_01",
+      "parent_datum": "top",
+      "child_datum": "origin",
+      "alignment": "coincident",
+      "offset": {
+        "x": 0.15,
+        "y": 0.09,
+        "z": 0.05,
+        "roll": 0.0,
+        "pitch": 1.5707963267948966,
+        "yaw": -0.0
+      },
+      "world_xyz": [
+        0.3715951598841334,
+        -0.37424381886860575,
+        1.25
+      ],
+      "world_rpy": [
+        0,
+        1.5707963267948966,
+        0.2617993877991494
+      ],
+      "datum_frame_error": 0.0
+    }
+  },
+  "result": "PASS",
+  "destinations": {
+    "default_drop_zone": {
+      "target": "target_bin_default",
+      "placement_local": {
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.009999999999999995
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ]
+      }
+    },
+    "place_zone_default": {
+      "target": "target_bin_default",
+      "placement_local": {
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.009999999999999995
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ]
+      }
+    }
+  },
+  "generated_objects_match": true,
+  "collision_objects": {
+    "camera_01": [
+      0.25,
+      -0.5,
+      0.6
+    ],
+    "support_surface_table": [
+      0.5032442055482832,
+      -0.07853231898476502,
+      -0.4531188535094261
+    ],
+    "target_bin_default": [
+      0.37237367356433265,
+      -0.010000000000000035,
+      0.09910000050067902
+    ]
+  },
+  "camera_pose_mirrors_asset": true
+}

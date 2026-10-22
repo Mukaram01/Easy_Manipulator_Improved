@@ -56,3 +56,19 @@ TEST(InspectorSpinConfig, RotationStepsOneDegree)
   spin.stepUp();
   EXPECT_NEAR(spin.value(), -89.5, 1e-9);
 }
+
+TEST(InspectorSpinConfig, UntouchedFieldsKeepTheirExactValue)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  QDoubleSpinBox z;
+  workcell_builder::configure_inspector_translation_spin(&z);
+  const double exact = 0.0991;            // a flush-mated bin; shown as 0.099 m
+  z.setValue(exact);
+  EXPECT_FALSE(workcell_builder::inspector_field_changed(&z, exact));
+  EXPECT_DOUBLE_EQ(workcell_builder::inspector_applied_value(&z, exact), exact);  // not rounded to 0.099
+  z.stepUp();
+  EXPECT_TRUE(workcell_builder::inspector_field_changed(&z, exact));
+  EXPECT_NEAR(workcell_builder::inspector_applied_value(&z, exact), 0.109, 1e-9);
+  z.setValue(-0.0101);                     // a typed change of only 1 mm still counts
+  EXPECT_TRUE(workcell_builder::inspector_field_changed(&z, -0.0091));
+}
