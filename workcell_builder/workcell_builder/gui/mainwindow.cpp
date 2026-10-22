@@ -17,6 +17,7 @@
 
 #include "gui/mainwindow.h"
 #include "gui/web_edit_policy.hpp"
+#include "gui/semantic_role_edit.hpp"
 #include "studio_page_navigation.hpp"
 #include "gui/layout_item_serializer.hpp"
 #include "gui/environment_task_editor.hpp"
@@ -7979,11 +7980,13 @@ void MainWindow::mark_layout_dirty(const QString & reason)
 
 void MainWindow::capture_active_editable_layout_session()
 {
-  const QString scene_name = selected_scene_name().trimmed();
-  if (scene_name.isEmpty()) return;
-  if (editable_layout_session_scene_name_ != scene_name) {
+  // Keyed by canonical scene path, not display name: two checkouts can hold a
+  // cell with the same name, and the retained session must never leak across.
+  const QString scene_key = selected_scene_path().trimmed();
+  if (scene_key.isEmpty()) return;
+  if (editable_layout_session_scene_name_ != scene_key) {
     editable_layout_session_items_.clear();
-    editable_layout_session_scene_name_ = scene_name;
+    editable_layout_session_scene_name_ = scene_key;
   }
 
   editable_layout_session_items_.clear();
@@ -8036,7 +8039,7 @@ void MainWindow::merge_active_editable_layout_session(
   workcell_builder::WorkcellStudioCanvasModel * model) const
 {
   if (!model || !layout_dirty_ ||
-      editable_layout_session_scene_name_ != selected_scene_name().trimmed()) return;
+      editable_layout_session_scene_name_ != selected_scene_path().trimmed()) return;
   std::vector<workcell_builder::WorkcellStudioCanvasItem> session_items;
   for (const auto & item : editable_layout_session_items_) {
     if (deleted_layout_item_ids_.contains(item.id)) continue;
@@ -9509,7 +9512,11 @@ void MainWindow::apply_inspector_pose_to_item()
     }
     if (inspector_semantic_role_) {
       const QString chosen_role = inspector_semantic_role_->currentData().toString().trimmed();
-      if (!chosen_role.isEmpty() && chosen_role != i->data(RoleRole).toString().trimmed()) {
+      const QString authored_role = i->data(RoleRole).toString().trimmed();
+      // Apply used to treat the displayed alias ("place_target_bin" for an
+      // authored "target_bin") as a user edit and rewrote the authored role.
+      if (workcell_builder::semantic_role_actually_changed(chosen_role, authored_role,
+            canonical_scene_hierarchy_role(authored_role, i->data(RoleCategory).toString(), QString()))) {
         updated_semantic_role = chosen_role;
         i->setData(RoleRole, updated_semantic_role);
         metadata_changed = true;

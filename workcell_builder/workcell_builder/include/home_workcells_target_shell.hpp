@@ -33,6 +33,7 @@
 #include <QPainterPath>
 #include <QPointer>
 #include <QPushButton>
+#include <QSet>
 #include <QSettings>
 #include <QStackedWidget>
 #include <QStandardPaths>
@@ -85,9 +86,25 @@ inline QString scene_dir_for_id(const QString & workspace_root, const QString & 
   return QString();
 }
 
-inline QDateTime scene_last_updated(const QString & workspace_root, const QString & scene_id)
+// MainWindow stores every row's canonical scene directory in UserRole + 42.
+// Home must read that, not re-resolve the display id under its own workspace
+// root: with the same cell in two checkouts the row and the lookup diverged.
+constexpr int kCanonicalScenePathRole = Qt::UserRole + 42;
+
+inline QString scene_dir_at(QTableWidget * table, int row)
 {
-  const QString scene_dir = scene_dir_for_id(workspace_root, scene_id);
+  if (!table || row < 0 || row >= table->rowCount() || !table->item(row, 0)) return QString();
+  return QDir::cleanPath(table->item(row, 0)->data(kCanonicalScenePathRole).toString().trimmed());
+}
+
+inline QString scene_dir_for_row(QTableWidget * table, int row, const QString & workspace_root)
+{
+  const QString stored = scene_dir_at(table, row);
+  return stored.isEmpty() ? scene_dir_for_id(workspace_root, scene_id_at(table, row)) : stored;
+}
+
+inline QDateTime scene_last_updated_in(const QString & scene_dir)
+{
   if (scene_dir.isEmpty()) return QDateTime();
   QDateTime latest;
   const QStringList evidence = {
@@ -108,9 +125,13 @@ inline QDateTime scene_last_updated(const QString & workspace_root, const QStrin
   return latest;
 }
 
-inline QString scene_content_fingerprint(const QString & workspace_root, const QString & scene_id)
+inline QDateTime scene_last_updated(const QString & workspace_root, const QString & scene_id)
 {
-  const QString scene_dir = scene_dir_for_id(workspace_root, scene_id);
+  return scene_last_updated_in(scene_dir_for_id(workspace_root, scene_id));
+}
+
+inline QString scene_content_fingerprint_in(const QString & scene_dir)
+{
   if (scene_dir.isEmpty()) return QStringLiteral("missing");
   const QStringList evidence = {
     QStringLiteral("environment.yaml"), QStringLiteral("cell_definition.yaml"),
@@ -159,6 +180,19 @@ inline bool completed_home_preview_contract(
     contract.value(QStringLiteral("lifecycle_state")).toString() == QStringLiteral("scene_ready") &&
     contract.value(QStringLiteral("terminal")).toBool() &&
     contract.value(QStringLiteral("rendered_physical_item_count")).toInt() > 0;
+}
+
+inline QString scene_content_fingerprint(const QString & workspace_root, const QString & scene_id)
+{
+  return scene_content_fingerprint_in(scene_dir_for_id(workspace_root, scene_id));
+}
+
+inline QString current_valid_home_preview_path_in(const QString & scene_dir, const QString & scene_id)
+{
+  const QString fingerprint = scene_content_fingerprint_in(scene_dir);
+  const QString path = QDir(home_preview_cache_directory()).filePath(QStringLiteral("%1-%2.png")
+    .arg(safe_home_preview_component(scene_id), fingerprint));
+  return completed_home_preview_contract(path, scene_id, fingerprint) ? path : QString();
 }
 
 inline QString current_valid_home_preview_path(const QString & workspace_root, const QString & scene_id)
@@ -233,13 +267,26 @@ public:
     const QString raw_id = first.data(Qt::ToolTipRole).toString().trimmed().isEmpty()
       ? first.data(Qt::DisplayRole).toString() : first.data(Qt::ToolTipRole).toString();
     const QString display_name = first.data(kDisplayNameRole).toString().trimmed();
+    const QString row_scene_dir = QDir::cleanPath(first.data(kCanonicalScenePathRole).toString().trimmed());
+    const QString scene_dir = row_scene_dir.isEmpty() ? scene_dir_for_id(workspace_root_, raw_id) : row_scene_dir;
+    int same_id_rows = 0;
+    for (int other = 0; other < model->rowCount(); ++other) {
+      const QModelIndex candidate = model->index(other, 0);
+      const QString other_id = candidate.data(Qt::ToolTipRole).toString().trimmed().isEmpty()
+        ? candidate.data(Qt::DisplayRole).toString() : candidate.data(Qt::ToolTipRole).toString();
+      if (other_id.trimmed() == raw_id.trimmed()) ++same_id_rows;
+    }
+    // Two checkouts with the same cell id: name the location so the user never
+    // edits one copy believing it is the other.
+    const QString subtitle = same_id_rows > 1 && !scene_dir.isEmpty()
+      ? QStringLiteral("%1 · %2").arg(raw_id, QDir(scene_dir).absolutePath()) : raw_id;
 
     if (index.column() == 0) {
       const QRect thumb(r.left() + 10, r.top() + 7, 70, r.height() - 14);
       painter->setPen(QPen(QColor(studioTokens().border), 1));
       painter->setBrush(QColor(studioTokens().surfaceRaised));
       painter->drawRoundedRect(thumb, 5, 5);
-      const QString preview_path = current_valid_home_preview_path(workspace_root_, raw_id);
+      const QString preview_path = current_valid_home_preview_path_in(scene_dir, raw_id);
       QPixmap pixmap(preview_path);
       if (!pixmap.isNull()) {
         QPainterPath clip;
@@ -263,7 +310,8 @@ public:
       id_font.setPointSizeF(qMax(8.0, option.font.pointSizeF() - 1.0));
       painter->setFont(id_font);
       painter->setPen(muted);
-      painter->drawText(text_rect.adjusted(0, 23, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, raw_id);
+      painter->drawText(text_rect.adjusted(0, 23, 0, 0), Qt::AlignLeft | Qt::AlignVCenter,
+        painter->fontMetrics().elidedText(subtitle, Qt::ElideMiddle, text_rect.width()));
     } else if (index.column() == 1) {
       const QString status = clean_status(index.data(Qt::DisplayRole).toString());
       QColor accent(studioTokens().warning);
@@ -288,7 +336,7 @@ public:
     } else if (index.column() == 4) {
       painter->setPen(primary);
       painter->drawText(r.adjusted(10, 0, -5, 0), Qt::AlignLeft | Qt::AlignVCenter,
-        relative_time(scene_last_updated(workspace_root_, raw_id)));
+        relative_time(scene_last_updated_in(scene_dir)));
     } else if (index.column() == 5) {
       const bool pinned = first.data(kPinnedRole).toBool();
       QFont star = option.font; star.setPixelSize(18); star.setBold(true);
@@ -515,6 +563,7 @@ inline void apply_composed_filters(QTableWidget * table, QLineEdit * search, QCo
   const QString tool_filter = tool ? tool->currentText() : QStringLiteral("Tool: All");
   const bool pinned_only = pinned && pinned->isChecked();
   int visible = 0;
+  QSet<QString> shown_scene_dirs;   // one row per canonical scene directory
   for (int row = 0; row < table->rowCount(); ++row) {
     const QString robot_value = table->item(row, 2) ? clean_robot(table->item(row, 2)->text()) : QStringLiteral("—");
     const QString tool_value = table->item(row, 3) ? clean_tool(table->item(row, 3)->text()) : QStringLiteral("—");
@@ -532,9 +581,11 @@ inline void apply_composed_filters(QTableWidget * table, QLineEdit * search, QCo
     const bool robot_matches = !robot || robot->currentIndex() == 0 || robot_filter == robot_value;
     const bool tool_matches = !tool || tool->currentIndex() == 0 || tool_filter == tool_value;
     const bool pinned_matches = !pinned_only || scene_is_pinned(table, row);
-    const bool show = search_matches && status_matches && robot_matches && tool_matches && pinned_matches;
+    const QString row_scene_dir = scene_dir_at(table, row);
+    const bool duplicate_path = !row_scene_dir.isEmpty() && shown_scene_dirs.contains(row_scene_dir);
+    const bool show = search_matches && status_matches && robot_matches && tool_matches && pinned_matches && !duplicate_path;
     table->setRowHidden(row, !show);
-    if (show) ++visible;
+    if (show) { ++visible; if (!row_scene_dir.isEmpty()) shown_scene_dirs.insert(row_scene_dir); }
   }
   const int selected_row = table->currentRow();
   if (selected_row >= 0 && table->isRowHidden(selected_row)) {
@@ -597,7 +648,7 @@ inline void sort_target_rows(QTableWidget * table, QComboBox * sort)
   for (int row = 0; row < table->rowCount(); ++row) {
     order[static_cast<std::size_t>(row)] = row;
     if (table->item(row, 0)) table->item(row, 0)->setData(
-      kModifiedRole, scene_last_updated(table->property("studioTargetWorkspaceRoot").toString(), scene_id_at(table, row)));
+      kModifiedRole, scene_last_updated_in(scene_dir_for_row(table, row, table->property("studioTargetWorkspaceRoot").toString())));
   }
   const int mode = sort->currentIndex();
   const auto less = [table, mode](int a, int b) {
@@ -647,7 +698,8 @@ inline void refresh_target_details(QMainWindow * window, QTableWidget * table, c
   const QString tool = selected && table->item(row, 3) ? clean_tool(table->item(row, 3)->text()) : QStringLiteral("—");
   const QString task = selected && table->item(row, 4) ? clean_task(table->item(row, 4)->text()) : QStringLiteral("—");
   const QString launch = selected && table->item(row, 5) ? clean_launch(table->item(row, 5)->text()) : QStringLiteral("—");
-  const QDateTime updated = selected ? scene_last_updated(workspace_root, scene_id) : QDateTime();
+  const QString selected_scene_dir = selected ? scene_dir_for_row(table, row, workspace_root) : QString();
+  const QDateTime updated = selected ? scene_last_updated_in(selected_scene_dir) : QDateTime();
 
   const QString display_name = selected ? table->item(row, 0)->data(kDisplayNameRole).toString().trimmed() : QString();
   set_label(window, QStringLiteral("studioTargetSelectedTitle"), selected ?
@@ -672,7 +724,7 @@ inline void refresh_target_details(QMainWindow * window, QTableWidget * table, c
 
   if (auto * preview = window->findChild<QLabel *>(QStringLiteral("studioTargetPreview"))) {
     preview->setPixmap(QPixmap());
-    const QString path = selected ? current_valid_home_preview_path(workspace_root, scene_id) : QString();
+    const QString path = selected ? current_valid_home_preview_path_in(selected_scene_dir, scene_id) : QString();
     const QPixmap pixmap(path);
     if (!pixmap.isNull()) {
       preview->setText(QString());
