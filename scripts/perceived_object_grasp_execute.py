@@ -1612,6 +1612,11 @@ def main():
                 raise
             if isinstance(exc,GraspRetentionLoss):begin_recovery(exc,during_action=True)
             if measurements:
+                # The interrupted motion needs its own measured stop: a stop window
+                # measured before it (close/hold) must never certify it (Trial 33).
+                summary['motion_stop_verified']=False
+                summary.pop('stopped_measurement',None)
+                summary.pop('stopped_window',None)
                 from simulator_execution import cancel_owned,cancel_response_matches
                 def request_cancel():
                     summary['cancellation_request']=dict(uuid=bytes(owned_uuid).hex(),
