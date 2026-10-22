@@ -287,12 +287,12 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     if (!button) continue;
     button->show();
     button->setMinimumHeight(32);
-    button->setMinimumWidth(64);          // never collapse to "ele/ov/ota" at 1366 px
+    button->setMinimumWidth(66);          // "Select"/"Rotate" need 66 px; never collapse to "Selec/Rotat"
     button->setProperty("editModeSegment", true);
     edit_mode_layout->addWidget(button);
   }
   layout->addWidget(edit_mode_group);
-  layout->addSpacing(10);
+  layout->addSpacing(4);
   if (place) place->hide();
   add_existing(add_object);
   add_existing(fit);
@@ -306,11 +306,11 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     button->setToolTip(is_undo ? QStringLiteral("Undo (Ctrl+Z)") : QStringLiteral("Redo (Ctrl+Shift+Z)"));
     button->setAccessibleName(button->text());
     button->setText(QString());
-    button->setFixedWidth(40);
+    button->setFixedWidth(34);
   }
   add_existing(undo);
   add_existing(redo);
-  layout->addSpacing(8);
+  layout->addSpacing(4);
   add_existing(save);
   add_existing(overflow);
 
@@ -462,10 +462,13 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   auto * right = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderRightPanel"));
   auto * splitter = scene_page->findChild<QSplitter *>(QStringLiteral("sceneBuilderMainSplitter"));
   if (left) {
-    left->setMinimumWidth(240);
+    left->setMinimumWidth(200);
     left->setMaximumWidth(340);
   }
-  if (center) center->setMinimumWidth(620);   // 240 + 620 + 470 still fits a 1366 px display
+  // 200 + 600 + 470 = 1270 px of panels: measured at 1366 px the page offers
+  // ~1280 px, so neither the toolbar (~600 px) nor the inspector (~466 px for
+  // three unit spin boxes per row) is squeezed or pushed off-screen.
+  if (center) center->setMinimumWidth(600);
   if (right) {
     // Unit suffixes (m, °) widen the transform spin boxes; keep the inspector
     // wide enough that no field or button is ever clipped.

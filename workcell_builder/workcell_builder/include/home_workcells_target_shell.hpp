@@ -304,8 +304,9 @@ public:
       title_font.setBold(true);
       painter->setFont(title_font);
       painter->setPen(primary);
+      const QString title = display_name.isEmpty() || display_name == raw_id ? friendly_workcell_name(raw_id) : display_name;
       painter->drawText(text_rect.adjusted(0, 1, 0, -20), Qt::AlignLeft | Qt::AlignVCenter,
-        display_name.isEmpty() || display_name == raw_id ? friendly_workcell_name(raw_id) : display_name);
+        painter->fontMetrics().elidedText(title, Qt::ElideRight, text_rect.width()));
       QFont id_font = option.font;
       id_font.setPointSizeF(qMax(8.0, option.font.pointSizeF() - 1.0));
       painter->setFont(id_font);
@@ -976,7 +977,7 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
       if (QTableWidgetItem * item = table->item(row, column)) item->setFlags(item->flags() & ~Qt::ItemIsEditable);
     }
   }
-  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); table->setColumnWidth(1, 145); table->setColumnWidth(2, 82); table->setColumnWidth(3, 135); table->setColumnWidth(4, 105); table->setColumnWidth(5, 46);
+  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); table->setColumnWidth(1, 140); table->setColumnWidth(2, 60); table->setColumnWidth(3, 116); table->setColumnWidth(4, 90); table->setColumnWidth(5, 40);  // 446 px fixed ("Needs Attention" needs 140): the name column keeps >= 250 px at 1366 px
   table_layout->addWidget(table, 1);
   auto * footer = new QLabel(QStringLiteral("Showing %1 of %1 workcells").arg(total), table_card); footer->setObjectName(QStringLiteral("studioTargetTableFooter")); footer->setContentsMargins(12, 6, 12, 6); table_layout->addWidget(footer);
   main->addWidget(table_card, 1);

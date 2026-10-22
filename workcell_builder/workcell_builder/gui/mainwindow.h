@@ -147,6 +147,7 @@ private:
   void run_scene_validation_truthfully(const QString & label);
   QSet<QString> scene_task_destination_ids() const;
   void set_validation_state(const QString & state, const QString & detail);
+  void set_validation_lists(const QStringList & blockers, const QStringList & warnings);
   QString validation_state_{QStringLiteral("not_validated")};
   QString validation_state_detail_;
   QString validation_state_text() const;

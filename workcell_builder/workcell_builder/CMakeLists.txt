@@ -497,6 +497,21 @@ if(BUILD_TESTING)
     target_include_directories(workcell_semantic_role_edit_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(workcell_semantic_role_edit_test Qt5::Core)
   endif()
+  ament_add_gtest(workcell_readiness_pack_command_test test/readiness_pack_command_test.cpp)
+  if(TARGET workcell_readiness_pack_command_test)
+    target_include_directories(workcell_readiness_pack_command_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_readiness_pack_command_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_save_projection_failure_test test/save_projection_failure_test.cpp)
+  if(TARGET workcell_save_projection_failure_test)
+    target_include_directories(workcell_save_projection_failure_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_save_projection_failure_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_inspector_spin_config_test test/inspector_spin_config_test.cpp)
+  if(TARGET workcell_inspector_spin_config_test)
+    target_include_directories(workcell_inspector_spin_config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_inspector_spin_config_test Qt5::Core Qt5::Widgets)
+  endif()
   ament_add_gtest(workcell_web_edit_policy_test test/web_edit_policy_test.cpp)
   if(TARGET workcell_web_edit_policy_test)
     target_include_directories(workcell_web_edit_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -854,6 +869,9 @@ if(BUILD_TESTING)
     studio_theme_test.cpp
     web_edit_policy_test.cpp
     semantic_role_edit_test.cpp
+    readiness_pack_command_test.cpp
+    inspector_spin_config_test.cpp
+    save_projection_failure_test.cpp
     support_contact_policy_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test
