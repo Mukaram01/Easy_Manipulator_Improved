@@ -1961,8 +1961,9 @@ ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_
 
 bool ScenePreviewWidget::embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const
 {
-  const QString selected_scene = normalized_preview_context(preview_context_).scene_id;
-  return !embedded_web_destroying_ && !selected_scene.isEmpty() && identity.scene_id == selected_scene &&
+  const PreviewContext selected = normalized_preview_context(preview_context_);
+  return !embedded_web_destroying_ && !selected.scene_id.isEmpty() && identity.scene_id == selected.scene_id &&
+    identity.absolute_scene_dir == selected.absolute_scene_dir &&
     embedded_web_has_active_identity_ && embedded_web_active_identity_ == identity;
 }
 
@@ -3446,8 +3447,13 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
     return;
   }
 
-  const QString previous_scene_id = normalized_preview_context(preview_context_).scene_id;
-  const bool scene_identity_changed = previous_scene_id != normalized.scene_id;
+  const PreviewContext previous_context = normalized_preview_context(preview_context_);
+  const QString previous_scene_id = previous_context.scene_id;
+  // Ownership rule: a Product View scene is its display id AND its canonical
+  // directory. The same cell id in another checkout is another scene, so the
+  // handoff below must run for it exactly as for a differently named scene.
+  const bool scene_identity_changed = previous_scene_id != normalized.scene_id ||
+    previous_context.absolute_scene_dir != normalized.absolute_scene_dir;
   const QString effective_scene_name = normalized.scene_id.isEmpty() ?
     QStringLiteral("No scene") : normalized.scene_id;
   const bool scene_name_changed = preview_scene_name_ != effective_scene_name;
@@ -3461,6 +3467,14 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
   // until its replacement proves ready.
   if (scene_identity_changed) {
     invalidate_embedded_web_scene_handoff(normalized.scene_id);
+    // The previous scene's committed payload is not this scene's payload. Forget
+    // it so no request for the new directory can carry the old authoring-session
+    // overlay, and so the next payload commit (even an identical one) restarts
+    // the request lifecycle instead of being coalesced as "unchanged".
+    preview_payload_revision_ = 0;
+    preview_payload_fingerprint_.clear();
+    last_visual_quality_revision_logged_ = -1;
+    emitted_scene_diagnostic_keys_.clear();
   }
 
   if (!normalized.scene_id.isEmpty()) {
