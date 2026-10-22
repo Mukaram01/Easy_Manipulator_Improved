@@ -507,6 +507,11 @@ if(BUILD_TESTING)
     target_include_directories(workcell_save_projection_failure_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
     target_link_libraries(workcell_save_projection_failure_test Qt5::Core)
   endif()
+  ament_add_gtest(workcell_datum_mating_text_test test/datum_mating_text_test.cpp)
+  if(TARGET workcell_datum_mating_text_test)
+    target_include_directories(workcell_datum_mating_text_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_datum_mating_text_test Qt5::Core yaml-cpp)
+  endif()
   ament_add_gtest(workcell_inspector_spin_config_test test/inspector_spin_config_test.cpp)
   if(TARGET workcell_inspector_spin_config_test)
     target_include_directories(workcell_inspector_spin_config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
@@ -872,6 +877,7 @@ if(BUILD_TESTING)
     readiness_pack_command_test.cpp
     inspector_spin_config_test.cpp
     save_projection_failure_test.cpp
+    datum_mating_text_test.cpp
     support_contact_policy_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test

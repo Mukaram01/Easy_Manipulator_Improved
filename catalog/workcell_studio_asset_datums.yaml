@@ -1,0 +1,58 @@
+# Reviewed mating datums for catalog assets, in each asset's own frame (metres,
+# radians, ROS fixed-axis RPY). Frames are explicit and reviewed against the
+# calibrated asset geometry noted below; they are never inferred from mesh
+# triangles. A plane datum lies in its local XY plane with +Z as the outward
+# normal; an axis datum runs along local +Z; a point datum is its origin.
+#
+# This file only offers datums. When a mate uses one, the Builder copies its
+# definition into that asset's mounting_anchors in environment.yaml, so a saved
+# scene never depends on this file and later edits here never move it.
+# Datums are offered only while the asset's mesh calibration matches.
+schema_version: workcell_studio_asset_datums/v1
+assets:
+  bin_standard:
+    calibration:
+      scale: [0.001, 0.001, 0.001]
+      rpy: [1.5707963267948966, 0.0, 1.5707963267948966]
+      origin_offset: [-0.173899436593, 0.0, -0.1]
+    review: >-
+      sorting_bin.stl (316 triangles) with the calibration above spans
+      x -0.1761..0.1761, y -0.1067..0.1067, z -0.1000..0.1000 m in the asset frame.
+    datums:
+      bottom:
+        datum_type: plane
+        label: Bottom face (normal points down)
+        pose_xyz: [0.0, 0.0, -0.1]
+        pose_rpy: [3.141592653589793, 0.0, 0.0]
+      rim:
+        datum_type: plane
+        label: Rim plane (normal points up)
+        pose_xyz: [0.0, 0.0, 0.1]
+        pose_rpy: [0.0, 0.0, 0.0]
+      centre_axis:
+        datum_type: axis
+        label: Vertical centre axis
+        pose_xyz: [0.0, 0.0, 0.0]
+        pose_rpy: [0.0, 0.0, 0.0]
+  camera_stand:
+    calibration:
+      scale: [1.0, 1.0, 1.0]
+    review: >-
+      camera_stand.stl (12 triangles, placeholder mast) spans x/y -0.04..0.04,
+      z -0.6..0.6 m in the asset frame; collision box 0.08 x 0.08 x 1.2 m.
+    datums:
+      base:
+        datum_type: plane
+        label: Base plate (normal points down)
+        pose_xyz: [0.0, 0.0, -0.6]
+        pose_rpy: [3.141592653589793, 0.0, 0.0]
+      top:
+        datum_type: plane
+        label: Top mounting face (normal points up)
+        pose_xyz: [0.0, 0.0, 0.6]
+        pose_rpy: [0.0, 0.0, 0.0]
+      mast_axis:
+        datum_type: axis
+        label: Mast axis
+        pose_xyz: [0.0, 0.0, 0.0]
+        pose_rpy: [0.0, 0.0, 0.0]

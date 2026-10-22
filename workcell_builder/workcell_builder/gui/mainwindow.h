@@ -370,10 +370,13 @@ private:
   void apply_inspector_pose_to_item();
   bool mounting_update_guard_{false};
   QJsonArray mounting_items() const;
+  bool mounted_pose_unchanged(const QString & id, double x, double y, double z, double roll, double pitch, double yaw) const;
   QJsonObject run_mounting_request(QJsonObject request);
   bool commit_mounting_request(QJsonObject request);
   void apply_mounting_snapshot(const QVector<ScenePreviewWidget::PreviewItem> & snapshot);
   void edit_selected_mounting();
+  void refresh_mount_relation_context();
+  QString mount_relation_text_for(const QString & id) const;
   void apply_selection_transform_from_editor();
   void revert_selection_transform_editor();
   void copy_selection_transform_to_clipboard();
@@ -556,6 +559,7 @@ private:
   QLabel * selection_scene_end_effector_label_{ nullptr };
   QLabel * selection_scene_launch_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
+  QLabel * inspector_mount_relation_label_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
   QDoubleSpinBox * inspector_y_{ nullptr };
   QDoubleSpinBox * inspector_z_{ nullptr };

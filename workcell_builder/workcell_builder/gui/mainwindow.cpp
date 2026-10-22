@@ -19,6 +19,7 @@
 #include "inspector_spin_config.hpp"
 #include "readiness_pack_command.hpp"
 #include "save_projection_failure.hpp"
+#include "datum_mating_text.hpp"
 #include "gui/web_edit_policy.hpp"
 #include "gui/semantic_role_edit.hpp"
 #include "studio_page_navigation.hpp"
@@ -2827,6 +2828,8 @@ void MainWindow::setup_studio_shell()
       bool mounted_graph = false;
       for (const auto & p : all_scene_preview_items_) mounted_graph = mounted_graph || p.mounting_yaml.contains("parent_object");
       if (mounted_graph && !pending_native_web_pose_signatures_.contains(echo)) {
+        // Selection re-reports the current pose; only a moved asset is an edit.
+        if (mounted_pose_unchanged(stable_id, x, y, z, roll, pitch, yaw)) return;
         commit_mounting_request({{"id", stable_id}, {"world_pose", QJsonObject{
           {"xyz", QJsonArray{x, y, z}}, {"rpy", QJsonArray{roll, pitch, yaw}}}}});
         return;
@@ -2968,6 +2971,7 @@ void MainWindow::setup_studio_shell()
       bool mounted_graph = false;
       for (const auto & row : all_scene_preview_items_) mounted_graph = mounted_graph || row.mounting_yaml.contains("parent_object");
       if (mounted_graph) {
+        if (mounted_pose_unchanged(id, x, y, z, r, p, yaw)) return;
         commit_mounting_request({{"id", id}, {"world_pose", QJsonObject{
           {"xyz", QJsonArray{x, y, z}}, {"rpy", QJsonArray{r, p, yaw}}}}});
         return;
@@ -3528,8 +3532,14 @@ void MainWindow::setup_studio_shell()
   selected_item_card_layout->addLayout(metadata_form);
   auto * mounting_button = new QPushButton("Mount To / Relative Pose…", scene_builder);
   mounting_button->setObjectName("sceneBuilderMounting");
-  mounting_button->setToolTip("Mount this asset to another asset or a named anchor. Reparent and detach preserve its world pose.");
+  mounting_button->setToolTip("Mount this asset to another asset: align one of its datums (origin, point, axis or plane) "
+    "with a parent datum, coincident or flush, with an offset. Reparent and detach preserve its world pose.");
   selected_item_card_layout->addWidget(mounting_button);
+  inspector_mount_relation_label_ = new QLabel(scene_builder);
+  inspector_mount_relation_label_->setObjectName("sceneBuilderMountRelation");
+  inspector_mount_relation_label_->setWordWrap(true);
+  inspector_mount_relation_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);  // wraps, never widens the panel
+  selected_item_card_layout->addWidget(inspector_mount_relation_label_);
   connect(mounting_button, &QPushButton::clicked, this, &MainWindow::edit_selected_mounting);
   auto * transform_title = new QLabel("<b>Transform</b><br/>Position in metres; rotation in degrees.", scene_builder);
   transform_title->setWordWrap(true);
@@ -8353,7 +8363,7 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   auto result = workcell_builder::serialize_layout_item(
     state, existing, gi->data(RoleMetadataExplicitlyEdited).toBool());
   const auto metadata = YAML::Load(gi->data(RoleMountingYaml).toString().toStdString());
-  for (const char * key : {"parent_object", "parent_link", "joint_type", "origin", "mounting_anchors"}) {
+  for (const char * key : {"parent_object", "parent_link", "joint_type", "origin", "mounting_anchors", "mate"}) {
     if (metadata && metadata[key]) result[key] = YAML::Clone(metadata[key]);
     else result.remove(key);
   }
@@ -9305,8 +9315,36 @@ void MainWindow::refresh_selection_transform_editor_from_item(QGraphicsItem * it
   refresh_selection_transform_editor_from_state(state);
 }
 
+QString MainWindow::mount_relation_text_for(const QString & id) const
+{
+  for (const auto & p : all_scene_preview_items_) {
+    if (p.id != id) continue;
+    const auto relation = workcell_builder::parse_mount_relation(p.mounting_yaml);
+    QString parent_name;
+    for (const auto & parent : all_scene_preview_items_) if (parent.id == relation.parent_id) parent_name = parent.display_name;
+    QStringList children;
+    for (const auto & child : all_scene_preview_items_) {
+      const auto child_relation = workcell_builder::parse_mount_relation(child.mounting_yaml);
+      if (child_relation.mounted && child_relation.parent_id == id) children << child.display_name;
+    }
+    QString text = workcell_builder::mount_relation_summary(relation, parent_name);
+    if (!children.isEmpty()) text += QStringLiteral("\nCarries: ") + children.join(QStringLiteral(", "));
+    return text;
+  }
+  return QString();
+}
+
+void MainWindow::refresh_mount_relation_context()
+{
+  if (!inspector_mount_relation_label_) return;
+  const QString text = mount_relation_text_for(current_selected_scene_item_id_.trimmed());
+  inspector_mount_relation_label_->setText(text);
+  inspector_mount_relation_label_->setVisible(!text.isEmpty());
+}
+
 void MainWindow::refresh_selection_transform_editor_from_state(const SelectedSceneItemState & state)
 {
+  refresh_mount_relation_context();
   if (!state.valid || !state.pose_available) {
     inspector_update_guard_ = true;
     for (auto * sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_, inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) {
@@ -9446,13 +9484,34 @@ void MainWindow::reset_robot_base_pose_from_snapshot()
   apply_robot_base_pose_from_inspector();
 }
 
+bool MainWindow::mounted_pose_unchanged(const QString & id, double x, double y, double z,
+  double roll, double pitch, double yaw) const
+{
+  const auto angle_equal = [](double a, double b) { return std::abs(std::atan2(std::sin(a - b), std::cos(a - b))) <= 1e-9; };
+  for (const auto & p : all_scene_preview_items_) {
+    if (p.id != id) continue;
+    return std::abs(p.x - x) <= 1e-9 && std::abs(p.y - y) <= 1e-9 && std::abs(p.z - z) <= 1e-9 &&
+      angle_equal(p.roll, roll) && angle_equal(p.pitch, pitch) && angle_equal(p.yaw, yaw);
+  }
+  return false;
+}
+
 QJsonArray MainWindow::mounting_items() const
 {
   QJsonArray rows;
   for (const auto & p : all_scene_preview_items_) {
     if (!p.editable || p.locked || p.source_layer != QStringLiteral("editable_layout") || deleted_layout_item_ids_.contains(p.id)) continue;
-    rows.append(QJsonObject{{"id", p.id}, {"role", p.role}, {"category", p.category}, {"mounting_yaml", p.mounting_yaml},
-      {"pose_xyz", QJsonArray{p.x, p.y, p.z}}, {"pose_rpy", QJsonArray{p.roll, p.pitch, p.yaw}}});
+    QJsonObject row{{"id", p.id}, {"role", p.role}, {"category", p.category}, {"mounting_yaml", p.mounting_yaml},
+      {"pose_xyz", QJsonArray{p.x, p.y, p.z}}, {"pose_rpy", QJsonArray{p.roll, p.pitch, p.yaw}}};
+    // Reviewed catalog datums apply only to the calibrated mesh they were measured on.
+    if (!p.catalog_asset_id.trimmed().isEmpty()) {
+      QJsonObject mesh{{"scale", QJsonArray{p.mesh_scale_x, p.mesh_scale_y, p.mesh_scale_z}},
+        {"rpy", QJsonArray{p.mesh_r, p.mesh_p, p.mesh_y}}};
+      if (p.has_origin_offset) mesh.insert("origin_offset", QJsonArray{p.origin_offset_x, p.origin_offset_y, p.origin_offset_z});
+      row.insert("catalog_asset_id", p.catalog_asset_id.trimmed());
+      row.insert("mesh", mesh);
+    }
+    rows.append(row);
   }
   return rows;
 }
@@ -9460,6 +9519,7 @@ QJsonArray MainWindow::mounting_items() const
 QJsonObject MainWindow::run_mounting_request(QJsonObject request)
 {
   request.insert("items", mounting_items());
+  request.insert("scene_dir", selected_scene_state_.path);  // saved mesh calibration for reviewed datums
   const QString root = resolve_workcell_studio_repo_root(fs::path(selected_scene_state_.path.toStdString()));
   QProcess process;
   process.start("python3", {QDir(root).filePath("scripts/asset_mounting.py")});
@@ -9531,6 +9591,18 @@ bool MainWindow::commit_mounting_request(QJsonObject request)
       after.push_back(p); break;
     }
   }
+  bool changed = false;
+  for (int k = 0; k < before.size() && !changed; ++k) {
+    const auto & a = before[k]; const auto & b = after[k];
+    changed = std::abs(a.x - b.x) > 1e-12 || std::abs(a.y - b.y) > 1e-12 || std::abs(a.z - b.z) > 1e-12 ||
+      std::abs(a.roll - b.roll) > 1e-12 || std::abs(a.pitch - b.pitch) > 1e-12 || std::abs(a.yaw - b.yaw) > 1e-12 ||
+      a.display_name != b.display_name || a.role != b.role || a.sx != b.sx || a.sy != b.sy || a.sz != b.sz ||
+      !workcell_builder::same_mounting_metadata(a.mounting_yaml, b.mounting_yaml);
+  }
+  if (!changed) {
+    append_studio_log(QStringLiteral("Asset mounting: %1 already has this relation and pose; nothing changed.").arg(request.value("id").toString()));
+    return true;
+  }
   CanvasEditCommand command{"mounting", request.value("id").toString(), {}, {}, false, false, before};
   command.after_items = after;
   apply_mounting_snapshot(after);
@@ -9550,49 +9622,136 @@ void MainWindow::edit_selected_mounting()
   QDialog dialog(this); dialog.setWindowTitle("Mount asset — " + target.state.display_name);
   dialog.setObjectName("assetMountingDialog");
   auto * form = new QFormLayout(&dialog);
+  auto * intro = new QLabel("Attach this asset to a parent. Choose a datum on each: the child datum is aligned to the "
+    "parent datum. A plane's normal points outward (+Z).", &dialog);
+  intro->setWordWrap(true); form->addRow(intro);
   auto * parent = new QComboBox(&dialog); parent->setObjectName("mountTo"); parent->addItem("World", "world");
   for (const auto & p : all_scene_preview_items_) if (named.contains(p.id) && p.id != target.state.id && !p.semantic_task_zone_helper)
     parent->addItem(p.display_name + " [" + p.id + "]", p.id);
   auto * anchor = new QComboBox(&dialog); anchor->setObjectName("mountAnchor");
-  const auto fill_anchors = [parent, anchor, named]() {
-    anchor->clear(); const auto id = parent->currentData().toString();
-    if (id == "world") anchor->addItem("world");
-    else for (const auto & key : named.value(id).toObject().keys()) anchor->addItem(key);
+  auto * child_datum = new QComboBox(&dialog); child_datum->setObjectName("mountChildDatum");
+  auto * alignment = new QComboBox(&dialog); alignment->setObjectName("mountAlignment");
+  alignment->addItem("Coincident — datum frames line up", "coincident");
+  alignment->addItem("Flush — plane faces touch, normals opposed", "flush");
+  // Datum lists: origin first, then the asset's own and reviewed catalog datums.
+  const auto add_datums = [](QComboBox * combo, const QJsonObject & datums) {
+    const QSignalBlocker blocker(combo);
+    combo->clear();
+    QStringList names = datums.keys();
+    names.removeAll(QStringLiteral("origin")); if (datums.contains(QStringLiteral("origin"))) names.prepend(QStringLiteral("origin"));
+    for (const auto & name : names) {
+      const auto datum = datums.value(name).toObject();
+      combo->addItem(workcell_builder::datum_choice_text(name, datum.value("datum_type").toString(), datum.value("label").toString()), name);
+      combo->setItemData(combo->count() - 1, datum.contains("catalog_asset_id")
+        ? QString("Reviewed datum from the asset catalog (%1); it is copied into this cell when used.").arg(datum.value("catalog_asset_id").toString())
+        : QString("Datum defined on this asset."), Qt::ToolTipRole);
+    }
   };
-  connect(parent, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, [fill_anchors](int){ fill_anchors(); });
-  form->addRow("Mount To", parent); form->addRow("Anchor", anchor);
-  auto * relative = new QCheckBox("Apply relative pose (metres / degrees)", &dialog); relative->setObjectName("applyRelativePose");
+  const auto fill_anchors = [parent, anchor, named, add_datums]() {
+    const auto id = parent->currentData().toString();
+    if (id == "world") { const QSignalBlocker blocker(anchor); anchor->clear(); anchor->addItem("world", "world"); }
+    else add_datums(anchor, named.value(id).toObject());
+  };
+  add_datums(child_datum, named.value(target.state.id).toObject());
+  form->addRow("Mount To", parent); form->addRow("Parent datum", anchor);
+  form->addRow("Child datum", child_datum); form->addRow("Alignment", alignment);
+  auto * relative = new QCheckBox("Move the asset: align the datums with this offset", &dialog); relative->setObjectName("applyRelativePose");
   form->addRow(relative);
   std::array<QDoubleSpinBox *, 6> values;
   const std::array<const char *, 6> keys{{"x", "y", "z", "roll", "pitch", "yaw"}};
-  YAML::Node metadata;
-  for (const auto & p : all_scene_preview_items_) if (p.id == target.state.id) metadata = YAML::Load(p.mounting_yaml.toStdString());
-  if (metadata && metadata["parent_object"]) parent->setCurrentIndex(qMax(0, parent->findData(QString::fromStdString(metadata["parent_object"].as<std::string>()))));
+  const std::array<const char *, 6> labels{{"Offset X", "Offset Y", "Offset Z (along normal)", "Offset roll", "Offset pitch", "Offset yaw (about normal)"}};
+  const auto relation = [this, &target]() {
+    for (const auto & p : all_scene_preview_items_) if (p.id == target.state.id) return workcell_builder::parse_mount_relation(p.mounting_yaml);
+    return workcell_builder::MountRelation{};
+  }();
+  if (relation.mounted) parent->setCurrentIndex(qMax(0, parent->findData(relation.parent_id)));
   fill_anchors();
-  if (metadata && metadata["parent_link"]) anchor->setCurrentText(QString::fromStdString(metadata["parent_link"].as<std::string>()));
-  for (int k = 0; k < 6; ++k) {
-    values[k] = new QDoubleSpinBox(&dialog); values[k]->setRange(-10000., 10000.); values[k]->setDecimals(6);
-    values[k]->setObjectName(QString("relative_%1").arg(keys[k]));
-    const double v = metadata && metadata["origin"] ? metadata["origin"][keys[k]].as<double>(0.) : 0.;
-    values[k]->setValue(k < 3 ? v : qRadiansToDegrees(v)); values[k]->setEnabled(false);
-    connect(relative, &QCheckBox::toggled, values[k], &QWidget::setEnabled);
-    form->addRow(QString("Relative %1").arg(keys[k]), values[k]);
+  if (relation.mounted) {
+    anchor->setCurrentIndex(qMax(0, anchor->findData(relation.parent_datum)));
+    child_datum->setCurrentIndex(qMax(0, child_datum->findData(relation.child_datum)));
+    alignment->setCurrentIndex(qMax(0, alignment->findData(relation.alignment)));
   }
-  auto * note = new QLabel("Mounting and detaching keep the current world pose unless Apply relative pose is selected.", &dialog);
+  for (int k = 0; k < 6; ++k) {
+    values[k] = new QDoubleSpinBox(&dialog); values[k]->setRange(k < 3 ? -1000. : -360., k < 3 ? 1000. : 360.); values[k]->setDecimals(k < 3 ? 4 : 3);
+    values[k]->setSingleStep(k < 3 ? 0.01 : 1.); values[k]->setSuffix(k < 3 ? " m" : "°"); values[k]->setKeyboardTracking(false);
+    values[k]->setObjectName(QString("relative_%1").arg(keys[k]));
+    values[k]->setValue(k < 3 ? relation.offset[k] : qRadiansToDegrees(relation.offset[k])); values[k]->setEnabled(false);
+    connect(relative, &QCheckBox::toggled, values[k], &QWidget::setEnabled);
+    form->addRow(labels[k], values[k]);
+  }
+  auto * preview = new QLabel(&dialog); preview->setObjectName("mountPreview"); preview->setWordWrap(true);
+  preview->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  form->addRow("Preview", preview);
+  auto * note = new QLabel("Unticked, the asset keeps its world pose and the offset is measured from where it is now. "
+    "Detach keeps the world pose and removes the mate. Children and linked destination zones follow.", &dialog);
   note->setWordWrap(true); form->addRow(note);
   auto * buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Cancel, &dialog);
   auto * detach = buttons->addButton("Detach", QDialogButtonBox::ActionRole); detach->setObjectName("detachAsset");
+  detach->setEnabled(relation.mounted);
+  detach->setAutoDefault(false); buttons->button(QDialogButtonBox::Cancel)->setAutoDefault(false);
+  buttons->button(QDialogButtonBox::Apply)->setDefault(true);  // Return applies; it never detaches
   form->addRow(buttons);
+  const auto build_request = [target, parent, anchor, child_datum, alignment, relative, values]() {
+    const QString parent_id = parent->currentData().toString();
+    QJsonObject request{{"id", target.state.id}, {"parent_object", parent_id}, {"parent_link", anchor->currentData().toString()}};
+    if (parent_id != "world") {
+      request.insert("child_datum", child_datum->currentData().toString());
+      request.insert("alignment", alignment->currentData().toString());
+    }
+    if (relative->isChecked()) request.insert("relative_pose", QJsonObject{
+      {"xyz", QJsonArray{values[0]->value(), values[1]->value(), values[2]->value()}},
+      {"rpy", QJsonArray{qDegreesToRadians(values[3]->value()), qDegreesToRadians(values[4]->value()), qDegreesToRadians(values[5]->value())}}});
+    return request;
+  };
+  // A dry run through the same resolver; nothing is applied until Apply.
+  const auto refresh_preview = [this, &target, parent, child_datum, alignment, preview, buttons, build_request]() {
+    const bool world = parent->currentData().toString() == "world";
+    child_datum->setEnabled(!world); alignment->setEnabled(!world);
+    const auto result = run_mounting_request(build_request());
+    auto * apply = buttons->button(QDialogButtonBox::Apply);
+    if (!result.value("ok").toBool()) {
+      preview->setStyleSheet(QStringLiteral("color:%1;").arg(workcell_builder::studioTokens().danger));
+      preview->setText("Cannot apply: " + result.value("error").toString());
+      apply->setEnabled(false);
+      return;
+    }
+    QStringList followers; QString line;
+    for (const auto & value : result.value("result").toArray()) {
+      const auto row = value.toObject();
+      const auto xyz = row.value("pose_xyz").toArray(), rpy = row.value("pose_rpy").toArray();
+      for (const auto & p : all_scene_preview_items_) if (p.id == row.value("id").toString()) {
+        const double moved = std::hypot(xyz[0].toDouble() - p.x, xyz[1].toDouble() - p.y, xyz[2].toDouble() - p.z);
+        const double turned = std::max({std::abs(rpy[0].toDouble() - p.roll), std::abs(rpy[1].toDouble() - p.pitch), std::abs(rpy[2].toDouble() - p.yaw)});
+        if (p.id == target.state.id) {
+          line = QString("%1 at X %2 · Y %3 · Z %4 m, roll %5° · pitch %6° · yaw %7° (moves %8 mm)")
+            .arg(p.display_name).arg(xyz[0].toDouble(), 0, 'f', 4).arg(xyz[1].toDouble(), 0, 'f', 4).arg(xyz[2].toDouble(), 0, 'f', 4)
+            .arg(qRadiansToDegrees(rpy[0].toDouble()), 0, 'f', 1).arg(qRadiansToDegrees(rpy[1].toDouble()), 0, 'f', 1)
+            .arg(qRadiansToDegrees(rpy[2].toDouble()), 0, 'f', 1).arg(moved * 1000., 0, 'f', 1);
+          const auto resulting = workcell_builder::parse_mount_relation(row.value("mounting_yaml").toString());
+          if (resulting.mounted) line += "\n" + workcell_builder::mount_offset_text(resulting);
+        } else if (moved > 1e-9 || turned > 1e-9) {
+          followers << p.display_name;
+        }
+        if ((moved > 1e-9 || turned > 1e-9)) for (const auto & zone : all_scene_preview_items_)
+          if (zone.target_ref == p.id) followers << zone.display_name + " (destination zone, keeps its target-local placement)";
+      }
+    }
+    preview->setStyleSheet(QString());
+    preview->setText(line + (followers.isEmpty() ? QString() : "\nFollows: " + followers.join(", ")));
+    apply->setEnabled(true);
+  };
+  connect(parent, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, [fill_anchors, refresh_preview](int){ fill_anchors(); refresh_preview(); });
+  for (auto * combo : {anchor, child_datum, alignment})
+    connect(combo, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, [refresh_preview](int){ refresh_preview(); });
+  connect(relative, &QCheckBox::toggled, &dialog, [refresh_preview](bool){ refresh_preview(); });
+  for (auto * value : values) connect(value, qOverload<double>(&QDoubleSpinBox::valueChanged), &dialog, [refresh_preview](double){ refresh_preview(); });
+  refresh_preview();
   connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
   connect(detach, &QPushButton::clicked, &dialog, [this, &dialog, target]() {
     if (commit_mounting_request({{"id", target.state.id}, {"parent_object", "world"}, {"parent_link", "world"}})) dialog.accept();
   });
-  connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, &dialog, [this, &dialog, target, parent, anchor, relative, values]() {
-    QJsonObject request{{"id", target.state.id}, {"parent_object", parent->currentData().toString()}, {"parent_link", anchor->currentText()}};
-    if (relative->isChecked()) request.insert("relative_pose", QJsonObject{
-      {"xyz", QJsonArray{values[0]->value(), values[1]->value(), values[2]->value()}},
-      {"rpy", QJsonArray{qDegreesToRadians(values[3]->value()), qDegreesToRadians(values[4]->value()), qDegreesToRadians(values[5]->value())}}});
-    if (commit_mounting_request(request)) dialog.accept();
+  connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, &dialog, [this, &dialog, build_request]() {
+    if (commit_mounting_request(build_request())) dialog.accept();
   });
   dialog.exec();
 }
@@ -9609,6 +9768,16 @@ void MainWindow::apply_inspector_pose_to_item()
     return;
   }
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Inspector edit"))) return;
+  // Fields the user did not touch keep the item's exact value, not the rounded display.
+  const double applied_x = workcell_builder::inspector_applied_value(inspector_x_, target.state.pose_x);
+  const double applied_y = workcell_builder::inspector_applied_value(inspector_y_, target.state.pose_y);
+  const double applied_z = workcell_builder::inspector_applied_value(inspector_z_, target.state.pose_z);
+  const auto applied_angle = [](const QDoubleSpinBox * spin, double exact_radians) {
+    return workcell_builder::inspector_field_changed(spin, qRadiansToDegrees(exact_radians)) ? qDegreesToRadians(spin->value()) : exact_radians;
+  };
+  const double updated_roll = applied_angle(inspector_roll_, target.state.roll);
+  const double updated_pitch = applied_angle(inspector_pitch_, target.state.pitch);
+  const double updated_yaw = applied_angle(inspector_yaw_, target.state.yaw);
 
   bool mounted_graph = false;
   for (const auto & row : mounting_items()) {
@@ -9617,17 +9786,14 @@ void MainWindow::apply_inspector_pose_to_item()
   }
   if (mounted_graph) {
     commit_mounting_request(QJsonObject{{"id", target.state.id}, {"inspector_edit", true}, {"world_pose", QJsonObject{
-      {"xyz", QJsonArray{inspector_x_->value(), inspector_y_->value(), inspector_z_->value()}},
-      {"rpy", QJsonArray{qDegreesToRadians(inspector_roll_->value()), qDegreesToRadians(inspector_pitch_->value()), qDegreesToRadians(inspector_yaw_->value())}}}}});
+      {"xyz", QJsonArray{applied_x, applied_y, applied_z}},
+      {"rpy", QJsonArray{updated_roll, updated_pitch, updated_yaw}}}}});
     return;
   }
   QGraphicsItem * i = target.fallback_item;
   const QString item_id = target.state.id.trimmed();
   const QPointF old(target.state.pose_x * 100.0, target.state.pose_y * 100.0);
-  const QPointF updated(inspector_x_->value() * 100.0, inspector_y_->value() * 100.0);
-  const double updated_roll = qDegreesToRadians(inspector_roll_->value());
-  const double updated_pitch = qDegreesToRadians(inspector_pitch_->value());
-  const double updated_yaw = qDegreesToRadians(inspector_yaw_->value());
+  const QPointF updated(applied_x * 100.0, applied_y * 100.0);
   ScenePreviewWidget::PreviewItem before_item;
   for (const auto & preview_item : all_scene_preview_items_) {
     if (preview_item.id.trimmed() == item_id) { before_item = preview_item; break; }
@@ -9638,7 +9804,7 @@ void MainWindow::apply_inspector_pose_to_item()
   bool metadata_changed = false;
   if (i) {
     workcell_builder::set_authored_canvas_position(i, updated);
-    i->setData(RolePoseZ, inspector_z_->value());
+    i->setData(RolePoseZ, applied_z);
     i->setData(RoleRoll, updated_roll);
     i->setData(RolePitch, updated_pitch);
     i->setData(RoleYaw, updated_yaw);
@@ -9673,9 +9839,9 @@ void MainWindow::apply_inspector_pose_to_item()
 
   SelectedSceneItemState refreshed_state = target.state;
   refreshed_state.pose_available = true;
-  refreshed_state.pose_x = inspector_x_->value();
-  refreshed_state.pose_y = inspector_y_->value();
-  refreshed_state.pose_z = inspector_z_->value();
+  refreshed_state.pose_x = applied_x;
+  refreshed_state.pose_y = applied_y;
+  refreshed_state.pose_z = applied_z;
   refreshed_state.roll = updated_roll;
   refreshed_state.pitch = updated_pitch;
   refreshed_state.yaw = updated_yaw;
@@ -9697,9 +9863,9 @@ void MainWindow::apply_inspector_pose_to_item()
   const QString selected_scene_name_for_log = selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("unknown");
   append_studio_log(QString("Inspector transform edited: scene=%1 id=%2 source=%3 xyz=[%4,%5,%6] rpy=[%7,%8,%9] dirty=true")
     .arg(selected_scene_name_for_log, item_id, target.source_path)
-    .arg(inspector_x_->value(), 0, 'g', 17)
-    .arg(inspector_y_->value(), 0, 'g', 17)
-    .arg(inspector_z_->value(), 0, 'g', 17)
+    .arg(applied_x, 0, 'g', 17)
+    .arg(applied_y, 0, 'g', 17)
+    .arg(applied_z, 0, 'g', 17)
     .arg(updated_roll, 0, 'g', 17)
     .arg(updated_pitch, 0, 'g', 17)
     .arg(updated_yaw, 0, 'g', 17));
@@ -10049,7 +10215,7 @@ void MainWindow::duplicate_selected_item()
   copy.display_name = new_name;
   if (!copy.mounting_yaml.isEmpty()) {
     auto metadata = YAML::Load(copy.mounting_yaml.toStdString());
-    for (const char * key : {"parent_object", "parent_link", "joint_type", "origin"}) metadata.remove(key);
+    for (const char * key : {"parent_object", "parent_link", "joint_type", "origin", "mate"}) metadata.remove(key);
     YAML::Emitter emitter; emitter << metadata; copy.mounting_yaml = QString::fromUtf8(emitter.c_str());
   }
   copy.x += 0.10;
@@ -11034,6 +11200,8 @@ void MainWindow::refresh_selected_item_card()
       .arg(qRound(item->yaw * 180.0 / 3.14159265358979323846));
     if (!item->transform_group.trimmed().isEmpty())
       details << QStringLiteral("Destination group: %1").arg(item->transform_group);
+    const QString relation = mount_relation_text_for(id);
+    if (!relation.isEmpty() && !relation.startsWith(QStringLiteral("Not mounted"))) details << relation;
   }
   selected_item_summary_label_->setText(details.join(QStringLiteral("\n")));
   const bool editable = item->editable && !item->locked && !derived_area;
@@ -11533,6 +11701,9 @@ void MainWindow::refresh_scene_hierarchy_tree_from_current_items()
       auto * child = nodes[p.id];
       scene_hierarchy_tree_->takeTopLevelItem(scene_hierarchy_tree_->indexOfTopLevelItem(child));
       nodes[parent]->addChild(child); nodes[parent]->setExpanded(true);
+      const auto relation = workcell_builder::parse_mount_relation(p.mounting_yaml);
+      child->setText(0, QStringLiteral("%1 · %2").arg(child->text(0), workcell_builder::mount_relation_short(relation)));
+      child->setToolTip(0, child->toolTip(0) + QStringLiteral("\n") + mount_relation_text_for(p.id));
     }
   }
   if (scene_hierarchy_tree_->topLevelItemCount() == 0) {
@@ -14274,7 +14445,7 @@ void MainWindow::populate_scene_hierarchy()
       for (const auto & record : physical[collection]) {
         const auto id = QString::fromStdString(record["layout_item_ref"].as<std::string>(record["id"].as<std::string>("")));
         YAML::Node metadata(YAML::NodeType::Map);
-        for (const char * key : {"parent_object", "parent_link", "joint_type", "origin", "mounting_anchors", "surface_z_m"})
+        for (const char * key : {"parent_object", "parent_link", "joint_type", "origin", "mounting_anchors", "mate", "surface_z_m"})
           if (record[key]) metadata[key] = YAML::Clone(record[key]);
         if (metadata["parent_object"]) {
           const auto parent = QString::fromStdString(metadata["parent_object"].as<std::string>());

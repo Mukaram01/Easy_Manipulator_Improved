@@ -6,6 +6,7 @@
 #include <QSettings>
 #include "gui/new_cell_wizard.h"
 #include "gui/task_intent_editor.h"
+#include "gui/datum_mating_text.hpp"
 #include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -20,6 +21,12 @@
 #include <limits>
 #include <yaml-cpp/yaml.h>
 #include <memory>
+#include <tuple>
+#include <functional>
+#include <array>
+#include <QLabel>
+#include <QComboBox>
+#include <QTreeWidget>
 #include <stdexcept>
 
 class TestMain {
@@ -197,7 +204,8 @@ public:
         if (detach) { dialog->findChild<QPushButton *>("detachAsset")->click(); return; }
         auto * parents = dialog->findChild<QComboBox *>("mountTo");
         parents->setCurrentIndex(parents->findData(parent));
-        dialog->findChild<QComboBox *>("mountAnchor")->setCurrentText(anchor);
+        auto * anchors = dialog->findChild<QComboBox *>("mountAnchor");
+        anchors->setCurrentIndex(anchors->findData(anchor));
         if (relative_edit) {
           dialog->findChild<QCheckBox *>("applyRelativePose")->setChecked(true);
           dialog->findChild<QDoubleSpinBox *>("relative_z")->setValue(1.2);
@@ -398,6 +406,309 @@ public:
         }
       }
     } catch (const std::exception & error) { s->evidence["failure"] = QString::fromUtf8(error.what()); write(); timer->stop(); app->exit(1); } });
+    timer->start();
+  }
+
+  // Datum mating on a fresh New Cell: bin bottom flush on the table top, camera on the
+  // camera-stand top, parent edits, undo/redo, detach/reparent, rejected relations,
+  // three consecutive bin saves and a separate-process reopen with GUI Generate/Validate.
+  static void start_datum_mating_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & scene_name, bool reopen) {
+    struct Session { int phase=0, ticks=0, saves=0; QString scene, stand; QJsonArray mated, moved; QJsonObject evidence, zone_local; };
+    auto s = std::make_shared<Session>(); QDir().mkpath(output);
+    s->evidence = {{"result", "FAIL"}, {"fake_hardware_only", true}, {"execution_goals_sent", 0}};
+    const QString bin = "target_bin_default", table = "support_surface_table", camera = "realsense_overhead";
+    const std::vector<double> bin_moves{-0.02, -0.07, -0.01};
+    auto write = [=]() {
+      s->evidence["studio_log_tail"] = window->studio_log_->toPlainText().right(6000);
+      QFile f(output + (reopen ? "/reopen.json" : "/authoring.json"));
+      if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson());
+    };
+    auto require = [](bool value, const QString & message) { if (!value) throw std::runtime_error(message.toStdString()); };
+    auto item = [=](const QString & id) {
+      for (const auto & p : window->all_scene_preview_items_) if (p.id == id) return p;
+      throw std::runtime_error(("scene item missing: " + id).toStdString());
+    };
+    auto relation = [=](const QString & id) { return YAML::Load(item(id).mounting_yaml.toStdString()); };
+    auto environment = [=]() { return YAML::LoadFile((s->scene + "/environment.yaml").toStdString()); };
+    auto record = [](const YAML::Node & root, const std::string & id) {
+      for (const char * key : {"support_surfaces", "assets", "sensors", "task_zones"})
+        for (const auto & r : root["environment"][key])
+          if (r["id"].as<std::string>("") == id || r["layout_item_ref"].as<std::string>("") == id) return r;
+      throw std::runtime_error("authored record missing: " + id);
+    };
+    auto near = [](double a, double b, double tol = 1e-8) { return std::abs(a - b) < tol; };
+    // Drives the real Inspector Mount To dialog; nothing is applied unless asked and enabled.
+    auto mate = [=](const QString & tag, const QString & child, const QString & parent, const QString & parent_datum,
+                    const QString & child_datum, const QString & alignment, std::array<double, 6> offset,
+                    bool move, bool apply, bool detach = false) {
+      auto seen = std::make_shared<QJsonObject>();
+      window->apply_scene_selection(child, "", false, false);
+      QTimer::singleShot(150, window, [=]() {
+        auto * dialog = window->findChild<QDialog *>("assetMountingDialog");
+        if (!dialog) return;
+        (*seen)["opened"] = true;
+        if (detach) { dialog->grab().save(output + "/dialog-" + tag + ".png"); dialog->findChild<QPushButton *>("detachAsset")->click(); return; }
+        auto pick = [&](const char * name, const QString & data) {
+          auto * combo = dialog->findChild<QComboBox *>(name);
+          const int index = combo ? combo->findData(data) : -1;
+          (*seen)[QString(name)] = index >= 0 ? combo->itemText(index) : QString("MISSING ") + data;
+          if (index >= 0) combo->setCurrentIndex(index);
+        };
+        pick("mountTo", parent); pick("mountAnchor", parent_datum);
+        if (parent != "world") { pick("mountChildDatum", child_datum); pick("mountAlignment", alignment); }
+        dialog->findChild<QCheckBox *>("applyRelativePose")->setChecked(move);
+        const char * keys[6] = {"x", "y", "z", "roll", "pitch", "yaw"};
+        for (int k = 0; k < 6; ++k) dialog->findChild<QDoubleSpinBox *>(QString("relative_%1").arg(keys[k]))->setValue(offset[k]);
+        auto * apply_button = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply);
+        (*seen)["preview"] = dialog->findChild<QLabel *>("mountPreview")->text();
+        (*seen)["apply_enabled"] = apply_button->isEnabled();
+        (*seen)["return_applies"] = apply_button->isDefault() && !dialog->findChild<QPushButton *>("detachAsset")->autoDefault();
+        dialog->adjustSize(); QCoreApplication::processEvents();  // capture the laid-out preview text
+        dialog->grab().save(output + "/dialog-" + tag + ".png");
+        if (apply && apply_button->isEnabled()) apply_button->click(); else dialog->reject();
+      });
+      window->findChild<QPushButton *>("sceneBuilderMounting")->click();
+      require(seen->value("opened").toBool(), "Mount To dialog did not open for " + child);
+      s->evidence["dialog_" + tag] = *seen;
+      return *seen;
+    };
+    auto inspector = [=](const QString & id, double dx, double dy, double dyaw_deg) {
+      window->apply_scene_selection(id, "", false, false);
+      window->inspector_update_guard_ = true;
+      window->inspector_x_->setValue(window->inspector_x_->value() + dx);
+      window->inspector_y_->setValue(window->inspector_y_->value() + dy);
+      window->inspector_yaw_->setValue(window->inspector_yaw_->value() + dyaw_deg);
+      window->inspector_update_guard_ = false;
+      window->inspector_apply_button_->click();
+    };
+    // Child datum frame against parent datum frame: the relation must hold exactly.
+    auto check_bin_on_table = [=](const QString & phase) {
+      const auto b = item(bin), t = item(table);
+      const auto m = relation(bin);
+      require(m["mate"]["alignment"].as<std::string>("") == "flush" && m["mate"]["child_datum"].as<std::string>("") == "bottom", phase + ": bin mate lost");
+      const double c = std::cos(t.yaw), sn = std::sin(t.yaw);
+      const double lx = c * (b.x - t.x) + sn * (b.y - t.y), ly = -sn * (b.x - t.x) + c * (b.y - t.y);
+      require(near(lx, m["origin"]["x"].as<double>()) && near(ly, m["origin"]["y"].as<double>()), phase + ": bin drifted from its table offset");
+      require(near(b.z, t.z + 0.1 + m["origin"]["z"].as<double>()), phase + ": bin bottom no longer flush on the table top");
+      require(near(b.yaw, t.yaw + m["origin"]["yaw"].as<double>()) && near(b.roll, 0.) && near(b.pitch, 0.), phase + ": bin rotation does not follow the table");
+      s->evidence[phase + "_bin_table_local"] = QJsonArray{lx, ly, b.z - t.z};
+    };
+    auto * modal_watch = new QTimer(window); modal_watch->setInterval(250);
+    QObject::connect(modal_watch, &QTimer::timeout, window, [=]() {
+      for (auto * widget : QApplication::topLevelWidgets()) if (auto * message = qobject_cast<QMessageBox *>(widget)) {
+        if (!message->isVisible()) continue;
+        s->evidence["failure"] = "unexpected message: " + message->text();
+        window->grab().save(output + "/failure.png"); write(); message->reject(); app->exit(1);
+      }
+    }); modal_watch->start();
+    auto * timer = new QTimer(window); timer->setInterval(300);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
+      require(++s->ticks < 1200, "datum mating GUI acceptance timed out");
+      if (window->load_watcher_ && window->load_watcher_->isRunning()) return;
+      switch (s->phase) {
+        case 0: {
+          if (s->ticks < 5) return;
+          const QString root = window->detect_workspace_root() + "/src/easy_manipulation_deployment";
+          s->scene = root + "/scenes/" + scene_name;
+          s->evidence["scene_path"] = s->scene;
+          if (reopen) {
+            QStringList blockers; QJsonObject diagnostics;
+            require(window->load_scene_for_scene3d_smoke(scene_name, s->scene, &blockers, &diagnostics), "saved cell did not reopen");
+            window->show_studio_page(MainWindow::StudioPage::SceneBuilderPage);
+            s->phase = 10; s->ticks = 0; break;
+          }
+          require(!QFileInfo::exists(s->scene), "acceptance refuses to replace an existing cell");
+          QSettings().setValue("startup/last_scene_output_root", root + "/scenes");
+          QTimer::singleShot(100, window, [=]() {
+            auto * wizard = window->findChild<NewCellWizard *>(); if (!wizard) return;
+            wizard->findChild<QLineEdit *>("newCellSceneName")->setText(scene_name);
+            wizard->findChild<QLineEdit *>("newCellDisplayName")->setText("Datum Mating Acceptance");
+            wizard->findChild<QListWidget *>("newCellWizardSteps")->setCurrentRow(5);
+            for (auto * button : wizard->findChildren<QPushButton *>()) if (button->text() == "Create and Open") { button->click(); break; }
+          });
+          timer->stop(); window->open_new_scene_creation_flow(); timer->start();
+          require(QFileInfo::exists(s->scene + "/environment.yaml"), "real New Cell Wizard did not create the cell");
+          window->show_studio_page(MainWindow::StudioPage::SceneBuilderPage);
+          s->evidence["wizard_created"] = s->scene; s->phase = 1; s->ticks = 0; break;
+        }
+        case 1: {
+          if (s->ticks < 10) return;
+          require(window->has_selected_scene(), "new cell not selected in Studio");
+          if (window->scene_preview_widget_ && !window->scene_preview_widget_->is_native_product_view_backend() &&
+              !window->scene_preview_widget_->embedded_web_authoring_active()) return;
+          s->evidence["backend"] = window->scene_preview_widget_->is_native_product_view_backend() ? "native_scene3d" : "embedded_web3d";
+          const auto created = environment();
+          s->zone_local["default_drop_zone"] = QString::fromStdString(YAML::Dump(record(created, "default_drop_zone")["placement_local"]));
+          // Add a camera stand from the Asset Library; its base sits on the floor.
+          require(window->place_catalog_asset_at_world_position("camera_stand", .25, -.45, .6, false), "camera stand could not be placed from the Asset Library");
+          for (const auto & p : window->all_scene_preview_items_) if (p.catalog_asset_id == "camera_stand") s->stand = p.id;
+          require(!s->stand.isEmpty(), "placed camera stand has no scene ID");
+          const auto listed = window->run_mounting_request({{"operation", "anchors"}});
+          require(listed.value("ok").toBool(), "datum listing failed: " + listed.value("error").toString());
+          const auto datums = listed.value("result").toObject();
+          s->evidence["placed_items"] = window->mounting_items();
+          s->evidence["datums"] = QJsonObject{{"bin", datums.value(bin)}, {"table", datums.value(table)}, {"stand", datums.value(s->stand)}, {"camera", datums.value(camera)}};
+          require(datums.value(bin).toObject().value("bottom").toObject().value("datum_type").toString() == "plane", "bin bottom datum unavailable");
+          require(datums.value(table).toObject().value("surface").toObject().value("datum_type").toString() == "plane", "table top datum unavailable");
+          require(datums.value(s->stand).toObject().value("top").toObject().value("datum_type").toString() == "plane", "camera stand top datum unavailable");
+          // Rejected relations: shown in the preview, Apply disabled, nothing changes.
+          const auto before = window->mounting_items();
+          for (const auto & bad : {std::make_tuple(QString("invalid-flush-origin"), bin, table, QString("surface"), QString("origin"), QString("flush"), QString("flush needs two plane datums")),
+                                   std::make_tuple(QString("invalid-axis-plane"), bin, table, QString("surface"), QString("centre_axis"), QString("coincident"), QString("axis datum cannot coincide")),
+                                   std::make_tuple(QString("invalid-cycle"), table, bin, QString("rim"), QString("origin"), QString("coincident"), QString("mounting cycle"))}) {
+            if (std::get<1>(bad) == table) {  // a cycle needs the bin mounted first
+              mate("bin-on-table", bin, table, "surface", "bottom", "flush", {-0.2607, 0.42, 0., 0., 0., 0.}, true, true);
+            }
+            const auto shown = mate(std::get<0>(bad), std::get<1>(bad), std::get<2>(bad), std::get<3>(bad), std::get<4>(bad), std::get<5>(bad), {0., 0., 0., 0., 0., 0.}, true, true);
+            require(!shown.value("apply_enabled").toBool(), std::get<0>(bad) + ": Apply was enabled for an invalid relation");
+            require(shown.value("preview").toString().contains(std::get<6>(bad)), std::get<0>(bad) + ": preview did not explain the rejection: " + shown.value("preview").toString());
+          }
+          window->undo_layout_edit();
+          require(window->mounting_items() == before, "rejected relations changed the scene");
+          s->evidence["invalid_relations_rejected_without_change"] = true;
+          // Relation 1: bin bottom flush on the table top, moved onto it by the dialog.
+          const auto bin_mate = mate("bin-on-table", bin, table, "surface", "bottom", "flush", {-0.2607, 0.42, 0., 0., 0., 0.}, true, true);
+          require(bin_mate.value("preview").toString().contains("Follows:"), "preview did not list the linked destination zone");
+          require(bin_mate.value("return_applies").toBool(), "Return in the Mount To dialog is not bound to Apply");
+          check_bin_on_table("mated");
+          // Relation 2 (independent): camera origin on the stand top, 5 cm above, looking down.
+          mate("camera-on-stand", camera, s->stand, "top", "origin", "coincident", {0.15, 0.09, 0.05, 0., 90., 0.}, true, true);
+          const auto cam = item(camera), stand = item(s->stand);
+          require(near(cam.z, stand.z + 0.6 + 0.05) && near(cam.pitch, M_PI / 2, 1e-6), "camera not placed at the stand top datum offset");
+          require(relation(s->stand)["mounting_anchors"]["top"]["datum_type"].as<std::string>("") == "plane", "stand top datum was not copied into the cell");
+          s->mated = window->mounting_items(); s->evidence["mated"] = s->mated;
+          window->grab().save(output + "/mated.png");
+          s->phase = 2; s->ticks = 0; break;
+        }
+        case 2: {
+          if (s->ticks < 4) return;
+          const auto camera_before = item(camera);
+          inspector(table, .05, 0., 20.);          // move and rotate the table
+          check_bin_on_table("table_moved");
+          require(near(item(camera).x, camera_before.x) && near(item(camera).yaw, camera_before.yaw), "independent camera relation moved with the table");
+          inspector(s->stand, 0., -.05, 15.);      // move and rotate the stand
+          const auto cam = item(camera), stand = item(s->stand);
+          const double c = std::cos(stand.yaw), sn = std::sin(stand.yaw);
+          require(near(c * (cam.x - stand.x) + sn * (cam.y - stand.y), 0.15) && near(-sn * (cam.x - stand.x) + c * (cam.y - stand.y), 0.09) &&
+                  near(cam.z, stand.z + 0.65), "camera drifted from the stand top datum");
+          s->moved = window->mounting_items(); s->evidence["moved"] = s->moved;
+          window->undo_layout_edit(); window->undo_layout_edit();
+          require(window->mounting_items() == s->mated, "undo did not restore the mated graph");
+          window->redo_layout_edit(); window->redo_layout_edit();
+          require(window->mounting_items() == s->moved, "redo did not restore the moved graph");
+          check_bin_on_table("redone");
+          const auto camera_world = item(camera);
+          mate("camera-detach", camera, "world", "world", "origin", "coincident", {0., 0., 0., 0., 0., 0.}, false, false, true);
+          require(!relation(camera)["parent_object"] || relation(camera)["parent_object"].as<std::string>() == "world", "detach kept a parent");
+          require(near(item(camera).x, camera_world.x) && near(item(camera).z, camera_world.z) && near(item(camera).pitch, camera_world.pitch), "detach moved the camera");
+          window->undo_layout_edit();
+          require(window->mounting_items() == s->moved, "detach undo lost graph/poses");
+          const auto bin_world = item(bin);
+          const auto reparent = mate("bin-reparent", bin, s->stand, "top", "bottom", "flush", {0., 0., 0., 0., 0., 0.}, false, true);
+          require(relation(bin)["parent_object"].as<std::string>("") == s->stand.toStdString(), "reparent did not change the parent");
+          require(near(item(bin).x, bin_world.x) && near(item(bin).y, bin_world.y) && near(item(bin).z, bin_world.z), "reparent moved the bin");
+          s->evidence["reparent_preview"] = reparent.value("preview");
+          window->undo_layout_edit();
+          require(window->mounting_items() == s->moved, "reparent undo lost graph/poses");
+          s->evidence["undo_redo_detach_reparent"] = true;
+          require(window->save_layout_button_ && window->save_layout_button_->isEnabled(), "Save Layout control is unavailable");
+          window->save_layout_button_->click();
+          s->phase = 3; s->ticks = 0; break;
+        }
+        case 3: {  // after each Save: disk matches the editor, zone keeps its target-local placement
+          if (s->ticks < 12) return;
+          require(!window->layout_dirty_, QString("save %1 was rejected or remained dirty").arg(s->saves));
+          const auto saved = environment();
+          const auto b = record(saved, bin.toStdString());
+          require(b["mate"]["child_datum"].as<std::string>("") == "bottom" && b["mate"]["alignment"].as<std::string>("") == "flush", "saved bin lost its mate");
+          require(b["parent_object"].as<std::string>("") == table.toStdString() && b["parent_link"].as<std::string>("") == "surface", "saved bin lost its parent datum");
+          require(b["mounting_anchors"]["bottom"]["datum_type"].as<std::string>("") == "plane", "saved bin datum missing");
+          const auto zone = record(saved, "default_drop_zone");
+          require(QString::fromStdString(YAML::Dump(zone["placement_local"])) == s->zone_local.value("default_drop_zone").toString(), "destination zone placement_local changed");
+          const auto live = item(bin);
+          for (int k = 0; k < 3; ++k) require(near(b["pose_xyz"][k].as<double>(), k == 0 ? live.x : k == 1 ? live.y : live.z), "disk bin pose differs from the editor");
+          if (s->saves > 0) require(near(b["pose_xyz"][1].as<double>(), bin_moves[s->saves - 1]), "disk bin Y differs from the requested move");
+          const auto c = record(saved, camera.toStdString());
+          require(c["parent_link"].as<std::string>("") == "top" && near(saved["camera"]["pose"][2].as<double>(), c["pose_xyz"][2].as<double>()), "camera relation or camera pose mirror not saved");
+          s->evidence[QString("save_%1").arg(s->saves)] = QJsonObject{{"bin", QString::fromStdString(YAML::Dump(b))}, {"zone", QString::fromStdString(YAML::Dump(zone))}};
+          if (s->saves == int(bin_moves.size())) {
+            s->evidence["final_items"] = window->mounting_items();
+            s->evidence["saved"] = true; s->evidence["result"] = "PASS";
+            window->grab().save(output + "/after-three-saves.png");
+            write(); timer->stop(); window->close(); app->exit(0); break;
+          }
+          window->apply_scene_selection(bin, "", false, false);
+          window->inspector_y_->setValue(bin_moves[s->saves]);
+          window->inspector_apply_button_->click();
+          require(window->layout_dirty_, "bin Apply did not mark the layout dirty");
+          check_bin_on_table(QString("bin_move_%1").arg(s->saves + 1));
+          ++s->saves;
+          window->save_layout_button_->click();
+          s->ticks = 0; break;
+        }
+        case 10: {  // separate Builder process: compare relations, IDs and transforms with disk
+          if (s->ticks < 14) return;
+          if (window->scene_preview_widget_ && !window->scene_preview_widget_->is_native_product_view_backend() &&
+              !window->scene_preview_widget_->embedded_web_authoring_active()) return;
+          require(QFileInfo(window->selected_scene_state_.path).canonicalFilePath() == QFileInfo(s->scene).canonicalFilePath(), "reopen selected a different scene");
+          QFile previous(output + "/authoring.json"); require(previous.open(QIODevice::ReadOnly), "authoring evidence missing");
+          const auto before = QJsonDocument::fromJson(previous.readAll()).object().value("final_items").toArray();
+          const auto after = window->mounting_items();
+          s->evidence["reopened"] = after;
+          require(before.size() == after.size(), "reopen changed physical identities");
+          QMap<QString, QJsonObject> indexed;
+          for (const auto & row : after) indexed.insert(row.toObject().value("id").toString(), row.toObject());
+          const auto disk = environment();
+          for (const auto & value : before) {
+            const auto row = value.toObject(), actual = indexed.value(row.value("id").toString());
+            require(!actual.isEmpty(), "reopen lost " + row.value("id").toString());
+            for (const auto & key : {QString("pose_xyz"), QString("pose_rpy")})
+              for (int k = 0; k < 3; ++k) require(near(row.value(key).toArray()[k].toDouble(), actual.value(key).toArray()[k].toDouble()), "reopen changed a transform of " + row.value("id").toString());
+            const auto a = YAML::Load(row.value("mounting_yaml").toString().toStdString()), b = YAML::Load(actual.value("mounting_yaml").toString().toStdString());
+            for (const char * key : {"parent_object", "parent_link", "mate", "origin", "mounting_anchors"})
+              require(workcell_builder::same_yaml_value(a[key], b[key]), QString("reopen changed %1 of %2").arg(key, row.value("id").toString()));
+            if (row.value("category").toString() == "zone") continue;
+            const auto stored = record(disk, row.value("id").toString().toStdString());
+            for (int k = 0; k < 3; ++k) require(near(stored["pose_xyz"][k].as<double>(), actual.value("pose_xyz").toArray()[k].toDouble()), "editor pose differs from environment.yaml for " + row.value("id").toString());
+            require(workcell_builder::same_yaml_value(stored["mate"], b["mate"]) && workcell_builder::same_yaml_value(stored["origin"], b["origin"]) && workcell_builder::same_yaml_value(stored["mounting_anchors"], b["mounting_anchors"]),
+              "editor relation differs from environment.yaml for " + row.value("id").toString());
+          }
+          const auto check = window->run_mounting_request({{"operation", "anchors"}});
+          require(check.value("ok").toBool(), "reopened relations do not resolve: " + check.value("error").toString());
+          s->evidence["relations_match_disk"] = true;
+          window->apply_scene_selection(bin, "", false, false);
+          s->phase = 11; s->ticks = 0; break;
+        }
+        case 11: {  // the Product View re-reports the selected pose; that is not an edit
+          if (s->ticks < 12) return;
+          require(!window->layout_dirty_, "selecting a mated asset marked the layout dirty");
+          s->evidence["selection_keeps_layout_clean"] = true;
+          s->evidence["selection_relation_text"] = window->inspector_mount_relation_label_->text();
+          require(window->inspector_mount_relation_label_->text().startsWith("Mated: bottom flush"), "selection context does not show the mate");
+          QJsonArray tree;
+          std::function<void(QTreeWidgetItem *, int)> walk = [&](QTreeWidgetItem * node, int depth) {
+            tree.append(QString(depth * 2, ' ') + node->text(0));
+            for (int i = 0; i < node->childCount(); ++i) walk(node->child(i), depth + 1);
+          };
+          for (int i = 0; i < window->scene_hierarchy_tree_->topLevelItemCount(); ++i) walk(window->scene_hierarchy_tree_->topLevelItem(i), 0);
+          s->evidence["hierarchy"] = tree;
+          window->grab().save(output + "/reopened.png");
+          window->generate_scene_package_for_selected_scene();
+          require(QFileInfo::exists(s->scene + "/generated/generated_environment_objects.yaml"), "GUI generation did not produce environment objects");
+          s->evidence["gui_generation_invoked"] = true;
+          window->validate_generated_scene_for_selected_scene();
+          const auto ready = window->selected_scene_readiness();
+          s->evidence["readiness_ready"] = ready.ready;
+          s->evidence["readiness_blockers"] = QJsonArray::fromStringList(ready.blockers);
+          s->evidence["result"] = "PASS";
+          write(); timer->stop(); window->close(); app->exit(0); break;
+        }
+      }
+    } catch (const std::exception & error) {
+      s->evidence["failure"] = QString::fromUtf8(error.what()); window->grab().save(output + "/failure.png");
+      write(); timer->stop(); window->layout_dirty_ = false; window->close(); app->exit(1);
+    } });
     timer->start();
   }
 
