@@ -8947,6 +8947,54 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     emit_save_layout_failure(error ? *error : QStringLiteral("Authored environment save failed"), QString::fromStdString(effective_layout_path.string()));
     return false;
   }
+  // Projection can move target-local destination regions with their physical
+  // target. Rebase the retained editor from the committed layout before the
+  // next Save; otherwise its old world pose looks like an independent zone
+  // edit and is converted into an unintended target-local offset.
+  QVector<ScenePreviewWidget::PreviewItem> projected_destinations;
+  try {
+    const auto committed = YAML::LoadFile(effective_layout_path.string());
+    for (const auto & item : committed["items"]) {
+      if (!item["target_ref"] || !item["placement_local"]) continue;
+      const QString id = QString::fromStdString(item["id"].as<std::string>());
+      for (const auto & existing : all_scene_preview_items_) {
+        if (existing.id != id) continue;
+        auto projected = existing;
+        const auto xyz = item["pose"]["xyz"], rpy = item["pose"]["rpy"];
+        projected.x = xyz[0].as<double>(); projected.y = xyz[1].as<double>(); projected.z = xyz[2].as<double>();
+        projected.roll = rpy[0].as<double>(); projected.pitch = rpy[1].as<double>(); projected.yaw = rpy[2].as<double>();
+        projected.sx = item["dimensions"][0].as<double>();
+        projected.sy = item["dimensions"][1].as<double>();
+        projected.sz = item["dimensions"][2].as<double>();
+        projected_destinations.push_back(projected);
+        break;
+      }
+    }
+  } catch (const std::exception & exc) {
+    const QString message = QStringLiteral("Physical layout was saved, but the committed destination projection could not be read: %1. Reopen the scene before saving again.")
+      .arg(QString::fromUtf8(exc.what()));
+    if (error) *error = message;
+    append_studio_log(message);
+    show_workflow_feedback("error", message);
+    return false;
+  }
+  for (const auto & projected : projected_destinations) {
+    for (auto & existing : all_scene_preview_items_) {
+      if (existing.id == projected.id) { existing = projected; break; }
+    }
+    if (auto * canvas = find_canvas_item_by_stable_id(projected.id)) {
+      workcell_builder::set_authored_canvas_position(canvas, QPointF(projected.x * 100., projected.y * 100.));
+      canvas->setData(RolePoseZ, projected.z);
+      canvas->setData(RoleRoll, projected.roll); canvas->setData(RolePitch, projected.pitch); canvas->setData(RoleYaw, projected.yaw);
+      canvas->setData(RoleWidth, projected.sx); canvas->setData(RoleDepth, projected.sy); canvas->setData(RoleHeight, projected.sz);
+    }
+    // Web3D already carries/rebases target-local dependents. A bridge command
+    // here could overwrite a newer browser edit made during the save request.
+    if (scene_preview_widget_ && !scene_preview_widget_->embedded_web_authoring_active()) {
+      scene_preview_widget_->set_authoring_item_pose(
+        projected.id, projected.x, projected.y, projected.z, projected.roll, projected.pitch, projected.yaw);
+    }
+  }
   deleted_layout_item_ids_.clear();
   for (auto * canvas : editable_canvas_items) {
     canvas->setData(RoleMetadataExplicitlyEdited, false);
@@ -8983,8 +9031,8 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
   append_studio_log(QString("Save Layout: live authored session retained without Product View regeneration (selection id='%1').")
     .arg(stable_selected_id_before_refresh.isEmpty() ? "<none>" : stable_selected_id_before_refresh));
   workcell_builder::invalidate_workcell_studio_scene_metadata_snapshot(scene_dir, "save_layout");
-  capture_active_editable_layout_session();
   refresh_scene_hierarchy_tree_from_current_items();
+  capture_active_editable_layout_session();
   populate_scene_files_tab();
   if (!stable_selected_id_before_refresh.isEmpty()) {
     apply_scene_selection(stable_selected_id_before_refresh, QStringLiteral("unknown"), false, false);
