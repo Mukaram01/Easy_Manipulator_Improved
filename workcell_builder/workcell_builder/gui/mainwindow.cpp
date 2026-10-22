@@ -16,6 +16,7 @@
 // limitations under the License.
 
 #include "gui/mainwindow.h"
+#include "gui/web_edit_policy.hpp"
 #include "studio_page_navigation.hpp"
 #include "gui/layout_item_serializer.hpp"
 #include "gui/environment_task_editor.hpp"
@@ -4567,9 +4568,11 @@ void MainWindow::validate_generated_scene_for_selected_scene() {
     show_workflow_feedback("error", "Validation timed out after 120 s. Check the log, then run Validate again.");
     return;
   }
-  validation_stale_ = false;
   append_studio_log("Validate Generated Scene: " + plan.display_command());
   const bool validator_ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+  validation_stale_ = !validator_ok;   // only a verified pass clears the stale flag
+  validation_state_ = validator_ok ? QStringLiteral("passed") : QStringLiteral("failed");
+  validation_state_detail_ = validator_ok ? QStringLiteral("generated scene validator passed") : QStringLiteral("generated scene validator exit code %1").arg(process.exitCode());
   if (!validator_ok) {
     const QString tail = QString::fromUtf8(process.readAllStandardError()).trimmed().section('\n', -1).left(200);
     append_studio_log(QStringLiteral("Validate Generated Scene: validator exited with code %1. %2").arg(process.exitCode()).arg(tail));
@@ -6146,7 +6149,8 @@ void MainWindow::refresh_preview_launch_ui()
     const auto metadata = selected_scene_metadata_summary(s);
     if (preview_scene_label_) preview_scene_label_->setText(QString("<b>Cell: %1</b><br/>%2 · %3")
       .arg(metadata.scene_name.toHtmlEscaped(), metadata.robot.toHtmlEscaped(), metadata.end_effector.toHtmlEscaped()));
-    if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2").arg(QString::fromStdString(s.scene_name), readiness));
+    if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2<br/>Validation: <b>%3</b>")
+      .arg(QString::fromStdString(s.scene_name), readiness, validation_state_text()));
   }
   const auto current = selected_scene_readiness();
   if (preview_status_label_) preview_status_label_->setText(QString("<b>Readiness</b><br/>Saved: %1 · Generated: %2 · Validated: %3<br/>%4")
@@ -6173,8 +6177,80 @@ void MainWindow::refresh_preview_launch_ui()
   if (stop_preview_button_) { stop_preview_button_->setVisible(busy); stop_preview_button_->setEnabled(busy && !preview_stop_requested_); }
 }
 
-void MainWindow::run_offline_validation() { validation_stale_ = false; append_studio_log("Full offline validation completed"); open_selected_scene_artifact("run_acceptance"); refresh_new_cell_checklist(); }
-void MainWindow::run_layout_validation_only() { validation_stale_ = false; append_studio_log("Layout validation completed"); open_selected_scene_artifact("run_acceptance"); }
+// Validation is only "current" when the validator actually ran and passed.
+// Both buttons used to clear the stale flag before running anything.
+void MainWindow::run_offline_validation() { run_scene_validation_truthfully(QStringLiteral("Offline validation")); refresh_new_cell_checklist(); }
+void MainWindow::run_layout_validation_only() { run_scene_validation_truthfully(QStringLiteral("Layout validation")); }
+
+void MainWindow::run_scene_validation_truthfully(const QString & label)
+{
+  if (!has_selected_scene()) {
+    set_validation_state(QStringLiteral("unavailable"), QStringLiteral("%1 cannot run: no scene is selected.").arg(label));
+    return;
+  }
+  if (layout_dirty_) {
+    set_validation_state(QStringLiteral("blocked"), QStringLiteral("%1 is blocked: the layout has unsaved edits. Save Layout first.").arg(label));
+    return;
+  }
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  QString script;
+  if (!helper_script_exists("validate_workcell_studio_generated_scene.py", &script)) {
+    set_validation_state(QStringLiteral("unavailable"), QStringLiteral("%1 cannot run: validate_workcell_studio_generated_scene.py was not found. Searched: %2")
+      .arg(label, helper_script_search_paths("validate_workcell_studio_generated_scene.py").join(" | ")));
+    return;
+  }
+  set_validation_state(QStringLiteral("running"), QStringLiteral("%1 is running…").arg(label));
+  QApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+  const fs::path layout_file = s.scene_dir / "layout" / "workcell_studio_layout.yaml";
+  const fs::path merge_report = s.scene_dir / "generated" / "workcell_studio_layout_merge_report.json";
+  if (fs::exists(layout_file) && (!fs::exists(merge_report) || fs::last_write_time(layout_file) > fs::last_write_time(merge_report))) {
+    append_studio_log("Validation: running safe offline layout merge first");
+    workcell_builder::merge_workcell_studio_layout(s.scene_dir);
+  }
+  const QString executable = QStringLiteral("python3");
+  const QStringList arguments{script, QString::fromStdString(s.scene_dir.string()), QStringLiteral("--json")};
+  const QString working_directory = QFileInfo(script).dir().absolutePath() + QStringLiteral("/..");
+  const WorkcellCommandResult result = run_workcell_command_checked(executable, arguments, working_directory);
+  if (workcell_command_succeeded(result)) {
+    validation_stale_ = false;
+    set_validation_state(QStringLiteral("passed"), QStringLiteral("%1 passed for %2.").arg(label, QString::fromStdString(s.scene_name)));
+  } else if (!result.started || result.timed_out) {
+    set_validation_state(QStringLiteral("unavailable"), QStringLiteral("%1 could not finish: %2").arg(label,
+      result.timed_out ? QStringLiteral("the validator timed out after 120 s.") : QStringLiteral("the validator did not start (%1).").arg(result.error_string)));
+    append_studio_log(QStringLiteral("Validation unavailable: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
+  } else {
+    const QString cause = result.stderr_text.trimmed().section('\n', -1).left(220);
+    set_validation_state(QStringLiteral("failed"), QStringLiteral("%1 found problems (exit code %2)%3 Open the validation report, fix the listed items, then validate again.")
+      .arg(label).arg(result.exit_code).arg(cause.isEmpty() ? QStringLiteral(".") : QStringLiteral(": %1.").arg(cause)));
+    append_studio_log(QStringLiteral("Validation failed: %1").arg(workcell_command_failure_summary(executable, arguments, working_directory, result)));
+  }
+  refresh_scene_browser_ui();
+}
+
+QString MainWindow::validation_state_text() const
+{
+  const QString & state = validation_state_;
+  const QString shown = state == QStringLiteral("passed") ? QStringLiteral("passed")
+    : state == QStringLiteral("failed") ? QStringLiteral("failed")
+    : state == QStringLiteral("running") ? QStringLiteral("running")
+    : state == QStringLiteral("blocked") ? QStringLiteral("blocked")
+    : state == QStringLiteral("unavailable") ? QStringLiteral("unavailable") : QStringLiteral("not validated");
+  return validation_state_detail_.isEmpty() ? shown : QStringLiteral("%1</b> — %2<b>").arg(shown, validation_state_detail_.toHtmlEscaped());
+}
+
+void MainWindow::set_validation_state(const QString & state, const QString & detail)
+{
+  validation_state_ = state;
+  validation_state_detail_ = detail;
+  if (state != QStringLiteral("passed")) validation_stale_ = true;   // only a verified pass clears the stale flag
+  append_studio_log(QStringLiteral("Validation state: %1 — %2").arg(state, detail));
+  if (validation_summary_label_) {
+    validation_summary_label_->setText(QStringLiteral("<b>Validation Summary</b><br/>Scene: %1<br/>Validation: <b>%2</b>")
+      .arg(selected_scene_name().toHtmlEscaped(), validation_state_text()));
+  }
+  if (state == QStringLiteral("running")) return;
+  show_workflow_feedback(state == QStringLiteral("passed") ? "success" : state == QStringLiteral("failed") ? "error" : "warning", detail);
+}
 void MainWindow::check_canvas_generated_parity()
 {
   QString user_warning;
@@ -6749,6 +6825,30 @@ QString MainWindow::selected_scene_path() const
 {
   if (!selected_scene_state_.valid) return "";
   return selected_scene_state_.path;
+}
+
+// Task destination zones are declared in scene_manifest.yaml (task.destinations[].id).
+// The Product View renders them anchored to their target bin, so a bin move also
+// reports them as moved; they are derived records with no authored layout entry.
+QSet<QString> MainWindow::scene_task_destination_ids() const
+{
+  QSet<QString> ids;
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return ids;
+  const fs::path manifest = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)].scene_dir / "scene_manifest.yaml";
+  if (!fs::exists(manifest)) return ids;
+  try {
+    const YAML::Node root = YAML::LoadFile(manifest.string());
+    for (const YAML::Node & parent : {root["task"], root}) {
+      if (!parent || !parent["destinations"] || !parent["destinations"].IsSequence()) continue;
+      for (const auto & destination : parent["destinations"]) {
+        if (destination["id"]) ids.insert(QString::fromStdString(destination["id"].as<std::string>()).trimmed());
+      }
+    }
+  } catch (const std::exception & exc) {
+    const_cast<MainWindow *>(this)->append_studio_log(QStringLiteral("Save Layout: scene_manifest.yaml could not be read for destination zones: %1").arg(exc.what()));
+  }
+  ids.remove(QString());
+  return ids;
 }
 
 bool MainWindow::has_selected_scene() const
@@ -8200,6 +8300,7 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
   };
   QVector<ValidatedTransform> validated;
   QSet<QString> seen_ids;
+  const QSet<QString> task_destination_ids = scene_task_destination_ids();
   const QJsonArray edits = web_patch.value(QStringLiteral("edits")).toArray();
   for (const auto & value : edits) {
     const QJsonObject edit = value.toObject();
@@ -8238,21 +8339,25 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
       }
     }
     auto * canvas = find_canvas_item_by_stable_id(id);
-    if (!canvas) {
-      // The browser also reports derived records that follow an authored item
-      // (for example the task destination zone anchored to the target bin).
-      // They have no authored layout entry, so there is nothing to persist;
-      // failing the whole save here blocked every edit of ur5_2f_test.
-      append_studio_log(QStringLiteral(
-        "Save Layout: ignored browser transform for '%1'; it is not an authored layout item (derived record).").arg(id));
-      continue;
-    }
-    if (canvas->data(RoleLocked).toBool() ||
-        canvas->data(RoleSourceLayer).toString().trimmed() != QStringLiteral("editable_layout") ||
-        deleted_layout_item_ids_.contains(id)) {
-      if (error) *error = QStringLiteral(
-        "Persisted item '%1' is locked, deleted, or outside editable_layout. No file was written; the unified authored session remains dirty.").arg(id);
-      return false;
+    workcell_builder::WebEditFacts facts;
+    facts.item_id = id;
+    facts.canvas_found = canvas != nullptr;
+    facts.locked = canvas && canvas->data(RoleLocked).toBool();
+    facts.source_layer = canvas ? canvas->data(RoleSourceLayer).toString() : QString();
+    facts.deleted = deleted_layout_item_ids_.contains(id);
+    facts.known_derived = !canvas && task_destination_ids.contains(id);
+    QString disposition_reason;
+    switch (workcell_builder::classify_web_edit(facts, &disposition_reason)) {
+      case workcell_builder::WebEditDisposition::SkipDerived:
+        // Positively identified: the scene's task destination zone follows its
+        // target bin in the Product View and has no authored layout entry.
+        append_studio_log(disposition_reason);
+        continue;
+      case workcell_builder::WebEditDisposition::Reject:
+        if (error) *error = disposition_reason;
+        return false;
+      case workcell_builder::WebEditDisposition::Persist:
+        break;
     }
     validated.push_back({canvas, id, xyz.value("x").toDouble(), xyz.value("y").toDouble(),
       xyz.value("z").toDouble(), rpy.value("x").toDouble(), rpy.value("y").toDouble(),

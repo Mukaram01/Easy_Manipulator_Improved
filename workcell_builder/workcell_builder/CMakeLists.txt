@@ -492,6 +492,11 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_visual_mesh_source_resolver_test
     test/visual_mesh_source_resolver_test.cpp
     src_visual_mesh_source_resolver.cpp)
+  ament_add_gtest(workcell_web_edit_policy_test test/web_edit_policy_test.cpp)
+  if(TARGET workcell_web_edit_policy_test)
+    target_include_directories(workcell_web_edit_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(workcell_web_edit_policy_test Qt5::Core)
+  endif()
   ament_add_gtest(workcell_studio_theme_test test/studio_theme_test.cpp gui/workcell_builder_ui_utils.cpp)
   if(TARGET workcell_studio_theme_test)
     target_include_directories(workcell_studio_theme_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -842,6 +847,7 @@ if(BUILD_TESTING)
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
     studio_theme_test.cpp
+    web_edit_policy_test.cpp
     support_contact_policy_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test
