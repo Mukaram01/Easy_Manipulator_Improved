@@ -1218,7 +1218,7 @@ int main(int argc, char * argv[])
     return report.value("pass").toBool() ? 0 : 1;
   }
 
-  a.setStyleSheet(workcell_builder::workcellStudioStyleSheet());
+  workcell_builder::applyStudioApplicationAppearance(&a);
 
   if (has_cli_flag(args, "--persistence-only")) {
     const QString output = cli_value(args, "--smoke-output");

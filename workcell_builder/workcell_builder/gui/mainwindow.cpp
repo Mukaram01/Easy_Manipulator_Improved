@@ -52,6 +52,9 @@
 #include <QToolBar>
 #include <QToolTip>
 #include <QApplication>
+#include <QPointer>
+#include <QTimer>
+#include <QStyle>
 #include <QClipboard>
 #include <QDir>
 #include <QUrl>
@@ -1858,7 +1861,7 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
 {
   ui->setupUi(this);
   workcell_builder::applyCompactDialogDefaults(this);
-  setWindowTitle("Workcell Studio - Workcell Builder");
+  setWindowTitle("Workcell Studio - Workcell Builder[*]");
   ui->next->setDisabled(true);
   ui->change_workcell->setDisabled(true);
   ui->quick_start_label->hide();
@@ -1953,41 +1956,55 @@ MainWindow::MainWindow(const QString & startup_workspace, const QString & startu
 
 void MainWindow::apply_studio_theme()
 {
-  setStyleSheet(
-    "QWidget#workcellStudioDashboardPage { background: #F5F7FA; color: #1F2933; }"
-    "QFrame#studioCard, QFrame#studioHomeHeroCard, QFrame#studioHomeDetailsCard, QFrame#studioPanel {"
-    " background: #FFFFFF; border: 1px solid #D0D7DE; border-radius: 8px; }"
-    "QLabel#dashboardTitleLabel { color: #1F2933; font-size: 24px; font-weight: 700; }"
-    "QLabel#dashboardSubtitleLabel, QLabel#dashboardSummaryLabel, QLabel#studioHomeSummaryCard { color: #5B6775; }"
-    "QTableWidget#studioHomeSceneTable { background: #FFFFFF; color: #1F2933; gridline-color: #D0D7DE; }"
-    "QHeaderView::section { background: #F5F7FA; color: #1F2933; border: 1px solid #D0D7DE; padding: 4px; }"
-    "QPushButton#studioHomePrimaryButton { background: #2563EB; color: white; border: 1px solid #1D4ED8; border-radius: 6px; padding: 6px 10px; font-weight: 600; }"
-    "QPushButton#studioHomeSecondaryButton { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; border-radius: 6px; padding: 6px 10px; }"
-    "QPushButton#studioHomeDangerButton { background: #FFFFFF; color: #B91C1C; border: 1px solid #FCA5A5; border-radius: 6px; padding: 6px 10px; }"
-    "QLabel#studioHomeSafetyPill { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 2px 8px; }"
-    "QTextEdit#studioHomeLog { background: #FFFFFF; color: #1F2933; border: 1px solid #D0D7DE; }"
-    "QWidget#workcellStudioSceneBuilderPage { background: #F4F7FA; color: #17212B; }"
-    "QWidget#sceneBuilderWorkspace { background: #E8EEF4; border: 1px solid #CAD4DF; border-radius: 10px; }"
-    "QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background: #F8FAFC; border: 0; }"
-    "QFrame#sceneBuilderProductViewPanel { background: #EEF2F6; border: 0; }"
-    "QFrame#sceneBuilderBottomStatusBar { background: #FFFFFF; border: 1px solid #D8E0E8; border-radius: 7px; }"
-    "QLabel#sceneBuilderCompactSceneIdentity { color: #5B6775; font-size: 12px; }"
-    "QLabel#sceneBuilderInspectorLabel { color: #17212B; font-size: 15px; font-weight: 650; }"
-    "QLabel#sceneBuilderIssueCount { background: #FFF1F2; color: #B42332; border: 1px solid #FECDD3; border-radius: 9px; padding: 2px 7px; }"
-    "QTabWidget::pane { border: 1px solid #D8E0E8; border-radius: 8px; background: #FFFFFF; top: -1px; }"
-    "QTabBar::tab { background: transparent; color: #617083; padding: 7px 11px; border: 0; border-bottom: 2px solid transparent; }"
-    "QTabBar::tab:selected { color: #155EEF; border-bottom: 2px solid #155EEF; font-weight: 650; }"
-    "QPushButton, QToolButton { min-height: 28px; border: 1px solid #C9D3DE; border-radius: 7px; padding: 3px 9px; background: #FFFFFF; color: #243447; }"
-    "QPushButton:hover, QToolButton:hover { border-color: #84ADFF; background: #F1F6FF; }"
-    "QPushButton:checked, QToolButton:checked { border-color: #155EEF; background: #EAF1FF; color: #0B4CC1; font-weight: 650; }"
-    "QPushButton[role=\"primary\"] { background: #155EEF; color: #FFFFFF; border-color: #155EEF; font-weight: 650; min-height: 32px; }"
-    "QPushButton[role=\"primary\"]:hover { background: #0B4CC1; border-color: #0B4CC1; }"
-    "QLineEdit, QComboBox, QDoubleSpinBox { min-height: 27px; border: 1px solid #C9D3DE; border-radius: 6px; background: #FFFFFF; padding: 2px 6px; selection-background-color: #DCE8FF; }"
-    "QGroupBox { border: 1px solid #D8E0E8; border-radius: 8px; margin-top: 8px; padding-top: 8px; font-weight: 600; }"
-    "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #344054; }"
-    "QScrollArea { border: 0; background: transparent; }");
-  append_studio_log("Loaded Workcell Studio light theme.");
-  statusBar()->showMessage("Workcell Studio light theme loaded.");
+  // Page-level rules on top of the application sheet; all colours are tokens.
+  setStyleSheet(workcell_builder::studioQss(QStringLiteral(R"QSS(
+    QWidget#workcellStudioDashboardPage { background: @bg; color: @text; }
+    QFrame#studioCard, QFrame#studioHomeHeroCard, QFrame#studioHomeDetailsCard, QFrame#studioPanel { background: @surface; border: 1px solid @border; border-radius: @radiusM; }
+    QLabel#dashboardTitleLabel { color: @text; font-size: 24px; font-weight: 700; }
+    QLabel#dashboardSubtitleLabel, QLabel#dashboardSummaryLabel, QLabel#studioHomeSummaryCard { color: @textSecondary; }
+    QTableWidget#studioHomeSceneTable { background: @surface; color: @text; gridline-color: @border; }
+    QPushButton#studioHomePrimaryButton { background: @accent; color: @accentText; border: 1px solid @accent; border-radius: @radiusS; padding: 6px 12px; font-weight: 650; }
+    QPushButton#studioHomePrimaryButton:hover { background: @accentHover; border-color: @accentHover; }
+    QPushButton#studioHomeSecondaryButton { background: @surface; color: @text; border: 1px solid @borderStrong; border-radius: @radiusS; padding: 6px 12px; }
+    QPushButton#studioHomeDangerButton { background: @surface; color: @danger; border: 1px solid @danger; border-radius: @radiusS; padding: 6px 12px; }
+    QLabel#studioHomeSafetyPill { background: @accentSoft; color: @accent; border: 1px solid @border; border-radius: 10px; padding: 2px 8px; }
+    QTextEdit#studioHomeLog { background: @surface; color: @text; border: 1px solid @border; }
+    QWidget#workcellStudioSceneBuilderPage { background: @bg; color: @text; }
+    QWidget#sceneBuilderWorkspace { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background: @surface; border: 0; }
+    QFrame#sceneBuilderProductViewPanel { background: @surfaceSunken; border: 0; }
+    QFrame#sceneBuilderBottomStatusBar { background: @surface; border: 1px solid @border; border-radius: @radiusS; }
+    QLabel#sceneBuilderCompactSceneIdentity { color: @textSecondary; font-size: 12px; }
+    QLabel#sceneBuilderInspectorLabel { color: @text; font-size: 15px; font-weight: 650; }
+    QLabel#sceneBuilderIssueCount { background: @dangerSoft; color: @danger; border: 1px solid @danger; border-radius: 9px; padding: 2px 7px; }
+  )QSS")));
+  const bool dark = workcell_builder::studioAppearance() == workcell_builder::StudioAppearance::Dark;
+  append_studio_log(dark ? "Loaded Workcell Studio dark appearance." : "Loaded Workcell Studio light appearance.");
+  statusBar()->showMessage(dark ? "Workcell Studio dark appearance loaded." : "Workcell Studio light appearance loaded.");
+}
+
+void MainWindow::show_workflow_feedback(const QString & kind, const QString & text)
+{
+  // Non-blocking outcome banner in the contextual top bar (the status bar is
+  // hidden by the product shell). Errors stay until replaced; success fades.
+  auto * label = findChild<QLabel *>(QStringLiteral("studioContextFeedback"));
+  if (!label) return;
+  const QString prefix = kind == QStringLiteral("error") ? QStringLiteral("✕  ")
+    : kind == QStringLiteral("warning") ? QStringLiteral("!  ") : QStringLiteral("✓  ");
+  label->setToolTip(text);
+  label->setText(label->fontMetrics().elidedText(prefix + text, Qt::ElideRight, 620));
+  label->setProperty("kind", kind);
+  label->style()->unpolish(label);
+  label->style()->polish(label);
+  label->show();
+  const int generation = label->property("feedbackGeneration").toInt() + 1;
+  label->setProperty("feedbackGeneration", generation);
+  if (kind != QStringLiteral("error")) {
+    QPointer<QLabel> safe(label);
+    QTimer::singleShot(9000, this, [safe, generation]() {
+      if (safe && safe->property("feedbackGeneration").toInt() == generation) safe->hide();
+    });
+  }
 }
 
 void MainWindow::toggle_full_screen()
@@ -3505,14 +3522,16 @@ void MainWindow::setup_studio_shell()
   selected_item_card_layout->addWidget(transform_title);
   auto * pose_grid = new QGridLayout();
   pose_grid->setHorizontalSpacing(6);
-  auto configure_spin = [](QDoubleSpinBox *sb) { sb->setMinimumWidth(76); sb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed); };
+  auto configure_spin = [](QDoubleSpinBox *sb) { sb->setMinimumWidth(64); sb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed); };
   inspector_x_ = new QDoubleSpinBox(scene_builder); inspector_x_->setPrefix("X "); configure_spin(inspector_x_); pose_grid->addWidget(inspector_x_, 0, 0);
   inspector_y_ = new QDoubleSpinBox(scene_builder); inspector_y_->setPrefix("Y "); configure_spin(inspector_y_); pose_grid->addWidget(inspector_y_, 0, 1);
   inspector_z_ = new QDoubleSpinBox(scene_builder); inspector_z_->setPrefix("Z "); configure_spin(inspector_z_); pose_grid->addWidget(inspector_z_, 0, 2);
   for (auto * position_spin : {inspector_x_, inspector_y_, inspector_z_}) position_spin->setRange(-1000.0, 1000.0);
+  for (auto * position_spin : {inspector_x_, inspector_y_, inspector_z_}) position_spin->setSuffix(" m");
   inspector_roll_ = new QDoubleSpinBox(scene_builder); inspector_roll_->setPrefix("Roll "); configure_spin(inspector_roll_); pose_grid->addWidget(inspector_roll_, 1, 0);
   inspector_pitch_ = new QDoubleSpinBox(scene_builder); inspector_pitch_->setPrefix("Pitch "); configure_spin(inspector_pitch_); pose_grid->addWidget(inspector_pitch_, 1, 1);
   inspector_yaw_ = new QDoubleSpinBox(scene_builder); inspector_yaw_->setPrefix("Yaw "); configure_spin(inspector_yaw_); pose_grid->addWidget(inspector_yaw_, 1, 2);
+  for (auto * angle_spin : {inspector_roll_, inspector_pitch_, inspector_yaw_}) angle_spin->setSuffix(QString::fromUtf8("\u00B0"));
   selected_item_card_layout->addLayout(pose_grid);
   auto * transform_actions = new QGridLayout();
   inspector_apply_button_ = new QPushButton("Apply", scene_builder); transform_actions->addWidget(inspector_apply_button_, 0, 0);
@@ -4528,22 +4547,33 @@ void MainWindow::validate_generated_scene_for_selected_scene() {
   if (!helper_script_exists("validate_builder_generated_scene.py", &script)) {
     append_studio_log("Validate Generated Scene: script missing. Searched: " +
       helper_script_search_paths("validate_builder_generated_scene.py").join(" | "));
+    show_workflow_feedback("error", "Validation could not run: the validator script is missing. See the log for the searched paths.");
     return;
   }
   const auto plan = workcell_builder::build_validate_generated_scene_command_plan(
     script, QString::fromStdString(sc.scene_dir.string()));
   if (!plan.ready()) {
     append_studio_log("Validate Generated Scene: " + plan.missing_fields_message());
+    show_workflow_feedback("error", "Validation could not run: " + plan.missing_fields_message());
     return;
   }
   QProcess process;
   process.start("python3", QStringList() << plan.script_path << plan.arguments);
   if (!process.waitForFinished(120000)) {
     append_studio_log("Validate Generated Scene: timed out while waiting for helper script.");
+    show_workflow_feedback("error", "Validation timed out after 120 s. Check the log, then run Validate again.");
     return;
   }
   validation_stale_ = false;
   append_studio_log("Validate Generated Scene: " + plan.display_command());
+  const bool validator_ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+  if (!validator_ok) {
+    const QString tail = QString::fromUtf8(process.readAllStandardError()).trimmed().section('\n', -1).left(200);
+    append_studio_log(QStringLiteral("Validate Generated Scene: validator exited with code %1. %2").arg(process.exitCode()).arg(tail));
+  }
+  show_workflow_feedback(validator_ok ? "success" : "error", validator_ok
+    ? QStringLiteral("Validation finished for the generated scene. Open Checks to review the report.")
+    : QStringLiteral("Validation reported problems (exit code %1). Open Checks, fix the listed items, then Generate and Validate again.").arg(process.exitCode()));
   refresh_new_cell_checklist();
 }
 void MainWindow::copy_build_launch_commands_for_selected_scene() {
@@ -7835,6 +7865,7 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   if (save_layout_button_) save_layout_button_->setEnabled(true);
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", true);
+    setWindowModified(true);
     save_layout_button_->style()->unpolish(save_layout_button_);
     save_layout_button_->style()->polish(save_layout_button_);
   }
@@ -8146,7 +8177,7 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
 void MainWindow::save_layout_changes(){
   if (environment_task_editor_ && environment_task_editor_->scene() == selected_scene_path() && environment_task_editor_->dirty()) {
     QString error;
-    if (!environment_task_editor_->save(&error)) { append_studio_log("Save blocked: " + error); return; }
+    if (!environment_task_editor_->save(&error)) { append_studio_log("Save blocked: " + error); show_workflow_feedback("error", "Save blocked: " + error); return; }
   }
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
     scene_preview_widget_->request_authoring_save();
@@ -8260,6 +8291,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
       .arg(target)
       .arg(blocker);
     append_studio_log(detail);
+    show_workflow_feedback("error", QStringLiteral("Save failed: %1 No file was written; your edits are still in the editor.").arg(blocker));
   };
 
   QString selected_preview_id;
@@ -8704,6 +8736,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
   layout_dirty_ = false;
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);
+    setWindowModified(false);
     save_layout_button_->style()->unpolish(save_layout_button_);
     save_layout_button_->style()->polish(save_layout_button_);
   }
@@ -8721,6 +8754,11 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
   } else {
     append_studio_log(QString("Saved scene layout metadata to %1").arg(QString::fromStdString(effective_layout_path.string())));
   }
+  show_workflow_feedback(editable_saved_count == 0 ? "warning" : "success",
+    editable_saved_count == 0
+      ? QStringLiteral("Saved layout metadata only: no editable items yet. Add an item or create an editable layout from the preview.")
+      : QStringLiteral("Saved %1 editable item(s) to %2. Generated outputs are now stale: run Generate, then Validate.")
+          .arg(QString::number(static_cast<int>(editable_saved_count)), QFileInfo(QString::fromStdString(effective_layout_path.string())).fileName()));
 
   append_studio_log(QString("Save Layout: serialized %1 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.")
     .arg(static_cast<int>(editable_saved_count)));
@@ -8925,6 +8963,7 @@ void MainWindow::revert_layout_changes()
   layout_dirty_ = false;
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);
+    setWindowModified(false);
     save_layout_button_->style()->unpolish(save_layout_button_);
     save_layout_button_->style()->polish(save_layout_button_);
   }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "workcell_builder_ui_utils.hpp"
+
 // Target Workcell Studio shell for the production Home page.
 //
 // This deliberately reuses the existing scene table, selection lifecycle and
@@ -224,8 +226,8 @@ public:
 
     const QRect r = option.rect;
     const bool selected = option.state & QStyle::State_Selected;
-    const QColor primary = selected ? QColor(QStringLiteral("#123F74")) : QColor(QStringLiteral("#102B4E"));
-    const QColor muted = selected ? QColor(QStringLiteral("#45698D")) : QColor(QStringLiteral("#70849A"));
+    const QColor primary(studioTokens().text);
+    const QColor muted(selected ? studioTokens().textSecondary : studioTokens().textMuted);
     const QAbstractItemModel * model = index.model();
     const QModelIndex first = model->index(index.row(), 0);
     const QString raw_id = first.data(Qt::ToolTipRole).toString().trimmed().isEmpty()
@@ -234,8 +236,8 @@ public:
 
     if (index.column() == 0) {
       const QRect thumb(r.left() + 10, r.top() + 7, 70, r.height() - 14);
-      painter->setPen(QPen(QColor(QStringLiteral("#DCE5EF")), 1));
-      painter->setBrush(QColor(QStringLiteral("#F7F9FC")));
+      painter->setPen(QPen(QColor(studioTokens().border), 1));
+      painter->setBrush(QColor(studioTokens().surfaceRaised));
       painter->drawRoundedRect(thumb, 5, 5);
       const QString preview_path = current_valid_home_preview_path(workspace_root_, raw_id);
       QPixmap pixmap(preview_path);
@@ -247,7 +249,7 @@ public:
           thumb.size() - QSize(4, 4), Qt::KeepAspectRatio, Qt::SmoothTransformation));
         painter->setClipping(false);
       } else {
-        painter->setPen(QColor(QStringLiteral("#7B91A8")));
+        painter->setPen(QColor(studioTokens().textMuted));
         painter->drawText(thumb, Qt::AlignCenter, QStringLiteral("◇"));
       }
       const QRect text_rect(thumb.right() + 12, r.top() + 9, r.right() - thumb.right() - 20, r.height() - 18);
@@ -264,12 +266,12 @@ public:
       painter->drawText(text_rect.adjusted(0, 23, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, raw_id);
     } else if (index.column() == 1) {
       const QString status = clean_status(index.data(Qt::DisplayRole).toString());
-      QColor accent(QStringLiteral("#D97706"));
+      QColor accent(studioTokens().warning);
       QString icon = QStringLiteral("△");
       if (status == QStringLiteral("Ready")) {
-        accent = QColor(QStringLiteral("#14804A")); icon = QStringLiteral("●");
+        accent = QColor(studioTokens().success); icon = QStringLiteral("●");
       } else if (status == QStringLiteral("Blocked")) {
-        accent = QColor(QStringLiteral("#C52B2B")); icon = QStringLiteral("×");
+        accent = QColor(studioTokens().danger); icon = QStringLiteral("×");
       }
       QFont strong = option.font; strong.setBold(true);
       painter->setFont(strong); painter->setPen(accent);
@@ -291,7 +293,7 @@ public:
       const bool pinned = first.data(kPinnedRole).toBool();
       QFont star = option.font; star.setPixelSize(18); star.setBold(true);
       painter->setFont(star);
-      painter->setPen(pinned ? QColor(QStringLiteral("#123F7A")) : QColor(QStringLiteral("#9DB0C4")));
+      painter->setPen(pinned ? QColor(studioTokens().accent) : QColor(studioTokens().textMuted));
       painter->drawText(r, Qt::AlignCenter, pinned ? QStringLiteral("★") : QStringLiteral("☆"));
     }
     painter->restore();
@@ -458,22 +460,23 @@ inline void build_application_shell(QMainWindow * window, QStackedWidget * pages
   if (QFrame * log = window->findChild<QFrame *>(QStringLiteral("sceneBuilderLogDrawer"))) log->hide();
   if (window->statusBar()) window->statusBar()->hide();
 
-  central->setStyleSheet(central->styleSheet() + QStringLiteral(
-    "QFrame#studioTargetSidebar{background:#0B2341;border:0;border-right:1px solid #163B63;}"
-    "QLabel#studioTargetBrand{color:#FFFFFF;font-size:17px;font-weight:900;letter-spacing:.5px;}"
-    "QPushButton#studioTargetNewCell{background:#0758D8;color:#FFFFFF;border:1px solid #146AE8;border-radius:6px;font-weight:800;text-align:left;padding-left:14px;}"
-    "QPushButton#studioTargetNewCell:hover{background:#0865EE;}"
-    "QPushButton#studioTargetNavButton{background:transparent;color:#E2ECF7;border:0;border-radius:6px;text-align:left;padding-left:13px;font-size:12px;font-weight:650;}"
-    "QPushButton#studioTargetNavButton:hover{background:#11365D;}"
-    "QPushButton#studioTargetNavButton[active=true]{background:#12457A;color:#FFFFFF;}"
-    "QLabel#studioTargetOnline{color:#AFC3D8;font-size:11px;line-height:1.5;}"
-    "QLabel#studioTargetVersion{color:#7992AA;font-size:10px;}"
-    "QWidget#studioTargetRightShell{background:#F5F8FC;}"
-    "QFrame#studioTargetTopbar{background:#FFFFFF;border:0;border-bottom:1px solid #DDE6EF;}"
-    "QLabel#studioTargetFakePill{background:#F3FBF6;color:#14794A;border:1px solid #D6E9DF;border-radius:17px;padding:7px 15px;font-size:10px;font-weight:750;}"
-    "QLabel#studioTargetLockedPill{background:#F8FAFD;color:#183C67;border:1px solid #DCE5EF;border-radius:17px;padding:7px 15px;font-size:10px;font-weight:750;}"
-    "QToolButton#studioTargetCircleButton{background:#FFFFFF;color:#173B68;border:1px solid #DCE5EF;border-radius:17px;min-width:34px;max-width:34px;min-height:34px;max-height:34px;padding:0;font-weight:800;}"
-    "QLabel#studioTargetAvatar{background:#0C2749;color:#FFFFFF;border-radius:19px;font-size:11px;font-weight:800;}"));
+  central->setStyleSheet(central->styleSheet() + studioQss(QStringLiteral(R"QSS(
+    QFrame#studioTargetSidebar { background: @sidebar; border: 0; border-right: 1px solid @sidebarRaised; }
+    QLabel#studioTargetBrand { color: #FFFFFF; font-size: 17px; font-weight: 800; letter-spacing: .4px; }
+    QPushButton#studioTargetNewCell { background: @accent; color: @accentText; border: 1px solid @accent; border-radius: @radiusS; min-height: 36px; font-weight: 700; text-align: left; padding-left: 14px; }
+    QPushButton#studioTargetNewCell:hover { background: @accentHover; border-color: @accentHover; }
+    QPushButton#studioTargetNavButton { background: transparent; color: @sidebarText; border: 0; border-radius: @radiusS; min-height: 34px; text-align: left; padding-left: 13px; font-size: 12px; font-weight: 600; }
+    QPushButton#studioTargetNavButton:hover { background: rgba(255,255,255,0.08); }
+    QPushButton#studioTargetNavButton[active=true] { background: @sidebarRaised; color: #FFFFFF; }
+    QLabel#studioTargetOnline { color: @sidebarMuted; font-size: 11px; }
+    QLabel#studioTargetVersion { color: @sidebarMuted; font-size: 10px; }
+    QWidget#studioTargetRightShell { background: @bg; }
+    QFrame#studioTargetTopbar { background: @glass; border: 0; border-bottom: 1px solid @glassBorder; }
+    QLabel#studioTargetFakePill { background: @successSoft; color: @success; border: 1px solid @border; border-radius: 17px; padding: 7px 15px; font-size: 10px; font-weight: 750; }
+    QLabel#studioTargetLockedPill { background: @surfaceSunken; color: @textSecondary; border: 1px solid @border; border-radius: 17px; padding: 7px 15px; font-size: 10px; font-weight: 750; }
+    QToolButton#studioTargetCircleButton { background: @surface; color: @text; border: 1px solid @border; border-radius: 17px; min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px; padding: 0; font-weight: 800; }
+    QLabel#studioTargetAvatar { background: @sidebar; color: #FFFFFF; border-radius: 19px; font-size: 11px; font-weight: 800; }
+  )QSS")));
 }
 
 inline QFrame * metric_card(const QString & icon, const QString & label, int count, const QString & hint,
@@ -761,7 +764,7 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
 
   auto * meta = new QWidget(inspector); meta->setObjectName(QStringLiteral("studioTargetMetadata"));
   auto * grid = new QGridLayout(meta); grid->setContentsMargins(0, 4, 0, 4); grid->setHorizontalSpacing(16); grid->setVerticalSpacing(7);
-  const QStringList keys = {QStringLiteral("♙   Robot"), QStringLiteral("⌘   Tool / Gripper"), QStringLiteral("▣   Task"), QStringLiteral("◉   Fake Hardware"), QStringLiteral("◷   Modified")};
+  const QStringList keys = {QStringLiteral("♙   Robot"), QStringLiteral("⌘   Tool / Gripper"), QStringLiteral("▣   Task"), QStringLiteral("◉   Sim launch (fake hardware)"), QStringLiteral("◷   Modified")};
   const QStringList names = {QStringLiteral("studioTargetMetaRobot"), QStringLiteral("studioTargetMetaTool"), QStringLiteral("studioTargetMetaTask"), QStringLiteral("studioTargetMetaLaunch"), QStringLiteral("studioTargetMetaUpdated")};
   for (int i = 0; i < keys.size(); ++i) {
     auto * key = new QLabel(keys[i], meta); key->setObjectName(QStringLiteral("studioTargetMetaKey"));
@@ -779,8 +782,25 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
   readiness_layout->addWidget(view_validation, 0, Qt::AlignLeft);
   layout->addWidget(readiness_card);
 
+  // The one obvious next step for a first-time user: open the selected cell in
+  // the Scene Builder. It reuses the sidebar's Product View navigation exactly.
+  auto * open_cell = new QPushButton(QStringLiteral("Open in Scene Builder"), inspector);
+  open_cell->setObjectName(QStringLiteral("studioTargetOpenPrimary"));
+  open_cell->setProperty("role", QStringLiteral("primary"));
+  open_cell->setToolTip(QStringLiteral("Edit the robot, gripper and environment of the selected workcell in the 3D Scene Builder."));
+  open_cell->setCursor(Qt::PointingHandCursor);
+  QObject::connect(open_cell, &QPushButton::clicked, window, [window]() {
+    // The dashboard's own "Open in Scene Builder" action loads the selected
+    // scene; the sidebar's Product View only switches pages.
+    if (QAction * open_action = action_with_text(window, {QStringLiteral("Open in Scene Builder")})) {
+      open_action->trigger();
+      return;
+    }
+    for (auto * button : window->findChildren<QPushButton *>(QStringLiteral("studioTargetNavButton")))
+      if (button && button->text().contains(QStringLiteral("Product View"))) { button->click(); return; }
+  });
   auto * action_row = new QHBoxLayout();
-  action_row->addStretch(1); action_row->addWidget(more); layout->addLayout(action_row);
+  action_row->addWidget(open_cell, 1); action_row->addWidget(more); layout->addLayout(action_row);
 
   const auto source_action = [source_menu](const QString & text) -> QAction * {
     if (!source_menu) return nullptr;
@@ -948,46 +968,48 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
   QObject::connect(table, &QTableWidget::itemSelectionChanged, window,
     [window, table, workspace_root]() { refresh_target_details(window, table, workspace_root); });
 
-  home->setStyleSheet(QStringLiteral(
-    "QWidget#studioTargetHomeContent{background:#F6F9FC;color:#102B4E;}"
-    "QLabel#studioTargetHeading{color:#102B4E;font-size:23px;font-weight:900;}"
-    "QLabel#studioTargetSubheading{color:#617A94;font-size:11px;}"
-    "QFrame#studioTargetMetricCard{background:#FFFFFF;border:1px solid #DDE6EF;border-radius:8px;}"
-    "QLabel#studioTargetMetricIcon{border-radius:18px;font-size:17px;font-weight:900;}"
-    "QLabel#studioTargetMetricIcon[kind=total]{background:#EDF4FF;color:#1260E8;}"
-    "QLabel#studioTargetMetricIcon[kind=ready]{background:#ECF8F1;color:#13804A;}"
-    "QLabel#studioTargetMetricIcon[kind=attention]{background:#FFF5E8;color:#E46F08;}"
-    "QLabel#studioTargetMetricIcon[kind=blocked]{background:#FDEEEF;color:#D62E3A;}"
-    "QLabel#studioTargetMetricLabel{color:#173656;font-size:11px;font-weight:750;}"
-    "QLabel#studioTargetMetricValue{color:#0D2F59;font-size:18px;font-weight:900;}"
-    "QLabel#studioTargetMetricHint{color:#68809A;font-size:9px;}"
-    "QLineEdit#studioTargetSearch,QComboBox#studioTargetFilter{background:#FFFFFF;color:#173656;border:1px solid #D4E0EB;border-radius:6px;min-height:38px;padding:0 11px;}"
-    "QPushButton#studioTargetPinnedFilter,QComboBox#studioTargetSort{background:#FFFFFF;color:#173656;border:1px solid #D4E0EB;border-radius:6px;min-height:38px;padding:0 13px;font-weight:650;}"
-    "QPushButton#studioTargetPinnedFilter:checked{background:#EEF4FF;color:#0C55C8;border-color:#AFC9EE;}"
-    "QFrame#studioTargetTableCard{background:#FFFFFF;border:1px solid #DCE5EF;border-radius:8px;}"
-    "QTableWidget#studioHomeSceneTable{background:#FFFFFF;color:#173656;border:0;outline:0;}"
-    "QTableWidget#studioHomeSceneTable::item{border:0;border-bottom:1px solid #E7EDF4;padding:0;}"
-    "QTableWidget#studioHomeSceneTable::item:selected{background:#EDF4FD;color:#123F74;}"
-    "QHeaderView::section{background:#F9FBFD;color:#35516F;border:0;border-bottom:1px solid #DCE5EF;padding:7px 9px;font-size:9px;font-weight:800;}"
-    "QLabel#studioTargetTableFooter{color:#70849A;background:#FFFFFF;border:0;border-top:1px solid #E7EDF4;font-size:9px;}"
-    "QFrame#studioTargetInspector{background:#FFFFFF;border:1px solid #DCE5EF;border-radius:8px;}"
-    "QLabel#studioTargetInspectorEyebrow{color:#173656;font-size:11px;font-weight:800;}"
-    "QToolButton#studioTargetInspectorPin{background:transparent;color:#143B68;border:0;min-width:28px;max-width:28px;min-height:28px;max-height:28px;padding:0;font-size:17px;}"
-    "QToolButton#studioTargetInspectorMore{background:#FFFFFF;color:#143B68;border:1px solid #C8D8EA;border-radius:5px;min-height:34px;padding:0 10px;font-size:10px;font-weight:750;}"
-    "QLabel#studioTargetSelectedTitle{color:#102B4E;font-size:20px;font-weight:900;}"
-    "QLabel#studioTargetSelectedId{color:#70849A;font-size:10px;}"
-    "QLabel#studioTargetStatus{border-radius:8px;padding:3px 8px;font-size:9px;font-weight:800;}"
-    "QLabel#studioTargetStatus[kind=neutral]{background:#EFF3F7;color:#66798C;border:1px solid #DCE4EB;}"
-    "QLabel#studioTargetStatus[kind=ready]{background:#ECF8F1;color:#147A49;border:1px solid #C8E5D3;}"
-    "QLabel#studioTargetStatus[kind=attention]{background:#FFF5E8;color:#C66708;border:1px solid #F1D1A6;}"
-    "QLabel#studioTargetStatus[kind=blocked]{background:#FDEEEF;color:#BC2B34;border:1px solid #EFBEC2;}"
-    "QLabel#studioTargetPreview{background:#121B24;color:#C4D0DC;border:1px solid #263847;border-radius:7px;font-size:10px;font-weight:700;}"
-    "QWidget#studioTargetMetadata{background:transparent;}"
-    "QLabel#studioTargetMetaKey{color:#536C86;font-size:10px;}"
-    "QLabel#studioTargetMetaRobot,QLabel#studioTargetMetaTool,QLabel#studioTargetMetaTask,QLabel#studioTargetMetaLaunch,QLabel#studioTargetMetaUpdated{color:#173656;font-size:10px;font-weight:700;}"
-    "QFrame#studioTargetReadinessCard{background:#FFF8EE;border:1px solid #F0DFC6;border-radius:7px;}"
-    "QLabel#studioTargetReadiness{color:#364E66;font-size:10px;font-weight:600;}"
-    "QPushButton#studioTargetViewValidation{background:transparent;color:#124A9D;border:0;padding:0;font-size:9px;font-weight:750;}"));
+  home->setStyleSheet(studioQss(QStringLiteral(R"QSS(
+    QWidget#studioTargetHomeContent { background: @bg; color: @text; }
+    QLabel#studioTargetHeading { color: @text; font-size: 24px; font-weight: 800; }
+    QLabel#studioTargetSubheading { color: @textSecondary; font-size: 12px; }
+    QFrame#studioTargetMetricCard { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QLabel#studioTargetMetricIcon { border-radius: 18px; font-size: 17px; font-weight: 800; }
+    QLabel#studioTargetMetricIcon[kind=total] { background: @accentSoft; color: @accent; }
+    QLabel#studioTargetMetricIcon[kind=ready] { background: @successSoft; color: @success; }
+    QLabel#studioTargetMetricIcon[kind=attention] { background: @warningSoft; color: @warning; }
+    QLabel#studioTargetMetricIcon[kind=blocked] { background: @dangerSoft; color: @danger; }
+    QLabel#studioTargetMetricLabel { color: @textSecondary; font-size: 11px; font-weight: 700; }
+    QLabel#studioTargetMetricValue { color: @text; font-size: 20px; font-weight: 800; }
+    QLabel#studioTargetMetricHint { color: @textMuted; font-size: 10px; }
+    QLineEdit#studioTargetSearch, QComboBox#studioTargetFilter { background: @surface; color: @text; border: 1px solid @borderStrong; border-radius: @radiusS; min-height: 36px; padding: 0 11px; }
+    QPushButton#studioTargetPinnedFilter, QComboBox#studioTargetSort { background: @surface; color: @text; border: 1px solid @borderStrong; border-radius: @radiusS; min-height: 36px; padding: 0 13px; font-weight: 600; }
+    QPushButton#studioTargetPinnedFilter:checked { background: @accentSoft; color: @accent; border-color: @accent; }
+    QFrame#studioTargetTableCard { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QTableWidget#studioHomeSceneTable { background: @surface; color: @text; border: 0; outline: 0; }
+    QTableWidget#studioHomeSceneTable::item { border: 0; border-bottom: 1px solid @border; padding: 0; }
+    QTableWidget#studioHomeSceneTable::item:selected { background: @accentSoft; color: @text; }
+    QHeaderView::section { background: @surfaceRaised; color: @textSecondary; border: 0; border-bottom: 1px solid @border; padding: 7px 9px; font-size: 10px; font-weight: 750; }
+    QLabel#studioTargetTableFooter { color: @textMuted; background: @surface; border: 0; border-top: 1px solid @border; font-size: 10px; }
+    QFrame#studioTargetInspector { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QLabel#studioTargetInspectorEyebrow { color: @textSecondary; font-size: 11px; font-weight: 750; letter-spacing: .6px; }
+    QToolButton#studioTargetInspectorPin { background: transparent; color: @text; border: 0; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0; font-size: 17px; }
+    QPushButton#studioTargetOpenPrimary { min-height: 36px; font-size: 13px; }
+    QToolButton#studioTargetInspectorMore { background: @surface; color: @text; border: 1px solid @borderStrong; border-radius: @radiusS; min-height: 34px; padding: 0 10px; font-size: 11px; font-weight: 700; }
+    QLabel#studioTargetSelectedTitle { color: @text; font-size: 20px; font-weight: 800; }
+    QLabel#studioTargetSelectedId { color: @textMuted; font-size: 10px; }
+    QLabel#studioTargetStatus { border-radius: 8px; padding: 3px 8px; font-size: 10px; font-weight: 750; }
+    QLabel#studioTargetStatus[kind=neutral] { background: @surfaceSunken; color: @textSecondary; border: 1px solid @border; }
+    QLabel#studioTargetStatus[kind=ready] { background: @successSoft; color: @success; border: 1px solid @success; }
+    QLabel#studioTargetStatus[kind=attention] { background: @warningSoft; color: @warning; border: 1px solid @warning; }
+    QLabel#studioTargetStatus[kind=blocked] { background: @dangerSoft; color: @danger; border: 1px solid @danger; }
+    QLabel#studioTargetPreview { background: @previewBg; color: @previewText; border: 1px solid @borderStrong; border-radius: @radiusM; font-size: 10px; font-weight: 700; }
+    QWidget#studioTargetMetadata { background: transparent; }
+    QLabel#studioTargetMetaKey { color: @textSecondary; font-size: 11px; }
+    QLabel#studioTargetMetaRobot, QLabel#studioTargetMetaTool, QLabel#studioTargetMetaTask, QLabel#studioTargetMetaLaunch, QLabel#studioTargetMetaUpdated { color: @text; font-size: 11px; font-weight: 700; }
+    QFrame#studioTargetReadinessCard { background: @warningSoft; border: 1px solid @warning; border-radius: @radiusM; }
+    QLabel#studioTargetReadiness { color: @text; font-size: 11px; font-weight: 600; }
+    QPushButton#studioTargetViewValidation { background: transparent; color: @accent; border: 0; padding: 0; font-size: 11px; font-weight: 700; min-height: 0; }
+  )QSS")));
 
   refresh_home();
   if (total > 0) {
