@@ -24,10 +24,11 @@ TEST(SaveProjectionFailure, TracebackIsReducedToItsLastLineWithAHint)
 
 TEST(SaveProjectionFailure, FallsBackToStdoutThenToAGenericReason)
 {
+  // A single-word prefix ("merge:", "ValueError:") is an exception/tool tag and is dropped.
   EXPECT_EQ(projection_failure_reason(QString(), QStringLiteral("merge: blocked by task binding\n")),
-    QStringLiteral("merge: blocked by task binding"));
+    QStringLiteral("blocked by task binding"));
   EXPECT_EQ(projection_failure_reason(QString(), QString()), QStringLiteral("the projection helper reported no detail"));
-  // A sentence that merely contains ": " is not treated as an exception prefix.
+  // A sentence whose part before ": " contains a space is kept whole.
   EXPECT_EQ(projection_failure_reason(QStringLiteral("asset bin_01: catalog mesh must be an existing STL"), QString()),
-    QStringLiteral("catalog mesh must be an existing STL"));
+    QStringLiteral("asset bin_01: catalog mesh must be an existing STL"));
 }
