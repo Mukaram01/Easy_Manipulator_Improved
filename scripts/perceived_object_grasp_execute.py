@@ -1518,6 +1518,12 @@ def main():
         if not client.wait_for_server(timeout_sec=5):
             raise RuntimeError('MoveIt action unavailable')
         if controlled_cancel and controller_audit:controller_audit.arm()
+        if client is execute_client:
+            # Owned motion starts: a stop measured before it can never certify the
+            # state after it, interrupted or not (Trial 33); only a later stop may.
+            summary['motion_stop_verified']=False
+            summary.pop('stopped_measurement',None)
+            summary.pop('stopped_window',None)
         sent = client.send_goal_async(goal)
         rclpy.spin_until_future_complete(node, sent, timeout_sec=5)
         if not sent.done():
@@ -1571,10 +1577,16 @@ def main():
                 rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
             else:
                 until=time.monotonic()+timeout
+                timer=getattr(measurements,'loop_timer',lambda:None)() if measurements else None   # GIL probe only
                 with cross_check_gate.planning_goal() if client is plan_client else nullcontext():
                     while not future.done() and time.monotonic()<until:
+                        started=time.monotonic_ns()
                         rclpy.spin_once(node,timeout_sec=.005)
-                        execution_monitor()
+                        spun=time.monotonic_ns()
+                        if timer:timer('spin_once',started,spun)
+                        try:execution_monitor()
+                        finally:
+                            if timer:timer('execution_monitor',spun,time.monotonic_ns())
                         if controlled_cancel:
                             sample=measurements.fresh()
                             moved=motion_trial.observe(sample,measurements.joints(sample))

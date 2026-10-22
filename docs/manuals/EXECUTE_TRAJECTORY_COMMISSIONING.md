@@ -260,6 +260,115 @@ capability binary and both qualified MoveIt overlay binaries. Build the local
 source overlay using [the dependency instructions](MOVEIT_HUMBLE_TEARDOWN_OVERLAY.md)
 first. Real hardware remains locked throughout.
 
+### Execution modes: full, targeted and fast
+
+The same runner has three modes. Only `--mode full` (the default) through
+`full-cycle` can report Stage-A acceptance; its report is
+`stage-a1-final-report.json` and carries `"stage_a_acceptance": true` only when
+all six gates pass. A passing `--through` prefix records `false`.
+
+```bash
+# FAST: no ROS launch. Commissioning build + its C++ unit tests + the 22 focused
+# Stage-A Python suites (runtime-only selections such as
+# WORKCELL_SIMULATOR_PHYSICS_ROOT are removed from the unit-test environment).
+python3 scripts/run_stage_a1_finish.py --output <new dir> --mode fast
+
+# TARGETED: one gate in its own fresh owned session.
+python3 scripts/run_stage_a1_finish.py --output <new dir> --world-profile sparse \
+  --search-timeout 900 --mode targeted --gate contact-release
+```
+
+A targeted gate runs the same preflight (world and bridge identity, commissioning
+build and C++ tests), keeps the session index, ROS domain and partition it has in
+the full sequence, and inside that session performs the same fresh Resolve,
+observation refresh, nine-stage revalidation, gate execution, gate assertions and
+owned shutdown checks as a full run. Nothing is skipped inside a gate; only the
+*earlier gates* are not run. `resolve`, `cancel`, `telemetry`, `stationary` and
+`contact-release` can be targeted. `full-cycle` cannot: the executor admits it
+only with passing cancellation, telemetry, retention and contact-release evidence
+bound to the same binaries, and the runner builds that evidence only from the
+sessions of the same full run, so it is available only in full mode. Targeted
+session reports carry `mode` and `scope` too; never hand-assemble targeted
+summaries into `--commission-evidence`. Targeted and fast reports
+are written as `stage-a1-targeted-report.json` / `stage-a1-fast-report.json`
+with `"scope": "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE"` and
+`"stage_a_acceptance": false`; they never replace the full acceptance sequence,
+and a targeted motion gate does not re-qualify cancellation on the current
+binary (only the cancel gate does; the report records
+`"cancellation_qualified_this_run"`).
+
+`--gil-watchdog-ms N` (targeted `resolve` only, 50–1000 ms, off by default) arms an
+executor diagnostic: when its heartbeat thread cannot run for about N − 25 ms
+(a GIL-holding call, a garbage collection, or CPU starvation), CPython's
+`faulthandler` watchdog writes every thread's stack to
+`<summary>.measurements.gil-holds.txt` and the overrun is recorded in the timing
+evidence (`gil_hold`, `gil_watch_summary`). The dump does not mark which thread
+held the lock; read it together with the `gc` and `receive` events of the same
+timing file. It changes no measurement, guard or threshold. Its own re-arm held
+the GIL for 400 ms in Trial 26 and failed a lift, so the runner refuses it for
+every gate that moves the robot and for full mode.
+
+`--gil-probe-ms N` (targeted/full, 20–1000 ms, off by default) builds
+`scripts/gil_probe.c` into the evidence directory (source and library hashes,
+compiler and Python version are recorded) and attributes every GIL hold of at
+least N ms in each executor session:
+
+- its native thread reads only static `_PyRuntime` fields (GIL locked flag,
+  switch number, holder thread-state pointer) and never dereferences an
+  interpreter object, thread state or frame;
+- Python threads register themselves under the GIL (thread-state pointer, CPython's
+  never-reused thread-state id, kernel tid, GIL switch number); a sampler thread asks
+  for the GIL every 20 ms, and after a wait of at least N/4 ms takes one native
+  snapshot (GC disabled, GIL kept, switch number read at both ends) of every thread's
+  Python frames and of the live thread-state -> (ident, id) map under CPython's head
+  lock. Each hold gets the holder's identity — `verified` only when the live id at
+  its address is the id of the registration in force at the hold's switch;
+  otherwise `snapshot only`, `registered, unconfirmed`, `address reused, ambiguous`,
+  `ambiguous (thread starting)` or `unattributed` — and its frames at the release
+  (`exact` only when no thread ran during the snapshot and at most one between the
+  release and it);
+- during a hold it reads the holder's `/proc/self/task/<tid>` CPU, run state and
+  syscall (`running` or the blocking call and its PC);
+- `--gil-probe-native-pc` also samples the holder's native PC during long holds
+  only: one signal at a time, each sent right after the holder's syscall file read
+  `running`, and none for the rest of a hold once it is seen inside a syscall
+  (`running` is the kernel's TASK_RUNNING, which includes the not-yet-sleeping part of
+  a syscall, so the first signals of a hold can still meet one); the handler copies
+  registers and 4 KiB of its stack (no unwinding); stack-scan candidates cover only
+  the libraries mapped when the probe started; `scripts/gil_probe_report.py <session>`
+  symbolizes them from the session's maps snapshot. Libraries without symbols
+  (the stripped `python3.10`, `_json`) are named by library, and their
+  "nearest exported symbol" is marked unreliable; libc resolves through
+  `libc6-dbg`. Stack-scan callers are heuristic;
+- the executor and acquisition loops record calls that took ≥ 20 ms
+  (`loop_slow`: `spin_once`, `execution_monitor`, `wait_set_*`, `take_message`).
+
+Holds of at least N/2 ms are also recorded (`gil_probe_brief_hold`: identity and
+frames only), and a hold still in progress when the probe stops is recorded as
+`gil_probe_open_hold`, so back-to-back shorter tenures are visible too.
+
+Limits: a hold that begins before the sampler's first loop (probe start) gets
+no snapshot; about 2 % of offline release snapshots are `holder may have run
+again`; the native thread costs about 1.5 % of one core and the sampler about
+0.5 %, with no measured change to callback latency or throughput under the
+release-phase replay load (one of 15 replays with native PC had a single 103 ms
+sample age with no hold recorded; not reproduced, cause unknown). A hold is
+evidence of *where* the GIL was kept, not proof of why.
+
+Measured on the sparse world (2026-10-21, one workstation; full-mode figures
+from Trials 20–22):
+
+| Mode | Measured wall time | Contents |
+|---|---|---|
+| fast | 145 s | preflight 96 s (build check, C++ action + support/Cartesian tests), 974 Python tests in 22 suites 49 s |
+| targeted `resolve` | 695 s | preflight 97 s + one plan-only session 598 s |
+| targeted `telemetry` | 776 s | preflight 97 s + one session 681 s (approach motion) |
+| full through `full-cycle` | 2885–4240 s | preflight + six sessions of 391–1367 s each |
+
+A session's time is dominated by its own fresh Resolve candidate search
+(89–936 s observed) and revalidation (56–372 s); the gate itself took
+65–263 s. Targeted `stationary` and `contact-release` were not measured.
+
 On a measured collision rejection, the executor preserves the first rejected
 measurement, exact queried robot state and full MoveIt validity response before
 cancellation or reconciliation. The owned goal record also retains its exact
