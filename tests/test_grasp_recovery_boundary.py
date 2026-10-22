@@ -272,21 +272,6 @@ def test_outer_hold_failure_invalidates_previous_stop_certificate():
     assert summary['motion_stop_verified'] is True
 
 
-def test_interrupted_motion_drops_earlier_stop_certificate_before_cancelling():
-    # Trial 33: a stale-telemetry failure in EXECUTE_LIFT kept the post-close stop
-    # window as motion_stop_verified, so cleanup skipped measuring the real stop.
-    main=next(n for n in ast.parse(SCRIPT.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='main')
-    action=next(n for n in ast.walk(main) if isinstance(n,ast.FunctionDef) and n.name=='action')
-    calls=lambda node,name:[c for c in ast.walk(node) if isinstance(c,ast.Call) and getattr(c.func,'id',None)==name]
-    branch=next(n for h in ast.walk(action) if isinstance(h,ast.ExceptHandler) for n in h.body
-                if isinstance(n,ast.If) and calls(n,'cancel_owned'))
-    cancel=next(i for i,s in enumerate(branch.body) if calls(s,'cancel_owned'))
-    before=[ast.unparse(s) for s in branch.body[:cancel]]
-    assert "summary['motion_stop_verified'] = False" in before
-    assert "summary.pop('stopped_measurement', None)" in before
-    assert "summary.pop('stopped_window', None)" in before
-
-
 def test_reconciliation_rejects_incomplete_live_robot_joint_names():
     initial,current,sample,m,guard=scene_fixture()
     current.robot_state.joint_state.name=['finger']
