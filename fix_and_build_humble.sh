@@ -131,8 +131,11 @@ check_epd_underlay_layout() {
 load_nvm_if_available() {
   if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
     export NVM_DIR="$HOME/.nvm"
+    # NVM is sourced under the same nounset guard used for ROS setup.
     # shellcheck disable=SC1091
+    set +u
     source "$NVM_DIR/nvm.sh"
+    set -u
   fi
 }
 
