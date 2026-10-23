@@ -46155,17 +46155,17 @@ function applyMateIsolation(assetId) {
   const keep = renderedById(assetId)?.object3d;
   if (!keep)
     return;
+  const onChain = (from, target) => {
+    for (let node = from; node; node = node.parent)
+      if (node === target)
+        return true;
+    return false;
+  };
   for (const record of [...state.objects, ...state.pickRecords]) {
     const root = record?.object3d;
     if (!root || root === keep || root.visible === false)
       continue;
-    let ancestorOfKeep = false;
-    for (let node = keep.parent; node; node = node.parent)
-      if (node === root) {
-        ancestorOfKeep = true;
-        break;
-      }
-    if (ancestorOfKeep)
+    if (onChain(keep.parent, root) || onChain(root.parent, keep))
       continue;
     mate.hiddenByIsolation.push([root, root.visible]);
     root.visible = false;

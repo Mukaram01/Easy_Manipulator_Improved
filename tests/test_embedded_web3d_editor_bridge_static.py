@@ -698,6 +698,54 @@ const raycastCandidates=[...state.objects.map(o=>o.object3d),...state.pickRecord
     subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js"), str(web_scene)], cwd=ROOT, check=True, text=True)
 
 
+def test_mate_isolation_keeps_reparented_owner_visuals_and_restores_hidden_roots():
+    import subprocess
+
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const viewerWindow={location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){},__WORKCELL_VIEWER_LIFECYCLE__:{registerCleanup(){}}};
+const context={console,assert,THREE_IMPL,window:viewerWindow,document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+THREE=THREE_IMPL;
+const scene=new THREE.Scene();state.three={scene};
+const record=(id,parent)=>{const object3d=new THREE.Group();object3d.name=id;const mesh=new THREE.Mesh(new THREE.BoxGeometry(.1,.1,.1),new THREE.MeshBasicMaterial());mesh.name=id+'_mesh';object3d.add(mesh);(parent||scene).add(object3d);return {item:{id},object3d,mesh};};
+// Generated camera/table visuals are separate roots reparented under their
+// authored owner (applyExportedOwnerRelativeVisualTransform).
+const camera=record('realsense_overhead'),cameraVisual=record('urdf_visual_camera_link_d435',camera.object3d);
+const table=record('support_surface_table'),tableVisual=record('urdf_visual_table_top',table.object3d);
+const bin=record('target_bin_default'),stand=record('camera_stand');
+const hiddenHelper=record('diagnostic_helper');hiddenHelper.object3d.visible=false;
+const robotLink=record('urdf_ur5_base_link');
+state.objects=[camera,cameraVisual,table,tableVisual,bin,stand,hiddenHelper];state.pickRecords=[robotLink];
+const all=[...state.objects,...state.pickRecords];
+const visibility=()=>Object.fromEntries(all.map(r=>[r.item.id,r.object3d.visible]));
+const before=visibility();
+const api=window.__WORKCELL_EDITOR_API_V1__;
+const isolate=assetId=>api.setMateMode({active:true,step:'pick_child',isolate_asset:assetId,markers:[]});
+const expectIsolated=(kept,assetId)=>{
+  assert.strictEqual(api.getMateState().isolatedAsset,assetId);
+  for(const r of all){
+    assert.strictEqual(r.object3d.visible,kept.includes(r),r.item.id+' visibility while '+assetId+' is isolated');
+  }
+  for(const r of kept)assert.strictEqual(hiddenPickSubtree(r.mesh),null,r.item.id+' faces must stay pickable');
+};
+isolate('realsense_overhead');expectIsolated([camera,cameraVisual],'realsense_overhead');
+isolate('support_surface_table');expectIsolated([table,tableVisual],'support_surface_table');
+// Isolating a nested root still keeps its ancestors (the owner) visible.
+isolate('urdf_visual_camera_link_d435');expectIsolated([camera,cameraVisual],'urdf_visual_camera_link_d435');
+isolate('target_bin_default');expectIsolated([bin],'target_bin_default');
+api.clearMateMode();
+assert.strictEqual(api.getMateState().isolatedAsset,'');
+assert.deepStrictEqual(visibility(),before,'clearing the mate restores every root exactly');
+assert.strictEqual(hiddenHelper.object3d.visible,false,'a root hidden before isolation stays hidden');
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, text=True)
+
+
 def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear():
     poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
     for token in [
