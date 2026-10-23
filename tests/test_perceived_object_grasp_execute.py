@@ -1704,3 +1704,19 @@ def test_real_measured_fcl_returns_before_any_scene_or_validity_traffic_while_pl
     assert traffic==[] and gate.pending
     window,=summary['deferred_measured_collision_checks']
     assert window['count']==1 and window['first']['sim_ns']==69389000000 and window['cleared'] is None and window['stage']=='COMMISSION_RELEASE'
+
+
+def test_identity_graph_waits_for_the_controller_manager_without_relaxing_exactly_one():
+    # LENLEG 2026-10-24: the graph read 0.46 s after start lacked the manager's node name.
+    seen=[[('move_group','/')],[('move_group','/')],[('move_group','/'),('controller_manager','/')]]
+    spins=[]
+    nodes=MODULE.discovered_graph(lambda:seen.pop(0) if len(seen)>1 else seen[0],lambda:spins.append(1),timeout=5.)
+    assert ('controller_manager','/') in nodes and len(spins)==2
+    two=[('controller_manager','/'),('controller_manager','/other')]
+    assert MODULE.discovered_graph(lambda:two,lambda:None) is two      # returned unchanged; live_identity still rejects
+    started=MODULE.time.monotonic()
+    assert MODULE.discovered_graph(lambda:[],lambda:None,timeout=.05)==[]   # bounded: absence is reported, not waited out
+    assert MODULE.time.monotonic()-started<1.
+    from simulator_backend import live_identity
+    import inspect
+    assert "manager_count=sum(n=='controller_manager' for n,ns in nodes)" in inspect.getsource(live_identity)

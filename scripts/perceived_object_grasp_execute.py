@@ -1317,6 +1317,22 @@ def observations_to_insert(objects,existing,backend):
     return [o for o in objects if o['id'] not in duplicates]
 
 
+def discovered_graph(read_graph, spin, timeout=10.0):
+    """Node names once this process has discovered a controller_manager (bounded).
+
+    A new node answers service calls as soon as their endpoints are discovered,
+    but node names arrive separately; reading the graph at once made the exact
+    one-controller_manager identity check fail as 'ambiguous' (LENLEG
+    2026-10-24, 0.46 s after start). The exactly-one rule stays with the caller.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        nodes = read_graph()
+        if any(name == 'controller_manager' for name, _ in nodes) or time.monotonic() >= deadline:
+            return nodes
+        spin()
+
+
 def wait_for_robot_baseline(read_scene, home, mimics=(), timeout=10.0):
     """Wait for initial state publication; never command home or relax tolerance."""
     required = dict(home, gripper_finger1_joint=0.0)
@@ -2360,7 +2376,9 @@ def main():
             controllers = call(node.create_client(ListControllers, '/controller_manager/list_controllers'), ListControllers.Request()).controller
             interfaces = call(node.create_client(ListHardwareInterfaces, '/controller_manager/list_hardware_interfaces'), ListHardwareInterfaces.Request()).command_interfaces
             summary['backend_identity'] = live_identity(args.simulator_receipt, params[2].string_value,
-                components, controllers, interfaces, node.get_node_names_and_namespaces(), settings[1].bool_value)
+                components, controllers, interfaces,
+                discovered_graph(node.get_node_names_and_namespaces, lambda: rclpy.spin_once(node, timeout_sec=.05)),
+                settings[1].bool_value)
             # Physical position control needs reserve beyond a tangent first
             # contact. This opt-in is confined to the verified simulator path.
             contract['simulator_closure_reserve'] = True
@@ -2591,7 +2609,8 @@ def main():
                 call(hardware_client,ListHardwareComponents.Request()).component,
                 motion_controllers,
                 call(node.create_client(ListHardwareInterfaces,'/controller_manager/list_hardware_interfaces'),ListHardwareInterfaces.Request()).command_interfaces,
-                node.get_node_names_and_namespaces(),current_params[3].bool_value)
+                discovered_graph(node.get_node_names_and_namespaces,lambda:rclpy.spin_once(node,timeout_sec=.05)),
+                current_params[3].bool_value)
             from simulator_backend import commissioning_capability_identity
             summary['commissioning_capability']=commissioning_capability_identity(node,args.simulator_receipt,
                 current_params[5].bool_value,current_params[6].string_value,current_params[7].string_value)
