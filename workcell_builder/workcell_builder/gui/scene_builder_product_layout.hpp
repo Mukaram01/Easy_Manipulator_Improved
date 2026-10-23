@@ -233,6 +233,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   QPushButton * rotate = button_with_text(host, QStringLiteral("Rotate"));
   QPushButton * duplicate = button_with_text(host, QStringLiteral("Duplicate"));
   QPushButton * save = button_with_text(host, QStringLiteral("Save Layout"));
+  QPushButton * operator_preview = host->findChild<QPushButton *>(QStringLiteral("sceneBuilderToolbarOperatorPreview"));
   if (select) select->setObjectName(QStringLiteral("sceneBuilderModeSelect"));
   if (move) move->setObjectName(QStringLiteral("sceneBuilderModeMove"));
   if (rotate) rotate->setObjectName(QStringLiteral("sceneBuilderModeRotate"));
@@ -312,6 +313,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   add_existing(redo);
   layout->addSpacing(4);
   add_existing(save);
+  add_existing(operator_preview);
   add_existing(overflow);
 
   if (save) {

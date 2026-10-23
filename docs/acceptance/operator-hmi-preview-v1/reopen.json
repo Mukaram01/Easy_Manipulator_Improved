@@ -1,0 +1,123 @@
+{
+    "checks": [
+        {
+            "check": "Builder opened the scene",
+            "ok": true
+        },
+        {
+            "check": "task editor loaded the scene",
+            "ok": true
+        },
+        {
+            "check": "task editor starts clean",
+            "ok": true
+        },
+        {
+            "check": "Operator Preview is on the visible Scene Builder toolbar",
+            "ok": true
+        },
+        {
+            "check": "Operator Preview is a registered Scene Builder action",
+            "ok": true
+        },
+        {
+            "check": "Operator Preview is also reachable from the Workcell Studio Home menu",
+            "ok": true
+        },
+        {
+            "check": "Operator HMI process started from Builder",
+            "ok": true
+        },
+        {
+            "check": "HMI shows the Builder's selected cell",
+            "ok": true
+        },
+        {
+            "check": "HMI shows the SAVED revision when the editor is clean",
+            "ok": true
+        },
+        {
+            "check": "HMI target class matches the saved TaskIntent",
+            "ok": true
+        },
+        {
+            "check": "HMI lists the configured destination",
+            "ok": true
+        },
+        {
+            "check": "Start production is disabled (NOT AUTHORISED)",
+            "ok": true
+        },
+        {
+            "check": "Reopened cell recovers the same saved task (intent SHA-256 matches the authoring run)",
+            "ok": true
+        },
+        {
+            "check": "Reopened cell recovers the saved target class",
+            "ok": true
+        },
+        {
+            "check": "HMI still open when the Builder exits",
+            "ok": true
+        }
+    ],
+    "execution_goals_sent": 0,
+    "hmi_pid": 345972,
+    "hmi_running_at_builder_exit": true,
+    "operator_preview_action_count": 2,
+    "result": "PASS",
+    "robot_motion_commanded": false,
+    "saved_hmi": {
+        "applied_revision": 1,
+        "approval": "NOT_APPROVED",
+        "busy": "",
+        "command_results": [
+        ],
+        "destinations": [
+            "default_drop_zone → target_bin_default"
+        ],
+        "dry_run_blockers": [
+        ],
+        "dry_run_enabled": true,
+        "dry_run_status": "",
+        "errors": [
+        ],
+        "event_count": 8,
+        "input_blocker": "",
+        "input_kind": "replay",
+        "intent_sha256": "d176de2f9913aaf5685082882a653f59402a1cddaf40a9e469687ded23106ee6",
+        "last_command": 0,
+        "layout_unsaved": false,
+        "loaded": true,
+        "mode": "OFFLINE",
+        "objects": [
+        ],
+        "offline_checks_allowed": true,
+        "pending_revision": -1,
+        "production_blockers": [
+            "No approved generated bundle for this cell.",
+            "Task resolution BLOCKED (CYCLE_EVALUATION_REQUIRED)",
+            "No live perception input is bound.",
+            "No qualified execution backend is connected to the Operator HMI. Physical robot motion is not authorised from this preview."
+        ],
+        "replay_enabled": true,
+        "replay_shown": false,
+        "resolution_status": "BLOCKED",
+        "revision": "SAVED",
+        "saved_intent_sha256": "d176de2f9913aaf5685082882a653f59402a1cddaf40a9e469687ded23106ee6",
+        "scene_name": "ur5_2f_test",
+        "scene_path": "/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+        "schema": "workcell_operator_hmi_status/v1",
+        "selected_object": "",
+        "start_enabled": false,
+        "target_class": "cup",
+        "task_id": "default_task",
+        "update_banner_visible": false,
+        "usable": true,
+        "validation_status": "PASS"
+    },
+    "saved_intent_sha256": "d176de2f9913aaf5685082882a653f59402a1cddaf40a9e469687ded23106ee6",
+    "saved_target_class": "cup",
+    "scene_path": "/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+    "studio_log_tail": "er/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae\nResolved package://robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae from repo assets: /home/user/wcs-r3-hmi-wt/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae\nResolved package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae from repo assets: /home/user/wcs-r3-hmi-wt/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae\nResolved package://robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae from repo assets: /home/user/wcs-r3-hmi-wt/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae\nResolved package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae from repo assets: /home/user/wcs-r3-hmi-wt/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae\nResolved package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae from repo assets: /home/user/wcs-r3-hmi-wt/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae\nResolved package://realsense2_description/meshes/d435.dae from repo assets: /home/user/wcs-r3-hmi-wt/assets/environment/realsense2_description/meshes/d435.dae\nVisual mesh index loaded from: /home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/scene_visual_mesh_index.json\nVisual mesh index safe_for_preview: true\nVisual mesh index extraction_mode: real_xacro_expanded\nVisual mesh index loaded: 18 visual items\nMesh items: 8, primitive items: 0, unknown items: 2\nVisual mesh preview items added: 8 / 18\nSkipped visual items (canonical): duplicate_generated_visual_index_row=8 unknown_role_no_fallback=2\nScene3D visual ingestion semantic/helper rows skipped: 2\nScene3D visual ingestion true duplicate mesh rows skipped: 8\nScene3D visual ingestion preserved generated URDF robot mesh rows: 0\nVisual mesh index parse_error=0\nLoader fallbacks: package_uri_resolved_by_loader=8 source_path_from_resolved_path=0 non_mesh_geometry_added=0 non_mesh_geometry_unsupported=2\nResolved source path diagnostics: stale_resolved_source_path=8 package_uri_resolved_after_stale=8\nTransform source: baked_world_visual_pose from generated/scene_visual_mesh_index.json (count=8, source=urdf_fk_link_world_times_visual_origin)\nTransform diagnostics: transform_chain_applied_count=2 visual_origin_applied_count=2 baked_world_visual_pose_count=8 robot_base_frame=world robot_world_pose=xyz=[-0.0785465,0.13359,0.447282] rpy=[3.10785,1.54999,-1.60524] missing_chain_warnings=0\nScene3D generated URDF visuals ordered before semantic overlays for renderer handoff: first_item=home_pose source_layer=locked_generated_urdf_visual active_visual_source=mesh_preview\nPreview placeholder suppression diagnostics: healthy_xacro_mesh_index_omits_legacy_placeholder=2 (examples=robot_base=>authoritative_xacro_mesh_index via healthy_xacro_mesh_index_omits_legacy_placeholder; robot_reach=>authoritative_xacro_mesh_index via healthy_xacro_mesh_index_omits_legacy_placeholder authoritative_mesh_index_equivalence_keys=36 preserved_editable_source_of_truth=5; authoritative_mesh_index_healthy=true; suppressed items are omitted without viewport warning placeholders)\nPreview placeholder suppression: omitted 2 legacy placeholders because authoritative xacro/xacro-lite mesh index is healthy\nPreviewContext resolved: scene_id=ur5_2f_test repo_root=/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment scene_dir=/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test\nScene3D diagnostic: selection-owner registry unavailable or malformed; retained usable preview state (/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/build/workcell_studio_web_scene/ur5_2f_test.web_scene.json).\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/build/workcell_studio_web_scene/ur5_2f_test.web_scene.json\nScene3D canvas: scene=ur5_2f_test received=16 cached=16 visible=16 rendered=16 selectable=16 mesh=9 fallback=0 locked=12 skipped=10\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/build/workcell_studio_web_scene/ur5_2f_test.web_scene.json\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/build/workcell_studio_web_scene/ur5_2f_test.web_scene.json\nStudio navigation settled: requested_page=1 nav_row=1 page_index=1 scene_id=ur5_2f_test\nOperator Preview opened for ur5_2f_test (revision 1).\nOperator Preview shows the saved task of ur5_2f_test."
+}

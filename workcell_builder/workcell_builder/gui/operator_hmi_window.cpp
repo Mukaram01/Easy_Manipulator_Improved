@@ -1,0 +1,1219 @@
+#include "operator_hmi_window.hpp"
+
+#include <QApplication>
+#include <QCloseEvent>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QLabel>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPlainTextEdit>
+#include <QProcess>
+#include <QPushButton>
+#include <QSaveFile>
+#include <QScrollArea>
+#include <QSplitter>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QTimer>
+#include <QVBoxLayout>
+
+#include <algorithm>
+#include <cmath>
+
+#include "workcell_builder_ui_utils.hpp"
+
+namespace workcell_builder
+{
+
+namespace
+{
+
+constexpr int kProjectionTimeoutMs = 60000;
+
+QString escaped(const QString & value) { return value.toHtmlEscaped(); }
+
+QString muted(const QString & value)
+{
+  return QString("<span style='color:%1'>%2</span>").arg(studioTokens().textMuted, escaped(value));
+}
+
+QString or_unavailable(const QString & value, const QString & missing = QStringLiteral("UNAVAILABLE"))
+{
+  return value.trimmed().isEmpty() ? muted(missing) : escaped(value);
+}
+
+QString number_or_unavailable(const std::optional<double> & value, const QString & unit, const QString & missing)
+{
+  return value ? escaped(QString::number(*value) + unit) : muted(missing);
+}
+
+QString rows(const QList<QPair<QString, QString>> & entries)
+{
+  QString html = QStringLiteral("<table cellspacing='0' cellpadding='3' width='100%'>");
+  for (const auto & entry : entries) {
+    html += QString("<tr><td width='38%' style='color:%1'>%2</td><td>%3</td></tr>")
+      .arg(studioTokens().textSecondary, escaped(entry.first), entry.second);
+  }
+  return html + QStringLiteral("</table>");
+}
+
+QString section(const QString & title)
+{
+  return QString("<div style='color:%1;font-size:9pt;font-weight:700;letter-spacing:1px;margin-top:6px'>%2</div>")
+    .arg(studioTokens().textMuted, escaped(title.toUpper()));
+}
+
+QString status_colour(const QString & state)
+{
+  const auto & t = studioTokens();
+  if (state == "ok") return t.success;
+  if (state == "warn") return t.warning;
+  if (state == "error") return t.danger;
+  if (state == "info") return t.info;
+  return t.textMuted;
+}
+
+QString state_text(const QString & value, const QString & state)
+{
+  return QString("<b style='color:%1'>%2</b>").arg(status_colour(state), escaped(value));
+}
+
+void set_badge(QLabel * label, const QString & caption, const QString & value, const QString & state)
+{
+  label->setText(QString("<span style='font-size:8pt;color:%1'>%2</span><br><b>%3</b>")
+                   .arg(studioTokens().textMuted, escaped(caption), escaped(value)));
+  label->setProperty("hmiState", state);
+  label->style()->unpolish(label);
+  label->style()->polish(label);
+}
+
+QString when(const std::optional<double> & epoch)
+{
+  if (!epoch) return {};
+  return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(*epoch * 1000.0)).toString("yyyy-MM-dd HH:mm");
+}
+
+QLabel * value_label(QWidget * parent)
+{
+  auto * label = new QLabel(parent);
+  label->setTextFormat(Qt::RichText);
+  label->setWordWrap(true);
+  label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  label->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  return label;
+}
+
+QFrame * card(QWidget * parent, const QString & title, QVBoxLayout ** body)
+{
+  auto * frame = new QFrame(parent);
+  frame->setObjectName("hmiCard");
+  auto * layout = new QVBoxLayout(frame);
+  layout->setContentsMargins(12, 10, 12, 10);
+  layout->setSpacing(6);
+  auto * heading = new QLabel(title.toUpper(), frame);
+  heading->setObjectName("hmiCardTitle");
+  layout->addWidget(heading);
+  *body = layout;
+  return frame;
+}
+
+}  // namespace
+
+// Top view of the authored pick/place zones and, when a replay was evaluated,
+// the recorded objects. World X to the right, world Y up.
+class CellMapWidget : public QWidget
+{
+public:
+  explicit CellMapWidget(QWidget * parent = nullptr) : QWidget(parent) { setMinimumSize(320, 200); }
+
+  void set_view(const OperatorPreviewView * view, bool show_objects, const QString & selected)
+  {
+    view_ = view;
+    show_objects_ = show_objects;
+    selected_ = selected;
+    update();
+  }
+
+protected:
+  void paintEvent(QPaintEvent *) override
+  {
+    const auto & t = studioTokens();
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.fillRect(rect(), QColor(t.previewBg));
+    if (!view_ || (!view_->pick_zone_geometry.valid && !view_->place_zone_geometry.valid)) {
+      painter.setPen(QColor(t.textMuted));
+      painter.drawText(rect().adjusted(12, 12, -12, -12), Qt::AlignCenter | Qt::TextWordWrap,
+                       "Zone geometry UNAVAILABLE for this task.");
+      return;
+    }
+    // World-space bounds of everything drawn.
+    double min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
+    auto include = [&](const std::array<double, 3> & c, const std::array<double, 3> & d) {
+        min_x = std::min(min_x, c[0] - d[0] / 2); max_x = std::max(max_x, c[0] + d[0] / 2);
+        min_y = std::min(min_y, c[1] - d[1] / 2); max_y = std::max(max_y, c[1] + d[1] / 2);
+      };
+    for (const auto * zone : {&view_->pick_zone_geometry, &view_->place_zone_geometry}) {
+      if (zone->valid) include(zone->xyz, zone->dimensions);
+    }
+    if (show_objects_) {
+      for (const auto & object : view_->objects) if (object.has_geometry) include(object.xyz, object.dimensions);
+    }
+    const double margin = 0.08;
+    min_x -= margin; max_x += margin; min_y -= margin; max_y += margin;
+    const QRectF area = QRectF(rect()).adjusted(16, 28, -16, -16);
+    const double scale = std::min(area.width() / (max_x - min_x), area.height() / (max_y - min_y));
+    const QPointF offset(area.center().x() - (min_x + max_x) / 2 * scale,
+                         area.center().y() + (min_y + max_y) / 2 * scale);
+    auto to_screen = [&](double x, double y) { return QPointF(offset.x() + x * scale, offset.y() - y * scale); };
+    auto rect_of = [&](const std::array<double, 3> & c, const std::array<double, 3> & d) {
+        return QRectF(to_screen(c[0] - d[0] / 2, c[1] + d[1] / 2), to_screen(c[0] + d[0] / 2, c[1] - d[1] / 2));
+      };
+
+    // 10 cm grid.
+    painter.setPen(QPen(QColor(t.border), 1, Qt::DotLine));
+    for (double x = std::floor(min_x * 10) / 10; x <= max_x; x += 0.1) {
+      painter.drawLine(to_screen(x, min_y), to_screen(x, max_y));
+    }
+    for (double y = std::floor(min_y * 10) / 10; y <= max_y; y += 0.1) {
+      painter.drawLine(to_screen(min_x, y), to_screen(max_x, y));
+    }
+    QFont label_font = font();
+    label_font.setPointSizeF(8.5);
+    label_font.setBold(true);
+    painter.setFont(label_font);
+    auto draw_zone = [&](const OperatorZone & zone, const QString & colour, const QString & caption) {
+        if (!zone.valid) return;
+        const QRectF r = rect_of(zone.xyz, zone.dimensions);
+        QColor fill(colour); fill.setAlpha(36);
+        painter.setPen(QPen(QColor(colour), 1.6, Qt::DashLine));
+        painter.setBrush(fill);
+        painter.drawRoundedRect(r, 4, 4);
+        // Short captions at the bottom edge keep the top free for object labels;
+        // zone IDs are listed in the Task card.
+        painter.setPen(QColor(colour));
+        const QFontMetricsF metrics(painter.font());
+        if (metrics.horizontalAdvance(caption) + 8 <= r.width() && metrics.height() + 4 <= r.height()) {
+          painter.drawText(r.adjusted(4, 2, -2, -3), Qt::AlignLeft | Qt::AlignBottom, caption);
+        } else {
+          painter.drawText(QPointF(r.left(), r.bottom() + metrics.ascent() + 2), caption);
+        }
+      };
+    draw_zone(view_->pick_zone_geometry, t.info, "PICK");
+    draw_zone(view_->place_zone_geometry, t.success, "PLACE");
+
+    if (show_objects_) {
+      int index = 0;
+      for (const auto & object : view_->objects) {
+        if (!object.has_geometry) continue;
+        const bool label_above = (index++ % 2) == 1;  // neighbours alternate so labels never overlap
+        const QRectF r = rect_of(object.xyz, object.dimensions);
+        const bool selected = object.object_id == selected_;
+        const QColor colour(object.accepted ? t.success : t.textMuted);
+        painter.setPen(QPen(selected ? QColor(t.accent) : colour, selected ? 3.0 : 1.5));
+        QColor fill(colour); fill.setAlpha(object.accepted ? 120 : 60);
+        painter.setBrush(fill);
+        painter.drawRect(r);
+        painter.setPen(QColor(t.text));
+        const QRectF label_box = label_above ? QRectF(r.center().x() - 50, r.top() - 18, 100, 16)
+                                             : QRectF(r.center().x() - 50, r.bottom() + 2, 100, 16);
+        painter.drawText(label_box, Qt::AlignHCenter | Qt::AlignVCenter,
+                         object.class_id + (object.accepted ? QString(" ✓") : QString(" ✕")));
+      }
+    }
+    painter.setPen(QColor(t.textMuted));
+    QFont small = font();
+    small.setPointSizeF(8);
+    painter.setFont(small);
+    painter.drawText(QRectF(12, 6, width() - 24, 18), Qt::AlignLeft | Qt::AlignVCenter,
+                     "Top view, world frame · grid 10 cm · X →  Y ↑");
+  }
+
+private:
+  const OperatorPreviewView * view_{nullptr};
+  bool show_objects_{false};
+  QString selected_;
+};
+
+OperatorHmiWindow::OperatorHmiWindow(const OperatorHmiOptions & options, QWidget * parent)
+: QMainWindow(parent), options_(options)
+{
+  setWindowTitle("Workcell Operator HMI");
+  setObjectName("operatorHmiWindow");
+  projection_timeout_ = new QTimer(this);
+  projection_timeout_->setSingleShot(true);
+  connect(projection_timeout_, &QTimer::timeout, this, [this]() {
+      if (projection_process_ && projection_process_->state() != QProcess::NotRunning) {
+        projection_process_->kill();
+        log_event("error", "PREVIEW_TIMEOUT", "The configuration projection did not finish in time.");
+      }
+    });
+  build_ui();
+  apply_style();
+  resize(1366, 768);
+}
+
+OperatorHmiWindow::~OperatorHmiWindow() { stop_checks(); }
+
+void OperatorHmiWindow::start()
+{
+  if (!options_.acceptance_commands.isEmpty()) {
+    // Commands written for an earlier HMI process are not replayed.
+    QFile existing(options_.acceptance_commands);
+    if (existing.open(QIODevice::ReadOnly)) {
+      for (const auto & value : QJsonDocument::fromJson(existing.readAll()).array()) {
+        last_command_ = std::max(last_command_, value.toObject().value("id").toInt());
+      }
+    }
+    command_poll_ = new QTimer(this);
+    command_poll_->setInterval(250);
+    connect(command_poll_, &QTimer::timeout, this, [this]() { poll_acceptance_commands(); });
+    command_poll_->start();
+  }
+  if (!options_.request_path.isEmpty()) {
+    request_watcher_ = new QFileSystemWatcher(this);
+    request_watcher_->addPath(options_.request_path);
+    request_watcher_->addPath(QFileInfo(options_.request_path).absolutePath());
+    connect(request_watcher_, &QFileSystemWatcher::fileChanged, this, [this]() { check_request_file(); });
+    connect(request_watcher_, &QFileSystemWatcher::directoryChanged, this, [this]() { check_request_file(); });
+    // The watcher can miss an atomic replace; a slow poll keeps the hand-off robust.
+    request_poll_ = new QTimer(this);
+    request_poll_->setInterval(1500);
+    connect(request_poll_, &QTimer::timeout, this, [this]() { check_request_file(); });
+    request_poll_->start();
+    render();
+    check_request_file();
+    if (!request_) {
+      log_event("error", "PREVIEW_REQUEST_INVALID", "Workcell Builder's preview request could not be read.");
+      render();
+    }
+    return;
+  }
+  scene_dir_ = options_.scene_dir;
+  render();
+  log_event("info", "PREVIEW_OPENED", "Standalone preview of the saved revision of " + scene_dir_);
+  refresh_preview(false);
+}
+
+void OperatorHmiWindow::check_request_file()
+{
+  if (request_watcher_ && !request_watcher_->files().contains(options_.request_path) &&
+    QFileInfo::exists(options_.request_path))
+  {
+    request_watcher_->addPath(options_.request_path);
+  }
+  QString error;
+  const auto request = read_operator_preview_request(options_.request_path, &error);
+  if (!request) return;
+  const int applied = request_ ? request_->revision : -1;
+  if (request->revision <= applied) return;  // nothing newer than what is shown
+  if (!request_ || request->activate) {
+    apply_request(*request);
+    if (request->activate) {
+      showNormal();
+      raise();
+      activateWindow();
+    }
+    return;
+  }
+  if (request->revision == pending_revision_) return;  // already announced
+  pending_revision_ = request->revision;
+  const bool scene_changed = request->scene_dir != request_->scene_dir;
+  update_banner_text_->setText(scene_changed
+    ? QString("Workcell Builder selected another cell (%1). Refresh to show it.").arg(request->scene_name)
+    : QString("Workcell Builder has newer engineering state (%1). Refresh to show it.")
+        .arg(request->task_dirty ? "unsaved task edits" : "saved changes"));
+  update_banner_->setVisible(true);
+  log_event("notice", "ENGINEERING_CHANGE_AVAILABLE", update_banner_text_->text());
+  write_status();
+}
+
+void OperatorHmiWindow::apply_request(const OperatorPreviewRequest & request)
+{
+  const bool scene_changed = !request_ || request_->scene_dir != request.scene_dir;
+  request_ = request;
+  pending_revision_ = -1;
+  update_banner_->setVisible(false);
+  scene_dir_ = request.scene_dir;
+  if (scene_changed) {
+    replay_shown_ = false;
+    dry_run_ = {};
+    dry_run_raw_ = {};
+  }
+  log_event("info", "PREVIEW_REQUESTED",
+    QString("Revision %1 of %2 from Workcell Builder (%3).").arg(request.revision).arg(request.scene_name,
+      request.task_dirty ? "unsaved task draft" : "saved task"));
+  refresh_preview(replay_shown_);
+}
+
+QString OperatorHmiWindow::resolve_script(const QString & name) const
+{
+  QStringList candidates;
+  if (!options_.scripts_dir.isEmpty()) candidates << QDir(options_.scripts_dir).filePath(name);
+  if (request_ && !request_->scripts_dir.isEmpty()) candidates << QDir(request_->scripts_dir).filePath(name);
+  const QString env = qEnvironmentVariable("WORKCELL_STUDIO_SCRIPTS_DIR");
+  if (!env.isEmpty()) candidates << QDir(env).filePath(name);
+  candidates << QCoreApplication::applicationDirPath() + "/" + name  // installed beside the HMI
+             << QCoreApplication::applicationDirPath() + "/../../share/workcell_builder/scripts/" + name
+             << QCoreApplication::applicationDirPath() + "/../../../scripts/" + name
+             << QDir::current().filePath("scripts/" + name);
+  for (const auto & candidate : candidates) {
+    if (QFileInfo::exists(candidate)) return QFileInfo(candidate).absoluteFilePath();
+  }
+  return {};
+}
+
+void OperatorHmiWindow::refresh_preview(bool evaluate_input)
+{
+  if (scene_dir_.isEmpty()) {
+    log_event("error", "SCENE_MISSING", "No cell was selected for the preview.");
+    render();
+    return;
+  }
+  const QString script = resolve_script("operator_preview_projection.py");
+  if (script.isEmpty()) {
+    log_event("error", "PREVIEW_ADAPTER_MISSING",
+      "operator_preview_projection.py was not found; the configuration cannot be read.");
+    render();
+    return;
+  }
+  if (projection_process_) {
+    projection_process_->disconnect(this);
+    projection_process_->kill();
+    projection_process_->waitForFinished(1000);
+    projection_process_->deleteLater();
+  }
+  const int generation = ++projection_generation_;
+  projection_wants_input_ = evaluate_input;
+  projection_process_ = new QProcess(this);
+  QStringList arguments{script, "--scene", scene_dir_};
+  const bool draft = request_ && request_->task_dirty;
+  if (draft) arguments << "--draft-stdin";
+  if (evaluate_input) arguments << "--evaluate-input";
+  details_->setPlainText(QString("Projection command:\npython3 %1\n").arg(arguments.join(' ')));
+  connect(projection_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+          [this, generation](int code, QProcess::ExitStatus) { projection_finished(generation, code); });
+  set_busy(evaluate_input ? "Running replay check…" : "Reading the engineering configuration…");
+  projection_process_->start("python3", arguments);
+  if (draft) projection_process_->write(QJsonDocument(request_->task_draft).toJson(QJsonDocument::Compact));
+  projection_process_->closeWriteChannel();
+  projection_timeout_->start(kProjectionTimeoutMs);
+}
+
+void OperatorHmiWindow::projection_finished(int generation, int exit_code)
+{
+  if (generation != projection_generation_ || !projection_process_) return;
+  projection_timeout_->stop();
+  const QByteArray out = projection_process_->readAllStandardOutput();
+  const QString err = QString::fromUtf8(projection_process_->readAllStandardError()).trimmed();
+  projection_process_->deleteLater();
+  projection_process_ = nullptr;
+  set_busy({});
+  QJsonParseError parse{};
+  const auto document = QJsonDocument::fromJson(out, &parse);
+  if (parse.error != QJsonParseError::NoError || !document.isObject()) {
+    log_event("error", "PREVIEW_FAILED", QString("Configuration projection failed (exit %1): %2")
+      .arg(exit_code).arg(err.left(400)));
+    view_ = parse_operator_preview({}, request_ && request_->layout_dirty);
+    view_loaded_ = true;
+    render();
+    return;
+  }
+  projection_raw_ = document.object();
+  view_ = parse_operator_preview(projection_raw_, request_ && request_->layout_dirty);
+  view_loaded_ = true;
+  replay_shown_ = projection_wants_input_ && view_.replay_evaluated;
+  log_event("info", "PREVIEW_REFRESHED", QString("%1 revision of %2 loaded.")
+    .arg(view_.draft ? "Draft" : "Saved", view_.scene_name));
+  for (const auto & event : view_.events) log_event(event.level, event.code, event.message);
+  if (projection_wants_input_ && view_.input_kind != "replay") {
+    log_event("warning", "REPLAY_NOT_RUN", view_.input_kind == "live"
+      ? QString("The task uses live perception; the preview evaluates recorded replays only.")
+      : QString("Replay check not run: the task input is unavailable (see PERCEPTION_INPUT_UNAVAILABLE)."));
+  }
+  render();
+}
+
+void OperatorHmiWindow::run_gated_dry_run()
+{
+  const QString script = resolve_script("run_generated_workcell_bundle.py");
+  if (script.isEmpty() || !view_.dry_run_available) return;
+  if (dry_run_process_ && dry_run_process_->state() != QProcess::NotRunning) return;
+  dry_run_dir_ = std::make_unique<QTemporaryDir>(QDir::tempPath() + "/workcell_operator_dry_run_XXXXXX");
+  dry_run_process_ = new QProcess(this);
+  // Existing operator-permitted, no-motion tool; reports go to a private
+  // directory so the engineering scene is not modified.
+  const QStringList arguments{script, "--workcell", scene_dir_, "--gated-dry-run", "--dry-run", "--no-replay",
+                              "--json", "--output-dir", dry_run_dir_->path()};
+  connect(dry_run_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+          [this](int code, QProcess::ExitStatus) { dry_run_finished(code); });
+  log_event("info", "OFFLINE_TEST_STARTED", "Generated-cell dry-run started (no robot motion).");
+  details_->appendPlainText("\nDry-run command:\npython3 " + arguments.join(' '));
+  set_busy("Generated-cell dry-run running (no motion)…");
+  dry_run_process_->start("python3", arguments);
+}
+
+void OperatorHmiWindow::dry_run_finished(int exit_code)
+{
+  if (!dry_run_process_) return;
+  const QByteArray out = dry_run_process_->readAllStandardOutput();
+  const QString err = QString::fromUtf8(dry_run_process_->readAllStandardError()).trimmed();
+  const bool crashed = dry_run_process_->exitStatus() != QProcess::NormalExit;
+  dry_run_process_->deleteLater();
+  dry_run_process_ = nullptr;
+  set_busy({});
+  if (crashed) {
+    log_event("notice", "OFFLINE_TEST_STOPPED", "Generated-cell dry-run was stopped before it finished.");
+    render();
+    return;
+  }
+  const auto document = QJsonDocument::fromJson(out);
+  dry_run_raw_ = document.object();
+  dry_run_ = parse_gated_dry_run(dry_run_raw_);
+  if (!dry_run_.parsed) {
+    log_event("error", "OFFLINE_TEST_FAILED", QString("Dry-run produced no report (exit %1): %2")
+      .arg(exit_code).arg(err.left(400)));
+  } else if (dry_run_.status == "PASS") {
+    log_event("info", "OFFLINE_TEST_COMPLETED", "Generated-cell dry-run passed. No robot motion was commanded.");
+  } else {
+    log_event("error", "OFFLINE_TEST_BLOCKED", QString("Generated-cell dry-run %1: %2")
+      .arg(dry_run_.status.isEmpty() ? QString("FAILED") : dry_run_.status,
+           dry_run_.blockers.isEmpty() ? dry_run_.next_action : dry_run_.blockers.join("; ")));
+  }
+  details_->appendPlainText("\nDry-run report:\n" + QString::fromUtf8(QJsonDocument(dry_run_raw_).toJson()));
+  render();
+}
+
+void OperatorHmiWindow::stop_checks()
+{
+  for (auto * process : {projection_process_, dry_run_process_}) {
+    if (process && process->state() != QProcess::NotRunning) {
+      process->kill();
+      process->waitForFinished(2000);
+    }
+  }
+  if (projection_timeout_) projection_timeout_->stop();
+}
+
+void OperatorHmiWindow::set_busy(const QString & activity)
+{
+  busy_ = activity;
+  if (!monitor_status_) return;
+  render_controls();
+}
+
+void OperatorHmiWindow::log_event(const QString & level, const QString & code, const QString & message)
+{
+  if (!events_) return;
+  events_->insertRow(0);
+  const auto & t = studioTokens();
+  const QString colour = level == "error" ? t.danger : level == "warning" ? t.warning
+    : level == "notice" ? t.info : t.textSecondary;
+  const QStringList cells{QTime::currentTime().toString("HH:mm:ss"), level.toUpper(), code, message};
+  for (int column = 0; column < cells.size(); ++column) {
+    auto * item = new QTableWidgetItem(cells.at(column));
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+    if (column == 1) item->setForeground(QColor(colour));
+    item->setToolTip(cells.at(column));
+    events_->setItem(0, column, item);
+  }
+  while (events_->rowCount() > 400) events_->removeRow(events_->rowCount() - 1);
+}
+
+void OperatorHmiWindow::closeEvent(QCloseEvent * event)
+{
+  stop_checks();
+  event->accept();
+}
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+void OperatorHmiWindow::build_ui()
+{
+  auto * root = new QWidget(this);
+  root->setObjectName("hmiRoot");
+  auto * layout = new QVBoxLayout(root);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(0);
+  layout->addWidget(build_header());
+
+  update_banner_ = new QFrame(root);
+  update_banner_->setObjectName("hmiBanner");
+  auto * banner = new QHBoxLayout(update_banner_);
+  banner->setContentsMargins(18, 6, 18, 6);
+  update_banner_text_ = new QLabel(update_banner_);
+  update_banner_text_->setWordWrap(true);
+  auto * banner_refresh = new QPushButton("Refresh preview", update_banner_);
+  banner_refresh->setObjectName("hmiPrimary");
+  connect(banner_refresh, &QPushButton::clicked, this, [this]() {
+      QString error;
+      if (const auto request = read_operator_preview_request(options_.request_path, &error)) apply_request(*request);
+    });
+  banner->addWidget(update_banner_text_, 1);
+  banner->addWidget(banner_refresh);
+  update_banner_->setVisible(false);
+  layout->addWidget(update_banner_);
+
+  draft_notice_ = new QLabel(root);
+  draft_notice_->setObjectName("hmiDraftNotice");
+  draft_notice_->setWordWrap(true);
+  draft_notice_->setVisible(false);
+  layout->addWidget(draft_notice_);
+
+  auto * vertical = new QSplitter(Qt::Vertical, root);
+  vertical->setChildrenCollapsible(false);
+  auto * body = new QSplitter(Qt::Horizontal, vertical);
+  body->setChildrenCollapsible(false);
+  body->addWidget(build_overview());
+  body->addWidget(build_monitoring());
+  body->addWidget(build_controls());
+  body->setStretchFactor(0, 0);
+  body->setStretchFactor(1, 1);
+  body->setStretchFactor(2, 0);
+  body->setSizes({360, 640, 340});
+  vertical->addWidget(body);
+  vertical->addWidget(build_events());
+  vertical->setStretchFactor(0, 1);
+  vertical->setStretchFactor(1, 0);
+  vertical->setSizes({540, 150});
+  layout->addWidget(vertical, 1);
+  setCentralWidget(root);
+}
+
+QFrame * OperatorHmiWindow::build_header()
+{
+  auto * header = new QFrame(this);
+  header->setObjectName("hmiHeader");
+  auto * layout = new QHBoxLayout(header);
+  layout->setContentsMargins(18, 10, 18, 10);
+  layout->setSpacing(10);
+  auto * titles = new QVBoxLayout();
+  titles->setSpacing(1);
+  auto * eyebrow = new QLabel("WORKCELL OPERATOR HMI · PREVIEW", header);
+  eyebrow->setObjectName("hmiEyebrow");
+  title_ = new QLabel("No cell", header);
+  title_->setObjectName("hmiTitle");
+  subtitle_ = new QLabel("Read-only view of the engineering configuration from Workcell Builder.", header);
+  subtitle_->setObjectName("hmiSubtitle");
+  subtitle_->setWordWrap(true);
+  titles->addWidget(eyebrow);
+  titles->addWidget(title_);
+  titles->addWidget(subtitle_);
+  layout->addLayout(titles, 1);
+  for (QLabel ** badge : {&revision_badge_, &approval_badge_, &mode_badge_, &readiness_badge_, &production_badge_}) {
+    *badge = new QLabel(header);
+    (*badge)->setObjectName("hmiBadge");
+    (*badge)->setAlignment(Qt::AlignCenter);
+    (*badge)->setTextFormat(Qt::RichText);
+    (*badge)->setMinimumWidth(112);
+    layout->addWidget(*badge, 0, Qt::AlignVCenter);
+  }
+  refresh_button_ = new QPushButton("Refresh", header);
+  refresh_button_->setObjectName("hmiSecondary");
+  refresh_button_->setToolTip("Reload the engineering configuration (keeps the replay view if shown).");
+  connect(refresh_button_, &QPushButton::clicked, this, [this]() {
+      QString error;
+      if (!options_.request_path.isEmpty()) {
+        if (const auto request = read_operator_preview_request(options_.request_path, &error)) {
+          apply_request(*request);
+          return;
+        }
+      }
+      refresh_preview(replay_shown_);
+    });
+  layout->addWidget(refresh_button_, 0, Qt::AlignVCenter);
+  return header;
+}
+
+QWidget * OperatorHmiWindow::build_overview()
+{
+  auto * scroll = new QScrollArea(this);
+  scroll->setObjectName("hmiColumn");
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setMinimumWidth(320);
+  auto * host = new QWidget(scroll);
+  host->setObjectName("hmiColumnHost");
+  auto * layout = new QVBoxLayout(host);
+  layout->setContentsMargins(12, 12, 6, 12);
+  layout->setSpacing(10);
+  QVBoxLayout * body = nullptr;
+  layout->addWidget(card(host, "Cell overview", &body));
+  cell_values_ = value_label(host);
+  body->addWidget(cell_values_);
+  layout->addWidget(card(host, "Task", &body));
+  task_values_ = value_label(host);
+  body->addWidget(task_values_);
+  layout->addWidget(card(host, "Validation & readiness", &body));
+  validation_values_ = value_label(host);
+  body->addWidget(validation_values_);
+  layout->addStretch(1);
+  scroll->setWidget(host);
+  return scroll;
+}
+
+QWidget * OperatorHmiWindow::build_monitoring()
+{
+  auto * host = new QWidget(this);
+  host->setObjectName("hmiColumnHost");
+  auto * layout = new QVBoxLayout(host);
+  layout->setContentsMargins(6, 12, 6, 12);
+  layout->setSpacing(10);
+  QVBoxLayout * body = nullptr;
+  auto * map_card = card(host, "Cell monitor", &body);
+  map_caption_ = new QLabel(map_card);
+  map_caption_->setObjectName("hmiCaption");
+  map_caption_->setWordWrap(true);
+  body->addWidget(map_caption_);
+  auto * split = new QHBoxLayout();
+  split->setSpacing(10);
+  map_ = new CellMapWidget(map_card);
+  split->addWidget(map_, 3);
+  auto * status_stack = new QVBoxLayout();
+  status_stack->setSpacing(6);
+  robot_status_ = value_label(map_card);
+  robot_status_->setObjectName("hmiStatusTile");
+  robot_status_->setMinimumHeight(76);
+  cycle_status_ = value_label(map_card);
+  cycle_status_->setObjectName("hmiStatusTile");
+  cycle_status_->setMinimumHeight(76);
+  status_stack->addWidget(robot_status_);
+  status_stack->addWidget(cycle_status_);
+  status_stack->addStretch(1);
+  split->addLayout(status_stack, 2);
+  body->addLayout(split, 1);
+  layout->addWidget(map_card, 3);
+
+  auto * objects_card = card(host, "Detected objects", &body);
+  objects_ = new QTableWidget(0, 4, objects_card);
+  objects_->setObjectName("hmiTable");
+  objects_->setHorizontalHeaderLabels({"Object", "Class", "Confidence", "Decision"});
+  objects_->verticalHeader()->setVisible(false);
+  objects_->setSelectionBehavior(QAbstractItemView::SelectRows);
+  objects_->setSelectionMode(QAbstractItemView::SingleSelection);
+  objects_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  objects_->horizontalHeader()->setStretchLastSection(true);
+  objects_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+  objects_->verticalHeader()->setDefaultSectionSize(26);
+  objects_->setMinimumHeight(96);
+  connect(objects_, &QTableWidget::itemSelectionChanged, this, [this]() { render_selected_object(); });
+  body->addWidget(objects_, 1);
+  object_detail_ = value_label(objects_card);
+  object_detail_->setObjectName("hmiCaption");
+  body->addWidget(object_detail_);
+  layout->addWidget(objects_card, 2);
+  return host;
+}
+
+QWidget * OperatorHmiWindow::build_controls()
+{
+  auto * scroll = new QScrollArea(this);
+  scroll->setObjectName("hmiColumn");
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setMinimumWidth(300);
+  auto * host = new QWidget(scroll);
+  host->setObjectName("hmiColumnHost");
+  auto * layout = new QVBoxLayout(host);
+  layout->setContentsMargins(6, 12, 12, 12);
+  layout->setSpacing(10);
+  QVBoxLayout * body = nullptr;
+  layout->addWidget(card(host, "Task workflow", &body));
+  auto step = [&](const QString & text) {
+      auto * label = new QLabel(text, host);
+      label->setObjectName("hmiStep");
+      body->addWidget(label);
+    };
+  step("1  Recipe");
+  recipe_summary_ = value_label(host);
+  body->addWidget(recipe_summary_);
+  step("2  Check readiness");
+  check_button_ = new QPushButton("Check readiness", host);
+  check_button_->setObjectName("hmiSecondary");
+  check_button_->setToolTip("Re-read the engineering configuration and its validation evidence (read-only).");
+  connect(check_button_, &QPushButton::clicked, this, [this]() {
+      log_event("info", "READINESS_CHECK", "Readiness check requested.");
+      refresh_preview(replay_shown_);
+    });
+  body->addWidget(check_button_);
+  step("3  Run permitted offline task");
+  replay_button_ = new QPushButton("Run replay check", host);
+  replay_button_->setObjectName("hmiPrimary");
+  replay_button_->setToolTip("Evaluate the task's recorded commissioning replay with the task's selection rules. "
+                             "No robot motion.");
+  connect(replay_button_, &QPushButton::clicked, this, [this]() {
+      log_event("info", "OFFLINE_TEST_STARTED", "Replay check started (recorded input, no robot motion).");
+      refresh_preview(true);
+    });
+  body->addWidget(replay_button_);
+  replay_note_ = value_label(host);
+  replay_note_->setObjectName("hmiCaption");
+  body->addWidget(replay_note_);
+  dry_run_button_ = new QPushButton("Run generated-cell dry-run", host);
+  dry_run_button_->setObjectName("hmiSecondary");
+  dry_run_button_->setToolTip("Existing gated dry-run of the generated cell package. No robot motion.");
+  connect(dry_run_button_, &QPushButton::clicked, this, [this]() { run_gated_dry_run(); });
+  body->addWidget(dry_run_button_);
+  dry_run_note_ = value_label(host);
+  dry_run_note_->setObjectName("hmiCaption");
+  body->addWidget(dry_run_note_);
+  step("4  Monitor");
+  monitor_status_ = value_label(host);
+  body->addWidget(monitor_status_);
+  step("5  Stop");
+  stop_button_ = new QPushButton("Stop check", host);
+  stop_button_->setObjectName("hmiSecondary");
+  stop_button_->setToolTip("Stops the running offline check process. This is not a safety function.");
+  connect(stop_button_, &QPushButton::clicked, this, [this]() {
+      const bool running = (projection_process_ && projection_process_->state() != QProcess::NotRunning) ||
+        (dry_run_process_ && dry_run_process_->state() != QProcess::NotRunning);
+      stop_checks();
+      set_busy({});
+      if (running) log_event("notice", "OFFLINE_TEST_STOPPED", "Offline check stopped by the operator.");
+    });
+  body->addWidget(stop_button_);
+  step("6  Review results");
+  results_summary_ = value_label(host);
+  body->addWidget(results_summary_);
+
+  layout->addWidget(card(host, "Production", &body));
+  start_button_ = new QPushButton("Start production cycle", host);
+  start_button_->setObjectName("hmiDanger");
+  start_button_->setEnabled(false);
+  start_button_->setToolTip("Not authorised in this release: no qualified execution backend.");
+  body->addWidget(start_button_);
+  production_blockers_ = value_label(host);
+  body->addWidget(production_blockers_);
+  auto * safety = new QLabel("This HMI has no emergency stop. Use the cell's hardware emergency stop. "
+                             "Stop check only ends an offline check.", host);
+  safety->setObjectName("hmiCaption");
+  safety->setWordWrap(true);
+  body->addWidget(safety);
+  layout->addStretch(1);
+  scroll->setWidget(host);
+  return scroll;
+}
+
+QWidget * OperatorHmiWindow::build_events()
+{
+  auto * tabs = new QTabWidget(this);
+  tabs->setObjectName("hmiTabs");
+  tabs->setMinimumHeight(130);
+  events_ = new QTableWidget(0, 4, tabs);
+  events_->setObjectName("hmiTable");
+  events_->setHorizontalHeaderLabels({"Time", "Level", "Event", "Details"});
+  events_->verticalHeader()->setVisible(false);
+  events_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  events_->setSelectionBehavior(QAbstractItemView::SelectRows);
+  events_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+  events_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+  events_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+  events_->horizontalHeader()->setStretchLastSection(true);
+  events_->verticalHeader()->setDefaultSectionSize(24);
+  tabs->addTab(events_, "Events");
+  details_ = new QPlainTextEdit(tabs);
+  details_->setObjectName("hmiDetails");
+  details_->setReadOnly(true);
+  tabs->addTab(details_, "Engineering details");
+  return tabs;
+}
+
+void OperatorHmiWindow::apply_style()
+{
+  setStyleSheet(studioQss(R"(
+    QWidget#hmiRoot, QWidget#hmiColumnHost { background: @bg; }
+    QScrollArea#hmiColumn { background: @bg; border: none; }
+    QFrame#hmiHeader { background: @surfaceSunken; border-bottom: 1px solid @border; }
+    QLabel#hmiEyebrow { color: @textMuted; font-size: 8pt; font-weight: 700; letter-spacing: 1px; }
+    QLabel#hmiTitle { color: @text; font-size: 17pt; font-weight: 700; }
+    QLabel#hmiSubtitle { color: @textSecondary; font-size: 9pt; }
+    QLabel#hmiBadge { background: @surface; border: 1px solid @border; border-radius: @radiusM;
+      padding: 4px 10px; color: @text; font-size: 10pt; }
+    QLabel#hmiBadge[hmiState="ok"] { border-color: @success; background: @successSoft; }
+    QLabel#hmiBadge[hmiState="warn"] { border-color: @warning; background: @warningSoft; }
+    QLabel#hmiBadge[hmiState="error"] { border-color: @danger; background: @dangerSoft; }
+    QLabel#hmiBadge[hmiState="info"] { border-color: @info; background: @infoSoft; }
+    QFrame#hmiBanner { background: @infoSoft; border-bottom: 1px solid @info; }
+    QFrame#hmiBanner QLabel { color: @text; font-size: 10pt; }
+    QLabel#hmiDraftNotice { background: @warningSoft; color: @text; border-bottom: 1px solid @warning;
+      padding: 6px 18px; font-size: 10pt; }
+    QFrame#hmiCard { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QLabel#hmiCardTitle { color: @textMuted; font-size: 8.5pt; font-weight: 700; letter-spacing: 1px; }
+    QLabel { color: @text; font-size: 10pt; }
+    QLabel#hmiCaption { color: @textSecondary; font-size: 9pt; }
+    QLabel#hmiStep { color: @accentHover; font-size: 9pt; font-weight: 700; margin-top: 2px; }
+    QLabel#hmiStatusTile { background: @surfaceSunken; border: 1px solid @border; border-radius: @radiusM;
+      padding: 8px; }
+    QPushButton { min-height: 30px; border-radius: @radiusM; padding: 3px 12px; font-size: 10pt; }
+    QPushButton#hmiPrimary { background: @accent; color: @accentText; border: 1px solid @accent; font-weight: 600; }
+    QPushButton#hmiPrimary:hover { background: @accentHover; }
+    QPushButton#hmiSecondary { background: @surfaceRaised; color: @text; border: 1px solid @borderStrong; }
+    QPushButton#hmiSecondary:hover { border-color: @accent; }
+    QPushButton#hmiDanger { background: @dangerSoft; color: @danger; border: 1px solid @danger; font-weight: 600; }
+    QPushButton:disabled, QPushButton#hmiPrimary:disabled, QPushButton#hmiSecondary:disabled,
+    QPushButton#hmiDanger:disabled { background: @surfaceSunken; color: @textMuted; border: 1px solid @border;
+      font-weight: 400; }
+    QTableWidget#hmiTable { background: @surfaceSunken; alternate-background-color: @surface; color: @text;
+      gridline-color: @border; border: 1px solid @border; border-radius: @radiusS; font-size: 9.5pt;
+      selection-background-color: @selection; }
+    QHeaderView::section { background: @surfaceRaised; color: @textSecondary; border: none;
+      border-right: 1px solid @border; padding: 4px 6px; font-size: 9pt; font-weight: 600; }
+    QTabWidget#hmiTabs::pane { border-top: 1px solid @border; background: @bg; }
+    QTabBar::tab { background: @surface; color: @textSecondary; padding: 6px 14px; border: 1px solid @border;
+      border-bottom: none; border-top-left-radius: @radiusS; border-top-right-radius: @radiusS; }
+    QTabBar::tab:selected { background: @surfaceRaised; color: @text; }
+    QPlainTextEdit#hmiDetails { background: @surfaceSunken; color: @textSecondary; border: none;
+      font-family: monospace; font-size: 9pt; }
+    QSplitter::handle { background: @bg; }
+  )"));
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
+void OperatorHmiWindow::render()
+{
+  render_badges();
+  render_overview();
+  render_monitoring();
+  render_controls();
+  write_status();
+}
+
+void OperatorHmiWindow::render_badges()
+{
+  const bool have = view_loaded_ && view_.usable;
+  title_->setText(have ? view_.scene_name : (request_ ? request_->scene_name : QFileInfo(scene_dir_).fileName()));
+  setWindowTitle(QString("Workcell Operator HMI — %1").arg(title_->text().isEmpty() ? "no cell" : title_->text()));
+  if (!have) {
+    set_badge(revision_badge_, "REVISION", "UNKNOWN", "neutral");
+    set_badge(approval_badge_, "APPROVAL", "UNKNOWN", "neutral");
+    set_badge(mode_badge_, "MODE", "UNAVAILABLE", "neutral");
+    set_badge(readiness_badge_, "READINESS", view_loaded_ ? "BLOCKED" : "LOADING", view_loaded_ ? "error" : "neutral");
+    set_badge(production_badge_, "PRODUCTION", "NOT AUTHORISED", "error");
+    draft_notice_->setVisible(false);
+    return;
+  }
+  set_badge(revision_badge_, "REVISION", view_.draft ? "DRAFT" : "SAVED", view_.draft ? "warn" : "ok");
+  set_badge(approval_badge_, "APPROVAL", view_.approval_status == "APPROVED" ? "APPROVED" : "NOT APPROVED",
+            view_.approval_status == "APPROVED" ? "ok" : "warn");
+  const auto mode = operator_mode(view_, replay_shown_);
+  set_badge(mode_badge_, "MODE", operator_mode_label(mode),
+            mode == OperatorMode::Draft ? "warn" : mode == OperatorMode::Replay ? "info" : "neutral");
+  const auto readiness = operator_readiness(view_);
+  set_badge(readiness_badge_, "OFFLINE CHECKS", readiness.offline_checks_allowed ? "READY" : "BLOCKED",
+            readiness.offline_checks_allowed ? "ok" : "error");
+  set_badge(production_badge_, "PRODUCTION", "NOT AUTHORISED", "error");
+  QStringList notices;
+  if (view_.draft) {
+    notices << QString("DRAFT — showing unsaved task edits from Workcell Builder (not saved, not approved)%1.")
+      .arg(view_.draft_differs == std::optional<bool>(false) ? "; identical to the saved task" : "");
+  }
+  if (view_.layout_unsaved) {
+    notices << "Workcell Builder has unsaved layout edits; the physical scene shown is the last saved revision.";
+  }
+  draft_notice_->setText(notices.join("  "));
+  draft_notice_->setVisible(!notices.isEmpty());
+}
+
+void OperatorHmiWindow::render_overview()
+{
+  if (!view_loaded_ || !view_.usable) {
+    const QString reason = view_.errors.isEmpty() ? QString("Loading the engineering configuration…")
+                                                  : view_.errors.join("<br>");
+    cell_values_->setText(view_.errors.isEmpty() ? muted(reason) : state_text("BLOCKED", "error") + "<br>" + reason);
+    task_values_->setText(muted("UNAVAILABLE"));
+    validation_values_->setText(muted("UNAVAILABLE"));
+    return;
+  }
+  QString tool = or_unavailable(view_.tool);
+  if (!view_.tool_type.isEmpty()) tool += muted(" · " + view_.tool_type);
+  cell_values_->setText(rows({
+      {"Cell", escaped(view_.scene_name)},
+      {"Robot", or_unavailable(view_.robot) + (view_.planning_group.isEmpty() ? QString() : muted(" · " + view_.planning_group))},
+      {"End effector", tool},
+      {"Tool capability", view_.capabilities.isEmpty() ? muted("UNKNOWN") : escaped(view_.capabilities.join(", "))},
+      {"Camera", or_unavailable(view_.camera)},
+      {"Perception", or_unavailable(view_.perception_contract) +
+        (view_.perception_mode.isEmpty() ? QString() : muted(" · " + view_.perception_mode))},
+    }));
+  QString target = view_.target_class.isEmpty() ? muted("ANY CLASS (no class filter)") : state_text(view_.target_class, "info");
+  if (!view_.target_color.isEmpty()) target += escaped(" · colour " + view_.target_color);
+  task_values_->setText(rows({
+      {"Task", or_unavailable(view_.task_id) + muted(" · " + view_.task_type)},
+      {"Target objects", target},
+      {"Ignored objects", escaped(view_.not_targeted_rule.isEmpty() ? QString("UNKNOWN") : view_.not_targeted_rule)},
+      {"Min confidence", number_or_unavailable(view_.min_confidence, "", "not set")},
+      {"Max age", number_or_unavailable(view_.max_age_seconds, " s", "not set")},
+      {"Pick zone", or_unavailable(view_.pick_zone)},
+      {"Input source", or_unavailable(view_.source)},
+      {"Destinations", view_.destinations.isEmpty() ? state_text("MISSING", "error") : escaped(view_.destinations.join(", "))},
+      {"Routing", view_.routing_rules.isEmpty() ? muted("none") : escaped(view_.routing_rules.join("; "))},
+      {"Grasp", or_unavailable(view_.grasp)},
+    }));
+  const auto check = [](const QString & status) {
+      if (status.isEmpty()) return muted("NOT RUN");
+      const QString state = (status == "PASS" || status == "READY") ? "ok"
+        : (status == "WARNING" || status == "WARNINGS" || status == "PREVIEW_ONLY") ? "warn" : "error";
+      return state_text(status, state);
+    };
+  QString offline = check(view_.offline_validation_status);
+  if (!view_.offline_validation_status.isEmpty()) {
+    offline += muted(" · " + when(view_.offline_validation_modified));
+    if (view_.offline_validation_current) {
+      offline += *view_.offline_validation_current ? muted(" · current") : " " + state_text("STALE", "warn");
+    }
+  }
+  QString scene_validation = check(view_.scene_validation_status);
+  if (!view_.scene_validation_status.isEmpty()) scene_validation += muted(" · " + when(view_.scene_validation_modified));
+  QString task_validation = check(view_.validation_status) + muted(" · " + view_.readiness_classification);
+  if (!view_.validation_errors.isEmpty()) task_validation += "<br>" + escaped(view_.validation_errors.join("; "));
+  QString resolution = check(view_.resolution_status);
+  if (!view_.resolution_code.isEmpty()) resolution += muted(" · " + view_.resolution_code);
+  if (!view_.resolution_reason.isEmpty()) resolution += "<br>" + muted(view_.resolution_reason);
+  QString input = view_.input_kind == "replay" ? state_text("RECORDED REPLAY", "info")
+    : view_.input_kind == "live" ? state_text("LIVE (not consumed in preview)", "warn")
+    : state_text("UNAVAILABLE", "error");
+  if (!view_.input_blocker.isEmpty()) input += "<br>" + escaped(view_.input_blocker);
+  validation_values_->setText(rows({
+      {"Task intent", task_validation},
+      {"Scene validation", scene_validation},
+      {"Offline validation", offline},
+      {"Task resolution", resolution},
+      {"Task input", input},
+      {"Simulation", muted("Workcell Builder only (not from HMI)")},
+      {"Live operation", state_text("NOT SUPPORTED", "warn")},
+    }));
+}
+
+void OperatorHmiWindow::render_monitoring()
+{
+  const bool objects = replay_shown_ && view_.replay_evaluated;
+  map_->set_view(view_loaded_ && view_.usable ? &view_ : nullptr, objects, view_.selected_object);
+  if (objects) {
+    map_caption_->setText(QString("<b style='color:%1'>REPLAY</b> · recorded commissioning snapshot, not a live camera"
+                                  "%2").arg(studioTokens().info,
+                                            view_.replay_description.isEmpty() ? QString() : " · " + escaped(view_.replay_description)));
+  } else {
+    map_caption_->setText(view_.input_kind == "replay"
+      ? "Camera: no live feed in the preview. Run the replay check to show the recorded objects."
+      : "Camera: no live feed in the preview. No observation data.");
+  }
+  objects_->setRowCount(0);
+  if (objects) {
+    for (const auto & row : view_.objects) {
+      const int r = objects_->rowCount();
+      objects_->insertRow(r);
+      const QStringList cells{row.object_id, row.class_id,
+        row.confidence ? QString::number(*row.confidence, 'f', 2) : QString("UNAVAILABLE"),
+        row.accepted ? QString("ACCEPTED") : QString("REJECTED · ") + row.reason_code};
+      for (int c = 0; c < cells.size(); ++c) {
+        auto * item = new QTableWidgetItem(cells.at(c));
+        item->setToolTip(row.reason);
+        if (c == 3) item->setForeground(QColor(row.accepted ? studioTokens().success : studioTokens().warning));
+        objects_->setItem(r, c, item);
+      }
+    }
+    if (!view_.replay_error.isEmpty()) object_detail_->setText(state_text("Replay check failed: ", "error") + escaped(view_.replay_error));
+  }
+  if (!objects) object_detail_->setText(muted("No detected-object data. Detections are UNAVAILABLE until a replay is evaluated."));
+  else if (view_.objects.isEmpty() && view_.replay_error.isEmpty()) object_detail_->setText(muted("The replay contained no objects."));
+  else if (view_.replay_error.isEmpty()) object_detail_->setText(muted("Select an object to see why it was accepted or rejected."));
+
+  robot_status_->setText(QString("<b>Robot</b><br>%1<br>%2").arg(state_text("NOT CONNECTED", "neutral"),
+    muted("State UNKNOWN (no runtime link).")));
+  QString cycle = QString("<b>Cycle stage</b><br>%1").arg(state_text("NO CYCLE RUNNING", "neutral"));
+  if (dry_run_.parsed) {
+    cycle += QString("<br>Last dry-run: %1").arg(state_text(dry_run_.status.isEmpty() ? "UNKNOWN" : dry_run_.status,
+      dry_run_.status == "PASS" ? "ok" : "error"));
+    if (!dry_run_.stages.isEmpty()) cycle += "<br>" + muted("Planned stages: " + dry_run_.stages.join(" → "));
+  } else if (objects && !view_.selected_object.isEmpty()) {
+    cycle += "<br>" + muted("Selected " + view_.selected_object + "; not executed.");
+  }
+  cycle_status_->setText(cycle);
+}
+
+void OperatorHmiWindow::render_selected_object()
+{
+  const auto selected = objects_->selectionModel() ? objects_->selectionModel()->selectedRows() : QModelIndexList{};
+  if (selected.isEmpty() || selected.first().row() >= view_.objects.size()) {
+    map_->set_view(view_loaded_ && view_.usable ? &view_ : nullptr, replay_shown_ && view_.replay_evaluated, view_.selected_object);
+    return;
+  }
+  const auto & row = view_.objects.at(selected.first().row());
+  map_->set_view(&view_, true, row.object_id);
+  object_detail_->setText(QString("%1 · <b>%2</b> · %3<br>%4 %5")
+    .arg(escaped(row.object_id), escaped(row.class_id),
+         row.confidence ? escaped(QString("confidence %1").arg(*row.confidence, 0, 'f', 2)) : muted("confidence UNAVAILABLE"),
+         row.accepted ? state_text("ACCEPTED", "ok") : state_text("REJECTED", "warn"),
+         escaped(row.reason) + muted(" (" + row.reason_code + ")")));
+}
+
+void OperatorHmiWindow::render_controls()
+{
+  const bool have = view_loaded_ && view_.usable;
+  const auto readiness = operator_readiness(view_);
+  const bool running = !busy_.isEmpty();
+  if (have) {
+    recipe_summary_->setText(QString("%1 · target %2<br>%3")
+      .arg(escaped(view_.task_id), view_.target_class.isEmpty() ? muted("any class") : state_text(view_.target_class, "info"),
+           view_.draft ? state_text("DRAFT — not an approved recipe", "warn")
+           : view_.approval_status == "APPROVED" ? state_text("Approved by " + view_.approval_by, "ok")
+           : state_text("Saved, not approved", "warn")));
+  } else {
+    recipe_summary_->setText(muted("UNAVAILABLE"));
+  }
+  check_button_->setEnabled(!scene_dir_.isEmpty() && !running);
+  replay_button_->setEnabled(have && readiness.offline_checks_allowed && view_.input_kind == "replay" && !running);
+  replay_button_->setToolTip(view_.input_kind == "replay" ? "Evaluate the recorded commissioning replay. No robot motion."
+                                                         : "No recorded replay is bound to this task.");
+  QString replay_note;
+  if (have && view_.input_kind != "replay") {
+    QString blocker = view_.input_blocker.isEmpty() ? QString("no recorded replay is bound to this task.") : view_.input_blocker;
+    if (!scene_dir_.isEmpty()) blocker.replace(QDir(scene_dir_).absolutePath() + "/", QString());  // scene-relative
+    replay_note = state_text("Replay check unavailable: ", "warn") + escaped(blocker);
+  } else if (have && !readiness.offline_checks_allowed) {
+    replay_note = state_text("Blocked: ", "error") + escaped(readiness.offline_blockers.join("; "));
+  }
+  replay_note_->setText(replay_note);
+  replay_note_->setVisible(!replay_note.isEmpty());
+  const bool dry_run_ok = have && view_.dry_run_available && !view_.draft && !running &&
+    !resolve_script("run_generated_workcell_bundle.py").isEmpty();
+  dry_run_button_->setEnabled(dry_run_ok);
+  QString dry_note;
+  if (!have) dry_note = muted("Dry-run UNAVAILABLE.");
+  else if (view_.draft) dry_note = muted("Dry-run uses the saved generated package; save and generate in Workcell Builder first.");
+  else if (!view_.dry_run_available) dry_note = muted(view_.dry_run_unavailable_reason);
+  else if (dry_run_.parsed && !dry_run_.blockers.isEmpty())
+    dry_note = state_text("Blocked: ", "error") + escaped(dry_run_.blockers.join("; "));
+  dry_run_note_->setText(dry_note);
+  dry_run_note_->setVisible(!dry_note.isEmpty());
+  monitor_status_->setText(running ? state_text(busy_, "info") : muted("Idle — no offline check running."));
+  stop_button_->setEnabled(running);
+
+  QStringList results;
+  if (replay_shown_ && view_.replay_evaluated) {
+    int accepted = 0;
+    for (const auto & row : view_.objects) accepted += row.accepted ? 1 : 0;
+    results << QString("Replay check: %1 of %2 objects accepted%3.").arg(accepted).arg(view_.objects.size())
+      .arg(view_.selected_object.isEmpty() ? QString() : "; selected " + view_.selected_object);
+  }
+  if (dry_run_.parsed) {
+    results << QString("Dry-run: %1%2").arg(dry_run_.status.isEmpty() ? QString("UNKNOWN") : dry_run_.status,
+      dry_run_.safe_for_robot_motion ? QString() : QString(" · safe for robot motion: false"));
+  }
+  results_summary_->setText(results.isEmpty() ? muted("No results yet.") : escaped(results.join("\n")).replace("\n", "<br>"));
+
+  start_button_->setEnabled(false);
+  QString blockers = state_text("NOT AUTHORISED", "error") + "<br>";
+  for (const auto & blocker : readiness.production_blockers) blockers += "• " + escaped(blocker) + "<br>";
+  production_blockers_->setText(blockers);
+}
+
+void OperatorHmiWindow::write_status() const
+{
+  if (options_.status_out.isEmpty()) return;
+  QJsonArray objects;
+  for (const auto & row : view_.objects) {
+    objects.append(QJsonObject{{"object_id", row.object_id}, {"class_id", row.class_id},
+                               {"accepted", row.accepted}, {"reason_code", row.reason_code}});
+  }
+  const auto readiness = operator_readiness(view_);
+  const QJsonObject status{
+    {"schema", "workcell_operator_hmi_status/v1"},
+    {"applied_revision", request_ ? request_->revision : -1},
+    {"pending_revision", pending_revision_},
+    {"update_banner_visible", update_banner_ && update_banner_->isVisible()},
+    {"scene_name", view_.scene_name}, {"scene_path", view_.scene_path},
+    {"loaded", view_loaded_}, {"usable", view_.usable},
+    {"revision", view_.draft ? "DRAFT" : "SAVED"},
+    {"layout_unsaved", view_.layout_unsaved},
+    {"intent_sha256", view_.intent_sha256}, {"saved_intent_sha256", view_.saved_intent_sha256},
+    {"mode", operator_mode_label(operator_mode(view_, replay_shown_))},
+    {"approval", view_.approval_status},
+    {"task_id", view_.task_id}, {"target_class", view_.target_class},
+    {"destinations", QJsonArray::fromStringList(view_.destinations)},
+    {"validation_status", view_.validation_status},
+    {"resolution_status", view_.resolution_status},
+    {"offline_checks_allowed", readiness.offline_checks_allowed},
+    {"start_enabled", start_button_ && start_button_->isEnabled()},
+    {"production_blockers", QJsonArray::fromStringList(readiness.production_blockers)},
+    {"replay_shown", replay_shown_}, {"objects", objects}, {"selected_object", view_.selected_object},
+    {"dry_run_status", dry_run_.parsed ? dry_run_.status : QString()},
+    {"dry_run_blockers", QJsonArray::fromStringList(dry_run_.blockers)},
+    {"busy", busy_}, {"errors", QJsonArray::fromStringList(view_.errors)},
+    {"event_count", events_ ? events_->rowCount() : 0},
+    {"last_command", last_command_}, {"command_results", command_results_},
+    {"replay_enabled", replay_button_ && replay_button_->isEnabled()},
+    {"dry_run_enabled", dry_run_button_ && dry_run_button_->isEnabled()},
+    {"input_kind", view_.input_kind}, {"input_blocker", view_.input_blocker},
+  };
+  QSaveFile file(options_.status_out);
+  if (file.open(QIODevice::WriteOnly)) {
+    file.write(QJsonDocument(status).toJson());
+    file.commit();
+  }
+}
+
+// Test-only: acceptance runs drive the real buttons through a command file so
+// the separate HMI process is exercised exactly as an operator would use it.
+void OperatorHmiWindow::poll_acceptance_commands()
+{
+  QFile file(options_.acceptance_commands);
+  if (!file.open(QIODevice::ReadOnly)) return;
+  const auto commands = QJsonDocument::fromJson(file.readAll()).array();
+  for (const auto & value : commands) {
+    const auto command = value.toObject();
+    const int id = command.value("id").toInt();
+    if (id <= last_command_) continue;
+    last_command_ = id;
+    const QString action = command.value("action").toString();
+    QString result = "done";
+    auto click = [&result](QPushButton * button) {
+        if (button && button->isEnabled()) {
+          button->click();
+        } else {
+          result = "rejected: control disabled";
+        }
+      };
+    const QHash<QString, QPushButton *> buttons{
+      {"replay_check", replay_button_}, {"dry_run", dry_run_button_}, {"check", check_button_},
+      {"refresh", refresh_button_}, {"stop", stop_button_}, {"start_production", start_button_}};
+    if (buttons.contains(action)) {
+      click(buttons.value(action));
+    } else if (action == "select_object") {
+      result = "rejected: object not shown";
+      for (int row = 0; row < objects_->rowCount(); ++row) {
+        if (objects_->item(row, 0) && objects_->item(row, 0)->text() == command.value("object_id").toString()) {
+          objects_->selectRow(row);
+          result = "done";
+        }
+      }
+    } else if (action == "capture" && !options_.capture_dir.isEmpty()) {
+      QDir().mkpath(options_.capture_dir);
+      grab().save(QDir(options_.capture_dir).filePath(command.value("name").toString() + ".png"));
+    } else if (action == "close") {
+      QTimer::singleShot(0, this, &QWidget::close);
+    } else {
+      result = "rejected: unknown action";
+    }
+    command_results_.append(QJsonObject{{"id", id}, {"action", action}, {"result", result}});
+    write_status();
+  }
+}
+
+}  // namespace workcell_builder

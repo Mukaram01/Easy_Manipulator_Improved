@@ -181,6 +181,8 @@ Workcell Studio should ultimately have three clearly separated user experiences 
 
 The Operator HMI must consume approved Workcell Studio task/scene contracts; it must not become a third authoring source of truth. Engineering changes stay in Workcell Builder/EPD. Operator controls should be intentionally narrow and safe.
 
+R3 delivered the first vertical slice: an **Operator Preview** launched from Workcell Builder. It is a separate read-only HMI process with draft and saved revisions, replay and generated-cell dry-run checks, and production NOT AUTHORISED. See `R3_OPERATOR_HMI_PREVIEW.md`. Live input, runtime telemetry, approval workflow and production start remain open.
+
 ## Near-term visual target
 
 The near-term engineering experience target is now:

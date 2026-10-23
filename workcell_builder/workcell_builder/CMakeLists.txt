@@ -215,7 +215,11 @@ add_executable(workcell_builder
     src_rviz_preview_runner.cpp
     src_visual_mesh_source_resolver.cpp
     include/rviz_preview_runner.hpp
-    include/visual_mesh_source_resolver.hpp)
+    include/visual_mesh_source_resolver.hpp
+    gui/operator_preview_launcher.cpp
+    gui/operator_preview_launcher.hpp
+    include/operator_preview_request.hpp
+    src_operator_preview_request.cpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
@@ -270,6 +274,17 @@ target_include_directories(workcell_builder
   PRIVATE
     ${Boost_INCLUDE_DIRS}
 )
+
+# Operator HMI (preview): a separate process that Workcell Builder launches with a
+# read-only request. It shares the Studio design tokens, not the authoring code.
+add_executable(workcell_operator_hmi
+  gui/operator_hmi_main.cpp
+  gui/operator_hmi_window.cpp
+  gui/operator_hmi_window.hpp
+  gui/operator_hmi_model.cpp
+  src_operator_preview_request.cpp
+  gui/workcell_builder_ui_utils.cpp)
+target_link_libraries(workcell_operator_hmi Qt5::Widgets)
 
 set(WORKCELL_BUILDER_CANONICAL_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
 set(WORKCELL_BUILDER_SECONDARY_ASSETS_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_assets")
@@ -379,6 +394,12 @@ if(BUILD_TESTING)
   endif()
   target_sources(workcell_task_intent_editor_test PRIVATE src_scene_select_paths.cpp)
   ament_target_dependencies(workcell_task_intent_editor_test ament_index_cpp rclcpp)
+  ament_add_gtest(workcell_operator_hmi_test
+    test/operator_hmi_test.cpp gui/operator_hmi_model.cpp gui/operator_preview_launcher.cpp
+    src_operator_preview_request.cpp)
+  if(TARGET workcell_operator_hmi_test)
+    target_link_libraries(workcell_operator_hmi_test Qt5::Widgets)
+  endif()
   ament_add_gtest(workcell_task_intent_model_test
     test/task_intent_model_test.cpp
     src_task_intent_model.cpp)
@@ -830,6 +851,7 @@ if(BUILD_TESTING)
   endif()
 
   set(workcell_builder_registered_cpp_tests
+    operator_hmi_test.cpp
     link_deletion_test.cpp
     workcell_directory_inspection_test.cpp
     scene_select_paths_test.cpp
@@ -908,6 +930,7 @@ install(TARGETS workcell_builder
   EXPORT export_${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
+install(TARGETS workcell_operator_hmi DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS
   scripts/workcell_builder
@@ -932,6 +955,8 @@ install(PROGRAMS
   ../../scripts/task_intent_authoring.py
   ../../scripts/task_intent_v2.py
   ../../scripts/task_intent_resolver.py
+  ../../scripts/operator_preview_projection.py
+  ../../scripts/workcell_roles.py
   ../../scripts/validate_builder_task_intent.py
   ../../scripts/capability_registry.py
   ../../scripts/workcell_studio_layout_source.py
