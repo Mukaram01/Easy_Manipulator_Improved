@@ -1,4 +1,5 @@
 #include "scene_preview_widget.h"
+#include "teardown_connections.hpp"
 // Compatibility token for static tests: Preview selection cleared after refresh (id missing):
 
 #include <QRectF>
@@ -886,6 +887,9 @@ ScenePreviewWidget::~ScenePreviewWidget()
   // The containing MainWindow's members may already be destroyed. Retire
   // outbound UI callbacks before process waits or WebEngine teardown.
   disconnect(this, nullptr, nullptr, nullptr);
+  // Children (web view, processes, network replies) are deleted after this
+  // widget's members; none of their signals may reach this widget again.
+  workcell_builder::retire_inbound_connections_from_descendants(this);
   cancel_embedded_web_lifecycle(true);
 }
 
