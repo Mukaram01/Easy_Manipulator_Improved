@@ -71,6 +71,7 @@ const context = {
     dispatchEvent(event) { events.push(event?.detail || null); },
     parent: { postMessage() {} },
     addEventListener() {},
+    __WORKCELL_VIEWER_LIFECYCLE__: { registerCleanup() {} },
   },
   document: {
     getElementById() { return element(); },
@@ -109,7 +110,7 @@ const makeCase = testCase => {
   const item = JSON.parse(JSON.stringify(testCase.item));
   const root = new THREE.Group();
   const rpy = testCase.visual_rotation_rpy || [0, 0, 0];
-  root.rotation.set(rpy[0], rpy[1], rpy[2], 'XYZ');
+  root.rotation.set(rpy[0], rpy[1], rpy[2], 'ZYX');
   const geometry = new THREE.BoxGeometry(...testCase.geometry_dimensions);
   const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
   root.add(mesh);

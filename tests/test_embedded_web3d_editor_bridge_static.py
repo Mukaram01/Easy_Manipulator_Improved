@@ -437,6 +437,67 @@ assert.strictEqual(canonicalRotatePreviewTransform(start,'X',NaN),null);
     assert "snapOptions: null" in pivot_finish
 
 
+
+def test_web3d_poses_use_ros_fixed_axis_rpy_for_set_and_read_back():
+    import subprocess
+
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',value:'',style:{},dataset:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const context={console,assert,THREE_IMPL,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){},__WORKCELL_VIEWER_LIFECYCLE__:{registerCleanup(){}}},document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+vm.runInContext(source+`
+THREE=THREE_IMPL;state.three.scene=new THREE.Scene();
+// Rz(yaw)*Ry(pitch)*Rx(roll): asset_mounting.py, native Scene3D, the generated URDF and RViz.
+const ros=([r,p,y])=>{const cr=Math.cos(r),sr=Math.sin(r),cp=Math.cos(p),sp=Math.sin(p),cy=Math.cos(y),sy=Math.sin(y);
+  return [[cy*cp,cy*sp*sr-sy*cr,cy*sp*cr+sy*sr],[sy*cp,sy*sp*sr+cy*cr,sy*sp*cr-cy*sr],[-sp,cp*sr,cp*cr]];};
+const sameRotation=(matrix,rpy,label)=>{const e=matrix.elements,m=ros(rpy);for(let r=0;r<3;r++)for(let c=0;c<3;c++)assert(Math.abs(e[c*4+r]-m[r][c])<1e-12,label+' R['+r+']['+c+']');};
+const drawn=object=>{object.updateMatrixWorld(true);return object.matrixWorld;};
+const transform=rpy=>({pose:{xyz:{x:.6,y:.1,z:.9},rpy:{x:rpy[0],y:rpy[1],z:rpy[2]}},scale:{x:1,y:1,z:1}});
+// A camera pitched 90 degrees on a stand turned 15 degrees, and general compound poses.
+const cases=[[0,Math.PI/2,0.26],[0.3,-0.4,1.2],[Math.PI-1e-3,0.2,-2.5]];
+for(const rpy of cases){
+  const label=JSON.stringify(rpy);
+  const object=new THREE.Group();assert(applyTransformToObject(object,transform(rpy)));
+  sameRotation(drawn(object),rpy,'applyTransformToObject '+label);
+  // Read-back is exact, so a selection poll never echoes a pose edit to Qt.
+  assert.deepStrictEqual(transformFromObject(object).pose.rpy,{x:rpy[0],y:rpy[1],z:rpy[2]},'read-back '+label);
+  const posed=new THREE.Group();assert(applyPose(posed,{id:'posed',pose:{xyz:[.6,.1,.9],rpy}}));
+  sameRotation(drawn(posed),rpy,'applyPose '+label);
+  assert.deepStrictEqual(transformFromObject(posed).pose.rpy,{x:rpy[0],y:rpy[1],z:rpy[2]},'applyPose read-back '+label);
+  const block=new THREE.Group();applyPoseBlockToObject(block,{xyz:[.6,.1,.9],rpy});sameRotation(drawn(block),rpy,'applyPoseBlockToObject '+label);
+  const matrix=matrixFromPoseBlock({xyz:[.6,.1,.9],rpy});sameRotation(matrix,rpy,'matrixFromPoseBlock '+label);
+  const back=poseBlockFromMatrix(matrix);sameRotation(matrixFromPoseBlock({xyz:[0,0,0],rpy:[back.rpy.x,back.rpy.y,back.rpy.z]}),rpy,'poseBlockFromMatrix '+label);
+  // R3.2: the owner pose a surface pick reports is the authored rotation, and the ghost draws the resolver's RPY.
+  sameRotation(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...mateRosRpyFromMatrix(drawn(object)),'ZYX')),rpy,'mate owner pose '+label);
+  state.objects=[{item:{id:'owner'},object3d:object}];state.three.scene.add(object);
+  const ghost=buildMateGhost({id:'owner',xyz:[.6,.1,.9],rpy});assert(ghost);sameRotation(drawn(ghost),rpy,'mate ghost '+label);
+  state.three.scene.remove(object);
+}
+// The ROS gimbal case keeps its authored angles through a matrix round trip.
+const locked=poseBlockFromMatrix(matrixFromPoseBlock({xyz:[0,0,0],rpy:[0,Math.PI/2,0.26]}));
+assert(Math.abs(locked.rpy.x)<1e-12&&Math.abs(locked.rpy.y-Math.PI/2)<1e-12&&Math.abs(locked.rpy.z-0.26)<1e-12,JSON.stringify(locked.rpy));
+// A gizmo turn about world Z of a tilted object reads back as a pure yaw change.
+const tilted=new THREE.Group();applyTransformToObject(tilted,transform([0.3,-0.4,1.2]));
+tilted.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),0.1));
+const turned=transformFromObject(tilted).pose.rpy;
+assert(Math.abs(turned.x-0.3)<1e-12&&Math.abs(turned.y+0.4)<1e-12&&Math.abs(turned.z-1.3)<1e-12,JSON.stringify(turned));
+// A rotation written in another Euler order is decomposed into ROS RPY, never reported raw.
+const foreign=new THREE.Group();foreign.rotation.set(0.3,-0.4,1.2,'XYZ');
+const decomposed=transformFromObject(foreign).pose.rpy;
+sameRotation(drawn(foreign),[decomposed.x,decomposed.y,decomposed.z],'foreign order read-back');
+assert(Math.abs(decomposed.x-0.3)>1e-3,'XYZ angles must not be reported as ROS RPY');
+`,context);
+"""
+    subprocess.run(
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    for legacy in ("'XYZ')", '"XYZ")'):
+        assert legacy not in VIEWER, "Web3D poses must not be set or read with three.js XYZ Euler order"
+
 def test_rotation_snap_radians_converts_arbitrary_degree_values():
     import subprocess
 
