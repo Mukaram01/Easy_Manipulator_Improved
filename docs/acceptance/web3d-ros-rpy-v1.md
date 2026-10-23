@@ -44,7 +44,7 @@ This matches the pre-existing shutdown heap corruption fixed on `codex/web3d-tea
 
 ## Found, not fixed here
 
-Mate's **Isolate part** hides every rendered root that is not the kept part or one of its ancestors. That includes the generated camera and table meshes, which are reparented under their owners. An isolated camera or table therefore shows only its outline and face clicks on it miss. The compound-pose step uses **Look at a face** without isolation.
+Mate's **Isolate part** used to hide the generated camera and table meshes, which are reparented under their owners. #3207 fixes this. With #3206 and #3207 combined, the compound-pose step isolates the camera; see [combined acceptance](web3d-mate-integration-v1.md).
 
 ## Reproduce
 

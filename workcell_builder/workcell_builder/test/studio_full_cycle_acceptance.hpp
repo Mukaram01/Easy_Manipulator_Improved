@@ -1085,6 +1085,180 @@ public:
 
     // ---- Step script --------------------------------------------------------
     auto add = [=](const QString & name, Step step) { steps->push_back({name, step}); };
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+    // Hover (never click) a world point in Mate mode and check what a click would hit.
+    auto hover_probe = [=](const QString & tag, std::function<std::array<double, 3>()> point_fn,
+                           std::function<void(const QJsonObject & hover, const QJsonObject & state)> check) {
+      auto attempts = std::make_shared<int>(0), local = std::make_shared<int>(0);
+      auto point = std::make_shared<std::array<double, 3>>();
+      return [=]() -> bool {
+        if (s->native) return true;
+        if (s->js_pending) return false;
+        switch (s->sub) {
+          case 0: {
+            *point = point_fn();
+            js(QString("window.__WORKCELL_EDITOR_API_V1__.projectWorldPoint([%1,%2,%3])").arg((*point)[0], 0, 'g', 12).arg((*point)[1], 0, 'g', 12).arg((*point)[2], 0, 'g', 12));
+            s->sub = 1; return false;
+          }
+          case 1: {
+            const auto projected = s->js_result.toMap();
+            require(!projected.isEmpty() && projected.value("inFront").toBool(), tag + ": probe point is not in view");
+            s->target = QPoint(qRound(projected.value("x").toDouble()), qRound(projected.value("y").toDouble()));
+            const auto canvas = projected.value("canvas").toMap();
+            const QRect inner(qRound(canvas.value("left").toDouble()) + 30, qRound(canvas.value("top").toDouble()) + 40,
+              qRound(canvas.value("width").toDouble()) - 60, qRound(canvas.value("height").toDouble()) - 70);
+            require(inner.contains(s->target), tag + ": probe point is outside the visible canvas");
+            s->evidence["_canvas_offset"] = QJsonArray{canvas.value("left").toDouble(), canvas.value("top").toDouble()};
+            mouse(QEvent::MouseMove, s->target + QPoint(-3 - *attempts, 0), Qt::NoButton, Qt::NoButton);
+            mouse(QEvent::MouseMove, s->target, Qt::NoButton, Qt::NoButton);
+            *local = 0; s->sub = 2; return false;
+          }
+          case 2: {
+            if (++*local < 9) return false;
+            js("window.__WORKCELL_EDITOR_API_V1__.getMateState()");
+            s->sub = 3; return false;
+          }
+          case 3: {
+            const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+            const auto hover = state.value("hoverResolution").toObject();
+            const auto client = state.value("hover").toObject().value("client").toObject();
+            const auto offset = s->evidence.value("_canvas_offset").toArray();
+            const bool current = hover.value("seq").toInt() == state.value("hoverSeq").toInt() &&
+              std::abs(client.value("x").toDouble() + offset[0].toDouble() - s->target.x()) < 2.5 &&
+              std::abs(client.value("y").toDouble() + offset[1].toDouble() - s->target.y()) < 2.5;
+            if (!current) { require(++*attempts < 5, tag + ": the hover never resolved"); s->sub = 0; return false; }
+            s->evidence[tag] = QJsonObject{{"point", QJsonArray{(*point)[0], (*point)[1], (*point)[2]}}, {"widget", QJsonArray{s->target.x(), s->target.y()}},
+              {"hover", hover}, {"isolatedAsset", state.value("isolatedAsset")}};
+            check(hover, state);
+            *attempts = 0; s->sub = 0;
+            return true;
+          }
+        }
+        return false;
+      };
+    };
+    // The camera pitched 90 degrees on the stand turned 15 degrees is a compound ROS RPY,
+    // and its generated D435 mesh is reparented under the authored camera owner. With the
+    // camera isolated, its body must still be drawn as authored and pickable, the stand
+    // must be hidden, and turning isolation off must bring the stand back.
+    auto add_isolated_camera_checks = [=](const QString & tag, const QString & shot_prefix, bool expect_clean_layout) {
+      add(tag + ": start Mate on the turned camera, isolate it and look at it", [=]() {
+        if (s->native) return true;
+        if (s->js_pending) return false;
+        if (s->sub == 0) {
+          const auto cam = item(camera);
+          const double xyz_error = turn(rpy_matrix(cam.roll, cam.pitch, cam.yaw, false), rpy_matrix(cam.roll, cam.pitch, cam.yaw, true));
+          s->evidence[tag + "_camera_rpy"] = QJsonArray{cam.roll, cam.pitch, cam.yaw};
+          s->evidence[tag + "_camera_xyz_order_error_deg"] = xyz_error * 180. / M_PI;
+          require(near(cam.roll, 0., 1e-9) && near(cam.pitch, M_PI / 2, 1e-9) && near(cam.yaw, 15. * M_PI / 180., 1e-6),
+            "the camera is not pitched 90 degrees on the stand turned 15 degrees");
+          require(xyz_error > M_PI / 180., "the turned camera is not a compound rotation, so this check would prove nothing");
+          window->apply_scene_selection(camera, "", false, false);
+          window->inspector_mate_button_->click();
+          require(window->mate_active() && mate()->pending_asset() == camera, "Inspector Mate did not start on the camera");
+          s->env_hash = file_hash(s->scene + "/environment.yaml");
+          s->items_before = window->mounting_items();
+          auto * isolate = panel()->findChild<QCheckBox *>("mateIsolate");
+          require(isolate->isEnabled(), "Isolate part is not offered for the camera");
+          if (!isolate->isChecked()) isolate->click();
+          s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->sub == 1) {
+          // The camera sits at the top edge of the cell view, under the status overlays; look at it.
+          if (s->ticks < 10) return false;
+          QAction * origin = nullptr;
+          for (auto * action : panel()->findChild<QToolButton *>("mateFaceView")->menu()->actions()) if (action->data().toString() == "origin") origin = action;
+          require(origin != nullptr, "the camera origin is not offered in Look at a face");
+          origin->trigger();
+          s->sub = 2; s->ticks = 0; return false;
+        }
+        if (s->sub == 2) { if (s->ticks < 10) return false; js("window.__WORKCELL_EDITOR_API_V1__.getMateState()"); s->sub = 3; return false; }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        s->evidence[tag + "_isolated_asset"] = state.value("isolatedAsset");
+        require(state.value("isolatedAsset").toString() == camera, "Web3D did not isolate the camera");
+        shot(shot_prefix + "a_isolated_turned_camera");
+        s->sub = 0;
+        return true;
+      });
+      add(tag + ": isolated camera face click is drawn as authored and picks the camera", click_world(tag + "_camera_body", [=]() {
+          // Aim at the D435 body, which extends from the camera_link origin along +x and
+          // across y; stay clear of the origin marker (markers win over faces).
+          const auto origin = datum(frames(), camera, "origin");
+          const auto o = v3(origin.value("xyz")), x = v3(origin.value("x_axis")), n = v3(origin.value("normal"));
+          const std::array<double, 3> y{n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]};
+          Points points;
+          for (const auto & [along, depth] : std::vector<std::pair<double, double>>{{.025, .012}, {.03, .012}, {.035, .012}, {.025, .008},
+                 {.03, .016}, {.04, .012}, {-.025, .012}, {.025, -.012}, {-.025, -.012}, {.02, .014}})
+            points.push_back({o[0] + along * y[0] + depth * x[0], o[1] + along * y[1] + depth * x[1], o[2] + along * y[2] + depth * x[2]});
+          return points;
+        }, camera, QString(),
+        [=](const QJsonObject & pick) {
+          const auto raw = pick.value("raw").toObject();
+          const auto pose = raw.value("object_pose_world").toArray();
+          require(pose.size() == 6, "the camera face pick carried no drawn pose");
+          const auto cam = item(camera);
+          const double moved = std::hypot(pose[0].toDouble() - cam.x, pose[1].toDouble() - cam.y, pose[2].toDouble() - cam.z);
+          const double turned = turn(rpy_matrix(pose[3].toDouble(), pose[4].toDouble(), pose[5].toDouble(), true), rpy_matrix(cam.roll, cam.pitch, cam.yaw, true));
+          s->evidence[tag + "_drawn_position_error_m"] = moved;
+          s->evidence[tag + "_drawn_rotation_error_deg"] = turned * 180. / M_PI;
+          require(pick.value("reason_code").toString() != "STALE_VIEW", "compound camera pose refused as a stale view: " + pick.value("reason").toString());
+          require(pick.value("asset_id").toString() == camera && raw.value("geometry").toString() == "surface" &&
+            raw.value("geometry_source").toString().contains("d435"), "the isolated click did not hit the camera's D435 mesh");
+          require(moved < 1e-6 && turned < 1e-6, "Web3D draws the turned camera away from its authored pose");
+          require(pick.value("reason_code").toString() == "NO_PLANE_DATUMS", "camera body: " + pick.value("reason").toString());
+        }));
+      // A point on the stand mast, below its top datum.
+      auto mast = [=]() {
+        const auto top = datum(frames(), s->stand, "top");
+        const auto o = v3(top.value("xyz")), n = v3(top.value("normal"));
+        return std::array<double, 3>{o[0] - .15 * n[0], o[1] - .15 * n[1], o[2] - .15 * n[2]};
+      };
+      add(tag + ": the stand is hidden while the camera is isolated", hover_probe(tag + "_stand_probe_isolated", mast,
+        [=](const QJsonObject & hover, const QJsonObject & state) {
+          require(state.value("isolatedAsset").toString() == camera, "isolation ended before the stand probe");
+          require(hover.value("asset_id").toString().isEmpty() && hover.value("reason_code").toString() == "NO_ASSET",
+            "the stand is still pickable while the camera is isolated: " + hover.value("asset_id").toString());
+        }));
+      add(tag + ": turning isolation off restores the cell", [=]() {
+        if (s->native) return true;
+        if (s->js_pending) return false;
+        if (s->sub == 0) {
+          auto * isolate = panel()->findChild<QCheckBox *>("mateIsolate");
+          require(isolate->isChecked(), "isolation was dropped before it was turned off");
+          isolate->click();
+          s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->sub == 1) { if (s->ticks < 8) return false; js("window.__WORKCELL_EDITOR_API_V1__.getMateState()"); s->sub = 2; return false; }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        require(state.value("isolatedAsset").toString().isEmpty(), "Web3D kept the camera isolated");
+        s->sub = 0;
+        return true;
+      });
+      add(tag + ": the stand picks again", hover_probe(tag + "_stand_probe_restored", mast,
+        [=](const QJsonObject & hover, const QJsonObject & state) {
+          require(state.value("isolatedAsset").toString().isEmpty(), "isolation came back");
+          require(hover.value("asset_id").toString() == s->stand, "the stand did not come back: " + hover.value("asset_id").toString());
+        }));
+      add(tag + ": view, then cancel without changes", [=]() {
+        if (s->native) return true;
+        if (s->js_pending) return false;
+        if (s->sub == 0) { if (s->ticks < 8) return false; shot(shot_prefix + "b_isolated_camera_face_pick"); mate()->cancel(); s->sub = 1; s->ticks = 0; return false; }
+        if (s->sub == 1) {
+          if (s->ticks < 4) return false;
+          require(!window->mate_active(), "Mate did not cancel");
+          require(file_hash(s->scene + "/environment.yaml") == s->env_hash && window->mounting_items() == s->items_before, "the isolated-camera check changed the cell");
+          require(!expect_clean_layout || !window->layout_dirty_, "inspecting the isolated camera marked the layout dirty");
+          js("window.__WORKCELL_EDITOR_API_V1__.fitScene()");  // back to the whole cell, as Mate does after a face view
+          s->sub = 2; s->ticks = 0; return false;
+        }
+        if (s->sub == 2) { if (s->ticks < 8) return false; js("window.__WORKCELL_EDITOR_API_V1__.getMateState()"); s->sub = 3; return false; }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        require(!state.value("active").toBool() && state.value("isolatedAsset").toString().isEmpty(), "Web3D still shows Mate or isolation after cancel");
+        s->sub = 0;
+        return true;
+      });
+    };
+#endif
     add("load cell", [=]() {
       if (s->ticks < 5) return false;
       const QString root = window->detect_workspace_root() + "/src/easy_manipulation_deployment";
@@ -1203,6 +1377,7 @@ public:
         s->sub = 0;
         return true;
       });
+      add_isolated_camera_checks("Reopen isolated camera", "23", true);
 #endif
       add("finish reopen", [=]() {
         s->evidence["result"] = "PASS";
@@ -1537,75 +1712,41 @@ public:
       });
       add("Scenario B: moved view", [=]() { if (s->ticks < 8) return false; shot("09_stand_moved_camera_follows"); return true; });
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
-      // The stand turn leaves the camera pitched 90 degrees on a stand turned 15
-      // degrees, a compound ROS RPY. Web3D draws it as authored, so a face click on
-      // it resolves on its geometry instead of being refused as a stale view.
-      add("Compound pose: start Mate on the turned camera and look at it", [=]() {
+      add_isolated_camera_checks("Compound pose", "09", false);
+      // The table owner, isolated: its top still resolves to the support surface.
+      add("Isolated table: start Mate on the table and isolate it", [=]() {
         if (s->native) return true;
+        if (s->js_pending) return false;
         if (s->sub == 0) {
-          const auto cam = item(camera);
-          const double xyz_error = turn(rpy_matrix(cam.roll, cam.pitch, cam.yaw, false), rpy_matrix(cam.roll, cam.pitch, cam.yaw, true));
-          s->evidence["D_camera_rpy"] = QJsonArray{cam.roll, cam.pitch, cam.yaw};
-          s->evidence["D_camera_xyz_order_error_deg"] = xyz_error * 180. / M_PI;
-          require(xyz_error > M_PI / 180., "the turned camera is not a compound rotation, so this check would prove nothing");
-          window->apply_scene_selection(camera, "", false, false);
+          window->apply_scene_selection(table, "", false, false);
           window->inspector_mate_button_->click();
-          require(window->mate_active() && mate()->pending_asset() == camera, "Inspector Mate did not start on the camera");
-          // Not isolated: isolation hides the camera's generated mesh, which is reparented under its owner.
+          require(window->mate_active() && mate()->pending_asset() == table, "Inspector Mate did not start on the table");
           s->env_hash = file_hash(s->scene + "/environment.yaml");
           s->items_before = window->mounting_items();
+          auto * isolate = panel()->findChild<QCheckBox *>("mateIsolate");
+          require(isolate->isEnabled(), "Isolate part is not offered for the table");
+          if (!isolate->isChecked()) isolate->click();
           s->sub = 1; s->ticks = 0; return false;
         }
-        if (s->sub == 1) {
-          // The camera sits at the top edge of the cell view, under the status overlays; look at it.
-          if (s->ticks < 10) return false;
-          QAction * origin = nullptr;
-          for (auto * action : panel()->findChild<QToolButton *>("mateFaceView")->menu()->actions()) if (action->data().toString() == "origin") origin = action;
-          require(origin != nullptr, "the camera origin is not offered in Look at a face");
-          origin->trigger();
-          s->sub = 2; s->ticks = 0; return false;
-        }
-        if (s->ticks < 10) return false;
-        shot("09a_turned_camera_framed");
+        if (s->sub == 1) { if (s->ticks < 10) return false; js("window.__WORKCELL_EDITOR_API_V1__.getMateState()"); s->sub = 2; return false; }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        s->evidence["E_isolated_asset"] = state.value("isolatedAsset");
+        require(state.value("isolatedAsset").toString() == table, "Web3D did not isolate the table");
+        shot("09c_isolated_table");
         s->sub = 0;
         return true;
       });
-      add("Compound pose: camera face click is drawn as authored, not a stale view", click_world("D_compound_camera_body", [=]() {
-          // Aim at the D435 body, which extends from the camera_link origin along +x and
-          // across y; stay clear of the origin marker (markers win over faces).
-          const auto origin = datum(frames(), camera, "origin");
-          const auto o = v3(origin.value("xyz")), x = v3(origin.value("x_axis")), n = v3(origin.value("normal"));
-          const std::array<double, 3> y{n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]};
-          Points points;
-          for (const auto & [along, depth] : std::vector<std::pair<double, double>>{{.025, .012}, {.03, .012}, {.035, .012}, {.025, .008},
-                 {.03, .016}, {.04, .012}, {-.025, .012}, {.025, -.012}, {-.025, -.012}, {.02, .014}})
-            points.push_back({o[0] + along * y[0] + depth * x[0], o[1] + along * y[1] + depth * x[1], o[2] + along * y[2] + depth * x[2]});
-          return points;
-        }, camera, QString(),
+      add("Isolated table: table top resolves to the table owner", click_world("E_table_top_isolated", fixed({{0.95, -0.25, 0.0}, {1.0, 0.25, 0.0}, {0.8, -0.05, 0.0}, {0.6, -0.3, 0.0}}), table, "surface",
         [=](const QJsonObject & pick) {
-          const auto pose = pick.value("raw").toObject().value("object_pose_world").toArray();
-          require(pose.size() == 6, "the camera face pick carried no drawn pose");
-          const auto cam = item(camera);
-          const double moved = std::hypot(pose[0].toDouble() - cam.x, pose[1].toDouble() - cam.y, pose[2].toDouble() - cam.z);
-          const double turned = turn(rpy_matrix(pose[3].toDouble(), pose[4].toDouble(), pose[5].toDouble(), true), rpy_matrix(cam.roll, cam.pitch, cam.yaw, true));
-          s->evidence["D_drawn_position_error_m"] = moved;
-          s->evidence["D_drawn_rotation_error_deg"] = turned * 180. / M_PI;
-          require(pick.value("reason_code").toString() != "STALE_VIEW", "compound camera pose refused as a stale view: " + pick.value("reason").toString());
-          require(moved < 1e-6 && turned < 1e-6, "Web3D draws the turned camera away from its authored pose");
-          require(pick.value("reason_code").toString() == "NO_PLANE_DATUMS", "camera body: " + pick.value("reason").toString());
+          require(pick.value("valid").toBool() && pick.value("asset_id").toString() == table && pick.value("datum").toString() == "surface" &&
+            pick.value("raw").toObject().value("geometry").toString() == "surface", "isolated table top: " + pick.value("reason").toString());
         }));
-      add("Compound pose: view, then cancel without changes", [=]() {
+      add("Isolated table: cancel without changes", [=]() {
         if (s->native) return true;
-        if (s->sub == 0) { if (s->ticks < 8) return false; shot("09b_turned_camera_face_pick"); mate()->cancel(); s->sub = 1; s->ticks = 0; return false; }
-        if (s->js_pending) return false;
-        if (s->sub == 1) {
-          if (s->ticks < 4) return false;
-          require(!window->mate_active(), "Mate did not cancel");
-          require(file_hash(s->scene + "/environment.yaml") == s->env_hash && window->mounting_items() == s->items_before, "the compound-pose check changed the cell");
-          js("window.__WORKCELL_EDITOR_API_V1__.fitScene()");  // back to the whole cell, as Mate does after a face view
-          s->sub = 2; s->ticks = 0; return false;
-        }
+        if (s->sub == 0) { mate()->cancel(); s->sub = 1; s->ticks = 0; return false; }
         if (s->ticks < 8) return false;
+        require(!window->mate_active(), "Mate did not cancel");
+        require(file_hash(s->scene + "/environment.yaml") == s->env_hash && window->mounting_items() == s->items_before, "the isolated-table check changed the cell");
         s->sub = 0;
         return true;
       });
