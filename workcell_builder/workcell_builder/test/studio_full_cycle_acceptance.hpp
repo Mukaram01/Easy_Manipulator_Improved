@@ -1378,6 +1378,161 @@ public:
         return true;
       });
       add_isolated_camera_checks("Reopen isolated camera", "23", true);
+
+      // Exercise the real WebEngine navigation and Qt poller after both counters
+      // have advanced. A new viewer starts counting at zero again.
+      add("Reload: seed an Esc before restarting Mate", [=]() {
+        if (s->native || s->js_pending) return s->native;
+        if (s->sub == 0) {
+          window->apply_scene_selection(camera, "", false, false);
+          window->inspector_mate_button_->click();
+          s->sub = 1; return false;
+        }
+        if (s->sub == 1) {
+          if (s->ticks < 15) return false;
+          key_escape(); s->sub = 2; s->ticks = 0; return false;
+        }
+        if (s->ticks < 15 || window->mate_active()) return false;
+        require(window->mate_seen_pick_seq_ > 0 && window->mate_seen_cancel_seq_ > 0,
+          "reload test needs previously consumed pick and Esc counters");
+        s->evidence["reload_previous_counters"] = QJsonObject{{"pick", window->mate_seen_pick_seq_},
+          {"hover", window->mate_seen_hover_seq_}, {"cancel", window->mate_seen_cancel_seq_}};
+        window->apply_scene_selection(camera, "", false, false);
+        window->inspector_mate_button_->click();
+        auto * isolate = panel()->findChild<QCheckBox *>("mateIsolate");
+        if (!isolate->isChecked()) isolate->click();
+        s->sub = 0; return true;
+      });
+      add("Reload: navigate WebEngine and restore Mate isolation", [=]() {
+        if (s->native || s->js_pending) return s->native;
+        if (s->sub == 0) {
+          if (s->ticks < 20) return false;
+          require(web() && window->mate_active(), "Mate is not active before reload");
+          s->env_hash = file_hash(s->scene + "/environment.yaml");
+          s->layout_hash = file_hash(s->scene + "/layout/workcell_studio_layout.yaml");
+          s->items_before = window->mounting_items();
+          web()->reload(); s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->sub == 1) {
+          if (s->ticks < 20) return false;
+          js("window.__WORKCELL_EDITOR_API_V1__?.getMateState?.() || null");
+          s->sub = 2; return false;
+        }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        if (!state.value("active").toBool() || state.value("isolatedAsset").toString() != camera ||
+            state.value("markerCount").toInt() == 0) { s->sub = 1; return false; }
+        require(state.value("seq").toInt() == 0 && state.value("cancelSeq").toInt() == 0,
+          "the WebEngine navigation did not restart the Mate counters");
+        require(window->mate_active(), "Builder lost the pending Mate on reload");
+        s->evidence["reload_restored_overlay"] = state;
+        // Restore framing through the real panel action, not a simulated pick.
+        for (auto * action : panel()->findChild<QToolButton *>("mateFaceView")->menu()->actions())
+          if (action->data().toString() == "origin") action->trigger();
+        shot("24_reload_restored_isolation");
+        s->sub = 0; return true;
+      });
+      add("Reload: restored isolation hides the stand from real raycasts", hover_probe("reload_hidden_stand", [=]() {
+          const auto top = datum(frames(), s->stand, "top");
+          const auto o = v3(top.value("xyz")), n = v3(top.value("normal"));
+          return std::array<double, 3>{o[0] - .15 * n[0], o[1] - .15 * n[1], o[2] - .15 * n[2]};
+        }, [=](const QJsonObject & hover, const QJsonObject & state) {
+          require(state.value("isolatedAsset").toString() == camera && hover.value("asset_id").toString().isEmpty() &&
+            hover.value("reason_code").toString() == "NO_ASSET", "reload isolation did not hide the stand");
+        }));
+      add("Reload: first new click reaches the Qt Mate controller", click_world("reload_camera_origin", [=]() {
+          return Points{v3(datum(frames(), camera, "origin").value("xyz"))};
+        }, camera, "origin", [=](const QJsonObject & pick) {
+          require(pick.value("valid").toBool() && mate()->child() && mate()->child()->asset_id == camera,
+            "the first click after reload did not reach the Qt Mate controller");
+        }));
+      add("Reload: first new Esc cancels without changing authored state", [=]() {
+        if (s->native || s->js_pending) return s->native;
+        if (s->sub == 0) { key_escape(); s->sub = 1; s->ticks = 0; return false; }
+        if (s->ticks < 15 || window->mate_active()) return false;
+        require(window->mate_seen_cancel_seq_ == 1, "Builder did not consume the restarted browser Esc counter");
+        require(!window->layout_dirty_ && window->mounting_items() == s->items_before &&
+          file_hash(s->scene + "/environment.yaml") == s->env_hash &&
+          file_hash(s->scene + "/layout/workcell_studio_layout.yaml") == s->layout_hash,
+          "reload, picking or Esc changed authored state");
+        s->evidence["reload_pick_and_escape_recovered"] = true;
+        s->sub = 0; return true;
+      });
+
+      // Both public navigation paths must cancel a valid, ready-to-Apply mate.
+      // Capture both cells' authored files, then try Apply after cancellation.
+      struct CellSwitchCheck {
+        int source = -1, target = -1;
+        QString target_path;
+        QMap<QString, QByteArray> hashes;
+      };
+      auto switching = std::make_shared<CellSwitchCheck>();
+      for (const bool home_path : {false, true}) {
+        const QString tag = home_path ? "Home/Open" : "Cell list";
+        add(tag + ": prepare a valid Mate before switching cells", [=]() {
+          if (s->native) return true;
+          if (s->ticks < 20 || !window->scene_preview_widget_->embedded_web_authoring_active()) return false;
+          switching->source = window->selected_scene_index_;
+          switching->target = -1;
+          for (int i = 0; i < int(window->scene_browser_result_.scenes.size()); ++i) {
+            const auto & candidate = window->scene_browser_result_.scenes[i];
+            if (QString::fromStdString(candidate.scene_name) == "suction_test" && i != switching->source) {
+              switching->target = i;
+              switching->target_path = QString::fromStdString(candidate.scene_dir.string());
+            }
+          }
+          require(switching->target >= 0, "cell-switch acceptance requires a disposable suction_test copy");
+          switching->hashes.clear();
+          for (const auto & path : {s->scene, switching->target_path})
+            for (const auto & file : {QString("environment.yaml"), QString("layout/workcell_studio_layout.yaml")})
+              switching->hashes.insert(path + "/" + file, file_hash(path + "/" + file));
+          window->apply_scene_selection(bin, "", false, false);
+          window->inspector_mate_button_->click();
+          auto choose = [=](const char * name, const QString & value) {
+            auto * combo = panel()->findChild<QComboBox *>(name);
+            const int index = combo ? combo->findData(value) : -1;
+            require(index >= 0, "switch test datum is unavailable");
+            combo->setCurrentIndex(index); emit combo->activated(index);
+          };
+          choose("mateChildDatum", "bottom");
+          window->on_hierarchy_item_selected(hierarchy_row(table));
+          choose("mateParentDatum", "surface");
+          require(window->mate_active() && mate()->preview().ok && panel_button("mateApply")->isEnabled(),
+            "switch test did not start from an applicable Mate");
+          if (home_path) {
+            window->show_workcells_home();
+            require(window->open_home_scene_in_builder("suction_test", switching->target_path), "Home open failed");
+          } else {
+            // select_scene_by_row accepts the displayed Home row and maps it to
+            // the browser index; use that mapping rather than assuming row order.
+            int row = -1;
+            for (int i = 0; window->dashboard_scene_table_ && i < window->dashboard_scene_table_->rowCount(); ++i) {
+              const auto * entry = window->dashboard_scene_table_->item(i, 0);
+              if (entry && entry->data(Qt::UserRole).toInt() == switching->target) row = i;
+            }
+            require(row >= 0, "target cell has no selectable row");
+            window->select_scene_by_row(row);
+          }
+          require(window->selected_scene_index_ == switching->target && !window->mate_active(),
+            tag + ": switching cells did not cancel Mate");
+          return true;
+        });
+        add(tag + ": cancelled Apply cannot write either cell", [=]() {
+          if (s->native) return true;
+          if (s->ticks < 20) return false;
+          require(!window->mate_active() && !panel()->isVisible() && !panel_button("mateApply")->isEnabled(),
+            tag + ": Mate Apply remains available in the new cell");
+          panel_button("mateApply")->click();
+          for (auto it = switching->hashes.cbegin(); it != switching->hashes.cend(); ++it)
+            require(file_hash(it.key()) == it.value(), tag + ": navigation or cancelled Apply wrote " + it.key());
+          s->evidence[tag + "_cancels_mate_without_writes"] = true;
+          require(window->studio_log_->toPlainText().contains("Mate cancelled: another cell was opened"),
+            "cell-switch cancellation did not explain what happened");
+          shot(home_path ? "26_home_switch_cancelled" : "25_list_switch_cancelled");
+          require(window->open_scene_builder_for_scene_index(switching->source, "Acceptance return to saved cell"),
+            "could not return to the original cell");
+          return true;
+        });
+      }
 #endif
       add("finish reopen", [=]() {
         s->evidence["result"] = "PASS";
@@ -1575,6 +1730,27 @@ public:
         require(panel_button("mateApply")->isEnabled(), "Apply is disabled for a valid mate");
         shot("05_preview_flush_ghost");
         s->sub = 0;
+        return true;
+      });
+      // The fields show rounded values (4 decimals, 2 for degrees). Editing one must
+      // change only that component; Reset brings back the exact proposal.
+      add("Scenario A: editing one offset field keeps the other five exact", [=]() {
+        if (s->native) return true;
+        const auto before = mate()->preview().offset;
+        auto * gap = panel()->findChild<QDoubleSpinBox *>("mateOffsetGap");
+        require(gap && gap->isEnabled(), "Gap offset field is not editable");
+        gap->setValue(gap->value() + 0.002);
+        const auto edited = mate()->preview().offset;
+        panel_button("mateReset")->click();
+        const auto reset = mate()->preview().offset;
+        auto json6 = [](const std::array<double, 6> & v) { return QJsonArray{v[0], v[1], v[2], v[3], v[4], v[5]}; };
+        s->evidence["A_offset_edit"] = QJsonObject{{"before", json6(before)}, {"gap_edited", json6(edited)}, {"after_reset", json6(reset)}};
+        for (int k = 0; k < 6; ++k) {
+          if (k != 2) require(edited[k] == before[k], QString("editing Gap changed offset component %1 to its rounded value").arg(k));
+        }
+        require(near(edited[2], before[2] + 0.002, 1e-9), "Gap edit was not applied");
+        for (int k = 0; k < 6; ++k) require(near(reset[k], before[k], 1e-12), "Reset did not restore the exact proposal");
+        require(mate()->preview().ok && window->mounting_items() == s->items_before, "editing the offset mutated the scene");
         return true;
       });
 #endif

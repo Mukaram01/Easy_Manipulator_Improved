@@ -161,3 +161,15 @@ TEST(MatePick, SeatedOffsetKeepsInPlanePositionAndYawOnly)
   EXPECT_DOUBLE_EQ(seated[4], 0.);
   EXPECT_DOUBLE_EQ(seated[5], 0.4);
 }
+
+TEST(MatePick, ViewerCountersRebaseWhenTheViewerRestartsCounting)
+{
+  using workcell_builder::MateViewerCounters;
+  using workcell_builder::mate_viewer_counters_rebase;
+  const MateViewerCounters seen{4, 30, 1};
+  EXPECT_FALSE(mate_viewer_counters_rebase(seen, {5, 31, 1}, true));  // a new click and hover: act on them
+  EXPECT_FALSE(mate_viewer_counters_rebase(seen, {4, 30, 1}, true));  // nothing new
+  EXPECT_TRUE(mate_viewer_counters_rebase(seen, {0, 0, 0}, true));    // a reloaded viewer counts from zero
+  EXPECT_TRUE(mate_viewer_counters_rebase(seen, {4, 30, 0}, true));   // any count going backwards
+  EXPECT_TRUE(mate_viewer_counters_rebase(seen, {4, 30, 1}, false));  // an inactive viewer records nothing
+}

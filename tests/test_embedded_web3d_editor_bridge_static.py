@@ -746,6 +746,118 @@ assert.strictEqual(hiddenHelper.object3d.visible,false,'a root hidden before iso
     subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, text=True)
 
 
+
+MATE_HARDENING_HARNESS_PREFIX = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',value:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},querySelector(){return null},querySelectorAll(){return[]},addEventListener(){},setAttribute(){},appendChild(){},remove(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+const viewerWindow={location:{search:''},dispatchEvent(){},parent:{postMessage(){}},addEventListener(){},__WORKCELL_VIEWER_LIFECYCLE__:{registerCleanup(){}}};
+const context={console,assert,THREE_IMPL,window:viewerWindow,document:{getElementById(){return element()},querySelectorAll(){return[]},createElement(){return element()}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context);
+"""
+
+
+def test_mate_blocks_keyboard_edits_paste_and_undo_until_it_ends():
+    import subprocess
+
+    harness = MATE_HARDENING_HARNESS_PREFIX + r"""
+vm.runInContext(source+`
+THREE=THREE_IMPL;state.three={scene:new THREE.Scene()};
+const owner={item:{id:'target_bin_default',editable:true},object3d:new THREE.Group()};
+canonicalTransformOwner=()=>owner;selectionIsEditable=()=>true;captureTransformGroup=()=>new Map();
+let commits=0,history=0,pastes=0;
+markDirtyTransform=()=>{commits++;return true};emitTransformCommitted=()=>{};syncInspectorTransformFields=()=>{};updateLabels=()=>{};
+undoPreviewEdit=()=>{history++};redoPreviewEdit=()=>{history++};pasteSelectedTransformFromClipboard=()=>{pastes++};
+state.selected='target_bin_default';state.undoStack=[{}];state.redoStack=[{}];
+const key=(code,mods={})=>onEditorKeyDown({code,key:code,repeat:false,target:null,preventDefault(){},...mods});
+const api=window.__WORKCELL_EDITOR_API_V1__;
+api.setMateMode({active:true,step:'pick_child',markers:[]});
+for(const code of ['KeyQ','KeyE','KeyW','KeyS','KeyA','KeyD','PageUp','PageDown','KeyR','KeyF','KeyZ','KeyC'])key(code);
+key('KeyV',{ctrlKey:true});key('KeyZ',{ctrlKey:true});key('KeyY',{ctrlKey:true});key('KeyZ',{ctrlKey:true,shiftKey:true});
+assert.deepStrictEqual([commits,history,pastes],[0,0,0],'Mate must not let keys edit, paste or undo the selection');
+api.clearMateMode();
+key('KeyE');key('KeyZ',{ctrlKey:true});
+assert.deepStrictEqual([commits,history],[1,1],'outside Mate the same keys still edit and undo');
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, text=True)
+
+
+def test_translate_drag_keeps_exact_rpy_for_a_part_pitched_90_degrees():
+    import subprocess
+
+    harness = MATE_HARDENING_HARNESS_PREFIX + r"""
+vm.runInContext(source+`
+THREE=THREE_IMPL;const scene=new THREE.Scene();state.three={scene};
+// The camera pitched 90 degrees on a stand turned 15 degrees: ZYX decomposition is at gimbal lock.
+const rpy={x:0,y:Math.PI/2,z:0.2617993877991494};
+const start={pose:{xyz:{x:0.3215951598841334,y:-0.22424381886860573,z:1.25},rpy},scale:{x:1,y:1,z:1}};
+const owner={item:{id:'realsense_overhead',editable:true},object3d:new THREE.Group()};scene.add(owner.object3d);
+applyTransformToObject(owner.object3d,start);
+const pivot=new THREE.Group();pivot.position.set(0.33,-0.2,1.24);owner.object3d.getWorldQuaternion(pivot.quaternion);scene.add(pivot);
+scene.updateMatrixWorld(true);
+let commits=0;markDirtyTransform=()=>{commits++;return true};emitTransformCommitted=()=>{};syncInspectorTransformFields=()=>{};updateLabels=()=>{};
+linkedTransformChanges=(rendered,before,after)=>[{rendered,before,after}];
+applyTransformChanges=changes=>{for(const c of changes)applyTransformToObject(c.rendered.object3d,c.after);return true};
+const begin=()=>{state.editorMode='move';state.gizmoPivot={owner,group:pivot};state.gizmoDragStart=cloneTransform(transformFromObject(owner.object3d));state.gizmoDragGroupStart=new Map();
+  owner.object3d.updateWorldMatrix(true,false);pivot.updateWorldMatrix(true,false);
+  state.gizmoPivotDragStart={ownerWorld:owner.object3d.matrixWorld.clone(),pivotWorld:pivot.matrixWorld.clone(),axis:'X'};};
+// A drag that ends where it started commits nothing.
+begin();assert.strictEqual(finishTransientPivotDrag(owner),false);assert.strictEqual(commits,0,'a zero-motion drag committed an edit');
+assert.deepStrictEqual(transformFromObject(owner.object3d).pose.rpy,rpy);
+// A real translate moves the part and keeps its RPY exactly.
+begin();pivot.position.x+=0.05;pivot.position.z+=0.02;pivot.updateMatrixWorld(true);
+assert.strictEqual(finishTransientPivotDrag(owner),true);assert.strictEqual(commits,1);
+const moved=transformFromObject(owner.object3d);
+assert.deepStrictEqual(moved.pose.rpy,rpy,'translate drag changed the RPY');
+assert(Math.abs(moved.pose.xyz.x-(start.pose.xyz.x+0.05))<1e-12&&Math.abs(moved.pose.xyz.z-(start.pose.xyz.z+0.02))<1e-12,JSON.stringify(moved.pose.xyz));
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, text=True)
+
+
+def test_scene_reset_ends_mate_so_isolation_reapplies_to_the_new_objects():
+    import subprocess
+
+    harness = MATE_HARDENING_HARNESS_PREFIX + r"""
+vm.runInContext(source+`
+THREE=THREE_IMPL;const scene=new THREE.Scene();state.three={scene};
+const record=id=>{const object3d=new THREE.Group();object3d.name=id;scene.add(object3d);return {item:{id},object3d};};
+const api=window.__WORKCELL_EDITOR_API_V1__;
+const isolateCamera=()=>api.setMateMode({active:true,step:'pick_child',isolate_asset:'realsense_overhead',markers:[]});
+state.objects=[record('realsense_overhead'),record('target_bin_default')];state.pickRecords=[];
+isolateCamera();assert.strictEqual(state.objects[1].object3d.visible,false);
+// The viewer re-renders its scene while Builder's Mate is still open.
+resetSceneLifecycleState();
+assert.strictEqual(api.getMateState().active,false,'a scene reset must end the viewer-side Mate');
+assert.strictEqual(api.getMateState().isolatedAsset,'');
+const camera=record('realsense_overhead'),bin=record('target_bin_default');state.objects=[camera,bin];
+// Builder sees Mate inactive and restores the same overlay: isolation applies to the new objects.
+isolateCamera();
+assert.strictEqual(api.getMateState().isolatedAsset,'realsense_overhead');
+assert.strictEqual(camera.object3d.visible,true);assert.strictEqual(bin.object3d.visible,false,'isolation went stale after the re-render');
+api.clearMateMode();assert.strictEqual(bin.object3d.visible,true);
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")], cwd=ROOT, check=True, text=True)
+
+
+def test_qt_mate_rebases_viewer_counters_and_cancels_on_cell_switch():
+    mainwindow = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    poll = mainwindow.split("void MainWindow::handle_embedded_mate_state", 1)[1].split("void MainWindow::notify_mate_scene_changed", 1)[0]
+    assert "mate_viewer_counters_rebase(" in poll
+    assert poll.index("mate_viewer_counters_rebase(") < poll.index("if (cancel_seq > mate_seen_cancel_seq_)")
+    switch = mainwindow.split("void MainWindow::select_scene_by_row(int row)", 1)[1].split("selected_scene_index_ = row;", 1)[0]
+    assert "cancel_mate_for_other_cell(row);" in switch
+    opened = mainwindow.split("bool MainWindow::open_scene_builder_for_scene_index(", 1)[1].split("selected_scene_index_ = scene_index;", 1)[0]
+    assert "cancel_mate_for_other_cell(scene_index);" in opened
+    guard = mainwindow.split("void MainWindow::cancel_mate_for_other_cell(int scene_index)", 1)[1].split("void MainWindow::push_mate_overlay()", 1)[0]
+    assert "if (mate_active() && scene_index != selected_scene_index_)" in guard and "mate_controller_->cancel(" in guard
+    panel = (ROOT / "workcell_builder/workcell_builder/gui/mate_tool_panel.cpp").read_text(encoding="utf-8")
+    assert "offset_from_fields" not in panel
+    assert "auto offset = controller_->preview().offset;" in panel and "offset[k] = " in panel
+
 def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear():
     poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
     for token in [
