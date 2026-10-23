@@ -433,7 +433,11 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     destination_object = destination['pose_xyz'] + quaternion_from_rpy(destination['pose_rpy'])
                     place_goal = operations.pose_message(compose_pose(destination_object, inverse_pose(object_in_tool)))
                 motion('PREPLAN_TRANSFER', operations.translated_pose(place_goal, dz=place_approach))
-                motion('PREPLAN_PLACE', place_goal)
+                # The authored place approach is z_down: descend straight into the
+                # destination like the grasp descent and the retreat. A free OMPL
+                # segment into the bin cavity cut corners through the bound physics
+                # walls between waypoints (LENLEG 2026-10-24, controller-interpolated audit).
+                motion('PREPLAN_PLACE', place_goal, straight=True)
                 reached = operations.fk(view.robot_state, contract['tool_link'])
                 achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
                 if math.dist(achieved[:3], destination['pose_xyz']) > 0.003:

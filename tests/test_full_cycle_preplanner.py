@@ -102,7 +102,8 @@ def test_complete_cycle_preserves_scene_states_metadata_and_top_geometry():
     assert len(result.stages) == 9
     assert trace == ['GENERATE_GRASPS'] + EXPECTED + ['CANDIDATE_READY']
     assert validity == pytest.approx([.01005, .0201])
-    assert [g[0] for g in goals if g[3]] == ['PREPLAN_GRASP', 'PREPLAN_LIFT', 'PREPLAN_RETREAT']
+    # Every authored z-axis approach/departure is a straight Cartesian segment, the place descent included.
+    assert [g[0] for g in goals if g[3]] == ['PREPLAN_GRASP', 'PREPLAN_LIFT', 'PREPLAN_PLACE', 'PREPLAN_RETREAT']
     assert runtime.pose_values(goals[0][1].pose) == pytest.approx([.4, -.2, .47, -.7071067811865475, .7071067811865476, 0., 0.])
     assert [goals[i][1].pose.position.z for i in (3, 4, 5, 7)] == pytest.approx([.5, .5, .35, .5])
     assert steps[3]['original'] == initial.world.collision_objects[0]
