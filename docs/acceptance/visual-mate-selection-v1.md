@@ -113,7 +113,7 @@ Screenshots are read from the real X11 window (`test/x11_window_capture.py`). Wi
 ## Limits
 
 - **Not a CAD kernel.** Faces are the verified planar datums and the surfaces associated with them; there are no arbitrary mesh, STEP or BREP faces, and no multi-constraint solver or moving joints. The pick contract carries the geometry source and triangle, so face-derived datums can be added later.
-- **Compound tilt-plus-yaw rotations in Web3D (fixed after this evidence).** This evidence was recorded while Web3D used three.js `XYZ` Euler order, which refused surface picks on such assets as a pose mismatch. Web3D now uses ROS fixed-axis RPY (three.js `ZYX`) for every pose; see [Visual Mate Selection](../manuals/VISUAL_MATE_SELECTION.md#known-limits). Markers, relations and generated cells were always exact.
+- **Compound tilt-plus-yaw rotations in Web3D (fixed after this evidence).** This evidence was recorded while Web3D used three.js `XYZ` Euler order, which refused surface picks on such assets as a pose mismatch. Web3D now uses ROS fixed-axis RPY (three.js `ZYX`) for every pose; see [Web3D ROS RPY acceptance](web3d-ros-rpy-v1.md). Markers, relations and generated cells were always exact.
 - **Pre-existing asset and viewer issues:**
   - The reviewed `camera_stand` placeholder STL is wound inside out.
   - A newly placed library asset is drawn as a live placeholder until the Product View refreshes.
