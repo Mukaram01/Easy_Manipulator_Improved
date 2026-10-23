@@ -49,6 +49,8 @@ STAGES=[
     "PREPLAN_OPEN_GRIPPER","PREPLAN_RETREAT","PREPLAN_HOME",
 ]
 GATES=("resolve","cancel","telemetry","stationary","contact-release","full-cycle")
+# Run settings whose silent defaults change what the evidence means.
+INVOCATION_SETTINGS=("world_profile","search_timeout","segment_planning_time")
 # First-reply service retries (perceived_object_grasp_execute.SERVICE_RETRY_ALLOWANCE_S):
 # 11 clients x 2 retries x 10 s may precede or interleave the search in every session.
 SERVICE_RETRY_ALLOWANCE_S=220
@@ -696,7 +698,15 @@ def main(argv=None):
         help="opt-in executor diagnostic: native probe naming the thread that keeps a contended GIL this long")
     parser.add_argument("--gil-probe-native-pc",action="store_true",
         help="with --gil-probe-ms: also sample the holder's native PC (signal to the holder during a long hold only)")
+    argv=list(sys.argv[1:] if argv is None else argv)
     args=parser.parse_args(argv)
+    # A wrapper that drops --world-profile/--search-timeout silently gets the
+    # pile benchmark and 300 s (LENLEG 2026-10-23); record what was asked for.
+    unset=object()
+    probe=copy.deepcopy(parser);probe.set_defaults(**{key:unset for key in INVOCATION_SETTINGS})
+    explicit=vars(probe.parse_args(argv))
+    invocation={"argv":argv,"defaulted":sorted(key for key in INVOCATION_SETTINGS if explicit[key] is unset),
+                "effective":{key:getattr(args,key) for key in INVOCATION_SETTINGS}}
 
     repo=Path(__file__).resolve().parents[1];workspace=repo.parent.parent
     args.output=args.output.resolve()
@@ -735,7 +745,10 @@ def main(argv=None):
     overall={"status":"BLOCKED","mode":args.mode,"stage_a_acceptance":False,
              "scope":"STAGE_A_ACCEPTANCE_SEQUENCE" if args.mode=="full" else "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE",
              "gates":{},"preflight":None,"started_wall_ns":started_wall_ns,
-             "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time}
+             "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time,
+             "invocation":invocation}
+    print("stage-a1 settings: "+", ".join(f"{key}={value}{' (default)' if key in invocation['defaulted'] else ''}"
+                                          for key,value in invocation["effective"].items()),file=sys.stderr,flush=True)
     if args.mode=="full":overall["through"]=args.through
     if args.mode=="targeted":
         # Only a cancel gate in this run qualifies cancellation on the current binary.

@@ -796,6 +796,34 @@ def test_full_mode_keeps_the_cumulative_sequence_and_only_a_complete_pass_is_acc
     assert json.loads((failed/'stage-a1-final-report.json').read_text())['stage_a_acceptance'] is False
 
 
+def test_report_records_argv_and_which_run_settings_fell_back_to_defaults(tmp_path,monkeypatch,stubbed_preflight,capsys):
+    # LENLEG 2026-10-23: a wrapper dropped --world-profile sparse --search-timeout 900
+    # and the evidence did not say the pile/300 s run came from defaults.
+    record_sessions(monkeypatch,fail_at='resolve')
+    output=tmp_path/'defaulted'
+    assert MODULE.main(['--output',str(output),'--mode','full','--through','full-cycle'])==1
+    report=json.loads((output/'stage-a1-final-report.json').read_text())
+    assert report['invocation']['argv']==['--output',str(output),'--mode','full','--through','full-cycle']
+    assert report['invocation']['defaulted']==['search_timeout','segment_planning_time','world_profile']
+    assert report['invocation']['effective']=={'world_profile':'pile','search_timeout':300.,'segment_planning_time':3.}
+    assert 'world_profile=pile (default)' in capsys.readouterr().err
+    explicit=tmp_path/'explicit';record_sessions(monkeypatch)
+    argv=['--output',str(explicit),'--world-profile','sparse','--search-timeout=900','--through','resolve']
+    assert MODULE.main(argv)==0
+    report=json.loads((explicit/'stage-a1-final-report.json').read_text())
+    assert report['invocation']['argv']==argv and report['invocation']['defaulted']==['segment_planning_time']
+    assert report['invocation']['effective']['world_profile']=='sparse' and report['search_timeout_s']==900.
+    assert 'world_profile=sparse,' in capsys.readouterr().err
+
+
+def test_explicit_value_equal_to_the_default_is_not_reported_as_defaulted(tmp_path,monkeypatch,stubbed_preflight):
+    record_sessions(monkeypatch)
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--world-profile','pile','--search-time','300',
+                        '--segment-planning-time','3','--through','resolve'])==0   # abbreviation accepted by argparse
+    assert json.loads((output/'stage-a1-final-report.json').read_text())['invocation']['defaulted']==[]
+
+
 def test_fast_mode_runs_build_and_focused_tests_without_any_session_or_world(tmp_path,monkeypatch,stubbed_preflight):
     seen=record_sessions(monkeypatch)
     def no_world(*args):pytest.fail('fast mode must not resolve a simulator world')
