@@ -4265,6 +4265,9 @@ function disposeOwnedMaterial(material) {
 }
 function resetSceneLifecycleState() {
   cancelPlacement();
+  // Mate's isolation and markers refer to the objects being replaced. End it here;
+  // Builder sees Mate inactive and restores the overlay on the new scene.
+  clearMateMode();
   robotPreviewLoadToken += 1;
   physicalLoadToken += 1;
   cancelInitialCameraFitRetry();
@@ -5982,6 +5985,9 @@ function applyKeyboardTransformStep(event, command) {
 }
 function onEditorKeyDown(event) {
   if (keyboardEventTargetsEditorControl(event)) return;
+  // Mate owns the 3D view until Apply or cancel: no keyboard transform steps,
+  // pastes or undo/redo behind its back (its capture listener handles Esc).
+  if (state.mate?.active) return;
   if (event.key === 'Escape') {
     if (state.placement.armed) { cancelPlacement(); event.preventDefault?.(); return; }
     if (cancelActiveTransformOperation('Escape')) event.preventDefault?.();
@@ -6104,6 +6110,9 @@ function previewTransientPivotDrag(owner) {
     owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
     owner.object3d.updateMatrixWorld(true);
     next = transformFromObject(owner.object3d);
+    // A translate drag never turns the part. Keep the start RPY exactly instead of
+    // re-deriving it from the matrix, which drifts at pitch +/-90 degrees.
+    next.pose.rpy = { ...state.gizmoDragStart.pose.rpy };
   }
   if (!next) return false;
   applyTransformChanges(linkedTransformChanges(owner, state.gizmoDragStart, next, state.gizmoDragGroupStart));

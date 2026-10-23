@@ -42781,6 +42781,7 @@ function disposeOwnedMaterial(material) {
 }
 function resetSceneLifecycleState() {
   cancelPlacement();
+  clearMateMode();
   robotPreviewLoadToken += 1;
   physicalLoadToken += 1;
   cancelInitialCameraFitRetry();
@@ -44582,6 +44583,8 @@ function applyKeyboardTransformStep(event, command) {
 function onEditorKeyDown(event) {
   if (keyboardEventTargetsEditorControl(event))
     return;
+  if (state.mate?.active)
+    return;
   if (event.key === "Escape") {
     if (state.placement.armed) {
       cancelPlacement();
@@ -44741,6 +44744,7 @@ function previewTransientPivotDrag(owner) {
     owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
     owner.object3d.updateMatrixWorld(true);
     next = transformFromObject(owner.object3d);
+    next.pose.rpy = { ...state.gizmoDragStart.pose.rpy };
   }
   if (!next)
     return false;

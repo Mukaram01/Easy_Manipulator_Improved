@@ -274,6 +274,11 @@ QJsonObject mate_pick_to_json(const MatePickResolution & r)
     {"candidates", candidates}, {"raw", raw}};
 }
 
+bool mate_viewer_counters_rebase(const MateViewerCounters & seen, const MateViewerCounters & viewer, bool viewer_active)
+{
+  return !viewer_active || viewer.pick < seen.pick || viewer.hover < seen.hover || viewer.cancel < seen.cancel;
+}
+
 std::array<double, 6> seated_mate_offset(const std::array<double, 6> & measured)
 {
   return {measured[0], measured[1], 0., 0., 0., measured[5]};

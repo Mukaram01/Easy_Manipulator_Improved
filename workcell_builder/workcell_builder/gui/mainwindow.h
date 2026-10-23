@@ -382,6 +382,7 @@ private:
   void begin_visual_mate();
   void end_visual_mate(bool applied, const QString & message);
   void push_mate_overlay();
+  void cancel_mate_for_other_cell(int scene_index);
   void handle_embedded_mate_state(const QVariantMap & mate);
   void notify_mate_scene_changed();
   bool mate_active() const;

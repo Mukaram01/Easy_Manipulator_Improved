@@ -1577,6 +1577,27 @@ public:
         s->sub = 0;
         return true;
       });
+      // The fields show rounded values (4 decimals, 2 for degrees). Editing one must
+      // change only that component; Reset brings back the exact proposal.
+      add("Scenario A: editing one offset field keeps the other five exact", [=]() {
+        if (s->native) return true;
+        const auto before = mate()->preview().offset;
+        auto * gap = panel()->findChild<QDoubleSpinBox *>("mateOffsetGap");
+        require(gap && gap->isEnabled(), "Gap offset field is not editable");
+        gap->setValue(gap->value() + 0.002);
+        const auto edited = mate()->preview().offset;
+        panel_button("mateReset")->click();
+        const auto reset = mate()->preview().offset;
+        auto json6 = [](const std::array<double, 6> & v) { return QJsonArray{v[0], v[1], v[2], v[3], v[4], v[5]}; };
+        s->evidence["A_offset_edit"] = QJsonObject{{"before", json6(before)}, {"gap_edited", json6(edited)}, {"after_reset", json6(reset)}};
+        for (int k = 0; k < 6; ++k) {
+          if (k != 2) require(edited[k] == before[k], QString("editing Gap changed offset component %1 to its rounded value").arg(k));
+        }
+        require(near(edited[2], before[2] + 0.002, 1e-9), "Gap edit was not applied");
+        for (int k = 0; k < 6; ++k) require(near(reset[k], before[k], 1e-12), "Reset did not restore the exact proposal");
+        require(mate()->preview().ok && window->mounting_items() == s->items_before, "editing the offset mutated the scene");
+        return true;
+      });
 #endif
       add("Scenario A: Apply", [=]() {
         if (s->native) return true;
