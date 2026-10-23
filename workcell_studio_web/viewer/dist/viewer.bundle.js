@@ -41929,6 +41929,7 @@ function initThree() {
     el.canvas.addEventListener("pointercancel", onCanvasPointerCancel);
     el.canvas.addEventListener("contextmenu", onCanvasContextMenu);
     window.addEventListener("keydown", onEditorKeyDown);
+    installMatePickListeners();
     animate();
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
@@ -41948,6 +41949,8 @@ function animate() {
   if (!renderer)
     return;
   state.animationId = requestAnimationFrame(animate);
+  if (state.mate?.active)
+    suppressGizmoForMate();
   controls.update();
   renderer.render(scene, camera);
   updateLabels();
@@ -45779,6 +45782,551 @@ function rebasePersistedPatch(patch) {
     patch: api2.getEditPatch()
   };
 }
+var MATE_COLORS = Object.freeze({ candidate: 9741240, hover: 16436245, child: 3900150, parent: 16347926, pending: 14870768, ghost: 6333946, click: 16777215 });
+function mateState() {
+  state.mate || (state.mate = { active: false, overlay: null, group: null, hoverGroup: null, ghosts: [], pickables: [], seq: 0, pick: null, hoverSeq: 0, hover: null, hoverResolution: null, cancelSeq: 0, lastHoverAt: 0, label: null, materials: [] });
+  return state.mate;
+}
+function mateRosRpyFromMatrix(matrix) {
+  const e = matrix.elements;
+  const sx = Math.hypot(e[0], e[1], e[2]) || 1, sy = Math.hypot(e[4], e[5], e[6]) || 1, sz = Math.hypot(e[8], e[9], e[10]) || 1;
+  const r00 = e[0] / sx, r10 = e[1] / sx, r20 = e[2] / sx, r01 = e[4] / sy, r11 = e[5] / sy, r21 = e[6] / sy, r22 = e[10] / sz;
+  const pitch = Math.asin(Math.max(-1, Math.min(1, -r20)));
+  if (Math.abs(Math.cos(pitch)) < 1e-9)
+    return [0, pitch, Math.atan2(-r01, r11)];
+  return [Math.atan2(r21, r22), pitch, Math.atan2(r10, r00)];
+}
+function mateRaycast(event) {
+  const rect = el.canvas?.getBoundingClientRect?.();
+  const { raycaster, pointer, camera } = state.three;
+  if (!rect?.width || !rect?.height || !raycaster || !camera)
+    return null;
+  pointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const direction = raycaster.ray.direction;
+  const base = { ray_direction_world: [direction.x, direction.y, direction.z], client: { x: event.clientX - rect.left, y: event.clientY - rect.top } };
+  const mate = mateState();
+  const MARKER_PRIORITY = { plane: 0, origin: 1, point: 1, axis: 2 };
+  const markerHits = (mate.pickables.length ? raycaster.intersectObjects(mate.pickables, false) : []).sort((a, b) => (MARKER_PRIORITY[a.object.userData.mateMarker?.type] ?? 3) - (MARKER_PRIORITY[b.object.userData.mateMarker?.type] ?? 3) || a.distance - b.distance);
+  if (markerHits.length) {
+    const marker = markerHits[0].object.userData.mateMarker;
+    const p = markerHits[0].point;
+    return { ...base, geometry: "datum_marker", asset_id: marker.asset_id, datum_name: marker.datum, point_world: [p.x, p.y, p.z], normal_world: marker.normal, geometry_source: "datum marker", triangle_index: -1 };
+  }
+  const rootCandidates = [...state.objects.map((o) => o.object3d), ...state.pickRecords.map((o) => o.pickRoot || o.object3d)].filter((root, index, all) => root?.visible !== false && !excludedPickNode(root) && all.indexOf(root) === index);
+  const candidateSet = new Set(rootCandidates);
+  const roots = rootCandidates.filter((root) => {
+    for (let ancestor = root.parent; ancestor; ancestor = ancestor.parent)
+      if (candidateSet.has(ancestor))
+        return false;
+    return true;
+  });
+  const hits = raycaster.intersectObjects(roots, true).filter((hit2) => !hiddenPickSubtree(hit2?.object));
+  const candidate = rankedPickingCandidates(hits).find((c) => Number.isFinite(c.priority) && c.eligible);
+  if (!candidate)
+    return { ...base, geometry: "surface", asset_id: "", point_world: [0, 0, 0], normal_world: [0, 0, 0], geometry_source: "no hit", triangle_index: -1 };
+  const hit = candidate.hit;
+  const ownerId = candidate.selectionOwner?.item?.id || explicitUiSelectionItemId(candidate.rendered);
+  const owner = renderedById(ownerId) || candidate.rendered;
+  let normal = [0, 0, 0];
+  if (hit.face?.normal && hit.object?.matrixWorld) {
+    const world = hit.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
+    normal = [world.x, world.y, world.z];
+  }
+  let fallback = false;
+  for (let node = hit.object; node; node = node.parent) {
+    if (String(node.userData?.render_status || "").includes("fallback")) {
+      fallback = true;
+      break;
+    }
+    if (node === owner?.object3d)
+      break;
+  }
+  const result = {
+    ...base,
+    geometry: "surface",
+    asset_id: ownerId || "",
+    point_world: [hit.point.x, hit.point.y, hit.point.z],
+    normal_world: normal,
+    geometry_source: fallback ? "fallback_primitive" : `${hit.object?.name || "mesh"}${owner?.item ? ` \xB7 ${displayMeshUri(owner.item) || "primitive"}` : ""}`,
+    triangle_index: Number.isInteger(hit.faceIndex) ? hit.faceIndex : -1
+  };
+  if (owner?.object3d) {
+    owner.object3d.updateMatrixWorld(true);
+    const position = new THREE.Vector3().setFromMatrixPosition(owner.object3d.matrixWorld);
+    result.object_pose_world = [position.x, position.y, position.z, ...mateRosRpyFromMatrix(owner.object3d.matrixWorld)];
+  }
+  return result;
+}
+function mateMaterial(color, opacity, extra = {}) {
+  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide, ...extra });
+  mateState().materials.push(material);
+  return material;
+}
+function mateLineMaterial(color) {
+  const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
+  mateState().materials.push(material);
+  return material;
+}
+function mateMarkerColor(marker, overlay) {
+  const resolution = mateState().hoverResolution;
+  if (marker.role === "child")
+    return MATE_COLORS.child;
+  if (marker.role === "parent")
+    return MATE_COLORS.parent;
+  if (resolution?.valid && resolution.asset_id === marker.asset_id && resolution.datum === marker.datum)
+    return MATE_COLORS.hover;
+  return MATE_COLORS.candidate;
+}
+function buildMateMarker(marker, overlay) {
+  const vec = (value) => new THREE.Vector3(Number(value?.[0]) || 0, Number(value?.[1]) || 0, Number(value?.[2]) || 0);
+  const origin = vec(marker.origin), normal = vec(marker.normal).normalize(), xAxis = vec(marker.x_axis).normalize();
+  if (!Number.isFinite(origin.x + origin.y + origin.z) || normal.lengthSq() < 0.5)
+    return null;
+  const group = new THREE.Group();
+  group.name = `mate_marker:${marker.asset_id}:${marker.datum}`;
+  const color = mateMarkerColor(marker, overlay);
+  const emphasised = marker.role !== "candidate";
+  const hovered = color === MATE_COLORS.hover;
+  const pickedAsset = overlay.child_asset === marker.asset_id || overlay.parent_asset === marker.asset_id;
+  if (overlay.step === "ready" && marker.role === "candidate")
+    return null;
+  const basis = new THREE.Matrix4().makeBasis(xAxis, new THREE.Vector3().crossVectors(normal, xAxis).normalize(), normal);
+  let pickable = null;
+  if (marker.type === "plane") {
+    const size = emphasised ? 0.1 : 0.05;
+    pickable = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mateMaterial(color, emphasised || hovered ? 0.55 : 0.28));
+    pickable.applyMatrix4(basis);
+    pickable.position.copy(origin);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(pickable.geometry), mateLineMaterial(color));
+    edges.applyMatrix4(basis);
+    edges.position.copy(origin);
+    group.add(pickable, edges);
+    const arrow = new THREE.ArrowHelper(normal, origin, emphasised ? 0.12 : 0.08, color, 0.025, 0.015);
+    arrow.traverse((node) => {
+      if (node.material) {
+        node.material.depthTest = false;
+        node.material.transparent = true;
+        mateState().materials.push(node.material);
+      }
+    });
+    group.add(arrow);
+  } else if (marker.type === "axis") {
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin.clone().addScaledVector(normal, -0.15), origin.clone().addScaledVector(normal, 0.15)]), mateLineMaterial(color));
+    pickable = new THREE.Mesh(new THREE.CylinderGeometry(8e-3, 8e-3, 0.3, 8), mateMaterial(color, emphasised ? 0.5 : 0.2));
+    pickable.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+    pickable.position.copy(origin);
+    group.add(line, pickable);
+  } else {
+    pickable = new THREE.Mesh(new THREE.SphereGeometry(emphasised ? 0.018 : 0.013, 16, 12), mateMaterial(color, emphasised ? 0.75 : pickedAsset ? 0.5 : 0.35));
+    pickable.position.copy(origin);
+    const axes = new THREE.AxesHelper(0.05);
+    axes.applyMatrix4(basis);
+    axes.position.copy(origin);
+    axes.material.depthTest = false;
+    axes.material.transparent = true;
+    mateState().materials.push(axes.material);
+    group.add(pickable, axes);
+  }
+  pickable.userData.mateMarker = { asset_id: marker.asset_id, datum: marker.datum, type: marker.type, normal: [normal.x, normal.y, normal.z] };
+  pickable.renderOrder = 1e3;
+  group.traverse((node) => {
+    node.renderOrder = Math.max(node.renderOrder || 0, 999);
+  });
+  mateState().pickables.push(pickable);
+  return group;
+}
+function buildMateGhost(entry) {
+  const rendered = renderedById(String(entry?.id || ""));
+  const xyz = entry?.xyz, rpy = entry?.rpy;
+  if (!rendered?.object3d || !Array.isArray(xyz) || !Array.isArray(rpy))
+    return null;
+  const ghost = rendered.object3d.clone(true);
+  const material = mateMaterial(MATE_COLORS.ghost, 0.32, { depthTest: true });
+  ghost.traverse((node) => {
+    node.userData = { mate_ghost: true, selectable: false, exclude_from_physical_bounds: true, exclude_from_fit_bounds: true };
+    node.name = `mate_ghost:${node.name || ""}`;
+    if (node.isMesh) {
+      node.material = material;
+      node.castShadow = false;
+      node.receiveShadow = false;
+      node.renderOrder = 997;
+    } else if (node.isLine || node.isLineSegments || node.isPoints || node.isSprite)
+      node.visible = false;
+  });
+  ghost.position.set(Number(xyz[0]), Number(xyz[1]), Number(xyz[2]));
+  ghost.rotation.set(Number(rpy[0]), Number(rpy[1]), Number(rpy[2]), "XYZ");
+  ghost.scale.copy(rendered.object3d.scale);
+  (rendered.object3d.parent || state.three.scene).add(ghost);
+  return ghost;
+}
+function matePhysicalBox(rendered) {
+  const physical = collectSelectionPhysicalBounds(rendered)?.bounds;
+  if (physical && !physical.isEmpty())
+    return physical.clone();
+  const box = rendered?.object3d ? new THREE.Box3().setFromObject(rendered.object3d) : new THREE.Box3();
+  return box;
+}
+function mateHighlight(assetId, color, track = true) {
+  const rendered = assetId ? renderedById(assetId) : null;
+  if (!rendered?.object3d)
+    return null;
+  const box = matePhysicalBox(rendered);
+  if (box.isEmpty())
+    return null;
+  const helper = new THREE.Box3Helper(box, color);
+  helper.material.depthTest = false;
+  helper.material.transparent = true;
+  if (track)
+    mateState().materials.push(helper.material);
+  helper.renderOrder = 996;
+  return helper;
+}
+function disposeMateOverlay() {
+  const mate = mateState();
+  for (const ghost of mate.ghosts)
+    ghost.parent?.remove(ghost);
+  mate.ghosts = [];
+  for (const group of [mate.group, mate.hoverGroup]) {
+    if (!group)
+      continue;
+    group.parent?.remove(group);
+    group.traverse((node) => {
+      if (node.geometry && !node.userData?.mate_shared_geometry)
+        node.geometry.dispose?.();
+    });
+  }
+  mate.group = null;
+  mate.hoverGroup = null;
+  mate.pickables = [];
+  for (const material of mate.materials)
+    material.dispose?.();
+  mate.materials = [];
+}
+function suppressGizmoForMate() {
+  const gizmo = state.three?.transformControls;
+  if (gizmo) {
+    gizmo.enabled = false;
+    gizmo.visible = false;
+  }
+}
+function mateLabel() {
+  const mate = mateState();
+  if (!mate.label && el.canvas?.parentElement && typeof document !== "undefined") {
+    const label = document.createElement("div");
+    label.className = "mate-hover-label";
+    label.setAttribute("role", "status");
+    Object.assign(label.style, {
+      position: "absolute",
+      pointerEvents: "none",
+      zIndex: "40",
+      maxWidth: "340px",
+      padding: "4px 8px",
+      borderRadius: "6px",
+      background: "rgba(15,23,42,0.92)",
+      color: "#f8fafc",
+      font: "12px/1.35 system-ui, sans-serif",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
+      display: "none"
+    });
+    el.canvas.parentElement.appendChild(label);
+    mate.label = label;
+  }
+  return mate.label;
+}
+function updateMateLabel() {
+  const mate = mateState();
+  const label = mateLabel();
+  if (!label)
+    return;
+  const hover = mate.hover;
+  if (!mate.active || !hover?.client || !hover.asset_id) {
+    label.style.display = "none";
+    return;
+  }
+  const resolution = mate.hoverResolution;
+  let text = "Checking\u2026";
+  if (resolution && resolution.asset_id === hover.asset_id && resolution.seq <= hover.seq) {
+    text = resolution.valid ? `${resolution.asset_label || hover.asset_id}: ${resolution.label}` : `${resolution.asset_label || hover.asset_id}: ${resolution.reason}`;
+    label.style.borderLeft = `3px solid ${resolution.valid ? "#facc15" : "#ef4444"}`;
+  } else {
+    label.style.borderLeft = "3px solid #94a3b8";
+  }
+  label.textContent = text;
+  label.style.left = `${Math.round(hover.client.x + 14)}px`;
+  label.style.top = `${Math.round(hover.client.y + 14)}px`;
+  label.style.display = "block";
+}
+function updateMateHoverVisual(hover) {
+  const mate = mateState();
+  if (mate.hoverGroup) {
+    mate.hoverGroup.parent?.remove(mate.hoverGroup);
+    mate.hoverGroup.traverse((node) => {
+      node.geometry?.dispose?.();
+      node.material?.dispose?.();
+    });
+    mate.hoverGroup = null;
+  }
+  if (hover?.asset_id && state.three?.scene) {
+    const group = new THREE.Group();
+    group.name = "mate_hover";
+    const highlight = mateHighlight(hover.asset_id, MATE_COLORS.hover, false);
+    if (highlight)
+      group.add(highlight);
+    const normal = new THREE.Vector3(...hover.normal_world || [0, 0, 0]);
+    if (hover.geometry === "surface" && normal.lengthSq() > 0.5) {
+      const ray = new THREE.Vector3(...hover.ray_direction_world || [0, 0, -1]);
+      if (normal.dot(ray) > 0)
+        normal.negate();
+      const arrow = new THREE.ArrowHelper(normal.normalize(), new THREE.Vector3(...hover.point_world), 0.07, MATE_COLORS.hover, 0.02, 0.012);
+      arrow.traverse((node) => {
+        if (node.material) {
+          node.material.depthTest = false;
+          node.material.transparent = true;
+        }
+      });
+      group.add(arrow);
+    }
+    markPlacementPreviewHelper(group);
+    group.name = "mate_hover";
+    state.three.scene.add(group);
+    mate.hoverGroup = group;
+  }
+  updateMateLabel();
+}
+function rebuildMateOverlay(overlay) {
+  const mate = mateState();
+  disposeMateOverlay();
+  if (!state.three?.scene)
+    return;
+  const group = new THREE.Group();
+  for (const marker of Array.isArray(overlay.markers) ? overlay.markers : []) {
+    const built = buildMateMarker(marker, overlay);
+    if (built)
+      group.add(built);
+  }
+  for (const [assetId, color] of [[overlay.pending_asset, MATE_COLORS.pending], [overlay.child_asset, MATE_COLORS.child], [overlay.parent_asset, MATE_COLORS.parent]]) {
+    const highlight = mateHighlight(assetId, color);
+    if (highlight)
+      group.add(highlight);
+  }
+  if (mate.pick?.point_world && overlay.step !== "ready") {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(8e-3, 12, 8), mateMaterial(MATE_COLORS.click, 0.9));
+    dot.position.set(...mate.pick.point_world);
+    group.add(dot);
+  }
+  markPlacementPreviewHelper(group);
+  group.name = "workcell_mate_overlay";
+  for (const pickable of mate.pickables)
+    pickable.userData.selectable = false;
+  state.three.scene.add(group);
+  mate.group = group;
+  if (overlay.preview_ok)
+    for (const entry of Array.isArray(overlay.ghost) ? overlay.ghost : []) {
+      const ghost = buildMateGhost(entry);
+      if (ghost)
+        mate.ghosts.push(ghost);
+    }
+}
+function applyMateIsolation(assetId) {
+  const mate = mateState();
+  if ((mate.isolatedAsset || "") === (assetId || ""))
+    return;
+  for (const [object, visible] of mate.hiddenByIsolation || [])
+    object.visible = visible;
+  mate.hiddenByIsolation = [];
+  mate.isolatedAsset = assetId || "";
+  if (!assetId)
+    return;
+  const keep = renderedById(assetId)?.object3d;
+  if (!keep)
+    return;
+  for (const record of [...state.objects, ...state.pickRecords]) {
+    const root = record?.object3d;
+    if (!root || root === keep || root.visible === false)
+      continue;
+    let ancestorOfKeep = false;
+    for (let node = keep.parent; node; node = node.parent)
+      if (node === root) {
+        ancestorOfKeep = true;
+        break;
+      }
+    if (ancestorOfKeep)
+      continue;
+    mate.hiddenByIsolation.push([root, root.visible]);
+    root.visible = false;
+  }
+}
+function applyMateFaceView(view) {
+  const mate = mateState();
+  const seq = Number(view?.seq || 0);
+  if (!seq || seq <= (mate.viewSeq || 0))
+    return;
+  mate.viewSeq = seq;
+  if (view.reset === true) {
+    resetView({ userInitiated: true, preset: "isometric" });
+    return;
+  }
+  const { camera, controls } = state.three;
+  const origin = new THREE.Vector3(...view.origin || [0, 0, 0]);
+  const normal = new THREE.Vector3(...view.normal || [0, 0, 1]);
+  if (!camera || !controls || normal.lengthSq() < 0.5 || !Number.isFinite(origin.x + origin.y + origin.z))
+    return;
+  normal.normalize();
+  const rendered = renderedById(String(view.asset_id || ""));
+  const box = rendered?.object3d ? matePhysicalBox(rendered) : null;
+  const size = box && !box.isEmpty() ? box.getSize(new THREE.Vector3()).length() : 0.5;
+  const distance = Math.min(1.2, Math.max(0.45, size * 0.9));
+  const side = new THREE.Vector3().crossVectors(normal, THREE.Object3D.DEFAULT_UP);
+  if (side.lengthSq() < 1e-6)
+    side.set(1, 0, 0);
+  side.normalize();
+  camera.position.copy(origin).addScaledVector(normal, distance).addScaledVector(side, distance * 0.35);
+  controls.target.copy(origin);
+  camera.lookAt(origin);
+  controls.update();
+  markCameraUserControlled();
+}
+function projectWorldPoint(point) {
+  const { camera } = state.three;
+  const rect = el.canvas?.getBoundingClientRect?.();
+  if (!camera || !rect?.width || !Array.isArray(point))
+    return null;
+  const v = new THREE.Vector3(Number(point[0]), Number(point[1]), Number(point[2])).project(camera);
+  return {
+    x: rect.left + (v.x + 1) / 2 * rect.width,
+    y: rect.top + (1 - v.y) / 2 * rect.height,
+    inFront: v.z < 1 && v.z > -1,
+    canvas: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    devicePixelRatio: window.devicePixelRatio || 1
+  };
+}
+function setMateMode(overlay) {
+  const mate = mateState();
+  if (!overlay || overlay.active !== true) {
+    clearMateMode();
+    return editorState();
+  }
+  if (!mate.active) {
+    if (state.placement.armed)
+      cancelPlacement();
+    if (el.canvas?.style)
+      el.canvas.style.cursor = "crosshair";
+    el.canvas?.classList?.add?.("mate-picking");
+  }
+  mate.active = true;
+  mate.overlay = overlay;
+  suppressGizmoForMate();
+  applyMateIsolation(String(overlay.isolate_asset || ""));
+  rebuildMateOverlay(overlay);
+  applyMateFaceView(overlay.view);
+  return editorState();
+}
+function clearMateMode() {
+  const mate = mateState();
+  const wasActive = mate.active;
+  mate.active = false;
+  mate.overlay = null;
+  mate.pick = null;
+  mate.hover = null;
+  mate.hoverResolution = null;
+  applyMateIsolation("");
+  disposeMateOverlay();
+  updateMateHoverVisual(null);
+  if (wasActive) {
+    if (el.canvas?.style)
+      el.canvas.style.cursor = "";
+    el.canvas?.classList?.remove?.("mate-picking");
+    const gizmo = state.three?.transformControls;
+    if (gizmo) {
+      gizmo.enabled = true;
+      gizmo.visible = Boolean(gizmo.object);
+    }
+  }
+  return editorState();
+}
+function setMateHoverResolution(resolution) {
+  const mate = mateState();
+  if (!mate.active)
+    return editorState();
+  const previous = mate.hoverResolution;
+  mate.hoverResolution = resolution && typeof resolution === "object" ? resolution : null;
+  const changedMarker = previous?.asset_id !== mate.hoverResolution?.asset_id || previous?.datum !== mate.hoverResolution?.datum || previous?.valid !== mate.hoverResolution?.valid;
+  if (changedMarker && mate.overlay)
+    rebuildMateOverlay(mate.overlay);
+  updateMateLabel();
+  return editorState();
+}
+function getMateState() {
+  const mate = mateState();
+  const strip = (value) => value ? { ...value } : null;
+  return {
+    active: mate.active,
+    seq: mate.seq,
+    pick: strip(mate.pick),
+    hoverSeq: mate.hoverSeq,
+    hover: strip(mate.hover),
+    cancelSeq: mate.cancelSeq,
+    markerCount: mate.pickables.length,
+    ghostCount: mate.ghosts.length,
+    isolatedAsset: mate.isolatedAsset || "",
+    viewSeq: mate.viewSeq || 0,
+    hoverResolution: strip(mate.hoverResolution),
+    labelText: mate.label?.style?.display === "block" ? mate.label.textContent : "",
+    sceneId: sceneId()
+  };
+}
+function onMatePointerDownCapture(event) {
+  const mate = state.mate;
+  if (!mate?.active || event.target !== el.canvas || event.button !== 0)
+    return;
+  event.preventDefault?.();
+  event.stopImmediatePropagation?.();
+  event.stopPropagation?.();
+  const pick = mateRaycast(event);
+  if (!pick)
+    return;
+  mate.seq += 1;
+  mate.pick = { seq: mate.seq, ...pick };
+  if (mate.overlay)
+    rebuildMateOverlay(mate.overlay);
+}
+function onMatePointerMoveCapture(event) {
+  const mate = state.mate;
+  if (!mate?.active || event.target !== el.canvas)
+    return;
+  const now2 = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+  if (now2 - mate.lastHoverAt < 60)
+    return;
+  mate.lastHoverAt = now2;
+  const hover = mateRaycast(event);
+  mate.hoverSeq += 1;
+  mate.hover = hover ? { seq: mate.hoverSeq, ...hover } : null;
+  updateMateHoverVisual(mate.hover);
+}
+function onMateKeyDownCapture(event) {
+  if (!state.mate?.active || event.key !== "Escape")
+    return;
+  state.mate.cancelSeq += 1;
+  event.preventDefault?.();
+  event.stopImmediatePropagation?.();
+}
+function onMateContextMenuCapture(event) {
+  if (!state.mate?.active || event.target !== el.canvas)
+    return;
+  event.preventDefault?.();
+  event.stopImmediatePropagation?.();
+}
+function installMatePickListeners() {
+  if (typeof window === "undefined" || window.__WORKCELL_MATE_LISTENERS__)
+    return;
+  window.__WORKCELL_MATE_LISTENERS__ = true;
+  window.addEventListener("pointerdown", onMatePointerDownCapture, true);
+  window.addEventListener("pointermove", onMatePointerMoveCapture, true);
+  window.addEventListener("keydown", onMateKeyDownCapture, true);
+  window.addEventListener("contextmenu", onMateContextMenuCapture, true);
+}
 window.__WORKCELL_EDITOR_API_V1__ = {
   apiVersion: "1.1.0",
   getCapabilities: () => Object.freeze({
@@ -45869,7 +46417,14 @@ window.__WORKCELL_EDITOR_API_V1__ = {
     const events = state.editorEvents.slice();
     state.editorEvents.length = 0;
     return events;
-  }
+  },
+  // Visual mate picking (optional; Builder checks for these before use).
+  setMateMode: (overlay) => setMateMode(overlay),
+  clearMateMode: () => clearMateMode(),
+  setMateHoverResolution: (resolution) => setMateHoverResolution(resolution),
+  getMateState: () => getMateState(),
+  // Diagnostics: where a world point appears on the canvas (page coordinates).
+  projectWorldPoint: (point) => projectWorldPoint(point)
 };
 var editorApiInstalledAt = (/* @__PURE__ */ new Date()).toISOString();
 var editorRuntimeViewerBuild = new URLSearchParams(window.location.search).get("viewerBuild") || "";

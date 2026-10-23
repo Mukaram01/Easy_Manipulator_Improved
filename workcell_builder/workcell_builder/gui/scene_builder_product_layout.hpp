@@ -220,6 +220,30 @@ inline QPushButton * make_proxy_button(
   return button;
 }
 
+// 8 px side padding on the button itself (wins over inherited toolbar rules) and a
+// minimum width from its bold label, so "Select"/"Rotate" never collapse to
+// "Selec/Rotat" and the toolbar still fits Mate at 1366 px.
+enum class ToolbarSegment { None, First, Middle, Last };
+inline void compact_toolbar_button(QPushButton * button, ToolbarSegment segment = ToolbarSegment::None)
+{
+  if (!button) return;
+  // A widget's own style sheet wins over inherited rules property by property,
+  // so a segment restates its joined-segment borders here.
+  QString rules = QStringLiteral("padding-left: 8px; padding-right: 8px;");
+  const QString radius = workcell_builder::studioTokens().radiusS;
+  if (segment != ToolbarSegment::None) rules += QStringLiteral(" border-radius: 0; border-right-width: 0;");
+  if (segment == ToolbarSegment::First) {
+    rules += QStringLiteral(" border-top-left-radius: %1; border-bottom-left-radius: %1;").arg(radius);
+  } else if (segment == ToolbarSegment::Last) {
+    rules += QStringLiteral(" border-top-right-radius: %1; border-bottom-right-radius: %1; border-right-width: 1px;").arg(radius);
+  }
+  button->setStyleSheet(QStringLiteral("QPushButton { %1 }").arg(rules));
+  button->ensurePolished();
+  QFont bold = button->font();
+  bold.setBold(true);
+  button->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(button->text()) + 2 * 8 + 6);
+}
+
 inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * preview)
 {
   if (!scene_page) return;
@@ -237,6 +261,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   if (move) move->setObjectName(QStringLiteral("sceneBuilderModeMove"));
   if (rotate) rotate->setObjectName(QStringLiteral("sceneBuilderModeRotate"));
   if (save) save->setObjectName(QStringLiteral("sceneBuilderToolbarSave"));
+  QPushButton * mate = scene_page->findChild<QPushButton *>(QStringLiteral("sceneBuilderToolbarMate"));
 
   QPushButton * embedded_add = button_with_text(preview, QStringLiteral("Add object"));
   QPushButton * embedded_fit = preview ? preview->findChild<QPushButton *>(QStringLiteral("embeddedFitButton")) : nullptr;
@@ -272,6 +297,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     duplicate->setFocusPolicy(Qt::NoFocus);
   }
 
+  layout->setSpacing(4);  // Mate fits at 1366 px without squeezing Select/Move/Rotate
   const auto add_existing = [layout](QWidget * widget) {
     if (!widget) return;
     widget->show();
@@ -287,15 +313,18 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     if (!button) continue;
     button->show();
     button->setMinimumHeight(32);
-    button->setMinimumWidth(66);          // "Select"/"Rotate" need 66 px; never collapse to "Selec/Rotat"
+    compact_toolbar_button(button, button == select ? ToolbarSegment::First
+      : button == rotate ? ToolbarSegment::Last : ToolbarSegment::Middle);
     button->setProperty("editModeSegment", true);
     edit_mode_layout->addWidget(button);
   }
   layout->addWidget(edit_mode_group);
   layout->addSpacing(4);
   if (place) place->hide();
+  for (auto * compact : {fit, mate}) compact_toolbar_button(compact);
   add_existing(add_object);
   add_existing(fit);
+  add_existing(mate);
   layout->addStretch(1);
   // Undo/Redo as compact icon buttons so the toolbar fits a 1366 px display;
   // the text stays as tooltip and accessible name.
@@ -508,7 +537,8 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
     QWidget#scene_builder_top_controls_host { background: @glass; border: 0px; border-bottom: 1px solid @glassBorder; }
     QWidget#scene_builder_top_controls_host QPushButton { min-height: 32px; padding: 4px 12px; border: 1px solid @borderStrong; border-radius: @radiusS; background: @surface; color: @text; }
     QWidget#scene_builder_top_controls_host QPushButton:hover { background: @accentSoft; border-color: @accent; }
-    QWidget#sceneBuilderEditModeGroup QPushButton { border-radius: 0; border-right-width: 0; min-width: 64px; }
+    QWidget#sceneBuilderEditModeGroup QPushButton { border-radius: 0; border-right-width: 0; }
+    QWidget#scene_builder_top_controls_host QPushButton#sceneBuilderToolbarMate:checked { background: @accent; color: @accentText; border-color: @accent; font-weight: 600; }
     QPushButton#sceneBuilderModeSelect { border-top-left-radius: @radiusS; border-bottom-left-radius: @radiusS; }
     QPushButton#sceneBuilderModeRotate { border-top-right-radius: @radiusS; border-bottom-right-radius: @radiusS; border-right-width: 1px; }
     QWidget#sceneBuilderEditModeGroup QPushButton:checked { background: @accent; color: @accentText; border-color: @accent; font-weight: 600; }

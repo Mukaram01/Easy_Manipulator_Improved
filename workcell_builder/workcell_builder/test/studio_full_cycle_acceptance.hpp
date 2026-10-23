@@ -28,6 +28,24 @@
 #include <QComboBox>
 #include <QTreeWidget>
 #include <stdexcept>
+#include <QCryptographicHash>
+#include <QProcess>
+#include <QGuiApplication>
+#include <QKeyEvent>
+#include <QMenu>
+#include <QMessageBox>
+#include <QMouseEvent>
+#include <QRadioButton>
+#include <QRegularExpression>
+#include <QScreen>
+#include <QToolButton>
+#include <QTreeWidgetItemIterator>
+#include <QWindow>
+#include "gui/mate_tool_controller.hpp"
+#include "gui/mate_tool_panel.hpp"
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+#include <QWebEngineView>
+#endif
 
 class TestMain {
 public:
@@ -833,6 +851,830 @@ public:
         window->stop_preview_process();
         if(window->preview_process_->state()==QProcess::NotRunning) app->exit(1);
         else QObject::connect(window->preview_process_,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),app,[app](){app->exit(1);});
+      }
+    });
+    timer->start();
+  }
+  // R3.2 visual mate acceptance: real mouse events into the Product View at
+  // projected world points (hover, then click), the real Mate panel controls,
+  // Inspector edits, undo/redo, the existing Mount To dialog, Save, Generate and
+  // Validate. Everything is checked against the resolver, the editor and disk.
+  static void start_visual_mate_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & scene_name, bool reopen, QSize window_size = QSize(1366, 768)) {
+    struct Session {
+      int step = 0, ticks = 0, sub = 0, candidate = 0;
+      QString scene, stand;
+      QJsonObject evidence;
+      bool js_pending = false; QVariant js_result;
+      QPoint target; qint64 pick_seq_before = 0;
+      QByteArray env_hash, layout_hash;
+      QJsonArray items_before, mated_items;
+      bool native = false;
+    };
+    using Step = std::function<bool()>;
+    auto s = std::make_shared<Session>();
+    auto steps = std::make_shared<std::vector<std::pair<QString, Step>>>();
+    QDir().mkpath(output);
+    s->evidence = {{"result", "FAIL"}, {"fake_hardware_only", true}, {"execution_goals_sent", 0}, {"robot_motion_commanded", false}};
+    const QString bin = "target_bin_default", table = "support_surface_table", camera = "realsense_overhead";
+    auto write = [=]() {
+      s->evidence["studio_log_tail"] = window->studio_log_->toPlainText().right(8000);
+      QFile f(output + (reopen ? "/reopen.json" : (s->native ? "/native.json" : "/authoring.json")));
+      if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson());
+    };
+    auto require = [](bool value, const QString & message) { if (!value) throw std::runtime_error(message.toStdString()); };
+    auto near = [](double a, double b, double tol = 1e-8) { return std::abs(a - b) < tol; };
+    auto item = [=](const QString & id) {
+      for (const auto & p : window->all_scene_preview_items_) if (p.id == id) return p;
+      throw std::runtime_error(("scene item missing: " + id).toStdString());
+    };
+    auto relation = [=](const QString & id) { return YAML::Load(item(id).mounting_yaml.toStdString()); };
+    auto file_hash = [](const QString & path) {
+      QFile f(path); if (!f.open(QIODevice::ReadOnly)) return QByteArray();
+      return QCryptographicHash::hash(f.readAll(), QCryptographicHash::Sha256).toHex();
+    };
+    auto environment = [=]() { return YAML::LoadFile((s->scene + "/environment.yaml").toStdString()); };
+    auto record = [](const YAML::Node & root, const std::string & id) {
+      for (const char * key : {"support_surfaces", "assets", "sensors", "task_zones"})
+        for (const auto & r : root["environment"][key])
+          if (r["id"].as<std::string>("") == id || r["layout_item_ref"].as<std::string>("") == id) return r;
+      throw std::runtime_error("authored record missing: " + id);
+    };
+    // The Product View is composited (QtWebEngine): read the real X11 window.
+    auto shot = [=](const QString & name) {
+      QCoreApplication::processEvents();
+      const QString script = QDir(window->detect_workspace_root()).filePath(
+        "src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/x11_window_capture.py");
+      const int code = QProcess::execute("python3", {script, QString::number(window->winId()), output + "/" + name + ".png"});
+      if (code != 0) window->grab().save(output + "/" + name + ".png");
+      QJsonArray shots = s->evidence.value("screenshots").toArray(); shots.append(name); s->evidence["screenshots"] = shots;
+    };
+    auto mate = [=]() { return window->mate_controller_; };
+    // Hierarchy rows are looked up fresh each time: Apply and selection rebuild the
+    // tree, so no QTreeWidgetItemIterator may live across them.
+    auto hierarchy_row = [=](const QString & id) -> QTreeWidgetItem * {
+      std::function<QTreeWidgetItem *(QTreeWidgetItem *)> find = [&](QTreeWidgetItem * node) -> QTreeWidgetItem * {
+        if (node->data(0, Qt::UserRole + 1 /* TreeRoleId */).toString() == id) return node;
+        for (int i = 0; i < node->childCount(); ++i) if (auto * hit = find(node->child(i))) return hit;
+        return nullptr;
+      };
+      auto * tree = window->scene_hierarchy_tree_;
+      for (int i = 0; tree && i < tree->topLevelItemCount(); ++i) if (auto * hit = find(tree->topLevelItem(i))) return hit;
+      return nullptr;
+    };
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+    auto web = [=]() -> QWebEngineView * {
+      for (auto * view : window->scene_preview_widget_->findChildren<QWebEngineView *>()) if (view->isVisible()) return view;
+      return nullptr;
+    };
+    auto js = [=](const QString & script) {
+      auto * view = web(); if (!view) return;
+      s->js_pending = true; s->js_result = QVariant();
+      view->page()->runJavaScript(script, [s](const QVariant & value) { s->js_result = value; s->js_pending = false; });
+    };
+    auto mouse = [=](QEvent::Type type, const QPoint & p, Qt::MouseButton button, Qt::MouseButtons buttons) {
+      auto * view = web(); if (!view) return;
+      QWidget * target = view->focusProxy() ? view->focusProxy() : view;
+      const QPoint local = target->mapFrom(view, p);
+      QMouseEvent event(type, QPointF(local), QPointF(target->window()->mapFromGlobal(target->mapToGlobal(local))),
+        QPointF(target->mapToGlobal(local)), button, buttons, Qt::NoModifier);
+      QApplication::sendEvent(target, &event);
+    };
+    auto key_escape = [=]() {
+      auto * view = web(); if (!view) return;
+      QWidget * target = view->focusProxy() ? view->focusProxy() : view;
+      target->setFocus();
+      QKeyEvent press(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier), release(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+      QApplication::sendEvent(target, &press); QApplication::sendEvent(target, &release);
+    };
+    // Hover each candidate world point until the hover resolves to the expected
+    // asset (and datum, when given), then click it. `check` validates the pick.
+    using Points = std::vector<std::array<double, 3>>;
+    auto fixed = [](Points points) { return std::function<Points()>([points]() { return points; }); };
+    auto click_world = [=](const QString & tag, std::function<Points()> candidate_fn, const QString & expect_asset,
+                           const QString & expect_datum, std::function<void(const QJsonObject &)> check) {
+      auto local = std::make_shared<int>(0);
+      auto candidates_ptr = std::make_shared<Points>();
+      return [=]() -> bool {
+        if (s->native) return true;  // the native fallback has no face picking (see the Native steps)
+        if (s->js_pending) return false;
+        const Points & candidates = *candidates_ptr;
+        switch (s->sub) {
+          case 0: {
+            if (s->candidate == 0) {
+              *candidates_ptr = candidate_fn();
+              if (candidates_ptr->empty()) { s->evidence[tag + "_skipped"] = true; return true; }
+            }
+            require(s->candidate < int(candidates_ptr->size()), tag + ": no candidate point resolved to " + expect_asset + " " + expect_datum);
+            const auto p = (*candidates_ptr)[s->candidate];
+            js(QString("window.__WORKCELL_EDITOR_API_V1__.projectWorldPoint([%1,%2,%3])").arg(p[0], 0, 'g', 12).arg(p[1], 0, 'g', 12).arg(p[2], 0, 'g', 12));
+            s->sub = 1; *local = 0; return false;
+          }
+          case 1: {
+            const auto projected = s->js_result.toMap();
+            require(!projected.isEmpty(), tag + ": projection unavailable");
+            s->target = QPoint(qRound(projected.value("x").toDouble()), qRound(projected.value("y").toDouble()));
+            const auto canvas = projected.value("canvas").toMap();
+            const QRect inner(qRound(canvas.value("left").toDouble()) + 30, qRound(canvas.value("top").toDouble()) + 40,
+              qRound(canvas.value("width").toDouble()) - 60, qRound(canvas.value("height").toDouble()) - 70);
+            if (!projected.value("inFront").toBool() || !inner.contains(s->target)) {
+              QJsonArray log = s->evidence.value(tag + "_hover_attempts").toArray();
+              log.append(QJsonObject{{"widget", QJsonArray{s->target.x(), s->target.y()}}, {"skipped", "outside the visible canvas"}});
+              s->evidence[tag + "_hover_attempts"] = log;
+              ++s->candidate; s->sub = 0; return false;
+            }
+            s->evidence["_canvas_offset"] = QJsonArray{canvas.value("left").toDouble(), canvas.value("top").toDouble()};
+            mouse(QEvent::MouseMove, s->target + QPoint(-3, 0), Qt::NoButton, Qt::NoButton);
+            mouse(QEvent::MouseMove, s->target, Qt::NoButton, Qt::NoButton);
+            s->sub = 2; *local = 0; return false;
+          }
+          case 2: {
+            if (++*local < 9) return false;  // poll + hover resolution round trip
+            js("window.__WORKCELL_EDITOR_API_V1__.getMateState()");
+            s->sub = 3; return false;
+          }
+          case 3: {
+            const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+            const auto hover = state.value("hoverResolution").toObject();
+            // Only a resolution of this very hover counts (overlays can swallow the pointer).
+            const auto client = state.value("hover").toObject().value("client").toObject();
+            const auto offset = s->evidence.value("_canvas_offset").toArray();
+            const bool current = hover.value("seq").toInt() == state.value("hoverSeq").toInt() &&
+              std::abs(client.value("x").toDouble() + offset[0].toDouble() - s->target.x()) < 2.5 &&
+              std::abs(client.value("y").toDouble() + offset[1].toDouble() - s->target.y()) < 2.5;
+            QJsonObject tried{{"point", QJsonArray{candidates[s->candidate][0], candidates[s->candidate][1], candidates[s->candidate][2]}},
+              {"widget", QJsonArray{s->target.x(), s->target.y()}}, {"hover", hover}, {"label", state.value("labelText")}};
+            QJsonArray log = s->evidence.value(tag + "_hover_attempts").toArray(); log.append(tried); s->evidence[tag + "_hover_attempts"] = log;
+            const bool asset_ok = current && (expect_asset.isEmpty() ? !hover.value("asset_id").toString().isEmpty() : hover.value("asset_id").toString() == expect_asset);
+            const bool datum_ok = expect_datum.isEmpty() || (hover.value("valid").toBool() && hover.value("datum").toString() == expect_datum);
+            if (!asset_ok || !datum_ok) { ++s->candidate; s->sub = 0; return false; }
+            s->evidence[tag + "_hover"] = tried;
+            s->pick_seq_before = window->mate_seen_pick_seq_;
+            mouse(QEvent::MouseButtonPress, s->target, Qt::LeftButton, Qt::LeftButton);
+            mouse(QEvent::MouseButtonRelease, s->target, Qt::LeftButton, Qt::NoButton);
+            s->sub = 4; *local = 0; return false;
+          }
+          case 4: {
+            if (window->mate_seen_pick_seq_ <= s->pick_seq_before) return false;
+            const auto picks = mate()->evidence().value("picks").toArray();
+            const auto last = picks.isEmpty() ? QJsonObject() : picks.last().toObject().value("resolution").toObject();
+            s->evidence[tag + "_pick"] = last;
+            check(last);
+            s->sub = 0; s->candidate = 0;
+            return true;
+          }
+        }
+        return false;
+      };
+    };
+#endif
+    auto panel = [=]() { return window->mate_panel_; };
+    auto panel_button = [=](const char * name) { auto * b = panel()->findChild<QPushButton *>(name); require(b, QString("Mate panel control missing: ") + name); return b; };
+    auto inspector = [=](const QString & id, double dx, double dy, double dyaw_deg) {
+      window->apply_scene_selection(id, "", false, false);
+      window->inspector_update_guard_ = true;
+      window->inspector_x_->setValue(window->inspector_x_->value() + dx);
+      window->inspector_y_->setValue(window->inspector_y_->value() + dy);
+      window->inspector_yaw_->setValue(window->inspector_yaw_->value() + dyaw_deg);
+      window->inspector_update_guard_ = false;
+      window->inspector_apply_button_->click();
+    };
+    // Child datum frame against parent datum frame, from the resolver's own frames.
+    auto frames = [=]() {
+      const auto response = window->run_mounting_request({{"operation", "datum_frames"}});
+      require(response.value("ok").toBool(), "datum frames failed: " + response.value("error").toString());
+      return response.value("result").toObject();
+    };
+    auto datum = [](const QJsonObject & all, const QString & asset, const QString & name) {
+      return all.value(asset).toObject().value("datums").toObject().value(name).toObject();
+    };
+    auto v3 = [](const QJsonValue & v) { const auto a = v.toArray(); return std::array<double, 3>{a[0].toDouble(), a[1].toDouble(), a[2].toDouble()}; };
+    auto check_flush = [=](const QString & phase, const QString & child, const QString & child_datum, const QString & parent, const QString & parent_datum) {
+      const auto all = frames();
+      const auto c = datum(all, child, child_datum), p = datum(all, parent, parent_datum);
+      const auto co = v3(c.value("xyz")), po = v3(p.value("xyz")), cn = v3(c.value("normal")), pn = v3(p.value("normal"));
+      const double gap = (co[0] - po[0]) * pn[0] + (co[1] - po[1]) * pn[1] + (co[2] - po[2]) * pn[2];
+      const double opposed = cn[0] * pn[0] + cn[1] * pn[1] + cn[2] * pn[2];
+      s->evidence[phase + "_flush"] = QJsonObject{{"gap_m", gap}, {"normal_dot", opposed}};
+      require(std::abs(gap) < 1e-9 && near(opposed, -1., 1e-9), phase + ": faces are not flush (gap " + QString::number(gap) + ")");
+    };
+    auto modal_watch = new QTimer(window); modal_watch->setInterval(250);
+    QObject::connect(modal_watch, &QTimer::timeout, window, [=]() {
+      for (auto * widget : QApplication::topLevelWidgets()) if (auto * message = qobject_cast<QMessageBox *>(widget)) {
+        if (!message->isVisible()) continue;
+        s->evidence["failure"] = "unexpected message: " + message->text();
+        shot("failure"); write(); message->reject(); app->exit(1);
+      }
+    }); modal_watch->start();
+
+    // ---- Step script --------------------------------------------------------
+    auto add = [=](const QString & name, Step step) { steps->push_back({name, step}); };
+    add("load cell", [=]() {
+      if (s->ticks < 5) return false;
+      const QString root = window->detect_workspace_root() + "/src/easy_manipulation_deployment";
+      s->scene = root + "/scenes/" + scene_name;
+      s->evidence["scene_path"] = s->scene;
+      QStringList blockers; QJsonObject diagnostics;
+      require(window->load_scene_for_scene3d_smoke(scene_name, s->scene, &blockers, &diagnostics), "cell did not open: " + blockers.join("; "));
+      window->show_studio_page(MainWindow::StudioPage::SceneBuilderPage);
+      return true;
+    });
+    add("wait for the 3D view", [=]() {
+      if (s->ticks < 10) return false;
+      auto * preview = window->scene_preview_widget_;
+      s->native = preview && preview->is_native_product_view_backend();
+      if (!s->native && !(preview && preview->embedded_web_authoring_active() && window->mate_web_supported_)) return false;
+      s->evidence["backend"] = s->native ? "native_scene3d" : "embedded_web3d";
+      // Only a request larger than the free desktop area may be clamped by the window manager.
+      QScreen * screen = window->windowHandle() ? window->windowHandle()->screen() : QGuiApplication::primaryScreen();
+      const QSize available = screen ? screen->availableGeometry().size() : window_size;
+      const bool fits = window_size.width() <= available.width() && window_size.height() <= available.height();
+      if (window->size() != window_size && (fits ? s->ticks < 300 : s->ticks < 40)) {
+        window->setWindowState(Qt::WindowNoState);
+        window->resize(window_size);
+        return false;
+      }
+      require(!fits || window->size() == window_size, "window did not resize to the requested size");
+      // The window manager may clamp a full-screen request to the free desktop area.
+      s->evidence["requested_window_size"] = QJsonArray{window_size.width(), window_size.height()};
+      s->evidence["window_size"] = QJsonArray{window->width(), window->height()};
+      return s->ticks > 25;
+    });
+    if (reopen) {
+      add("reopened relations equal disk", [=]() {
+        QFile previous(output + "/authoring.json"); require(previous.open(QIODevice::ReadOnly), "authoring evidence missing");
+        const auto authored = QJsonDocument::fromJson(previous.readAll()).object();
+        const auto before = authored.value("final_items").toArray();
+        const auto after = window->mounting_items();
+        require(before.size() == after.size(), "reopen changed physical identities");
+        QMap<QString, QJsonObject> indexed;
+        for (const auto & row : after) indexed.insert(row.toObject().value("id").toString(), row.toObject());
+        const auto disk = environment();
+        for (const auto & value : before) {
+          const auto row = value.toObject(), actual = indexed.value(row.value("id").toString());
+          require(!actual.isEmpty(), "reopen lost " + row.value("id").toString());
+          for (const auto & key : {QString("pose_xyz"), QString("pose_rpy")})
+            for (int k = 0; k < 3; ++k) require(near(row.value(key).toArray()[k].toDouble(), actual.value(key).toArray()[k].toDouble()), "reopen changed a transform of " + row.value("id").toString());
+          const auto a = YAML::Load(row.value("mounting_yaml").toString().toStdString()), b = YAML::Load(actual.value("mounting_yaml").toString().toStdString());
+          for (const char * key : {"parent_object", "parent_link", "mate", "origin", "mounting_anchors"})
+            require(workcell_builder::same_yaml_value(a[key], b[key]), QString("reopen changed %1 of %2").arg(key, row.value("id").toString()));
+          if (row.value("category").toString() == "zone") continue;
+          const auto stored = record(disk, row.value("id").toString().toStdString());
+          for (int k = 0; k < 3; ++k) require(near(stored["pose_xyz"][k].as<double>(), actual.value("pose_xyz").toArray()[k].toDouble()), "editor pose differs from environment.yaml for " + row.value("id").toString());
+          require(workcell_builder::same_yaml_value(stored["mate"], b["mate"]) && workcell_builder::same_yaml_value(stored["origin"], b["origin"]),
+            "editor relation differs from environment.yaml for " + row.value("id").toString());
+        }
+        s->evidence["relations_match_disk"] = true;
+        s->stand = authored.value("stand").toString();
+        check_flush("reopened_bin", bin, "bottom", table, "surface");
+        check_flush("reopened_stand", s->stand, "base", table, "surface");
+        s->env_hash = file_hash(s->scene + "/environment.yaml");
+        window->apply_scene_selection(bin, "", false, false);
+        return true;
+      });
+      add("selecting a mated asset keeps the layout clean", [=]() {
+        if (s->ticks < 12) return false;
+        require(!window->layout_dirty_, "selecting a mated asset marked the layout dirty");
+        s->evidence["selection_relation_text"] = window->inspector_mount_relation_label_->text();
+        require(window->inspector_mount_relation_label_->text().startsWith("Mated: bottom flush"), "selection context does not show the mate");
+        shot("20_reopened");
+        panel_button("mateApply");  // panel exists
+        window->scene_builder_mate_button_->click();
+        require(window->mate_active(), "Mate did not start after reopen");
+        return true;
+      });
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      add("reopened overlay shows datum markers; Esc cancels", [=]() {
+        if (s->native) return true;
+        if (s->js_pending) return false;
+        if (s->sub == 0) { if (s->ticks < 8) return false; js("window.__WORKCELL_EDITOR_API_V1__.getMateState()"); s->sub = 1; return false; }
+        if (s->sub == 1) {
+          const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+          s->evidence["reopen_overlay"] = state;
+          require(state.value("active").toBool() && state.value("markerCount").toInt() > 6, "reopened Mate overlay has no datum markers");
+          shot("21_reopened_mate_markers");
+          key_escape();
+          s->sub = 2; s->ticks = 0; return false;
+        }
+        if (s->ticks < 8) return false;
+        require(!window->mate_active(), "Esc in the 3D view did not cancel Mate");
+        require(file_hash(s->scene + "/environment.yaml") == s->env_hash && !window->layout_dirty_, "cancelled Mate changed the cell");
+        s->sub = 0;
+        return true;
+      });
+#endif
+      add("finish reopen", [=]() {
+        s->evidence["result"] = "PASS";
+        write();
+        return true;
+      });
+    } else {
+      add("baseline and entry points", [=]() {
+        s->env_hash = file_hash(s->scene + "/environment.yaml");
+        s->layout_hash = file_hash(s->scene + "/layout/workcell_studio_layout.yaml");
+        s->evidence["baseline_environment_sha256"] = QString(s->env_hash);
+        require(window->scene_builder_mate_button_ && window->scene_builder_mate_button_->isVisible(), "Mate is not on the Scene Builder toolbar");
+        // No squeezed (clipped) toolbar controls at this window size.
+        QJsonArray toolbar;
+        auto * host = window->findChild<QWidget *>("scene_builder_top_controls_host");
+        QList<QPushButton *> placed;
+        for (int i = 0; host->layout() && i < host->layout()->count(); ++i) {
+          QWidget * widget = host->layout()->itemAt(i)->widget();
+          if (auto * button = qobject_cast<QPushButton *>(widget)) placed << button;
+          else if (widget && widget->objectName() == "sceneBuilderEditModeGroup") placed << widget->findChildren<QPushButton *>();
+        }
+        for (auto * button : placed) {
+          if (!button->isVisible()) continue;
+          QFont font = button->font();
+          if (button->isChecked()) font.setBold(true);
+          const int needs = button->text().isEmpty() ? button->minimumWidth() : QFontMetrics(font).horizontalAdvance(button->text()) + 2 * 8;
+          toolbar.append(QJsonObject{{"name", button->objectName()}, {"text", button->text()}, {"width", button->width()}, {"needs", needs}});
+          require(button->width() >= needs, "toolbar control clipped: " + (button->text().isEmpty() ? button->objectName() : button->text()));
+        }
+        s->evidence["toolbar"] = toolbar;
+        require(window->inspector_mate_button_ != nullptr, "Mate is not in the Inspector");
+        // Context menu entry: open the real hierarchy menu and read it.
+        auto * tree = window->scene_hierarchy_tree_;
+        QTreeWidgetItem * row = hierarchy_row(bin);
+        require(row != nullptr, "bin missing from the Scene Hierarchy");
+        QTimer::singleShot(300, window, [=]() {
+          if (auto * menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) {
+            QJsonArray texts; for (auto * action : menu->actions()) if (!action->isSeparator()) texts.append(action->text());
+            s->evidence["hierarchy_context_menu"] = texts;
+            menu->close();
+          }
+        });
+        tree->scrollToItem(row);
+        window->show_scene_hierarchy_context_menu(tree->visualItemRect(row).center());
+        const auto texts = s->evidence.value("hierarchy_context_menu").toArray();
+        require(texts.contains(QJsonValue("Mate by Picking Faces…")) && texts.contains(QJsonValue("Mount To / Relative Pose…")),
+          "Scene context menu lacks Mate / Mount To");
+        // A camera stand from the Asset Library, standing on the table top.
+        require(window->place_catalog_asset_at_world_position("camera_stand", .15, -.35, .6, false), "camera stand could not be placed from the Asset Library");
+        for (const auto & p : window->all_scene_preview_items_) if (p.catalog_asset_id == "camera_stand") s->stand = p.id;
+        require(!s->stand.isEmpty(), "placed camera stand has no scene ID");
+        s->evidence["stand"] = s->stand;
+        window->save_layout_button_->click();
+        return true;
+      });
+      // Save keeps the live session without regenerating the Product View, and the
+      // live overlay draws a newly placed library fixture only as a placeholder:
+      // run the Builder's own post-save Product View refresh so the 3D view is the
+      // fresh export with the stand's staged mesh.
+      add("stand saved; refresh the Product View", [=]() {
+        if (s->ticks < 20 || window->layout_dirty_) return false;
+        if (!s->native) require(window->scene_preview_widget_->request_post_save_product_view_refresh() > 0, "Product View refresh was not requested");
+        return true;
+      });
+      add("stand drawn", [=]() {
+        if (s->ticks < 15) return false;
+        auto * preview = window->scene_preview_widget_;
+        if (!s->native && !(preview->embedded_web_authoring_active() && window->mate_web_supported_)) return false;
+        if (s->ticks < 45) return false;
+        require(item(s->stand).catalog_asset_id == "camera_stand", "reopened cell lost the camera stand");
+        s->env_hash = file_hash(s->scene + "/environment.yaml");
+        s->items_before = window->mounting_items();
+        return true;
+      });
+      if (true) {
+        add("Scenario A: start Mate from the toolbar", [=]() {
+          window->apply_scene_selection(bin, "", false, false);
+          window->scene_builder_mate_button_->click();
+          require(window->mate_active() && panel()->isVisible(), "Mate panel did not open");
+          require(mate()->pending_asset() == bin, "the selected bin is not offered as the first part");
+          return true;
+        });
+      }
+      add("Native: honest fallback, hierarchy and datum lists", [=]() {
+        if (!s->native) return true;
+        auto * note = panel()->findChild<QLabel *>("mateBackendNote");
+        s->evidence["native_backend_note"] = note ? note->text() : QString();
+        require(note && note->isVisible() && note->text().contains("native Scene3D"), "native fallback note missing");
+        require(!panel()->findChild<QCheckBox *>("mateIsolate")->isEnabled() && !panel()->findChild<QToolButton *>("mateFaceView")->isEnabled(),
+          "visual-only controls are enabled in the native view");
+        auto choose = [=](const char * combo_name, const QString & name) {
+          auto * combo = panel()->findChild<QComboBox *>(combo_name);
+          const int index = combo ? combo->findData(name) : -1;
+          require(index >= 0, QString("datum %1 is not offered in %2").arg(name, combo_name));
+          combo->setCurrentIndex(index);
+          emit combo->activated(index);
+        };
+        choose("mateChildDatum", "bottom");
+        require(mate()->child() && mate()->child()->how == "chosen manually", "native child datum not chosen");
+        auto * table_row = hierarchy_row(table);
+        require(table_row != nullptr, "table missing from the Scene Hierarchy");
+        window->on_hierarchy_item_selected(table_row);
+        require(mate()->pending_asset() == table, "hierarchy click did not choose the table for step 2");
+        choose("mateParentDatum", "surface");
+        require(mate()->step() == workcell_builder::MateToolController::Step::Ready && mate()->preview().ok && mate()->alignment() == "flush",
+          "native preview: " + mate()->preview().error);
+        s->evidence["native_preview"] = mate()->evidence().value("preview");
+        shot("native_01_preview");
+        panel_button("mateApply")->click();
+        check_flush("native_applied", bin, "bottom", table, "surface");
+        s->evidence["native_relation"] = QString::fromStdString(YAML::Dump(relation(bin)));
+        return true;
+      });
+      add("Native: applied view", [=]() {
+        if (!s->native) return true;
+        if (s->ticks < 8) return false;
+        shot("native_02_applied");
+        s->evidence["result"] = "PASS";
+        write();
+        s->step = int(steps->size()) - 1;  // the remaining steps need face picking
+        return true;
+      });
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      add("Scenario A: datum markers drawn", [=]() {
+        if (s->native) return true;
+        if (s->js_pending) return false;
+        if (s->sub == 0) { if (s->ticks < 6) return false; js("window.__WORKCELL_EDITOR_API_V1__.getMateState()"); s->sub = 1; return false; }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        s->evidence["mate_start_overlay"] = state;
+        require(state.value("active").toBool() && state.value("markerCount").toInt() > 6, "datum markers are not drawn");
+        shot("01_mate_started_markers");
+        s->sub = 0;
+        return true;
+      });
+      add("Scenario A: bin side wall is rejected honestly", click_world("A_side_wall", fixed({{0.45 + 0.1761, 0.22, 0.1}, {0.45 + 0.1761, 0.18, 0.12}}), bin, QString(),
+        [=](const QJsonObject & pick) {
+          require(!pick.value("valid").toBool() && pick.value("reason_code").toString() == "NO_MATCHING_DATUM",
+            "side wall was not rejected: " + pick.value("reason").toString());
+          require(mate()->step() == workcell_builder::MateToolController::Step::PickChild && !mate()->child(), "a rejected face changed the mate");
+          require(mate()->status().contains("choose a datum"), "rejection does not offer the manual datum selector");
+          shot("02_rejected_side_wall");
+        }));
+      add("Scenario A: isolate the bin and look at its bottom", [=]() {
+        if (s->sub == 0) {
+          panel()->findChild<QCheckBox *>("mateIsolate")->click();
+          auto * face = panel()->findChild<QToolButton *>("mateFaceView");  // looked up after the refresh
+          QAction * bottom = nullptr;
+          for (auto * action : face->menu()->actions()) if (action->data().toString() == "bottom") bottom = action;
+          require(bottom != nullptr, "bin bottom datum is not offered in Look at a face");
+          bottom->trigger();
+          s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->ticks < 10) return false;
+        s->sub = 0;
+        shot("03_isolated_bottom_view");
+        return true;
+      });
+      add("Scenario A: click the bin bottom face (geometry)", click_world("A_bin_bottom", fixed({{0.45 + 0.13, 0.22 + 0.05, 0.0}, {0.45 - 0.12, 0.22 - 0.05, 0.0}, {0.45 + 0.1, 0.22 - 0.07, 0.0}}), bin, "bottom",
+        [=](const QJsonObject & pick) {
+          require(pick.value("valid").toBool() && pick.value("reason_code").toString() == "MATCHED" && pick.value("datum").toString() == "bottom",
+            "bin bottom face did not resolve to the bottom datum: " + pick.value("reason").toString());
+          require(pick.value("raw").toObject().value("geometry").toString() == "surface", "bin bottom was not a geometry pick");
+          require(mate()->child() && mate()->child()->datum == "bottom", "child is not the bin bottom");
+          require(mate()->step() == workcell_builder::MateToolController::Step::PickParent, "Mate did not move to step 2");
+        }));
+      add("Scenario A: view returns to the cell", [=]() { if (s->ticks < 10) return false; shot("04_child_picked"); return true; });
+      add("Scenario A: click the table top (geometry)", click_world("A_table_top", fixed({{0.95, -0.25, 0.0}, {1.0, 0.25, 0.0}, {0.8, -0.05, 0.0}, {0.25, 0.3, 0.0}, {0.6, -0.3, 0.0}}), table, "surface",
+        [=](const QJsonObject & pick) {
+          require(pick.value("valid").toBool() && pick.value("datum").toString() == "surface", "table top did not resolve to its surface: " + pick.value("reason").toString());
+          require(pick.value("raw").toObject().value("geometry").toString() == "surface", "table top was not a geometry pick");
+          require(mate()->step() == workcell_builder::MateToolController::Step::Ready, "both picks did not complete the mate");
+        }));
+      add("Scenario A: flush preview with ghost, nothing mutated", [=]() {
+        if (s->js_pending) return false;
+        if (s->sub == 0) { if (s->ticks < 6) return false; js("window.__WORKCELL_EDITOR_API_V1__.getMateState()"); s->sub = 1; return false; }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        const auto & preview = mate()->preview();
+        s->evidence["A_preview"] = mate()->evidence().value("preview");
+        s->evidence["A_overlay_state"] = state;
+        require(mate()->alignment() == "flush", "plane-to-plane mate did not default to Flush");
+        require(preview.ok, "flush preview failed: " + preview.error);
+        require(near(preview.offset[2], 0.) && near(preview.offset[3], 0.) && near(preview.offset[4], 0.), "proposal did not seat the faces");
+        bool bin_row = false;
+        for (const auto & value : preview.moved) {
+          const auto row = value.toObject();
+          if (row.value("id").toString() != bin) continue;
+          bin_row = true;
+          const auto xyz = row.value("xyz").toArray();
+          require(near(xyz[0].toDouble(), item(bin).x, 1e-9) && near(xyz[1].toDouble(), item(bin).y, 1e-9) && near(xyz[2].toDouble(), item(table).z + 0.1, 1e-9),
+            "preview does not seat the bin on the table top");
+        }
+        require(bin_row, "preview does not move the bin");
+        require(state.value("ghostCount").toInt() >= 1, "no ghost preview in the 3D view");
+        require(window->mounting_items() == s->items_before && file_hash(s->scene + "/environment.yaml") == s->env_hash, "preview mutated the scene");
+        require(panel_button("mateApply")->isEnabled(), "Apply is disabled for a valid mate");
+        shot("05_preview_flush_ghost");
+        s->sub = 0;
+        return true;
+      });
+#endif
+      add("Scenario A: Apply", [=]() {
+        if (s->native) return true;
+        const int undo_before = int(window->undo_stack_.size());
+        panel_button("mateApply")->click();
+        require(!window->mate_active(), "Apply did not finish the mate");
+        const auto m = relation(bin);
+        require(m["parent_object"].as<std::string>("") == table.toStdString() && m["parent_link"].as<std::string>("") == "surface" &&
+          m["mate"]["child_datum"].as<std::string>("") == "bottom" && m["mate"]["alignment"].as<std::string>("") == "flush", "bin relation not stored");
+        require(near(m["origin"]["z"].as<double>(), 0.) && near(item(bin).z, item(table).z + 0.1), "bin not seated on the table top");
+        require(int(window->undo_stack_.size()) == undo_before + 1 && window->layout_dirty_, "Apply did not record one undoable edit");
+        check_flush("A_applied", bin, "bottom", table, "surface");
+        s->evidence["A_relation"] = QString::fromStdString(YAML::Dump(m));
+        return true;
+      });
+      add("Scenario A: applied view", [=]() { if (s->ticks < 8) return false; shot("06_applied"); return true; });
+      add("Scenario A: move and rotate the table", [=]() {
+        if (s->native) return true;
+        const auto t0 = item(table), b0 = item(bin);
+        const double c0 = std::cos(t0.yaw), s0 = std::sin(t0.yaw);
+        const double lx0 = c0 * (b0.x - t0.x) + s0 * (b0.y - t0.y), ly0 = -s0 * (b0.x - t0.x) + c0 * (b0.y - t0.y);
+        const auto zone_before = relation("place_zone_default");
+        inspector(table, .05, -.03, 20.);
+        const auto t = item(table), b = item(bin);
+        const double c = std::cos(t.yaw), sn = std::sin(t.yaw);
+        const double lx = c * (b.x - t.x) + sn * (b.y - t.y), ly = -sn * (b.x - t.x) + c * (b.y - t.y);
+        require(near(lx, lx0, 1e-9) && near(ly, ly0, 1e-9) && near(b.yaw - t.yaw, b0.yaw - t0.yaw, 1e-9), "bin drifted from the table");
+        check_flush("A_table_moved", bin, "bottom", table, "surface");
+        s->evidence["A_table_local_bin"] = QJsonArray{lx, ly, b.z - t.z};
+        return true;
+      });
+      add("Scenario A: moved view", [=]() { if (s->ticks < 8) return false; shot("07_table_moved_bin_follows"); return true; });
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      add("Scenario B: start Mate from the Inspector", [=]() {
+        if (s->native) return true;
+        window->apply_scene_selection(camera, "", false, false);
+        window->inspector_mate_button_->click();
+        require(window->mate_active() && mate()->pending_asset() == camera, "Inspector Mate did not start on the camera");
+        return s->ticks > 4;
+      });
+      add("Scenario B: camera body has no mounting faces", click_world("B_camera_body", fixed({{0.4, -0.36 + 0.035, 0.85}, {0.4, -0.36 - 0.035, 0.85}, {0.4, -0.36 + 0.025, 0.85},
+          {0.4, -0.36 - 0.025, 0.85}, {0.4 + 0.012, -0.36 + 0.03, 0.85}, {0.4 - 0.01, -0.36 + 0.02, 0.85}, {0.4, -0.36 + 0.02, 0.845}}), camera, QString(),
+        [=](const QJsonObject & pick) {
+          require(!pick.value("valid").toBool() && pick.value("reason_code").toString() == "NO_PLANE_DATUMS", "camera body: " + pick.value("reason").toString());
+        }));
+      add("Scenario B: click the camera origin marker", click_world("B_camera_origin", [=]() { return Points{v3(datum(frames(), camera, "origin").value("xyz"))}; }, camera, "origin",
+        [=](const QJsonObject & pick) {
+          require(pick.value("valid").toBool() && pick.value("reason_code").toString() == "DATUM_MARKER" && pick.value("datum").toString() == "origin",
+            "camera origin marker: " + pick.value("reason").toString());
+        }));
+      add("Scenario B: choose the stand in the hierarchy, isolate it and look at its top", [=]() {
+        if (s->sub == 0) {
+          auto * stand_row = hierarchy_row(s->stand);
+          require(stand_row != nullptr, "stand missing from the Scene Hierarchy");
+          window->on_hierarchy_item_selected(stand_row);
+          require(mate()->pending_asset() == s->stand && mate()->child() && mate()->child()->asset_id == camera,
+            "hierarchy click did not choose the stand for step 2 (or changed the picked camera)");
+          panel()->findChild<QCheckBox *>("mateIsolate")->click();  // the robot arm hides the mast top from above
+          auto * face = panel()->findChild<QToolButton *>("mateFaceView");
+          QAction * top = nullptr;
+          for (auto * action : face->menu()->actions()) if (action->data().toString() == "top") top = action;
+          require(top != nullptr, "stand top datum is not offered in Look at a face");
+          top->trigger();
+          s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->ticks < 10) return false;
+        shot("08a_stand_top_face_view");
+        return true;
+      });
+      // The Asset Library camera stand is not in the exported Web3D scene (it is
+      // drawn as a live placeholder); a face click on it must be refused, and
+      // its reviewed top datum marker still picks the exact frame.
+      add("Scenario B: stand top face click (placeholder or mesh)", click_world("B_stand_face", fixed({{.15 + .03, -.35 + .03, 1.2}, {.15 - .03, -.35 + .03, 1.2}, {.15 + .03, -.35 - .03, 1.2}, {.15 - .03, -.35 - .03, 1.2}, {.15, -.35, 1.19}}), QString(), QString(),
+        [=](const QJsonObject & pick) {
+          require(pick.value("asset_id").toString() == s->stand, "stand face click hit " + pick.value("asset_id").toString());
+          // The library stand placeholder STL is wound inside out (all 12 normals point
+          // inward), so Web3D culls its outer faces: a click on the top reaches an
+          // inner wall, which is refused. A placeholder shape is refused as well.
+          const QString code = pick.value("reason_code").toString();
+          require(code == "PLACEHOLDER_GEOMETRY" || code == "NO_MATCHING_DATUM" ||
+            (pick.value("valid").toBool() && pick.value("datum").toString() == "top"), "stand face: " + pick.value("reason").toString());
+          s->evidence["B_stand_face_outcome"] = code;
+          if (!pick.value("valid").toBool()) {
+            require(!mate()->parent() && mate()->step() == workcell_builder::MateToolController::Step::PickParent, "a placeholder click changed the mate");
+            shot("08b_stand_face_refused");
+          }
+        }));
+      add("Scenario B: stand top datum marker", click_world("B_stand_top", [=]() {
+          if (mate()->parent()) return Points{};
+          return Points{v3(datum(frames(), s->stand, "top").value("xyz"))};
+        }, QString(), "top",
+        [=](const QJsonObject & pick) {
+          require(pick.value("valid").toBool() && pick.value("datum").toString() == "top" && pick.value("asset_id").toString() == s->stand,
+            "stand top: " + pick.value("reason").toString());
+        }));
+#endif
+      add("Scenario B: coincident with offset and orientation", [=]() {
+        if (s->native) return true;
+        if (s->sub == 0) {
+          require(mate()->alignment() == "coincident", "origin-to-plane did not default to Coincident");
+          require(!panel()->findChild<QRadioButton *>("mateFlush")->isEnabled() &&
+            panel()->findChild<QLabel *>("mateAlignmentNote")->text().contains("Flush needs two plane faces"), "Flush is not disabled with its reason");
+          const std::vector<std::pair<const char *, double>> fields{{"mateOffsetX", .15}, {"mateOffsetY", .09}, {"mateOffsetGap", .05},
+            {"mateOffsetRoll", 0.}, {"mateOffsetPitch", 90.}, {"mateOffsetYaw", 0.}};
+          for (const auto & field : fields) panel()->findChild<QDoubleSpinBox *>(field.first)->setValue(field.second);
+          s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->ticks < 8) return false;
+        const auto & preview = mate()->preview();
+        s->evidence["B_preview"] = mate()->evidence().value("preview");
+        require(preview.ok && near(preview.offset[0], .15) && near(preview.offset[2], .05) && near(preview.offset[4], M_PI / 2, 1e-9), "camera offset preview");
+        shot("08_camera_on_stand_preview");
+        panel_button("mateApply")->click();
+        const auto cam = item(camera), stand = item(s->stand);
+        require(near(cam.z, stand.z + 0.6 + 0.05) && near(cam.pitch, M_PI / 2, 1e-6), "camera not placed at the stand top offset");
+        require(relation(s->stand)["mounting_anchors"]["top"]["datum_type"].as<std::string>("") == "plane", "stand top datum was not copied into the cell");
+        s->sub = 0;
+        return true;
+      });
+      add("Scenario B: move and rotate the stand", [=]() {
+        if (s->native) return true;
+        inspector(s->stand, .05, 0., 15.);
+        const auto all = frames();
+        const auto top = datum(all, s->stand, "top"), cam = datum(all, camera, "origin");
+        const auto o = v3(top.value("xyz")), x = v3(top.value("x_axis")), n = v3(top.value("normal")), c = v3(cam.value("xyz"));
+        const std::array<double, 3> y{n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]};
+        const std::array<double, 3> expected{o[0] + .15 * x[0] + .09 * y[0] + .05 * n[0], o[1] + .15 * x[1] + .09 * y[1] + .05 * n[1], o[2] + .15 * x[2] + .09 * y[2] + .05 * n[2]};
+        const double error = std::hypot(c[0] - expected[0], c[1] - expected[1], c[2] - expected[2]);
+        s->evidence["B_camera_offset_error_m"] = error;
+        require(error < 1e-9, "camera drifted from the stand top datum");
+        check_flush("B_bin_still_flush", bin, "bottom", table, "surface");
+        return true;
+      });
+      add("Scenario B: moved view", [=]() { if (s->ticks < 8) return false; shot("09_stand_moved_camera_follows"); return true; });
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      add("Scenario C: start Mate from the context menu", [=]() {
+        if (s->native) return true;
+        window->apply_scene_selection(table, "", false, false);
+        QTimer::singleShot(300, window, [=]() {
+          if (auto * menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) {
+            for (auto * action : menu->actions()) if (action->text() == "Mate by Picking Faces…") {
+              menu->setActiveAction(action);
+              QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+              QApplication::sendEvent(menu, &press);
+              return;
+            }
+            menu->close();
+          }
+        });
+        auto * tree = window->scene_hierarchy_tree_;
+        auto * table_row = hierarchy_row(table);
+        require(table_row != nullptr, "table missing from the Scene Hierarchy");
+        tree->scrollToItem(table_row);
+        window->show_scene_hierarchy_context_menu(tree->visualItemRect(table_row).center());
+        require(window->mate_active(), "context menu did not start Mate");
+        s->env_hash = file_hash(s->scene + "/environment.yaml");
+        s->items_before = window->mounting_items();
+        return true;
+      });
+      add("Scenario C: pick the table top as the moving part", click_world("C_table_child", fixed({{0.95, -0.25, 0.0}, {1.0, 0.25, 0.0}, {0.8, -0.05, 0.0}, {0.6, -0.3, 0.0}}), table, "surface",
+        [=](const QJsonObject & pick) { require(pick.value("valid").toBool() && mate()->child() && mate()->child()->asset_id == table, "table child pick"); }));
+      add("Scenario C: self-mate is refused", click_world("C_self", fixed({{1.0, 0.25, 0.0}, {0.95, -0.25, 0.0}, {0.8, -0.05, 0.0}}), table, "surface",
+        [=](const QJsonObject &) {
+          require(!mate()->parent() && mate()->status().contains("cannot be mated to itself"), "self-mate was not refused");
+        }));
+      add("Scenario C: pick the bin rim marker (cycle)", click_world("C_bin_rim", [=]() { return Points{v3(datum(frames(), bin, "rim").value("xyz"))}; }, bin, "rim",
+        [=](const QJsonObject & pick) {
+          require(pick.value("valid").toBool() && pick.value("datum").toString() == "rim", "bin rim marker");
+        }));
+#endif
+      add("Scenario C: invalid cycle is shown, Apply disabled, nothing changed", [=]() {
+        if (s->native) return true;
+        if (s->ticks < 6) return false;
+        const auto & preview = mate()->preview();
+        s->evidence["C_invalid_preview"] = mate()->evidence().value("preview");
+        require(!preview.ok && preview.error.contains("cycle"), "cycle not rejected: " + preview.error);
+        require(!panel_button("mateApply")->isEnabled(), "Apply enabled for a cycle");
+        require(panel()->findChild<QLabel *>("matePreview")->text().startsWith("Cannot apply"), "rejection reason not shown");
+        require(window->mounting_items() == s->items_before && file_hash(s->scene + "/environment.yaml") == s->env_hash, "invalid mate changed the scene");
+        shot("10_invalid_cycle_rejected");
+        panel_button("mateChildReplace")->click();
+        return true;
+      });
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      add("Scenario C: correct the child (stand base marker)", click_world("C_stand_base", [=]() { return Points{v3(datum(frames(), s->stand, "base").value("xyz"))}; }, QString(), "base",
+        [=](const QJsonObject & pick) {
+          require(pick.value("valid").toBool() && pick.value("asset_id").toString() == s->stand && pick.value("datum").toString() == "base", "stand base marker");
+        }));
+#endif
+      add("Scenario C: correct the parent (table top)", [=]() {
+        if (s->native) return true;
+        panel_button("mateParentReplace")->click();
+        require(mate()->step() == workcell_builder::MateToolController::Step::PickParent, "Replace did not reopen step 2");
+        return true;
+      });
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      add("Scenario C: table top as the parent", click_world("C_table_parent", fixed({{0.95, -0.25, 0.0}, {1.0, 0.25, 0.0}, {0.8, -0.05, 0.0}, {0.6, -0.3, 0.0}}), table, "surface",
+        [=](const QJsonObject & pick) { require(pick.value("valid").toBool(), "table parent pick"); }));
+#endif
+      add("Scenario C: corrected mate applies; undo, redo", [=]() {
+        if (s->native) return true;
+        if (s->ticks < 6) return false;
+        require(mate()->preview().ok && mate()->alignment() == "flush", "corrected mate preview: " + mate()->preview().error);
+        shot("11_corrected_preview");
+        const auto before = window->mounting_items();
+        panel_button("mateApply")->click();
+        check_flush("C_applied", s->stand, "base", table, "surface");
+        const auto after = window->mounting_items();
+        window->undo_layout_edit();
+        require(window->mounting_items() == before, "undo did not restore the scene");
+        window->redo_layout_edit();
+        require(window->mounting_items() == after, "redo did not restore the mate");
+        check_flush("C_redone", s->stand, "base", table, "surface");
+        s->evidence["C_undo_redo"] = true;
+        return true;
+      });
+      add("Scenario C: detach keeps the world pose (Mount To dialog), then undo", [=]() {
+        if (s->native) return true;
+        const auto before = window->mounting_items();
+        const auto stand_world = item(s->stand);
+        window->apply_scene_selection(s->stand, "", false, false);
+        QTimer::singleShot(200, window, [=]() {
+          if (auto * dialog = window->findChild<QDialog *>("assetMountingDialog")) {
+            dialog->grab().save(output + "/12_mount_to_dialog_stand.png");
+            dialog->findChild<QPushButton *>("detachAsset")->click();
+          }
+        });
+        window->findChild<QPushButton *>("sceneBuilderMounting")->click();
+        require(!relation(s->stand)["parent_object"] || relation(s->stand)["parent_object"].as<std::string>() == "world", "detach kept a parent");
+        require(near(item(s->stand).z, stand_world.z) && near(item(s->stand).x, stand_world.x), "detach moved the stand");
+        window->undo_layout_edit();
+        require(window->mounting_items() == before, "detach undo lost the relation");
+        s->evidence["C_detach_undo"] = true;
+        return true;
+      });
+      add("Manual datum mating still works (Mount To dialog on the camera)", [=]() {
+        if (s->native) return true;
+        const auto before = window->mounting_items();
+        auto seen = std::make_shared<QJsonObject>();
+        window->apply_scene_selection(camera, "", false, false);
+        QTimer::singleShot(200, window, [=]() {
+          auto * dialog = window->findChild<QDialog *>("assetMountingDialog"); if (!dialog) return;
+          for (const char * name : {"mountTo", "mountAnchor", "mountChildDatum", "mountAlignment"})
+            (*seen)[name] = dialog->findChild<QComboBox *>(name)->currentData().toString();
+          dialog->findChild<QCheckBox *>("applyRelativePose")->setChecked(true);
+          auto * yaw = dialog->findChild<QDoubleSpinBox *>("relative_yaw");
+          (*seen)["offset_x"] = dialog->findChild<QDoubleSpinBox *>("relative_x")->value();
+          yaw->setValue(yaw->value() + 10.);
+          (*seen)["preview"] = dialog->findChild<QLabel *>("mountPreview")->text();
+          dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();
+        });
+        window->findChild<QPushButton *>("sceneBuilderMounting")->click();
+        s->evidence["manual_dialog"] = *seen;
+        require(seen->value("mountTo").toString() == s->stand && seen->value("mountAnchor").toString() == "top" &&
+          seen->value("mountChildDatum").toString() == "origin" && seen->value("mountAlignment").toString() == "coincident",
+          "Mount To dialog does not show the relation authored by Mate");
+        require(near(relation(camera)["origin"]["yaw"].as<double>(), qDegreesToRadians(10.), 1e-6), "manual offset edit not applied");
+        window->undo_layout_edit();
+        require(window->mounting_items() == before, "manual edit undo failed");
+        return true;
+      });
+      add("Save", [=]() {
+        if (s->native) return true;
+        s->mated_items = window->mounting_items();
+        window->save_layout_button_->click();
+        return true;
+      });
+      add("saved: disk equals the editor", [=]() {
+        if (s->native) return true;
+        if (s->ticks < 12 || window->layout_dirty_) return false;
+        const auto saved = environment();
+        for (const auto & id : {bin, s->stand, camera}) {
+          const auto r = record(saved, id.toStdString());
+          const auto live = item(id);
+          const auto m = relation(id);
+          for (int k = 0; k < 3; ++k) require(near(r["pose_xyz"][k].as<double>(), k == 0 ? live.x : k == 1 ? live.y : live.z), "disk pose differs from the editor for " + id);
+          for (const char * key : {"parent_object", "parent_link", "mate", "origin"})
+            require(workcell_builder::same_yaml_value(r[key], m[key]), QString("disk %1 differs for %2").arg(key, id));
+        }
+        s->evidence["final_items"] = window->mounting_items();
+        s->evidence["saved_environment_sha256"] = QString(file_hash(s->scene + "/environment.yaml"));
+        s->evidence["saved_bin"] = QString::fromStdString(YAML::Dump(record(saved, bin.toStdString())));
+        s->evidence["saved_camera"] = QString::fromStdString(YAML::Dump(record(saved, camera.toStdString())));
+        s->evidence["saved_stand"] = QString::fromStdString(YAML::Dump(record(saved, s->stand.toStdString())));
+        s->evidence["saved_drop_zone"] = QString::fromStdString(YAML::Dump(record(saved, "default_drop_zone")));
+        return true;
+      });
+      add("Generate and Validate", [=]() {
+        if (s->native) return true;
+        window->generate_scene_package_for_selected_scene();
+        require(QFileInfo::exists(s->scene + "/generated/generated_environment_objects.yaml"), "GUI generation did not produce environment objects");
+        window->run_offline_validation();
+        s->evidence["builder_validation_state"] = window->validation_state_text().remove(QRegularExpression("<[^>]*>")).simplified();
+        return true;
+      });
+      add("final view", [=]() { if (s->ticks < 10) return false; shot("13_saved_generated"); s->evidence["result"] = "PASS"; write(); return true; });
+    }
+    // ---- Runner -------------------------------------------------------------
+    auto * timer = new QTimer(window); timer->setInterval(100);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() {
+      try {
+        if (window->load_watcher_ && window->load_watcher_->isRunning()) return;
+        if (s->step >= int(steps->size())) { timer->stop(); modal_watch->stop(); window->close(); app->exit(0); return; }
+        const auto & current = (*steps)[s->step];
+        require(++s->ticks < 600, "timed out at step: " + current.first);
+        if (current.second()) {
+          QJsonArray done = s->evidence.value("steps").toArray(); done.append(current.first); s->evidence["steps"] = done;
+          ++s->step; s->ticks = 0; s->sub = 0;
+        }
+      } catch (const std::exception & error) {
+        s->evidence["failure"] = QString::fromStdString(error.what());
+        s->evidence["failed_step"] = s->step < int(steps->size()) ? (*steps)[s->step].first : QString();
+        if (window->mate_controller_) s->evidence["mate_state"] = window->mate_controller_->evidence();
+        shot("failure"); write(); timer->stop(); app->exit(1);
       }
     });
     timer->start();

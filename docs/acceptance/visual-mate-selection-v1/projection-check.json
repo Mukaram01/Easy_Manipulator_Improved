@@ -1,0 +1,142 @@
+{
+  "scene": "scenes/ur5_2f_test",
+  "relations": {
+    "target_bin_default": {
+      "parent": "support_surface_table",
+      "parent_datum": "surface",
+      "child_datum": "bottom",
+      "alignment": "flush",
+      "offset": {
+        "x": -0.2606668243408203,
+        "y": 0.42000000000000004,
+        "z": 0,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0
+      },
+      "world_xyz": [
+        0.3724048484864537,
+        0.0755175961087873,
+        0.09910000050067902
+      ],
+      "world_rpy": [
+        0,
+        0,
+        0.3490658503988659
+      ],
+      "datum_frame_error": 1.1103945355491882e-16
+    },
+    "realsense_overhead": {
+      "parent": "object_01",
+      "parent_datum": "top",
+      "child_datum": "origin",
+      "alignment": "coincident",
+      "offset": {
+        "x": 0.15,
+        "y": 0.09,
+        "z": 0.05,
+        "roll": 0.0,
+        "pitch": 1.5707963267948966,
+        "yaw": -0.0
+      },
+      "world_xyz": [
+        0.3215951598841334,
+        -0.22424381886860573,
+        1.2491000005006792
+      ],
+      "world_rpy": [
+        0,
+        1.5707963267948966,
+        0.26179938779914935
+      ],
+      "datum_frame_error": 0.0
+    },
+    "object_01": {
+      "parent": "support_surface_table",
+      "parent_datum": "surface",
+      "child_datum": "base",
+      "alignment": "flush",
+      "offset": {
+        "x": -0.5682099774599748,
+        "y": 0.07911018591139116,
+        "z": 0,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": -0.0872664625997165
+      },
+      "world_xyz": [
+        0.2,
+        -0.35,
+        0.599100000500679
+      ],
+      "world_rpy": [
+        0,
+        0,
+        0.26179938779914935
+      ],
+      "datum_frame_error": 1.6852073527983425e-16
+    }
+  },
+  "result": "PASS",
+  "destinations": {
+    "default_drop_zone": {
+      "target": "target_bin_default",
+      "placement_local": {
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.009999999999999995
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ]
+      }
+    },
+    "place_zone_default": {
+      "target": "target_bin_default",
+      "placement_local": {
+        "pose_xyz": [
+          0.0,
+          0.0,
+          0.009999999999999995
+        ],
+        "pose_rpy": [
+          0.0,
+          -0.0,
+          0.0
+        ],
+        "dimensions": [
+          0.2,
+          0.1,
+          0.12
+        ]
+      }
+    }
+  },
+  "generated_objects_match": true,
+  "collision_objects": {
+    "object_01": [
+      0.2,
+      -0.35,
+      0.599100000500679
+    ],
+    "support_surface_table": [
+      0.5032442055482832,
+      -0.10853231898476502,
+      -0.4531188535094261
+    ],
+    "target_bin_default": [
+      0.3724048484864537,
+      0.0755175961087873,
+      0.09910000050067902
+    ]
+  },
+  "camera_pose_mirrors_asset": true
+}

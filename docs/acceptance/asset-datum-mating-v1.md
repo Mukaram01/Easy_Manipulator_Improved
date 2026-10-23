@@ -111,11 +111,13 @@ python3 -m pytest -q tests/test_asset_datum_mating.py tests/test_asset_mounting.
 
 ## Limits
 
-- Fixed relations only; one parent per asset. Not a CAD solver: no face picking,
-  STEP, constraint loops, revolute/prismatic joints, flexible mechanisms or
-  physics. Datum frames come from asset records or the reviewed catalog.
-- The preview is numeric (pose, offset, followers); the 3D view updates on
-  Apply and Undo restores it.
+- Fixed relations only; one parent per asset. Not a CAD solver: no STEP,
+  constraint loops, revolute/prismatic joints, flexible mechanisms or physics.
+  Datum frames come from asset records or the reviewed catalog. Clicking the
+  verified datum faces in 3D, with a ghost preview, was added in R3.2
+  ([visual mate selection](visual-mate-selection-v1.md)).
+- The dialog preview is numeric (pose, offset, followers); the 3D view updates
+  on Apply and Undo restores it.
 - Reviewed catalog datums exist for the standard bin and the placeholder camera
   stand only; other assets offer `origin`, `surface` and their own anchors.
 - Pre-existing, not changed here: the embedded Web3D Builder can crash with heap

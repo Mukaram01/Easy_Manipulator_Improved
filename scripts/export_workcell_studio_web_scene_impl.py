@@ -985,6 +985,17 @@ def _normalize_generated_urdf_mesh_preview_item(item: Json) -> None:
         item["fallback_reason"] = ""
 
 
+CAMERA_MOUNT_TOKENS = ("camera_stand", "camera stand", "camera_mount", "camera mount", "camera_bracket",
+                       "camera bracket", "camera_frame", "camera frame", "camera_gantry", "camera gantry",
+                       "camera_clamp", "camera clamp")
+
+
+def _is_camera_mount_text(text: str) -> bool:
+    """Stands, brackets, frames and gantries carry a camera; they are physical
+    fixtures, not the cell's camera (a cell has one physical camera owner)."""
+    return any(token in text for token in CAMERA_MOUNT_TOKENS) and not any(token in text for token in ("realsense", "d435"))
+
+
 def _section_from_item(item: Mapping[str, Any]) -> str:
     if _is_transform_anchor(item):
         return "frames"
@@ -997,7 +1008,7 @@ def _section_from_item(item: Mapping[str, Any]) -> str:
         return "robots"
     # Camera IDs may contain task/tool vocabulary (for example
     # realsense_suction_overhead); explicit camera semantics own classification.
-    if category == "camera" or role == "camera" or "camera" in text or "realsense" in text:
+    if category == "camera" or role == "camera" or (("camera" in text or "realsense" in text) and not _is_camera_mount_text(text)):
         return "sensors"
     if (
         category in {"tool", "gripper", "end_effector"}
