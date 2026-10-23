@@ -1242,6 +1242,19 @@ int main(int argc, char * argv[])
     return a.exec();
   }
 
+  if (has_cli_flag(args, "--visual-mate-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    const QString size = cli_value(args, "--window-size");
+    const auto parts = size.split('x');
+    const QSize window_size = parts.size() == 2 ? QSize(parts[0].toInt(), parts[1].toInt()) : QSize(1366, 768);
+    w.resize(window_size);
+    w.show();
+    TestMain::start_visual_mate_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"), window_size);
+    return a.exec();
+  }
   if (has_cli_flag(args, "--datum-mating-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     const QString scene = cli_value(args, "--scene");

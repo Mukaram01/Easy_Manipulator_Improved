@@ -72,7 +72,14 @@ try:
  while time.monotonic()<deadline and not buf.can_transform('world','camera_link',rclpy.time.Time()):rclpy.spin_once(n,timeout_sec=.2)
  t=buf.lookup_transform('world','camera_link',rclpy.time.Time()).transform
  xyz=[t.translation.x,t.translation.y,t.translation.z];result['camera_world_xyz']=xyz
- expanded=subprocess.check_output(['xacro',str(root/'urdf/scene.urdf.xacro'),'use_fake_hardware:=true'],text=True)
+ xacro_args=['xacro',str(root/'urdf/scene.urdf.xacro'),'use_fake_hardware:=true']
+ if 'camera_world_xyz' in (root/'urdf/scene.urdf.xacro').read_text():
+  # Cells whose launch passes the authored camera pose as xacro args (the camera
+  # block mirrors the mounted camera asset in environment.yaml).
+  pose=[float(v) for v in env['camera']['pose']]
+  xacro_args+=['camera_world_xyz:='+' '.join(repr(v) for v in pose[:3]),'camera_world_rpy:='+' '.join(repr(v) for v in pose[3:])]
+  result['camera_pose_from_environment']=pose
+ expanded=subprocess.check_output(xacro_args,text=True)
  model=ET.fromstring(expanded);joints={j.find('child').get('link'):j for j in model.findall('joint')}
  def frame(name):
   if name=='world':return ([0.,0.,0.],rotation([0.,0.,0.]))

@@ -2996,7 +2996,7 @@ void ScenePreviewWidget::poll_embedded_editor_events()
   if (!embedded_editor_polling_ || !embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
   const quint64 state_request_token = ++embedded_editor_state_request_token_;
-  static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents()}; })()";
+  static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents(),mate:(typeof api.getMateState === 'function' ? api.getMateState() : null)}; })()";
   embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, guard = QPointer<ScenePreviewWidget>(this), identity, state_request_token](const QVariant & value){
     if (!guard || embedded_web_destroying_) return;
     if (!embedded_web_identity_is_current(identity)) return;
@@ -3108,6 +3108,7 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     if (context_menu_requested) {
       emit embedded_authoring_context_menu_requested(context_menu_global_position);
     }
+    if (scene_identity_matches) emit embedded_mate_state_reported(payload.value(QStringLiteral("mate")).toMap());
     if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
       if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
     });
@@ -3404,6 +3405,33 @@ void ScenePreviewWidget::set_live_visible_item_ids(const QSet<QString> & ids)
     "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
     "return a&&typeof a.setVisibleItemIds==='function'"
     "?a.setVisibleItemIds(%1):{error:'missing_setVisibleItemIds'};})()")
+    .arg(payload));
+}
+
+void ScenePreviewWidget::set_mate_overlay(const QJsonObject & overlay)
+{
+  if (!embedded_web_authoring_active()) return;
+  const QString payload = QString::fromUtf8(QJsonDocument(overlay).toJson(QJsonDocument::Compact));
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setMateMode==='function'?a.setMateMode(%1):{error:'missing_setMateMode'};})()").arg(payload));
+}
+
+void ScenePreviewWidget::clear_mate_overlay()
+{
+  if (!embedded_web_authoring_active()) return;
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.clearMateMode==='function'?a.clearMateMode():{error:'missing_clearMateMode'};})()"));
+}
+
+void ScenePreviewWidget::set_mate_hover_resolution(const QJsonObject & resolution)
+{
+  if (!embedded_web_authoring_active()) return;
+  const QString payload = QString::fromUtf8(QJsonDocument(resolution).toJson(QJsonDocument::Compact));
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setMateHoverResolution==='function'?a.setMateHoverResolution(%1):{error:'missing_setMateHoverResolution'};})()")
     .arg(payload));
 }
 
