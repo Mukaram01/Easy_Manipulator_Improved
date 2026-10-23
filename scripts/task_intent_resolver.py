@@ -41,30 +41,47 @@ def _vector(value, size):
             and all(_finite(item) for item in value))
 
 
+def observation_rejection(observation, filters, now):
+    """Return (code, reason) for the first eligibility check that fails, else None.
+
+    This is the only object-eligibility rule set; selection and operator
+    explanations both use it.
+    """
+    if not isinstance(observation, dict):
+        return "OBSERVATION_INVALID", "Observation is not a mapping."
+    confidence = observation.get("confidence")
+    timestamp = observation.get("timestamp")
+    pose = observation.get("pose")
+    dimensions = observation.get("dimensions")
+    if not isinstance(observation.get("id"), str) or not observation["id"]:
+        return "OBSERVATION_INVALID", "Observation has no identifier."
+    if observation.get("frame_id") != "world":
+        return "FRAME_NOT_WORLD", "Pose is not expressed in the world frame."
+    if observation.get("shape") != "BOX":
+        return "SHAPE_UNSUPPORTED", "Only box-bounded observations are supported."
+    if confidence is not None and (not _finite(confidence) or not 0 <= confidence <= 1):
+        return "CONFIDENCE_INVALID", "Confidence is not a probability."
+    if filters.get("min_confidence") is not None and (
+            confidence is None or confidence < filters["min_confidence"]):
+        return "CONFIDENCE_BELOW_MINIMUM", (
+            "Confidence is unavailable or below the task minimum.")
+    if not _finite(timestamp) or timestamp > now:
+        return "TIMESTAMP_INVALID", "Observation timestamp is missing or in the future."
+    if now - timestamp > (filters.get("max_age_seconds") or math.inf):
+        return "OBSERVATION_STALE", "Observation is older than the task's maximum age."
+    if not _vector(pose, 7) or math.hypot(*pose[3:]) < 1e-9:
+        return "POSE_INVALID", "Observation pose is not finite."
+    if not _vector(dimensions, 3) or any(v <= 0 for v in dimensions):
+        return "DIMENSIONS_INVALID", "Observation dimensions are not positive."
+    for key, code in (("class_id", "CLASS_NOT_TARGETED"), ("color", "COLOR_NOT_TARGETED")):
+        if filters.get(key) not in (None, "") and observation.get(key) != filters[key]:
+            return code, f"{key} {observation.get(key)!r} is not the task target {filters[key]!r}."
+    return None
+
+
 def _eligible_observations(observations, filters, now):
-    eligible = []
-    for observation in observations:
-        if not isinstance(observation, dict):
-            continue
-        confidence = observation.get("confidence")
-        timestamp = observation.get("timestamp")
-        pose = observation.get("pose")
-        dimensions = observation.get("dimensions")
-        if (not isinstance(observation.get("id"), str) or not observation["id"]
-                or observation.get("frame_id") != "world"
-                or observation.get("shape") != "BOX"
-                or (confidence is not None and (not _finite(confidence) or not 0 <= confidence <= 1))
-                or (filters.get("min_confidence") is not None and
-                    (confidence is None or confidence < filters["min_confidence"]))
-                or not _finite(timestamp) or timestamp > now
-                or now - timestamp > (filters.get("max_age_seconds") or math.inf)
-                or not _vector(pose, 7) or math.hypot(*pose[3:]) < 1e-9
-                or not _vector(dimensions, 3) or any(v <= 0 for v in dimensions)):
-            continue
-        if any(filters.get(key) not in (None, "") and observation.get(key) != filters[key]
-               for key in ("class_id", "color")):
-            continue
-        eligible.append(copy.deepcopy(observation))
+    eligible = [copy.deepcopy(observation) for observation in observations
+                if observation_rejection(observation, filters, now) is None]
     return sorted(eligible, key=lambda item: (item["confidence"] is None, -(item["confidence"] or 0.0), item["id"]))
 
 
@@ -79,6 +96,31 @@ def select_observations(intent, environment, observations, now):
     region = zone({'environment': environment}, selection['zone_ref'])
     return [item for item in _eligible_observations(observations, selection['object_filter'], now)
             if contained(item, region, geometry)]
+
+
+def explain_observations(intent, environment, observations, now):
+    """Per-observation selection decisions, using exactly select_observations' rules."""
+    from runtime_pick_inputs import zone, contained
+    import perceived_object_grasp_plan as geometry
+    selection = intent['pick']['selection']
+    region = zone({'environment': environment}, selection['zone_ref'])
+    selected = {item['id'] for item in select_observations(intent, environment, observations, now)}
+    decisions = []
+    for observation in observations:
+        rejection = observation_rejection(observation, selection['object_filter'], now)
+        if rejection is None and not contained(observation, region, geometry):
+            rejection = ("OUTSIDE_PICK_ZONE", f"Outside pick zone {selection['zone_ref']}.")
+        accepted = rejection is None and observation.get('id') in selected
+        decisions.append({
+            'id': observation.get('id'),
+            'object_id': observation.get('object_id'),
+            'class_id': observation.get('class_id'),
+            'confidence': observation.get('confidence'),
+            'accepted': accepted,
+            'reason_code': 'SELECTED' if accepted else rejection[0],
+            'reason': 'Matches the task target and pick zone.' if accepted else rejection[1],
+        })
+    return decisions
 
 
 def _readiness(result, status, code, reason):

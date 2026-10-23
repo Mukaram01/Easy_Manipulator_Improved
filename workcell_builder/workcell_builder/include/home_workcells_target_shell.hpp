@@ -878,6 +878,9 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
       {QStringLiteral("Generate Scene Package"), QStringLiteral("Generate Workcell Package")})) {
     add_backed_more_action(generate, QStringLiteral("Generate Package"));
   }
+  if (QAction * preview = action_with_text(window, {QStringLiteral("Operator Preview")})) {
+    add_backed_more_action(preview, QStringLiteral("Operator Preview"));
+  }
   if (QAction * remove = source_action(QStringLiteral("Delete Scene"))) {
     add_backed_more_action(remove, remove->text());
   }

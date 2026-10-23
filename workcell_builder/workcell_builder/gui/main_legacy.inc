@@ -1242,6 +1242,14 @@ int main(int argc, char * argv[])
     return a.exec();
   }
 
+  if (has_cli_flag(args, "--operator-preview-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_operator_preview_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"));
+    return a.exec();
+  }
   if (has_cli_flag(args, "--datum-mating-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     const QString scene = cli_value(args, "--scene");
