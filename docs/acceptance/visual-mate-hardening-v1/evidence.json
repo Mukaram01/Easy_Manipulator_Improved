@@ -1,0 +1,133 @@
+{
+  "schema": "visual_mate_hardening_acceptance/v1",
+  "production_commit": "d4e49f8363a44bf9499f6a311ba34ea1dd92ded4",
+  "production_changed_during_verification": false,
+  "backend": "embedded_web3d",
+  "fixture": "disposable git archive workspace; ur5_2f_test and suction_test copies",
+  "qt_config": "isolated XDG_CONFIG_HOME",
+  "authoring": {
+    "result": "PASS",
+    "steps": 52,
+    "process_exit": 0
+  },
+  "reopen": {
+    "result": "PASS",
+    "steps": 21,
+    "process_exit": 0,
+    "previous_browser_counters": {
+      "cancel": 2,
+      "hover": 3,
+      "pick": 1
+    },
+    "restored_overlay": {
+      "active": true,
+      "cancelSeq": 0,
+      "ghostCount": 0,
+      "hover": null,
+      "hoverResolution": null,
+      "hoverSeq": 0,
+      "isolatedAsset": "realsense_overhead",
+      "labelText": "",
+      "markerCount": 11,
+      "pick": null,
+      "sceneId": "ur5_2f_test",
+      "seq": 0,
+      "viewSeq": 0
+    },
+    "hidden_stand_probe": {
+      "hover": {
+        "asset_id": "",
+        "asset_label": "",
+        "datum": "",
+        "label": "",
+        "reason": "The click did not hit an asset. Click a face of a placed asset.",
+        "reason_code": "NO_ASSET",
+        "seq": 1,
+        "valid": false
+      },
+      "isolatedAsset": "realsense_overhead",
+      "point": [
+        0.19999999999999984,
+        -0.35,
+        1.0491000005006792
+      ],
+      "widget": [
+        372,
+        612
+      ]
+    },
+    "first_pick": {
+      "asset_id": "realsense_overhead",
+      "candidates": [],
+      "datum": "origin",
+      "datum_label": "Asset origin",
+      "datum_source": "asset origin",
+      "datum_type": "origin",
+      "normal_angle_deg": 0,
+      "normal_local": [
+        1.232595164407831e-32,
+        -2.7755575615628914e-17,
+        1.0000000000000002
+      ],
+      "normal_world": [
+        0.9659258262890684,
+        0.2588190451025207,
+        6.123233995736766e-17
+      ],
+      "plane_distance_m": 0,
+      "point_local": [
+        0.0003259141672853357,
+        -0.004243239600073501,
+        0.01212354171449479
+      ],
+      "point_world": [
+        0.3344038331536888,
+        -0.2252046700956431,
+        1.2487740863333938
+      ],
+      "raw": {
+        "asset_id": "realsense_overhead",
+        "backend": "embedded_web3d",
+        "datum_name": "origin",
+        "geometry": "datum_marker",
+        "geometry_source": "datum marker",
+        "normal_world": [
+          0.9659258262890684,
+          0.2588190451025207,
+          6.123233995736766e-17
+        ],
+        "point_world": [
+          0.3344038331536888,
+          -0.2252046700956431,
+          1.2487740863333938
+        ],
+        "ray_direction_world": [
+          -0.9971978981746045,
+          0.07480547000423952,
+          -0.0007025194630129546
+        ],
+        "triangle_index": -1
+      },
+      "reason": "Picked the Asset origin datum marker of realsense_overhead.",
+      "reason_code": "DATUM_MARKER",
+      "valid": true
+    },
+    "first_escape_consumed_cancel_seq": 1,
+    "reload_pick_and_escape_recovered": true,
+    "cell_list_cancelled_without_authored_writes": true,
+    "home_open_cancelled_without_authored_writes": true
+  },
+  "fresh_checks": {
+    "focused_pytest_passed": 5,
+    "mate_pick_gtest_passed": 9,
+    "ros_rpy_node": "PASS",
+    "bundle": "current",
+    "bundle_sha256": "53cf30aeb94412f91b35bdba26e690e446200a6ace954233b1d325b5638e9519"
+  },
+  "limits": [
+    "Full-page reload exercised live; same-document scene reset covered by viewer harness.",
+    "Native GUI reported passing in original PR; not rerun here.",
+    "Known baseline browser-matrix failures accepted outside scope.",
+    "Two clean exits do not establish resolution of intermittent teardown defect #3203."
+  ]
+}
