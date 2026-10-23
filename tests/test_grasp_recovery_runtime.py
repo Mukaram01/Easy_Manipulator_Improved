@@ -29,7 +29,7 @@ def action_fixture(*, accepted_cancel=True, terminal=True, stopped=True, cancel_
     cycle = {'full_cycle_prevalidated': True,
              'steps': [{'trajectory': 'old-trajectory'}], 'candidate': object()}
     uuid = bytes(range(16))
-    sample = {'run_id': 'run', 'pid': 99, 'iteration': 40, 'sim_ns': 40_000_000, 'wall_ns': 40_000_000}
+    sample = {'run_id': 'run', 'pid': 99, 'iteration': 40, 'sim_ns': 40_000_000, 'wall_ns': 40_000_000, 'monotonic_raw_ns': 40_000_000}
     result_future = Future(done=False)
     cancel_response = N(return_code=0, goals_canceling=[N(goal_id=N(uuid=uuid))])
 
@@ -153,9 +153,9 @@ def test_fake_transport_runs_complete_boundary_and_refuses_retry():
 
     action, client, summary, cycle, recoveries, events = action_fixture()
     reconcile, _, _, sample, guard, queries, updates = runtime_reconcile_fixture()
-    sample.update(iteration=42,sim_ns=42_000_000,wall_ns=42_000_000)
+    sample.update(iteration=42,sim_ns=42_000_000,wall_ns=42_000_000,monotonic_raw_ns=42_000_000)
     stop=copy.deepcopy(sample)
-    stop.update(iteration=41,sim_ns=41_000_000,wall_ns=41_000_000)
+    stop.update(iteration=41,sim_ns=41_000_000,wall_ns=41_000_000,monotonic_raw_ns=41_000_000)
     def stopped():
         events.append('stop')
         summary['stopped_measurement']=stop
@@ -183,7 +183,7 @@ def test_fake_transport_runs_complete_boundary_and_refuses_retry():
 
 # Interrupted-motion stop certification (Trial 33): only a stop measured after the
 # interrupted owned motion may set motion_stop_verified.
-OLD_STOP = {'run_id': 'run', 'pid': 99, 'iteration': 10, 'sim_ns': 10_000_000, 'wall_ns': 10_000_000}
+OLD_STOP = {'run_id': 'run', 'pid': 99, 'iteration': 10, 'sim_ns': 10_000_000, 'wall_ns': 10_000_000, 'monotonic_raw_ns': 10_000_000}
 STALE = 'SIMULATOR_TELEMETRY_INVALID: stale measurement'
 
 
@@ -200,7 +200,7 @@ def stale_interruption(stop='fresh', **faults):
         events.append('stop')
         if stop == 'stale':
             raise guards.StaleMeasurement(STALE)       # what the real wait_stopped's fresh() raises
-        sample = dict(OLD_STOP, iteration=50 + len(measured), sim_ns=50_000_000, wall_ns=50_000_000)
+        sample = dict(OLD_STOP, iteration=50 + len(measured), sim_ns=50_000_000, wall_ns=50_000_000,monotonic_raw_ns=50_000_000)
         measured.append(sample)
         summary['stopped_measurement'] = sample
         return True

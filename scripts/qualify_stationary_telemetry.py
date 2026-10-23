@@ -4,6 +4,7 @@ import argparse,json,time
 from pathlib import Path
 import rclpy
 from rclpy.task import Future
+import measurement_clock
 from simulator_execution import Measurements,StopWindow
 
 def run(receipt,output,duration):
@@ -21,7 +22,7 @@ def run(receipt,output,duration):
    # writing used during cancellation. No execution or controller goal is sent.
    f=Future();timer=node.create_timer(.6,lambda: f.set_result(True) if not f.done() else None)
    rclpy.spin_until_future_complete(node,f,timeout_sec=1);node.destroy_timer(timer)
-   sample=m.fresh();max_age=max(max_age,time.time()-sample['wall_ns']/1e9)
+   sample=m.fresh();max_age=max(max_age,(measurement_clock.now_ns()-sample['monotonic_raw_ns'])/1e9)
    pending=m.drain()
    for s in pending:
     m.record('stationary_wait',s);count+=1
@@ -38,7 +39,7 @@ def run(receipt,output,duration):
       stop_duration_sim_ns=stop['duration_sim_ns'],stop_max_velocity=stop['max_velocity_rad_s'])
  except Exception as e:
   report.update(error=str(e),latest_iteration=m.latest['iteration'] if m.latest else None,
-      latest_age_seconds=time.time()-m.latest['wall_ns']/1e9 if m.latest else None)
+      latest_age_seconds=(measurement_clock.now_ns()-m.latest['monotonic_raw_ns'])/1e9 if m.latest and 'monotonic_raw_ns' in m.latest else None)
  finally:
   m.close();node.destroy_node();rclpy.shutdown();(output/'summary.json').write_text(json.dumps(report,indent=2));print(json.dumps(report))
  return 0 if report['result']=='PASS' else 1

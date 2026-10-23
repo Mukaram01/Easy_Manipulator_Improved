@@ -461,7 +461,8 @@ def assert_release_evidence(gate,summary,retention):
         not goal.get('uuid') or goal.get('accepted') is not True or
         goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or
         not isinstance(goal.get('wall_ns'),int) or not isinstance(goal.get('terminal_wall_ns'),int) or
-        goal['terminal_wall_ns']<goal['wall_ns'] or
+        type(goal.get('monotonic_raw_ns')) is not int or type(goal.get('terminal_monotonic_raw_ns')) is not int or
+        goal['terminal_monotonic_raw_ns']<goal['monotonic_raw_ns'] or
         observed.get('run_id')!=retention.get('run_id') or
         observed.get('target')!=summary.get('selected_object_id') or
         observed.get('required_finger_contacts_absent') is not True or
@@ -470,7 +471,8 @@ def assert_release_evidence(gate,summary,retention):
         source.get('query_iteration')!=observed.get('iteration') or
         source.get('query_sim_ns')!=observed.get('sim_ns') or
         observed.get('relative_translation_m',0)<=.000001 or
-        not isinstance(observed.get('wall_ns'),int) or observed['wall_ns']<=goal['wall_ns'] or
+        not isinstance(observed.get('wall_ns'),int) or
+        type(observed.get('monotonic_raw_ns')) is not int or observed['monotonic_raw_ns']<=goal['monotonic_raw_ns'] or
         not isinstance(observed.get('sim_ns'),int) or
         evidence.get('transition_sim_ns',-1)<observed['sim_ns'] or
         evidence.get('sim_ns',-1)<evidence.get('transition_sim_ns',0) or
@@ -504,6 +506,8 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
             not binding.get("close_goal_uuid") or binding!=certificate.get("binding") or
             binding.get("resolution_sha256")!=summary.get("resolution_sha256") or
             binding.get("close_goal_terminal_wall_ns")!=summary.get("close_terminal_wall_ns") or
+            type(binding.get("close_goal_terminal_monotonic_raw_ns")) is not int or
+            binding["close_goal_terminal_monotonic_raw_ns"]!=summary.get("close_terminal_monotonic_raw_ns") or
             retention.get("duration_sim_ns",0)<1_000_000_000 or
             retention.get("end_sim_ns",-1)-retention.get("start_sim_ns",0)!=retention.get("duration_sim_ns") or
             not retention.get("start_sim_ns",-1)<=begin.get("sim_ns",-2)<=retention.get("end_sim_ns",-1)<=end.get("sim_ns",-2) or

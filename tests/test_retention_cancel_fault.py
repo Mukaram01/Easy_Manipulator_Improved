@@ -14,6 +14,7 @@ def test_stale_measurement_does_not_prevent_owned_goal_cancellation():
     summary={}
     namespace=dict(summary=summary,owned_uuid=uuid,measurements=N(fresh=stale),
         controlled_cancel=False,controller_audit=None,time=N(time_ns=lambda:1,monotonic_ns=lambda:1),
+        measurement_clock=N(now_ns=lambda:1),
         handle=N(cancel_goal_async=send),node=None,
         rclpy=N(spin_until_future_complete=lambda *a,**kw:events.append('awaited cancellation')),
         cancel_response_matches=lambda owned,r:owned==uuid and r is response)
@@ -32,13 +33,14 @@ def test_failure_stop_does_not_require_controlled_trial_metrics():
     source=Path(__file__).parents[1]/'scripts/perceived_object_grasp_execute.py'
     fn=next(n for n in ast.walk(ast.parse(source.read_text()))
             if isinstance(n,ast.FunctionDef) and n.name=='wait_stopped')
+    import measurement_clock
     def drain():
-        now=time.time_ns()
-        return [dict(iteration=i,sim_ns=(i+1)*1000000,wall_ns=now) for i in range(301)]
+        now=time.time_ns();raw=measurement_clock.now_ns()
+        return [dict(iteration=i,sim_ns=(i+1)*1000000,wall_ns=now,monotonic_raw_ns=raw) for i in range(301)]
     measurements=N(robot=ET.fromstring('<robot><ros2_control><joint name="joint"/></ros2_control></robot>'),
         fresh=lambda:{},drain=drain,record=lambda *a:None,joints=lambda s:{'joint':[0.,0.]})
     summary={'cancellation_request':{'uuid':'ordinary-fault'}}
-    namespace=dict(summary=summary,measurements=measurements,time=time,node=None,
+    namespace=dict(summary=summary,measurements=measurements,time=time,measurement_clock=measurement_clock,node=None,
                    rclpy=N(spin_once=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
     assert namespace['wait_stopped']()

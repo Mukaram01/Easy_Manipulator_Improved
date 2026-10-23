@@ -15,7 +15,7 @@ def case():
                  srdf_sha256='c'*64,receipt_sha256='d'*64,candidate_id='synthetic::001',target_id='synthetic-box')
     data=dict(model=model,target=dict(id='synthetic-box',shape='BOX',frame_id='world',pose=[0,0,0,0,0,0,1],dimensions=[.02,.03,.03]),
               candidate_pose=[0,0,0,0,0,2**-.5,2**-.5],
-              measured=dict(kind='MEASURED',wall_ns=1_000_000_000,
+              measured=dict(kind='MEASURED',wall_ns=1_000_000_000,monotonic_raw_ns=1_000_000_000,
                             target_pose=[0,0,0,0,0,0,1],link_poses={'left':[-.04,0,0,0,0,0,1],'right':[.04,0,0,0,0,0,1]},joints={'close':0.,'follower':0.}),
               planned_open={'close':0.,'follower':0.},planned_closed={'close':.0285,'follower':.0285},
               binding=binding,now_ns=1_000_000_000)
@@ -186,8 +186,22 @@ def test_completed_calculation_requires_fresh_unchanged_evidence(change):
     confirmed=confirm_capture(result,current,hashes,now)
     assert not confirmed['accepted']
     assert confirmed['completion_measurement']==current
-    assert confirmed['completion_checked_wall_ns']==now
+    assert confirmed['completion_checked_monotonic_raw_ns']==now
     assert confirmed['measured']==data['measured']
+
+
+@pytest.mark.parametrize('step_ns',[-1_500_000_000,1_500_000_000])
+def test_wall_clock_step_neither_ages_nor_refreshes_measured_evidence(step_ns):
+    # LENLEG 2026-10-23: WSL2 time sync stepped CLOCK_REALTIME by ~1.5 s mid-motion.
+    from grasp_capture import confirm_capture
+    qualify,data=case()
+    data['measured']['wall_ns']+=step_ns
+    result=qualify(**data);assert result['accepted'],result
+    current=copy.deepcopy(data['measured']);current['wall_ns']-=2*step_ns
+    assert confirm_capture(result,current,data['binding'],data['now_ns'])['accepted']
+    stale=copy.deepcopy(data);stale['measured']['wall_ns']=stale['now_ns']   # fresh by wall, old by monotonic
+    stale['measured']['monotonic_raw_ns']=stale['now_ns']-250_000_001
+    assert not qualify(**stale)['accepted']
 
 
 def test_completion_rechecks_original_target_admission_without_restamping_geometry():
@@ -195,15 +209,15 @@ def test_completion_rechecks_original_target_admission_without_restamping_geomet
     qualify,data=case();result=qualify(**data)
     original=copy.deepcopy(result['measured']);samples=copy.deepcopy(result['samples'])
     current=copy.deepcopy(data['measured'])
-    current['wall_ns']+=7_000_000_000
+    current['wall_ns']+=7_000_000_000;current['monotonic_raw_ns']+=7_000_000_000
     current['target_pose'][0]+=.00000001  # Above numeric equality, within admission.
-    confirmed=confirm_capture(result,current,data['binding'],current['wall_ns'])
+    confirmed=confirm_capture(result,current,data['binding'],current['monotonic_raw_ns'])
     assert confirmed['accepted'],confirmed['reason']
     assert confirmed['measured']==original
     assert confirmed['samples']==samples
     assert confirmed['target_reference_pose']==data['target']['pose']
     assert confirmed['completion_measurement']==current
-    assert confirmed['confirmed_wall_ns']==current['wall_ns']
+    assert confirmed['confirmed_monotonic_raw_ns']==current['monotonic_raw_ns']
     assert confirmed['completion_target_agreement']['reference']=='bound_observation'
     assert confirmed['completion_target_agreement']['translation_m']==pytest.approx(.00000001)
     assert confirmed['robustness']=='SAMPLED_NOT_CONTINUOUS_PROOF'

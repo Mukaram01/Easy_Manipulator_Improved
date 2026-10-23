@@ -12,6 +12,8 @@ import time
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
+import measurement_clock
+
 
 _PLANNER_PATH = Path(__file__).with_name("perceived_object_grasp_plan.py")
 _SPEC = importlib.util.spec_from_file_location("p8e1_grasp_plan", _PLANNER_PATH)
@@ -588,10 +590,10 @@ CARRIED_STAGES = ('PREPLAN_LIFT', 'PREPLAN_TRANSFER', 'PREPLAN_PLACE')
 
 
 def measured_real_time_factor(previous, current, *, floor=.02, min_wall_s=1.):
-    """Simulation seconds per wall second between two measured samples; None when unusable."""
+    """Simulation seconds per elapsed (CLOCK_MONOTONIC_RAW) second between two measured samples; None when unusable."""
     if not previous or not current:
         return None
-    wall = (current['wall_ns'] - previous['wall_ns']) / 1e9
+    wall = (current['monotonic_raw_ns'] - previous['monotonic_raw_ns']) / 1e9
     sim = (current['sim_ns'] - previous['sim_ns']) / 1e9
     if wall < min_wall_s or sim <= 0.:
         return None
@@ -1552,7 +1554,7 @@ def main():
         if client is execute_client:
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
                 stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
-                trajectory=trajectory_evidence)
+                monotonic_raw_ns=measurement_clock.now_ns(),trajectory=trajectory_evidence)
             if opening_action:
                 summary['owned_execution_goal'].update(run_id=measurements.receipt['run_id'],
                     target=selected_id,resolution_sha256=summary['resolution_sha256'],
@@ -1571,7 +1573,7 @@ def main():
                 accepted_sample=measurements.fresh()
                 motion_trial=CancellationMotion(bytes(owned_uuid).hex(),accepted_sample,
                     measurements.joints(accepted_sample),contract['home_joint_names'],
-                    accepted_wall_ns=summary['owned_execution_goal']['wall_ns'])
+                    accepted_monotonic_raw_ns=summary['owned_execution_goal']['monotonic_raw_ns'])
                 summary['cancellation_motion']=motion_trial.evidence
             if execution_monitor is None:
                 rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
@@ -1621,7 +1623,7 @@ def main():
                 from simulator_execution import cancel_owned,cancel_response_matches
                 def request_cancel():
                     summary['cancellation_request']=dict(uuid=bytes(owned_uuid).hex(),
-                        wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
+                        wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),monotonic_raw_ns=measurement_clock.now_ns())
                     try:
                         summary['cancel_measurement']=measurements.fresh()
                     except RuntimeError as exc:
@@ -1631,7 +1633,8 @@ def main():
                     if controlled_cancel and controller_audit:
                         try:controller_audit.before_cancel()
                         except Exception as exc:summary['controller_audit_failure']=str(exc)
-                    summary['cancellation_request'].update(wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
+                    summary['cancellation_request'].update(wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
+                                                           monotonic_raw_ns=measurement_clock.now_ns())
                     cancel=handle.cancel_goal_async()
                     rclpy.spin_until_future_complete(node,cancel,timeout_sec=5)
                     response=cancel.result() if cancel.done() else None
@@ -1693,7 +1696,7 @@ def main():
             raise MoveItActionFailure(response.status, response.result.error_code.val)
         if opening_action:
             contact_guard.terminal_release(bytes(owned_uuid).hex(),response.status,
-                                           response.result.error_code.val,time.time_ns())
+                                           response.result.error_code.val,time.time_ns(),measurement_clock.now_ns())
             summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
         return response.result
     def wait_stopped(monitor_contacts=False):
@@ -1702,7 +1705,7 @@ def main():
         window=StopWindow(names)
         travel_samples=[]
         measurements.fresh()
-        after_terminal_wall_ns=time.time_ns()
+        after_terminal_monotonic_raw_ns=measurement_clock.now_ns()
         until=time.monotonic()+8
         while time.monotonic()<until:
             rclpy.spin_once(node,timeout_sec=.01)
@@ -1712,11 +1715,11 @@ def main():
             for sample in pending:
                 if monitor_contacts:contact_guard.check(sample)
                 measurements.record('stopping',sample)
-                if sample['wall_ns']>=summary.get('cancel_measurement',sample)['wall_ns']:travel_samples.append(sample)
-                if sample['wall_ns']<after_terminal_wall_ns:continue
+                if sample['monotonic_raw_ns']>=summary.get('cancel_measurement',sample)['monotonic_raw_ns']:travel_samples.append(sample)
+                if sample['monotonic_raw_ns']<after_terminal_monotonic_raw_ns:continue
                 stopped=window.observe(sample,measurements.joints(sample))
                 stop_sample=sample
-            if stopped and 0<=time.time()-stop_sample['wall_ns']/1e9<=.25:
+            if stopped and 0<=measurement_clock.now_ns()-stop_sample['monotonic_raw_ns']<=250_000_000:
                 measurements.fresh()
                 summary['stopped_measurement']=stop_sample
                 summary['stopped_window']=window.evidence
@@ -1786,14 +1789,14 @@ def main():
             s=measurements.fresh();stop=summary['stopped_measurement']
             if (s.get('run_id')!=measurements.receipt['run_id'] or s.get('pid')!=measurements.receipt['pid'] or
                     s.get('run_id')!=stop.get('run_id') or s.get('pid')!=stop.get('pid') or
-                    any(s[k]<=stop[k] for k in ('iteration','sim_ns','wall_ns'))):
+                    any(s[k]<=stop[k] for k in ('iteration','sim_ns','monotonic_raw_ns'))):
                 raise RuntimeError('RECOVERY_MEASUREMENT_NOT_POST_STOP')
             diff,expected=retention_reconciliation_scene(initial,scene_now(),baseline,measurements,contact_guard,s)
             apply(diff)
             current=scene_now()
             assert_scene_match(current,expected)
             evidence=dict(held=False,run_id=s['run_id'],pid=s['pid'],target=contact_guard.object,
-                iteration=s['iteration'],sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],
+                iteration=s['iteration'],sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],monotonic_raw_ns=s['monotonic_raw_ns'],
                 measured_object_ids=sorted(contact_guard.pile_objects),attached_ids=[],
                 acm_restored=True,measured_geometry_matches=True,
                 sample_sha256=digest(s),robot_state_sha256=digest(message_to_ordereddict(expected.robot_state)),
@@ -2465,7 +2468,7 @@ def main():
             from grasp_capture import qualify_capture, confirm_capture
             sample=copy.deepcopy(measurements.fresh())
             joints={name:values[0] for name,values in measurements.joints(sample).items()}
-            measured=dict(kind='MEASURED',wall_ns=sample['wall_ns'],iteration=sample['iteration'],
+            measured=dict(kind='MEASURED',wall_ns=sample['wall_ns'],monotonic_raw_ns=sample['monotonic_raw_ns'],iteration=sample['iteration'],
                 sim_ns=sample['sim_ns'],joints=joints,physics_sample=sample,
                 link_poses={name:measurements.frame(sample,name) for name in contract['allowed_touch_links']})
             actual_pose=measurements.object_pose(sample,observation['object_id'])
@@ -2483,7 +2486,7 @@ def main():
                 candidate_pose=list(candidate.grasp_pose),measured=measured,
                 planned_open=dict(zip(planned_open.joint_state.name,planned_open.joint_state.position)),
                 planned_closed=dict(zip(planned_closed.joint_state.name,planned_closed.joint_state.position)),
-                binding=binding,now_ns=time.time_ns(),config=contract.get('geometric_qualification'))
+                binding=binding,now_ns=measurement_clock.now_ns(),config=contract.get('geometric_qualification'))
             # Finish against a new passive sample and current model parameters;
             # never re-stamp the measurement used by the geometry calculation.
             current_models=call(params_client,GetParameters.Request(
@@ -2492,12 +2495,12 @@ def main():
                 robot_model_sha256=sha256(current_models[0].string_value.encode()).hexdigest(),
                 srdf_sha256=sha256(current_models[1].string_value.encode()).hexdigest())
             latest=copy.deepcopy(measurements.fresh())
-            current=dict(kind='MEASURED',wall_ns=latest['wall_ns'],iteration=latest['iteration'],
+            current=dict(kind='MEASURED',wall_ns=latest['wall_ns'],monotonic_raw_ns=latest['monotonic_raw_ns'],iteration=latest['iteration'],
                 sim_ns=latest['sim_ns'],physics_sample=latest,
                 joints={name:values[0] for name,values in measurements.joints(latest).items()},
                 link_poses={name:measurements.frame(latest,name) for name in contract['allowed_touch_links']},
                 target_pose=measurements.object_pose(latest,observation['object_id']))
-            result=confirm_capture(result,current,model_binding,time.time_ns())
+            result=confirm_capture(result,current,model_binding,measurement_clock.now_ns())
             root=Path(args.summary_output).parent/'grasp-qualification';root.mkdir(exist_ok=True)
             index=len(summary.setdefault('grasp_qualification_evidence',[]))
             path=root/f'{index:04d}.json'
@@ -2665,13 +2668,14 @@ def main():
                     if step['stage'] in CARRIED_STAGES:
                         rtf=measured_real_time_factor(execution_mark,start_sample)
                         wait=carried_execution_wait(step['trajectory'],rtf)
-                        stamp=lambda smp:{k:smp[k] for k in ('iteration','sim_ns','wall_ns')} if smp else None
+                        stamp=lambda smp:{k:smp[k] for k in ('iteration','sim_ns','wall_ns','monotonic_raw_ns')} if smp else None
                         summary.setdefault('owned_execution_waits',[]).append(dict(stage=label,
                             planned_duration_s=planned_duration_s(step['trajectory']),measured_rtf=rtf,wait_s=wait,
                             previous_start=stamp(execution_mark),start=stamp(start_sample)))
                     execution_mark=start_sample
                     result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)
-                    if step['stage']=='PREPLAN_CLOSE_GRIPPER':summary['close_terminal_wall_ns']=time.time_ns()
+                    if step['stage']=='PREPLAN_CLOSE_GRIPPER':
+                        summary.update(close_terminal_wall_ns=time.time_ns(),close_terminal_monotonic_raw_ns=measurement_clock.now_ns())
                     controlled_cancel=False
                     contact_guard.drain()
                     summary.setdefault('execution_results',[]).append(dict(stage=label,code=result.error_code.val,action_status=4))
@@ -2712,7 +2716,9 @@ def main():
                 elif step['kind']=='attach':
                     contact_guard.pile_binding.update(close_goal_uuid=summary['owned_execution_goal']['uuid'],
                         close_goal_accepted_wall_ns=summary['owned_execution_goal']['wall_ns'],
-                        close_goal_terminal_wall_ns=summary['close_terminal_wall_ns'])
+                        close_goal_terminal_wall_ns=summary['close_terminal_wall_ns'],
+                        close_goal_accepted_monotonic_raw_ns=summary['owned_execution_goal']['monotonic_raw_ns'],
+                        close_goal_terminal_monotonic_raw_ns=summary['close_terminal_monotonic_raw_ns'])
                     # Observe exact post-close contacts while the existing stop
                     # window settles. Freeze this continuously checked set before
                     # retention admission or any further commanded arm motion.

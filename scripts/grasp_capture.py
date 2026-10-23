@@ -281,9 +281,11 @@ def qualify_capture(*,model,target,candidate_pose,measured,planned_open,planned_
             if 'path' in mesh and digest(Path(mesh['path']).read_bytes())!=mesh['sha256']:
                 raise ValueError('stale collision mesh evidence')
         if target['frame_id']!='world':raise ValueError('target frame must be world')
-        if measured.get('kind')!='MEASURED' or not isinstance(measured.get('wall_ns'),int):
+        if (measured.get('kind')!='MEASURED' or not isinstance(measured.get('wall_ns'),int) or
+                type(measured.get('monotonic_raw_ns')) is not int):
             raise ValueError('missing measured evidence')
-        if not 0<=now_ns-measured['wall_ns']<=250_000_000:raise ValueError('stale measured evidence (>250 ms)')
+        # now_ns is CLOCK_MONOTONIC_RAW: a wall-clock step must not age or refresh evidence.
+        if not 0<=now_ns-measured['monotonic_raw_ns']<=250_000_000:raise ValueError('stale measured evidence (>250 ms)')
         # Facets are evaluated at the immutable bound observation, not at a
         # substitute simulator pose. Admission at entry and completion uses
         # the same original reference; sampled robustness is not a drift proof.
@@ -381,10 +383,11 @@ def confirm_capture(result, current, binding, now_ns):
     The original sample is never re-stamped or replaced by the completion one.
     """
     result['completion_measurement']=current
-    result['completion_checked_wall_ns']=now_ns
+    result['completion_checked_monotonic_raw_ns']=now_ns
     try:
         if not result.get('accepted'):return result
-        if current.get('kind')!='MEASURED' or not 0<=now_ns-current['wall_ns']<=250_000_000:
+        if (current.get('kind')!='MEASURED' or type(current.get('monotonic_raw_ns')) is not int or
+                not 0<=now_ns-current['monotonic_raw_ns']<=250_000_000):
             raise ValueError('stale completion measurement evidence')
         for key in ('robot_model_sha256','srdf_sha256'):
             if binding.get(key)!=result['binding'][key]:
@@ -402,7 +405,7 @@ def confirm_capture(result, current, binding, now_ns):
             current['target_pose'],result['target_reference_pose'])
         if not result['completion_target_agreement']['accepted']:
             raise ValueError('target geometry changed since bound observation')
-        result['confirmed_wall_ns']=now_ns
+        result['confirmed_monotonic_raw_ns']=now_ns
     except (ValueError,KeyError,TypeError) as exc:
         result.update(accepted=False,reason=str(exc))
     return result

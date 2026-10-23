@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 import time
 import threading
+import measurement_clock
 import queue
 from enum import Enum
 import xml.etree.ElementTree as ET
@@ -60,8 +61,15 @@ class StaleMeasurement(RuntimeError):
 
 
 def validate_sample(s,receipt,now,previous=None):
+    """now is measurement_clock seconds (CLOCK_MONOTONIC_RAW), never wall time.
+
+    Age and ordering use the simulator's monotonic_raw_ns (see measurement_clock):
+    a stepped wall clock made a 1 ms-old sample stale mid-approach (LENLEG
+    2026-10-23); a backward step would make a stale one look fresh. wall_ns
+    stays required evidence."""
     if (s.get('run_id')!=receipt['run_id'] or s.get('pid')!=receipt['pid'] or s.get('error') or
-        type(s.get('wall_ns')) is not int or s['wall_ns']<=0 or now<s['wall_ns']/1e9 or
+        type(s.get('wall_ns')) is not int or s['wall_ns']<=0 or
+        type(s.get('monotonic_raw_ns')) is not int or s['monotonic_raw_ns']<=0 or now<s['monotonic_raw_ns']/1e9 or
         not s.get('poses') or not s.get('joints') or
         not s.get('collisions') or not isinstance(s.get('contacts'),list) or
         not isinstance(s.get('sim_ns'),int) or type(s.get('iteration')) is not int or (previous is not None and s['iteration']!=previous+1)):
@@ -107,7 +115,7 @@ def validate_sample(s,receipt,now,previous=None):
     # Check age last: an aged message with another defect must still latch that
     # defect. A structurally valid rejected pre-motion sample may be replaced
     # by a later fresh sample, never re-stamped or used for any guard.
-    if now-s['wall_ns']/1e9>.25:
+    if now-s['monotonic_raw_ns']/1e9>.25:
         raise StaleMeasurement('SIMULATOR_TELEMETRY_INVALID: stale measurement')
 
 
@@ -183,10 +191,10 @@ class RetentionRecovery:
         if not sample:raise RuntimeError('RECOVERY_STOP_UNCONFIRMED')
         failed=self.evidence['rejected_sample']
         if failed and (any(sample.get(k)!=failed.get(k) for k in ('run_id','pid')) or
-                       any(sample[k]<=failed[k] for k in ('iteration','sim_ns','wall_ns'))):
+                       any(sample[k]<=failed[k] for k in ('iteration','sim_ns','monotonic_raw_ns'))):
             raise RuntimeError('RECOVERY_STOP_PRECEDES_LOSS')
         self._transition(RecoveryState.CANCEL_AND_STOP,RecoveryState.FAILURE_RECONCILE)
-        self.evidence['stopped_sample']={k:sample[k] for k in ('iteration','sim_ns','wall_ns')}
+        self.evidence['stopped_sample']={k:sample[k] for k in ('iteration','sim_ns','wall_ns','monotonic_raw_ns')}
 
     def reconciled(self, evidence):
         if evidence['attached_ids'] or not evidence['acm_restored'] or not evidence['measured_geometry_matches']:
@@ -237,20 +245,21 @@ def _joint_measurement(sample,joints,names):
     selected={name:list(joints[name]) for name in sorted(names)}
     if any(len(value)!=2 or not all(math.isfinite(x) for x in value) for value in selected.values()):
         raise RuntimeError('invalid commanded joint measurement')
-    return dict(iteration=sample['iteration'],sim_ns=sample['sim_ns'],wall_ns=sample['wall_ns'],joints=selected)
+    return dict(iteration=sample['iteration'],sim_ns=sample['sim_ns'],wall_ns=sample['wall_ns'],
+                monotonic_raw_ns=sample['monotonic_raw_ns'],joints=selected)
 
 
 class CancellationMotion:
     """Evidence of actual commanded-arm movement after owned goal acceptance."""
-    def __init__(self,goal_uuid,sample,joints,names,accepted_wall_ns=None):
+    def __init__(self,goal_uuid,sample,joints,names,accepted_monotonic_raw_ns=None):
         self.names=set(names)
-        self.accepted_wall_ns=sample['wall_ns'] if accepted_wall_ns is None else accepted_wall_ns
+        self.accepted_monotonic_raw_ns=sample['monotonic_raw_ns'] if accepted_monotonic_raw_ns is None else accepted_monotonic_raw_ns
         self.evidence=dict(goal_uuid=goal_uuid,accepted=_joint_measurement(sample,joints,self.names),movement=None)
     def observe(self,sample,joints):
         measured=_joint_measurement(sample,joints,self.names)
         start=self.evidence['accepted']
         if (measured['iteration']<=start['iteration'] or measured['sim_ns']<=start['sim_ns'] or
-                measured['wall_ns']<=self.accepted_wall_ns):return False
+                measured['monotonic_raw_ns']<=self.accepted_monotonic_raw_ns):return False
         deltas={name:abs(value[0]-start['joints'][name][0]) for name,value in measured['joints'].items()}
         # The existing 1 mrad state comparison and 2 mrad/s stop thresholds
         # distinguish motion from settled numerical jitter; neither is relaxed.
@@ -298,31 +307,36 @@ def _metric(values):
                 p99=percentile(.99),max=values[-1])
 
 
-def telemetry_metrics(timing,armed_wall_ns=None):
-    """Summarize the existing authoritative physics stream without changing it."""
+def telemetry_metrics(timing,armed_monotonic_raw_ns=None):
+    """Summarize the existing authoritative physics stream without changing it.
+
+    Every interval is CLOCK_MONOTONIC_RAW: a wall-clock step between source and
+    receive stamps would otherwise read as delivery latency."""
     receive=[e for e in timing if e.get('event')=='receive' and e.get('iteration') is not None
-             and not e.get('error') and (armed_wall_ns is None or e.get('receive_wall_ns',0)>=armed_wall_ns)]
+             and not e.get('error') and (armed_monotonic_raw_ns is None or e.get('receive_monotonic_raw_ns',0)>=armed_monotonic_raw_ns)]
     fresh=[e for e in timing if e.get('event')=='fresh' and e.get('iteration') is not None
-           and not e.get('error') and (armed_wall_ns is None or e.get('read_wall_ns',0)>=armed_wall_ns)]
+           and not e.get('error') and (armed_monotonic_raw_ns is None or e.get('read_monotonic_raw_ns',0)>=armed_monotonic_raw_ns)]
     if len(receive)<2 or not fresh:raise RuntimeError('insufficient motion telemetry timing evidence')
-    receive.sort(key=lambda e:e['receive_wall_ns'])
+    if any(type(e.get(k)) is not int for e in receive for k in ('source_monotonic_raw_ns','receive_monotonic_raw_ns')):
+        raise RuntimeError('motion telemetry timing lacks monotonic stamps')
+    receive.sort(key=lambda e:e['receive_monotonic_raw_ns'])
     if any(b['iteration']!=a['iteration']+1 for a,b in zip(receive,receive[1:])):
         raise RuntimeError('telemetry timing contains an iteration gap')
-    source_intervals=[(b['source_wall_ns']-a['source_wall_ns'])/1e6 for a,b in zip(receive,receive[1:])]
-    receive_intervals=[(b['receive_wall_ns']-a['receive_wall_ns'])/1e6 for a,b in zip(receive,receive[1:])]
-    delivery=[(e['receive_wall_ns']-e['source_wall_ns'])/1e6 for e in receive]
-    publish=[(e['publish_wall_ns']-e['source_wall_ns'])/1e6 for e in receive
-             if e.get('publish_wall_ns') is not None]
+    source_intervals=[(b['source_monotonic_raw_ns']-a['source_monotonic_raw_ns'])/1e6 for a,b in zip(receive,receive[1:])]
+    receive_intervals=[(b['receive_monotonic_raw_ns']-a['receive_monotonic_raw_ns'])/1e6 for a,b in zip(receive,receive[1:])]
+    delivery=[(e['receive_monotonic_raw_ns']-e['source_monotonic_raw_ns'])/1e6 for e in receive]
+    publish=[(e['publish_monotonic_raw_ns']-e['source_monotonic_raw_ns'])/1e6 for e in receive
+             if e.get('publish_monotonic_raw_ns') is not None]
     callback=[e['callback_ns']/1e6 for e in receive if e.get('callback_ns') is not None]
     serialization=[e['source_serialization_ns']/1e6 for e in receive
                    if e.get('source_serialization_ns') is not None]
     ages=[e['age_ns']/1e6 for e in fresh if e.get('age_ns') is not None]
     lock_wait=[e['lock_wait_ns']/1e6 for e in fresh if e.get('lock_wait_ns') is not None]
     if any(v<0 for v in delivery+publish+ages):
-        raise RuntimeError('telemetry wall-clock ordering is contradictory')
+        raise RuntimeError('telemetry monotonic-clock ordering is contradictory')
     sim_span=receive[-1].get('sim_ns',0)-receive[0].get('sim_ns',0)
-    wall_span=receive[-1]['source_wall_ns']-receive[0]['source_wall_ns']
-    result=dict(samples=len(receive),
+    wall_span=receive[-1]['source_monotonic_raw_ns']-receive[0]['source_monotonic_raw_ns']
+    result=dict(samples=len(receive),clock=measurement_clock.CLOCK_NAME,
         source_interval_ms=_metric(source_intervals),
         receive_interval_ms=_metric(receive_intervals),
         source_to_publish_ms=_metric(publish),
@@ -776,7 +790,7 @@ class Measurements:
         from rclpy.node import Node
         self.node=Node('simulator_measurement_acquisition',context=node.context)
         self.lock=TimedRLock();self.latest=None;self.pending=[];self.error=None;self.previous=None
-        self.timing=[];self.armed_wall_ns=None;self.log_path=Path(log)
+        self.timing=[];self.armed_wall_ns=None;self.armed_monotonic_raw_ns=None;self.log_path=Path(log)
         self.log=Path(log).open('w');self.armed=False
         self.log_queue=queue.Queue(maxsize=10000);self.raw={}
         self.sub=self.node.create_subscription(String,f"/world/{self.receipt['world']}/workcell_measurements",self.update,
@@ -831,7 +845,7 @@ class Measurements:
                 with self.lock:
                     if self.error is None:self.error=RuntimeError('measurement acquisition stopped before close')
     def update(self,msg):
-        received=time.time_ns();started=time.monotonic_ns();s={};sample_error=None
+        received=time.time_ns();started=time.monotonic_ns();received_raw=measurement_clock.now_ns();s={};sample_error=None
         # Parsing touches no shared state; keep it out of the lock that fresh(),
         # drain() and the evidence writer contend for. A parse failure is raised
         # inside the lock exactly where json.loads used to raise it.
@@ -844,7 +858,7 @@ class Measurements:
                 if parse_error is not None:raise parse_error
                 s=parsed
                 if self.latest and s.get('sim_ns',0)<=self.latest['sim_ns']:raise RuntimeError('simulation time stopped/reversed')
-                validate_sample(s,self.receipt,time.time(),self.previous if self.armed else None)
+                validate_sample(s,self.receipt,measurement_clock.now_ns()/1e9,self.previous if self.armed else None)
                 self.previous=s['iteration'];self.latest=s
                 if self.armed:
                     if len(self.pending)>=10000:raise RuntimeError('measurement consumer queue overflow')
@@ -861,7 +875,9 @@ class Measurements:
                 if self.error is None:self.error=exc
             self.timing.append(dict(event='receive',iteration=s.get('iteration'),sim_ns=s.get('sim_ns'),
                 source_wall_ns=s.get('wall_ns'),publish_wall_ns=s.get('publish_wall_ns'),
+                source_monotonic_raw_ns=s.get('monotonic_raw_ns'),publish_monotonic_raw_ns=s.get('publish_monotonic_raw_ns'),
                 source_serialization_ns=s.get('serialization_ns'),receive_wall_ns=received,
+                receive_monotonic_raw_ns=received_raw,
                 callback_ns=time.monotonic_ns()-started,parse_ns=parse_ns,lock_wait_ns=lock_wait_ns,queue_depth=len(self.pending),
                 error=str(self.error or sample_error) if self.error or sample_error else None))
     def loop_timer(self):
@@ -881,24 +897,25 @@ class Measurements:
         # time then runs outside it (inside it when the caller already holds it).
         waiting=time.monotonic_ns()
         with self.lock:
-            entered=time.monotonic_ns();now_ns=time.time_ns();error=self.error;latest=self.latest
+            entered=time.monotonic_ns();now_ns=time.time_ns();read_raw=measurement_clock.now_ns();error=self.error;latest=self.latest
             if error:
-                self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,
+                self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,read_monotonic_raw_ns=read_raw,
                     lock_wait_ns=entered-waiting,error=str(error)));raise error
             if latest is None:
-                self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,
+                self.timing.append(dict(event='fresh',iteration=None,read_wall_ns=now_ns,read_monotonic_raw_ns=read_raw,
                     lock_wait_ns=entered-waiting,error='no simulator measurement'))
                 raise RuntimeError('no simulator measurement')
-        age_ns=now_ns-latest['wall_ns']
-        try:validate_sample(latest,self.receipt,now_ns/1e9)
+        stamp=latest.get('monotonic_raw_ns')
+        age_ns=read_raw-stamp if type(stamp) is int else None
+        try:validate_sample(latest,self.receipt,read_raw/1e9)
         except Exception as exc:
             with self.lock:
                 self.timing.append(dict(event='fresh',iteration=latest.get('iteration'),read_wall_ns=now_ns,
-                    age_ns=age_ns,lock_wait_ns=entered-waiting,error=str(exc)))
+                    read_monotonic_raw_ns=read_raw,age_ns=age_ns,lock_wait_ns=entered-waiting,error=str(exc)))
             raise
         with self.lock:
             self.timing.append(dict(event='fresh',iteration=latest['iteration'],read_wall_ns=now_ns,
-                age_ns=age_ns,lock_wait_ns=entered-waiting,error=None))
+                read_monotonic_raw_ns=read_raw,age_ns=age_ns,lock_wait_ns=entered-waiting,error=None))
         return latest
     def drain(self):
         self.fresh()
@@ -915,9 +932,10 @@ class Measurements:
         publishers=self.node.get_publishers_info_by_topic(f"/world/{self.receipt['world']}/workcell_measurements")
         validate_publisher(publishers)
         with self.lock:
-            self.fresh();self.armed_wall_ns=time.time_ns();self.armed=True;self.pending=[]
+            self.fresh();self.armed_wall_ns=time.time_ns();self.armed_monotonic_raw_ns=measurement_clock.now_ns()
+            self.armed=True;self.pending=[]
     def metrics(self):
-        return telemetry_metrics(self.timing,self.armed_wall_ns)
+        return telemetry_metrics(self.timing,self.armed_monotonic_raw_ns)
     def frame(self,s,link):
         prefix=self.receipt['world']+'::'+self.receipt['model']+'::'
         transform=[0,0,0,0,0,0,1]
@@ -1078,7 +1096,8 @@ class ContactGuard:
         self.pile_certificate['certified_set'].append(neighbor)
         self.pile_certificate['certified_set'].sort()
         self.pile_certificate['admissions'].append(dict(copy.deepcopy(entry),iteration=s['iteration'],
-            sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],freshness_ms=(time.time_ns()-s['wall_ns'])/1e6))
+            sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],monotonic_raw_ns=s['monotonic_raw_ns'],
+            freshness_ms=(measurement_clock.now_ns()-s['monotonic_raw_ns'])/1e6))
 
     def certify_pile(self,s):
         # Direct certification stays a frozen, one-sample operation. The live
@@ -1086,18 +1105,19 @@ class ContactGuard:
         # stationary stop proof; predicted planning contacts are never authority.
         evidence=dict(target=self.object,physical_target=self.m.receipt['world']+'::'+self.name,
             binding=copy.deepcopy(self.pile_binding),run_id=s.get('run_id'),iteration=s.get('iteration'),
-            sim_ns=s.get('sim_ns'),wall_ns=s.get('wall_ns'),certified_set=[],contacts=[],rejected=[],
+            sim_ns=s.get('sim_ns'),wall_ns=s.get('wall_ns'),monotonic_raw_ns=s.get('monotonic_raw_ns'),
+            certified_set=[],contacts=[],rejected=[],
             admissions=[],active_set=[],frozen=True,checked_samples=0,expired_pairs=[])
         self.pile_certificate=evidence;self.pile_expired=set();self.pile_origin=None
         self.pile_admitting=False;self.pile_live_sequence=False;self.pile_last_iteration=s.get('iteration')
         try:
-            validate_sample(s,self.m.receipt,time.time())
-            admitted=self.pile_binding.get('close_goal_terminal_wall_ns')
-            accepted=self.pile_binding.get('close_goal_accepted_wall_ns')
-            if (not self.pile_binding.get('close_goal_uuid') or not isinstance(admitted,int) or
-                not isinstance(accepted,int) or accepted>admitted or s['wall_ns']<admitted):
+            validate_sample(s,self.m.receipt,measurement_clock.now_ns()/1e9)
+            admitted=self.pile_binding.get('close_goal_terminal_monotonic_raw_ns')
+            accepted=self.pile_binding.get('close_goal_accepted_monotonic_raw_ns')
+            if (not self.pile_binding.get('close_goal_uuid') or type(admitted) is not int or
+                type(accepted) is not int or accepted>admitted or s['monotonic_raw_ns']<admitted):
                 raise RuntimeError('pile admission requires measured state after successful owned close')
-            evidence['freshness_ms']=(time.time_ns()-s['wall_ns'])/1e6
+            evidence['freshness_ms']=(measurement_clock.now_ns()-s['monotonic_raw_ns'])/1e6
             for neighbor,c in sorted(self.pile_contacts(s).items()):self._admit_pile_contact(s,neighbor,c)
             evidence['active_set']=list(evidence['certified_set'])
             evidence['initial_bottom_m']=self.bottom(self.m.object_pose(s,self.name))
@@ -1109,9 +1129,9 @@ class ContactGuard:
     def begin_pile_admission(self):
         if self.pile_certificate is not None or self.held:
             raise RuntimeError('pile admission already initialized')
-        admitted=self.pile_binding.get('close_goal_terminal_wall_ns',0)
+        admitted=self.pile_binding.get('close_goal_terminal_monotonic_raw_ns',0)
         deadline=time.monotonic()+.25
-        while self.m.fresh()['wall_ns']<admitted:
+        while self.m.fresh()['monotonic_raw_ns']<admitted:
             if time.monotonic()>=deadline:raise RuntimeError('post-close physical measurement not received')
             time.sleep(.001)
         # Consume buffered pre-admission measurements in the original unheld
@@ -1141,7 +1161,7 @@ class ContactGuard:
             raise RuntimeError('pile certificate measurement binding changed')
         if self.pile_live_sequence:
             previous=self.pile_last_iteration if s['iteration']!=self.pile_last_iteration else None
-            validate_sample(s,self.m.receipt,time.time(),previous)
+            validate_sample(s,self.m.receipt,measurement_clock.now_ns()/1e9,previous)
         contacts=self.pile_contacts(s);certified=set(certificate['certified_set'])
         recontact=set(contacts)&self.pile_expired
         if recontact:raise RuntimeError('pile contact recontact after separation: '+','.join(sorted(recontact)))
@@ -1215,7 +1235,7 @@ class ContactGuard:
         physically_free=(self.release_candidate is not None and self.ownership=='RELEASING') or self.ownership in ('FREE_SETTLING','RELEASE_CONFIRMED')
         if physically_free:
             previous=self.pile_last_iteration if self.pile_live_sequence and s['iteration']!=self.pile_last_iteration else None
-            validate_sample(s,self.m.receipt,time.time(),previous)
+            validate_sample(s,self.m.receipt,measurement_clock.now_ns()/1e9,previous)
             self.pile_last_iteration=s['iteration']
         elif self.held or self.pile_admitting:self.check_pile(s)
         for contact in s['contacts']:
@@ -1275,7 +1295,7 @@ class ContactGuard:
             certificate['certified_set']=list(certificate['active_set'])
             certificate['frozen']=True
             certificate['freeze']=dict(iteration=s['iteration'],sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],
-                freshness_ms=(time.time_ns()-s['wall_ns'])/1e6)
+                monotonic_raw_ns=s['monotonic_raw_ns'],freshness_ms=(measurement_clock.now_ns()-s['monotonic_raw_ns'])/1e6)
             certificate['initial_bottom_m']=self.bottom(self.m.object_pose(s,self.name))
         joints=self.m.joints(s)
         leaders=[j.get('name') for c in self.m.robot.findall('ros2_control') for j in c.findall('joint') if j.find('command_interface') is not None and j.get('name') not in self.arm_names]
@@ -1288,7 +1308,7 @@ class ContactGuard:
         self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
         self.held_proof=dict(run_id=s['run_id'],target=self.object,
             binding=copy.deepcopy(certificate['binding']),start_iteration=s['iteration'],
-            start_sim_ns=s['sim_ns'],start_wall_ns=s['wall_ns'])
+            start_sim_ns=s['sim_ns'],start_wall_ns=s['wall_ns'],start_monotonic_raw_ns=s['monotonic_raw_ns'])
         if self.support:self.separation=Separation(obj,self.support['floor_z'])
         return self.held.relative
     def begin_release(self,goal,held_sample):
@@ -1301,13 +1321,13 @@ class ContactGuard:
             goal.get('resolution_sha256')!=binding['resolution_sha256'] or
             goal.get('execution_attempt')!=binding['execution_attempt'] or
             goal.get('selected_grasp_index')!=binding.get('selected_grasp_index',0) or
-            not isinstance(goal.get('wall_ns'),int)):
+            not isinstance(goal.get('wall_ns'),int) or type(goal.get('monotonic_raw_ns')) is not int):
             raise RuntimeError('owned OPEN goal does not match current grasp attempt')
-        validate_sample(held_sample,self.m.receipt,time.time())
-        if held_sample['wall_ns']>=goal['wall_ns']:
+        validate_sample(held_sample,self.m.receipt,measurement_clock.now_ns()/1e9)
+        if held_sample['monotonic_raw_ns']>=goal['monotonic_raw_ns']:
             raise RuntimeError('owned OPEN goal lacks a preceding held measurement')
         self.release_goal=copy.deepcopy(goal)
-        self.release_goal['terminal_wall_ns']=None
+        self.release_goal.update(terminal_wall_ns=None,terminal_monotonic_raw_ns=None)
         self.release_candidate=None;self.release_transition=None
         self.release_start_joint=self.m.joints(held_sample)[self.leader][0]
         self.ownership='RELEASING'
@@ -1315,37 +1335,39 @@ class ContactGuard:
     def _observe_release(self,s,obj,tool,fingers):
         if self.ownership!='RELEASING' or self.release_candidate is not None:return
         goal=self.release_goal
-        if s.get('run_id')!=goal['run_id'] or s.get('wall_ns',0)<=goal['wall_ns']:
+        if s.get('run_id')!=goal['run_id'] or s.get('monotonic_raw_ns',0)<=goal['monotonic_raw_ns']:
             return
         if self.held.required.intersection(fingers):return
         joint=self.m.joints(s)[self.leader][0]
         relative=compose_pose(inverse_pose(tool),obj)
         displacement=math.dist(relative[:3],self.held.relative[:3])
         if self.release_start_joint-joint<=.001 or displacement<=.000001:return
-        validate_sample(s,self.m.receipt,time.time(),self.pile_last_iteration if self.pile_live_sequence and s['iteration']!=self.pile_last_iteration else None)
+        validate_sample(s,self.m.receipt,measurement_clock.now_ns()/1e9,self.pile_last_iteration if self.pile_live_sequence and s['iteration']!=self.pile_last_iteration else None)
         self.release_candidate=dict(iteration=s['iteration'],sim_ns=s['sim_ns'],wall_ns=s['wall_ns'],
+            monotonic_raw_ns=s['monotonic_raw_ns'],
             run_id=s['run_id'],target=self.object,gripper_position_rad=joint,
             relative_translation_m=displacement,required_finger_contacts_absent=True,
             pose_source=copy.deepcopy(s.get('pose_source')))
 
-    def terminal_release(self,uuid,status,moveit_code,terminal_wall_ns):
+    def terminal_release(self,uuid,status,moveit_code,terminal_wall_ns,terminal_monotonic_raw_ns):
         if self.ownership!='RELEASING' or not self.release_goal or uuid!=self.release_goal['uuid']:
             raise RuntimeError('owned OPEN terminal goal mismatch')
-        if status!=4 or moveit_code!=1 or terminal_wall_ns<self.release_goal['wall_ns']:
+        if (status!=4 or moveit_code!=1 or type(terminal_monotonic_raw_ns) is not int or
+                terminal_monotonic_raw_ns<self.release_goal['monotonic_raw_ns']):
             raise RuntimeError('owned OPEN did not reach successful terminal state')
         self.release_goal.update(terminal_status=status,moveit_code=moveit_code,
-                                 terminal_wall_ns=terminal_wall_ns)
+                                 terminal_wall_ns=terminal_wall_ns,terminal_monotonic_raw_ns=terminal_monotonic_raw_ns)
 
     def release_ready(self):
         if self.ownership!='RELEASING':
             raise RuntimeError('physical release has not been measured')
         goal=self.release_goal
-        if goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or not goal.get('terminal_wall_ns'):
+        if goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or not goal.get('terminal_monotonic_raw_ns'):
             raise RuntimeError('owned OPEN successful terminal state missing')
         s=self.checked_current()
         if self.release_candidate is None:
             raise RuntimeError('physical release has not been measured')
-        if s['wall_ns']<goal['terminal_wall_ns']:
+        if s['monotonic_raw_ns']<goal['terminal_monotonic_raw_ns']:
             raise RuntimeError('post-terminal measured release sample missing')
         if s['run_id']!=goal['run_id'] or s['sim_ns']<self.release_candidate['sim_ns'] or self.fingers:
             raise RuntimeError('physical release current measurement changed')
@@ -1358,7 +1380,7 @@ class ContactGuard:
         if self.ownership!='RELEASING' or self.release_candidate is None:
             raise RuntimeError('physical release has not been measured')
         goal=self.release_goal
-        if goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or not goal.get('terminal_wall_ns'):
+        if goal.get('terminal_status')!=4 or goal.get('moveit_code')!=1 or not goal.get('terminal_monotonic_raw_ns'):
             raise RuntimeError('owned OPEN successful terminal state missing')
         if (detachment.get('held') is not False or detachment.get('attached_ids') or
             detachment.get('acm_restored') is not True or detachment.get('measured_geometry_matches') is not True):
@@ -1576,11 +1598,12 @@ class ControllerCancellationAudit:
         if covered!=requested:raise RuntimeError('controller audit missing requested joint ownership')
         if not all(c.wait_for_service(timeout_sec=3) for c in self.clients.values()):raise RuntimeError('controller result service unavailable')
     def update(self,name,msg):
-        wall=time.time_ns()
+        wall=time.time_ns();raw=measurement_clock.now_ns()
         for s in msg.status_list:
             uid=bytes(s.goal_info.goal_id.uuid).hex()
             self.states[name][uid]=dict(status=s.status,uuid=list(s.goal_info.goal_id.uuid))
             self.events.append(dict(controller=name,uuid=uid,status=s.status,receive_wall_ns=wall,
+                receive_monotonic_raw_ns=raw,
                 accepted_sim_ns=s.goal_info.stamp.sec*1000000000+s.goal_info.stamp.nanosec))
     def arm(self):
         self.baseline={n:set(states) for n,states in self.states.items()}
@@ -1601,15 +1624,18 @@ class ControllerCancellationAudit:
             rclpy.spin_until_future_complete(self.node,future,timeout_sec=3)
             if not future.done() or future.result() is None:raise RuntimeError('controller terminal result missing')
             result=future.result();e.update(status=result.status,error_code=result.result.error_code,
-                error_string=result.result.error_string,result_wall_ns=time.time_ns())
+                error_string=result.result.error_string,result_wall_ns=time.time_ns(),
+                result_monotonic_raw_ns=measurement_clock.now_ns())
             terminal=next((x for x in self.events if x['uuid']==e['uuid'] and x['status'] in (4,5,6)),None)
-            if terminal:e['terminal_status_receive_wall_ns']=terminal['receive_wall_ns']
+            if terminal:e.update(terminal_status_receive_wall_ns=terminal['receive_wall_ns'],
+                                 terminal_status_receive_monotonic_raw_ns=terminal['receive_monotonic_raw_ns'])
         validate_controller_cancellation(self.results)
         return self.results
 
 
 def cancellation_metrics(summary,measurements,samples):
-    request=summary['cancellation_request']['wall_ns'];anchor=summary['cancel_measurement']
+    # Executor and simulator stamps are compared on CLOCK_MONOTONIC_RAW only.
+    request=summary['cancellation_request']['monotonic_raw_ns'];anchor=summary['cancel_measurement']
     names=set(summary['cancellation_motion']['accepted']['joints'])
     origin=measurements.joints(anchor);previous=origin;travel={n:0. for n in names};extent={n:0. for n in names}
     for sample in samples:
@@ -1622,12 +1648,12 @@ def cancellation_metrics(summary,measurements,samples):
     # separately accepted stop window still begins after terminal confirmation.
     earliest=StopWindow(set(origin));first=summary['stopped_window']['samples'][0]
     for sample in samples:
-        if sample['wall_ns']<request:continue
+        if sample['monotonic_raw_ns']<request:continue
         if earliest.observe(sample,measurements.joints(sample)):
             first=earliest.samples[0];break
-    return dict(cancel_to_measured_stop_ms=(first['wall_ns']-request)/1e6,
-        cancel_to_controller_result_ms={n:(c.get('terminal_status_receive_wall_ns',c['result_wall_ns'])-request)/1e6
+    return dict(cancel_to_measured_stop_ms=(first['monotonic_raw_ns']-request)/1e6,
+        cancel_to_controller_result_ms={n:(c.get('terminal_status_receive_monotonic_raw_ns',c['result_monotonic_raw_ns'])-request)/1e6
             for n,c in summary.get('controller_cancellation',{}).items()},
-        cancel_snapshot_age_ms=(request-anchor['wall_ns'])/1e6,
+        cancel_snapshot_age_ms=(request-anchor['monotonic_raw_ns'])/1e6,
         additional_joint_travel_rad=travel,max_joint_displacement_after_cancel_rad=extent,
         measurement_samples=len(samples),stop_window_confirmed_wall_ns=time.time_ns())

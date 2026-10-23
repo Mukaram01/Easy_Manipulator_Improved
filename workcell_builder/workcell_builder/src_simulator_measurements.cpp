@@ -17,10 +17,20 @@
 #include <iomanip>
 #include <sstream>
 #include <set>
+#include <time.h>
 #include <unistd.h>
 namespace workcell {
 namespace sim=ignition::gazebo;
 namespace c=sim::components;
+// CLOCK_MONOTONIC_RAW is shared by every process of this boot and is never
+// stepped or rate-adjusted; consumers (scripts/measurement_clock.py) judge
+// freshness, ordering and latency against it. wall_ns stays evidence: on WSL2
+// (LENLEG 2026-10-23) CLOCK_REALTIME stepped ~1.6-2 s every 32 s and the
+// kernel tick slowed CLOCK_MONOTONIC by up to 8.3 %.
+inline long long MonotonicRawNs() {
+  timespec now{};clock_gettime(CLOCK_MONOTONIC_RAW,&now);
+  return static_cast<long long>(now.tv_sec)*1000000000LL+now.tv_nsec;
+}
 class SimulatorMeasurements: public sim::System, public sim::ISystemConfigure,
  public sim::ISystemPreUpdate, public sim::ISystemPostUpdate {
  ignition::transport::Node node;
@@ -55,7 +65,8 @@ class SimulatorMeasurements: public sim::System, public sim::ISystemConfigure,
    std::ostringstream out;out<<std::setprecision(17);
    out<<"{\"run_id\":"<<std::quoted(run)<<",\"pid\":"<<getpid()<<",\"iteration\":"<<info.iterations
       <<",\"sim_ns\":"<<std::chrono::duration_cast<std::chrono::nanoseconds>(info.simTime).count()
-      <<",\"wall_ns\":"<<std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      <<",\"wall_ns\":"<<std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
+      <<",\"monotonic_raw_ns\":"<<MonotonicRawNs();
    auto name=[&](sim::Entity e){return sim::scopedName(e,ecm,"::",false);};
    struct PoseMeasurement {sim::Entity entity,link,query; bool model; ignition::math::Pose3d pose;};
    std::vector<PoseMeasurement> poses;
@@ -108,6 +119,7 @@ class SimulatorMeasurements: public sim::System, public sim::ISystemConfigure,
    first=true;out<<"],\"collisions\":[";
    ecm.Each<c::Collision>([&](const sim::Entity& e,const c::Collision*){if(!first)out<<",";first=false;out<<std::quoted(name(e));return true;});
    out<<"],\"publish_wall_ns\":"<<std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
+      <<",\"publish_monotonic_raw_ns\":"<<MonotonicRawNs()
       <<",\"serialization_ns\":"<<std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-acquisition).count()<<"}";
    ignition::msgs::StringMsg msg;msg.set_data(out.str());publisher.Publish(msg);
  }

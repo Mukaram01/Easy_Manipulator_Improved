@@ -10,7 +10,12 @@ fixture=json.loads((Path(__file__).parent/'fixtures/stage_a1_box_motion.json').r
 
 def test_real_neighbor_combined_motion_stays_within_every_point_limit(tmp_path,monkeypatch):
     f=copy.deepcopy(fixture);origin=f['origin'];last=f['rejected'];now=[origin['wall_ns']/1e9+.001]
+    # Recorded before measurement-clock stamps: replay it on one synthetic timeline.
+    for record,keys in ((origin,['wall_ns']),(last,['wall_ns']),
+                        (f['binding'],['close_goal_accepted_wall_ns','close_goal_terminal_wall_ns'])):
+        for key in keys:record[key.replace('wall_ns','monotonic_raw_ns')]=record[key]
     monkeypatch.setattr(module.time,'time',lambda:now[0]);monkeypatch.setattr(module.time,'time_ns',lambda:int(now[0]*1e9))
+    monkeypatch.setattr('measurement_clock.now_ns',lambda:int(now[0]*1e9))
     models=''.join(f'<model name="{o["object_id"]}"><link name="link"><collision name="collision"><geometry><box><size>0.025 0.025 0.025</size></box></geometry></collision></link></model>' for o in f['objects'])
     (tmp_path/'world.sdf').write_text('<sdf><world name="a0">'+models+'</world></sdf>')
     m=N(receipt=dict(world='a0',model='workcell_robot',run_id=origin['run_id'],pid=origin['pid']),receipt_path=tmp_path/'receipt.json',robot=ET.fromstring('<robot/>'),fresh=lambda:origin,object_pose=lambda s,n:s['poses']['a0::'+n],frame=lambda s,n:[0,0,0,0,0,0,1],joints=lambda s:{},record=lambda p,s:None)

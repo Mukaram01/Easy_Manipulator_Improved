@@ -1139,7 +1139,8 @@ def test_physical_carried_phases_use_conservative_scaling_without_changing_reque
 def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retention_failure):
     """Execute the real attach branch with observable boundary calls."""
     import ast
-    calls=[];current={'iteration':1200};summary={'owned_execution_goal':{'uuid':'close','wall_ns':1},'close_terminal_wall_ns':2}
+    calls=[];current={'iteration':1200};summary={'owned_execution_goal':{'uuid':'close','wall_ns':1,'monotonic_raw_ns':1},'close_terminal_wall_ns':2,
+             'close_terminal_monotonic_raw_ns':2}
     def record(name,result=None):
         def call(*args,**kwargs):
             calls.append(name)
@@ -1363,13 +1364,17 @@ def _traj(duration_s):
     return RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'],points=pts))
 
 
-def test_measured_real_time_factor_requires_a_second_of_wall_time_and_forward_sim():
+def test_measured_real_time_factor_requires_a_second_of_elapsed_time_and_forward_sim():
     f=MODULE.measured_real_time_factor
-    assert f(None,{'wall_ns':0,'sim_ns':0}) is None
-    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(.5e9),'sim_ns':int(.1e9)}) is None
-    assert f({'wall_ns':0,'sim_ns':int(5e9)},{'wall_ns':int(10e9),'sim_ns':int(5e9)}) is None
-    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(67.5e9),'sim_ns':int(5.8e9)})==pytest.approx(5.8/67.5)
-    assert f({'wall_ns':0,'sim_ns':0},{'wall_ns':int(100e9),'sim_ns':int(.1e9)})==.02  # floor
+    t=lambda ns,sim:{'wall_ns':ns,'monotonic_raw_ns':ns,'sim_ns':sim}
+    assert f(None,t(0,0)) is None
+    assert f(t(0,0),t(int(.5e9),int(.1e9))) is None
+    assert f(t(0,int(5e9)),t(int(10e9),int(5e9))) is None
+    assert f(t(0,0),t(int(67.5e9),int(5.8e9)))==pytest.approx(5.8/67.5)
+    assert f(t(0,0),t(int(100e9),int(.1e9)))==.02  # floor
+    # A 2 s wall-clock step inside the window does not change the measured rate.
+    stepped=t(int(67.5e9),int(5.8e9));stepped['wall_ns']+=int(2e9)
+    assert f(t(0,0),stepped)==pytest.approx(5.8/67.5)
 
 
 def test_carried_execution_wait_follows_plan_and_rtf_within_bounds():

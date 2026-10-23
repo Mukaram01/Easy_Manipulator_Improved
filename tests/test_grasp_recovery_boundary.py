@@ -58,9 +58,9 @@ def test_loss_revokes_cycle_and_keeps_only_historical_provenance():
 def test_owned_cancel_must_finish_before_reconciliation():
     recovery = recovery_type()({}, {}, loss(), during_action=True)
     with pytest.raises(RuntimeError, match='CANCELLATION_UNCONFIRMED'):
-        recovery.confirm_stop(dict(iteration=30,sim_ns=30,wall_ns=30), False)
+        recovery.confirm_stop(dict(iteration=30,sim_ns=30,wall_ns=30,monotonic_raw_ns=30), False)
     assert recovery.evidence['state'] == 'CANCEL_AND_STOP'
-    recovery.confirm_stop(dict(iteration=30,sim_ns=30,wall_ns=30), True)
+    recovery.confirm_stop(dict(iteration=30,sim_ns=30,wall_ns=30,monotonic_raw_ns=30), True)
     assert recovery.evidence['state'] == 'FAILURE_RECONCILE'
 
 
@@ -71,7 +71,7 @@ def test_owned_cancel_must_finish_before_reconciliation():
 ])
 def test_retreat_qualification_never_authorizes_unqualified_motion(valid, physical_contacts, code):
     recovery = recovery_type()({}, {}, loss(), during_action=False)
-    recovery.confirm_stop(dict(iteration=30,sim_ns=30,wall_ns=30), False)
+    recovery.confirm_stop(dict(iteration=30,sim_ns=30,wall_ns=30,monotonic_raw_ns=30), False)
     recovery.reconciled({'attached_ids': [], 'acm_restored': True, 'measured_geometry_matches': True})
     recovery.qualify_retreat(valid, physical_contacts)
     assert recovery.evidence['state'] == 'RECOVERY_BLOCKED'
@@ -122,7 +122,7 @@ def scene_fixture():
     current.robot_state.attached_collision_objects=[AttachedCollisionObject(
         link_name='tool',object=copy.deepcopy(initial.world.collision_objects[0]))]
     current.world.collision_objects=current.world.collision_objects[1:]
-    sample=dict(run_id='run',pid=99,iteration=40,sim_ns=40000000,wall_ns=40000000,
+    sample=dict(run_id='run',pid=99,iteration=40,sim_ns=40000000,wall_ns=40000000,monotonic_raw_ns=40000000,
                 joints={'arm':[.9,0.],'finger':[.3,0.]},
                 poses={'target':[1.,2.,3.,0.,0.,0.,1.],'neighbor':[4.,5.,6.,0.,0.,0.,1.]},contacts=[])
     m=N(joints=lambda s:s['joints'],object_pose=lambda s,n:s['poses'][n])
@@ -169,7 +169,7 @@ def runtime_reconcile_fixture(*, valid=True, contacts=None):
     m.fresh=lambda:sample
     sample['contacts']=contacts or []
     stopped=copy.deepcopy(sample)
-    for k in ('iteration','sim_ns','wall_ns'):stopped[k]-=1
+    for k in ('iteration','sim_ns','wall_ns','monotonic_raw_ns'):stopped[k]-=1
     summary={'motion_stop_verified':True,'stopped_measurement':stopped,'cancellation_confirmed':True}
     recovery=recovery_type()({},summary,loss(),during_action=True)
     queries=[];updates=[]
@@ -245,7 +245,7 @@ def test_guard_preserves_typed_failure_sample(tmp_path,monkeypatch):
 
 def test_stop_certificate_must_postdate_the_loss_sample():
     failure=loss()
-    failure.sample=dict(run_id='run',pid=99,iteration=50,sim_ns=50,wall_ns=50)
+    failure.sample=dict(run_id='run',pid=99,iteration=50,sim_ns=50,wall_ns=50,monotonic_raw_ns=50)
     recovery=recovery_type()({}, {}, failure, during_action=False)
     with pytest.raises(RuntimeError,match='RECOVERY_STOP_PRECEDES_LOSS'):
         recovery.confirm_stop(dict(failure.sample), False)

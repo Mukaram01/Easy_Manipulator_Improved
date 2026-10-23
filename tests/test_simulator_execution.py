@@ -3,6 +3,20 @@ import sys, copy, json
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parents[1]/'scripts'))
 import pytest
+import measurement_clock
+
+
+def synthetic_clock(monkeypatch,seconds,nanoseconds):
+    """One synthetic timeline for wall evidence stamps and the measurement clock."""
+    monkeypatch.setattr('simulator_execution.time.time',seconds)
+    monkeypatch.setattr('simulator_execution.time.time_ns',nanoseconds)
+    monkeypatch.setattr('measurement_clock.now_ns',nanoseconds)
+
+
+def mirror_monotonic(record,*keys):
+    """Recorded evidence predates measurement-clock stamps; give it the same synthetic timeline."""
+    for key in keys:record[key.replace('wall_ns','monotonic_raw_ns')]=record[key]
+    return record
 
 
 def test_measured_attachment_supplies_actual_pose_without_duplicate_world_remove():
@@ -40,9 +54,9 @@ def recorded_pile_guard(tmp_path, monkeypatch):
     from types import SimpleNamespace as N
     from simulator_execution import ContactGuard
     data=json.loads((Path(__file__).parent/'fixtures/stage_a1_pile_contacts.json').read_text())
-    sample=data['sample']
-    monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.001)
-    monkeypatch.setattr('simulator_execution.time.time_ns',lambda:sample['wall_ns']+1000000)
+    sample=mirror_monotonic(data['sample'],'wall_ns')
+    mirror_monotonic(data['binding'],'close_goal_accepted_wall_ns','close_goal_terminal_wall_ns')
+    synthetic_clock(monkeypatch,lambda:sample['monotonic_raw_ns']/1e9+.001,lambda:sample['monotonic_raw_ns']+1000000)
     models=''.join(f'<model name="{o["object_id"]}"><link name="link"><collision name="collision"><geometry><box><size>0.025 0.025 0.025</size></box></geometry></collision></link></model>' for o in data['objects'])
     (tmp_path/'world.sdf').write_text('<sdf><world name="a0">'+models+'</world></sdf>')
     m=N(receipt=dict(world='a0',model='workcell_robot',run_id=sample['run_id'],pid=sample['pid']),
@@ -74,7 +88,7 @@ def provisional_pile_guard(tmp_path,monkeypatch):
     def contact(name,point):
         return dict(a='a0::part_06::link::collision',b=f'a0::part_{name}::link::collision',points=[point])
     def advance():
-        sample['iteration']+=1;sample['sim_ns']+=1000000;sample['wall_ns']+=1000000
+        sample['iteration']+=1;sample['sim_ns']+=1000000;sample['wall_ns']+=1000000;sample['monotonic_raw_ns']+=1000000
     sample['contacts'].append(contact('07',[0,.0125,0]))
     return guard,sample,advance,contact
 
@@ -131,7 +145,7 @@ def test_provisional_expiry_is_irreversible_before_and_after_freeze(tmp_path,mon
 def test_provisional_admission_preserves_freshness_sequence_and_geometry(tmp_path,monkeypatch,bad):
     guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)
     guard.begin_pile_admission();advance()
-    if bad=='stale':monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.251)
+    if bad=='stale':synthetic_clock(monkeypatch,lambda:sample['monotonic_raw_ns']/1e9+.251,lambda:sample['monotonic_raw_ns']+251000000)
     if bad=='gap':sample['iteration']+=1
     if bad=='deep':sample['poses']['a0::part_06'][1]+=.001
     if bad=='neighbor_moved':sample['poses']['a0::part_07'][0]+=.001
@@ -375,10 +389,10 @@ def test_pile_certificate_rejects_unknown_identity_stale_or_deep_contact(tmp_pat
     for change in ('unknown','stale','deep','point','preclose'):
         bad=copy.deepcopy(sample)
         if change=='unknown':bad['contacts'][0]['a']='a0::intruder::link::collision'
-        if change=='stale':bad['wall_ns']-=300000000
+        if change=='stale':bad['monotonic_raw_ns']-=300000000
         if change=='deep':bad['poses']['a0::part_06'][2]-=.001
         if change=='point':bad['contacts'][0]['points'][0][0]+=.01
-        if change=='preclose':guard.pile_binding['close_goal_terminal_wall_ns']=sample['wall_ns']+1
+        if change=='preclose':guard.pile_binding['close_goal_terminal_monotonic_raw_ns']=sample['monotonic_raw_ns']+1
         with pytest.raises(RuntimeError):guard.certify_pile(bad)
         assert guard.pile_certificate['rejected']
 
@@ -433,12 +447,26 @@ def test_measured_fcl_pile_exception_requires_exact_active_pair_and_depth(tmp_pa
 
 def test_measurement_rejects_stale_wrong_run_and_missing_samples():
     from simulator_execution import validate_sample
-    sample=dict(run_id='r',pid=12,iteration=10,sim_ns=10000000,wall_ns=1000000000,
+    sample=dict(run_id='r',pid=12,iteration=10,sim_ns=10000000,wall_ns=1000000000,monotonic_raw_ns=1000000000,
                 poses={'cell::part':[0,0,0,0,0,0,1]},joints={'cell::leader':[.3,0]},contacts=[],collisions=['cell::part::body::shape'])
     receipt=dict(run_id='r',pid=12)
     validate_sample(sample,receipt,1.01,9)
-    for patch in [dict(run_id='wrong'),dict(pid=13),dict(iteration=8),dict(wall_ns=0),dict(poses={}),dict(error='broken')]:
+    for patch in [dict(run_id='wrong'),dict(pid=13),dict(iteration=8),dict(wall_ns=0),dict(monotonic_raw_ns=0),
+                  dict(monotonic_raw_ns=None),dict(poses={}),dict(error='broken')]:
         with pytest.raises(RuntimeError):validate_sample(dict(sample,**patch),receipt,1.01,9)
+
+
+@pytest.mark.parametrize('step_ns',[-1_500_000_000,1_500_000_000])
+def test_freshness_is_monotonic_so_a_wall_clock_step_neither_ages_nor_refreshes_a_sample(step_ns):
+    # LENLEG 2026-10-23: WSL2 time sync stepped CLOCK_REALTIME ~1.5 s mid-approach and a
+    # 1 ms-old sample failed as stale; a backward step would have passed a stale one.
+    from simulator_execution import validate_sample,StaleMeasurement
+    sample=dict(run_id='r',pid=12,iteration=10,sim_ns=10000000,wall_ns=3000000000+step_ns,monotonic_raw_ns=1000000000,
+                poses={'cell::part':[0,0,0,0,0,0,1]},joints={'cell::leader':[.3,0]},contacts=[],collisions=['cell::part::body::shape'])
+    receipt=dict(run_id='r',pid=12)
+    validate_sample(sample,receipt,1.001,9)
+    with pytest.raises(StaleMeasurement):validate_sample(dict(sample,wall_ns=3250000000),receipt,1.2501,9)
+    with pytest.raises(RuntimeError,match='contradictory'):validate_sample(sample,receipt,.999,9)
 
 
 def test_support_expiry_and_non_monotonic_separation():
@@ -548,11 +576,13 @@ def test_bridge_publisher_identity_is_node_not_executable_name():
 
 def test_controlled_cancel_requires_measured_arm_movement_after_goal_acceptance():
     from simulator_execution import CancellationMotion
-    start=dict(iteration=10,sim_ns=100000000,wall_ns=1000000000)
-    trial=CancellationMotion('owned',start,{'arm':[0.,0.]},{'arm'},accepted_wall_ns=1100000000)
+    start=dict(iteration=10,sim_ns=100000000,wall_ns=1000000000,monotonic_raw_ns=1000000000)
+    trial=CancellationMotion('owned',start,{'arm':[0.,0.]},{'arm'},accepted_monotonic_raw_ns=1100000000)
     assert not trial.observe(dict(start,iteration=11,sim_ns=200000000),{'arm':[.003,.01]})
-    assert not trial.observe(dict(start,iteration=12,sim_ns=210000000,wall_ns=1110000000),{'arm':[.002,0.]})
-    assert trial.observe(dict(start,iteration=13,sim_ns=220000000,wall_ns=1120000000),{'arm':[.003,.01]})
+    # A wall-clock step after acceptance cannot make a pre-acceptance sample count.
+    assert not trial.observe(dict(start,iteration=11,sim_ns=200000000,wall_ns=9000000000),{'arm':[.003,.01]})
+    assert not trial.observe(dict(start,iteration=12,sim_ns=210000000,monotonic_raw_ns=1110000000),{'arm':[.002,0.]})
+    assert trial.observe(dict(start,iteration=13,sim_ns=220000000,monotonic_raw_ns=1120000000),{'arm':[.003,.01]})
     assert trial.evidence['movement']['joints']['arm']==[.003,.01]
     assert trial.evidence['movement']['max_displacement_rad']==pytest.approx(.003)
     with pytest.raises(RuntimeError,match='missing'):
@@ -573,7 +603,7 @@ def test_cancel_acknowledgement_must_name_the_owned_goal():
 def test_stop_window_requires_complete_contiguous_sustained_measured_stop():
     from simulator_execution import StopWindow
     window=StopWindow({'arm','gripper'})
-    def sample(i,ns):return dict(iteration=i,sim_ns=ns,wall_ns=1000000000+ns)
+    def sample(i,ns):return dict(iteration=i,sim_ns=ns,wall_ns=1000000000+ns,monotonic_raw_ns=1000000000+ns)
     stopped={'arm':[.3,0.],'gripper':[0.,0.]}
     assert not window.observe(sample(1,0),stopped)
     assert not window.observe(sample(2,200000000),stopped)
@@ -619,9 +649,9 @@ def test_early_successful_approach_cannot_fall_through_cancel_trial():
     handle=N(accepted=True,goal_id=N(uuid=[1]*16),get_result_async=lambda:terminal,
              cancel_goal_async=lambda:future(N(return_code=3,goals_canceling=[])))
     client=N(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:future(handle))
-    sample=dict(iteration=1,sim_ns=100,wall_ns=time.time_ns())
+    sample=dict(iteration=1,sim_ns=100,wall_ns=time.time_ns(),monotonic_raw_ns=measurement_clock.now_ns())
     summary={};events=[]
-    context=dict(time=time,node=None,summary=summary,measurements=N(fresh=lambda:sample,joints=lambda s:{'arm':[0.,0.]}),
+    context=dict(time=time,measurement_clock=measurement_clock,node=None,summary=summary,measurements=N(fresh=lambda:sample,joints=lambda s:{'arm':[0.,0.]}),
         execute_client=client,plan_client=object(),controlled_cancel=True,controller_audit=None,contract={'home_joint_names':['arm']},
         apply_client=(scene:=object()),exchanged_clients={scene},
         cross_check_gate=PlanningCrossCheckGate({}),nullcontext=nullcontext,
@@ -656,7 +686,7 @@ def test_acquisition_gap_is_latched_even_if_following_samples_are_valid():
     m.latest=None;m.pending=[];m.previous=1;m.armed=True;m.error=None;m.timing=[]
     def send(i):
         m.update(N(data=json.dumps(dict(run_id='r',pid=12,iteration=i,sim_ns=i,wall_ns=time.time_ns(),
-            poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c']))))
+            monotonic_raw_ns=measurement_clock.now_ns(),poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c']))))
     send(3);send(2)
     with pytest.raises(RuntimeError,match='skipped'):m.fresh()
 
@@ -664,13 +694,15 @@ def test_acquisition_gap_is_latched_even_if_following_samples_are_valid():
 def test_cancel_metrics_include_motion_during_controller_result_wait():
     from simulator_execution import cancellation_metrics
     from types import SimpleNamespace as N
-    anchor=dict(iteration=1,sim_ns=0,wall_ns=1000000000,joints={'arm':[0.,.1]})
-    samples=[dict(iteration=i,sim_ns=(i-1)*100000000,wall_ns=1000000000+(i-1)*100000000,
-                  joints={'arm':[.02,0.]}) for i in range(2,7)]
-    summary=dict(cancellation_request={'wall_ns':1010000000},cancel_measurement=anchor,
+    # Wall stamps carry a 1.5 s clock step; every latency is CLOCK_MONOTONIC.
+    anchor=dict(iteration=1,sim_ns=0,wall_ns=1000000000,monotonic_raw_ns=1000000000,joints={'arm':[0.,.1]})
+    samples=[dict(iteration=i,sim_ns=(i-1)*100000000,wall_ns=2500000000+(i-1)*100000000,
+                  monotonic_raw_ns=1000000000+(i-1)*100000000,joints={'arm':[.02,0.]}) for i in range(2,7)]
+    summary=dict(cancellation_request={'wall_ns':1010000000,'monotonic_raw_ns':1010000000},cancel_measurement=anchor,
         cancellation_motion={'accepted':{'joints':{'arm':[0.,.1]}}},
         stopped_window={'samples':[samples[2]]},
-        controller_cancellation={'arm':{'result_wall_ns':1300000000,'terminal_status_receive_wall_ns':1250000000}})
+        controller_cancellation={'arm':{'result_wall_ns':2800000000,'terminal_status_receive_wall_ns':2750000000,
+                                        'result_monotonic_raw_ns':1300000000,'terminal_status_receive_monotonic_raw_ns':1250000000}})
     result=cancellation_metrics(summary,N(joints=lambda s:s['joints']),samples)
     assert result['cancel_to_measured_stop_ms']==90
     assert result['cancel_to_controller_result_ms']['arm']==240
@@ -682,13 +714,18 @@ def test_motion_telemetry_metrics_keep_250ms_guard_and_contiguous_iterations():
     timing=[]
     for i in range(1,6):
         source=1_000_000_000+i*10_000_000
+        # A 1.5 s wall-clock step between source and receive of sample 3 is not latency.
+        step=1_500_000_000 if i>=3 else 0
         timing.append(dict(event='receive',iteration=i,sim_ns=i*10_000_000,
             source_wall_ns=source,publish_wall_ns=source+1_000_000,
-            source_serialization_ns=500_000,receive_wall_ns=source+2_000_000,
-            callback_ns=200_000,error=None))
-        timing.append(dict(event='fresh',iteration=i,read_wall_ns=source+3_000_000,
-            age_ns=3_000_000,lock_wait_ns=10_000,error=None))
+            source_monotonic_raw_ns=source,publish_monotonic_raw_ns=source+1_000_000,
+            source_serialization_ns=500_000,receive_wall_ns=source+2_000_000+step,
+            receive_monotonic_raw_ns=source+2_000_000,callback_ns=200_000,error=None))
+        timing.append(dict(event='fresh',iteration=i,read_wall_ns=source+3_000_000+step,
+            read_monotonic_raw_ns=source+3_000_000,age_ns=3_000_000,lock_wait_ns=10_000,error=None))
     result=telemetry_metrics(timing)
+    assert result['clock']=='CLOCK_MONOTONIC_RAW'
+    assert result['receive_interval_ms']['max']==pytest.approx(10.)
     assert result['samples']==5
     assert result['max_fresh_age_ms']==pytest.approx(3.)
     assert result['max_delivery_ms']==pytest.approx(2.)
@@ -810,7 +847,7 @@ def test_live_retention_rejects_foreign_stale_or_changed_attempt(tmp_path,monkey
     guard.begin_pile_admission();guard.establish()
     for _ in range(1000):advance();guard.check(sample)
     if bad=='another_run':sample['run_id']='foreign-run'
-    elif bad=='stale':monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.251)
+    elif bad=='stale':synthetic_clock(monkeypatch,lambda:sample['monotonic_raw_ns']/1e9+.251,lambda:sample['monotonic_raw_ns']+251000000)
     elif bad=='changed_close':guard.pile_binding['close_goal_uuid']='foreign-close'
     else:guard.pile_binding['resolution_sha256']='foreign-resolution'
     with pytest.raises(RuntimeError):guard.retention_evidence()
@@ -847,7 +884,7 @@ def physics_pose_sample():
     """Synthetic declared-source contract, not relabelled historical physics data."""
     method='physics_link_frame_data_at_offset'
     receipt=dict(run_id='physics-run',pid=12,world='a0',measurement_pose_source=method)
-    sample=dict(run_id='physics-run',pid=12,iteration=10,sim_ns=10_000_000,wall_ns=1_000_000_000,
+    sample=dict(run_id='physics-run',pid=12,iteration=10,sim_ns=10_000_000,wall_ns=1_000_000_000,monotonic_raw_ns=1_000_000_000,
         poses={'a0::part':[0,0,0,0,0,0,1],'a0::part::link':[0,0,0,0,0,0,1]},
         joints={'a0::robot::j':[0,0]},collisions=['collision'],contacts=[],
         pose_source=dict(method=method,frame='world',query_iteration=10,query_sim_ns=10_000_000,
@@ -865,7 +902,7 @@ def test_authoritative_physics_pose_source_accepts_complete_current_identity():
 
 @pytest.mark.parametrize('bad',['missing_source','wrong_method','wrong_receipt_method','wrong_frame',
     'writable','missing_version','stale_iteration','stale_sim_time','missing_entities','missing_link',
-    'extra_entity','zero_entity','wrong_link_identity','wrong_kind','foreign_world','query_error','stale_wall',
+    'extra_entity','zero_entity','wrong_link_identity','wrong_kind','foreign_world','query_error','stale_monotonic',
     'wrong_model_link','wrong_model_query','duplicate_entity','shared_link_query','query_is_original'])
 def test_authoritative_physics_pose_source_fails_closed(tmp_path,bad):
     from simulator_execution import validate_sample
@@ -896,7 +933,7 @@ def test_authoritative_physics_pose_source_fails_closed(tmp_path,bad):
         sample['poses']['other::part']=sample['poses'].pop('a0::part')
         sample['pose_entities']['other::part']=sample['pose_entities'].pop('a0::part')
     elif bad=='query_error':sample['error']='physics pose query unavailable'
-    elif bad=='stale_wall':sample['wall_ns']=700_000_000
+    elif bad=='stale_monotonic':sample['monotonic_raw_ns']=700_000_000
     with pytest.raises(RuntimeError):validate_sample(sample,receipt,1.01,9)
 
 
@@ -922,7 +959,7 @@ def release_boundary_guard(tmp_path, monkeypatch):
     position = [.3]
     guard.m.joints = lambda s: {'leader': [position[0], 0.]}
     goal = dict(uuid='a'*32,accepted=True,stage='COMMISSION_RELEASE',
-        wall_ns=sample['wall_ns']+1,run_id=sample['run_id'],target=guard.object,
+        wall_ns=sample['wall_ns']+1,monotonic_raw_ns=sample['monotonic_raw_ns']+1,run_id=sample['run_id'],target=guard.object,
         resolution_sha256=guard.pile_binding['resolution_sha256'],
         execution_attempt=guard.pile_binding['execution_attempt'],
         selected_grasp_index=guard.pile_binding.get('selected_grasp_index',0))
@@ -944,8 +981,8 @@ def test_release_requires_owned_success_physical_loss_and_detachment(tmp_path, m
     with pytest.raises(RuntimeError, match='terminal'):
         guard.finish_release(dict(held=False,attached_ids=[],acm_restored=True,measured_geometry_matches=True))
     with pytest.raises(RuntimeError, match='owned'):
-        guard.terminal_release('b'*32,4,1,sample['wall_ns'])
-    guard.terminal_release(goal['uuid'],4,1,sample['wall_ns']+1)
+        guard.terminal_release('b'*32,4,1,sample['wall_ns'],sample['monotonic_raw_ns'])
+    guard.terminal_release(goal['uuid'],4,1,sample['wall_ns']+1,sample['monotonic_raw_ns']+1)
     with pytest.raises(RuntimeError, match='attachment'):
         guard.finish_release(dict(held=False,attached_ids=[guard.object],acm_restored=True,measured_geometry_matches=True))
     assert guard.ownership=='RELEASING'
@@ -956,7 +993,7 @@ def test_release_requires_owned_success_physical_loss_and_detachment(tmp_path, m
     evidence=guard.finish_release(dict(held=False,attached_ids=[],acm_restored=True,measured_geometry_matches=True))
     assert evidence['run_id']==sample['run_id'] and evidence['target']==guard.object
     assert evidence['goal']['uuid']==goal['uuid']
-    assert evidence['separation']['wall_ns']<evidence['goal']['terminal_wall_ns']
+    assert evidence['separation']['monotonic_raw_ns']<evidence['goal']['terminal_monotonic_raw_ns']
     assert guard.ownership=='FREE_SETTLING' and guard.held is None
     with pytest.raises(RuntimeError, match='cannot regress'):
         guard.begin_release(goal,sample)
@@ -986,7 +1023,7 @@ def test_release_rejects_foreign_stale_failed_or_unmoved_evidence(tmp_path,monke
     guard,sample,advance,position,goal,_=release_boundary_guard(tmp_path,monkeypatch)
     advance()
     if fault=='other_run':sample['run_id']='foreign'
-    elif fault=='stale':monkeypatch.setattr('simulator_execution.time.time',lambda:sample['wall_ns']/1e9+.3)
+    elif fault=='stale':synthetic_clock(monkeypatch,lambda:sample['monotonic_raw_ns']/1e9+.3,lambda:sample['monotonic_raw_ns']+300000000)
     elif fault!='no_motion':position[0]=.28
     sample['contacts']=[];sample['poses']['a0::part_06'][0]+=.0001
     if fault in ('other_run','stale'):
@@ -997,15 +1034,15 @@ def test_release_rejects_foreign_stale_failed_or_unmoved_evidence(tmp_path,monke
         assert guard.release_candidate is None
         return
     if fault=='foreign_goal':
-        with pytest.raises(RuntimeError,match='owned'):guard.terminal_release('b'*32,4,1,sample['wall_ns'])
+        with pytest.raises(RuntimeError,match='owned'):guard.terminal_release('b'*32,4,1,sample['wall_ns'],sample['monotonic_raw_ns'])
     else:
-        with pytest.raises(RuntimeError,match='successful'):guard.terminal_release(goal['uuid'],5,1,sample['wall_ns'])
+        with pytest.raises(RuntimeError,match='successful'):guard.terminal_release(goal['uuid'],5,1,sample['wall_ns'],sample['monotonic_raw_ns'])
     assert guard.ownership=='RELEASING'
 
 
 def test_release_ready_consumes_pending_physical_separation_before_rejecting(tmp_path,monkeypatch):
     guard,sample,advance,position,goal,_=release_boundary_guard(tmp_path,monkeypatch)
-    guard.terminal_release(goal['uuid'],4,1,sample['wall_ns']+1)
+    guard.terminal_release(goal['uuid'],4,1,sample['wall_ns']+1,sample['monotonic_raw_ns']+1)
     advance();position[0]=0.;sample['contacts']=[]
     sample['poses']['a0::part_06'][0]+=.0001
     guard.m.drain=lambda:[copy.deepcopy(sample)]
@@ -1023,10 +1060,9 @@ def test_age_only_receive_reacquires_only_before_motion_arm(armed,monkeypatch):
     m=module.Measurements.__new__(module.Measurements)
     m.lock=threading.RLock();m.receipt=dict(run_id='r',pid=12)
     m.latest=None;m.pending=[];m.previous=None;m.armed=armed;m.error=None;m.timing=[]
-    monkeypatch.setattr(module.time,'time',lambda:2.)
-    monkeypatch.setattr(module.time,'time_ns',lambda:2_000_000_000)
+    synthetic_clock(monkeypatch,lambda:2.,lambda:2_000_000_000)
     def sample(i,wall):
-        return dict(run_id='r',pid=12,iteration=i,sim_ns=i,wall_ns=wall,
+        return dict(run_id='r',pid=12,iteration=i,sim_ns=i,wall_ns=wall,monotonic_raw_ns=wall,
             poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c'])
     m.update(N(data=json.dumps(sample(1,1_616_000_000))))
     assert m.latest is None and m.pending==[] and m.previous is None
@@ -1053,19 +1089,19 @@ def test_stale_prearm_sample_does_not_hide_other_invalidity(patch,monkeypatch):
     m=module.Measurements.__new__(module.Measurements)
     m.lock=threading.RLock();m.receipt=dict(run_id='r',pid=12)
     m.latest=dict(sim_ns=1);m.pending=[];m.previous=1;m.armed=False;m.error=None;m.timing=[]
-    monkeypatch.setattr(module.time,'time',lambda:2.)
-    monkeypatch.setattr(module.time,'time_ns',lambda:2_000_000_000)
-    sample=dict(run_id='r',pid=12,iteration=2,sim_ns=2,wall_ns=1_616_000_000,
+    synthetic_clock(monkeypatch,lambda:2.,lambda:2_000_000_000)
+    sample=dict(run_id='r',pid=12,iteration=2,sim_ns=2,wall_ns=1_616_000_000,monotonic_raw_ns=1_616_000_000,
         poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c'])
     m.update(N(data=json.dumps(dict(sample,**patch))))
     assert m.error is not None
-    m.update(N(data=json.dumps(dict(sample,iteration=3,sim_ns=3,wall_ns=1_998_000_000))))
+    m.update(N(data=json.dumps(dict(sample,iteration=3,sim_ns=3,wall_ns=1_998_000_000,monotonic_raw_ns=1_998_000_000))))
     with pytest.raises(RuntimeError):m.fresh()
 
 
-def live_measurement_sample(i,wall_ns,run_id='r',pid=12):
+def live_measurement_sample(i,wall_ns,monotonic_raw_ns,run_id='r',pid=12):
     from simulator_backend import PHYSICS_POSE_METHOD
     return dict(run_id=run_id,pid=pid,iteration=i,sim_ns=i*1000000,wall_ns=wall_ns,publish_wall_ns=wall_ns+200000,
+        monotonic_raw_ns=monotonic_raw_ns,publish_monotonic_raw_ns=monotonic_raw_ns+200000,
         serialization_ns=100000,poses={'a0::part':[0,0,0,0,0,0,1],'a0::part::link':[0,0,0,0,0,0,1]},
         joints={'a0::robot::leader':[.3,0.]},contacts=[],collisions=['a0::part::link::collision'],
         pose_source=dict(method=PHYSICS_POSE_METHOD,frame='world',read_only=True,gazebo_version='6.16',
@@ -1099,8 +1135,8 @@ def test_live_acquisition_takes_every_sample_writes_source_text_and_latches_stal
         m=simulator_execution.Measurements(node,tmp_path/'receipt.json',tmp_path/'measurements.jsonl')
         assert m.acquisition.is_alive() and m.writer.is_alive()
         published={}
-        def publish(i,wall_ns=None):
-            s=live_measurement_sample(i,time.time_ns() if wall_ns is None else wall_ns)
+        def publish(i,monotonic_raw_ns=None):
+            s=live_measurement_sample(i,time.time_ns(),measurement_clock.now_ns() if monotonic_raw_ns is None else monotonic_raw_ns)
             # One multi-line text proves the writer falls back to a single-line dump.
             text=json.dumps(s,sort_keys=True,indent=1 if i==60 else None);published[i]=(s,text);pub.publish(String(data=text))
         until=time.monotonic()+5
@@ -1134,7 +1170,7 @@ def test_live_acquisition_takes_every_sample_writes_source_text_and_latches_stal
         assert [e['iteration'] for e in receive]==list(range(1,551))
         assert all('lock_wait_ns' in e and e['error'] is None for e in receive)
         # A structurally valid but old sample latches the unchanged guard once armed.
-        publish(551,time.time_ns()-300000000)
+        publish(551,measurement_clock.now_ns()-300000000)   # current wall stamp, old by the measurement clock
         until=time.monotonic()+5
         while m.error is None and time.monotonic()<until:time.sleep(.005)
         assert isinstance(m.error,simulator_execution.StaleMeasurement)
@@ -1241,8 +1277,10 @@ def _timed_measurements(module):
     return m
 
 
-def _plain_sample(i,wall_ns):
+def _plain_sample(i,wall_ns,monotonic_raw_ns=None):
+    import time
     return dict(run_id='r',pid=12,iteration=i,sim_ns=i,wall_ns=wall_ns,
+        monotonic_raw_ns=measurement_clock.now_ns() if monotonic_raw_ns is None else monotonic_raw_ns,
         poses={'p':[0,0,0,0,0,0,1]},joints={'j':[0,0]},contacts=[],collisions=['c'])
 
 
@@ -1297,8 +1335,9 @@ def test_fresh_rejection_outside_the_lock_is_recorded_and_raised(monkeypatch):
     import json,time
     from types import SimpleNamespace as N
     import simulator_execution as module
-    m=_timed_measurements(module);wall=time.time_ns();m.update(N(data=json.dumps(_plain_sample(1,wall))))
-    monkeypatch.setattr(module.time,'time_ns',lambda:wall+300_000_000)
+    m=_timed_measurements(module);wall=time.time_ns();mono=measurement_clock.now_ns()
+    m.update(N(data=json.dumps(_plain_sample(1,wall,mono))))
+    monkeypatch.setattr('measurement_clock.now_ns',lambda:mono+300_000_000)
     with pytest.raises(module.StaleMeasurement):m.fresh()
     assert m.timing[-1]['event']=='fresh' and 'stale' in m.timing[-1]['error'] and m.timing[-1]['age_ns']==300_000_000
 

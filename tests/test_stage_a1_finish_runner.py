@@ -60,9 +60,9 @@ def test_plan_gate_requires_complete_nine_stage_plan():
 
 def current_retention_summary():
     binding={"close_goal_uuid":"current-close","close_goal_terminal_wall_ns":100,
-             "resolution_sha256":"resolution"}
+             "close_goal_terminal_monotonic_raw_ns":100,"resolution_sha256":"resolution"}
     return dict(selected_object_id="runtime::part",resolution_sha256="resolution",
-        close_terminal_wall_ns=100,
+        close_terminal_wall_ns=100,close_terminal_monotonic_raw_ns=100,
         pile_contact_certification={"run_id":"current-run","target":"runtime::part","binding":binding},
         stationary_hold_start={"run_id":"current-run","sim_ns":0},
         stationary_hold_end={"run_id":"current-run","sim_ns":1_100_000_000},
@@ -528,7 +528,7 @@ def current_release_summary(gate):
     retained=current_retention_summary()
     goal=dict(uuid='a'*32,accepted=True,
         stage='COMMISSION_RELEASE' if gate=='contact-release' else 'EXECUTE_OPEN_GRIPPER',
-        wall_ns=200,terminal_wall_ns=500,terminal_status=4,moveit_code=1,
+        wall_ns=200,terminal_wall_ns=500,monotonic_raw_ns=200,terminal_monotonic_raw_ns=500,terminal_status=4,moveit_code=1,
         run_id='current-run',target='runtime::part',resolution_sha256='resolution',
         execution_attempt='attempt',selected_grasp_index=1)
     retained['pile_contact_certification']['binding']['execution_attempt']='attempt'
@@ -540,7 +540,7 @@ def current_release_summary(gate):
     retained['release_evidence']=dict(run_id='current-run',target='runtime::part',
         binding=dict(retained['stationary_retention']['binding']),goal=dict(goal),
         separation=dict(run_id='current-run',target='runtime::part',iteration=10,sim_ns=10,
-                        wall_ns=300,gripper_position_rad=.2,relative_translation_m=.0001,
+                        wall_ns=300,monotonic_raw_ns=300,gripper_position_rad=.2,relative_translation_m=.0001,
                         required_finger_contacts_absent=True,
                         pose_source=dict(method='physics_link_frame_data_at_offset',frame='world',
                             read_only=True,query_iteration=10,query_sim_ns=10)),
@@ -548,6 +548,22 @@ def current_release_summary(gate):
         transition_iteration=11,transition_sim_ns=11,state='RELEASE_CONFIRMED',
         settled=True,sim_ns=1_000_000_011)
     return retained
+
+
+@pytest.mark.parametrize('gate,result', [('contact-release','CONTACT_RELEASE_PASS'),('full-cycle','PASS')])
+def test_release_ordering_uses_the_measurement_clock_not_a_stepped_wall_clock(gate,result):
+    summary=dict(result=result,full_cycle_prevalidated=True,
+        commissioning_capability={'sha256':'build','moveit_overlay':{
+            'library':{'sha256':'tem'},'move_group':{'executable':{'sha256':'group'},'capabilities':{'sha256':'capabilities'}}}},
+        verified_lift_clearance_m=.02,full_cycle_execution_success=True,
+        full_cycle_physical_acceptance={'final_collision_valid':True,'attached_ids':[]})
+    summary.update(current_release_summary(gate))
+    evidence=summary['release_evidence']
+    evidence['separation']['wall_ns']=150            # wall clock stepped back between goal and separation
+    MODULE.assert_gate(gate,summary,'build',('tem','group','capabilities'))
+    evidence['separation']['wall_ns']=300;evidence['separation']['monotonic_raw_ns']=200
+    with pytest.raises(RuntimeError,match='release'):
+        MODULE.assert_gate(gate,summary,'build',('tem','group','capabilities'))
 
 
 @pytest.mark.parametrize('gate,result', [('contact-release','CONTACT_RELEASE_PASS'),('full-cycle','PASS')])
@@ -571,7 +587,7 @@ def test_gate_rejects_release_evidence_not_owned_by_current_attempt(gate,result,
     elif bad=='wrong_stage':evidence['goal']['stage']='EXECUTE_TRANSFER'
     elif bad=='no_terminal':evidence['goal']['terminal_status']=5
     elif bad=='no_separation':evidence['separation']['required_finger_contacts_absent']=False
-    elif bad=='stale_separation':evidence['separation']['wall_ns']=100
+    elif bad=='stale_separation':evidence['separation']['monotonic_raw_ns']=100
     elif bad=='attachment':evidence['detachment']['attached_ids']=['runtime::part']
     elif bad=='missing_source':evidence['separation'].pop('pose_source')
     else:evidence['settled']=False
