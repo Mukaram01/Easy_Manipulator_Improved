@@ -20,6 +20,7 @@
 #include "readiness_pack_command.hpp"
 #include "save_projection_failure.hpp"
 #include "datum_mating_text.hpp"
+#include "teardown_connections.hpp"
 #include "gui/web_edit_policy.hpp"
 #include "gui/semantic_role_edit.hpp"
 #include "studio_page_navigation.hpp"
@@ -3169,7 +3170,9 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_button_->setText("Panels & Tools");
   scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
   scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
-  auto * keep_placing_action = new QWidgetAction(scene_builder_secondary_overflow_menu_);
+  // Owned by the window: the overflow menu is cleared and rebuilt, and a
+  // menu-owned action would delete place_mode_persistent_box_ with it.
+  auto * keep_placing_action = new QWidgetAction(this);
   keep_placing_action->setDefaultWidget(place_mode_persistent_box_);
   auto * snap_menu_action = canvas_more_menu->menuAction();
   snap_menu_action->setText("Snap");
@@ -5758,6 +5761,10 @@ void MainWindow::open_scene_bundle_export_folder()
 
 MainWindow::~MainWindow()
 {
+  // Child widgets are deleted after every MainWindow member. Destroying the
+  // canvas scene emits selectionChanged for its selected item, which ran
+  // on_canvas_selection_changed() on destroyed members and corrupted the heap.
+  workcell_builder::retire_inbound_connections_from_descendants(this);
   delete ui;
 }
 
