@@ -24,6 +24,7 @@
 #include <tuple>
 #include <functional>
 #include <array>
+#include <algorithm>
 #include <QLabel>
 #include <QComboBox>
 #include <QTreeWidget>
@@ -884,6 +885,21 @@ public:
     };
     auto require = [](bool value, const QString & message) { if (!value) throw std::runtime_error(message.toStdString()); };
     auto near = [](double a, double b, double tol = 1e-8) { return std::abs(a - b) < tol; };
+    // ROS fixed-axis RPY (Rz*Ry*Rx) or three.js 'XYZ' (Rx*Ry*Rz), and the angle between two rotations.
+    using M3 = std::array<std::array<double, 3>, 3>;
+    auto rpy_matrix = [](double r, double p, double y, bool ros) {
+      const double cr = std::cos(r), sr = std::sin(r), cp = std::cos(p), sp = std::sin(p), cy = std::cos(y), sy = std::sin(y);
+      const M3 rx{{{1, 0, 0}, {0, cr, -sr}, {0, sr, cr}}}, ry{{{cp, 0, sp}, {0, 1, 0}, {-sp, 0, cp}}}, rz{{{cy, -sy, 0}, {sy, cy, 0}, {0, 0, 1}}};
+      auto mul = [](const M3 & a, const M3 & b) {
+        M3 m{}; for (int i = 0; i < 3; ++i) for (int k = 0; k < 3; ++k) for (int j = 0; j < 3; ++j) m[i][k] += a[i][j] * b[j][k];
+        return m;
+      };
+      return ros ? mul(rz, mul(ry, rx)) : mul(rx, mul(ry, rz));
+    };
+    auto turn = [](const M3 & a, const M3 & b) {
+      double trace = 0.; for (int i = 0; i < 3; ++i) for (int k = 0; k < 3; ++k) trace += a[k][i] * b[k][i];
+      return std::acos(std::clamp((trace - 1.) / 2., -1., 1.));
+    };
     auto item = [=](const QString & id) {
       for (const auto & p : window->all_scene_preview_items_) if (p.id == id) return p;
       throw std::runtime_error(("scene item missing: " + id).toStdString());
@@ -1159,6 +1175,31 @@ public:
         if (s->ticks < 8) return false;
         require(!window->mate_active(), "Esc in the 3D view did not cancel Mate");
         require(file_hash(s->scene + "/environment.yaml") == s->env_hash && !window->layout_dirty_, "cancelled Mate changed the cell");
+        s->sub = 0;
+        return true;
+      });
+      // Web3D sets and reads poses as ROS RPY, so selecting a compound-rotated
+      // asset reads back its authored angles and echoes no pose edit to Qt.
+      add("selecting the turned camera reads back exactly and keeps the layout clean", [=]() {
+        if (s->native) return true;
+        if (s->js_pending) return false;
+        const auto cam = item(camera);
+        if (s->sub == 0) {
+          s->evidence["reopen_camera_rpy"] = QJsonArray{cam.roll, cam.pitch, cam.yaw};
+          s->evidence["reopen_camera_xyz_order_error_deg"] =
+            turn(rpy_matrix(cam.roll, cam.pitch, cam.yaw, false), rpy_matrix(cam.roll, cam.pitch, cam.yaw, true)) * 180. / M_PI;
+          window->apply_scene_selection(camera, "", false, false);
+          s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->sub == 1) { if (s->ticks < 12) return false; js("window.__WORKCELL_EDITOR_API_V1__.getState()"); s->sub = 2; return false; }
+        const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+        const auto rpy = state.value("selectedTransform").toObject().value("pose").toObject().value("rpy").toObject();
+        s->evidence["reopen_camera_web3d_rpy"] = rpy;
+        require(state.value("selectedItemId").toString() == camera || state.value("uiSelectionItemId").toString() == camera, "Web3D did not select the camera");
+        require(near(rpy.value("x").toDouble(), cam.roll, 1e-12) && near(rpy.value("y").toDouble(), cam.pitch, 1e-12) && near(rpy.value("z").toDouble(), cam.yaw, 1e-12),
+          "Web3D reads the camera rotation back differently from the authored RPY");
+        require(!window->layout_dirty_ && file_hash(s->scene + "/environment.yaml") == s->env_hash, "selecting the turned camera echoed a pose edit");
+        shot("22_reopened_turned_camera_selected");
         s->sub = 0;
         return true;
       });
@@ -1496,6 +1537,78 @@ public:
       });
       add("Scenario B: moved view", [=]() { if (s->ticks < 8) return false; shot("09_stand_moved_camera_follows"); return true; });
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      // The stand turn leaves the camera pitched 90 degrees on a stand turned 15
+      // degrees, a compound ROS RPY. Web3D draws it as authored, so a face click on
+      // it resolves on its geometry instead of being refused as a stale view.
+      add("Compound pose: start Mate on the turned camera and look at it", [=]() {
+        if (s->native) return true;
+        if (s->sub == 0) {
+          const auto cam = item(camera);
+          const double xyz_error = turn(rpy_matrix(cam.roll, cam.pitch, cam.yaw, false), rpy_matrix(cam.roll, cam.pitch, cam.yaw, true));
+          s->evidence["D_camera_rpy"] = QJsonArray{cam.roll, cam.pitch, cam.yaw};
+          s->evidence["D_camera_xyz_order_error_deg"] = xyz_error * 180. / M_PI;
+          require(xyz_error > M_PI / 180., "the turned camera is not a compound rotation, so this check would prove nothing");
+          window->apply_scene_selection(camera, "", false, false);
+          window->inspector_mate_button_->click();
+          require(window->mate_active() && mate()->pending_asset() == camera, "Inspector Mate did not start on the camera");
+          // Not isolated: isolation hides the camera's generated mesh, which is reparented under its owner.
+          s->env_hash = file_hash(s->scene + "/environment.yaml");
+          s->items_before = window->mounting_items();
+          s->sub = 1; s->ticks = 0; return false;
+        }
+        if (s->sub == 1) {
+          // The camera sits at the top edge of the cell view, under the status overlays; look at it.
+          if (s->ticks < 10) return false;
+          QAction * origin = nullptr;
+          for (auto * action : panel()->findChild<QToolButton *>("mateFaceView")->menu()->actions()) if (action->data().toString() == "origin") origin = action;
+          require(origin != nullptr, "the camera origin is not offered in Look at a face");
+          origin->trigger();
+          s->sub = 2; s->ticks = 0; return false;
+        }
+        if (s->ticks < 10) return false;
+        shot("09a_turned_camera_framed");
+        s->sub = 0;
+        return true;
+      });
+      add("Compound pose: camera face click is drawn as authored, not a stale view", click_world("D_compound_camera_body", [=]() {
+          // Aim at the D435 body, which extends from the camera_link origin along +x and
+          // across y; stay clear of the origin marker (markers win over faces).
+          const auto origin = datum(frames(), camera, "origin");
+          const auto o = v3(origin.value("xyz")), x = v3(origin.value("x_axis")), n = v3(origin.value("normal"));
+          const std::array<double, 3> y{n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]};
+          Points points;
+          for (const auto & [along, depth] : std::vector<std::pair<double, double>>{{.025, .012}, {.03, .012}, {.035, .012}, {.025, .008},
+                 {.03, .016}, {.04, .012}, {-.025, .012}, {.025, -.012}, {-.025, -.012}, {.02, .014}})
+            points.push_back({o[0] + along * y[0] + depth * x[0], o[1] + along * y[1] + depth * x[1], o[2] + along * y[2] + depth * x[2]});
+          return points;
+        }, camera, QString(),
+        [=](const QJsonObject & pick) {
+          const auto pose = pick.value("raw").toObject().value("object_pose_world").toArray();
+          require(pose.size() == 6, "the camera face pick carried no drawn pose");
+          const auto cam = item(camera);
+          const double moved = std::hypot(pose[0].toDouble() - cam.x, pose[1].toDouble() - cam.y, pose[2].toDouble() - cam.z);
+          const double turned = turn(rpy_matrix(pose[3].toDouble(), pose[4].toDouble(), pose[5].toDouble(), true), rpy_matrix(cam.roll, cam.pitch, cam.yaw, true));
+          s->evidence["D_drawn_position_error_m"] = moved;
+          s->evidence["D_drawn_rotation_error_deg"] = turned * 180. / M_PI;
+          require(pick.value("reason_code").toString() != "STALE_VIEW", "compound camera pose refused as a stale view: " + pick.value("reason").toString());
+          require(moved < 1e-6 && turned < 1e-6, "Web3D draws the turned camera away from its authored pose");
+          require(pick.value("reason_code").toString() == "NO_PLANE_DATUMS", "camera body: " + pick.value("reason").toString());
+        }));
+      add("Compound pose: view, then cancel without changes", [=]() {
+        if (s->native) return true;
+        if (s->sub == 0) { if (s->ticks < 8) return false; shot("09b_turned_camera_face_pick"); mate()->cancel(); s->sub = 1; s->ticks = 0; return false; }
+        if (s->js_pending) return false;
+        if (s->sub == 1) {
+          if (s->ticks < 4) return false;
+          require(!window->mate_active(), "Mate did not cancel");
+          require(file_hash(s->scene + "/environment.yaml") == s->env_hash && window->mounting_items() == s->items_before, "the compound-pose check changed the cell");
+          js("window.__WORKCELL_EDITOR_API_V1__.fitScene()");  // back to the whole cell, as Mate does after a face view
+          s->sub = 2; s->ticks = 0; return false;
+        }
+        if (s->ticks < 8) return false;
+        s->sub = 0;
+        return true;
+      });
       add("Scenario C: start Mate from the context menu", [=]() {
         if (s->native) return true;
         window->apply_scene_selection(table, "", false, false);

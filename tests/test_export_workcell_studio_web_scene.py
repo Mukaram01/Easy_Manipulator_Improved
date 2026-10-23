@@ -1337,13 +1337,35 @@ def test_runtime_joint_values_preserve_canonical_home_and_legitimate_zero():
     assert exporter._runtime_initial_joint_values(xml) == {'arm_joint': 1.57, 'zero_joint': 0.0}
 
 
-def test_urdf_camera_relative_visual_preserves_ros_rotation_in_xyz_viewer():
+def test_urdf_camera_relative_visual_preserves_ros_rotation_in_ros_rpy_viewer():
     import math
     parent = {'xyz': [0.4, -0.25, 0.85], 'rpy': [0, 1.57, 0]}
     child = {'xyz': [0.4125118613, -0.25, 0.8351099588], 'rpy': [math.pi - 0.00079632679, 0, math.pi / 2]}
-    relative = exporter._parent_to_child_pose(parent, child, child_ros_rpy=True)
-    actual = exporter._matrix_multiply(exporter._rpy_xyz_matrix(parent['rpy']), exporter._rpy_xyz_matrix(relative['rpy']))
+    relative = exporter._parent_to_child_pose(parent, child)
+    actual = exporter._matrix_multiply(exporter._ros_rpy_matrix(parent['rpy']), exporter._ros_rpy_matrix(relative['rpy']))
     roll = child['rpy'][0]
     # Rz(pi/2) * Ry(0) * Rx(roll), the URDF fixed-axis convention.
     expected = [[0, -math.cos(roll), math.sin(roll)], [1, 0, 0], [0, math.sin(roll), math.cos(roll)]]
     assert max(abs(actual[r][c] - expected[r][c]) for r in range(3) for c in range(3)) < 1e-8
+
+
+def test_owner_relative_visual_uses_ros_rpy_for_compound_owner_rotation():
+    from extract_scene_urdf_visual_mesh_index import tf_from_xyz_rpy
+
+    # A camera pitched 90 degrees on a stand turned 15 degrees: the owner pose
+    # is ROS RPY and Web3D draws it with THREE.Euler(..., 'ZYX').
+    owner = {'xyz': [0.6, 0.1, 0.9], 'rpy': [0.0, 1.5707963267948966, 0.26]}
+    visual = {'xyz': [0.62, 0.08, 0.95], 'rpy': [0.3, -0.4, 1.2]}
+    for rpy in (owner['rpy'], visual['rpy'], [0.7, 0.2, -2.5]):
+        ros = [row[:3] for row in tf_from_xyz_rpy([0, 0, 0], rpy)[:3]]
+        assert max(abs(exporter._ros_rpy_matrix(rpy)[r][c] - ros[r][c]) for r in range(3) for c in range(3)) < 1e-12
+    relative = exporter._parent_to_child_pose(owner, visual)
+    drawn = exporter._matrix_multiply(exporter._ros_rpy_matrix(owner['rpy']), exporter._ros_rpy_matrix(relative['rpy']))
+    expected = exporter._ros_rpy_matrix(visual['rpy'])
+    assert max(abs(drawn[r][c] - expected[r][c]) for r in range(3) for c in range(3)) < 1e-9
+    drawn_xyz = [owner['xyz'][r] + sum(exporter._ros_rpy_matrix(owner['rpy'])[r][k] * relative['xyz'][k] for k in range(3)) for r in range(3)]
+    assert max(abs(drawn_xyz[r] - visual['xyz'][r]) for r in range(3)) < 1e-9
+    # Gimbal lock decomposes to an equivalent rotation.
+    locked = exporter._ros_rpy_from_matrix(exporter._ros_rpy_matrix(owner['rpy']))
+    again = exporter._ros_rpy_matrix(locked)
+    assert max(abs(again[r][c] - exporter._ros_rpy_matrix(owner['rpy'])[r][c]) for r in range(3) for c in range(3)) < 1e-9

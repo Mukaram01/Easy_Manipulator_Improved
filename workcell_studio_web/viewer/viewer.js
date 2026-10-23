@@ -884,7 +884,7 @@ function vector3ToDiagnostics(value) {
   return xyz ? { x: xyz[0], y: xyz[1], z: xyz[2] } : null;
 }
 function quaternionToDiagnostics(q) { return q ? { x: q.x, y: q.y, z: q.z, w: q.w } : null; }
-function eulerToDiagnostics(e) { return e ? { x: e.x, y: e.y, z: e.z, order: e.order || 'XYZ' } : null; }
+function eulerToDiagnostics(e) { return e ? { x: e.x, y: e.y, z: e.z, order: e.order || 'ZYX' } : null; }
 function worldUpDiagnosticsForObject(object) {
   if (!object || !THREE?.Vector3) return null;
   object.updateMatrixWorld(true);
@@ -1150,7 +1150,7 @@ function collectRenderedMeshDiagnostics() {
     const itemBounds = box3DiagnosticsForObject(rendered.object3d);
     const worldQuaternion = new THREE.Quaternion();
     rendered.object3d.getWorldQuaternion(worldQuaternion);
-    const worldEuler = new THREE.Euler().setFromQuaternion(worldQuaternion, 'XYZ');
+    const worldEuler = new THREE.Euler().setFromQuaternion(worldQuaternion, 'ZYX');
     const inferredUpAxis = worldUpDiagnosticsForObject(rendered.object3d);
     const expectedDimensions = expectedDimensionsOf(item);
     const meshLocal = meshLocalTransformOf(item);
@@ -1904,7 +1904,7 @@ function applyExportedOwnerRelativeVisualTransform(rendered, owner) {
   if (rendered.object3d.parent !== owner.object3d) owner.object3d.add(rendered.object3d);
   const pose = poseBlockOf(relative);
   rendered.object3d.position.copy(pose.xyz);
-  rendered.object3d.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  applyRosRpy(rendered.object3d, pose.rpy);
   // The rendered root follows the item's root-scale contract.  In particular,
   // generated URDF roots are unit scale; their mesh/unit conversion is applied
   // exactly once below this root by applyLoadedMeshScaleHandling().  Ignoring
@@ -1966,7 +1966,7 @@ function selectionIsEditable(rendered) {
   return Boolean(rendered && !rendered.readOnlyPick && !isTaskOnlyHelperItem(rendered.item) && !isDebugOverlayItem(rendered.item) && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
 }
 function transformFromObject(object) {
-  return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
+  return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: rosRpyOfObject(object) }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
 }
 function translationSnapValue() { const v = Number(el.translationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? v : null; }
 function rotationSnapRadians() { const v = Number(el.rotationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? THREE.MathUtils.degToRad(v) : null; }
@@ -1986,7 +1986,7 @@ function isFiniteTransform(transform) {
 function applyTransformToObject(object, transform) {
   if (!isFiniteTransform(transform)) return false;
   object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
-  object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, 'XYZ');
+  applyRosRpy(object, transform.pose.rpy);
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   return true;
 }
@@ -2696,15 +2696,33 @@ function makeSensorMarker(item) {
   applyFallbackRenderMetadata(group, item, 'sensor_fallback');
   return group;
 }
+// Every Web3D pose uses ROS/URDF fixed-axis roll-pitch-yaw, R = Rz(yaw)·Ry(pitch)·Rx(roll),
+// which is three.js Euler order 'ZYX': the same as the resolver, native Scene3D,
+// the generated URDF and RViz. Poses are written with applyRosRpy and read back
+// with rosRpyOfObject, so a pose round-trips exactly through the editor bridge.
 function applyRosRpy(object, rpy) {
   object.rotation.set(rpy.x, rpy.y, rpy.z, 'ZYX');
+}
+function rosRpyEuler(rpy) {
+  return new THREE.Euler(rpy.x, rpy.y, rpy.z, 'ZYX');
+}
+function rosRpyFromQuaternion(quaternion) {
+  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'ZYX');
+  return { x: euler.x, y: euler.y, z: euler.z };
+}
+function rosRpyOfObject(object) {
+  // The angles applyRosRpy wrote are returned exactly (gizmo edits keep the
+  // order). Anything rotated in another order is decomposed into ROS RPY.
+  const rotation = object.rotation;
+  if (rotation.order && rotation.order !== 'ZYX' && object.quaternion) return rosRpyFromQuaternion(object.quaternion);
+  return { x: rotation.x, y: rotation.y, z: rotation.z };
 }
 function applyPose(object, item) {
   const validation = validateRenderableTransform(item);
   if (!validation.valid) return false;
   const pose = validation.pose;
   object.position.copy(pose.xyz);
-  object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  applyRosRpy(object, pose.rpy);
   const s = validation.scale;
   object.scale.set(s.x, s.y, s.z);
   return true;
@@ -3013,7 +3031,7 @@ function matrixFromPoseBlock(source) {
   const pose = poseBlockOf(source || {});
   return new THREE.Matrix4().compose(
     pose.xyz,
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ')),
+    new THREE.Quaternion().setFromEuler(rosRpyEuler(pose.rpy)),
     new THREE.Vector3(1, 1, 1),
   );
 }
@@ -3022,8 +3040,8 @@ function poseBlockFromMatrix(matrix) {
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   matrix.decompose(xyz, quaternion, scale);
-  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
-  return { xyz, rpy: new THREE.Vector3(euler.x, euler.y, euler.z), matrix: matrix.clone() };
+  const rpy = rosRpyFromQuaternion(quaternion);
+  return { xyz, rpy: new THREE.Vector3(rpy.x, rpy.y, rpy.z), matrix: matrix.clone() };
 }
 function localFramePoseSource(frame) {
   return frame?.world_pose || frame?.world_transform || frame?.pose || frame?.transform || frame?.origin || frame;
@@ -3216,7 +3234,7 @@ function renderFrameDebugOverlays() {
     const axes = new THREE.AxesHelper(0.12);
     axes.name = `${name}_debug_frame_axes`;
     axes.position.copy(pose.xyz);
-    axes.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+    applyRosRpy(axes, pose.rpy);
     addDebugRenderedObject(axes, diagnosticDebugItem(`debug_frame_axes_${name}`, `${name} frame axes`));
   }
   for (const [parent, child] of [['wrist_3_link', 'tool0'], ['tool0', 'gripper_base_link']]) {
@@ -4684,7 +4702,7 @@ function jointOriginForChildItem(item, parentItem) {
 function applyPoseBlockToObject(object, poseSource) {
   const pose = poseBlockOf(poseSource || {});
   object.position.copy(pose.xyz);
-  object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  applyRosRpy(object, pose.rpy);
   object.scale.set(1, 1, 1);
 }
 function assemblyGroupKey(item) {
@@ -5594,7 +5612,8 @@ function composePlacementOrientation() {
     if (state.placement.previewRoot?.rotation) state.placement.previewRoot.rotation.z = state.placement.yaw;
     return null;
   }
-  const presetQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(preset.roll, preset.pitch, 0, 'XYZ'));
+  // Rz(yaw)·Ry(pitch)·Rx(roll): the world-Z yaw composes into one ROS RPY.
+  const presetQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(preset.roll, preset.pitch, 0, 'ZYX'));
   const yawQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), state.placement.yaw);
   state.placement.orientationQuaternion = yawQuaternion.multiply(presetQuaternion);
   state.placement.previewRoot?.quaternion?.copy?.(state.placement.orientationQuaternion);
@@ -5603,8 +5622,8 @@ function composePlacementOrientation() {
 function placementCanonicalRpy() {
   const quaternion = state.placement.orientationQuaternion || composePlacementOrientation();
   if (!quaternion || !THREE?.Euler) return { roll: 0, pitch: 0, yaw: state.placement.yaw };
-  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
-  return { roll: euler.x, pitch: euler.y, yaw: euler.z };
+  const rpy = rosRpyFromQuaternion(quaternion);
+  return { roll: rpy.x, pitch: rpy.y, yaw: rpy.z };
 }
 function placementRequest(point, repeat) {
   return { ...point, ...placementCanonicalRpy(), repeat };
@@ -7121,9 +7140,9 @@ function buildMateGhost(entry) {
     if (node.isMesh) { node.material = material; node.castShadow = false; node.receiveShadow = false; node.renderOrder = 997; }
     else if (node.isLine || node.isLineSegments || node.isPoints || node.isSprite) node.visible = false;
   });
-  // The viewer's own pose convention, so the ghost is exactly what Apply will show.
+  // The resolver's ROS RPY, drawn the way applyPose draws it, so the ghost is exactly what Apply will show.
   ghost.position.set(Number(xyz[0]), Number(xyz[1]), Number(xyz[2]));
-  ghost.rotation.set(Number(rpy[0]), Number(rpy[1]), Number(rpy[2]), 'XYZ');
+  applyRosRpy(ghost, { x: Number(rpy[0]), y: Number(rpy[1]), z: Number(rpy[2]) });
   ghost.scale.copy(rendered.object3d.scale);
   (rendered.object3d.parent || state.three.scene).add(ghost);
   return ghost;
