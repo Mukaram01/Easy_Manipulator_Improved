@@ -271,6 +271,9 @@ public:
     double roll, double pitch, double yaw);
   void set_authoring_item_metadata(
     const QString & id, const QString & display_name, const QString & semantic_role);
+  // Live-session addItem payload. A library mesh outside the browser-served
+  // roots is staged into the exporter's cache so Web3D draws it immediately.
+  QJsonObject live_authoring_item_payload(const PreviewItem & item);
   void add_authoring_item(const PreviewItem & item);
   void duplicate_authoring_item(const QString & source_id, const PreviewItem & item);
   void remove_authoring_item(const QString & id);

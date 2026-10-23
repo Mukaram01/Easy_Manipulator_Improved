@@ -218,6 +218,8 @@ add_executable(workcell_builder
     include/visual_mesh_source_resolver.hpp
     include/mate_pick.hpp
     src_mate_pick.cpp
+    include/live_mesh_staging.hpp
+    src_live_mesh_staging.cpp
     gui/mate_tool_controller.cpp
     gui/mate_tool_controller.hpp
     gui/mate_tool_panel.cpp
@@ -459,6 +461,7 @@ if(BUILD_TESTING)
     test/scene_preview_widget_ui_test.cpp
     gui/scene_load_diagnostic_context.cpp
     gui/scene_preview_widget.cpp
+    src_live_mesh_staging.cpp
     gui/robot_home_yaml_io.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
@@ -522,6 +525,11 @@ if(BUILD_TESTING)
   if(TARGET workcell_mate_pick_test)
     target_include_directories(workcell_mate_pick_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(workcell_mate_pick_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_live_mesh_staging_test test/live_mesh_staging_test.cpp src_live_mesh_staging.cpp)
+  if(TARGET workcell_live_mesh_staging_test)
+    target_include_directories(workcell_live_mesh_staging_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_live_mesh_staging_test Qt5::Core)
   endif()
   ament_add_gtest(workcell_mate_tool_controller_test test/mate_tool_controller_test.cpp
     gui/mate_tool_controller.cpp gui/mate_tool_controller.hpp src_mate_pick.cpp)
@@ -900,6 +908,7 @@ if(BUILD_TESTING)
     save_projection_failure_test.cpp
     datum_mating_text_test.cpp
     mate_pick_test.cpp
+    live_mesh_staging_test.cpp
     mate_tool_controller_test.cpp
     support_contact_policy_test.cpp
   )

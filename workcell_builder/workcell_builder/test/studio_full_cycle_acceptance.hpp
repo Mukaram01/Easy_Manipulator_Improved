@@ -863,7 +863,7 @@ public:
       const QString & output, const QString & scene_name, bool reopen, QSize window_size = QSize(1366, 768)) {
     struct Session {
       int step = 0, ticks = 0, sub = 0, candidate = 0;
-      QString scene, stand;
+      QString scene, stand, stand_mesh_uri;
       QJsonObject evidence;
       bool js_pending = false; QVariant js_result;
       QPoint target; qint64 pick_seq_before = 0;
@@ -954,6 +954,7 @@ public:
     auto click_world = [=](const QString & tag, std::function<Points()> candidate_fn, const QString & expect_asset,
                            const QString & expect_datum, std::function<void(const QJsonObject &)> check) {
       auto local = std::make_shared<int>(0);
+      auto passes = std::make_shared<int>(0);
       auto candidates_ptr = std::make_shared<Points>();
       return [=]() -> bool {
         if (s->native) return true;  // the native fallback has no face picking (see the Native steps)
@@ -965,6 +966,9 @@ public:
               *candidates_ptr = candidate_fn();
               if (candidates_ptr->empty()) { s->evidence[tag + "_skipped"] = true; return true; }
             }
+            // The viewer redraws datum markers after each Mate step change; a hover
+            // that races that refresh is retried (every attempt stays in the evidence).
+            if (s->candidate >= int(candidates_ptr->size()) && ++*passes < 3) { s->candidate = 0; s->sub = 5; *local = 0; return false; }
             require(s->candidate < int(candidates_ptr->size()), tag + ": no candidate point resolved to " + expect_asset + " " + expect_datum);
             const auto p = (*candidates_ptr)[s->candidate];
             js(QString("window.__WORKCELL_EDITOR_API_V1__.projectWorldPoint([%1,%2,%3])").arg(p[0], 0, 'g', 12).arg(p[1], 0, 'g', 12).arg(p[2], 0, 'g', 12));
@@ -1020,8 +1024,12 @@ public:
             const auto last = picks.isEmpty() ? QJsonObject() : picks.last().toObject().value("resolution").toObject();
             s->evidence[tag + "_pick"] = last;
             check(last);
-            s->sub = 0; s->candidate = 0;
+            s->sub = 0; s->candidate = 0; *passes = 0;
             return true;
+          }
+          case 5: {
+            if (++*local < 15) return false;  // let the marker overlay settle, then hover again
+            s->sub = 0; return false;
           }
         }
         return false;
@@ -1214,16 +1222,74 @@ public:
         for (const auto & p : window->all_scene_preview_items_) if (p.catalog_asset_id == "camera_stand") s->stand = p.id;
         require(!s->stand.isEmpty(), "placed camera stand has no scene ID");
         s->evidence["stand"] = s->stand;
-        window->save_layout_button_->click();
         return true;
       });
-      // Save keeps the live session without regenerating the Product View, and the
-      // live overlay draws a newly placed library fixture only as a placeholder:
-      // run the Builder's own post-save Product View refresh so the 3D view is the
-      // fresh export with the stand's staged mesh.
-      add("stand saved; refresh the Product View", [=]() {
+      // The placed library stand draws its real mesh in the live session at once,
+      // before Save and without a Product View refresh: Builder stages the catalog
+      // mesh into the exporter's cache and hands the viewer that URI. A page
+      // marker proves Save keeps the same live page (no reload, no regeneration).
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+      const QString library_stand_mesh = "workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl";
+      auto stand_status_script = [=]() {
+        const QString id = QString::fromUtf8(QJsonDocument(QJsonArray{s->stand}).toJson(QJsonDocument::Compact)).mid(1).chopped(1);
+        return QString("(()=>{const v=window.__WORKCELL_VIEWER_STATUS__||{};"
+          "const a=window.__WORKCELL_EDITOR_API_V1__;return {object:(v.rendered_object_statuses||[]).find(o=>o.id===%1)||null,"
+          "marker:window.__wcsLivePageMarker||'',placement:a&&a.getPlacementState?a.getPlacementState():null};})()").arg(id);
+      };
+      auto stand_live_mesh = [=](const QJsonObject & status) {
+        const auto object = status.value("object").toObject();
+        if (object.value("render_status").toString() != "mesh_loaded") return QJsonObject();
+        require(object.value("mesh_uri").toString() == s->stand_mesh_uri, "the live stand draws " + object.value("mesh_uri").toString() + ", not the staged library mesh");
+        require(!object.value("fallback_visible").toBool(), "the live stand still shows its placeholder");
+        return object;
+      };
+#endif
+      add("stand drawn live with its staged mesh before Save", [=]() {
+        require(window->layout_dirty_, "placing the stand did not mark the layout dirty");
+        if (s->native) return true;
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+        if (s->js_pending) return false;
+        if (s->sub == 0) {
+          s->stand_mesh_uri = "build/workcell_studio_web_scene/assets/" + window->scene_preview_widget_->preview_context().scene_id + "/" + library_stand_mesh;
+          js(stand_status_script()); s->sub = 1; return false;
+        }
+        const auto status = QJsonObject::fromVariantMap(s->js_result.toMap());
+        const auto object = stand_live_mesh(status);
+        if (object.isEmpty()) { s->sub = 0; return false; }  // still loading; the runner times out
+        QJsonArray staging_log;
+        for (const auto & line : window->studio_log_->toPlainText().split('\n'))
+          if (line.contains("Product View: staged the mesh of live item " + s->stand) || line.contains("placement preview of camera_stand")) staging_log.append(line);
+        s->evidence["stand_staging_log"] = staging_log;
+        s->evidence["stand_placement_state"] = status.value("placement");
+        const QString repo = window->detect_workspace_root() + "/src/easy_manipulation_deployment/";
+        const QByteArray staged = file_hash(repo + s->stand_mesh_uri), library = file_hash(repo + library_stand_mesh);
+        require(!staged.isEmpty() && staged == library, "the staged stand mesh differs from the Asset Library mesh");
+        s->evidence["stand_live_render"] = object;
+        s->evidence["stand_staged_mesh"] = QJsonObject{{"uri", s->stand_mesh_uri}, {"library_mesh", library_stand_mesh}, {"sha256", QString(staged)}};
+        js("window.__wcsLivePageMarker='stand-placed'");
+        shot("08p_stand_placed_live_mesh");
+#endif
+        return true;
+      });
+      const QString retained = "live authored session retained without Product View regeneration";
+      auto retained_saves = std::make_shared<int>(0);
+      add("Save keeps the live session and the stand mesh", [=]() {
+        if (s->sub == 0) {
+          *retained_saves = window->studio_log_->toPlainText().count(retained);
+          window->save_layout_button_->click(); s->sub = 1; s->ticks = 0; return false;
+        }
         if (s->ticks < 20 || window->layout_dirty_) return false;
-        if (!s->native) require(window->scene_preview_widget_->request_post_save_product_view_refresh() > 0, "Product View refresh was not requested");
+        require(window->studio_log_->toPlainText().count(retained) > *retained_saves, "Save did not keep the live authored session");
+        if (s->native) return true;
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+        if (s->js_pending) return false;
+        if (s->sub == 1) { js(stand_status_script()); s->sub = 2; return false; }
+        const auto status = QJsonObject::fromVariantMap(s->js_result.toMap());
+        require(status.value("marker").toString() == "stand-placed", "Save reloaded the Product View page");
+        const auto object = stand_live_mesh(status);
+        require(!object.isEmpty(), "the stand mesh was lost after Save");
+        s->evidence["stand_after_save_render"] = object;
+#endif
         return true;
       });
       add("stand drawn", [=]() {
@@ -1430,23 +1496,23 @@ public:
         shot("08a_stand_top_face_view");
         return true;
       });
-      // The Asset Library camera stand is not in the exported Web3D scene (it is
-      // drawn as a live placeholder); a face click on it must be refused, and
-      // its reviewed top datum marker still picks the exact frame.
-      add("Scenario B: stand top face click (placeholder or mesh)", click_world("B_stand_face", fixed({{.15 + .03, -.35 + .03, 1.2}, {.15 - .03, -.35 + .03, 1.2}, {.15 + .03, -.35 - .03, 1.2}, {.15 - .03, -.35 - .03, 1.2}, {.15, -.35, 1.19}}), QString(), QString(),
+      // A geometry click on the live stand's top face (its staged library mesh,
+      // wound outward) resolves to the reviewed top datum. The points lie between
+      // the 5 cm candidate marker and the 8 cm face edge, so they hit the face.
+      add("Scenario B: stand top face click matches the top datum", click_world("B_stand_face", fixed({{.15 + .03, -.35 + .03, 1.2}, {.15 - .03, -.35 + .03, 1.2},
+          {.15 + .03, -.35 - .03, 1.2}, {.15 - .03, -.35 - .03, 1.2}, {.15 + .0335, -.35, 1.2}, {.15, -.35 + .0335, 1.2}}), QString(), QString(),
         [=](const QJsonObject & pick) {
           require(pick.value("asset_id").toString() == s->stand, "stand face click hit " + pick.value("asset_id").toString());
-          // The library stand placeholder STL is wound inside out (all 12 normals point
-          // inward), so Web3D culls its outer faces: a click on the top reaches an
-          // inner wall, which is refused. A placeholder shape is refused as well.
-          const QString code = pick.value("reason_code").toString();
-          require(code == "PLACEHOLDER_GEOMETRY" || code == "NO_MATCHING_DATUM" ||
-            (pick.value("valid").toBool() && pick.value("datum").toString() == "top"), "stand face: " + pick.value("reason").toString());
-          s->evidence["B_stand_face_outcome"] = code;
-          if (!pick.value("valid").toBool()) {
-            require(!mate()->parent() && mate()->step() == workcell_builder::MateToolController::Step::PickParent, "a placeholder click changed the mate");
-            shot("08b_stand_face_refused");
-          }
+          const auto raw = pick.value("raw").toObject();
+          s->evidence["B_stand_face_outcome"] = pick.value("reason_code");
+          require(pick.value("valid").toBool() && pick.value("reason_code").toString() == "MATCHED" && pick.value("datum").toString() == "top",
+            "stand top face: " + pick.value("reason").toString());
+          require(raw.value("geometry").toString() == "surface" && raw.value("geometry_source").toString().endsWith(s->stand_mesh_uri),
+            "stand top face was not a surface hit on the staged mesh: " + raw.value("geometry_source").toString());
+          require(pick.value("plane_distance_m").toDouble() <= 1e-3 && pick.value("normal_angle_deg").toDouble() <= 1.,
+            "stand top face is off its datum plane");
+          require(mate()->parent() && mate()->parent()->asset_id == s->stand && mate()->parent()->datum == "top", "the matched face did not become the parent datum");
+          shot("08b_stand_top_face_matched");
         }));
       add("Scenario B: stand top datum marker", click_world("B_stand_top", [=]() {
           if (mate()->parent()) return Points{};
