@@ -2386,7 +2386,7 @@ def main():
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
-            from destination_binding import WALLS_OBJECT_ID, walls_scene_diff
+            from destination_binding import wall_object_ids, walls_scene_diff
             from simulator_backend import digest
             receipt_bytes = Path(args.simulator_receipt).read_bytes()
             if digest(receipt_bytes) != summary['backend_identity']['receipt_sha256']:
@@ -2394,7 +2394,7 @@ def main():
             destination_binding = json.loads(receipt_bytes).get('destination_geometry_binding')
             if destination_binding is not None:
                 apply(walls_scene_diff(destination_binding))
-                summary['physical_destination_walls'] = dict(object_id=WALLS_OBJECT_ID,
+                summary['physical_destination_walls'] = dict(object_ids=wall_object_ids(destination_binding),
                     walls=destination_binding['walls'], receipt_sha256=summary['backend_identity']['receipt_sha256'])
         initial = scene_now()
         initial.robot_state.is_diff = False

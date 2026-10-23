@@ -90,20 +90,25 @@ def test_wall_binding_fails_closed(tmp_path, wall, message):
         bind_destination_geometry(xml, manifest(tmp_path, [ITEM]))
 
 
-def test_walls_scene_diff_adds_one_object_with_a_box_per_bound_wall():
-    from destination_binding import WALLS_OBJECT_ID, walls_scene_diff
+def test_walls_scene_diff_adds_one_convex_box_object_per_bound_wall():
+    # One object per wall: the controller certificate bounds a multi-shape body by its
+    # joint projections, so one four-wall object made every place descent UNCERTIFIED
+    # (PRECISION_OR_DEPTH_LIMIT ~0.11 s into PREPLAN_PLACE, LENLEG 2026-10-24).
+    from destination_binding import WALL_OBJECT_PREFIX, wall_object_ids, walls_scene_diff
     from moveit_msgs.msg import CollisionObject
     from shape_msgs.msg import SolidPrimitive
     walls = [dict(collision='wall_y_plus', xyz=[.45, .285, .145], size_m=[.24, .01, .10]),
              dict(collision='wall_y_minus', xyz=[.45, .155, .145], size_m=[.24, .01, .10])]
     scene = walls_scene_diff(dict(walls=walls))
-    assert scene.is_diff and len(scene.world.collision_objects) == 1
-    item = scene.world.collision_objects[0]
-    assert (item.id, item.operation, item.header.frame_id) == (WALLS_OBJECT_ID, CollisionObject.ADD, 'world')
-    assert [(p.type, list(p.dimensions)) for p in item.primitives] == [(SolidPrimitive.BOX, [.24, .01, .10])] * 2
-    assert [(p.position.x, p.position.y, p.position.z, p.orientation.w) for p in item.primitive_poses] == [
-        (.45, .285, .145, 1.), (.45, .155, .145, 1.)]
-    for bad in ({}, dict(walls=[]), dict(walls=[dict(walls[0], size_m=[.24, 0., .1])])):
+    assert scene.is_diff and wall_object_ids(dict(walls=walls)) == [
+        WALL_OBJECT_PREFIX + 'wall_y_plus', WALL_OBJECT_PREFIX + 'wall_y_minus']
+    assert [o.id for o in scene.world.collision_objects] == wall_object_ids(dict(walls=walls))
+    for item, wall in zip(scene.world.collision_objects, walls):
+        assert (item.operation, item.header.frame_id) == (CollisionObject.ADD, 'world')
+        assert [(p.type, list(p.dimensions)) for p in item.primitives] == [(SolidPrimitive.BOX, wall['size_m'])]
+        pose, = item.primitive_poses
+        assert [pose.position.x, pose.position.y, pose.position.z, pose.orientation.w] == [*wall['xyz'], 1.]
+    for bad in ({}, dict(walls=[]), dict(walls=[dict(walls[0], size_m=[.24, 0., .1])]), dict(walls=[walls[0], walls[0]])):
         with pytest.raises(ValueError):walls_scene_diff(bad)
 
 

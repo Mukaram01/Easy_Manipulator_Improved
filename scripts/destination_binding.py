@@ -13,7 +13,7 @@ The physics walls are recorded too. They bound a 0.24 x 0.12 m cavity (the usabl
 placement box), narrower than the authored bin mesh's ~0.195 m inner width, so a
 plan certified against the mesh alone can drive the gripper into a physical wall
 (LENLEG 2026-10-23 full-cycle: finger2 knuckle on wall_y_plus during place).
-Simulator planning adds them as one extra collision object (walls_scene_diff).
+Simulator planning adds each wall as its own BOX collision object (walls_scene_diff).
 """
 import json
 import math
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from simulator_backend import digest
 
-WALLS_OBJECT_ID = 'workcell::target_bin_physics_walls'
+WALL_OBJECT_PREFIX = 'workcell::target_bin_physics_'
 
 
 def bind_destination_geometry(xml, manifest_path):
@@ -90,11 +90,18 @@ def bind_destination_geometry(xml, manifest_path):
         raise ValueError('destination geometry binding rejected: ' + str(exc)) from exc
 
 
+def wall_object_ids(binding):
+    return [WALL_OBJECT_PREFIX + wall['collision'] for wall in (binding or {}).get('walls') or []]
+
+
 def walls_scene_diff(binding):
-    """The bound physics walls as one ADD collision object (BOX per wall, world frame).
+    """The bound physics walls as ADD collision objects, one world-frame BOX each.
 
     Planning then certifies against the union of the authored bin mesh and the walls
     the simulator will enforce. The floor is not added: it is the bound authored floor.
+    One object per wall: the controller certificate bounds a multi-shape body by its
+    joint projections (its convex hull), so four walls in one object enclose the
+    cavity and a gripper inside it can never be certified clear.
     """
     from geometry_msgs.msg import Pose
     from moveit_msgs.msg import CollisionObject, PlanningScene
@@ -102,20 +109,22 @@ def walls_scene_diff(binding):
     walls = (binding or {}).get('walls')
     if not isinstance(walls, list) or not walls:
         raise ValueError('destination binding carries no physics walls')
-    item = CollisionObject(id=WALLS_OBJECT_ID, operation=CollisionObject.ADD)
-    item.header.frame_id = 'world'
-    item.pose.orientation.w = 1.0
-    for wall in walls:
+    scene = PlanningScene(is_diff=True)
+    for wall, object_id in zip(walls, wall_object_ids(binding)):
         xyz, size = wall['xyz'], wall['size_m']
         if (len(xyz) != 3 or len(size) != 3 or not all(math.isfinite(float(v)) for v in [*xyz, *size]) or
                 min(float(v) for v in size) <= 0):
             raise ValueError('invalid bound destination wall: ' + str(wall.get('collision')))
+        item = CollisionObject(id=object_id, operation=CollisionObject.ADD)
+        item.header.frame_id = 'world'
+        item.pose.orientation.w = 1.0
         pose = Pose(); pose.orientation.w = 1.0
         pose.position.x, pose.position.y, pose.position.z = (float(v) for v in xyz)
-        item.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in size]))
-        item.primitive_poses.append(pose)
-    scene = PlanningScene(is_diff=True)
-    scene.world.collision_objects = [item]
+        item.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in size])]
+        item.primitive_poses = [pose]
+        scene.world.collision_objects.append(item)
+    if len({o.id for o in scene.world.collision_objects}) != len(walls):
+        raise ValueError('ambiguous bound destination wall identity')
     return scene
 
 
