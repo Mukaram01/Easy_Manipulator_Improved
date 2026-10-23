@@ -8,6 +8,12 @@ carries a static box floor. The binding records the one floor height both contac
 checkers use and refuses a world whose physics floor does not sit at the authored
 destination origin, so a placed part cannot rest below the planning floor
 (stage_a0_sparse before 2026-10-20: 5 mm low).
+
+The physics walls are recorded too. They bound a 0.24 x 0.12 m cavity (the usable
+placement box), narrower than the authored bin mesh's ~0.195 m inner width, so a
+plan certified against the mesh alone can drive the gripper into a physical wall
+(LENLEG 2026-10-23 full-cycle: finger2 knuckle on wall_y_plus during place).
+Simulator planning adds them as one extra collision object (walls_scene_diff).
 """
 import json
 import math
@@ -15,6 +21,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from simulator_backend import digest
+
+WALLS_OBJECT_ID = 'workcell::target_bin_physics_walls'
 
 
 def bind_destination_geometry(xml, manifest_path):
@@ -60,11 +68,55 @@ def bind_destination_geometry(xml, manifest_path):
         if math.dist(fp[:2], xyz[:2]) > 1e-6 or abs(floor_z - xyz[2]) > 1e-6:
             raise ValueError('physics destination floor top %.6f/(%.4f,%.4f) differs from authored destination origin %.6f/(%.4f,%.4f)'
                              % (floor_z, fp[0], fp[1], xyz[2], xyz[0], xyz[1]))
+        walls = []
+        for collision in link.findall('collision'):
+            if collision is floor:
+                continue
+            name = collision.get('name'); pose_element = collision.find('pose'); geometry = collision.find('geometry')
+            if pose_element is not None and pose_element.attrib:
+                raise ValueError('destination wall pose must be expressed in the world frame without attributes')
+            wp = [float(v) for v in (collision.findtext('pose') or '0 0 0 0 0 0').split()]
+            ws = [float(v) for v in collision.findtext('geometry/box/size', '').split()]
+            if (not name or geometry is None or len(list(geometry)) != 1 or geometry.find('box') is None or
+                    len(wp) != 6 or any(abs(v) > 1e-12 for v in wp[3:]) or len(ws) != 3 or min(ws) <= 0):
+                raise ValueError('destination walls must be named axis-aligned boxes')
+            walls.append(dict(collision=name, xyz=wp[:3], size_m=ws))
+        if not walls or len({w['collision'] for w in walls}) != len(walls):
+            raise ValueError('destination walls missing or ambiguous')
         return dict(manifest_path=str(path), manifest_sha256=digest(raw), object_id=item['id'],
                     model='target_bin_physics', link='bin_link', collision='floor', floor_z=floor_z,
-                    floor_xyz=fp[:3], floor_size_m=size, pose_xyz=xyz)
+                    floor_xyz=fp[:3], floor_size_m=size, pose_xyz=xyz, walls=walls)
     except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError) as exc:
         raise ValueError('destination geometry binding rejected: ' + str(exc)) from exc
+
+
+def walls_scene_diff(binding):
+    """The bound physics walls as one ADD collision object (BOX per wall, world frame).
+
+    Planning then certifies against the union of the authored bin mesh and the walls
+    the simulator will enforce. The floor is not added: it is the bound authored floor.
+    """
+    from geometry_msgs.msg import Pose
+    from moveit_msgs.msg import CollisionObject, PlanningScene
+    from shape_msgs.msg import SolidPrimitive
+    walls = (binding or {}).get('walls')
+    if not isinstance(walls, list) or not walls:
+        raise ValueError('destination binding carries no physics walls')
+    item = CollisionObject(id=WALLS_OBJECT_ID, operation=CollisionObject.ADD)
+    item.header.frame_id = 'world'
+    item.pose.orientation.w = 1.0
+    for wall in walls:
+        xyz, size = wall['xyz'], wall['size_m']
+        if (len(xyz) != 3 or len(size) != 3 or not all(math.isfinite(float(v)) for v in [*xyz, *size]) or
+                min(float(v) for v in size) <= 0):
+            raise ValueError('invalid bound destination wall: ' + str(wall.get('collision')))
+        pose = Pose(); pose.orientation.w = 1.0
+        pose.position.x, pose.position.y, pose.position.z = (float(v) for v in xyz)
+        item.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in size]))
+        item.primitive_poses.append(pose)
+    scene = PlanningScene(is_diff=True)
+    scene.world.collision_objects = [item]
+    return scene
 
 
 def augment_spec(output, manifest_path):

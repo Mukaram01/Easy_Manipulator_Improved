@@ -69,3 +69,61 @@ def test_launch_applies_the_binding_after_prepare_without_touching_the_evidence_
     launch = (REPO / 'scenes/ur5_2f_test/launch/demo.launch.py').read_text()
     assert "destination_binding.augment_spec(output, collision_manifest_path)" in launch
     assert 'destination' not in (REPO / 'scripts/simulator_backend.py').read_text()
+
+
+def test_binding_records_every_physics_wall_as_a_world_axis_aligned_box(tmp_path):
+    from destination_binding import bind_destination_geometry
+    binding = bind_destination_geometry(world(), manifest(tmp_path, [ITEM]))
+    assert binding['walls'] == [dict(collision='wall_x_minus', xyz=[.325, .22, .145], size_m=[.01, .14, .10])]
+
+
+@pytest.mark.parametrize('wall,message', [
+    ('<collision name="wall_x_plus"><pose>0.575 0.22 0.145 0 0 0.1</pose><geometry><box><size>0.01 0.14 0.10</size></box></geometry></collision>', 'axis-aligned'),
+    ('<collision name="wall_x_plus"><pose>0.575 0.22 0.145 0 0 0</pose><geometry><cylinder><radius>.01</radius><length>.1</length></cylinder></geometry></collision>', 'axis-aligned'),
+    ('<collision name="wall_x_plus"><pose relative_to="bin_link">0.575 0.22 0.145 0 0 0</pose><geometry><box><size>0.01 0.14 0.10</size></box></geometry></collision>', 'world frame'),
+    ('<collision name="wall_x_minus"><pose>0.575 0.22 0.145 0 0 0</pose><geometry><box><size>0.01 0.14 0.10</size></box></geometry></collision>', 'ambiguous'),
+])
+def test_wall_binding_fails_closed(tmp_path, wall, message):
+    from destination_binding import bind_destination_geometry
+    xml = world().replace('</link></model>', wall + '</link></model>')
+    with pytest.raises(ValueError, match=message):
+        bind_destination_geometry(xml, manifest(tmp_path, [ITEM]))
+
+
+def test_walls_scene_diff_adds_one_object_with_a_box_per_bound_wall():
+    from destination_binding import WALLS_OBJECT_ID, walls_scene_diff
+    from moveit_msgs.msg import CollisionObject
+    from shape_msgs.msg import SolidPrimitive
+    walls = [dict(collision='wall_y_plus', xyz=[.45, .285, .145], size_m=[.24, .01, .10]),
+             dict(collision='wall_y_minus', xyz=[.45, .155, .145], size_m=[.24, .01, .10])]
+    scene = walls_scene_diff(dict(walls=walls))
+    assert scene.is_diff and len(scene.world.collision_objects) == 1
+    item = scene.world.collision_objects[0]
+    assert (item.id, item.operation, item.header.frame_id) == (WALLS_OBJECT_ID, CollisionObject.ADD, 'world')
+    assert [(p.type, list(p.dimensions)) for p in item.primitives] == [(SolidPrimitive.BOX, [.24, .01, .10])] * 2
+    assert [(p.position.x, p.position.y, p.position.z, p.orientation.w) for p in item.primitive_poses] == [
+        (.45, .285, .145, 1.), (.45, .155, .145, 1.)]
+    for bad in ({}, dict(walls=[]), dict(walls=[dict(walls[0], size_m=[.24, 0., .1])])):
+        with pytest.raises(ValueError):walls_scene_diff(bad)
+
+
+def test_committed_worlds_bind_the_walls_that_stopped_the_lenleg_full_cycle():
+    # LENLEG 2026-10-23 full-cycle: during place, gripper_finger2_knuckle_link touched
+    # wall_y_plus at (0.5695, 0.28, 0.1946); the authored mesh's inner +y face at that
+    # height is at y~0.318, so only the bound physics wall makes MoveIt see it.
+    from destination_binding import bind_destination_geometry
+    manifest_path = REPO / 'scenes/ur5_2f_test/config/moveit_collision_objects.yaml'
+    contact = [.5695, .28, .1946]
+    for name in ('stage_a0_sparse.sdf', 'stage_a0.sdf'):
+        walls = bind_destination_geometry((REPO / 'scenes/ur5_2f_test/worlds' / name).read_text(), manifest_path)['walls']
+        assert {w['collision'] for w in walls} == {'wall_x_minus', 'wall_x_plus', 'wall_y_minus', 'wall_y_plus'}
+        hit = [w['collision'] for w in walls if all(abs(c - x) <= s / 2 + 1e-4 for c, x, s in zip(contact, w['xyz'], w['size_m']))]
+        assert hit == ['wall_y_plus']
+
+
+def test_simulator_planning_adds_the_receipt_walls_before_the_initial_scene_is_read():
+    source = (REPO / 'scripts/perceived_object_grasp_execute.py').read_text()
+    block = source[source.index("stage('UPDATE_PLANNING_SCENE')"):source.index("evidence_scene('planning_scene_before', initial)")]
+    assert "if args.backend == 'simulator':" in block
+    assert block.index("digest(receipt_bytes) != summary['backend_identity']['receipt_sha256']") < block.index("apply(walls_scene_diff(destination_binding))")
+    assert block.index("apply(walls_scene_diff(destination_binding))") < block.rindex("initial = scene_now()")
