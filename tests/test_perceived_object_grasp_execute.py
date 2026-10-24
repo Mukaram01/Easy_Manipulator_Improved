@@ -1720,3 +1720,12 @@ def test_identity_graph_waits_for_the_controller_manager_without_relaxing_exactl
     from simulator_backend import live_identity
     import inspect
     assert "manager_count=sum(n=='controller_manager' for n,ns in nodes)" in inspect.getsource(live_identity)
+
+
+def test_full_cycle_judges_home_only_after_the_measured_stationary_window():
+    # LENLEG 2026-10-24: HOME succeeded while the pan joint was still 1.1 mrad short and moving.
+    source=SCRIPT.read_text()
+    block=source[source.index("# Final measured acceptance: physics state"):source.index("full-cycle measured gripper is not open")]
+    assert block.index("if not wait_stopped(monitor_contacts=True):") < block.index("final_sample=measurements.fresh()")
+    assert "abs(final_joints[name][0]-value)>.001" in block                      # home tolerance unchanged
+    assert "summary['final_home_stop']" in block

@@ -2838,6 +2838,13 @@ def main():
                 raise RuntimeError('bounded simulator trial ended without an accepted result')
             # Final measured acceptance: physics state, planning state, robot home,
             # destination containment and release separation must all agree.
+            # HOME succeeds on the controller's goal tolerance while the position loop
+            # still converges (LENLEG 2026-10-24: pan 1.1 mrad short at 0.011 rad/s at
+            # the check, 0.08 mrad 0.5 s later). Judge home after the measured stop.
+            if not wait_stopped(monitor_contacts=True):
+                raise RuntimeError('full-cycle final home did not reach a measured stationary state')
+            summary['final_home_stop']=dict(stopped_measurement=copy.deepcopy(summary['stopped_measurement']),
+                                            stopped_window=copy.deepcopy(summary['stopped_window']))
             final_sample=measurements.fresh();final_joints=measurements.joints(final_sample)
             for name,value in home.items():
                 if name not in final_joints or abs(final_joints[name][0]-value)>.001:
