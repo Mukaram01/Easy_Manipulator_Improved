@@ -352,6 +352,15 @@ def _launch_setup(context):
         if hold_profile is not None:
             robot_description_config, hold_binding = end_effector_hold.bind_source_description(
                 robot_description_config, hold_profile)
+        # Physics contact geometry declared by the same capability record: primitive pads
+        # replace the concave fingertip meshes in the simulator derivation only.
+        import simulation_collision
+        from capability_registry import load_capability_registry
+        collision_binding = None
+        if hold_profile is not None:
+            record = load_capability_registry().get(hold_profile.capability_id)
+            robot_description_config, collision_binding = simulation_collision.bind_from_capability(
+                robot_description_config, record.payload)
         robot_description_config, controllers_config_path, simulator_spec = simulator_backend.prepare(
             robot_description_config, controllers_config_path,
             LaunchConfiguration("simulator_world").perform(context),
@@ -359,6 +368,8 @@ def _launch_setup(context):
             collision_manifest_path=collision_manifest_path)
         if hold_binding is not None:
             simulator_spec['end_effector_hold'] = end_effector_hold.augment_spec(output, hold_binding)
+        if collision_binding is not None:
+            simulator_spec['simulator_collision_primitives'] = simulation_collision.augment_spec(output, collision_binding)
         # Destination (bin floor) binding for the contact guard; kept outside the
         # evidence-bound simulator_backend module. Fails closed on a floor mismatch.
         import destination_binding

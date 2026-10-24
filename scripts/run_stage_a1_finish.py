@@ -74,7 +74,7 @@ REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-
 FAST_TEST_FILES=(
     "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
-    "tests/test_end_effector_hold.py",
+    "tests/test_end_effector_hold.py","tests/test_simulation_collision.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
     "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
     "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",

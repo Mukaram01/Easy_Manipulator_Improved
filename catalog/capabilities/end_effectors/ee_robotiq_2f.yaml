@@ -61,3 +61,10 @@ end_effector:
         measured_closure_rad: 0.5848
         evidence: LENLEG 2026-10-24 transmitted joint wrenches, stage_a1_finish_lenleg_hold_full4 and targeted stationary runs force40_st1 / force20_st1
     release: open_until_clear
+  # Physics-simulator contact geometry (simulation_collision.py). The fingertip collision mesh
+  # (2436 concave triangles) makes DART+Bullet pad contact collapse and the part rotate in the
+  # grip at any speed and force; its own bounding box (same pad plane, encloses the mesh) holds.
+  simulator_collision:
+    mode: mesh_bounding_box
+    links: [gripper_finger1_finger_tip_link, gripper_finger2_finger_tip_link]
+    evidence: "LENLEG 2026-10-24 standalone DART replay of stage_a1_release_gate_full1 transfer: mesh pads 2.6-104 mrad with ~0 N pad force, bounding-box pads 0.0013-0.0019 mrad, no collapse (0.25x-2x speed, 20/90 N)"
