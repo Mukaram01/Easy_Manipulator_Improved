@@ -30,13 +30,13 @@ from perceived_object_grasp_plan import (
 from physical_destination import check_object_containment
 from grasp_strategy_candidates import generate_strategy_candidates
 
-# Position reserve past the refined first opposing contact on the simulator path.
-# 0.804/80 (one coarse closure step, 0.01005 rad) let finger_pinch_basic::000 pivot
-# 0.00912-0.01012 rad in the pinch against the 0.0100 rad retention limit (LENLEG
-# 2026-10-24). 0.0125 rad keeps the planned pad penetration (~0.057 m/rad, 0.58 mm
-# at 0.01005) under the unchanged 1 mm GRASP_GEOMETRY limit; the actuator effort
-# limit, the only force bound, is unchanged.
-SIMULATOR_CLOSURE_RESERVE_RAD = 0.0125
+# Position reserve past the refined first opposing contact on the simulator path:
+# one coarse closure step. The finger servo stalls at first contact, so the reserve
+# is a standing position error, not extra closure: 0.0125 rad (LENLEG 2026-10-24,
+# run reserve0125_r1) left the finger 0.0117-0.0125 rad short, did not reduce the
+# in-pinch rotation (0.00915 rad) and made the prevalidated OPEN start 0.0125 rad
+# from the measured finger, beyond MoveIt's 0.01 rad allowed_start_tolerance.
+SIMULATOR_CLOSURE_RESERVE_RAD = 0.804/80
 
 
 @dataclass(frozen=True)

@@ -200,12 +200,12 @@ def test_simulator_closure_refines_opposing_contact_then_checks_full_reserve():
     assert upper-lower==pytest.approx(.01005/1024)
     assert metadata['contact_refinement_iterations']==10
     assert metadata['first_opposing_position_rad']==upper
-    assert close['gripper_finger1_joint']==pytest.approx(upper+.0125)
+    assert close['gripper_finger1_joint']==pytest.approx(upper+.01005)
     assert metadata['commanded_position_rad']==close['gripper_finger1_joint']
     assert validity[-1]==close['gripper_finger1_joint']
     assert qualified==[close['gripper_finger1_joint']]
     from full_cycle_preplanner import SIMULATOR_CLOSURE_RESERVE_RAD
-    assert metadata['position_reserve_rad']==pytest.approx(SIMULATOR_CLOSURE_RESERVE_RAD)==pytest.approx(.0125)
+    assert metadata['position_reserve_rad']==pytest.approx(SIMULATOR_CLOSURE_RESERVE_RAD)==pytest.approx(.01005)
     assert metadata['required_contact_links']==['left_tip','right_tip']
     assert metadata['planned_contact_links']==['left_tip','right_tip']
 
@@ -225,7 +225,7 @@ def test_simulator_closure_rejects_forbidden_or_lost_contacts_at_reserve(reserve
     assert reason in result.reason.lower()
     assert validity[:2]==pytest.approx([.01005,0.])
     assert len(validity)==13
-    assert .0195<=validity[-1]<=.0195+.01005/1024
+    assert .01705<=validity[-1]<=.01705+.01005/1024
     assert all(name!='PREPLAN_CLOSE_GRIPPER' for name,_,_,_ in goals)
     assert 'ATTACH' not in trace
 
