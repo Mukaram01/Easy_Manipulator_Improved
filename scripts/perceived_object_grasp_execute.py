@@ -2923,9 +2923,9 @@ def main():
             from physical_destination import check_object_containment
             check_object_containment(destination,final_pose,selected['dimensions'],clearance=contract.get('placement_clearance_m',.001))
             pre=summary.get('pre_release_measurement')
-            before_relative=compose_pose(inverse_pose(measurements.frame(pre,contract['tool_link'])),
+            before_relative=_PLANNER.compose_pose(_PLANNER.inverse_pose(measurements.frame(pre,contract['tool_link'])),
                                          measurements.object_pose(pre,contact_guard.name))
-            after_relative=compose_pose(inverse_pose(measurements.frame(final_sample,contract['tool_link'])),final_pose)
+            after_relative=_PLANNER.compose_pose(_PLANNER.inverse_pose(measurements.frame(final_sample,contract['tool_link'])),final_pose)
             relative_separation=math.dist(before_relative[:3],after_relative[:3])
             if relative_separation<.01:raise RuntimeError('full-cycle release did not separate object from retreating tool')
             final_scene=scene_now()

@@ -1763,6 +1763,24 @@ def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_meas
     assert "grasp_hold_target(hold_before['leader_position_rad'],hold_profile.hold_reserve_rad," in attach
     assert "GRASP_HOLD_RESERVE_RAD" not in attach
     acceptance=source[source.index("# Retention findings (record policy) and placement accuracy"):source.index("final = scene_now()")]
+    # The final acceptance block is reached only by a physically complete cycle (first on LENLEG
+    # functional_force90_r1, 2026-10-24); every pose helper it uses must resolve at module scope.
+    import ast,builtins
+    tree=ast.parse(source);main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    defined={n.name for n in tree.body if isinstance(n,(ast.FunctionDef,ast.ClassDef))}|{a.asname or a.name.split('.')[0]
+        for n in tree.body if isinstance(n,(ast.Import,ast.ImportFrom)) for a in n.names}|{t.id for n in tree.body
+        if isinstance(n,ast.Assign) for t in n.targets if isinstance(t,ast.Name)}|set(dir(builtins))|{'__file__','__name__'}
+    local=set()
+    for node in ast.walk(main):
+        if isinstance(node,ast.Name) and isinstance(node.ctx,ast.Store):local.add(node.id)
+        elif isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):local.add(node.name)
+        elif isinstance(node,ast.arg):local.add(node.arg)
+        elif isinstance(node,(ast.Import,ast.ImportFrom)):local.update(a.asname or a.name.split('.')[0] for a in node.names)
+        elif isinstance(node,ast.ExceptHandler) and node.name:local.add(node.name)
+        elif isinstance(node,(ast.Global,ast.Nonlocal)):local.update(node.names)
+    unresolved={n.id for n in ast.walk(main) if isinstance(n,ast.Name) and isinstance(n.ctx,ast.Load)
+                and n.id not in defined and n.id not in local}
+    assert unresolved==set(),unresolved
     assert "result='PASS' if summary['strict_retention_compliant'] else 'FUNCTIONAL_PASS'" in acceptance   # strict PASS never diluted
     assert "error_to_destination_m=" in acceptance and "release_disturbance_m=" in acceptance
     assert "contact_guard.retention_policy=args.retention_policy" in source
