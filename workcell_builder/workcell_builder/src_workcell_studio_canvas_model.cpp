@@ -905,6 +905,8 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           if (!explicit_type.empty()) item.type = explicit_type;
           if (!explicit_category.empty()) item.category = explicit_category;
           if (!explicit_role.empty()) item.role = explicit_role;
+          // Catalog identity selects reviewed asset metadata such as mating datums.
+          item.catalog_asset_id = read_string_or_warn(yaml_map_key(node, "catalog_asset_id"), "items[].catalog_asset_id", "");
           if (layout_source_is_environment_layout) {
             item.source_file = "environment_layout.yaml";
             bool locked = false;
@@ -972,6 +974,7 @@ WorkcellStudioCanvasModel build_workcell_studio_canvas_model(const fs::path & sc
           if (source_file.empty()) source_file = read_string_or_warn(yaml_map_key(node, "source_layer"), "items[].source_layer", layout_source_file);
           extra.source_file = source_file.empty() ? layout_source_file : source_file;
           extra.provenance = WorkcellStudioItemProvenance::EditableLayout;
+          extra.catalog_asset_id = read_string_or_warn(yaml_map_key(node, "catalog_asset_id"), "items[].catalog_asset_id", "");
           copy_primitive_metadata(extra, node);
           YAML::Node pose = yaml_map_key(node, "pose");
           if (pose.IsDefined() && pose.IsMap()) {

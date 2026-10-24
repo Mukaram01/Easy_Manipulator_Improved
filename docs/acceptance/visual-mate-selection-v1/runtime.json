@@ -1,0 +1,58 @@
+{
+  "scene": "ur5_2f_test",
+  "fake_hardware_only": true,
+  "execution_goals_sent": 0,
+  "result": "PASS",
+  "description_and_semantic_loaded": true,
+  "controllers": {
+    "joint_state_broadcaster": "active",
+    "ur5_arm_controller": "active",
+    "ur5_gripper_controller": "active"
+  },
+  "joint_states_received": 156,
+  "collision_object_ids": [
+    "workcell::object_01",
+    "workcell::support_surface_table",
+    "workcell::target_bin_default"
+  ],
+  "collision_world_xyz": {
+    "workcell::object_01": [
+      0.2,
+      -0.35,
+      0.599100000500679
+    ],
+    "workcell::support_surface_table": [
+      0.5032442055482832,
+      -0.10853231898476502,
+      -0.4531188535094261
+    ],
+    "workcell::target_bin_default": [
+      0.3724048484864537,
+      0.0755175961087873,
+      0.09910000050067902
+    ]
+  },
+  "collision_manifest_applied": true,
+  "camera_world_xyz": [
+    0.3291398994234526,
+    -0.20410487884476552,
+    1.2385000005006792
+  ],
+  "camera_pose_from_environment": [
+    0.3215951598841334,
+    -0.22424381886860573,
+    1.2491000005006792,
+    0.0,
+    1.5707963267948966,
+    0.26179938779914935
+  ],
+  "generated_camera_world_xyz": [
+    0.3291398994234526,
+    -0.20410487884476552,
+    1.2385000005006792
+  ],
+  "camera_tf_matches_authored": true,
+  "mesh_markers_received": 3,
+  "rviz_started": true,
+  "launch_exit_code": 0
+}

@@ -158,6 +158,15 @@ def load_authoring(scene, draft=None):
     except (ValueError, OSError, yaml.YAMLError) as exc:
         report['planning_input_blocker'] = str(exc)
     report['pick_zones'] = [z['id'] for z in env.get('task_zones', []) if z.get('type') == 'pick_zone']
+    intent = parsed['normalized']
+    if intent is not None and intent.get('sequence') is not None:
+        # The same review the queue preview and the full-sequence check apply to this (draft) task.
+        from simulation_batch_preview import review_sequence
+        try:
+            report['sequence_review'] = review_sequence(scene, intent)
+        except (ValueError, KeyError, TypeError, OSError, yaml.YAMLError) as exc:  # never hide the task itself
+            report['sequence_review'] = {'status': 'BLOCKED', 'items': [], 'order': [], 'placements': {},
+                                         'summary': f'BLOCKED: the saved sequence cannot be checked: {exc}'}
     return report
 
 

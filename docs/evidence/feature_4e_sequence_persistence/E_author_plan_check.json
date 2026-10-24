@@ -1,0 +1,140 @@
+{
+  "epd_used": false,
+  "execution_attempted": false,
+  "first_blocking": null,
+  "motion_commanded": false,
+  "moveit_planning_attempted": false,
+  "objects": [],
+  "obstacles": [
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-e",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.448,
+        -0.25,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-n",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.38,
+        -0.182,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-s",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.38,
+        -0.318,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "bottle",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.18
+      ],
+      "object_id": "runtime::bottle-w",
+      "planning_scene_verified": false,
+      "reason": "CLASS_OR_COLOUR_MISMATCH",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.312,
+        -0.25,
+        0.091,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "class_id": "cup",
+      "dimensions_m": [
+        0.06,
+        0.06,
+        0.1
+      ],
+      "object_id": "runtime::cup-04",
+      "planning_scene_verified": false,
+      "reason": "OUTSIDE_PICK_VOLUME",
+      "role": "NON_TARGET_OBSTACLE",
+      "world_pose": [
+        0.565,
+        -0.34,
+        0.051,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "output_dir": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234247Z",
+  "planned_not_executed": true,
+  "preview": {
+    "destination_region_ref": "default_drop_zone",
+    "reason": "",
+    "source_path": "/ws/src/easy_manipulation_deployment/tests/fixtures/multiobject_plan_check_ur5_2f_test.yaml",
+    "source_sha256": "bc94da59df646fa2ebc42bcc9b8fe0d720b5c6a192f742c0bf7d29fdac3c3ca5",
+    "status": "ELIGIBILITY_ONLY",
+    "task_intent_sha256": "fb005f760f7e2fc6258a8679741386da942b599a67b50b164a21e75472e014a8",
+    "total_eligible": 3,
+    "total_observed": 8
+  },
+  "reason": "SEQUENCE_BLOCKED: BLOCKED: 1 of 3 saved object(s) need attention. runtime::cup-03: INSUFFICIENT_CAPACITY: default_drop_zone has no room left for this 0.060 x 0.060 m object with 0.005 m clearance after 2 other object(s). Remove an object from the sequence or use a larger destination.",
+  "scene": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+  "schema_version": "workcell_simulation_sequence_plan_check/v1",
+  "sequence_review": {
+    "status": "BLOCKED",
+    "summary": "BLOCKED: 1 of 3 saved object(s) need attention. runtime::cup-03: INSUFFICIENT_CAPACITY: default_drop_zone has no room left for this 0.060 x 0.060 m object with 0.005 m clearance after 2 other object(s). Remove an object from the sequence or use a larger destination."
+  },
+  "sequence_source": "saved_task",
+  "sequence_status": "SEQUENCE_BLOCKED",
+  "simulator_live_connected": false,
+  "status": "BLOCKED",
+  "virtual_scene": [],
+  "virtual_state_scope": "owned plan-only sandbox launch for this check; authored scene and task untouched"
+}

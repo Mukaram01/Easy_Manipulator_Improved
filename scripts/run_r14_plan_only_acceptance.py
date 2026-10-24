@@ -37,6 +37,20 @@ def process_failures(log_text):
             and int(match[1]) not in (0, -signal.SIGINT, -signal.SIGTERM)]
 
 
+def check_sequence_result(result, execution_goals):
+    if (result.get('result') != 'PLAN_ONLY' or result.get('sequence_planning_completed') is not True or
+            result.get('execution_attempted') is not False or not isinstance(result.get('sequence'), list)):
+        raise RuntimeError('executor did not complete a plan-only sequence evaluation')
+    for entry in result['sequence']:
+        if entry.get('result') == 'PLANNED' and (
+                [p['stage'] for p in entry.get('plan_metadata', [])] != STAGES or
+                any(not p.get('success') or p.get('moveit_code') != 1 or p.get('points', 0) < 2
+                    for p in entry['plan_metadata'])):
+            raise RuntimeError(f"sequence entry {entry.get('object_id')} lacks nine successful stages")
+    if execution_goals:
+        raise RuntimeError('unexpected trajectory execution action observed')
+
+
 def check_execution_result(result, statuses):
     required = ['full_cycle_prevalidated', 'prevalidation_left_live_scene_unchanged',
                 'execution_attempted', 'full_cycle_execution_success', 'attach_verified',
@@ -122,8 +136,20 @@ def main():
     parser.add_argument('--resolve-if-needed', action='store_true', help='Studio: consume current resolution, or resolve a blocked/unresolved saved task')
     parser.add_argument('--detections', type=Path, help='Replay observation input, never a task override')
     parser.add_argument('--stream-status', action='store_true', help='Emit structured stage/result events for Studio')
+    parser.add_argument('--target-object-id', help='Multi-object plan check: plan only this eligible object; all '
+                        'other observations stay in the fresh PlanningScene as obstacles. Writes no task artifacts.')
+    parser.add_argument('--sequence-object-ids', help='Sequential plan-only check of these eligible IDs, in order, '
+                        'against validated virtual revisions inside this owned launch. Writes no task artifacts.')
+    parser.add_argument('--sequence-placements', help='JSON object of operator-chosen target-local places per '
+                        'sequence object ID (plan-only; passed to the executor unchanged)')
     args = parser.parse_args()
-    if not 0 < args.timeout <= 900 or not 0 <= args.domain_id <= 232:
+    if args.sequence_placements is not None and args.sequence_object_ids is None:
+        parser.error('--sequence-placements requires --sequence-object-ids')
+    if args.target_object_id is not None and args.execute:
+        parser.error('--target-object-id is plan-only')
+    if args.sequence_object_ids is not None and (args.execute or args.target_object_id is not None):
+        parser.error('--sequence-object-ids is plan-only and excludes --target-object-id')
+    if not 0 < args.timeout <= (3600 if args.sequence_object_ids else 900) or not 0 <= args.domain_id <= 232:
         parser.error('timeout must be in (0,900]; domain-id in [0,232]')
     os.environ.update(ROS_DOMAIN_ID=str(args.domain_id), ROS_LOCALHOST_ONLY='1')
     import rclpy
@@ -134,6 +160,8 @@ def main():
     scene_dir = (args.scene_dir or root / 'scenes/ur5_2f_test').resolve()
     scene_name = scene_dir.name
     import yaml
+    if args.target_object_id is not None or args.sequence_object_ids is not None:
+        args.resolve_if_needed, args.resolve_task = False, True
     if args.resolve_if_needed and not args.resolve_task:
         from task_intent_resolver import read_scene_task, scene_resolution
         intent, physical, document = read_scene_task(scene_dir)
@@ -237,10 +265,14 @@ def main():
             executor = subprocess.Popen([sys.executable, str(executor_path),
                 '--scene-package', str(scene_dir),
                 '--detections', str(input_path),
-                '--timeout', str(min(300, max(1, deadline-time.monotonic()-5))), '--summary-output', str(summary_path)]
+                '--timeout', str(min(3600 if args.sequence_object_ids else 300, max(1, deadline-time.monotonic()-5))),
+                '--summary-output', str(summary_path)]
                 + (['--replay'] if replay_input else [])
                 + (['--resolve-task'] if args.resolve_task else [] if uses_authored_task else ['--task-request', str(root/'config/runtime/r1_4b_task.yaml')])
-                + (['--start'] if args.execute else []),
+                + (['--start'] if args.execute else [])
+                + (['--target-object-id', args.target_object_id] if args.target_object_id is not None else [])
+                + (['--sequence-object-ids', args.sequence_object_ids] if args.sequence_object_ids is not None else [])
+                + (['--sequence-placements', args.sequence_placements] if args.sequence_placements is not None else []),
                 stdout=elog, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: executor.poll() is not None)
             stream_stages()
@@ -250,14 +282,19 @@ def main():
             result = json.loads(summary_path.read_text())
             if args.execute:
                 check_execution_result(result, statuses)
+            elif args.sequence_object_ids is not None:
+                check_sequence_result(result, goals)
             else:
                 check_result(result, goals)
             if executor.returncode:
                 raise RuntimeError(f'executor exited {executor.returncode}')
             audit.update(result)
-            audit.update(result='PASS', selected_object_id=result['selected_object_id'],
-                         selected_grasp_index=result['selected_grasp_index'], planned_stages=STAGES,
-                         full_cycle_prevalidated=True, execution_attempted=args.execute)
+            if args.sequence_object_ids is not None:
+                audit.update(result='PASS', execution_attempted=False)
+            else:
+                audit.update(result='PASS', selected_object_id=result['selected_object_id'],
+                             selected_grasp_index=result['selected_grasp_index'], planned_stages=STAGES,
+                             full_cycle_prevalidated=True, execution_attempted=args.execute)
     except (Exception, KeyboardInterrupt) as exc:
         if summary_path.exists():
             audit.update(json.loads(summary_path.read_text()))

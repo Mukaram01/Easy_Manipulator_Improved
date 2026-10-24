@@ -17,6 +17,7 @@
 #include <functional>
 
 #include "home_workcells_target_shell.hpp"
+#include "workcell_builder_ui_utils.hpp"
 
 namespace workcell_builder
 {
@@ -169,6 +170,16 @@ inline void install_contextual_navigation(
   page->setObjectName(QStringLiteral("studioContextPage"));
   row->addWidget(page);
 
+  // Outcome of the last Save / Validate action. MainWindow::show_workflow_feedback
+  // fills it; it stays hidden until there is something to report.
+  auto * feedback = new QLabel(context);
+  feedback->setObjectName(QStringLiteral("studioContextFeedback"));
+  feedback->setProperty("kind", QStringLiteral("success"));
+  feedback->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  feedback->hide();
+  row->addSpacing(6);
+  row->addWidget(feedback);
+
   row->addStretch(1);
 
   auto * status = new QLabel(QStringLiteral("No scene selected"), context);
@@ -199,20 +210,25 @@ inline void install_contextual_navigation(
   QObject::connect(table, &QTableWidget::cellClicked, context,
     [window, pages, table](int, int) { refresh_context_header(window, pages, table); });
 
-  right_shell->setStyleSheet(right_shell->styleSheet() + QStringLiteral(
-    "QFrame#studioContextTopbar{background:#FFFFFF;border:0;border-bottom:1px solid #DCE5EF;}"
-    "QToolButton#studioContextHome{background:transparent;color:#17446F;border:0;border-radius:5px;padding:4px 7px;font-size:10px;font-weight:750;}"
-    "QToolButton#studioContextHome:hover{background:#EDF4FB;}"
-    "QLabel#studioContextSceneTitle{color:#102B4E;font-size:11px;font-weight:850;}"
-    "QLabel#studioContextDivider{color:#A1AFBD;font-size:10px;}"
-    "QLabel#studioContextPage{color:#647B92;font-size:10px;font-weight:650;}"
-    "QLabel#studioContextStatus{border-radius:8px;padding:3px 7px;font-size:8px;font-weight:800;}"
-    "QLabel#studioContextStatus[kind=neutral]{background:#F1F4F7;color:#63788D;}"
-    "QLabel#studioContextStatus[kind=ready]{background:#ECF8F1;color:#147A49;}"
-    "QLabel#studioContextStatus[kind=attention]{background:#FFF5E8;color:#C66708;}"
-    "QLabel#studioContextStatus[kind=blocked]{background:#FDEEEF;color:#BC2B34;}"
-    "QLabel#studioContextFake{background:#F0F9F4;color:#137A48;border:1px solid #D2E9DC;border-radius:8px;padding:3px 7px;font-size:8px;font-weight:800;}"
-    "QLabel#studioContextLocked{background:#F6F8FB;color:#234466;border:1px solid #DCE5EF;border-radius:8px;padding:3px 7px;font-size:8px;font-weight:800;}"));
+  right_shell->setStyleSheet(right_shell->styleSheet() + studioQss(QStringLiteral(R"QSS(
+    QFrame#studioContextTopbar { background: @glass; border: 0; border-bottom: 1px solid @glassBorder; }
+    QToolButton#studioContextHome { background: transparent; color: @accent; border: 0; border-radius: @radiusS; padding: 4px 8px; font-size: 12px; font-weight: 650; }
+    QToolButton#studioContextHome:hover { background: @accentSoft; }
+    QLabel#studioContextSceneTitle { color: @text; font-size: 13px; font-weight: 700; }
+    QLabel#studioContextDivider { color: @textMuted; font-size: 12px; }
+    QLabel#studioContextPage { color: @textSecondary; font-size: 12px; font-weight: 600; }
+    QLabel#studioContextFeedback { border-radius: @radiusS; padding: 4px 10px; font-size: 12px; font-weight: 600; }
+    QLabel#studioContextFeedback[kind=success] { background: @successSoft; color: @success; border: 1px solid @success; }
+    QLabel#studioContextFeedback[kind=warning] { background: @warningSoft; color: @warning; border: 1px solid @warning; }
+    QLabel#studioContextFeedback[kind=error] { background: @dangerSoft; color: @danger; border: 1px solid @danger; }
+    QLabel#studioContextStatus { border-radius: 9px; padding: 3px 9px; font-size: 10px; font-weight: 750; }
+    QLabel#studioContextStatus[kind=neutral] { background: @surfaceSunken; color: @textSecondary; }
+    QLabel#studioContextStatus[kind=ready] { background: @successSoft; color: @success; }
+    QLabel#studioContextStatus[kind=attention] { background: @warningSoft; color: @warning; }
+    QLabel#studioContextStatus[kind=blocked] { background: @dangerSoft; color: @danger; }
+    QLabel#studioContextFake { background: @successSoft; color: @success; border: 1px solid @border; border-radius: 9px; padding: 3px 9px; font-size: 10px; font-weight: 750; }
+    QLabel#studioContextLocked { background: @surfaceSunken; color: @textSecondary; border: 1px solid @border; border-radius: 9px; padding: 3px 9px; font-size: 10px; font-weight: 750; }
+  )QSS")));
 
   simplify_home_inspector(window);
   refresh_context_header(window, pages, table);

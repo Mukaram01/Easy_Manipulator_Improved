@@ -1,9 +1,12 @@
 #include <QFileInfo>
 #include <gtest/gtest.h>
+#include <QListWidget>
 #include <QApplication>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
+#include <QCryptographicHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
@@ -425,6 +428,186 @@ TEST(TaskIntentEditor, RuntimeParityCreatesFreshCellAndSavesReplayTask) {
   }
 }
 
+TEST(TaskIntentEditor, MultiObjectPreviewIsSavedReplayOnlyAndDoesNotLaunchOnSave) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * preview = editor.findChild<QPushButton *>("taskSimulationBatchPreview");
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  ASSERT_NE(preview, nullptr); ASSERT_NE(mode, nullptr);
+  ASSERT_NE(editor.findChild<QLabel *>("taskSimulationBatchStatus"), nullptr);
+  EXPECT_FALSE(preview->isEnabled());  // No user-selected input; no implicit default.
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  edit(editor, "taskReplayPath",
+       QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
+  EXPECT_FALSE(preview->isEnabled());  // Unsaved task cannot launch preview.
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preview->isEnabled());  // Enabled, not automatically executed.
+  edit(editor, "taskTargetClass", "cup");
+  EXPECT_FALSE(preview->isEnabled());
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preview->isEnabled());
+  mode->setCurrentIndex(mode->findData("live_epd"));
+  ASSERT_TRUE(editor.save());
+  EXPECT_FALSE(preview->isEnabled());  // Live camera never masquerades as commissioning.
+  mode->setCurrentIndex(mode->findData("off"));
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preview->isEnabled());  // Explicit saved replay remains a commissioning input.
+  edit(editor, "taskReplayPath", "");
+  ASSERT_TRUE(editor.save());
+  EXPECT_FALSE(preview->isEnabled());
+}
+
+TEST(TaskIntentEditor, PlanCheckIsSavedReplayOnlyAndNeverStartsByItself) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * check = editor.findChild<QPushButton *>("taskSimulationBatchPlanCheck");
+  auto * cancel = editor.findChild<QPushButton *>("taskSimulationBatchPlanCancel");
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  ASSERT_NE(check, nullptr); ASSERT_NE(cancel, nullptr);
+  EXPECT_FALSE(check->isEnabled());
+  EXPECT_FALSE(cancel->isEnabled());
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  edit(editor, "taskReplayPath",
+       QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
+  EXPECT_FALSE(check->isEnabled());  // Unsaved edits never reach MoveIt.
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(check->isEnabled());
+  EXPECT_FALSE(cancel->isEnabled());  // Saving does not start a check.
+  edit(editor, "taskTargetClass", "cup");
+  EXPECT_FALSE(check->isEnabled());
+  mode->setCurrentIndex(mode->findData("live_epd"));
+  ASSERT_TRUE(editor.save());
+  EXPECT_FALSE(check->isEnabled());  // Live input is not a commissioning plan check.
+}
+
+TEST(TaskIntentEditor, SequenceCheckIsSavedReplayOnlyAndOrderClearsOnSceneLoad) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * sequence = editor.findChild<QPushButton *>("taskSimulationSequenceCheck");
+  auto * order = editor.findChild<QListWidget *>("taskSequenceOrder");
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  ASSERT_NE(sequence, nullptr); ASSERT_NE(order, nullptr);
+  EXPECT_FALSE(sequence->isEnabled());
+  EXPECT_EQ(order->dragDropMode(), QAbstractItemView::InternalMove);  // Operator reordering.
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  edit(editor, "taskReplayPath",
+       QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
+  EXPECT_FALSE(sequence->isEnabled());
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(sequence->isEnabled());  // Enabled, never started by saving.
+  EXPECT_FALSE(editor.findChild<QPushButton *>("taskSimulationBatchPlanCancel")->isEnabled());
+  order->addItem("runtime::sample-cup");
+  edit(editor, "taskTargetClass", "cup");
+  EXPECT_FALSE(sequence->isEnabled());
+  QTemporaryDir other; seed(other.path());
+  ASSERT_TRUE(editor.save());
+  ASSERT_TRUE(editor.load_scene(other.path(), helper()));
+  EXPECT_EQ(order->count(), 0);  // A queue from another cell never carries over.
+}
+
+namespace {
+// A saved two-cup sequence: cup-02 Automatic first, then cup-01 at the far-end place.
+QString seed_sequence(const QString & scene) {
+  seed(scene);
+  const QByteArray recording = R"(schema_version: detected_objects/v1
+source: {mode: replayed_snapshot, description: two cups}
+objects:
+- {object_id: cup-01, class_id: cup, confidence: 0.99, age_seconds: 0, pose: {frame_id: world, xyz: [0.3, -0.1, 0.05], rpy: [0, 0, 0]}, dimensions: [0.06, 0.06, 0.1]}
+- {object_id: cup-02, class_id: cup, confidence: 0.98, age_seconds: 0, pose: {frame_id: world, xyz: [0.4, -0.1, 0.05], rpy: [0, 0, 0]}, dimensions: [0.06, 0.06, 0.1]}
+)";
+  write(scene + "/recording.yaml", recording);
+  const QString sha = QCryptographicHash::hash(recording, QCryptographicHash::Sha256).toHex();
+  write(scene + "/config/workcell_builder_task_intent.yaml", QString(R"(schema: workcell_builder_task_intent/v2
+task: {id: t, type: pick_place, template: pick_place}
+pick: {selection: {source_ref: detected_objects/v1, source_type: perception, zone_ref: pick, object_filter: {class_id: cup, min_confidence: null}}, grasp: {policy: AUTO, required_capability: two_finger_parallel, approach: {axis: z_down, distance_m: 0.1}, lift: {axis: z_up, distance_m: 0.15}}}
+place: {target: {asset_ref: bin, region_ref: drop}, placement: {policy: AUTO, clearance_m: 0.0, orientation: {mode: target_default}, approach: {axis: z_down, distance_m: 0.1}, retreat: {axis: z_up, distance_m: 0.1}}, release: {strategy: tool_release}}
+perception: {mode: replayed_snapshot, replay_path: recording.yaml}
+safety: {require_fake_hardware: true, real_hardware_enabled: false}
+sequence:
+  source_sha256: %1
+  items:
+  - {object_id: 'runtime::cup-02', class_id: cup, observed_xyz_m: [0.4, -0.1, 0.05], dimensions_m: [0.06, 0.06, 0.1], placement: {mode: AUTO}}
+  - {object_id: 'runtime::cup-01', class_id: cup, observed_xyz_m: [0.3, -0.1, 0.05], dimensions_m: [0.06, 0.06, 0.1], placement: {mode: MANUAL, asset_ref: bin, region_ref: drop, local_pose: {xyz_m: [0.117, 0, 0.1], rpy_rad: [0, 0, 0]}}}
+)").arg(sha).toUtf8());
+  return sha;
+}
+void choose_place(TaskIntentEditor & editor, const QString & label) {
+  auto * place = editor.findChild<QComboBox *>("taskSequencePlace");
+  const int index = place->findText(label); ASSERT_GE(index, 0) << label.toStdString();
+  place->setCurrentIndex(index); emit place->activated(index);
+}
+}  // namespace
+
+TEST(TaskIntentEditor, SavedSequenceReopensEditsRevertsAndSaves) {
+  application(); QTemporaryDir dir; seed_sequence(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * order = editor.findChild<QListWidget *>("taskSequenceOrder");
+  auto * summary = editor.findChild<QLabel *>("taskSequenceSummary");
+  auto * revert = editor.findChild<QPushButton *>("taskRevert");
+  ASSERT_NE(order, nullptr); ASSERT_NE(summary, nullptr); ASSERT_NE(revert, nullptr);
+  // Reopened exactly as saved, without a Preview: order, bindings and places.
+  ASSERT_EQ(order->count(), 2);
+  EXPECT_TRUE(order->item(0)->text().startsWith("1. cup-02 (cup)  →  Automatic")) << order->item(0)->text().toStdString();
+  EXPECT_EQ(order->item(1)->text(), "2. cup-01 (cup)  →  Place 3 of 3 — far end");
+  EXPECT_TRUE(summary->text().contains("Ready for the full-sequence check")) << summary->text().toStdString();
+  EXPECT_FALSE(editor.dirty()); EXPECT_FALSE(revert->isEnabled());
+  order->setCurrentRow(1);
+  EXPECT_EQ(editor.findChild<QComboBox *>("taskSequencePlace")->currentText(), "Place 3 of 3 — far end");
+  EXPECT_TRUE(editor.findChild<QLabel *>("taskSequencePlaceDetail")->text().contains("x 0.117, y 0.000, z 0.100 m"));
+  // Choose another place: unsaved, revertible.
+  choose_place(editor, "Place 1 of 3 — near end");
+  EXPECT_TRUE(editor.dirty()); EXPECT_TRUE(revert->isEnabled());
+  EXPECT_EQ(order->item(1)->text(), "2. cup-01 (cup)  →  Place 1 of 3 — near end");
+  editor.revert();
+  EXPECT_FALSE(editor.dirty());
+  EXPECT_EQ(order->item(1)->text(), "2. cup-01 (cup)  →  Place 3 of 3 — far end");
+  // Reorder by dragging (a model row move), save, reopen.
+  ASSERT_TRUE(order->model()->moveRow(QModelIndex(), 1, QModelIndex(), 0));
+  EXPECT_TRUE(editor.dirty());
+  ASSERT_TRUE(editor.save());
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  auto * again = reopened.findChild<QListWidget *>("taskSequenceOrder");
+  ASSERT_EQ(again->count(), 2);
+  EXPECT_EQ(again->item(0)->text(), "1. cup-01 (cup)  →  Place 3 of 3 — far end");
+  EXPECT_TRUE(again->item(1)->text().startsWith("2. cup-02 (cup)  →  Automatic"));
+  const auto saved = read(dir.path() + "/config/workcell_builder_task_intent.yaml");
+  EXPECT_LT(saved.indexOf("runtime::cup-01"), saved.indexOf("runtime::cup-02"));
+  EXPECT_FALSE(saved.contains("Place 3"));  // Labels are never the stored truth.
+}
+
+TEST(TaskIntentEditor, SequenceProblemsAreShownAndNeverSilentlyRebound) {
+  application(); QTemporaryDir dir; const QString sha = seed_sequence(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * order = editor.findChild<QListWidget *>("taskSequenceOrder");
+  auto * summary = editor.findChild<QLabel *>("taskSequenceSummary");
+  order->setCurrentRow(0);
+  choose_place(editor, "Place 3 of 3 — far end");  // Same place as cup-01.
+  editor.validate_now();
+  EXPECT_TRUE(summary->text().startsWith("Unsaved changes — NEEDS REVIEW")) << summary->text().toStdString();
+  EXPECT_TRUE(order->item(1)->text().startsWith("⚠ 2. cup-01")) << order->item(1)->text().toStdString();
+  EXPECT_TRUE(order->item(1)->toolTip().startsWith("PLACE_CONFLICT"));
+  editor.revert();
+  // Same object IDs, different detection: blocked, and the saved binding stays.
+  QByteArray recording = read(dir.path() + "/recording.yaml");
+  write(dir.path() + "/recording.yaml", recording.replace("xyz: [0.4, -0.1, 0.05]", "xyz: [0.45, -0.1, 0.05]"));
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  auto * blocked = reopened.findChild<QLabel *>("taskSequenceSummary");
+  EXPECT_TRUE(blocked->text().startsWith("BLOCKED")) << blocked->text().toStdString();
+  EXPECT_TRUE(blocked->text().contains("SEQUENCE_SOURCE_CHANGED"));
+  EXPECT_TRUE(reopened.findChild<QListWidget *>("taskSequenceOrder")->item(0)->text().endsWith("BLOCKED"));
+  EXPECT_FALSE(reopened.dirty());
+  EXPECT_TRUE(read(dir.path() + "/config/workcell_builder_task_intent.yaml").contains(sha.toUtf8()));
+}
+
+TEST(TaskIntentEditor, TaskWithoutSequenceLoadsWithEmptyList) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  EXPECT_EQ(editor.findChild<QListWidget *>("taskSequenceOrder")->count(), 0);
+  EXPECT_TRUE(editor.findChild<QLabel *>("taskSequenceSummary")->text().startsWith("No saved sequence"));
+  EXPECT_FALSE(editor.findChild<QComboBox *>("taskSequencePlace")->isEnabled());
+  EXPECT_FALSE(editor.findChild<QPushButton *>("taskRevert")->isEnabled());
+}
+
 TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {
   application(); QTemporaryDir dir; seed(dir.path()); TaskIntentEditor editor;
   ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
@@ -498,4 +681,39 @@ TEST(TaskIntentEditor, ExplicitLiveCameraSourceSurvivesReopenAndClearsOutsideLiv
   const auto task = QJsonDocument::fromJson(QByteArray::fromStdString(
     workcell_builder::canonical_task_intent_json_for_testing(d435i.model().to_yaml()))).object();
   EXPECT_TRUE(task.value("perception").toObject().value("camera_source").isNull());
+}
+
+TEST(TaskIntentEditor, DestinationChangeSurvivesReorderToggleSaveUntilPlaceReselected) {
+  application(); QTemporaryDir dir; seed_sequence(dir.path());
+  auto environment = read(dir.path() + "/environment.yaml");
+  environment.replace("assets:\n", "assets:\n- {id: bin2, frame: world, pose_xyz: [1, 2, 3], pose_rpy: [0, 0, 0], collision: {enabled: true}, usable_placement: {pose_xyz: [0, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.4, 0.3, 0.2]}}\n");
+  environment += "- {id: drop2, target_ref: bin2, frame: world, pose_xyz: [1.05, 2, 3.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1], placement_local: {pose_xyz: [0.05, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1]}}\n";
+  write(dir.path() + "/environment.yaml", environment);
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  editor.bind_destination("drop2");
+  editor.validate_now();
+  auto * order = editor.findChild<QListWidget *>("taskSequenceOrder");
+  ASSERT_EQ(order->count(), 2);
+  ASSERT_TRUE(order->model()->moveRow(QModelIndex(), 1, QModelIndex(), 0));
+  order->item(1)->setCheckState(Qt::Unchecked);
+  order->item(1)->setCheckState(Qt::Checked);
+  editor.validate_now();
+  const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(editor.model().to_yaml()))).object();
+  const auto placement = root["sequence"].toObject()["items"].toArray()[0].toObject()["placement"].toObject();
+  EXPECT_EQ(placement["asset_ref"].toString(), "bin");
+  EXPECT_EQ(placement["region_ref"].toString(), "drop");
+  EXPECT_TRUE(editor.findChild<QLabel *>("taskSequenceSummary")->text().contains("DESTINATION_CHANGED"));
+  ASSERT_TRUE(editor.save());
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  EXPECT_TRUE(reopened.findChild<QLabel *>("taskSequenceSummary")->text().contains("DESTINATION_CHANGED"));
+  auto * again = reopened.findChild<QListWidget *>("taskSequenceOrder");
+  again->setCurrentRow(0);
+  choose_place(reopened, "Place 3 of 3 — far end");
+  ASSERT_TRUE(reopened.save());
+  const auto updated = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(reopened.model().to_yaml()))).object();
+  const auto selected = updated["sequence"].toObject()["items"].toArray()[0].toObject()["placement"].toObject();
+  EXPECT_EQ(selected["asset_ref"].toString(), "bin2");
+  EXPECT_EQ(selected["region_ref"].toString(), "drop2");
 }

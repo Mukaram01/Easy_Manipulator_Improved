@@ -1,5 +1,7 @@
 #pragma once
 
+#include "workcell_builder_ui_utils.hpp"
+
 // Production Home workcell-library presentation.
 //
 // This is intentionally a one-shot composition pass called explicitly from
@@ -488,31 +490,33 @@ inline void configure(QMainWindow * window, const QString & workspace_root)
 
   build_details_panel(window, details, workspace_root);
 
-  center->setStyleSheet(QStringLiteral(
-    "QFrame#studioHomeWorkcellsCard{background:#FFFFFF;border:1px solid #DCE5EF;border-radius:10px;}"
-    "QLabel#studioHomeWorkcellsHeading{color:#102B46;font-size:15px;font-weight:800;border:0;}"
-    "QTableWidget#studioHomeSceneTable{background:#FFFFFF;border:1px solid #DCE5EF;border-radius:7px;outline:0;}"
-    "QTableWidget#studioHomeSceneTable::item{border-bottom:1px solid #EDF2F6;padding:6px 9px;color:#263C52;}"
-    "QTableWidget#studioHomeSceneTable::item:selected{background:#EAF2FB;color:#153D62;}"
-    "QHeaderView::section{background:#F7F9FC;color:#465B70;border:0;border-bottom:1px solid #DCE5EF;padding:7px 8px;font-weight:700;}"));
-  details->setStyleSheet(QStringLiteral(
-    "QFrame#studioHomeDetailsCard{background:#FFFFFF;border:1px solid #DCE5EF;border-radius:10px;}"
-    "QLabel#studioHomeDetailsEyebrow{color:#6C7E91;font-size:10px;font-weight:800;letter-spacing:1px;}"
-    "QLabel#studioHomeSelectedTitle{color:#102B46;font-size:20px;font-weight:800;}"
-    "QLabel#studioHomeSelectedId{color:#71869A;font-size:11px;}"
-    "QLabel#studioHomeSelectedStatus{border-radius:9px;padding:3px 8px;font-size:10px;font-weight:800;}"
-    "QLabel#studioHomeSelectedStatus[kind=neutral]{background:#EEF2F7;color:#64748B;border:1px solid #D9E1E9;}"
-    "QLabel#studioHomeSelectedStatus[kind=ready]{background:#EAF7F0;color:#137A46;border:1px solid #BBDDC9;}"
-    "QLabel#studioHomeSelectedStatus[kind=attention]{background:#FFF4E5;color:#A45500;border:1px solid #EDB879;}"
-    "QLabel#studioHomeSelectedStatus[kind=blocked]{background:#FDECEC;color:#B42318;border:1px solid #E6B3AF;}"
-    "QLabel#studioHomeScenePreview{background:#121D28;color:#C7D3DF;border:1px solid #243747;border-radius:8px;font-size:11px;font-weight:700;padding:4px;}"
-    "QWidget#studioHomeMetadata{background:transparent;border:0;}"
-    "QLabel#studioHomeMetaKey{color:#64788D;font-size:11px;}"
-    "QLabel#studioHomeMetaRobot,QLabel#studioHomeMetaTool,QLabel#studioHomeMetaTask,QLabel#studioHomeMetaLaunch{color:#17324C;font-size:11px;font-weight:700;}"
-    "QFrame#studioHomeReadinessCard{background:#FFF8EE;border:1px solid #F0DFC6;border-radius:8px;}"
-    "QLabel#studioHomeReadinessSummary{color:#3D5267;font-size:11px;background:transparent;border:0;}"
-    "QToolButton#studioHomeSecondaryButton{background:#F6F8FB;color:#173B5D;border:1px solid #D8E2EC;border-radius:6px;padding:2px;font-size:18px;}"
-    "QToolButton#studioHomeSecondaryButton:hover{background:#EAF1F7;}"));
+  center->setStyleSheet(studioQss(QStringLiteral(R"QSS(
+    QFrame#studioHomeWorkcellsCard { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QLabel#studioHomeWorkcellsHeading { color: @text; font-size: 15px; font-weight: 800; border: 0; }
+    QTableWidget#studioHomeSceneTable { background: @surface; border: 1px solid @border; border-radius: @radiusM; outline: 0; }
+    QTableWidget#studioHomeSceneTable::item { border-bottom: 1px solid @border; padding: 6px 9px; color: @text; }
+    QTableWidget#studioHomeSceneTable::item:selected { background: @accentSoft; color: @text; }
+    QHeaderView::section { background: @surfaceRaised; color: @textSecondary; border: 0; border-bottom: 1px solid @border; padding: 7px 8px; font-weight: 700; }
+  )QSS")));
+  details->setStyleSheet(studioQss(QStringLiteral(R"QSS(
+    QFrame#studioHomeDetailsCard { background: @surface; border: 1px solid @border; border-radius: @radiusL; }
+    QLabel#studioHomeDetailsEyebrow { color: @textSecondary; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
+    QLabel#studioHomeSelectedTitle { color: @text; font-size: 20px; font-weight: 800; }
+    QLabel#studioHomeSelectedId { color: @textMuted; font-size: 11px; }
+    QLabel#studioHomeSelectedStatus { border-radius: 9px; padding: 3px 8px; font-size: 10px; font-weight: 800; }
+    QLabel#studioHomeSelectedStatus[kind=neutral] { background: @surfaceSunken; color: @textSecondary; border: 1px solid @border; }
+    QLabel#studioHomeSelectedStatus[kind=ready] { background: @successSoft; color: @success; border: 1px solid @success; }
+    QLabel#studioHomeSelectedStatus[kind=attention] { background: @warningSoft; color: @warning; border: 1px solid @warning; }
+    QLabel#studioHomeSelectedStatus[kind=blocked] { background: @dangerSoft; color: @danger; border: 1px solid @danger; }
+    QLabel#studioHomeScenePreview { background: @previewBg; color: @previewText; border: 1px solid @borderStrong; border-radius: @radiusM; font-size: 11px; font-weight: 700; padding: 4px; }
+    QWidget#studioHomeMetadata { background: transparent; border: 0; }
+    QLabel#studioHomeMetaKey { color: @textSecondary; font-size: 11px; }
+    QLabel#studioHomeMetaRobot, QLabel#studioHomeMetaTool, QLabel#studioHomeMetaTask, QLabel#studioHomeMetaLaunch { color: @text; font-size: 11px; font-weight: 700; }
+    QFrame#studioHomeReadinessCard { background: @warningSoft; border: 1px solid @warning; border-radius: @radiusM; }
+    QLabel#studioHomeReadinessSummary { color: @text; font-size: 11px; background: transparent; border: 0; }
+    QToolButton#studioHomeSecondaryButton { background: @surface; color: @text; border: 1px solid @borderStrong; border-radius: @radiusS; padding: 2px; font-size: 18px; }
+    QToolButton#studioHomeSecondaryButton:hover { background: @accentSoft; border-color: @accent; }
+  )QSS")));
 
   const QPointer<QMainWindow> safe_window(window);
   QObject::connect(table, &QTableWidget::cellClicked, window,

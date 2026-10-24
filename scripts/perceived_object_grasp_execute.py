@@ -298,6 +298,10 @@ def translated_pose(pose, dx=0.0, dy=0.0, dz=0.0):
     return result
 
 
+STAGES = ['PREPLAN_APPROACH', 'PREPLAN_GRASP', 'PREPLAN_CLOSE_GRIPPER', 'PREPLAN_LIFT',
+          'PREPLAN_TRANSFER', 'PREPLAN_PLACE', 'PREPLAN_OPEN_GRIPPER', 'PREPLAN_RETREAT', 'PREPLAN_HOME']
+
+
 def candidate_indices(count, preferred=3):
     """Try a preferred orientation, followed by every remaining candidate."""
     if not 0 <= preferred < count:
@@ -476,6 +480,57 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
     return cycle
 
 
+def sequence_place_poses(intent, environment, occupied, dimensions, max_slots=3, min_spacing=0.02,
+                         chosen=None, reserved=()):
+    """Target-local placements to try, in order, for the next object of a plan-only sequence.
+
+    An operator-chosen place is tried alone, unless it overlaps an object already there
+    (`conflicts` lists those indices into `occupied`). Otherwise an authored EXACT pose is
+    honoured unchanged (None: plan the saved intent as is); AUTO packs free slots from the
+    region's corner and PREFERRED tries the free slots nearest the requested pose, both
+    keeping clear of `reserved` places chosen for later objects. Each pose is planned by the
+    unchanged resolver and full-cycle preplanner as an EXACT placement; nothing here proves
+    feasibility.
+    """
+    from physical_destination import PLACEMENT_TOLERANCE_M, place_conflicts, placement_slots, resolve_destination
+    placement = intent['place']['placement']
+    allocation = {'authored_policy': placement['policy'], 'objects_checked_for_overlap': len(occupied)}
+    destination = resolve_destination(environment, intent['place']['target']['region_ref'])
+    if chosen is not None:
+        conflicts = place_conflicts(destination, chosen, dimensions, placement['clearance_m'], occupied)
+        return ([] if conflicts else [chosen]), dict(allocation, applied=False, operator_selected=True,
+                                                    chosen_local_pose=chosen, conflicts=conflicts)
+    if placement['policy'] == 'EXACT':
+        return [None], dict(allocation, applied=False,
+                            reason='EXACT placement: every object is planned to the one authored pose')
+    # Neighbours keep the planner's placement tolerance too, as the saved-sequence review assumes.
+    slots = placement_slots(destination, dimensions, placement['clearance_m'], list(occupied) + list(reserved),
+                            separation=PLACEMENT_TOLERANCE_M)
+    if placement['policy'] == 'PREFERRED':
+        wanted = placement['requested_local_pose']['xyz_m']
+        slots.sort(key=lambda slot: math.dist(slot['xyz_m'], wanted))
+    chosen_slots = []
+    for slot in slots:
+        if all(math.dist(slot['xyz_m'], other['xyz_m']) >= min_spacing for other in chosen_slots):
+            chosen_slots.append(slot)
+        if len(chosen_slots) == max_slots:
+            break
+    return chosen_slots, dict(allocation, applied=True, free_slot_count=len(slots), slots_to_try=chosen_slots,
+                              reserved_for_later_objects=len(reserved))
+
+
+PLACE_INDEPENDENT_STAGES = 4  # APPROACH, GRASP, CLOSE_GRIPPER, LIFT do not depend on the place
+
+
+def furthest_attempt(attempts):
+    """The candidate attempt that progressed furthest, its failing check and stage count."""
+    if not attempts:
+        return None, {}, 0
+    best = max(attempts, key=lambda a: sum(1 for s in a.get('stages', []) if s.get('success')))
+    failed = next((c for c in best.get('checks', []) if c.get('status') == 'FAIL'), {})
+    return best, failed, sum(1 for s in best.get('stages', []) if s.get('success'))
+
+
 def require_prevalidated_execution(start, cycle):
     if not start or not cycle.get('full_cycle_prevalidated'):
         raise RuntimeError('execution requires --start and a fully prevalidated cycle')
@@ -587,7 +642,19 @@ def main():
     parser.add_argument('--start', action='store_true')
     parser.add_argument('--timeout', type=float, default=180.0, help='Total candidate search budget in seconds')
     parser.add_argument('--retreat-distance', type=float)
+    parser.add_argument('--sequence-object-ids', help='Plan-only sequence check: comma-separated eligible '
+                        'observation IDs, planned in order against validated virtual scene revisions.')
+    parser.add_argument('--sequence-placements', help='Plan-only sequence check: JSON object mapping object IDs to '
+                        'operator-chosen target-local places {"xyz_m": [...], "rpy_rad": [...]}; others use AUTO.')
+    parser.add_argument('--target-object-id', help='Plan-only batch check: restrict the pick target to this eligible '
+                        'observation. Every observed object is still inserted as a PlanningScene obstacle.')
     args = parser.parse_args()
+    if args.sequence_placements is not None and args.sequence_object_ids is None:
+        parser.error('--sequence-placements requires --sequence-object-ids')
+    if args.target_object_id is not None and (args.start or not args.resolve_task):
+        parser.error('--target-object-id is plan-only and requires --resolve-task without --start')
+    if args.sequence_object_ids is not None and (args.start or not args.resolve_task or args.target_object_id):
+        parser.error('--sequence-object-ids is plan-only, requires --resolve-task and excludes --target-object-id')
     import yaml
     import xml.etree.ElementTree as ET
     import rclpy
@@ -879,6 +946,15 @@ def main():
             from task_intent_resolver import select_observations, scene_resolution
             eligible = select_observations(intent, physical, objects, time.time())
             rejected = {o['id']: 'outside_authored_selection' for o in objects if o not in eligible}
+            if args.target_object_id is not None:
+                # Others stay in `objects` (inserted below as obstacles); only the target set narrows.
+                eligible = [o for o in eligible if o['id'] == args.target_object_id]
+                if not eligible:
+                    raise ValueError(f'TARGET_NOT_ELIGIBLE: {args.target_object_id} is not an eligible observation '
+                                     'under the saved task')
+                rejected.update({o['id']: 'not_batch_target_retained_as_obstacle' for o in objects
+                                 if o['id'] != args.target_object_id and o['id'] not in rejected})
+                summary['batch_target_object_id'] = args.target_object_id
             expected_resolution = None if args.resolve_task else scene_resolution(
                 package, intent, physical, document, require_ready=True)
             if expected_resolution is not None:
@@ -938,6 +1014,134 @@ def main():
             target_contact_matrix=target_contact_matrix, verify_selected_contacts=verify_selected_contacts,
             private_attachment=private_attachment, object_pose_after_motion=object_pose_after_motion,
             place_detachment_diff=place_detachment_diff, stage=stage)
+        if args.sequence_object_ids is not None:
+            # Sequential plan-only check. Each object is planned with the existing full-cycle
+            # preplanner from the current validated revision. Only a complete nine-stage cycle
+            # advances the revision, using that cycle's own predicted end scene (attach, transfer,
+            # detach and placement contracts). The revision is mirrored into this owned, throwaway
+            # sandbox launch so IK and contact diagnostics see it; nothing is executed.
+            from moveit_msgs.msg import CollisionObject
+            order = [oid for oid in args.sequence_object_ids.split(',') if oid]
+            by_id = {o['id']: o for o in objects}
+            eligible_ids = {o['id'] for o in eligible}
+            if not order or len(set(order)) != len(order):
+                raise ValueError('SEQUENCE_INVALID: object order must list distinct IDs')
+            chosen_places = json.loads(args.sequence_placements or '{}')
+            if not isinstance(chosen_places, dict) or not set(chosen_places) <= set(order):
+                raise ValueError('SEQUENCE_PLACEMENTS_INVALID: places must be chosen for objects in the order')
+            from physical_destination import local_to_world_pose, resolve_destination as region_destination
+            place_region = region_destination(physical, intent['place']['target']['region_ref'])
+            revision, prev_end, entries = 0, None, []
+            moved = {}
+            budget = max(1.0, args.timeout / len(order))
+            for position, oid in enumerate(order, 1):
+                entry = dict(position=position, object_id=oid, class_id=by_id.get(oid, {}).get('class_id'),
+                             revision_before=revision, source_pose=by_id.get(oid, {}).get('pose'))
+                entries.append(entry)
+                stage(f'SEQUENCE_OBJECT_{position}')
+                if oid not in by_id or oid not in eligible_ids or oid in moved:
+                    entry.update(result='INVALID_INPUT', reason='not an eligible, unmoved observation under the saved task')
+                    continue
+                current = scene_now()
+                current.robot_state.is_diff = False
+                current.is_diff = True
+                entry['robot_start_matches_previous_end'] = True
+                if prev_end is not None:
+                    try:
+                        assert_joint_match(current.robot_state, prev_end.robot_state)
+                    except Exception as exc:
+                        entry.update(result='SEQUENCE_BLOCKED', robot_start_matches_previous_end=False,
+                                     reason=f'robot start state differs from previous predicted end: {exc}')
+                        continue
+                entry['collision_objects_considered'] = sorted(o.id for o in current.world.collision_objects)
+                initial = current  # plan_segment's IK/contact diagnostics compare against this sandbox state
+                boxes = [box for box in (collision_object_dict(o) for o in current.world.collision_objects
+                                         if o.id in by_id and o.id != oid) if box is not None]
+                occupied = [(box['pose'], box['dimensions']) for box in boxes]
+                # Places chosen for later objects stay free for them.
+                reserved = [(local_to_world_pose(place_region, chosen_places[later]), by_id[later]['dimensions'])
+                            for later in order[position:] if later in chosen_places and later in by_id]
+                poses, allocation = sequence_place_poses(intent, physical, occupied, by_id[oid]['dimensions'],
+                                                         chosen=chosen_places.get(oid), reserved=reserved)
+                entry.update(placement_allocation=allocation, placement_attempts=[])
+                if allocation.get('operator_selected') and not poses:
+                    blocking = sorted(boxes[i]['id'] for i in allocation['conflicts'])
+                    entry.update(result='FAILED', candidate_attempts=[],
+                                 failure=(f"PLACE_OCCUPIED: the chosen place overlaps {', '.join(blocking)} "
+                                          "(with placement clearance); choose another place or Automatic"))
+                    continue
+                if not poses:
+                    entry.update(result='FAILED', candidate_attempts=[],
+                                 failure=(f"DESTINATION_FULL: no free placement for this object's "
+                                          f"{by_id[oid]['dimensions']} m footprint is left in "
+                                          f"{intent['place']['target']['region_ref']} after "
+                                          f"{len(moved)} object(s) placed earlier in this sequence"))
+                    continue
+                object_deadline = time.monotonic() + budget
+                cycle, per_object, failures = None, None, []
+                for local_pose in poses:
+                    per_object = dict(candidate_attempts=[])
+                    slot_intent = intent
+                    if local_pose is not None:
+                        slot_intent = copy.deepcopy(intent)
+                        slot_intent['place']['placement'].update(policy='EXACT', requested_local_pose=local_pose)
+                    try:
+                        cycle = plan_authored_cycle(initial_scene=current, intent=slot_intent, environment=physical,
+                            cell=document, targets=[by_id[oid]], contract=contract, operations=operations,
+                            deadline=object_deadline, summary=per_object, resolved=None)
+                    except Exception as exc:
+                        failures.append((exc, per_object))
+                        _, failed, progress = furthest_attempt(per_object['candidate_attempts'])
+                        entry['placement_attempts'].append(dict(
+                            local_pose=local_pose, result='FAILED', failure=str(exc),
+                            furthest_stage=failed.get('code'), furthest_reason=failed.get('reason')))
+                        # No candidate got past LIFT: another place cannot change the outcome.
+                        if progress < PLACE_INDEPENDENT_STAGES or time.monotonic() >= object_deadline:
+                            break
+                        continue
+                    entry['placement_attempts'].append(dict(local_pose=local_pose, result='PLANNED'))
+                    break
+                if cycle is None:
+                    exc, per_object = failures[0]
+                    entry.update(result='FAILED', failure=str(exc),
+                                 candidate_attempts=[a for _, f in failures for a in f['candidate_attempts']],
+                                 task_intent_resolution=per_object.get('task_intent_resolution'))
+                    continue
+                assert_scene_match(scene_now(), current)  # planning never changed the sandbox
+                final = cycle['steps'][-1]['after']
+                placed = [o for o in final.world.collision_objects if o.id == oid]
+                if (len(placed) != 1 or final.robot_state.attached_collision_objects or
+                        [s['stage'] for s in cycle['steps'] if s['kind'] == 'motion'] != STAGES):
+                    entry.update(result='SEQUENCE_BLOCKED', reason='planned cycle did not end with the target '
+                                 'detached once in the world and the robot free; transition not derivable')
+                    continue
+                diff = PlanningScene(is_diff=True)
+                obj = copy.deepcopy(placed[0])
+                obj.operation = CollisionObject.ADD
+                diff.world.collision_objects.append(obj)
+                apply(diff)
+                try:
+                    assert_scene_match(scene_now(), final, oid)
+                except Exception as exc:
+                    entry.update(result='SEQUENCE_BLOCKED', reason=f'virtual revision could not be reproduced: {exc}')
+                    break
+                revision += 1
+                moved[oid] = collision_object_dict(placed[0])['pose']
+                prev_end = final
+                grasp = per_object['task_intent_resolution']['grasp_resolution']
+                entry.update(result='PLANNED', revision_after=revision, placed_pose=moved[oid],
+                             grasp_strategy=grasp.get('selected_strategy_ref'),
+                             grasp_candidate=grasp.get('selected_candidate_id'),
+                             destination=per_object['task_intent_resolution']['place_resolution']['destination']['id'],
+                             place_local_pose=per_object['task_intent_resolution']['place_resolution']['selected_local_pose'],
+                             robot_end_matches_sandbox=True,
+                             plan_metadata=[s['metadata'] for s in cycle['steps'] if s['kind'] == 'motion'],
+                             candidate_attempts=per_object['candidate_attempts'])
+            summary.update(sequence=entries, sequence_order=order, final_revision=revision,
+                           virtual_moves=moved, result='PLAN_ONLY', sequence_planning_completed=True,
+                           prevalidation_left_live_scene_unchanged=None,
+                           virtual_revisions_applied_to_owned_sandbox_only=True)
+            return 0
         if authored:
             cycle = plan_authored_cycle(initial_scene=initial, intent=intent, environment=physical,
                 cell=document, targets=eligible, contract=contract, operations=operations,
@@ -959,7 +1163,8 @@ def main():
             from task_intent_resolver import consume_resolution, read_scene_task, write_resolution_artifacts
             current_intent, current_physical, current_document = read_scene_task(package)
             consume_resolution(summary['task_intent_resolution'], current_intent, current_physical, current_document)
-            if args.resolve_task:
+            if args.resolve_task and args.target_object_id is None:
+                # A per-object batch check is evidence only, never the persisted task resolution.
                 write_resolution_artifacts(summary['task_intent_resolution'], package / 'generated')
         if not args.start:
             summary['result'] = 'PLAN_ONLY'
@@ -1045,7 +1250,8 @@ def main():
         stage('FAILED')
         summary['recovery_required'] = summary['execution_attempted']
         resolution = summary.get('task_intent_resolution')
-        if args.resolve_task and resolution is not None and resolution['readiness_status'] == 'BLOCKED':
+        if (args.resolve_task and args.target_object_id is None and resolution is not None
+                and resolution['readiness_status'] == 'BLOCKED'):
             try:
                 from task_intent_resolver import consume_resolution, read_scene_task, write_resolution_artifacts
                 current_intent, current_physical, current_document = read_scene_task(package)

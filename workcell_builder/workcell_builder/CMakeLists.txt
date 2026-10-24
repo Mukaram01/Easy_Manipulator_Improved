@@ -215,7 +215,15 @@ add_executable(workcell_builder
     src_rviz_preview_runner.cpp
     src_visual_mesh_source_resolver.cpp
     include/rviz_preview_runner.hpp
-    include/visual_mesh_source_resolver.hpp)
+    include/visual_mesh_source_resolver.hpp
+    include/mate_pick.hpp
+    src_mate_pick.cpp
+    include/live_mesh_staging.hpp
+    src_live_mesh_staging.cpp
+    gui/mate_tool_controller.cpp
+    gui/mate_tool_controller.hpp
+    gui/mate_tool_panel.cpp
+    gui/mate_tool_panel.hpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
@@ -453,6 +461,7 @@ if(BUILD_TESTING)
     test/scene_preview_widget_ui_test.cpp
     gui/scene_load_diagnostic_context.cpp
     gui/scene_preview_widget.cpp
+    src_live_mesh_staging.cpp
     gui/robot_home_yaml_io.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
@@ -492,6 +501,66 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_visual_mesh_source_resolver_test
     test/visual_mesh_source_resolver_test.cpp
     src_visual_mesh_source_resolver.cpp)
+  ament_add_gtest(workcell_semantic_role_edit_test test/semantic_role_edit_test.cpp)
+  if(TARGET workcell_semantic_role_edit_test)
+    target_include_directories(workcell_semantic_role_edit_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(workcell_semantic_role_edit_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_readiness_pack_command_test test/readiness_pack_command_test.cpp)
+  if(TARGET workcell_readiness_pack_command_test)
+    target_include_directories(workcell_readiness_pack_command_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_readiness_pack_command_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_save_projection_failure_test test/save_projection_failure_test.cpp)
+  if(TARGET workcell_save_projection_failure_test)
+    target_include_directories(workcell_save_projection_failure_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_save_projection_failure_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_teardown_connections_test test/teardown_connections_test.cpp)
+  if(TARGET workcell_teardown_connections_test)
+    target_include_directories(workcell_teardown_connections_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_teardown_connections_test Qt5::Widgets)
+  endif()
+  ament_add_gtest(workcell_datum_mating_text_test test/datum_mating_text_test.cpp)
+  if(TARGET workcell_datum_mating_text_test)
+    target_include_directories(workcell_datum_mating_text_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_datum_mating_text_test Qt5::Core yaml-cpp)
+  endif()
+  ament_add_gtest(workcell_mate_pick_test test/mate_pick_test.cpp src_mate_pick.cpp)
+  if(TARGET workcell_mate_pick_test)
+    target_include_directories(workcell_mate_pick_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_mate_pick_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_live_mesh_staging_test test/live_mesh_staging_test.cpp src_live_mesh_staging.cpp)
+  if(TARGET workcell_live_mesh_staging_test)
+    target_include_directories(workcell_live_mesh_staging_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_live_mesh_staging_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_mate_tool_controller_test test/mate_tool_controller_test.cpp
+    gui/mate_tool_controller.cpp gui/mate_tool_controller.hpp src_mate_pick.cpp)
+  if(TARGET workcell_mate_tool_controller_test)
+    set_target_properties(workcell_mate_tool_controller_test PROPERTIES AUTOMOC ON)
+    target_include_directories(workcell_mate_tool_controller_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_compile_definitions(workcell_mate_tool_controller_test PRIVATE
+      WORKCELL_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    target_link_libraries(workcell_mate_tool_controller_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_inspector_spin_config_test test/inspector_spin_config_test.cpp)
+  if(TARGET workcell_inspector_spin_config_test)
+    target_include_directories(workcell_inspector_spin_config_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_inspector_spin_config_test Qt5::Core Qt5::Widgets)
+  endif()
+  ament_add_gtest(workcell_web_edit_policy_test test/web_edit_policy_test.cpp)
+  if(TARGET workcell_web_edit_policy_test)
+    target_include_directories(workcell_web_edit_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(workcell_web_edit_policy_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_studio_theme_test test/studio_theme_test.cpp gui/workcell_builder_ui_utils.cpp)
+  if(TARGET workcell_studio_theme_test)
+    target_include_directories(workcell_studio_theme_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_studio_theme_test Qt5::Widgets)
+  endif()
   ament_add_gtest(workcell_transform_clipboard_utils_test
     test/transform_clipboard_utils_test.cpp
     gui/transform_clipboard_utils.cpp)
@@ -836,6 +905,17 @@ if(BUILD_TESTING)
     rviz_preview_metadata_command_test.cpp
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
+    studio_theme_test.cpp
+    web_edit_policy_test.cpp
+    semantic_role_edit_test.cpp
+    readiness_pack_command_test.cpp
+    inspector_spin_config_test.cpp
+    save_projection_failure_test.cpp
+    datum_mating_text_test.cpp
+    teardown_connections_test.cpp
+    mate_pick_test.cpp
+    live_mesh_staging_test.cpp
+    mate_tool_controller_test.cpp
     support_contact_policy_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test
@@ -891,6 +971,8 @@ install(PROGRAMS
   ../../scripts/workcell_camera_probe.py
   ../../scripts/capture_selected_live_epd.py
   ../../scripts/continuous_epd_task_binding.py
+  ../../scripts/simulation_batch_preview.py
+  ../../scripts/simulation_batch_plan_check.py
   ../../scripts/task_intent_v2.py
   ../../scripts/task_intent_resolver.py
   ../../scripts/validate_builder_task_intent.py
