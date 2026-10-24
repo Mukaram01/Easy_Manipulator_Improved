@@ -217,6 +217,56 @@ class RetentionRecovery:
         self.evidence.update(failure_code=code,failure_detail=detail)
 
 
+# Hold reserve past the measured contact closure (servo target 0.1 x reserve x
+# 100 Hz). Chosen experimentally; see grasp_hold evidence in each executor summary.
+GRASP_HOLD_RESERVE_RAD = 0.002
+
+
+def grasp_hold_target(measured, reserve, certified_close, open_position):
+    """Hold command for a closed grasp: measured contact closure plus a reserve.
+
+    The CLOSE command (certified first contact + one closure step) leaves the
+    stalled finger servo a standing ~0.01 rad error; at the servo's 0.1 rad/s
+    target it advanced 0.1 mrad whenever the pad manifold regenerated and jolted
+    the part about the pinch axis (LENLEG 2026-10-24). The hold never exceeds the
+    certified closure, so no penetration or collision beyond the plan is commanded.
+    """
+    values=(measured,reserve,certified_close,open_position)
+    if any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in values):
+        raise RuntimeError('GRASP_HOLD_INPUT_INVALID')
+    if reserve<=0 or measured<=open_position+.001 or certified_close<measured:
+        raise RuntimeError('GRASP_HOLD_REQUIRES_MEASURED_CLOSURE_WITHIN_CERTIFIED_RANGE')
+    return min(measured+reserve,certified_close)
+
+
+def grasp_load_evidence(sample, leader, touch_links, target_model):
+    """Measured finger positions, pad contacts and joint loads of one sample.
+
+    Loads come from the simulator's transmitted joint wrenches: the fingertip
+    joint force is the pad's contact load, axis torques are actuator/constraint
+    efforts. Evidence only; retention acceptance stays with the contact guard.
+    """
+    joints={k.split('::')[-1]:v for k,v in sample.get('joints',{}).items()}
+    wrenches={k.split('::')[-1]:v for k,v in (sample.get('joint_wrenches') or {}).items()}
+    gripper={n:v for n,v in joints.items() if n.startswith('gripper_')}
+    if leader not in gripper or not wrenches:
+        raise RuntimeError('GRASP_LOAD_EVIDENCE_MISSING')
+    pads={}
+    for contact in sample.get('contacts',[]):
+        bodies=(contact['a'],contact['b'])
+        if not any(f'::{target_model}::' in body for body in bodies):continue
+        for link in touch_links:
+            if any(f'::{link}::' in body for body in bodies):
+                pads[link]=pads.get(link,0)+len(contact['points'])
+    return dict(iteration=sample['iteration'],sim_ns=sample['sim_ns'],monotonic_raw_ns=sample['monotonic_raw_ns'],
+        leader_position_rad=gripper[leader][0],leader_velocity_rad_s=gripper[leader][1],
+        joint_positions_rad={n:v[0] for n,v in sorted(gripper.items())},
+        pad_contact_points={link:pads.get(link,0) for link in sorted(touch_links)},
+        fingertip_joint_force_n={n:math.sqrt(sum(x*x for x in w[:3])) for n,w in sorted(wrenches.items())
+                                 if n.startswith('gripper_') and n.endswith('finger_tip_joint')},
+        joint_axis_torque_nm={n:w[6] for n,w in sorted(wrenches.items()) if n.startswith('gripper_')})
+
+
 class HeldObject:
     def __init__(self,tool,obj,fingers,required,closure,open_position):
         self.required=set(required)

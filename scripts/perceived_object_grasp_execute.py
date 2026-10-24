@@ -2705,7 +2705,27 @@ def main():
                             planned_duration_s=planned_duration_s(step['trajectory']),measured_rtf=rtf,wait_s=wait,
                             previous_start=stamp(execution_mark),start=stamp(start_sample)))
                     execution_mark=start_sample
-                    result=action(execute_client,ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)
+                    trajectory=step['trajectory']
+                    if step['stage']=='PREPLAN_OPEN_GRIPPER' and summary.get('grasp_hold'):
+                        # The held finger rests at its measured closure, not at the certified
+                        # closure the prevalidated OPEN starts from (MoveIt start tolerance 0.01
+                        # rad). Plan the same OPEN goal from the verified actual state.
+                        prevalidated=trajectory.joint_trajectory
+                        open_goal=dict(zip(prevalidated.joint_names,prevalidated.points[-1].positions))
+                        deadline=time.monotonic()+30
+                        release=plan_segment(scene_now(),label,open_goal,group='gripper')
+                        trajectory=release['trajectory'];live=trajectory.joint_trajectory
+                        measured_open=measurements.joints(measurements.fresh())[contact_guard.leader][0]
+                        live_start=live.points[0].positions[list(live.joint_names).index(contact_guard.leader)]
+                        summary['release_alignment']=dict(open_goal=open_goal,measured_rad=measured_open,
+                            prevalidated_start_rad=prevalidated.points[0].positions[list(prevalidated.joint_names).index(contact_guard.leader)],
+                            live_start_rad=live_start,start_deviation_rad=abs(live_start-measured_open),allowed_start_tolerance_rad=.01)
+                        live_goal=dict(zip(live.joint_names,live.points[-1].positions))
+                        if (summary['release_alignment']['start_deviation_rad']>.01 or set(live_goal)!=set(open_goal) or
+                                any(abs(live_goal[n]-open_goal[n])>1e-6 for n in open_goal)):
+                            raise RuntimeError('RELEASE_NOT_ALIGNED_WITH_MEASURED_STATE')
+                        stage(label)
+                    result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)
                     if step['stage']=='PREPLAN_CLOSE_GRIPPER':
                         summary.update(close_terminal_wall_ns=time.time_ns(),close_terminal_monotonic_raw_ns=measurement_clock.now_ns())
                     controlled_cancel=False
@@ -2758,6 +2778,36 @@ def main():
                     summary['motion_stop_verified']=wait_stopped(monitor_contacts=True)
                     if not summary['motion_stop_verified']:
                         raise RuntimeError('physical closure did not converge')
+                    # Grasp-to-hold: the certified CLOSE command leaves the stalled finger a
+                    # standing ~0.01 rad servo error that ratchets it 0.1 mrad per pad-manifold
+                    # regeneration and jolts the part (LENLEG 2026-10-24). Once opposing contact
+                    # is measured and settled, hold at the measured closure plus a small reserve,
+                    # never beyond the certified closure. Retention is then proven under the hold.
+                    from simulator_execution import GRASP_HOLD_RESERVE_RAD,grasp_hold_target,grasp_load_evidence
+                    touch=contract['allowed_touch_links'];leader=next(iter(leaders))
+                    closed=contact_guard.checked_current()
+                    if not set(touch)<=contact_guard.fingers:
+                        raise RuntimeError('GRASP_HOLD_REQUIRES_OPPOSING_CONTACT')
+                    close_motion=next(s for s in cycle['steps'] if s['stage']=='PREPLAN_CLOSE_GRIPPER')['trajectory'].joint_trajectory
+                    certified_close=close_motion.points[-1].positions[list(close_motion.joint_names).index(leader)]
+                    hold_before=grasp_load_evidence(closed,leader,touch,contact_guard.name)
+                    hold_command=grasp_hold_target(hold_before['leader_position_rad'],GRASP_HOLD_RESERVE_RAD,
+                                                   certified_close,contact_guard.open_position)
+                    deadline=time.monotonic()+30
+                    hold=plan_segment(scene_now(),'COMMISSION_GRASP_HOLD',{leader:hold_command},group='gripper')
+                    hold_points=hold['trajectory'].joint_trajectory
+                    action(execute_client,ExecuteTrajectory.Goal(trajectory=hold['trajectory']),30)
+                    stage(label)
+                    if not wait_stopped(monitor_contacts=True):
+                        raise RuntimeError('GRASP_HOLD_DID_NOT_SETTLE')
+                    held_sample=contact_guard.checked_current()
+                    if not set(touch)<=contact_guard.fingers:
+                        raise RuntimeError('GRASP_HOLD_LOST_OPPOSING_CONTACT')
+                    summary['grasp_hold']=dict(reserve_rad=GRASP_HOLD_RESERVE_RAD,certified_close_rad=certified_close,
+                        hold_command_rad=hold_command,
+                        hold_trajectory_start_rad=hold_points.points[0].positions[list(hold_points.joint_names).index(leader)],
+                        before=hold_before,after=grasp_load_evidence(held_sample,leader,touch,contact_guard.name),
+                        hold_metadata={k:v for k,v in hold['metadata'].items() if k in ('moveit_code','points','planning_time','success')})
                     # Every current grasp must prove physical retention before
                     # planning attachment or further arm motion. Keep the frozen
                     # contact certificate and held reference throughout the hold.

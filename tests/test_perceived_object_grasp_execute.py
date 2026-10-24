@@ -1155,9 +1155,19 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
         calls.append('retention')
         if retention_failure=='duration':raise RuntimeError('physical retention duration rejected')
         return {'duration_sim_ns':1_100_000_000,'samples':1101}
+    # A stalled closed finger with real-format telemetry for the grasp-to-hold transition.
+    current.update(sim_ns=1,monotonic_raw_ns=1,contacts=[],joints={'a0::r::gripper_finger1_joint':[.5848,0.]},
+                   joint_wrenches={'a0::r::gripper_finger1_finger_tip_joint':[90.,0.,0.,0.,0.,0.,.3]})
     guard=SimpleNamespace(pile_binding={},begin_pile_admission=record('admission'),
         establish=record('establish',[0,0,0,0,0,0,1]),checked_current=record('checked',current),
-        retention_evidence=retention,held=object(),separation=object(),planning_attached=False)
+        retention_evidence=retention,held=object(),separation=object(),planning_attached=False,
+        fingers={'left','right'},name='part_04',open_position=0.)
+    trajectory=lambda q:SimpleNamespace(joint_trajectory=SimpleNamespace(joint_names=['gripper_finger1_joint'],
+                                                                         points=[SimpleNamespace(positions=[q])]))
+    holds=[]
+    def plan(scene,name,goal,group=None):
+        calls.append('hold-plan');holds.append((name,goal,group))
+        return {'trajectory':trajectory(.5848),'metadata':{'moveit_code':1,'success':True}}
     def attachment(original,contract,measurements,sample):
         assert sample is current
         assert calls.index('retention')<len(calls)
@@ -1166,8 +1176,12 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
     scope={'summary':summary,'contact_guard':guard,'args':SimpleNamespace(simulator_commission=mode),
         'wait_stopped':record('stop',True),'measurements':SimpleNamespace(fresh=record('unchecked',{'iteration':1})),
         'monitored_hold':hold,'measured_reconcile':record('reconcile'),'measured_attachment':attachment,
-        'step':{'original':'original'},'contract':{},'apply':record('apply'),'baseline':'baseline',
-        'PlanningScene':lambda **kwargs:kwargs,'RuntimeError':RuntimeError}
+        'step':{'original':'original'},'contract':{'allowed_touch_links':['left','right']},'apply':record('apply'),'baseline':'baseline',
+        'PlanningScene':lambda **kwargs:kwargs,'RuntimeError':RuntimeError,
+        'leaders':{'gripper_finger1_joint'},'cycle':{'steps':[{'stage':'PREPLAN_CLOSE_GRIPPER','trajectory':trajectory(.5949)}]},
+        'plan_segment':plan,'scene_now':lambda:'scene','action':record('hold-action'),'stage':record('stage'),
+        'execute_client':'execute','ExecuteTrajectory':SimpleNamespace(Goal=lambda trajectory:trajectory),
+        'label':'ATTACH','time':__import__('time')}
     tree=ast.parse(SCRIPT.read_text())
     branch=next(n for n in ast.walk(tree) if isinstance(n,ast.If) and
         ast.unparse(n.test)=="step['kind'] == 'attach'" and 'begin_pile_admission' in ast.unparse(n))
@@ -1184,6 +1198,9 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
         scope['exercise']()
         assert summary['stationary_retention']['duration_sim_ns']>=1_000_000_000
         assert calls.index('admission')<calls.index('stop')<calls.index('establish')<calls.index('hold')<calls.index('retention')
+        assert calls.index('stop')<calls.index('hold-plan')<calls.index('hold-action')<calls.index('establish')
+        assert holds==[('COMMISSION_GRASP_HOLD',{'gripper_finger1_joint':pytest.approx(.5868)},'gripper')]
+        assert summary['grasp_hold']['hold_command_rad']==pytest.approx(.5868) and summary['grasp_hold']['certified_close_rad']==.5949
         assert calls.count('establish')==1 and calls.count('admission')==1
         assert 'unchecked' not in calls
         if mode=='stationary':
@@ -1394,7 +1411,8 @@ def test_execution_loop_derives_the_wait_only_for_carried_steps():
     source=SCRIPT.read_text()
     assert "wait=carried_execution_wait(step['trajectory'],rtf)" in source
     assert "if step['stage'] in CARRIED_STAGES:" in source
-    assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),wait)" in source
+    assert "trajectory=step['trajectory']\n" in source                      # every step executes its own plan,
+    assert "ExecuteTrajectory.Goal(trajectory=trajectory),wait)" in source     # except an aligned live OPEN (tested apart)
     assert "ExecuteTrajectory.Goal(trajectory=step['trajectory']),120)" not in source
     assert "previous_start=stamp(execution_mark),start=stamp(start_sample)" in source
     assert MODULE.CARRIED_STAGES==('PREPLAN_LIFT','PREPLAN_TRANSFER','PREPLAN_PLACE')
@@ -1729,3 +1747,15 @@ def test_full_cycle_judges_home_only_after_the_measured_stationary_window():
     assert block.index("if not wait_stopped(monitor_contacts=True):") < block.index("final_sample=measurements.fresh()")
     assert "abs(final_joints[name][0]-value)>.001" in block                      # home tolerance unchanged
     assert "summary['final_home_stop']" in block
+
+
+def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_measured_state():
+    source=SCRIPT.read_text()
+    attach=source[source.index("raise RuntimeError('physical closure did not converge')"):source.index("summary['stationary_hold_start']")]
+    assert attach.index("GRASP_HOLD_REQUIRES_OPPOSING_CONTACT")<attach.index("grasp_hold_target(")<attach.index(
+        "plan_segment(scene_now(),'COMMISSION_GRASP_HOLD'")<attach.index("GRASP_HOLD_LOST_OPPOSING_CONTACT")<attach.index(
+        "contact_guard.establish()")
+    release=source[source.index("if step['stage']=='PREPLAN_OPEN_GRIPPER' and summary.get('grasp_hold'):"):
+                   source.index("result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)")]
+    assert "plan_segment(scene_now(),label,open_goal,group='gripper')" in release      # same goal, actual start
+    assert "start_deviation_rad']>.01" in release and "abs(live_goal[n]-open_goal[n])>1e-6" in release

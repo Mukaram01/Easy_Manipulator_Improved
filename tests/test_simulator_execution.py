@@ -1780,3 +1780,31 @@ def test_gil_probe_starts_before_the_measurement_threads_and_names_them_after():
     assert source.index("self.acquisition=threading.Thread(target=self._acquire")<source.index("if self.gil_probe is not None:self.gil_probe.capture_names()")
 
 
+
+
+def test_grasp_hold_target_stays_between_measured_contact_and_certified_closure():
+    from simulator_execution import grasp_hold_target
+    assert grasp_hold_target(.5848,.002,.5949,0.)==pytest.approx(.5868)
+    assert grasp_hold_target(.5940,.002,.5949,0.)==pytest.approx(.5949)      # never beyond the certified closure
+    for bad in ((.5848,0.,.5949,0.),(.5848,-.001,.5949,0.),(.0005,.002,.5949,0.),(.5960,.002,.5949,0.),
+                (float('nan'),.002,.5949,0.),(True,.002,.5949,0.)):
+        with pytest.raises(RuntimeError):grasp_hold_target(*bad)
+
+
+def test_grasp_load_evidence_reads_pad_loads_and_contacts_of_the_held_part_only():
+    from simulator_execution import grasp_load_evidence
+    touch=['gripper_finger1_finger_tip_link','gripper_finger2_finger_tip_link']
+    tip=lambda f:[f,0.,0.,0.,0.,0.,.25]
+    sample=dict(iteration=7,sim_ns=7,monotonic_raw_ns=70,
+        joints={'a0::workcell_robot::gripper_finger1_joint':[.5848,0.],'a0::workcell_robot::shoulder_pan_joint':[1.,0.]},
+        joint_wrenches={'a0::workcell_robot::gripper_finger1_finger_tip_joint':tip(90.),
+                        'a0::workcell_robot::gripper_finger2_finger_tip_joint':tip(89.5),
+                        'a0::workcell_robot::gripper_finger1_joint':[0.,0.,0.,0.,0.,.01,.01]},
+        contacts=[dict(a='a0::part_04::link::collision',b=f'a0::workcell_robot::{touch[0]}::c',points=[[0,0,0]]*4),
+                  dict(a='a0::part_04::link::collision',b=f'a0::workcell_robot::{touch[1]}::c',points=[[0,0,0]]*3),
+                  dict(a='a0::part_09::link::collision',b=f'a0::workcell_robot::{touch[1]}::c',points=[[0,0,0]]*2)])
+    e=grasp_load_evidence(sample,'gripper_finger1_joint',touch,'part_04')
+    assert e['leader_position_rad']==.5848 and e['pad_contact_points']=={touch[0]:4,touch[1]:3}
+    assert e['fingertip_joint_force_n']=={'gripper_finger1_finger_tip_joint':90.,'gripper_finger2_finger_tip_joint':89.5}
+    assert e['joint_axis_torque_nm']['gripper_finger1_joint']==.01 and 'shoulder_pan_joint' not in e['joint_positions_rad']
+    with pytest.raises(RuntimeError,match='MISSING'):grasp_load_evidence(dict(sample,joint_wrenches={}),'gripper_finger1_joint',touch,'part_04')
