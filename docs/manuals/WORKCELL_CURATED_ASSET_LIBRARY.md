@@ -18,6 +18,8 @@ Placement: select an asset in picker/discovery, then add in Object Placement Man
 
 Replacement policy: these are lightweight generated placeholders. Replace with real licensed CAD later by importing user meshes into a workspace asset package.
 
+Winding: closed placeholder STLs must be wound outward (counter-clockwise seen from outside). Web3D draws and picks front faces only, so an inside-out mesh shows its inner walls and its faces cannot be picked for Mate. `tests/test_placeholder_stl_winding.py` checks the environment asset STLs.
+
 License/source policy: built-ins are generated_internal or placeholder/user_replaceable only. No proprietary vendor CAD is bundled.
 
 User STL import path recommendation: place imported meshes under a workspace-owned package path (for example, `assets/environment/<your_asset>_description/meshes/`) and keep package discovery flat.
