@@ -1,6 +1,7 @@
 import hashlib
 import json
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -146,8 +147,14 @@ def test_live_authoring_crud_api_updates_product_view_without_scene_regeneration
         assert method in preview_header
         assert f"ScenePreviewWidget::{method}" in preview
         assert method in mainwindow
-    assert 'live_item.insert(QStringLiteral("mesh_uri"), mesh_source)' in preview
-    assert 'mesh_source.startsWith(QStringLiteral("scenes/"))' in preview
+    # Add and duplicate share one payload; a library mesh outside the served
+    # roots is staged so the live item draws its real mesh at once.
+    assert preview.count("QJsonDocument(live_authoring_item_payload(item))") == 2
+    assert 'live_item.insert(QStringLiteral("mesh_uri"), staging.uri)' in preview
+    staging = (ROOT / "workcell_builder/workcell_builder/src_live_mesh_staging.cpp").read_text(encoding="utf-8")
+    viewer_roots = re.search(r"const STAGED_MESH_ROOTS = \[(.*?)\];", viewer, re.S).group(1)
+    assert re.findall(r"'([^']+)'", viewer_roots) == re.findall(
+        r'QStringLiteral\("([^"]+/)"\)', staging.split("kBrowserServedRoots{", 1)[1].split("};", 1)[0])
 
     delete_body = mainwindow.split("void MainWindow::delete_selected_item()", 1)[1].split(
         "double MainWindow::current_nudge_step_m", 1
