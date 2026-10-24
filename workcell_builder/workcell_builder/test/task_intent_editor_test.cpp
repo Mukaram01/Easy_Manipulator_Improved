@@ -628,6 +628,61 @@ TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {
   EXPECT_EQ(reopened.model().pick_selection.source_ref, "pick");
 }
 
+
+TEST(TaskIntentEditor, ExplicitLiveCameraSourceSurvivesReopenAndClearsOutsideLiveMode) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  auto * camera = editor.findChild<QComboBox *>("taskCameraSource");
+  ASSERT_NE(mode, nullptr); ASSERT_NE(camera, nullptr);
+  auto * capture = editor.findChild<QPushButton *>("taskCameraCapture");
+  auto * preview = editor.findChild<QLabel *>("taskCameraCaptureStatus");
+  ASSERT_NE(capture, nullptr); ASSERT_NE(preview, nullptr);
+  auto * live_epd = editor.findChild<QPushButton *>("taskCaptureLiveEpd");
+  ASSERT_NE(live_epd, nullptr);
+  ASSERT_NE(editor.findChild<QLabel *>("taskCaptureLiveEpdStatus"), nullptr);
+  auto * preflight = editor.findChild<QPushButton *>("taskLiveScenePreflight");
+  ASSERT_NE(preflight, nullptr);
+  ASSERT_NE(editor.findChild<QLabel *>("taskLiveScenePreflightStatus"), nullptr);
+  EXPECT_FALSE(preflight->isEnabled());
+  EXPECT_FALSE(capture->isEnabled());
+  EXPECT_FALSE(live_epd->isEnabled());
+  mode->setCurrentIndex(mode->findData("live_epd"));
+  ASSERT_TRUE(camera->isEnabled());
+  camera->setCurrentIndex(camera->findData("simulated_rgbd"));
+  EXPECT_FALSE(capture->isEnabled());  // Unsaved camera edits cannot probe.
+  EXPECT_FALSE(live_epd->isEnabled());
+  EXPECT_FALSE(preflight->isEnabled());
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preflight->isEnabled());  // Check is explicit; no ROS starts by saving.
+  EXPECT_TRUE(capture->isEnabled());  // No ROS launched until explicit click.
+  EXPECT_TRUE(live_epd->isEnabled());  // No EPD subscribed until explicit click.
+  EXPECT_TRUE(editor.blocker().contains("TASK_INPUT_UNAVAILABLE"));
+
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  auto * source = reopened.findChild<QComboBox *>("taskCameraSource"); ASSERT_NE(source, nullptr);
+  EXPECT_EQ(source->currentData().toString(), "simulated_rgbd");
+  auto * live_mode = reopened.findChild<QComboBox *>("taskPerceptionMode");
+  EXPECT_EQ(live_mode->currentData().toString(), "live_epd");
+  source->setCurrentIndex(source->findData("realsense_d435i"));
+  ASSERT_TRUE(reopened.save());
+
+  TaskIntentEditor d435i; ASSERT_TRUE(d435i.load_scene(dir.path(), helper()));
+  auto * physical = d435i.findChild<QComboBox *>("taskCameraSource");
+  ASSERT_NE(physical, nullptr);
+  EXPECT_EQ(physical->currentData().toString(), "realsense_d435i");
+  auto * selected_mode = d435i.findChild<QComboBox *>("taskPerceptionMode");
+  selected_mode->setCurrentIndex(selected_mode->findData("off"));
+  EXPECT_FALSE(physical->isEnabled());
+  EXPECT_FALSE(d435i.findChild<QPushButton *>("taskCameraCapture")->isEnabled());
+  EXPECT_FALSE(d435i.findChild<QPushButton *>("taskCaptureLiveEpd")->isEnabled());
+  EXPECT_FALSE(d435i.findChild<QPushButton *>("taskLiveScenePreflight")->isEnabled());
+  ASSERT_TRUE(d435i.save());
+  const auto task = QJsonDocument::fromJson(QByteArray::fromStdString(
+    workcell_builder::canonical_task_intent_json_for_testing(d435i.model().to_yaml()))).object();
+  EXPECT_TRUE(task.value("perception").toObject().value("camera_source").isNull());
+}
+
 TEST(TaskIntentEditor, DestinationChangeSurvivesReorderToggleSaveUntilPlaceReselected) {
   application(); QTemporaryDir dir; seed_sequence(dir.path());
   auto environment = read(dir.path() + "/environment.yaml");

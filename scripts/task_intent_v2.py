@@ -213,8 +213,15 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
         if policy in {"PREFERRED", "EXACT"} and not block.get("strategy_ref") and label == "grasp":
             errors.append({"code": "STRATEGY_REQUIRED", "message": "grasp.strategy_ref is required for this policy"})
     perception = model.get('perception')
+    if perception is not None and not isinstance(perception, dict):
+        errors.append({'code': 'PERCEPTION_BINDING_INVALID', 'message': 'perception must be a mapping.'})
     if isinstance(perception, dict) and 'mode' in perception:
         mode = perception['mode']
+        camera_source = perception.get('camera_source')
+        if camera_source is not None and camera_source not in ('simulated_rgbd', 'realsense_d435i'):
+            errors.append({'code': 'CAMERA_SOURCE_UNSUPPORTED', 'message': 'Choose Simulated RGB-D or Intel RealSense D435i.'})
+        if camera_source is not None and mode != 'live_epd':
+            errors.append({'code': 'CAMERA_SOURCE_MODE_MISMATCH', 'message': 'A live camera source requires live_epd mode.'})
         selection = model.get('pick', {}).get('selection', {})
         if mode not in ('off', 'replayed_snapshot', 'live_epd'):
             errors.append({'code': 'PERCEPTION_MODE_UNSUPPORTED', 'message': 'Select off, replayed_snapshot or live_epd.'})
