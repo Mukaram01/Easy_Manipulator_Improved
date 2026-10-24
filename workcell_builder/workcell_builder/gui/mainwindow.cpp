@@ -1,4 +1,5 @@
 #include "task_intent_editor.h"
+#include "operator_preview_launcher.hpp"
 #include "authored_canvas_position.hpp"
 // Copyright 2026 Mukaram01
 // Compatibility tokens: Selection id missing after refresh, clearing atomically: Locked/generated item edit rejected
@@ -3041,6 +3042,8 @@ void MainWindow::setup_studio_shell()
   register_scene_action("simulate.stop", "Stop Simulation", [this]() { if (stop_preview_button_) stop_preview_button_->click(); });
   register_scene_action("diagnostics.self_test", "Run Self-Test", [this]() { if (run_self_test_button_) run_self_test_button_->click(); });
   register_scene_action("diagnostics.golden_flow", "Run Golden Flow Dry Run", [this]() { if (run_golden_flow_button_) run_golden_flow_button_->click(); });
+  register_scene_action("operate.operator_preview", "Operator Preview", [this]() { open_operator_preview(); })
+    ->setToolTip("Open the operator HMI for this cell in a separate window (read-only, no robot motion).");
 
   auto make_primary_button = [scene_builder](const QString & text) {
       auto * button = new QPushButton(text, scene_builder);
@@ -3076,6 +3079,11 @@ void MainWindow::setup_studio_shell()
     });
   save_layout_button_ = make_primary_button("Save Layout");
   primary_controls->addWidget(save_layout_button_);
+  operator_preview_button_ = make_primary_button("Operator Preview");
+  operator_preview_button_->setObjectName("sceneBuilderToolbarOperatorPreview");
+  operator_preview_button_->setToolTip(scene_builder_action("operate.operator_preview")->toolTip());
+  connect(operator_preview_button_, &QPushButton::clicked, this, [this]() { open_operator_preview(); });
+  primary_controls->addWidget(operator_preview_button_);
   scene_builder_mate_button_ = new QPushButton("Mate", scene_builder);
   scene_builder_mate_button_->setObjectName("sceneBuilderToolbarMate");
   scene_builder_mate_button_->setCheckable(true);
@@ -3425,11 +3433,13 @@ void MainWindow::setup_studio_shell()
     if (save_layout_button_) save_layout_button_->setEnabled(true);
     if (layout_state_label_) layout_state_label_->setText("Unsaved task edits — Save task before planning.");
     refresh_preview_launch_ui();
+    schedule_operator_preview_update();
   });
   connect(environment_task_editor_, &TaskIntentEditor::saved, this, [this] {
     validation_stale_ = true;
     if (layout_state_label_ && !layout_dirty_) layout_state_label_->setText("Task saved and reopened; Generate and Validate before planning.");
     refresh_preview_launch_ui();
+    schedule_operator_preview_update();
   });
   workflow_tab_layout->addWidget(environment_task_editor_);
 
@@ -5854,6 +5864,7 @@ void MainWindow::closeEvent(QCloseEvent * event)
     event->ignore();
     return;
   }
+  if (operator_preview_launcher_) operator_preview_launcher_->shutdown();
   event->accept();
 }
 
@@ -6828,6 +6839,78 @@ void MainWindow::copy_layout_merge_summary()
 QString MainWindow::diagnostics_output_root() const
 { const QString ws = detect_workspace_root(); return ws.isEmpty() ? (QDir::homePath() + "/diagnostics") : (ws + "/diagnostics"); }
 
+workcell_builder::OperatorPreviewRequest MainWindow::operator_preview_request() const
+{
+  workcell_builder::OperatorPreviewRequest request;
+  request.scene_dir = selected_scene_path();
+  request.scene_name = selected_scene_name();
+  request.workspace_root = detect_workspace_root();
+  QString helper;
+  if (helper_script_exists("operator_preview_projection.py", &helper)) {
+    request.scripts_dir = QFileInfo(helper).absolutePath();
+  }
+  // Unsaved task edits travel as the editor's own canonical v2 draft (the same
+  // bytes its validator sees). Layout edits are only flagged: geometry reaches
+  // environment.yaml on Save, and the preview must not write the scene.
+  if (environment_task_editor_ && environment_task_editor_->dirty() &&
+    QFileInfo(environment_task_editor_->scene()).canonicalFilePath() ==
+    QFileInfo(request.scene_dir).canonicalFilePath())
+  {
+    const auto draft = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(environment_task_editor_->model().to_yaml())));
+    request.task_dirty = draft.isObject() && !draft.object().isEmpty();
+    request.task_draft = draft.object();
+  }
+  request.layout_dirty = layout_dirty_;
+  return request;
+}
+
+void MainWindow::open_operator_preview()
+{
+  if (!has_selected_scene()) {
+    QMessageBox::information(this, "Operator Preview", "Select a cell before opening the Operator Preview.");
+    return;
+  }
+  ensure_operator_preview_launcher();
+  const auto request = operator_preview_request();
+  QString error;
+  if (!operator_preview_launcher_->open_or_refresh(request, &error)) {
+    append_studio_log("Operator Preview blocked: " + error, workcell_builder::StudioLogSeverity::Error,
+      QStringLiteral("operator_preview"));
+    QMessageBox::warning(this, "Operator Preview", error);
+    return;
+  }
+  append_studio_log(QString("Operator Preview shows the %1 task of %2%3.")
+    .arg(request.task_dirty ? "unsaved draft" : "saved", request.scene_name,
+         request.layout_dirty ? "; unsaved layout edits are not included" : ""));
+}
+
+workcell_builder::OperatorPreviewLauncher * MainWindow::ensure_operator_preview_launcher()
+{
+  if (!operator_preview_launcher_) {
+    operator_preview_launcher_ = new workcell_builder::OperatorPreviewLauncher(this);
+    connect(operator_preview_launcher_, &workcell_builder::OperatorPreviewLauncher::state_changed, this,
+      [this](const QString &, const QString & detail) { append_studio_log(detail); });
+  }
+  return operator_preview_launcher_;
+}
+
+void MainWindow::schedule_operator_preview_update()
+{
+  if (!operator_preview_launcher_ || !operator_preview_launcher_->running()) return;
+  if (!operator_preview_update_timer_) {
+    operator_preview_update_timer_ = new QTimer(this);
+    operator_preview_update_timer_->setSingleShot(true);
+    operator_preview_update_timer_->setInterval(400);
+    connect(operator_preview_update_timer_, &QTimer::timeout, this, [this]() {
+      if (operator_preview_launcher_ && has_selected_scene()) {
+        operator_preview_launcher_->publish_update(operator_preview_request());
+      }
+    });
+  }
+  operator_preview_update_timer_->start();
+}
+
 bool MainWindow::helper_script_exists(const QString & script_name, QString * path) const
 {
   const QStringList candidates = helper_script_search_paths(script_name);
@@ -7080,6 +7163,7 @@ void MainWindow::update_scene_builder_path_header(const QString & scene_name, co
 
 void MainWindow::sync_selected_scene_state()
 {
+  schedule_operator_preview_update();
   selected_scene_state_ = {};
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return;
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
@@ -7815,6 +7899,7 @@ void MainWindow::update_scene_builder_top_controls_overflow()
   secondary_layout_menu->addAction(scene_builder_action("layout.save"));
   secondary_layout_menu->addAction(scene_builder_action("layout.duplicate"));
   secondary_layout_menu->addAction(scene_builder_action("layout.remove"));
+  scene_builder_secondary_overflow_menu_->addAction(scene_builder_action("operate.operator_preview"));
   const auto remap_menu = [this](QToolButton * button) {
       if (!button || !button->menu()) return;
       scene_builder_secondary_overflow_menu_->addMenu(button->menu());
@@ -8138,6 +8223,7 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   // before serialization.
   if (!layout_dirty_) capture_active_editable_layout_session();
   layout_dirty_ = true;
+  schedule_operator_preview_update();
   layout_saved_ = false;
   notify_mate_scene_changed();
   validation_stale_ = true;
@@ -9098,6 +9184,7 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     canvas->setData(RoleMetadataExplicitlyEdited, false);
   }
   layout_dirty_ = false;
+  schedule_operator_preview_update();
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);
     setWindowModified(false);
@@ -9325,6 +9412,7 @@ void MainWindow::revert_layout_changes()
   refresh_environment_task_editor();
   rebuild_digital_twin_canvas();
   layout_dirty_ = false;
+  schedule_operator_preview_update();
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);
     setWindowModified(false);

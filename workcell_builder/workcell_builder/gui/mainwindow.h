@@ -43,6 +43,7 @@
 #include "studio_log_issue_tracker.hpp"
 #include "gui/scene_preview_widget.h"
 #include "gui/asset_thumbnail_service.h"
+#include "operator_preview_request.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -55,6 +56,7 @@ class MateToolPanel;
 QT_BEGIN_NAMESPACE
 namespace Ui {class MainWindow;}
 class TaskIntentEditor;
+namespace workcell_builder { class OperatorPreviewLauncher; }
 QT_END_NAMESPACE
 class QProgressDialog;
 class QListWidget;
@@ -629,6 +631,14 @@ private:
   QLabel * scene_builder_launch_command_label_{ nullptr };
   QLabel * task_intent_details_label_{ nullptr };
   TaskIntentEditor * environment_task_editor_{ nullptr };
+  // Operator HMI preview: separate process fed with read-only engineering state.
+  workcell_builder::OperatorPreviewLauncher * operator_preview_launcher_{ nullptr };
+  QTimer * operator_preview_update_timer_{ nullptr };
+  QPushButton * operator_preview_button_{ nullptr };
+  void open_operator_preview();
+  workcell_builder::OperatorPreviewLauncher * ensure_operator_preview_launcher();
+  void schedule_operator_preview_update();
+  workcell_builder::OperatorPreviewRequest operator_preview_request() const;
   QLabel * pick_place_details_label_{ nullptr };
   QLabel * grasp_details_label_{ nullptr };
   QLabel * approach_retreat_details_label_{ nullptr };

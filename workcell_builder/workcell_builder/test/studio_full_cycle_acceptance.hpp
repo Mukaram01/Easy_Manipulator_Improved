@@ -7,6 +7,13 @@
 #include "gui/new_cell_wizard.h"
 #include "gui/task_intent_editor.h"
 #include "gui/datum_mating_text.hpp"
+#include "gui/operator_preview_launcher.hpp"
+#include <QComboBox>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QProcess>
+#include <QSaveFile>
+#include <QRegularExpression>
 #include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
@@ -1151,6 +1158,280 @@ public:
         else QObject::connect(window->preview_process_,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),app,[app](){app->exit(1);});
       }
     });
+    timer->start();
+  }
+  // Operator Preview (R3): Builder launches the separate Operator HMI for the
+  // selected cell, propagates draft/saved task edits, the HMI runs only offline
+  // no-motion checks, invalid input blocks honestly, open/close does not leak
+  // processes, and a separate reopen recovers the saved configuration.
+  static void start_operator_preview_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & scene_name, bool reopen) {
+    struct Session { int phase=0, ticks=0, wait=0, command=0, cycles=0; qint64 pid=0; QString scene, saved_class, new_class;
+                     QJsonObject evidence; QJsonArray commands, checks; };
+    auto s = std::make_shared<Session>(); QDir().mkpath(output);
+    const QString tag = reopen ? "reopen" : "authoring";
+    const QString status_path = output + "/hmi_status_" + tag + ".json";
+    const QString commands_path = output + "/hmi_commands_" + tag + ".json";
+    QFile::remove(status_path); QFile::remove(commands_path);
+    s->evidence = {{"result", "FAIL"}, {"robot_motion_commanded", false}, {"execution_goals_sent", 0}};
+    auto write = [=]() {
+      s->evidence["checks"] = s->checks;
+      s->evidence["studio_log_tail"] = window->studio_log_->toPlainText().right(5000);
+      QFile f(output + "/" + tag + ".json");
+      if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson());
+    };
+    auto require = [=](bool value, const QString & message) {
+      s->checks.append(QJsonObject{{"check", message}, {"ok", value}});
+      if (!value) throw std::runtime_error(message.toStdString());
+    };
+    auto status = [=]() {
+      QFile f(status_path);
+      return f.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(f.readAll()).object() : QJsonObject{};
+    };
+    auto command = [=](const QString & action, const QJsonObject & extra = {}) {
+      QJsonObject c = extra; c["id"] = ++s->command; c["action"] = action;
+      s->commands.append(c);
+      QSaveFile f(commands_path);
+      if (f.open(QIODevice::WriteOnly)) { f.write(QJsonDocument(s->commands).toJson()); f.commit(); }
+      return s->command;
+    };
+    auto command_result = [=](int id) {
+      for (const auto & r : status().value("command_results").toArray())
+        if (r.toObject().value("id").toInt() == id) return r.toObject().value("result").toString();
+      return QString();
+    };
+    auto count_processes = [](const QString & pattern) {
+      QProcess p; p.start("pgrep", {"-fc", pattern}); p.waitForFinished(3000);
+      return QString::fromUtf8(p.readAllStandardOutput()).trimmed().toInt();
+    };
+    auto editor = [=]() { return window->environment_task_editor_; };
+    auto set_text = [=](const char * name, const QString & value) {
+      auto * edit = editor()->findChild<QLineEdit *>(name);
+      if (!edit) throw std::runtime_error(std::string("task editor field missing: ") + name);
+      edit->setText(value); emit edit->textEdited(value);
+    };
+    auto * modal_watch = new QTimer(window); modal_watch->setInterval(250);
+    QObject::connect(modal_watch, &QTimer::timeout, window, [=]() {
+      for (auto * widget : QApplication::topLevelWidgets()) if (auto * message = qobject_cast<QMessageBox *>(widget)) {
+        if (!message->isVisible()) continue;
+        s->evidence["failure"] = "unexpected message: " + message->text();
+        window->grab().save(output + "/failure_" + tag + ".png"); write(); message->reject(); app->exit(1);
+      }
+    }); modal_watch->start();
+    auto * timer = new QTimer(window); timer->setInterval(250);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
+      if (++s->ticks >= 1600) require(false, "operator preview acceptance timed out in phase " + QString::number(s->phase));
+      if (window->load_watcher_ && window->load_watcher_->isRunning()) return;
+      const auto hmi = status();
+      auto * launcher = window->operator_preview_launcher_;
+      switch (s->phase) {
+        case 0: {
+          if (s->ticks < 6) return;
+          s->scene = window->detect_workspace_root() + "/src/easy_manipulation_deployment/scenes/" + scene_name;
+          s->evidence["scene_path"] = s->scene;
+          QStringList blockers; QJsonObject diagnostics;
+          require(window->load_scene_for_scene3d_smoke(scene_name, s->scene, &blockers, &diagnostics), "Builder opened the scene");
+          window->show_studio_page(MainWindow::StudioPage::SceneBuilderPage);
+          s->phase = 1; s->ticks = 0; break;
+        }
+        case 1: {
+          if (!editor() || editor()->scene().isEmpty() || s->ticks < 8) return;
+          require(QFileInfo(editor()->scene()).canonicalFilePath() == QFileInfo(s->scene).canonicalFilePath(), "task editor loaded the scene");
+          require(!editor()->dirty(), "task editor starts clean");
+          s->saved_class = QString::fromStdString(editor()->model().pick_selection.class_id);
+          s->evidence["saved_target_class"] = s->saved_class;
+          auto * button = window->findChild<QPushButton *>("sceneBuilderToolbarOperatorPreview");
+          require(button && button->isVisible() && button->isEnabled(), "Operator Preview is on the visible Scene Builder toolbar");
+          require(window->scene_builder_action("operate.operator_preview") != nullptr, "Operator Preview is a registered Scene Builder action");
+          int menu_entries = 0;
+          for (auto * action : window->findChildren<QAction *>()) menu_entries += action->text() == "Operator Preview" ? 1 : 0;
+          s->evidence["operator_preview_action_count"] = menu_entries;
+          require(menu_entries >= 2, "Operator Preview is also reachable from the Workcell Studio Home menu");
+          window->grab().save(output + "/01_builder_" + tag + ".png");
+          window->ensure_operator_preview_launcher()->set_extra_arguments(
+            {"--status-out", status_path, "--acceptance-commands", commands_path, "--capture-dir", output});
+          button->click();
+          require(window->operator_preview_launcher_->running(), "Operator HMI process started from Builder");
+          s->pid = window->operator_preview_launcher_->process_id();
+          s->evidence["hmi_pid"] = static_cast<double>(s->pid);
+          s->phase = 2; s->ticks = 0; break;
+        }
+        case 2: {
+          if (!hmi.value("loaded").toBool() || !hmi.value("busy").toString().isEmpty()) return;
+          require(hmi.value("scene_name").toString() == scene_name, "HMI shows the Builder's selected cell");
+          require(hmi.value("revision").toString() == "SAVED", "HMI shows the SAVED revision when the editor is clean");
+          require(hmi.value("target_class").toString() == s->saved_class, "HMI target class matches the saved TaskIntent");
+          require(!hmi.value("destinations").toArray().isEmpty(), "HMI lists the configured destination");
+          require(!hmi.value("start_enabled").toBool(), "Start production is disabled (NOT AUTHORISED)");
+          s->evidence["saved_hmi"] = hmi;
+          s->evidence["saved_intent_sha256"] = hmi.value("intent_sha256");
+          if (reopen) {
+            QFile f(output + "/authoring.json");
+            const auto authoring = f.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(f.readAll()).object() : QJsonObject{};
+            require(authoring.value("final_saved_intent_sha256").toString() == hmi.value("intent_sha256").toString(),
+              "Reopened cell recovers the same saved task (intent SHA-256 matches the authoring run)");
+            require(hmi.value("target_class").toString() == authoring.value("final_target_class").toString(),
+              "Reopened cell recovers the saved target class");
+            command("capture", {{"name", "20_hmi_reopened"}});
+            s->phase = 90; s->ticks = 0; break;
+          }
+          command("capture", {{"name", "02_hmi_saved"}});
+          s->new_class = s->saved_class == "cup" ? "bottle" : "cup";
+          s->evidence["draft_target_class"] = s->new_class;
+          set_text("taskTargetClass", s->new_class);
+          s->phase = 3; s->ticks = 0; break;
+        }
+        case 3: {  // the Builder pushes the draft without raising: HMI offers Refresh
+          if (!hmi.value("update_banner_visible").toBool()) return;
+          require(editor()->dirty(), "task editor holds unsaved edits");
+          require(hmi.value("revision").toString() == "SAVED", "HMI keeps showing what it loaded until refreshed");
+          s->wait = command("capture", {{"name", "03_hmi_update_available"}});
+          s->phase = 30; s->ticks = 0; break;
+        }
+        case 30: {  // refresh only after the banner was captured
+          if (command_result(s->wait).isEmpty()) return;
+          window->findChild<QPushButton *>("sceneBuilderToolbarOperatorPreview")->click();
+          s->phase = 4; s->ticks = 0; break;
+        }
+        case 4: {
+          if (hmi.value("revision").toString() != "DRAFT" || !hmi.value("busy").toString().isEmpty()) return;
+          require(hmi.value("target_class").toString() == s->new_class, "Refresh shows the draft target class");
+          require(launcher->process_id() == s->pid, "Repeated Operator Preview reuses the running HMI");
+          require(hmi.value("mode").toString() == "DRAFT", "Mode is DRAFT for unsaved edits");
+          command("capture", {{"name", "04_hmi_draft"}});
+          s->wait = command("replay_check");
+          s->phase = 5; s->ticks = 0; break;
+        }
+        case 5: {
+          if (!hmi.value("replay_shown").toBool() || !hmi.value("busy").toString().isEmpty()) return;
+          require(command_result(s->wait) == "done", "Replay check ran from the HMI");
+          QString accepted, rejected;
+          for (const auto & o : hmi.value("objects").toArray()) {
+            const auto obj = o.toObject();
+            if (obj.value("accepted").toBool()) accepted = obj.value("class_id").toString();
+            else if (obj.value("reason_code").toString() == "CLASS_NOT_TARGETED") rejected = obj.value("object_id").toString();
+          }
+          s->evidence["draft_replay_objects"] = hmi.value("objects");
+          require(accepted == s->new_class, "Replay check accepts the draft target class");
+          require(!rejected.isEmpty(), "Replay check rejects the other class with CLASS_NOT_TARGETED");
+          require(hmi.value("mode").toString() == "DRAFT", "Draft stays labelled DRAFT during replay");
+          command("capture", {{"name", "05_hmi_draft_replay"}});
+          command("select_object", {{"object_id", rejected}});
+          command("capture", {{"name", "06_hmi_rejected_detail"}});
+          editor()->findChild<QPushButton *>("taskSave")->click();
+          s->phase = 6; s->ticks = 0; break;
+        }
+        case 6: {
+          if (editor()->dirty() || !hmi.value("update_banner_visible").toBool()) return;
+          s->wait = command("refresh");  // operator-side refresh path
+          s->phase = 7; s->ticks = 0; break;
+        }
+        case 7: {
+          if (hmi.value("revision").toString() != "SAVED" || !hmi.value("busy").toString().isEmpty() ||
+              hmi.value("update_banner_visible").toBool()) return;
+          require(hmi.value("target_class").toString() == s->new_class, "Saved change propagates after HMI Refresh");
+          require(hmi.value("mode").toString() == "REPLAY", "Saved revision with recorded input is labelled REPLAY");
+          s->evidence["final_saved_intent_sha256"] = hmi.value("intent_sha256");
+          s->evidence["final_target_class"] = s->new_class;
+          command("capture", {{"name", "07_hmi_saved_replay"}});
+          // Existing engineering workflow: Generate, then Validate (unchanged code paths).
+          window->generate_scene_package_for_selected_scene();
+          s->evidence["generated_summary_exists"] = QFileInfo::exists(s->scene + "/generated/generated_workcell_summary.json");
+          window->run_offline_validation();
+          s->evidence["builder_offline_validation_state"] =
+            window->validation_state_text().remove(QRegularExpression("<[^>]*>")).simplified();
+          s->wait = command("check");
+          s->phase = 8; s->ticks = 0; break;
+        }
+        case 8: {
+          if (command_result(s->wait).isEmpty() || !hmi.value("busy").toString().isEmpty()) return;
+          s->evidence["after_validate_generate_hmi"] = hmi;
+          require(s->evidence["generated_summary_exists"].toBool(), "Builder Generate produced the generated package");
+          require(hmi.value("dry_run_enabled").toBool(), "Generated-cell dry-run becomes available after Generate");
+          s->wait = command("dry_run");
+          s->phase = 9; s->ticks = 0; break;
+        }
+        case 9: {
+          if (hmi.value("dry_run_status").toString().isEmpty() || !hmi.value("busy").toString().isEmpty()) return;
+          s->evidence["dry_run_status"] = hmi.value("dry_run_status");
+          s->evidence["dry_run_blockers"] = hmi.value("dry_run_blockers");
+          require(hmi.value("dry_run_status").toString() == "PASS" || !hmi.value("dry_run_blockers").toArray().isEmpty(),
+            "Dry-run result is a PASS or names its blockers");
+          command("capture", {{"name", "08_hmi_dry_run"}});
+          // Engineering error: bind a commissioning replay that does not exist (never saved).
+          auto * mode = editor()->findChild<QComboBox *>("taskPerceptionMode");
+          mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+          set_text("taskReplayPath", "config/missing_commissioning_replay.yaml");
+          s->phase = 10; s->ticks = 0; break;
+        }
+        case 10: {
+          if (!editor()->dirty() || s->ticks < 6) return;
+          window->findChild<QPushButton *>("sceneBuilderToolbarOperatorPreview")->click();
+          s->phase = 11; s->ticks = 0; break;
+        }
+        case 11: {
+          if (hmi.value("revision").toString() != "DRAFT" || !hmi.value("busy").toString().isEmpty() ||
+              hmi.value("input_kind").toString() != "unavailable") return;
+          require(!hmi.value("replay_enabled").toBool(), "Missing task input disables the replay check");
+          require(hmi.value("input_blocker").toString().contains("TASK_INPUT_UNAVAILABLE"), "HMI shows the actual input blocker");
+          s->wait = command("replay_check");
+          command("start_production");
+          command("capture", {{"name", "09_hmi_blocked_input"}});
+          s->phase = 12; s->ticks = 0; break;
+        }
+        case 12: {
+          if (command_result(s->wait + 2).isEmpty()) return;
+          require(command_result(s->wait).startsWith("rejected"), "Blocked replay check cannot be run");
+          require(command_result(s->wait + 1).startsWith("rejected"), "Start production cannot be pressed");
+          command("close");
+          s->phase = 13; s->ticks = 0; break;
+        }
+        case 13: {
+          if (launcher->running()) return;
+          require(window->isVisible(), "Closing the HMI leaves Workcell Builder open");
+          require(window->has_selected_scene() && window->findChild<QPushButton *>("sceneBuilderToolbarOperatorPreview")->isEnabled(),
+            "Builder stays usable after the HMI closes");
+          window->grab().save(output + "/10_builder_after_hmi_close.png");
+          s->phase = 14; s->ticks = 0; break;
+        }
+        case 14: {  // repeated open/close: one HMI at a time, nothing left behind
+          if (launcher->running()) return;
+          if (s->cycles == 5) {
+            const int hmi_left = count_processes("[w]orkcell_operator_hmi --request");
+            const int adapters_left = count_processes("[o]perator_preview_projection.py");
+            s->evidence["open_close_cycles"] = s->cycles;
+            s->evidence["hmi_processes_left"] = hmi_left;
+            s->evidence["projection_processes_left"] = adapters_left;
+            require(hmi_left == 0 && adapters_left == 0, "Repeated open/close leaves no HMI or adapter process");
+            s->phase = 90; s->ticks = 0; break;
+          }
+          QFile::remove(status_path);
+          window->findChild<QPushButton *>("sceneBuilderToolbarOperatorPreview")->click();
+          s->phase = 15; s->ticks = 0; break;
+        }
+        case 15: {
+          if (!hmi.value("loaded").toBool() || !hmi.value("busy").toString().isEmpty()) return;
+          require(launcher->running(), "HMI reopened");
+          ++s->cycles;
+          command("close");
+          s->phase = 14; s->ticks = 0; break;
+        }
+        case 90: {
+          // The reopen run exits with the HMI still open: the Builder must take it down
+          // (checked by the caller: no workcell_operator_hmi process may remain).
+          if (reopen) {
+            require(launcher && launcher->running(), "HMI still open when the Builder exits");
+            s->evidence["hmi_running_at_builder_exit"] = true;
+          }
+          s->evidence["result"] = "PASS"; write();
+          timer->stop(); modal_watch->stop(); app->exit(0); break;
+        }
+      }
+    } catch (const std::exception & error) {
+      s->evidence["failure"] = QString::fromUtf8(error.what());
+      window->grab().save(output + "/failure_" + tag + ".png");
+      write(); timer->stop(); modal_watch->stop(); app->exit(1);
+    } });
     timer->start();
   }
   // R3.2 visual mate acceptance: real mouse events into the Product View at

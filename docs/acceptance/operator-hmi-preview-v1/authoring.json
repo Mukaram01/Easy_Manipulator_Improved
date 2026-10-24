@@ -1,0 +1,352 @@
+{
+    "after_validate_generate_hmi": {
+        "applied_revision": 4,
+        "approval": "NOT_APPROVED",
+        "busy": "",
+        "command_results": [
+            {
+                "action": "capture",
+                "id": 1,
+                "result": "done"
+            },
+            {
+                "action": "capture",
+                "id": 2,
+                "result": "done"
+            },
+            {
+                "action": "capture",
+                "id": 3,
+                "result": "done"
+            },
+            {
+                "action": "replay_check",
+                "id": 4,
+                "result": "done"
+            },
+            {
+                "action": "capture",
+                "id": 5,
+                "result": "done"
+            },
+            {
+                "action": "select_object",
+                "id": 6,
+                "result": "done"
+            },
+            {
+                "action": "capture",
+                "id": 7,
+                "result": "done"
+            },
+            {
+                "action": "refresh",
+                "id": 8,
+                "result": "done"
+            },
+            {
+                "action": "capture",
+                "id": 9,
+                "result": "done"
+            },
+            {
+                "action": "check",
+                "id": 10,
+                "result": "done"
+            }
+        ],
+        "destinations": [
+            "default_drop_zone → target_bin_default"
+        ],
+        "dry_run_blockers": [
+        ],
+        "dry_run_enabled": true,
+        "dry_run_status": "",
+        "errors": [
+        ],
+        "event_count": 50,
+        "input_blocker": "",
+        "input_kind": "replay",
+        "intent_sha256": "d176de2f9913aaf5685082882a653f59402a1cddaf40a9e469687ded23106ee6",
+        "last_command": 10,
+        "layout_unsaved": false,
+        "loaded": true,
+        "mode": "REPLAY",
+        "objects": [
+            {
+                "accepted": true,
+                "class_id": "cup",
+                "object_id": "sample-cup",
+                "reason_code": "SELECTED"
+            },
+            {
+                "accepted": false,
+                "class_id": "bottle",
+                "object_id": "sample-bottle",
+                "reason_code": "CLASS_NOT_TARGETED"
+            }
+        ],
+        "offline_checks_allowed": true,
+        "pending_revision": 6,
+        "production_blockers": [
+            "No approved generated bundle for this cell.",
+            "Task resolution BLOCKED (CYCLE_EVALUATION_REQUIRED)",
+            "No live perception input is bound.",
+            "No qualified execution backend is connected to the Operator HMI. Physical robot motion is not authorised from this preview."
+        ],
+        "replay_enabled": true,
+        "replay_shown": true,
+        "resolution_status": "BLOCKED",
+        "revision": "SAVED",
+        "saved_intent_sha256": "d176de2f9913aaf5685082882a653f59402a1cddaf40a9e469687ded23106ee6",
+        "scene_name": "ur5_2f_test",
+        "scene_path": "/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+        "schema": "workcell_operator_hmi_status/v1",
+        "selected_object": "sample-cup",
+        "start_enabled": false,
+        "target_class": "cup",
+        "task_id": "default_task",
+        "update_banner_visible": true,
+        "usable": true,
+        "validation_status": "PASS"
+    },
+    "builder_offline_validation_state": "passed — Offline validation passed for ur5_2f_test.",
+    "checks": [
+        {
+            "check": "Builder opened the scene",
+            "ok": true
+        },
+        {
+            "check": "task editor loaded the scene",
+            "ok": true
+        },
+        {
+            "check": "task editor starts clean",
+            "ok": true
+        },
+        {
+            "check": "Operator Preview is on the visible Scene Builder toolbar",
+            "ok": true
+        },
+        {
+            "check": "Operator Preview is a registered Scene Builder action",
+            "ok": true
+        },
+        {
+            "check": "Operator Preview is also reachable from the Workcell Studio Home menu",
+            "ok": true
+        },
+        {
+            "check": "Operator HMI process started from Builder",
+            "ok": true
+        },
+        {
+            "check": "HMI shows the Builder's selected cell",
+            "ok": true
+        },
+        {
+            "check": "HMI shows the SAVED revision when the editor is clean",
+            "ok": true
+        },
+        {
+            "check": "HMI target class matches the saved TaskIntent",
+            "ok": true
+        },
+        {
+            "check": "HMI lists the configured destination",
+            "ok": true
+        },
+        {
+            "check": "Start production is disabled (NOT AUTHORISED)",
+            "ok": true
+        },
+        {
+            "check": "task editor holds unsaved edits",
+            "ok": true
+        },
+        {
+            "check": "HMI keeps showing what it loaded until refreshed",
+            "ok": true
+        },
+        {
+            "check": "Refresh shows the draft target class",
+            "ok": true
+        },
+        {
+            "check": "Repeated Operator Preview reuses the running HMI",
+            "ok": true
+        },
+        {
+            "check": "Mode is DRAFT for unsaved edits",
+            "ok": true
+        },
+        {
+            "check": "Replay check ran from the HMI",
+            "ok": true
+        },
+        {
+            "check": "Replay check accepts the draft target class",
+            "ok": true
+        },
+        {
+            "check": "Replay check rejects the other class with CLASS_NOT_TARGETED",
+            "ok": true
+        },
+        {
+            "check": "Draft stays labelled DRAFT during replay",
+            "ok": true
+        },
+        {
+            "check": "Saved change propagates after HMI Refresh",
+            "ok": true
+        },
+        {
+            "check": "Saved revision with recorded input is labelled REPLAY",
+            "ok": true
+        },
+        {
+            "check": "Builder Generate produced the generated package",
+            "ok": true
+        },
+        {
+            "check": "Generated-cell dry-run becomes available after Generate",
+            "ok": true
+        },
+        {
+            "check": "Dry-run result is a PASS or names its blockers",
+            "ok": true
+        },
+        {
+            "check": "Missing task input disables the replay check",
+            "ok": true
+        },
+        {
+            "check": "HMI shows the actual input blocker",
+            "ok": true
+        },
+        {
+            "check": "Blocked replay check cannot be run",
+            "ok": true
+        },
+        {
+            "check": "Start production cannot be pressed",
+            "ok": true
+        },
+        {
+            "check": "Closing the HMI leaves Workcell Builder open",
+            "ok": true
+        },
+        {
+            "check": "Builder stays usable after the HMI closes",
+            "ok": true
+        },
+        {
+            "check": "HMI reopened",
+            "ok": true
+        },
+        {
+            "check": "HMI reopened",
+            "ok": true
+        },
+        {
+            "check": "HMI reopened",
+            "ok": true
+        },
+        {
+            "check": "HMI reopened",
+            "ok": true
+        },
+        {
+            "check": "HMI reopened",
+            "ok": true
+        },
+        {
+            "check": "Repeated open/close leaves no HMI or adapter process",
+            "ok": true
+        }
+    ],
+    "draft_replay_objects": [
+        {
+            "accepted": true,
+            "class_id": "cup",
+            "object_id": "sample-cup",
+            "reason_code": "SELECTED"
+        },
+        {
+            "accepted": false,
+            "class_id": "bottle",
+            "object_id": "sample-bottle",
+            "reason_code": "CLASS_NOT_TARGETED"
+        }
+    ],
+    "draft_target_class": "cup",
+    "dry_run_blockers": [
+        "install/setup.bash missing under workspace root",
+        "Generated-cell dry-run validation failed."
+    ],
+    "dry_run_status": "FAIL",
+    "execution_goals_sent": 0,
+    "final_saved_intent_sha256": "d176de2f9913aaf5685082882a653f59402a1cddaf40a9e469687ded23106ee6",
+    "final_target_class": "cup",
+    "generated_summary_exists": true,
+    "hmi_pid": 345672,
+    "hmi_processes_left": 0,
+    "open_close_cycles": 5,
+    "operator_preview_action_count": 2,
+    "projection_processes_left": 0,
+    "result": "PASS",
+    "robot_motion_commanded": false,
+    "saved_hmi": {
+        "applied_revision": 1,
+        "approval": "NOT_APPROVED",
+        "busy": "",
+        "command_results": [
+        ],
+        "destinations": [
+            "default_drop_zone → target_bin_default"
+        ],
+        "dry_run_blockers": [
+        ],
+        "dry_run_enabled": false,
+        "dry_run_status": "",
+        "errors": [
+        ],
+        "event_count": 8,
+        "input_blocker": "",
+        "input_kind": "replay",
+        "intent_sha256": "2de253a5e6584ca7d74c9d8bd0d80b7d444a1a249e686cd58623df7e2b963ff0",
+        "last_command": 0,
+        "layout_unsaved": false,
+        "loaded": true,
+        "mode": "OFFLINE",
+        "objects": [
+        ],
+        "offline_checks_allowed": true,
+        "pending_revision": -1,
+        "production_blockers": [
+            "No approved generated bundle for this cell.",
+            "Task resolution BLOCKED (CYCLE_EVALUATION_REQUIRED)",
+            "No live perception input is bound.",
+            "No qualified execution backend is connected to the Operator HMI. Physical robot motion is not authorised from this preview."
+        ],
+        "replay_enabled": true,
+        "replay_shown": false,
+        "resolution_status": "BLOCKED",
+        "revision": "SAVED",
+        "saved_intent_sha256": "2de253a5e6584ca7d74c9d8bd0d80b7d444a1a249e686cd58623df7e2b963ff0",
+        "scene_name": "ur5_2f_test",
+        "scene_path": "/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+        "schema": "workcell_operator_hmi_status/v1",
+        "selected_object": "",
+        "start_enabled": false,
+        "target_class": "bottle",
+        "task_id": "default_task",
+        "update_banner_visible": false,
+        "usable": true,
+        "validation_status": "PASS"
+    },
+    "saved_intent_sha256": "2de253a5e6584ca7d74c9d8bd0d80b7d444a1a249e686cd58623df7e2b963ff0",
+    "saved_target_class": "bottle",
+    "scene_path": "/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+    "studio_log_tail": "3-accept-ws/src/eas\nLoaded 16 scenes from /home/user/workcell_ws/src/easy_manipulation_deployment/scenes\nEmbedded Product View preparation terminal: outcome=cancelled scene=ur5_2f_test generation=3 payload_revision=1 exit_status=normal exit_code=0 expected_json_exists=true detail=lifecycle cancelled stdout_tail= stderr_tail=Refreshing mesh index for ur5_2f_test: mesh index extractor_version is None, expected '2.15'\n[scene_visual_mesh_index] ur5_2f_test: UR5 visual source: repo_assets/ur_description\n[scene_visual_mesh_index] ur5_2f_test: UR5 visual mesh files found: 7\n[scene_visual_mesh_index] ur5_2f_test: UR5 visual mesh items generated: 7\n[scene_visual_mesh_index] ur5_2f_test: UR5 static fallback items generated: 0\n[scene_visual_mesh_index] ur5_2f_test: UR5 transform table (7 rows)\n[scene_visual_mesh_index] link_name | parent_link | joint_name | joint_value | world_xyz | world_rpy | visual_origin_xyz | visual_origin_rpy | mesh_uri\n[scene_visual_mesh_index] base_link_inertia | base_link | base_link-base_link_inertia | 0.0 | [0.0, 0.0, 1e-05] | [0.0, -0.0, 3.141593] | [0.0, 0.0, 0.0] | [0.0, 0.0, 3.141593] | package://ur_description/meshes/ur5/visual/base.dae\n[scene_visual_mesh_index] shoulder_link | base_link_inertia | shoulder_pan_joint | 1.57 | [0.0, 0.0, 0.089169] | [0.0, -0.0, -1.571593] | [0.0, 0.0, 0.0] | [0.0, 0.0, 3.141593] | package://ur_description/meshes/ur5/visual/shoulder.dae\n[scene_visual_mesh_index] upper_arm_link | shoulder_link | shoulder_lift_joint | -2.35 | [0.0, 0.0, 0.089169] | [-1.570796, 0.791593, 1.57] | [0.0, 0.0, 0.13585] | [1.570796, 0.0, -1.570796] | package://ur_description/meshes/ur5/visual/upperarm.dae\n[scene_visual_mesh_index] forearm_link | upper_arm_link | elbow_joint | 1.83 | [-0.000238, -0.298653, 0.391545] | [1.570796, 0.52, -1.571593] | [0.0, 0.0, 0.0165] | [1.570796, 0.0, -1.570796] | package://ur_description/meshes/ur5/visual/forearm.dae\n[scene_visual_mesh_index] wrist_1_link | forearm_link | wrist_1_joint | -1.03 | [-0.109117, 0.041836, 0.586446] | [1.570796, 1.55, -1.571593] | [0.0, 0.0, -0.093] | [1.570796, 0.0, 0.0] | package://ur_description/meshes/ur5/visual/wrist1.dae\n[scene_visual_mesh_index] wrist_2_link | wrist_1_link | wrist_2_joint | -1.57 | [-0.109041, 0.136465, 0.584478] | [-1.591593, 0.000796, -0.000813] | [0.0, 0.0, -0.095] | [0.0, 0.0, 0.0] | package://ur_description/meshes/ur5/visual/wrist2.dae\n[scene_visual_mesh_index] wrist_3_link | wrist_2_link | wrist_3_joint | 0.0 | [-0.109108, 0.134754, 0.502196] | [3.120796, 0.000796, -0.000813] | [0.0, 0.0, -0.0818] | [1.570796, 0.0, 0.0] | package://ur_description/meshes/ur5/visual/wrist3.dae\n[workcell_web_scene_fresh] normalized mesh preview rows: base_link_inertia,camera_link,forearm_link,gripper_base_link,gripper_finger1_finger_link,gripper_finger1_finger_tip_link,gripper_finger1_inner_knuckle_link,gripper_finger1_knuckle_link,gripper_finger2_finger_link,gripper_finger2_finger_tip_link,gripper_finger2_inner_knuckle_link,gripper_finger2_knuckle_link,shoulder_link,upper_arm_link,wrist_1_link,wrist_2_link,wrist_3_link\nRefreshing web scene for ur5_2f_test: mesh index UR5 preview rows were normalized for web export; mesh index UR5 preview rows were normalized for web export\nProduct View lifecycle requested: scene=ur5_2f_test generation=4 payload_revision=2 origin=post_save force=true.\nPreparing embedded Product View: scene=ur5_2f_test generation=4 payload_revision=2 origin=user_retry repo_root=/home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment command=python3 scripts/ensure_workcell_studio_web_scene_fresh.py --scene /home/user/wcs-r3-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test --output build/workcell_studio_web_scene/preparations/ur5_2f_test-r2-g4-34549463399966887df9286f02d80f3478d0ede581a49b1380f68bc3ebbc338e.web_scene.json --stage-assets --force\nValidation state: running — Offline validation is running…\nValidation: running safe offline layout merge first\nValidation state: passed — Offline validation passed for ur5_2f_test.\nLoaded 16 scenes from /home/user/workcell_ws/src/easy_manipulation_deployment/scenes\nOperator Preview refreshed (revision 8).\nOperator Preview shows the unsaved draft task of ur5_2f_test.\nOperator Preview closed (exit 0).\nOperator Preview opened for ur5_2f_test (revision 9).\nOperator Preview shows the unsaved draft task of ur5_2f_test.\nOperator Preview closed (exit 0).\nOperator Preview opened for ur5_2f_test (revision 10).\nOperator Preview shows the unsaved draft task of ur5_2f_test.\nOperator Preview closed (exit 0).\nOperator Preview opened for ur5_2f_test (revision 11).\nOperator Preview shows the unsaved draft task of ur5_2f_test.\nOperator Preview closed (exit 0).\nOperator Preview opened for ur5_2f_test (revision 12).\nOperator Preview shows the unsaved draft task of ur5_2f_test.\nOperator Preview closed (exit 0).\nOperator Preview opened for ur5_2f_test (revision 13).\nOperator Preview shows the unsaved draft task of ur5_2f_test.\nOperator Preview closed (exit 0)."
+}
