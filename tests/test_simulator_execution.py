@@ -93,6 +93,25 @@ def provisional_pile_guard(tmp_path,monkeypatch):
     return guard,sample,advance,contact
 
 
+def test_recorded_retention_policy_keeps_the_limits_but_only_a_drop_aborts():
+    from simulator_execution import HeldObject,GraspRetentionLoss,RETENTION_TRANSLATION_LIMIT_M,RETENTION_ROTATION_LIMIT_RAD
+    tool=[0,0,0,0,0,0,1];obj=[.1,0,0,0,0,0,1];fingers={'left','right'}
+    assert (RETENTION_TRANSLATION_LIMIT_M,RETENTION_ROTATION_LIMIT_RAD)==(.002,.01)          # Stage-A limits unchanged
+    strict=HeldObject(tool,obj,fingers,fingers,.5,0.)
+    with pytest.raises(GraspRetentionLoss):strict.check(tool,[.1025,0,0,0,0,0,1],fingers,phase='transfer')
+    record=HeldObject(tool,obj,fingers,fingers,.5,0.,'record')
+    record.check(tool,[.1015,0,0,0,0,0,1],fingers,phase='lift',sample={'sim_ns':1,'iteration':1})      # within limits
+    record.check(tool,[.1025,0,0,0,0,0,1],fingers,phase='transfer',sample={'sim_ns':2,'iteration':2})  # recorded, not raised
+    record.check(tool,[.1030,0,0,0,0,0,1],fingers,phase='transfer',sample={'sim_ns':3,'iteration':3})  # same finding grows the peak
+    evidence=record.evidence()
+    assert evidence['policy']=='record' and evidence['strict_compliant'] is False
+    assert [f['kind'] for f in evidence['findings']]==['translation'] and evidence['findings'][0]['phase']=='transfer'
+    assert evidence['findings'][0]['translation_error_m']==pytest.approx(.0025) and evidence['findings'][0]['sim_ns']==2
+    assert evidence['peak']['translation_m']==pytest.approx(.003) and evidence['peak']['translation_phase']=='transfer'
+    with pytest.raises(GraspRetentionLoss):record.check(tool,[.1,0,0,0,0,0,1],{'left'},phase='transfer')    # a drop still aborts
+    with pytest.raises(RuntimeError,match='retention policy'):HeldObject(tool,obj,fingers,fingers,.5,0.,'lenient')
+
+
 def test_establish_takes_the_required_contact_links_from_the_hold_profile(tmp_path,monkeypatch):
     from end_effector_hold import load_hold_profile
     guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)

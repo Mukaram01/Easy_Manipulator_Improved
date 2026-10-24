@@ -49,6 +49,8 @@ STAGES=[
     "PREPLAN_OPEN_GRIPPER","PREPLAN_RETREAT","PREPLAN_HOME",
 ]
 GATES=("resolve","cancel","telemetry","stationary","contact-release","full-cycle")
+RUN_SCOPES={"full":"STAGE_A_ACCEPTANCE_SEQUENCE","targeted":"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE",
+            "fast":"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE","functional":"FUNCTIONAL_VALIDATION_NOT_STAGE_A_ACCEPTANCE"}
 # Run settings whose silent defaults change what the evidence means.
 INVOCATION_SETTINGS=("world_profile","search_timeout","segment_planning_time")
 # First-reply service retries (perceived_object_grasp_execute.SERVICE_RETRY_ALLOWANCE_S):
@@ -58,12 +60,13 @@ SERVICE_RETRY_ALLOWANCE_S=220
 # steps, release, holds, service retries) may total ~2 ks after the search; the last-resort
 # subprocess kill must come after the executor's own cancellation, never before it.
 EXECUTION_GATE_MARGIN_S=2100
-MODES=("full","targeted","fast")
+MODES=("full","targeted","fast","functional")
 # full-cycle needs passing cancel, telemetry, stationary and contact-release
 # evidence on the same binaries (executor --commission-evidence); the runner only
 # ever builds that file from the sessions of the same full run, so it cannot run alone.
 TARGETABLE_GATES=GATES[:-1]
 REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-report.json",
+              "functional":"stage-a1-functional-report.json",
               "fast":"stage-a1-fast-report.json"}
 # Focused Stage-A Python suites: the suites of the runner, the executor and every
 # local module they import (checked by a test), plus the recovery/runtime suites
@@ -484,10 +487,11 @@ def assert_release_evidence(gate,summary,retention):
         raise RuntimeError('physical release evidence is missing or bound to another attempt')
 
 
-def assert_gate(gate,summary,capability_sha,overlay_identity):
+def assert_gate(gate,summary,capability_sha,overlay_identity,*,functional=False):
     from simulator_backend import moveit_overlay_identity
     expected=EXPECTED_RESULTS[gate]
-    if summary.get("result")!=expected:raise RuntimeError(f"{gate} gate returned {summary.get('result')!r}, expected {expected!r}")
+    accepted=(expected,"FUNCTIONAL_PASS") if functional and gate=="full-cycle" else (expected,)
+    if summary.get("result") not in accepted:raise RuntimeError(f"{gate} gate returned {summary.get('result')!r}, expected {expected!r}")
     if summary.get("full_cycle_prevalidated") is not True:raise RuntimeError(f"{gate} gate did not revalidate the complete cycle")
     if summary.get("commissioning_capability",{}).get("sha256")!=capability_sha:
         raise RuntimeError(f"{gate} used a different commissioning capability binary")
@@ -532,6 +536,44 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
             raise RuntimeError("full physical cycle final acceptance is incomplete")
 
 
+# Functional validation classifies a failed cycle so safety-critical stops are never
+# confused with task-quality deviations. Strict Stage-A acceptance is unaffected.
+FAILURE_CATEGORIES=(
+    ("safety_critical",("unpermitted physical contact","certificate","COLLISION","in collision","TELEMETRY","telemetry",
+                        "CANCEL","cancellation","IDENTITY","identity","BINDING","OVERLAY","SUPPORT_CONTACT",
+                        "JOINT_LIMIT","penetration","stale measurement")),
+    ("task_quality",("retention lost: contact/slip","placement","containment","DESTINATION")),
+    ("functional",("motion lacks","SEARCH_BUDGET","CANDIDATE","PREPLAN","IK","planning","did not separate",
+                   "home mismatch","not open","did not settle","GRASP_HOLD","closure","dropped","missing_contacts")),
+)
+
+
+def classify_failure(text,summary=None):
+    """safety_critical / functional / task_quality / unclassified for one failure text."""
+    text=text or ""
+    details=((summary or {}).get("grasp_recovery") or {}).get("details") or {}
+    if "retention lost" in text and details.get("missing_contacts"):return "functional"      # a physical drop
+    for category,markers in FAILURE_CATEGORIES:
+        if any(marker in text for marker in markers):return category
+    return "unclassified"
+
+
+def functional_report(summary,failure=None):
+    """Functional success, strict compliance, retention and placement, reported separately."""
+    summary=summary or {}
+    result=summary.get("result")
+    retention=summary.get("retention_findings") or {}
+    acceptance=summary.get("full_cycle_physical_acceptance") or {}
+    return dict(functional_success=result in ("PASS","FUNCTIONAL_PASS"),
+                strict_benchmark_compliant=result=="PASS",
+                strict_retention_compliant=summary.get("strict_retention_compliant"),
+                retention_peak=retention.get("peak"),retention_findings=retention.get("findings"),
+                placement=acceptance.get("placement"),
+                executed_stages=[r.get("stage") for r in summary.get("execution_results",[])],
+                failed_stage=summary.get("failed_stage"),
+                failure=failure,failure_category=classify_failure(failure,summary) if failure else None)
+
+
 def prior_evidence(directory,capability_sha):
     """Passing prerequisite summaries of a completed run, for a diagnostic targeted full-cycle.
 
@@ -553,7 +595,8 @@ def prior_evidence(directory,capability_sha):
     return prior
 
 
-def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None,search_timeout=300.):
+def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None,search_timeout=300.,
+                     retention_policy=None):
     cmd=[sys.executable,str(repo/"scripts/perceived_object_grasp_execute.py"),
          "--scene-package",str(scene),"--backend","simulator","--simulator-receipt",str(receipt),
          "--detections",str(observations),"--timeout",str(search_timeout),"--segment-planning-time",str(planning_time),
@@ -564,6 +607,7 @@ def executor_command(repo,scene,receipt,observations,summary,planning_time,*,res
         if gate=="full-cycle":
             if evidence is None:raise ValueError("full-cycle gate requires prerequisite evidence")
             cmd+=["--commission-evidence",str(evidence)]
+            if retention_policy is not None:cmd+=["--retention-policy",retention_policy]
     return cmd
 
 
@@ -589,7 +633,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
              ROS_LOCALHOST_ONLY="1",ROS2CLI_DISABLE_DAEMON="1",PYTHONUNBUFFERED="1")
     report={"gate":gate,"domain":domain,"partition":env["IGN_PARTITION"],"status":"BLOCKED",
             "mode":getattr(args,"mode","full"),
-            "scope":"STAGE_A_ACCEPTANCE_SEQUENCE" if getattr(args,"mode","full")=="full" else "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE"}
+            "scope":RUN_SCOPES.get(getattr(args,"mode","full"),"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE")}
     launch=None;launch_log=None
     try:
         assert_domain_free(env,repo)
@@ -644,10 +688,12 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             records=[json.loads(prior[name].read_text()) for name in required]
             evidence=session/"commission-evidence.json";evidence.write_text(json.dumps(records,indent=2)+"\n")
         gate_summary=session/f"{gate}/summary.json"
+        functional=getattr(args,"mode","full")=="functional"
         run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
-                gate=gate,evidence=evidence,search_timeout=args.search_timeout),
+                gate=gate,evidence=evidence,search_timeout=args.search_timeout,
+                retention_policy="record" if functional else None),
             env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+EXECUTION_GATE_MARGIN_S)
-        result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity)
+        result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity,functional=functional)
         report.update(status="PASS",result=result["result"],selected_object_id=result.get("selected_object_id"),
                       selected_grasp_index=result.get("selected_grasp_index"))
         return gate_summary
@@ -716,7 +762,8 @@ def main(argv=None):
     parser.add_argument("--through",choices=GATES,
         help="full mode only: last gate of the sequence (default full-cycle)")
     parser.add_argument("--mode",choices=MODES,default="full",
-        help="full: six-gate acceptance; targeted: one gate in its own session; fast: no ROS launch")
+        help="full: six-gate acceptance; targeted: one gate in its own session; fast: no ROS launch; "
+             "functional: one full cycle with recorded (never relaxed) retention limits, reported beside strict compliance")
     parser.add_argument("--gate",choices=GATES,help="targeted mode only: the single gate to run")
     parser.add_argument("--prior-evidence",type=Path,
         help="targeted --gate full-cycle only: completed run whose passing cancel, telemetry, stationary and "
@@ -756,8 +803,13 @@ def main(argv=None):
                 parser.error("full-cycle consumes the cancel, telemetry, stationary and contact-release "
                              "evidence of the same run and cannot run alone; use --mode full, or reuse a completed "
                              "run's evidence with --prior-evidence for a diagnostic transfer trial")
-        if args.prior_evidence is not None and (args.mode!="targeted" or args.gate!="full-cycle"):
-            parser.error("--prior-evidence applies to a targeted full-cycle only")
+        if args.mode=="functional":
+            if args.gate is not None:parser.error("functional mode always runs the full cycle")
+            if args.prior_evidence is None:
+                parser.error("functional mode reuses a completed run's cancel, telemetry, stationary and contact-release "
+                             "evidence; give --prior-evidence")
+        elif args.prior_evidence is not None and (args.mode!="targeted" or args.gate!="full-cycle"):
+            parser.error("--prior-evidence applies to a targeted full-cycle or functional run only")
     if args.gil_watchdog_ms is not None:
         if args.mode=="fast":parser.error("the GIL watchdog observes executor sessions; fast mode runs none")
         if args.mode!="targeted" or args.gate not in GIL_WATCHDOG_GATES:
@@ -776,7 +828,7 @@ def main(argv=None):
     args.output.mkdir(parents=True)
     started_wall_ns=time.time_ns();started=time.monotonic()
     overall={"status":"BLOCKED","mode":args.mode,"stage_a_acceptance":False,
-             "scope":"STAGE_A_ACCEPTANCE_SEQUENCE" if args.mode=="full" else "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE",
+             "scope":RUN_SCOPES[args.mode],
              "gates":{},"preflight":None,"started_wall_ns":started_wall_ns,
              "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time,
              "invocation":invocation}
@@ -815,6 +867,7 @@ def main(argv=None):
         # A targeted gate keeps its full-run session index, so it gets the same
         # ROS domain and partition as in the sequence and its own fresh session.
         selected=[(GATES.index(args.gate)+1,args.gate)] if args.mode=="targeted" else \
+            [(len(GATES),"full-cycle")] if args.mode=="functional" else \
             list(enumerate(GATES[:GATES.index(args.through)+1],1))
         last=selected[-1][1]
         for index,gate in selected:
@@ -832,8 +885,13 @@ def main(argv=None):
                     for key in ("shutdown","shutdown_failure","moveit_overlay","bridge_overlay"):
                         if key in recorded:failed[key]=recorded[key]
                 overall["gates"][gate]=failed
+                if args.mode=="functional":
+                    partial=args.output/f"{index:02d}-{gate}"/gate/"summary.json"
+                    overall["functional"]=functional_report(json.loads(partial.read_text()) if partial.is_file() else None,
+                                                            failure=failed["failure"])
                 raise
             if args.mode=="targeted" and gate=="cancel":overall["cancellation_qualified_this_run"]=True
+            if args.mode=="functional":overall["functional"]=functional_report(json.loads(path.read_text()))
             prior[gate]=path;overall["gates"][gate]={"status":"PASS","summary":str(path.relative_to(args.output)),
                                                      "duration_s":round(time.monotonic()-began,1),
                                                      "end_effector_hold":(json.loads(path.read_text()).get("end_effector_hold") or {}).get("profile")}

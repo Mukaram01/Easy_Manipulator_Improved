@@ -65,12 +65,13 @@ def test_two_finger_profile_requires_both_cell_contact_links_and_derives_the_act
     assert profile.method=='opposing_contact' and profile.hold_reserve_rad==0.002
     assert profile.required_contact_links(['f1','f2'],{'f1'})==['f1','f2']      # link names come from the cell
     assert profile.contact_verified(['f1','f2'],{'f1','f2'}) and not profile.contact_verified(['f1','f2'],{'f1'})
-    assert profile.expected_pad_force_n()==40
-    assert profile.simulated_actuator_effort_nm()==pytest.approx(40/8.94)
+    commanded=profile.actuation['commanded_grasp_force_n']            # the frozen functional value lives in the catalog
+    assert 20<=commanded<=235 and profile.expected_pad_force_n()==commanded
+    assert profile.simulated_actuator_effort_nm()==pytest.approx(commanded/8.94)
     assert profile.sha256==__import__('hashlib').sha256((CATALOG/'ee_robotiq_2f.yaml').read_bytes()).hexdigest()
     evidence=profile.evidence()
-    assert evidence['capability_id']=='robotiq_2f_85' and evidence['commanded_grasp_force_n']==40
-    assert evidence['grasp_force_range_n']==[20,235] and evidence['simulated_actuator_effort_nm']==pytest.approx(40/8.94)
+    assert evidence['capability_id']=='robotiq_2f_85' and evidence['commanded_grasp_force_n']==commanded
+    assert evidence['grasp_force_range_n']==[20,235] and evidence['simulated_actuator_effort_nm']==pytest.approx(commanded/8.94)
     with pytest.raises(hold.HoldProfileError):profile.required_contact_links(['only'],{'only'})
 
 
@@ -112,17 +113,18 @@ ROBOT='''<robot><joint name="arm"><limit effort="150"/></joint><joint name="lead
 def test_actuation_binding_lowers_only_the_commanded_linkage_driver_and_records_it():
     profile=hold.load_hold_profile('robotiq_2f_85');root=ET.fromstring(ROBOT)
     binding=hold.bind_actuation(root,['arm','leader'],profile)
-    assert float(root.find("joint[@name='leader']/limit").get('effort'))==pytest.approx(40/8.94)
+    expected=profile.actuation['commanded_grasp_force_n']/8.94
+    assert float(root.find("joint[@name='leader']/limit").get('effort'))==pytest.approx(expected)
     assert root.find("joint[@name='arm']/limit").get('effort')=='150'
     assert [j.find('limit').get('effort') for j in root.findall('joint') if j.find('mimic') is not None]==['0.1','0.1']
     assert binding['actuated_joint']=='leader' and binding['source_effort_nm']==10.114
-    assert binding['derived_effort_nm']==pytest.approx(40/8.94) and binding['commanded_grasp_force_n']==40
+    assert binding['derived_effort_nm']==pytest.approx(expected) and binding['commanded_grasp_force_n']==profile.actuation['commanded_grasp_force_n']
     assert binding['sha256']==profile.sha256 and binding['hold_reserve_rad']==0.002
 
 
 def test_actuation_binding_never_raises_the_authored_limit_and_needs_one_driver():
     profile=hold.load_hold_profile('robotiq_2f_85')
-    weak=ROBOT.replace('effort="10.114"','effort="4.0"')
+    weak=ROBOT.replace('effort="10.114"','effort="1.0"')          # below any in-range commanded force
     with pytest.raises(hold.HoldProfileError,match='EXCEEDS_AUTHORED_LIMIT'):
         hold.bind_actuation(ET.fromstring(weak),['arm','leader'],profile)
     with pytest.raises(hold.HoldProfileError,match='HOLD_ACTUATION_UNBOUND'):
@@ -157,7 +159,7 @@ def test_source_description_binding_and_spec_augmentation_stay_outside_the_evide
     profile=hold.load_hold_profile('robotiq_2f_85')
     bound,binding=hold.bind_source_description(SOURCE,profile)
     root=ET.fromstring(bound)
-    assert float(root.find("joint[@name='leader']/limit").get('effort'))==pytest.approx(40/8.94)
+    assert float(root.find("joint[@name='leader']/limit").get('effort'))==pytest.approx(profile.actuation['commanded_grasp_force_n']/8.94)
     assert root.find("joint[@name='arm']/limit").get('effort')=='150'
     assert binding['actuated_joint']=='leader' and binding['source_effort_nm']==10.114
     (tmp_path/'spec.json').write_text(json.dumps({'world':'a0'}))

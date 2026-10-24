@@ -267,17 +267,45 @@ def grasp_load_evidence(sample, leader, touch_links, target_model):
         joint_axis_torque_nm={n:w[6] for n,w in sorted(wrenches.items()) if n.startswith('gripper_')})
 
 
+RETENTION_TRANSLATION_LIMIT_M=.002
+RETENTION_ROTATION_LIMIT_RAD=.01
+RETENTION_POLICIES=('strict','record')
+
+
 class HeldObject:
-    def __init__(self,tool,obj,fingers,required,closure,open_position):
+    """Measured part-in-tool reference and the Stage-A retention limits.
+
+    ``strict`` (qualification) raises on any exceedance. ``record`` (functional
+    validation) keeps the unchanged limits but records translation/rotation
+    exceedances as task-quality findings and continues; lost finger contact is a
+    physical drop and still raises under either policy.
+    """
+    def __init__(self,tool,obj,fingers,required,closure,open_position,policy='strict'):
         self.required=set(required)
         if len(self.required)<2 or not self.required.issubset(fingers) or closure<=open_position+.001:
             raise RuntimeError('closure lacks measured opposing finger/object contact')
-        self.relative=compose_pose(inverse_pose(tool),obj)
-    def check(self,tool,obj,fingers):
+        if policy not in RETENTION_POLICIES:raise RuntimeError('unknown retention policy')
+        self.relative=compose_pose(inverse_pose(tool),obj);self.policy=policy
+        self.findings=[];self.peak=dict(translation_m=0.,rotation_rad=0.,translation_phase=None,rotation_phase=None)
+    def check(self,tool,obj,fingers,phase=None,sample=None):
         actual=compose_pose(inverse_pose(tool),obj)
         translation=math.dist(actual[:3],self.relative[:3]);rotation=angle(actual,self.relative)
-        if (not self.required.issubset(fingers) or translation>.002 or rotation>.01):
-            raise GraspRetentionLoss(self.required-set(fingers),translation,rotation)
+        if translation>self.peak['translation_m']:self.peak.update(translation_m=translation,translation_phase=phase)
+        if rotation>self.peak['rotation_rad']:self.peak.update(rotation_m=None,rotation_rad=rotation,rotation_phase=phase)
+        missing=self.required-set(fingers)
+        exceeded=translation>RETENTION_TRANSLATION_LIMIT_M or rotation>RETENTION_ROTATION_LIMIT_RAD
+        if missing or (exceeded and self.policy=='strict'):
+            raise GraspRetentionLoss(missing,translation,rotation)
+        if exceeded:
+            kind='translation' if translation>RETENTION_TRANSLATION_LIMIT_M else 'rotation'
+            if not any(f['kind']==kind and f['phase']==phase for f in self.findings):
+                self.findings.append(dict(kind=kind,phase=phase,translation_error_m=translation,rotation_error_rad=rotation,
+                    limit=RETENTION_TRANSLATION_LIMIT_M if kind=='translation' else RETENTION_ROTATION_LIMIT_RAD,
+                    sim_ns=(sample or {}).get('sim_ns'),iteration=(sample or {}).get('iteration')))
+    def evidence(self):
+        peak={k:v for k,v in self.peak.items() if k!='rotation_m'}
+        return dict(policy=self.policy,limits=dict(translation_m=RETENTION_TRANSLATION_LIMIT_M,rotation_rad=RETENTION_ROTATION_LIMIT_RAD),
+                    peak=peak,findings=copy.deepcopy(self.findings),strict_compliant=not self.findings)
 
 
 def cancel_owned(cancel,terminal,stopped,revoke,reconcile):
@@ -1067,6 +1095,8 @@ class ContactGuard:
         # The end-effector capability's hold profile decides which measured contact
         # links a verified hold must keep (set by the executor; None keeps every touch link).
         self.hold_profile=None
+        # 'strict' (qualification) or 'record' (functional validation); limits are shared.
+        self.retention_policy='strict';self.retention_record=None
 
     def bind_pile(self,objects,binding):
         """Bind perceived BOX geometry to the receipt's immutable physical world."""
@@ -1321,7 +1351,7 @@ class ContactGuard:
             raise RuntimeError('unpermitted physical contact: '+a+' / '+b)
         self.fingers=fingers
         if self.held and self.phase not in ('opening','released'):
-            self.held.check(tool,obj,fingers);self.held_samples+=1
+            self.held.check(tool,obj,fingers,phase=self.phase,sample=s);self.held_samples+=1
             bottom=self.bottom(obj)
             if self.separation:self.separation.check(obj,bottom,support_contact)
             self.min_clearance=min(self.min_clearance,bottom-self.support['floor_z']) if self.support else math.inf
@@ -1357,7 +1387,8 @@ class ContactGuard:
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool)
         if self.ownership!='UNHELD':raise RuntimeError('physical ownership cannot regress to carried')
         required=self.hold_profile.required_contact_links(self.touch,self.fingers) if self.hold_profile else self.touch
-        self.held=HeldObject(tool,obj,self.fingers,required,joints[self.leader][0],self.open_position)
+        self.held=HeldObject(tool,obj,self.fingers,required,joints[self.leader][0],self.open_position,self.retention_policy)
+        self.retention_record=self.held
         self.ownership='CARRIED'
         self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
         self.held_proof=dict(run_id=s['run_id'],target=self.object,

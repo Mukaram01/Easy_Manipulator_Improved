@@ -759,8 +759,60 @@ def test_targeted_full_cycle_with_prior_evidence_is_a_diagnostic_transfer_trial(
     assert report['gates']['full-cycle']['end_effector_hold'] is None       # stub summary carries no profile
 
 
+def test_functional_mode_runs_one_recorded_cycle_and_reports_measures_separately(tmp_path,monkeypatch,stubbed_preflight):
+    seen=record_sessions(monkeypatch)
+    prior=completed_run(tmp_path/'prior');output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','functional','--prior-evidence',str(prior)])==0
+    assert len(seen)==1 and seen[0][:2]==('full-cycle',6) and set(seen[0][2])=={'cancel','telemetry','stationary','contact-release'}
+    report=json.loads((output/'stage-a1-functional-report.json').read_text())
+    assert report['status']=='PASS' and report['stage_a_acceptance'] is False
+    assert report['scope']=='FUNCTIONAL_VALIDATION_NOT_STAGE_A_ACCEPTANCE'
+    assert set(report['functional'])>={'functional_success','strict_benchmark_compliant','strict_retention_compliant',
+                                       'retention_peak','retention_findings','placement','failure_category'}
+    assert not (output/'stage-a1-final-report.json').exists()
+
+
+def test_functional_mode_requires_prior_evidence_and_no_gate(tmp_path,monkeypatch,stubbed_preflight,capsys):
+    for argv,message in ((['--mode','functional'],'give --prior-evidence'),
+                         (['--mode','functional','--gate','cancel','--prior-evidence','x'],'always runs the full cycle')):
+        with pytest.raises(SystemExit):MODULE.main(['--output',str(tmp_path/'e')]+argv)
+        assert message in capsys.readouterr().err
+
+
+def test_functional_full_cycle_passes_the_record_policy_and_accepts_a_functional_pass():
+    cmd=MODULE.executor_command(Path('/repo'),Path('/s'),Path('/r'),Path('/o'),Path('/sum'),3.,gate='full-cycle',
+                                evidence=Path('/e'),retention_policy='record')
+    assert cmd[-2:]==['--retention-policy','record']
+    strict=MODULE.executor_command(Path('/repo'),Path('/s'),Path('/r'),Path('/o'),Path('/sum'),3.,gate='full-cycle',evidence=Path('/e'))
+    assert '--retention-policy' not in strict
+    base=dict(result='FUNCTIONAL_PASS',full_cycle_prevalidated=True,commissioning_capability={'sha256':'c','moveit_overlay':{}})
+    import simulator_backend
+    with pytest.raises(RuntimeError,match="expected 'PASS'"):
+        MODULE.assert_gate('full-cycle',base,'c',simulator_backend.moveit_overlay_identity({}))          # strict never accepts it
+    with pytest.raises(RuntimeError,match='retention is missing'):
+        MODULE.assert_gate('full-cycle',base,'c',simulator_backend.moveit_overlay_identity({}),functional=True)  # result accepted, evidence still required
+
+
+def test_failure_classification_separates_safety_functional_and_task_quality():
+    classify=MODULE.classify_failure
+    assert classify('unpermitted physical contact: a / b')=='safety_critical'
+    assert classify('SIMULATOR_TELEMETRY_INVALID: stale measurement')=='safety_critical'
+    assert classify('HOLD_PROFILE_BINDING_MISMATCH: simulator was derived from a different hold profile')=='safety_critical'
+    assert classify('motion lacks successful collision-planning evidence')=='functional'
+    assert classify('full-cycle measured home mismatch: shoulder_pan_joint')=='functional'
+    assert classify('measured grasp retention lost: contact/slip')=='task_quality'
+    assert classify('measured grasp retention lost: contact/slip',{'grasp_recovery':{'details':{'missing_contacts':['left']}}})=='functional'
+    assert classify('something new')=='unclassified'
+    report=MODULE.functional_report({'result':'FUNCTIONAL_PASS','strict_retention_compliant':False,
+        'retention_findings':{'peak':{'translation_m':.0021},'findings':[{'kind':'translation'}]},
+        'full_cycle_physical_acceptance':{'placement':{'error_to_destination_m':.001}},
+        'execution_results':[{'stage':'EXECUTE_HOME'}]})
+    assert report['functional_success'] is True and report['strict_benchmark_compliant'] is False
+    assert report['placement']=={'error_to_destination_m':.001} and report['executed_stages']==['EXECUTE_HOME']
+
+
 @pytest.mark.parametrize('argv,message',[
-    (['--mode','targeted','--gate','stationary','--prior-evidence','x'],'targeted full-cycle only'),
+    (['--mode','targeted','--gate','stationary','--prior-evidence','x'],'targeted full-cycle or functional'),
     (['--mode','full','--prior-evidence','x'],'targeted full-cycle only'),
 ])
 def test_prior_evidence_is_accepted_for_a_targeted_full_cycle_only(tmp_path,monkeypatch,stubbed_preflight,argv,message,capsys):
@@ -963,7 +1015,9 @@ def test_session_reports_carry_the_run_mode_and_scope(tmp_path,monkeypatch):
     import types
     source=SCRIPT.read_text()
     assert '"mode":getattr(args,"mode","full"),' in source
-    assert '"scope":"STAGE_A_ACCEPTANCE_SEQUENCE" if getattr(args,"mode","full")=="full" else "DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE"}' in source
+    assert '"scope":RUN_SCOPES.get(getattr(args,"mode","full"),"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE")}' in source
+    assert MODULE.RUN_SCOPES=={"full":"STAGE_A_ACCEPTANCE_SEQUENCE","targeted":"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE",
+                               "fast":"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE","functional":"FUNCTIONAL_VALIDATION_NOT_STAGE_A_ACCEPTANCE"}
     # the real one_session writes them even when its very first step fails
     monkeypatch.setattr(MODULE,'prepare_scene',lambda repo,destination,class_id:destination)
     def busy(env,cwd):raise RuntimeError('ROS domain 203 is not isolated')

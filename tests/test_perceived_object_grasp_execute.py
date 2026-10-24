@@ -1762,6 +1762,11 @@ def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_meas
     assert attach.count("hold_profile.contact_verified(touch,contact_guard.fingers)")==2
     assert "grasp_hold_target(hold_before['leader_position_rad'],hold_profile.hold_reserve_rad," in attach
     assert "GRASP_HOLD_RESERVE_RAD" not in attach
+    acceptance=source[source.index("# Retention findings (record policy) and placement accuracy"):source.index("final = scene_now()")]
+    assert "result='PASS' if summary['strict_retention_compliant'] else 'FUNCTIONAL_PASS'" in acceptance   # strict PASS never diluted
+    assert "error_to_destination_m=" in acceptance and "release_disturbance_m=" in acceptance
+    assert "contact_guard.retention_policy=args.retention_policy" in source
+    assert "a recorded retention policy applies to the full-cycle functional validation only" in source
     boundary=source[source.index("measurements = Measurements(node,args.simulator_receipt,"):source.index("capture_model = CaptureModel(")]
     assert "hold_profile = load_hold_profile(contract.get('end_effector_capability'))" in boundary
     assert "summary['end_effector_hold'] = verify_hold_binding(hold_profile, measurements.receipt)" in boundary

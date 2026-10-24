@@ -1422,6 +1422,9 @@ def main():
     parser.add_argument('--backend', choices=('fake', 'simulator'), default='fake')
     parser.add_argument('--simulator-commission', choices=('cancel', 'telemetry', 'stationary', 'contact-release', 'full-cycle'), help='Explicit bounded simulator trial; ordinary execution remains blocked')
     parser.add_argument('--commission-evidence', type=Path, help='Passing measured trial and cancellation evidence required for full-cycle')
+    parser.add_argument('--retention-policy', choices=('strict', 'record'), default='strict',
+                        help='full-cycle only: record keeps the unchanged retention limits but records exceedances as '
+                             'task-quality findings instead of aborting (functional validation, never Stage-A acceptance)')
     parser.add_argument('--simulator-receipt', type=Path, help='Live local Fortress receipt; independently verified, never an identity bypass')
     parser.add_argument('--segment-planning-time', type=float, default=3.0, help='Per-request computation budget, 0 < seconds <= 10; collision tolerances unchanged')
     parser.add_argument('--timeout', type=float, default=180.0, help='Total candidate search budget in seconds')
@@ -2628,6 +2631,10 @@ def main():
             selected=next(o for o in objects if o['id']==selected_id)
             contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,contract['tool_link'])
             contact_guard.hold_profile=hold_profile
+            if args.retention_policy!='strict' and args.simulator_commission!='full-cycle':
+                raise RuntimeError('a recorded retention policy applies to the full-cycle functional validation only')
+            contact_guard.retention_policy=args.retention_policy
+            summary['retention_policy']=args.retention_policy
             contact_guard.bind_pile(objects,dict(resolution_sha256=summary['resolution_sha256'],
                 execution_attempt=measurements.receipt['run_id']+':'+str(time.monotonic_ns()),
                 selected_grasp_index=summary['selected_grasp_index'],
@@ -2928,11 +2935,28 @@ def main():
                 raise RuntimeError('full-cycle final ACM differs from baseline')
             final_valid=call(validity_client,GetStateValidity.Request(robot_state=final_scene.robot_state,group_name=''))
             if not final_valid.valid:raise RuntimeError('full-cycle final robot state is in collision')
-            summary.update(result='PASS',full_cycle_execution_success=True,
+            # Retention findings (record policy) and placement accuracy are reported
+            # beside, never instead of, the strict acceptance above.
+            retention=contact_guard.retention_record.evidence() if contact_guard.retention_record else None
+            summary['retention_findings']=retention
+            summary['strict_retention_compliant']=retention is None or retention['strict_compliant']
+            planned=next((o for s in cycle['steps'] if s['kind']=='detach'
+                          for o in s['after'].world.collision_objects if o.id==selected_id),None)
+            planned_pose=pose_values(planned.pose) if planned is not None else None
+            destination_pose=list(destination["pose_xyz"])+_PLANNER.quaternion_from_rpy(destination["pose_rpy"])
+            quaternion_angle=lambda a,b:2*math.acos(min(1.,abs(sum(x*y for x,y in zip(a[3:],b[3:])))))
+            summary.update(result='PASS' if summary['strict_retention_compliant'] else 'FUNCTIONAL_PASS',
+                full_cycle_execution_success=True,
                 full_cycle_physical_acceptance=dict(final_pose=final_pose,
                     release_relative_separation_m=relative_separation,
                     final_sim_ns=final_sample['sim_ns'],final_collision_valid=True,
-                    baseline_acm_restored=True,attached_ids=[]))
+                    baseline_acm_restored=True,attached_ids=[],
+                    placement=dict(planned_pose=planned_pose,destination_pose=destination_pose,
+                        error_to_planned_m=math.dist(final_pose[:3],planned_pose[:3]) if planned_pose else None,
+                        rotation_to_planned_rad=quaternion_angle(final_pose,planned_pose) if planned_pose else None,
+                        error_to_destination_m=math.dist(final_pose[:3],destination_pose[:3]),
+                        rotation_to_destination_rad=quaternion_angle(final_pose,destination_pose),
+                        release_disturbance_m=math.dist(final_pose[:3],measurements.object_pose(pre,contact_guard.name)[:3]))))
             return 0
         final = scene_now()
         assert_scene_match(final, expected, selected_id)

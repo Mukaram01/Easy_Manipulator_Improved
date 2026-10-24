@@ -55,7 +55,7 @@ end_effector:
     actuation:
       kind: single_actuated_joint
       grasp_force_range_n: [20, 235]    # Robotiq 2F-85 specification
-      commanded_grasp_force_n: 40
+      commanded_grasp_force_n: 20
       pad_force_per_actuator_torque:
         n_per_nm: 8.94                  # measured 90.4 N @ 10.114 N m, 39.6 N @ 4.474, 20.0 N @ 2.237 (linear within 1 %)
         measured_closure_rad: 0.5848
