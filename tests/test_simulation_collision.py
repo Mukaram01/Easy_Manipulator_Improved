@@ -48,19 +48,36 @@ def test_the_box_encloses_the_mesh_lies_on_its_extreme_planes_and_keeps_the_coll
     assert [float(v) for v in origin.get('xyz').split()] == pytest.approx([.1-.015, .02, .01])
     assert [float(v) for v in origin.get('rpy').split()] == pytest.approx([0, 0, math.pi/2])
     record, = binding['links']
-    assert record['triangles'] == 3 and record['mesh_sha256'] and record['box_centre_m'] == pytest.approx([.02, .015, .01])
+    assert record['triangles'] == 3 and record['mesh_sha256'] and record['boxes'][0]['box_centre_m'] == pytest.approx([.02, .015, .01])
     assert ET.fromstring(bound).find("link[@name='other']/collision/geometry/mesh") is not None     # unlisted links untouched
     assert binding['mode'] == 'mesh_bounding_box' and binding['evidence'] == 'test'
 
 
 @pytest.mark.skipif(not TIP_MESH.is_file(), reason='robotiq_85_description not installed')
-def test_the_2f85_fingertip_box_preserves_the_measured_pad_plane(tmp_path):
-    _, binding = sc.bind_mesh_bounding_boxes(description(TIP_MESH, origin=''), ['tip'])
+def test_the_2f85_slab_boxes_keep_the_real_pad_face_and_set_the_rest_back():
+    block = RECORD['simulator_collision']
+    bound, binding = sc.bind_mesh_bounding_boxes(description(TIP_MESH, origin=''), ['tip'],
+                                                 axis=block['axis'], cuts=tuple(block['cuts_m']))
     record, = binding['links']
-    assert record['triangles'] == 2436
-    assert record['box_size_m'] == pytest.approx([.0570, .0317, .0220], abs=2e-4)
-    # The recorded pad contacts all lie on tip-frame y = 0.0078 m: the box's +y face.
-    assert record['box_centre_m'][1] + record['box_size_m'][1]/2 == pytest.approx(.0078, abs=1e-5)
+    assert record['triangles'] == 2436 and binding['mode'] == 'mesh_slab_bounding_boxes'
+    proximal, distal = record['boxes']
+    face = lambda box: box['box_centre_m'][1] + box['box_size_m'][1]/2
+    # The recorded pad contacts all lie on tip-frame y = 0.0078 m (the real pad face, x 7.0-44.5 mm).
+    assert face(distal) == pytest.approx(.0078, abs=1e-5)
+    assert face(proximal) == pytest.approx(.0060, abs=1e-5)                    # 1.8 mm behind the pad plane
+    lo = distal['box_centre_m'][0] - distal['box_size_m'][0]/2
+    assert 0.004 < lo < 0.007 and distal['box_size_m'][2] == pytest.approx(.022, abs=1e-6)   # pad face, not the whole tip
+    collisions = ET.fromstring(bound).findall("link[@name='tip']/collision")
+    assert len(collisions) == 2 and all(c.find('geometry/box') is not None for c in collisions)
+
+
+def test_slab_boxes_enclose_every_triangle_and_fail_closed_otherwise():
+    tris = np.array(L_SHAPE, dtype=float)
+    boxes = sc.slab_boxes(tris, 'x', (0.02,))
+    assert len(boxes) == 2
+    for tri in tris:
+        assert any(((tri >= lo - 1e-12) & (tri <= hi + 1e-12)).all() for lo, hi in boxes)
+    assert len(sc.slab_boxes(tris)) == 1 and len(sc.slab_boxes(tris, 'x', (5.0,))) == 1     # empty slabs dropped
 
 
 @pytest.mark.parametrize('xml,message', [
@@ -89,7 +106,9 @@ def test_the_capability_block_is_validated_and_absent_means_unchanged():
     assert sc.block_errors(RECORD) == []
     assert RECORD['simulator_collision']['links'] == ['gripper_finger1_finger_tip_link', 'gripper_finger2_finger_tip_link']
     for change, message in ((lambda b: b.update(mode='convex_hull'), 'mode'), (lambda b: b.update(links=[]), 'links'),
-                            (lambda b: b.pop('evidence'), 'evidence')):
+                            (lambda b: b.pop('evidence'), 'evidence'), (lambda b: b.update(axis='w'), 'axis'),
+                            (lambda b: b.update(cuts_m=[.02, .01]), 'cuts_m'), (lambda b: b.update(cuts_m=[]), 'cuts_m'),
+                            (lambda b: b.update(mode='mesh_bounding_box'), 'no axis or cuts_m')):
         bad = copy.deepcopy(RECORD); change(bad['simulator_collision'])
         assert any(message in e for e in sc.block_errors(bad))
         with pytest.raises(sc.SimulationCollisionError):

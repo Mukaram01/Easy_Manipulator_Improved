@@ -78,8 +78,17 @@ int main(int argc, char** argv) {
       shape = std::make_shared<dynamics::BoxShape>(Vector3d(0.0173, 0.006, 0.022));
       offset.translation() = Vector3d(0.03585, 0.0048, 0.0);
     }
+    if (geometry == "slabs") {        // centroid-assigned slab bounding boxes: distal = pad face, proximal set back
+      const double boxes[2][6] = {{0.03958, 0.01463, 0.022, 0.02471, 0.00049, 0.0}, {0.01991, 0.0299, 0.015, -0.00256, -0.00895, 0.0}};
+      for (const auto& b : boxes) {
+        Isometry3d o = Isometry3d::Identity(); o.translation() = Vector3d(b[3], b[4], b[5]);
+        auto node = pad->createShapeNodeWith<dynamics::CollisionAspect, dynamics::DynamicsAspect>(std::make_shared<dynamics::BoxShape>(Vector3d(b[0], b[1], b[2])));
+        node->setRelativeTransform(o); node->getDynamicsAspect()->setFrictionCoeff(100000.0);
+      }
+    } else {
     auto sn = pad->createShapeNodeWith<dynamics::CollisionAspect, dynamics::DynamicsAspect>(shape);
     sn->setRelativeTransform(offset); sn->getDynamicsAspect()->setFrictionCoeff(100000.0);
+    }
     pads.push_back(pad);
   }
   palm->getSkeleton()->enableSelfCollisionCheck(); gripper->disableSelfCollisionCheck();
@@ -103,8 +112,10 @@ int main(int argc, char** argv) {
     double sum = 0; const auto& res = world->getLastCollisionResult();
     for (const auto& c : res.getContacts()) {
       auto* a = c.collisionObject1->getShapeFrame(); auto* b = c.collisionObject2->getShapeFrame();
-      auto* pn = pads[k]->getShapeNode(0);
-      if (a == pn || b == pn) sum += c.force.norm();
+      for (size_t n = 0; n < pads[k]->getNumShapeNodes(); ++n) {
+        auto* pn = pads[k]->getShapeNode(n);
+        if (a == pn || b == pn) sum += c.force.norm();
+      }
     }
     return sum;
   };
