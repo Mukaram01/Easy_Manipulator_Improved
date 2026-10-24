@@ -2720,9 +2720,13 @@ def main():
                         summary['release_alignment']=dict(open_goal=open_goal,measured_rad=measured_open,
                             prevalidated_start_rad=prevalidated.points[0].positions[list(prevalidated.joint_names).index(contact_guard.leader)],
                             live_start_rad=live_start,start_deviation_rad=abs(live_start-measured_open),allowed_start_tolerance_rad=.01)
+                        # The goal must be the prevalidated OPEN goal within the planner's own
+                        # JointConstraint tolerance (joint_constraints: 1e-4 rad).
                         live_goal=dict(zip(live.joint_names,live.points[-1].positions))
+                        summary['release_alignment'].update(goal_deviation_rad={n:abs(live_goal[n]-open_goal[n])
+                            for n in open_goal if n in live_goal},goal_tolerance_rad=1e-4)
                         if (summary['release_alignment']['start_deviation_rad']>.01 or set(live_goal)!=set(open_goal) or
-                                any(abs(live_goal[n]-open_goal[n])>1e-6 for n in open_goal)):
+                                any(abs(live_goal[n]-open_goal[n])>1e-4+1e-12 for n in open_goal)):
                             raise RuntimeError('RELEASE_NOT_ALIGNED_WITH_MEASURED_STATE')
                         stage(label)
                     result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)

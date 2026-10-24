@@ -1758,4 +1758,5 @@ def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_meas
     release=source[source.index("if step['stage']=='PREPLAN_OPEN_GRIPPER' and summary.get('grasp_hold'):"):
                    source.index("result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)")]
     assert "plan_segment(scene_now(),label,open_goal,group='gripper')" in release      # same goal, actual start
-    assert "start_deviation_rad']>.01" in release and "abs(live_goal[n]-open_goal[n])>1e-6" in release
+    assert "start_deviation_rad']>.01" in release and "abs(live_goal[n]-open_goal[n])>1e-4+1e-12" in release
+    assert "tolerance_above=0.0001, tolerance_below=0.0001" in source       # the planner's own goal tolerance
