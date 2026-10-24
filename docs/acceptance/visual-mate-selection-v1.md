@@ -123,7 +123,7 @@ Screenshots are read from the real X11 window (`test/x11_window_capture.py`). Wi
 ## Limits
 
 - **Not a CAD kernel.** Faces are the verified planar datums and the surfaces associated with them; there are no arbitrary mesh, STEP or BREP faces, and no multi-constraint solver or moving joints. The pick contract carries the geometry source and triangle, so face-derived datums can be added later.
-- **Web3D draws compound tilt-plus-yaw rotations with three.js `XYZ` Euler order.** Surface picks on such assets are refused as a pose mismatch, while markers, relations and generated cells are exact.
+- **Compound tilt-plus-yaw rotations in Web3D (fixed after this evidence).** This evidence was recorded while Web3D used three.js `XYZ` Euler order, which refused surface picks on such assets as a pose mismatch. Web3D now uses ROS fixed-axis RPY (three.js `ZYX`) for every pose; see [Web3D ROS RPY acceptance](web3d-ros-rpy-v1.md). Markers, relations and generated cells were always exact.
 - **Cells saved before the winding fix** keep their own inside-out copy of a library STL under `assets/imported/catalog/`; place the part again to pick its faces.
 - **Vendor meshes.** The Robotiq 3F `GRIPPER_CLOSED` and `GRIPPER_OPEN_FINGER_2` meshes are also wound inside out; they are upstream vendor geometry and are left unchanged.
 - **Harness-load breadcrumb** can show the previously selected cell.
