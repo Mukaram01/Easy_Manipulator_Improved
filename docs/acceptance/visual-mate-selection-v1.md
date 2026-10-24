@@ -37,11 +37,13 @@ The real Builder is driven by real Qt mouse events in the Product View, delivere
 
 | Run | Result | Evidence |
 |---|---|---|
-| Web3D authoring, 1366×768 | PASS, 42 steps | [authoring.json](visual-mate-selection-v1/authoring.json) |
+| Web3D authoring, 1366×768 | PASS, 43 steps | [authoring.json](visual-mate-selection-v1/authoring.json) |
 | Web3D reopen, separate process (1920×1080 requested; the WM clamps it to the 1850×1016 desktop) | PASS | [reopen.json](visual-mate-selection-v1/reopen.json) |
-| Native Scene3D fallback, 1366×768 | PASS | [native.json](visual-mate-selection-v1/native.json) |
+| Native Scene3D fallback, 1366×768 | PASS, 8 steps | [native.json](visual-mate-selection-v1/native.json) |
 | Offline projection check | PASS | [projection-check.json](visual-mate-selection-v1/projection-check.json) |
-| ROS 2 Humble fake hardware, no motion | PASS | [runtime.json](visual-mate-selection-v1/runtime.json) |
+| ROS 2 Humble fake hardware, no motion | PASS (first R3.2 run; not repeated after the library-mesh follow-up, which changes no runtime code) | [runtime.json](visual-mate-selection-v1/runtime.json) |
+
+The authoring, reopen, native and projection runs were repeated after the library-mesh follow-up (live staged meshes, outward-wound placeholder STLs), with the stricter Scenario B below.
 
 **Scenario A: bin on table.**
 1. A click on the bin's side wall is refused: `NO_MATCHING_DATUM`, "not a verified mounting surface", and the manual datum list is offered.
@@ -51,9 +53,13 @@ The real Builder is driven by real Qt mouse events in the Product View, delivere
 5. Apply records one undoable edit. The flush gap is 2e-18 m with normals opposed.
 6. The table is moved +5 cm / −3 cm and turned 20°. The bin keeps its table-local offset (−0.2607, 0.42) exactly and stays flush.
 
+**Library part in the live view.**
+1. A Camera Stand is placed from the Asset Library. Before Save, the live Web3D view already draws its real mast mesh (`mesh_loaded`, no placeholder) from `build/workcell_studio_web_scene/assets/ur5_2f_test/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl`. That staged copy has the same SHA-256 as the Asset Library STL, and the layout is dirty.
+2. Save keeps the live session ("live authored session retained without Product View regeneration"). A marker set on the page before Save is still there afterwards (no reload), and the stand still draws the same mesh.
+
 **Scenario B: camera on stand.**
-1. A Camera Stand is placed from the Asset Library. A click on the camera body is refused (`NO_PLANE_DATUMS`); its origin marker picks `origin`.
-2. The stand is chosen in the hierarchy, isolated, and its top viewed. A click on the stand's top face reaches an inner wall of the inside-out placeholder STL and is refused (`NO_MATCHING_DATUM`). Its `top` datum marker picks the reviewed frame.
+1. A click on the camera body is refused (`NO_PLANE_DATUMS`); its origin marker picks `origin`.
+2. The stand is chosen in the hierarchy, isolated, and its top viewed. A geometry click on the stand's top face (between the datum marker and the face edge) resolves to `top`: `MATCHED`, 0.0 mm from the plane and 0° from the normal. It is a surface hit on the staged mesh, not on the marker.
 3. Origin to plane defaults to Coincident; Flush is disabled with its reason. The offset is set in the panel: 0.15 / 0.09 m, gap 0.05 m, pitch 90°.
 4. After Apply, the stand is moved and turned 15°. The camera holds its offset from the stand top (error 0 m), and the bin stays flush.
 
@@ -84,6 +90,7 @@ The real Builder is driven by real Qt mouse events in the Product View, delivere
 
 | | |
 |---|---|
+| ![Placed](visual-mate-selection-v1/08p_stand_placed_live_mesh.png) Placed Camera Stand: real mesh in the live view | ![Top face](visual-mate-selection-v1/08b_stand_top_face_matched.png) Stand top face click matches `top` |
 | ![Markers](visual-mate-selection-v1/01_mate_started_markers.png) Mate started: datum markers | ![Rejected](visual-mate-selection-v1/02_rejected_side_wall.png) Side wall refused, with reason |
 | ![Bottom](visual-mate-selection-v1/03_isolated_bottom_view.png) Isolate + Look at a face (bin bottom) | ![Preview](visual-mate-selection-v1/05_preview_flush_ghost.png) Flush preview with ghost |
 | ![Moved](visual-mate-selection-v1/07_table_moved_bin_follows.png) Table moved, bin follows | ![Camera](visual-mate-selection-v1/08_camera_on_stand_preview.png) Camera on stand, coincident offset |
@@ -94,6 +101,9 @@ The real Builder is driven by real Qt mouse events in the Product View, delivere
 
 - **Camera mounts are fixtures.** Asset discovery and the Web3D export treated any "camera…" identity as a camera, so the Asset Library Camera Stand became a second camera owner. It was then dropped from the Web3D scene, and reopening the cell failed Product View preparation ("exactly one physical camera owner; found 2"). Camera stands, mounts, brackets, frames, gantries and clamps are now fixtures. Real cameras, and anything with `role: camera`, are unchanged.
 - **Runtime script.** `asset_mounting_runtime_acceptance.py` now passes the cell's authored camera pose as xacro arguments when the scene xacro declares `camera_world_xyz` / `camera_world_rpy`, as the generated launch does.
+- **Library meshes in the live view (follow-up).** A part placed from the Asset Library was drawn as a placeholder until the Product View was refreshed, because Builder handed the viewer only mesh URIs under the browser-served roots. Builder now copies such a mesh into the exporter's cache, `build/workcell_studio_web_scene/assets/<scene>/<repo path>` (`include/live_mesh_staging.hpp`), for the placed item and for the placement ghost. Before, the ghost never loaded, so a click placement of a library part in Web3D could not commit either. The harness no longer refreshes the Product View after placing the stand.
+- **Placeholder STLs wound inside out (follow-up).** The reviewed `camera_stand` STL and 23 other generated box placeholders were wound inside out (negative volume). Web3D culls back faces, so their outer faces were invisible to clicks. They are rewound with identical vertices and bounds; `tests/test_placeholder_stl_winding.py` keeps them outward.
+- **Harness hover retry.** A hover sent right after a Mate step change could race the viewer's marker redraw (seen once on "stand base marker"). `click_world` now retries its candidate points after 1.5 s, at most three passes, and keeps every attempt in the evidence.
 
 ## Reproduce
 
@@ -114,7 +124,6 @@ Screenshots are read from the real X11 window (`test/x11_window_capture.py`). Wi
 
 - **Not a CAD kernel.** Faces are the verified planar datums and the surfaces associated with them; there are no arbitrary mesh, STEP or BREP faces, and no multi-constraint solver or moving joints. The pick contract carries the geometry source and triangle, so face-derived datums can be added later.
 - **Compound tilt-plus-yaw rotations in Web3D (fixed after this evidence).** This evidence was recorded while Web3D used three.js `XYZ` Euler order, which refused surface picks on such assets as a pose mismatch. Web3D now uses ROS fixed-axis RPY (three.js `ZYX`) for every pose; see [Web3D ROS RPY acceptance](web3d-ros-rpy-v1.md). Markers, relations and generated cells were always exact.
-- **Pre-existing asset and viewer issues:**
-  - The reviewed `camera_stand` placeholder STL is wound inside out.
-  - A newly placed library asset is drawn as a live placeholder until the Product View refreshes.
-  - The harness-load breadcrumb can show the previously selected cell.
+- **Cells saved before the winding fix** keep their own inside-out copy of a library STL under `assets/imported/catalog/`; place the part again to pick its faces.
+- **Vendor meshes.** The Robotiq 3F `GRIPPER_CLOSED` and `GRIPPER_OPEN_FINGER_2` meshes are also wound inside out; they are upstream vendor geometry and are left unchanged.
+- **Harness-load breadcrumb** can show the previously selected cell.
