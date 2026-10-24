@@ -44,7 +44,6 @@ private:
   };
   Row build_row(const QString & title, const QString & object_prefix);
   void fill_datums(QComboBox * combo, const QString & asset_id, const QString & selected);
-  std::array<double, 6> offset_from_fields() const;
 
   QPointer<MateToolController> controller_;
   QLabel * intro_{nullptr};

@@ -149,8 +149,13 @@ MateToolPanel::MateToolPanel(MateToolController * controller, QWidget * parent)
     auto * label = new QLabel(QString::fromLatin1(labels[k]), this);
     grid->addWidget(label, i / 2, (i % 2) * 2);
     grid->addWidget(spin, i / 2, (i % 2) * 2 + 1);
-    connect(spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
-      if (!refreshing_ && controller_) controller_->set_offset(offset_from_fields());
+    connect(spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this, k](double value) {
+      if (refreshing_ || !controller_) return;
+      // Change only this component of the exact offset the fields show; their
+      // text is rounded (4 decimals, 2 for degrees) and must not be read back.
+      auto offset = controller_->preview().offset;
+      offset[k] = k < 3 ? value : qDegreesToRadians(value);
+      controller_->set_offset(offset);
     });
   }
   grid->setColumnStretch(1, 1);
@@ -235,13 +240,6 @@ void MateToolPanel::fill_datums(QComboBox * combo, const QString & asset_id, con
   }
   const int index = combo->findData(selected);
   combo->setCurrentIndex(index >= 0 ? index : 0);
-}
-
-std::array<double, 6> MateToolPanel::offset_from_fields() const
-{
-  std::array<double, 6> offset{};
-  for (int k = 0; k < 6; ++k) offset[k] = k < 3 ? offset_[k]->value() : qDegreesToRadians(offset_[k]->value());
-  return offset;
 }
 
 void MateToolPanel::refresh()

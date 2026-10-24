@@ -2067,6 +2067,7 @@ bool MainWindow::open_scene_builder_for_scene_index(
   // Navigation happens before editor ownership changes. Home callbacks are
   // therefore inactive before the canonical editor refresh begins.
   show_studio_page(StudioPage::SceneBuilderPage);
+  cancel_mate_for_other_cell(scene_index);
   selected_scene_index_ = scene_index;
   try {
     refresh_scene_builder_selection_state_ui();
@@ -5504,6 +5505,7 @@ void MainWindow::select_scene_by_row(int row)
       QString::fromStdString(scene_browser_result_.scenes[row].scene_dir.string()))) return;
   const QString previous_scene_path = selected_scene_path();
   if (place_asset_armed_) set_canvas_interaction_mode(CanvasInteractionMode::Select);
+  cancel_mate_for_other_cell(row);
   selected_scene_index_ = row;
   sync_selected_scene_state();
   refresh_selected_scene_metadata_panel();
@@ -9911,6 +9913,14 @@ void MainWindow::end_visual_mate(bool applied, const QString & message)
   refresh_selected_item_card();
 }
 
+void MainWindow::cancel_mate_for_other_cell(int scene_index)
+{
+  // Mate belongs to the cell it started in; Apply must never commit into another one.
+  if (mate_active() && scene_index != selected_scene_index_) {
+    mate_controller_->cancel(QStringLiteral("Mate cancelled: another cell was opened. Nothing was applied."));
+  }
+}
+
 void MainWindow::push_mate_overlay()
 {
   if (!mate_controller_) return;
@@ -9954,8 +9964,15 @@ void MainWindow::handle_embedded_mate_state(const QVariantMap & mate)
     if (mate.value(QStringLiteral("active")).toBool() && scene_preview_widget_) scene_preview_widget_->clear_mate_overlay();
     return;
   }
-  if (!mate.value(QStringLiteral("active")).toBool() && QDateTime::currentMSecsSinceEpoch() - mate_overlay_sent_ms_ > 1000) {
-    push_mate_overlay();  // the viewer reloaded its scene; restore the overlay
+  // A reloaded viewer counts from zero again: rebase so its next click and Esc are not ignored.
+  const bool viewer_active = mate.value(QStringLiteral("active")).toBool();
+  if (workcell_builder::mate_viewer_counters_rebase({mate_seen_pick_seq_, mate_seen_hover_seq_, mate_seen_cancel_seq_},
+        {pick_seq, hover_seq, cancel_seq}, viewer_active)) {
+    mate_seen_pick_seq_ = pick_seq; mate_seen_hover_seq_ = hover_seq; mate_seen_cancel_seq_ = cancel_seq;
+  }
+  if (!viewer_active) {
+    if (QDateTime::currentMSecsSinceEpoch() - mate_overlay_sent_ms_ > 1000) push_mate_overlay();  // the viewer reloaded its scene; restore the overlay
+    return;
   }
   if (cancel_seq > mate_seen_cancel_seq_) {
     mate_seen_cancel_seq_ = cancel_seq;

@@ -130,4 +130,17 @@ QString mate_datum_display(const MateDatumFrame & datum);
 // the normal and removes the gap and tilt, so the datums seat exactly.
 std::array<double, 6> seated_mate_offset(const std::array<double, 6> & measured);
 
+// The embedded viewer numbers its Mate clicks, hovers and Esc presses, and
+// Builder acts only on numbers it has not seen. The viewer's counts become the
+// new baseline when its Mate is inactive (it records nothing then) or when a
+// count went backwards (a reloaded viewer counts from zero again); otherwise
+// clicks after a reload would be ignored without any message.
+struct MateViewerCounters
+{
+  qint64 pick = 0;
+  qint64 hover = 0;
+  qint64 cancel = 0;
+};
+bool mate_viewer_counters_rebase(const MateViewerCounters & seen, const MateViewerCounters & viewer, bool viewer_active);
+
 }  // namespace workcell_builder

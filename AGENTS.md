@@ -9,7 +9,7 @@ Use it to keep development aligned with the evidence-driven Workcell Studio road
 ### Instruction-document authority
 
 - `AGENTS.md` is the authoritative contributor and AI/Codex operating contract.
-- `docs/manuals/WORKCELL_STUDIO_ROADMAP.md` is the current product roadmap; use other manuals only when they are relevant to the scoped change.
+- `docs/manuals/WORKCELL_STUDIO_ROADMAP.md` remains the detailed historical/current product roadmap, but its dated status paragraphs may lag verified releases. The focused release charter and sequencing below supersede stale M0/M1 or "Gazebo later" instructions until that roadmap is reconciled in a separate scoped change. Preserve historical evidence; do not silently relabel it.
 - `Workcell_Studio_AI_Operating_Guardrail.md` is not a current or historical tracked path in the available repository refs. It was not renamed to the roadmap. Treat requests to read it as stale references to this `AGENTS.md`, and do not recreate a second operating contract under that name.
 
 Do not measure progress by PR count, test count, or the amount of scaffolding added. Measure progress by user-visible acceptance evidence for the canonical Workcell Studio workflow.
@@ -18,9 +18,9 @@ Do not measure progress by PR count, test count, or the amount of scaffolding ad
 
 This repository is the primary Workcell Studio / Easy Manipulation Deployment workspace.
 
-Workcell Studio is an internal configurable robotic-cell platform for authoring, generating, validating, simulating, demonstrating, and eventually commissioning industrial robotic cells.
+Workcell Studio is an internal configurable robotic-cell platform for authoring, generating, validating, simulating, demonstrating, and eventually commissioning industrial robotic cells. Its first go-to-market hypothesis is an **internal integration/engineering accelerator**, with optional integrator licensing only after customer demand and product support costs are validated. The purpose of the investor showcase is to earn credible pilot interest and potential fundraising discussions, **not** to claim that investment, valuations, performance or market fit have already been secured.
 
-This is not only a sorting demo. Sorting, inspection, machine tending, conveyor picking, binning, palletising, and similar workflows are templates inside Workcell Studio.
+**Current investor-demo release scope is exactly three flagship scenarios:** (1) controlled pick-and-place, (2) configurable inspection/sorting including indexed conveyors, and (3) random bin picking. Multi-robot composition, fixed/external cameras, interchangeable tools and reusable capability definitions are cross-cutting requirements, not fourth scenarios. Machine tending, palletising, welding, assembly and other uses remain future extensions, not current release commitments.
 
 The primary product UI is `workcell_builder`. Improve `workcell_builder` directly.
 
@@ -121,154 +121,78 @@ When a required environment is unavailable:
 - report exactly what was skipped and why;
 - identify the smallest next action on a real ROS Humble workstation.
 
-## Current roadmap position
+## Active release charter — three scenarios, investor evidence
 
-The immediate sequence is M0 followed directly by M1.
+**Decision date: 2026-10-21.** This charter is the priority for new work. Historical R1/R2 milestone material remains useful evidence but must not be reopened automatically.
 
-### M0 — Honest executable baseline
+### Verified baseline and outstanding proof (snapshot; re-check live repository before each task)
 
-Goal:
+- The existing Workcell Builder/New Cell Wizard, TaskIntent v2, AUTO/PREFERRED/EXACT resolution, Save/Generate/Validate/Product View, and MoveIt fake-hardware flow have meaningful implementation and recorded acceptance. The repository roadmap records R1.9 complete same-session fake-hardware cycles and R2.0d/e authoring/runtime parity. Do not restart M0/M1 or redesign these components without a reproducible regression.
+- Physics-backed Stage-A has demonstrated measured two-finger contact, attachment, 100 mm lift, transfer and placement approach in different bounded sparse-world trials. **One accepted complete physics-backed cycle, reliable repeated pile picking, and the full simulated RGB-D→EPD loop remain UNPROVEN.** Passing five of six gates is not full-cycle acceptance.
+- As reported in Trial 22 (2026-10-21), an approximately 190 ms executor stall correlated with stale telemetry during contact-release; the underlying native call was not identified and the stop was not formally verified. The Draft #3198 stack contains relevant changes and evidence. Do not merge it or declare the runtime commissioned solely on these reports. Verify PR/head/current runtime status rather than assuming this snapshot remains current.
+- Known stall classes include bridge delivery, simulator scheduling, Python GC (mitigated in a bounded trial), and an as-yet-unidentified executor-thread hold. Avoid another hour-long full suite simply to locate a millisecond-scale defect.
+- Real hardware is not validated or authorised. Keep real_hardware_enabled false and fake hardware as the default.
 
-- define what is authored, generated, cached, and runtime;
-- reset optimistic scene-support claims;
-- name canonical scenes;
-- define acceptance evidence and provenance requirements.
+### Release outcomes (priority order, not a demand to redo completed work)
 
-M0 does not mean adding more validators. It means making project claims honest and unambiguous.
+1. **Fast and safe developer feedback:** profile the existing six-gate runner; isolate a failing gate or no-motion component; find the unexplained executor stall with evidence. Maintain a separate full acceptance mode. Do not introduce another broad validator framework.
+2. **Core Stage A reliability:** achieve one complete physics-backed grasp→lift→transfer→place→release→retreat→home cycle using the qualified sparse cell; then show repeated picking from a changing pile using simulator RGB-D processed through the existing EPD boundary. Distinguish EMPTY from NO VALID PICK. Real contact and resettling must be measured, not faked with attach/detach alone.
+3. **Stage B perception:** replace simulated images with a calibrated real D435i at a configurable external/fixed location while keeping robot execution virtual. Preserve the same normalized object/task interfaces; do not feed camera-frame coordinates directly into a world-frame planner.
+4. **Stage B2 scenario expansion:** deliver controlled pick-and-place and indexed-conveyor intelligent sorting, including configurable camera/sensor placement, multi-attribute rules, destinations and a first two-robot independent-station cell. Reuse current Builder, resolver, MoveIt and EPD contracts. Moving-belt interception comes only after stopped/indexed tracking passes.
+5. **Stage B3 investor-demo qualification:** demonstrate all three scenarios, variant configurations (not just renamed scenes), at least two robot instances, and both 2F and suction where capability evidence allows; package repeatable measurements, limitations, video and business evidence.
+6. **Stage C physical commissioning:** a later, separate hardware-specific programme with independent machine risk assessment, guarding, E-stops, functional safety engineering, interlocks and commissioning. Simulation evidence alone never authorises physical motion.
 
-### M1 — Complete `ur5_2f_test` authoring round-trip
+### Product acceptance gates
 
-Goal:
+**Gate A — Controlled pick-and-place**
 
-- open the canonical scene;
-- select the intended editable physical item;
-- move/rotate it;
-- update task/destination bindings where applicable;
-- undo/redo correctly;
-- save;
-- close and reopen;
-- recover identical transforms and task bindings;
-- regenerate from the saved authored state.
+- A beginner uses the existing GUI to configure a supported robot/tool, source, known part, placement target, orientation and task policy; saves, reopens, generates and validates without manual YAML/source repair.
+- MoveIt collision checks, task resolution, planned approach/grasp/retreat/transfer/place, execution, release, home, failures and re-run are demonstrated with attached evidence.
+- Preserve earlier proven fake-hardware acceptances; do not confuse them with uncompleted Gazebo contact-physics acceptance.
 
-M1 is not complete merely because the robot, bin, or mesh is visible. Visual correctness is necessary, but the milestone is the complete edit/save/reopen/regenerate contract.
+**Gate B — Intelligent sorting with an indexed conveyor**
 
-### Current priority order
+- Configure an indexed/stopped conveyor with speed, direction, encoder/position or indexed-state interface, stations, stop/start interlocks, sensing/pick zones and reject/output destinations using capabilities rather than bespoke scene edits.
+- Support fixed upstream/overhead cameras with authored XYZ/RPY, calibrated extrinsics/intrinsics, timestamps and camera-to-world transforms. The camera may be separated from the robot; no eye-in-hand assumption.
+- Evaluate ordered, versioned rules using *combined* attributes: colour, supported geometry/dimensions, object class/shape, quality/rejection, barcode or other validated inputs; use sensor/model evidence for material classification and expose UNKNOWN/confidence thresholds. RGB alone must not be assumed to identify material composition reliably.
+- Route to designated bins or reject/quarantine without silently substituting unsupported predicates. Track an object from observation through conveyor displacement to its actual pick opportunity; invalidate stale observations.
+- Demonstrate repeatable correct routing for a small test set with a documented confusion matrix/rule outcomes and failure handling. Moving-belt pick/intercept is explicitly deferred until accurate timing/encoder-tracking, synchronisation and collision validation are proven.
 
-When choosing the next change, prefer this order:
+**Gate C — Random bin picking**
 
-1. Repair a regression introduced by the latest merged change when it blocks the canonical workflow.
-2. Remove ambiguity between authored, generated, cached, mirror, and runtime state.
-3. Make `ur5_2f_test` selection, transforms, task bindings, save, reopen, and regeneration deterministic.
-4. Make the generated `ur5_2f_test` package build and launch in fake hardware.
-5. Prove a complete simulated 2F pick/place flow with safe return home.
-6. Apply the same contract to `suction_test`.
-7. Propagate proven contracts to the rest of the scene catalog.
-8. Simplify the Workcell Builder user flow.
-9. Strengthen deterministic generation and provenance.
-10. Harden task/grasp authoring and runtime introspection.
-11. Formalize replay/live EPD integration.
-12. Produce the demo/review bundle.
-13. Add optional Gazebo/Isaac backends only after the core path works.
-14. Add guarded physical commissioning last.
+- Real, settled pile of same known part in a physically hollow bin; simulated RGB-D enters EPD or its existing normalized adapter, *not* perfect simulator poses as the planner input.
+- Resolve reachable, collision-valid grasp and placement using current AUTO/PREFERRED/EXACT semantics; physically retain the item through motion; release at bound support; allow pile to settle and re-observe.
+- Repeat to EMPTY when absence is supported by perception coverage, or NO VALID PICK with a specific evidence-backed blocker. Report successful picks, failed attempts, reasons and recovery.
+- Prove at least one change of part profile or bin/destination layout without modifying generic resolver/planner code.
 
-Do not let visual polish, broad cleanup, optional simulators, or another validator loop displace the current canonical workflow blocker.
+**Gate D — Reuse across equipment**
 
-## Milestone ladder
+- At least two robot instances in one configured scene (first independently scheduled, then coordinated shared-zone/handoff only once safe), correct namespaces, TF, controllers, planning groups, collision permissions and per-robot status.
+- Demonstrate a supported robot/tool swap or different validated tool modality without rewriting scenario-specific motion logic. Do not label unsupported robot brands/grippers as production-ready.
+- Generate identical behaviour from the same authored inputs and trace changes via provenance.
 
-### M0 — Establish an honest executable baseline
+**Gate E — Investor showcase**
 
-Exit gate:
+- 5–10-minute guided demonstration of the existing Workcell Studio GUI creating or reopening a cell, changing a meaningful parameter, saving, generating, validating, showing RViz planning, and executing the relevant simulator task with operator-visible status.
+- Three concise scenario segments, each with a known-good configuration, captured workstation video, logs, a failure path, repeatability evidence and exact backend/perception mode. Prefer a reproducible live demo plus a clearly labelled prerecorded fallback, never pass prerecorded video off as live.
+- Include measured setup time, execution time, per-task throughput, success/failure rate with trials and denominator, position/reachability/collision correctness, RTF, CPU/RAM, startup times, recovery outcomes, and assumptions. Show before/after engineering-hours savings **only when measured against a realistic baseline**.
+- Investor data room: product overview, architecture and IP/provenance, supported/unsupported capability matrix, demo replay instructions, test evidence, sample-generated customer deliverables, deployment/security/safety limitations, licences/dependencies, customer discovery and pilot/LOI status, cost model, go-to-market hypotheses, budget/milestones and explicit risks.
+- Do not promise a specific valuation, multimillion-pound raise, investment return or time-to-market. Treat fundraising as a potential consequence of credible product proof and commercial traction, never as an engineering acceptance criterion.
 
-- authored/generated/cached/runtime ownership is documented;
-- canonical scenes are named;
-- unproven scene support labels are blocked or experimental;
-- acceptance evidence requirements are explicit.
+### Milestone statuses and reporting
 
-### M1 — Make `ur5_2f_test` pass the complete authoring workflow
+Report each item as CONFIRMED, PARTIALLY CONFIRMED, INFERRED, BLOCKED or UNVERIFIED and distinguish: implemented source, static tests, real ROS workstation demo, repeated simulation acceptance and live physical deployment. A milestone cannot be marked complete because unit tests pass or a video looks good.
 
-Exit gate:
+Legacy labels M0–M12 and R1/R2 remain historical references in the roadmap; this charter is the active release sequence. If asked to reconcile detailed roadmap status, make a narrowly scoped documentation PR rather than deleting history.
 
-- one recorded edit/save/reopen/regenerate round-trip;
-- identical transforms and task bindings after reopen;
-- no silent save or selection failure.
+### Testing speed and bounded qualification
 
-### M2 — Make `ur5_2f_test` build and launch correctly in fake hardware
-
-Exit gate:
-
-- canonical workspace build succeeds;
-- generated package is discoverable;
-- RViz/MoveIt fake-hardware launch succeeds;
-- robot, tool, environment, destination semantics, and frames are correct;
-- launch evidence is captured.
-
-### M3 — skip
-
-### M4 — Complete the second canonical suction scene
-
-Exit gate:
-
-- `suction_test` passes the same relevant authoring, generation, build, launch, and simulation checklist.
-
-### M5 — Spread proven contracts across supported scenes
-
-Exit gate:
-
-- every scene labelled supported has attached acceptance evidence;
-- unproven scenes remain blocked or experimental with a specific blocker.
-
-### M6 — Simplify and productize Workcell Builder UX
-
-Exit gate:
-
-```text
-open scene → edit → save → generate → validate → launch
-```
-
-is an obvious novice flow without developer-only clutter.
-
-### M7 — Strengthen deterministic scene/package generation
-
-Exit gate:
-
-- generated artifacts declare schema version, generator name/version, generator commit, source hashes, and generation timestamp;
-- authored and derived layers are unambiguous.
-
-### M8 — Harden task/grasp authoring and simulation
-
-Exit gate:
-
-- task intent and executable recipe responsibilities are explicit;
-- runtime objective/behavior state is inspectable;
-- failures have actionable reasons.
-
-### M9 — Formalize replay/live EPD integration
-
-Exit gate:
-
-- stable adapter schema exists;
-- canonical replay evidence exists;
-- live mode uses the same normalized runtime contract.
-
-### M10 — Produce customer/investor demo and commissioning bundle
-
-Exit gate:
-
-- reproducible bundle contains screenshots, scene metadata, validation summary, runtime evidence, and visible real-execution lock state.
-
-### M11 — Add optional Gazebo/Isaac backends
-
-Exit gate:
-
-- optional adapters only;
-- neither simulator is required by the core authoring/fake-hardware workflow.
-
-### M12 — Add guarded physical commissioning
-
-Exit gate:
-
-- real execution is explicit, opt-in, preflight-guarded, and separately documented;
-- normal authoring and simulation cannot accidentally trigger robot motion.
+- **FAST:** focused unit/contract tests without Gazebo when possible (aspirational 1–3 minutes).
+- **TARGETED:** select a single gate or no-motion reproducer in the existing supervised runner with required preflight, fresh state, controller ownership, stop verification and cleanup (aspirational 5–15 minutes where feasible).
+- **FULL:** existing six-gate complete qualification with unchanged safety checks and traceable acceptance evidence. Reserve for milestone candidates or cross-cutting changes, not every local edit.
+- Record measured wall time broken into build/startup/planning/wait/motion/cleanup and simulator RTF. Targets are not verified timings or justification to relax guards.
+- For Trial 22-like stalls, prefer bounded stack/callback/GIL and writer-backlog diagnostics first; a targeted PASS is never a FULL PASS.
+- Never weaken telemetry freshness, retention, collision or physical-contact checks; no unapproved retry, timeout widening or motion. Honor qualified overlay/file hashes and restore clean owned processes.
 
 ## Source-of-truth ownership
 
@@ -403,6 +327,48 @@ Rules:
 - do not save successfully to one tree while runtime resolves a different tree;
 - when path ambiguity is detected, fail clearly with the candidate paths and selected authority.
 
+## Flagship scenario and shared industrial capability contracts
+
+Exactly **three flagship release templates** are in scope: controlled pick-and-place, indexed-conveyor sorting/inspection, and random bin picking. Industrial capabilities are shared composable modules across them. Do not write three parallel planning/execution stacks or introduce generic workflow engines without proving a missing capability.
+
+### Configurable physical equipment and sensors
+
+- Robots: one or multiple configurable arms; robot assets, bases, joints, namespaces, planning groups, hardware interfaces, frame trees, reach envelopes and controller ownership. Start with verified UR configurations; other brands are adapters requiring evidence.
+- End effectors: 2F and suction first, then others only if validated. Document TCP, gripper mode, grasp/contact geometry, force/aperture/vacuum/attachment model, capability limits and object compatibility.
+- Conveyors: belt/roller geometry, origin/axis, working length, width, height, speed and direction, stationary/indexed mode, encoder/drive/PLC signals, pick and reject zones, object tracking and safe stop/clear/fault semantics. Continuous-motion interception is a separate, later capability with demonstrated timing.
+- Cameras: any number of fixed upstream/overhead/side cameras and robot-mounted cameras, all with own physical pose, calibration, camera ID, frame, optical intrinsics, depth availability, timestamp and confidence/quality. Multiple calibrated observations must not become double picks of the same tracked item.
+- Sensors: photoeyes, encoders, scales, barcode readers, proximity and material sensors as supported; define data type, units, uncertainty, update frequency, time basis, signal/fault interpretation and simulation adapter. Never pretend an RGB classifier proves physical material.
+- Environment: bins, tray grids, fixtures, pick/drop zones, obstacles, robot bases, camera mounts, collision models, physical support/destination identities, authorised contact zones and conveyor sections.
+- Destinations and job policy: route priorities, pass/fail/unknown paths, capacity/occupancy, reject/quarantine, timing window, task sequence, operator controls, stop reason and bounded recovery.
+
+### Multi-robot architecture and acceptance
+
+- A cell may contain more than one robot, each with unique identity/namespace, TF frames, controller interfaces, tool config, task ownership, E-stop/interlock state and time-stamped event trace.
+- First prove two robots working independently in one generated cell with no namespace, topic, planning-scene or task cross-talk.
+- Next coordinate shared regions using explicit zone reservations and arbitration, deadlock/failure handling, collision constraints and safe state transitions. Robot-to-robot handoffs must be separately accepted for grasp transfer/contact.
+- Shared planning across robots is not automatically supplied by a multi-robot RViz picture. Use MoveIt multi-group planning only when current adapter supports it and measured acceptance proves synchronized execution; otherwise coordinate independently planned robots through explicit handshakes.
+- One robot's fault, missing telemetry or unverified stop must not permit the other to enter its reserved hazard zone. Never claim functional-safety-rated coordination from ROS messaging alone.
+- Where multi-robot support requires a canonical schema extension, evolve the current scene/cell contracts with migrations and tests; do not replace TaskIntent, the resolver, MoveIt or Workcell Builder.
+
+### Task logic / recipe usability
+
+- Keep task creation understandable in the existing Builder: what object, what source, what predicate(s), which actuator, what destination, what to do on UNKNOWN/fault, and who may enter a shared zone.
+- Use compatible capability profiles to generate scene-local task, robot, sensor and I/O bindings. Preserve stable authored identities on save/reopen/regeneration.
+- Task rule ordering, units (mm vs m, RGB vs HSV etc.), thresholds, priority, conflict detection, simulation playback and audit trail must be explicit.
+- Workcell Studio orchestrates; RViz visualises; MoveIt plans; Gazebo supplies optional task-required contact/physics; EPD detects/localises. **Do not duplicate RViz as a robot planner or Gazebo as a physics engine inside the Builder.** Existing 3D canvas is for physical layout editing and intelligible previews only.
+
+## Investor readiness and commercial discipline
+
+Workcell Studio's commercial north star is **shorter engineering time from cell definition to a credible simulated commissioning package**, proven across the three industrial scenarios. An attractive GUI alone is insufficient.
+
+- Prioritise a polished, stable, reproducible demonstration over more features or another large validator layer. Build assets for trustworthy screenshots/video, investor room and technical due diligence.
+- Product narrative: problem (costly specialist setup/integration), solution (one configurable authoring and task-execution workflow), proof (three working scenarios, multi-robot configurability, external sensing, measured time savings), customers (integrators/machine builders/automation teams), moat hypothesis (reuse/integration/workflow data), commercial model (internal deployments initially; optional software licensing later).
+- Track pilot targets, discovery interviews, letters of intent only if real, actual engineering time before/after, delivered cell/project economics, support burden, integrations and repeat deployment time. Do not invent users, revenue, customer references, market shares, valuation or fundraising commitments.
+- Keep robot/third-party model and code licences, contribution history, proprietary asset rights, data/privacy handling, external service dependencies and supply-chain/security risks reviewable. Identify anything that would prevent commercial use before promising it.
+- Investor showcase ≠ safety certification or factory deployment. Show real-hardware locked; keep separate factory acceptance, electrical/PLC/safety engineering, cyber-security, maintenance and liability plans for a future physical deployment.
+- After first credible investor demo, seek feedback from real manufacturers/integrators and prioritize their repeatable pain points over speculative feature breadth. A million-pound raise is an aspiration, not a success claim or requirement.
+
+
 ## Workcell Builder rules
 
 Improve the existing Workcell Builder rather than creating a parallel product.
@@ -448,7 +414,7 @@ UI rules:
 
 ## 3D editing and Product View rules
 
-The 3D surface must become a trustworthy editor, not only a preview.
+The 3D surface is an **authoring and layout editor**, not a replacement for RViz, MoveIt or Gazebo. Preserve useful existing UI work; do not rebuild path planning, physics, interactive robot controls or advanced RViz features inside Workcell Builder. The 3D surface must be a trustworthy editor, not only a preview.
 
 Required behavior:
 
@@ -676,7 +642,7 @@ Current supported baseline:
 
 Do not migrate ROS distributions unless explicitly requested.
 
-Do not make Gazebo, Ignition/Gazebo Sim, or Isaac Sim mandatory for the core workflow yet.
+Do not make Gazebo, Ignition/Gazebo Sim, or Isaac Sim mandatory for core scene authoring, validation or MoveIt fake-hardware workflows. **Gazebo Fortress (or a separately qualified compatible backend) is nevertheless required for the Stage-A contact-physics/pile acceptance case.** Keep Isaac optional and deferred.
 
 Optional simulation backends must consume the same canonical scene/task contracts rather than creating a second source of truth.
 
@@ -861,14 +827,15 @@ A Codex prompt should contain:
 
 Before recommending or implementing a change, ask:
 
-1. Does it close M0 ambiguity or M1 authoring round-trip risk?
-2. Does it make `ur5_2f_test` save/reopen/regenerate correctly?
-3. Does it improve the generated runtime handoff or fake-hardware launch?
-4. Does it produce missing acceptance evidence?
-5. Does it preserve the Easy/EPD boundary?
-6. Does it avoid another test/validator-only loop?
+1. Does it close a real evidence-backed blocker for one of the **three** flagship scenarios, or improve a shared capability they need?
+2. Does it reuse proven Workcell Builder, TaskIntent, resolver, MoveIt, RViz, EPD and simulator contracts instead of duplicating them?
+3. Does it measurably reduce the time to get accurate engineering evidence without weakening safety?
+4. Does it improve fixed-camera calibration, industrial sorting/conveyor capabilities or multi-robot correctness?
+5. Does it bring us closer to a repeatable 5–10 minute **honest investor showcase** or measured customer engineering-time savings?
+6. Is the capability actually missing, rather than already delivered by merged R1/R2 code? Is there a simpler targeted test?
+7. Does it preserve safe defaults, provenance, single-source-of-truth and exact blockers?
 
-If the answer is no to all six, it is probably not the next task.
+If the answer is no to all seven, defer it. Do not authorize another long full-cycle attempt merely because an isolated test failed. Avoid broad refactors and new simulators/planners unless the existing stack has a demonstrated capability gap.
 
 ## Anti-goals
 
@@ -878,12 +845,12 @@ Do not:
 - merge EPD into Workcell Builder;
 - combine the EPD GUI with the Workcell Builder UI;
 - replace `workcell_builder` with Streamlit or another parallel product;
-- broaden the scene catalog before canonical contracts are proven;
+- broaden beyond the three flagship scenarios before their shared contracts are proven;
 - call a scene supported without workstation evidence;
 - treat static green checks as end-to-end proof;
 - add validators as milestones by themselves;
 - create synthetic-only evidence and present it as runtime proof;
-- make Isaac or Gazebo mandatory before the core flow is stable;
+- make Isaac or Gazebo mandatory for core Builder/RViz fake-hardware authoring; Gazebo remains task-required only for physics-backed Stage-A acceptance;
 - start real robot motion as an early milestone;
 - enable real robot motion by default;
 - weaken fake-hardware-first safety;
@@ -901,25 +868,23 @@ Do not:
 
 A change is done only when:
 
-- the requested blocker is closed at the correct source-of-truth layer;
-- relevant authored/generated/runtime files are updated consistently;
-- focused automated validation passes;
-- required manual/workstation evidence is attached or explicitly marked blocked;
-- fake-hardware and real-execution safety defaults are preserved;
-- user-facing behavior is documented when needed;
-- the PR explains what changed, why, evidence, risks, and rollback;
-- no unsupported readiness claim was introduced.
+- it closes a specific current blocker in the appropriate authored/generated/runtime layer;
+- focused automated tests and relevant workstation/targeted acceptance pass, or the exact blocker is recorded;
+- fake-hardware-first, telemetry, contact/retention, FCL/collision, cancellation, recovery and real-hardware locks remain intact;
+- provenance, manual commands, timing, limitations, rollback and user-facing behaviour are reviewable;
+- no unsupported readiness, investor, safety or market claim was introduced.
 
-For the canonical Workcell Studio path, “done” ultimately means:
+**Investor-demo release** is done only when a non-author user can configure and run **three distinct supported scenarios** from the existing Builder, including a fixed off-robot camera, indexed-conveyor rules, a physically simulated random pile, and a demonstrably correct two-robot cell. Each scenario must have reproducible evidence, a meaningful variant that does not require hardcoded generic planner changes, measured reliability, an understandable failure path and an investor-friendly bounded demo. Known unsupported features must be visibly labelled.
 
-```text
-honest scene contract
-+ deterministic edit/save/reopen
-+ repeatable generation with provenance
-+ clean ROS 2 Humble build
-+ RViz/MoveIt fake-hardware launch
-+ complete simulated task/grasp
-+ replay/live perception contract
-+ reviewable demo evidence
-+ guarded real-hardware future
-```
+**Physical industrial commissioning** is explicitly **not** part of investor-demo acceptance. It remains separately gated by equipment-specific safety design, testing and qualified acceptance.
+
+The release path is:
+
+1. Preserve accepted R1/R2 Builder/TaskIntent/MoveIt capabilities.
+2. Make Stage-A physics/repeated-perception reliable and cheap to diagnose.
+3. Validate Stage-B real external-camera perception with virtual robot.
+4. Add indexed-conveyor sorting and evidence-backed multi-robot composition.
+5. Validate three scenarios and produce measured investor showcase/data room.
+6. Pursue real pilot feedback and commercial traction; decide on funding/licensing based on evidence.
+7. Undertake guarded Stage-C hardware commissioning only when separately authorised.
+
