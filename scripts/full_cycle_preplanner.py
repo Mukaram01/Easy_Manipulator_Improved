@@ -29,9 +29,12 @@ from perceived_object_grasp_plan import (
 )
 from physical_destination import check_object_containment
 from grasp_strategy_candidates import generate_strategy_candidates
+from tool_interface import interface_from_contract
+from transport_policy import policy_from_contract
 
 # Position reserve past the refined first opposing contact on the simulator path:
-# one coarse closure step. The finger servo stalls at first contact, so the reserve
+# one coarse closure step of the installed tool's interface (the 2F-85 value below;
+# tool_interface.LEGACY_TWO_FINGER.closure_step()). The finger servo stalls at first contact, so the reserve
 # is a standing position error, not extra closure: 0.0125 rad (LENLEG 2026-10-24,
 # run reserve0125_r1) left the finger 0.0117-0.0125 rad short, did not reduce the
 # in-pinch rotation (0.00915 rad) and made the prevalidated OPEN start 0.0125 rad
@@ -138,12 +141,12 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             return SearchBudgetExhausted('candidate search budget exhausted')
         return CandidateBudgetExhausted('candidate wall-clock slice exhausted')
 
-    def motion(name, goal, group=None, straight=False):
+    def motion(name, goal, group=None, straight=False, **extra):
         nonlocal view
         stage(name)
         if time.monotonic() > deadline:
             raise budget_failure()
-        options = {}
+        options = dict(extra)
         if name == 'PREPLAN_CLOSE_GRIPPER' and closure_clearance is not None:
             options['closure_clearance'] = copy.deepcopy(closure_clearance)
         if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
@@ -166,6 +169,10 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
 
     try:
         stage('GENERATE_GRASPS')
+        # The installed tool's interface supplies joints, positions, group and aperture.
+        # A tool whose engagement the planner cannot express fails here, before any motion.
+        tool = interface_from_contract(contract)
+        closure_positions = tool.closure_positions()
         intent = contract.get('task_intent')
         if intent is not None:
             grasp = intent['pick']['grasp']
@@ -259,8 +266,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             aperture = intent['pick']['grasp'].get('aperture', {'min_m': 0., 'max_m': 0.085})
             if not aperture['min_m'] <= aperture_extent <= aperture['max_m']:
                 raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: object outside authored aperture')
-        if aperture_extent > 0.085:
-            raise RuntimeError('target exceeds Robotiq aperture')
+        if aperture_extent > tool.max_aperture_m:
+            raise RuntimeError(f'target exceeds the {tool.capability_id} aperture ({tool.max_aperture_m} m)')
         if any(a > b for a, b in zip(extents, destination['dimensions'])):
             raise RuntimeError('target exceeds destination bounds')
         original = next(o for o in view.world.collision_objects if o.id == observation['id'])
@@ -274,7 +281,10 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             checks.append(dict(code='PREPLAN_CLOSURE_CLEARANCE',status='PASS',
                                evidence=copy.deepcopy(closure_clearance)))
         retreat = contract['retreat_distance_m']
+        transport = policy_from_contract(contract)
         place_approach = contract.get('place_approach_distance_m', retreat)
+        if transport is not None:
+            place_approach = transport.place_approach_m(place_approach)
         place_retreat = contract.get('place_retreat_distance_m', retreat)
         clearance = contract.get('placement_clearance_m', 0.001)
         if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
@@ -298,7 +308,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         def closure_contacts(position):
             if reserve and time.monotonic() >= deadline:
                 raise budget_failure()
-            trial = operations.updated_state(view.robot_state, {'gripper_finger1_joint': position})
+            trial = operations.updated_state(view.robot_state, tool.engage_goal(position))
             response = operations.state_validity(trial)
             if response.contacts:
                 try:
@@ -316,9 +326,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                 if observation['id'] in (c.contact_body_1, c.contact_body_2)
             }
 
-        closure_step = 0.804/80
-        for i in range(1, 81):
-            position = 0.804*i/80
+        for i, position in enumerate(closure_positions, 1):
             response = closure_contacts(position)
             if response.contacts and not reserve:
                 close = position
@@ -330,7 +338,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     # Refine the first observed contact bracket before adding
                     # the unchanged reserve. The coarse sample can already
                     # overshoot contact by an entire closure step.
-                    lower, upper = 0.804*(i-1)/80, position
+                    lower = closure_positions[i-2] if i > 1 else tool.open_positions_rad[tool.closure_joint]
+                    upper = position
                     refinement_iterations = 0
                     if i == 1 and required_contacts.issubset(
                             target_contact_links(closure_contacts(lower))):
@@ -343,8 +352,8 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                             lower = middle
                         refinement_iterations += 1
                     first_opposing = upper
-                    close = first_opposing+SIMULATOR_CLOSURE_RESERVE_RAD
-                    if close > 0.804:
+                    close = first_opposing+tool.closure_step()
+                    if close > tool.closed_position_rad:
                         raise RuntimeError('no closure reserve remains within gripper range')
                     planned_contacts = target_contact_links(closure_contacts(close))
                     if not required_contacts.issubset(planned_contacts):
@@ -353,7 +362,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if close is None:
             raise RuntimeError('no allowed fingertip contact in closing range')
         grasp_open_state = copy.deepcopy(view.robot_state)
-        motion('PREPLAN_CLOSE_GRIPPER', {'gripper_finger1_joint': close}, group='gripper')
+        motion('PREPLAN_CLOSE_GRIPPER', tool.engage_goal(close), group=tool.planning_group)
         if reserve:
             # A position reserve is not a force measurement. Execution must
             # still establish and continuously retain actual opposing contact.
@@ -444,7 +453,27 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     object_in_tool = compose_pose(inverse_pose(grasp_tool), observation['pose'])
                     destination_object = destination['pose_xyz'] + quaternion_from_rpy(destination['pose_rpy'])
                     place_goal = operations.pose_message(compose_pose(destination_object, inverse_pose(object_in_tool)))
-                motion('PREPLAN_TRANSFER', operations.translated_pose(place_goal, dz=place_approach))
+                transfer_goal = operations.translated_pose(place_goal, dz=place_approach)
+                if transport is None:
+                    motion('PREPLAN_TRANSFER', transfer_goal)
+                else:
+                    # Bounded attempts along the authored ladder; a budget or lifecycle stop is never retried.
+                    attempts = []
+                    for attempt in transport.attempts():
+                        try:
+                            motion('PREPLAN_TRANSFER', transfer_goal, **({} if attempt.tilt_tolerance_rad is None else
+                                   {'transport_tilt_tolerance_rad': attempt.tilt_tolerance_rad}))
+                        except (SearchBudgetExhausted, CandidateBudgetExhausted, PlanningLifecycleFailure):
+                            raise
+                        except Exception as exc:
+                            attempts.append(dict(attempt.as_dict(), success=False, reason=str(exc)[:200]))
+                            if len(attempts) == len(transport.attempts()):
+                                checks.append(dict(code='TRANSPORT_POLICY', status='FAIL', attempts=attempts))
+                                raise
+                            continue
+                        attempts.append(dict(attempt.as_dict(), success=True))
+                        steps[-1]['metadata']['transport_policy'] = dict(transport.as_contract(), attempts=attempts)
+                        break
                 # The authored place approach is z_down: descend straight into the
                 # destination like the grasp descent and the retreat. A free OMPL
                 # segment into the bin cavity cut corners through the bound physics
@@ -462,7 +491,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                         raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: planned placement orientation differs from physical destination')
                 check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=clearance)
                 checks.append(dict(code=check_code, status='PASS'))
-                motion('PREPLAN_OPEN_GRIPPER', {'gripper_finger1_joint': 0.0}, group='gripper')
+                motion('PREPLAN_OPEN_GRIPPER', tool.release_goal(), group=tool.planning_group)
                 stage('DETACH')
                 before = copy.deepcopy(view)
                 placed = operations.place_detachment_diff(original, contract['grasp_frame'], achieved[:3], achieved[3:]).world.collision_objects[0]

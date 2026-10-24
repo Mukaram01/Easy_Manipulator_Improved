@@ -1858,3 +1858,123 @@ def test_pinch_tcp_rotation_offset_is_still_refused():
     kwargs['candidate'] = generate_strategy_candidates('finger_pinch_basic', kwargs['observation'], {'approach_distance_m': .07})[0]
     result = preplan_full_cycle(**kwargs)
     assert not result.success and 'nonzero authored TCP adjustment' in result.reason and goals == []
+
+
+# --- R3: capability-driven tool interface and transport policy ---------------------------------
+
+def tool_interface(**changes):
+    from tool_interface import LEGACY_TWO_FINGER
+    interface = LEGACY_TWO_FINGER.as_contract()
+    interface.update(capability_id='synthetic_tool', planning_group='tool_group', command_joints=['tool_close_joint'],
+                     open_positions_rad={'tool_close_joint': 0.0}, closed_position_rad=0.5, search_steps=50,
+                     max_aperture_m=0.06)
+    interface.update(changes)
+    return interface
+
+
+def tool_fixture(interface):
+    kwargs, trace, goals, validity = fixture()
+    names = kwargs['initial_scene'].robot_state.joint_state.name
+    names[-1] = 'tool_close_joint'              # this tool's command joint, not gripper_finger1_joint
+    kwargs['contract']['tool_interface'] = interface
+    return kwargs, trace, goals, validity
+
+
+def test_a_different_tool_is_driven_entirely_by_its_interface():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, validity = tool_fixture(tool_interface())
+    result = preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    assert validity == pytest.approx([.01, .02])          # its own closure search (0.5 rad / 50 steps)
+    close = next(g for g in goals if g[0] == 'PREPLAN_CLOSE_GRIPPER')
+    opened = next(g for g in goals if g[0] == 'PREPLAN_OPEN_GRIPPER')
+    assert close[1] == {'tool_close_joint': pytest.approx(.02)} and close[2] == 'tool_group'
+    assert opened[1] == {'tool_close_joint': 0.0} and opened[2] == 'tool_group'
+    assert not any('gripper_finger1_joint' in g[1] for g in goals if isinstance(g[1], dict))
+
+
+def test_the_tool_aperture_bounds_the_target():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, _ = tool_fixture(tool_interface(max_aperture_m=0.03))      # fixture box is 0.04 m across
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success and 'synthetic_tool aperture (0.03 m)' in result.reason
+    assert goals == []                                                           # refused before any motion
+
+
+@pytest.mark.parametrize('interface,code', [
+    (dict(kind='io_signal', signals={'engage': 'vacuum_on', 'release': 'blowoff', 'feedback': 'vacuum_on',
+                                     'release_mode': 'pulse'}), 'TOOL_ENGAGEMENT_UNSUPPORTED'),
+    (dict(closed_position_rad=None), 'TOOL_CLOSURE_UNCOMMISSIONED'),
+])
+def test_a_tool_whose_engagement_cannot_be_planned_fails_before_any_motion(interface, code):
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, trace, goals, validity = tool_fixture(tool_interface(**interface))
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success and code in result.reason
+    assert goals == [] and validity == [] and trace == ['GENERATE_GRASPS']
+
+
+def transport_fixture(policy, fail=lambda options: False, exception=None):
+    from dataclasses import replace
+    kwargs, trace, goals, validity = fixture()
+    kwargs['contract']['transport_policy'] = policy
+    transfers = []
+    inner = kwargs['operations'].plan_segment
+    def segment(view, name, goal, group=None, straight=False, **options):
+        if name == 'PREPLAN_TRANSFER':
+            transfers.append(dict(options, z=goal.pose.position.z))
+            if exception is not None:
+                raise exception
+            if fail(options):
+                raise RuntimeError(f"constrained transfer infeasible at {options.get('transport_tilt_tolerance_rad')}")
+        return inner(view, name, goal, group, straight, **options)
+    kwargs['operations'] = replace(kwargs['operations'], plan_segment=segment)
+    return kwargs, transfers
+
+
+def keep_level(**fields):
+    return dict({'schema': 'transport_policy/v1', 'orientation': 'keep_level', 'tilt_tolerances_rad': [0.05, 0.1]}, **fields)
+
+
+def test_keep_level_transport_widens_tolerance_only_along_the_authored_ladder():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, transfers = transport_fixture(keep_level(), fail=lambda o: o.get('transport_tilt_tolerance_rad') == .05)
+    result = preplan_full_cycle(**kwargs)
+    assert result.success, result.reason
+    assert [t.get('transport_tilt_tolerance_rad') for t in transfers] == [.05, .1]
+    metadata = next(s for s in result.stages if s['stage'] == 'PREPLAN_TRANSFER')['transport_policy']
+    assert [(a['tilt_tolerance_rad'], a['success']) for a in metadata['attempts']] == [(.05, False), (.1, True)]
+    assert 'infeasible at 0.05' in metadata['attempts'][0]['reason']
+
+
+def test_without_an_authored_fallback_transport_never_drops_the_constraint():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, transfers = transport_fixture(keep_level(), fail=lambda o: True)
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code == 'PREPLAN_TRANSFER_FAILED'
+    assert [t.get('transport_tilt_tolerance_rad') for t in transfers] == [.05, .1]
+    check = next(c for c in result.checks if c['code'] == 'TRANSPORT_POLICY')
+    assert check['status'] == 'FAIL' and len(check['attempts']) == 2
+    # An explicitly authored fallback adds exactly one unconstrained attempt.
+    kwargs, transfers = transport_fixture(keep_level(allow_unconstrained_fallback=True),
+                                          fail=lambda o: 'transport_tilt_tolerance_rad' in o)
+    assert preplan_full_cycle(**kwargs).success
+    assert [t.get('transport_tilt_tolerance_rad') for t in transfers] == [.05, .1, None]
+
+
+def test_a_budget_stop_is_never_retried_as_a_transport_fallback():
+    from full_cycle_preplanner import CandidateBudgetExhausted, preplan_full_cycle
+    kwargs, transfers = transport_fixture(keep_level(allow_unconstrained_fallback=True),
+                                          exception=CandidateBudgetExhausted('slice exhausted'))
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success and result.reason_code == 'CANDIDATE_SLICE_EXHAUSTED'
+    assert len(transfers) == 1
+
+
+def test_the_destination_approach_waypoint_raises_only_the_transfer_end():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, legacy = transport_fixture(None)
+    assert preplan_full_cycle(**kwargs).success
+    kwargs, raised = transport_fixture(keep_level(destination_approach_height_m=0.3))
+    assert preplan_full_cycle(**kwargs).success
+    assert raised[0]['z'] - legacy[0]['z'] == pytest.approx(0.3 - 0.15)      # fixture place approach is 0.15 m
