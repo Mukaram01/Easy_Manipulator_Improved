@@ -42,6 +42,15 @@ def _catalog_strategy(strategy_ref):
     return payload
 
 
+def _candidate_constraints(strategy_ref, effective_grasp):
+    """Generator constraints: the approach distance, plus the authored TCP offset for the pinch."""
+    constraints = {"approach_distance_m": effective_grasp["approach"]["distance_m"]}
+    offset = effective_grasp.get("tcp_offset_xyz_m", [0.0, 0.0, 0.0])
+    if strategy_ref == "finger_pinch_basic" and any(abs(v) > 1e-12 for v in offset):
+        constraints["tcp_offset_xyz_m"] = list(offset)
+    return constraints
+
+
 def _effective_intent_for_strategy(normalized, strategy_ref):
     """Return the exact grasp constraints evaluated for one strategy.
 
@@ -286,7 +295,7 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
             return _readiness(result, 'BLOCKED', 'TASK_GRASP_EFFECTIVE_CHANGED',
                               'Resolved strategy-effective grasp constraints changed; resolve again.')
         candidates = generate_strategy_candidates(chosen['selected_strategy_ref'], observation,
-            {'approach_distance_m': effective_grasp['approach']['distance_m']})
+            _candidate_constraints(chosen['selected_strategy_ref'], effective_grasp))
         candidate = next((item for item in candidates if item.candidate_id == chosen['selected_candidate_id']), None)
         if candidate is None:
             return _readiness(result, 'BLOCKED', 'TASK_CANDIDATE_CHANGED', 'Resolved candidate is no longer available.')
@@ -334,8 +343,7 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
             for observation in eligible:
                 try:
                     candidates = generate_strategy_candidates(
-                        strategy, observation,
-                        {"approach_distance_m": effective_grasp["approach"]["distance_m"]})
+                        strategy, observation, _candidate_constraints(strategy, effective_grasp))
                 except (ValueError, KeyError, TypeError) as exc:
                     return _readiness(result, "BLOCKED", "GRASP_CANDIDATE_INVALID", str(exc))
                 for candidate in candidates:

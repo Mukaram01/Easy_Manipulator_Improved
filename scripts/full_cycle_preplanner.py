@@ -181,8 +181,12 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     placement['retreat']['axis'] != 'z_up' or
                     placement['orientation']['mode'] != 'target_default'):
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle')
-            if any(abs(v) > 1e-12 for key in ('tcp_offset_xyz_m', 'tcp_offset_rpy_rad')
-                   for v in grasp.get(key, [0., 0., 0.])):
+            # Only the pinch generator honours a (translation-only) TCP offset; it must be
+            # the very offset the candidate was generated with. Everything else still fails.
+            honoured = (candidate.strategy_ref == 'finger_pinch_basic' and
+                        list(grasp.get('tcp_offset_xyz_m', [0., 0., 0.])) == list(candidate.effective.get('tcp_offset_xyz_m', [0., 0., 0.])))
+            if (any(abs(v) > 1e-12 for v in grasp.get('tcp_offset_rpy_rad', [0., 0., 0.])) or
+                    (any(abs(v) > 1e-12 for v in grasp.get('tcp_offset_xyz_m', [0., 0., 0.])) and not honoured)):
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: nonzero authored TCP adjustment')
             if grasp.get('contact', {}).get('min_quality', 0.) != 0.:
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: contact quality measurement unavailable')

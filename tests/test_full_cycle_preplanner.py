@@ -1818,3 +1818,43 @@ def test_deferred_aliases_cannot_hide_a_later_objects_selected_retry(monkeypatch
     assert (retries[0]['object_id'], retries[0]['candidate_id']) == (second['id'], 'top_2f::000')
     assert calls[-1] == (second['id'], 'top_2f::000', 'retry:top_2f')
     assert len(kwargs['summary']['candidate_search']['phases'][0]['retries']) == 1
+
+
+@pytest.mark.parametrize('authored,candidate_offset,accepted', [
+    ([0., 0., -.004], [0., 0., -.004], True),     # honoured: the candidate carries the very offset
+    ([0., 0., -.004], None, False),               # authored but not consumed by the candidate
+    ([0., 0., -.003], [0., 0., -.004], False),    # different offset
+])
+def test_pinch_tcp_offset_is_accepted_only_when_the_candidate_honours_it(authored, candidate_offset, accepted):
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from full_cycle_preplanner import preplan_full_cycle
+    from tests.test_task_intent_resolver import valid_intent
+    kwargs, _, goals, _ = fixture()
+    intent = valid_intent('EXACT')
+    grasp = intent['pick']['grasp']
+    grasp.update(strategy_ref='finger_pinch_basic', tcp_offset_xyz_m=authored)
+    grasp['approach']['axis'] = 'tool_z'; grasp['orientation']['mode'] = 'tool_aligned'
+    kwargs['contract']['task_intent'] = intent
+    constraints = {'approach_distance_m': .07}
+    if candidate_offset is not None:
+        constraints['tcp_offset_xyz_m'] = candidate_offset
+    kwargs['candidate'] = generate_strategy_candidates('finger_pinch_basic', kwargs['observation'], constraints)[0]
+    result = preplan_full_cycle(**kwargs)
+    if accepted:
+        assert result.success, result.reason
+    else:
+        assert not result.success and 'nonzero authored TCP adjustment' in result.reason and goals == []
+
+
+def test_pinch_tcp_rotation_offset_is_still_refused():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    from full_cycle_preplanner import preplan_full_cycle
+    from tests.test_task_intent_resolver import valid_intent
+    kwargs, _, goals, _ = fixture()
+    intent = valid_intent('EXACT'); grasp = intent['pick']['grasp']
+    grasp.update(strategy_ref='finger_pinch_basic', tcp_offset_rpy_rad=[0., 0., .1])
+    grasp['approach']['axis'] = 'tool_z'; grasp['orientation']['mode'] = 'tool_aligned'
+    kwargs['contract']['task_intent'] = intent
+    kwargs['candidate'] = generate_strategy_candidates('finger_pinch_basic', kwargs['observation'], {'approach_distance_m': .07})[0]
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success and 'nonzero authored TCP adjustment' in result.reason and goals == []
