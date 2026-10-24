@@ -19,7 +19,14 @@ every face lies on an extreme plane of real geometry (never beyond the tool,
 conservative for collision checking), and with a cut just before the pad the distal box
 face is the pad face while the proximal box stays 1.8 mm behind it. The same replay held
 0.0016-0.0022 mrad with no collapse. Binding fails closed unless the boxes enclose every
-triangle. Only the simulator derivation uses it; the fake-hardware description is
+triangle.
+
+Only the physics model Gazebo spawns (robot.sdf) changes. Planning keeps the exact mesh:
+with two shapes per fingertip, the controller-interval certificate loses its
+single-shape triangle-cover bound against the concave bin mesh and could no longer
+certify the place descent (fingertips inside the bin), and grasp qualification is defined
+on the planning geometry. The boxes are a superset of the mesh, so any extra physical
+contact is still caught by the unpermitted-contact guard. The fake-hardware path is
 unchanged.
 
 Capability record block (``end_effector.simulator_collision``):
@@ -33,6 +40,7 @@ Capability record block (``end_effector.simulator_collision``):
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -83,13 +91,6 @@ def _rpy(r, p, y):
     return np.array([[cy*cp, cy*sp*sr-sy*cr, cy*sp*cr+sy*sr], [sy*cp, sy*sp*sr+cy*cr, sy*sp*cr-cy*sr], [-sp, cp*sr, cp*cr]])
 
 
-def _resolve(uri, package_share):
-    if uri.startswith('package://'):
-        package, relative = uri[10:].split('/', 1)
-        return Path(package_share(package)) / relative
-    return Path(uri.removeprefix('file://'))
-
-
 def _binary_stl_triangles(path):
     data = Path(path).read_bytes()
     if len(data) < 84:
@@ -122,75 +123,91 @@ def slab_boxes(triangles, axis=None, cuts=()):
     return boxes
 
 
-def bind_mesh_bounding_boxes(xml, links, *, package_share=None, evidence=None, axis=None, cuts=()):
-    """Replace each listed link's single mesh collision with slab bounding boxes of that mesh.
+def _pose(text):
+    values = [float(v) for v in (text or '0 0 0 0 0 0').split()]
+    if len(values) != 6 or not all(math.isfinite(v) for v in values):
+        raise SimulationCollisionError('collision pose must be six finite numbers')
+    return np.array(values[:3]), values[3:]
 
-    Returns the bound description and the binding record. Boxes are expressed in the
-    collision frame (each collision origin keeps its rotation; its translation moves to
-    the box centre). Without cuts, a single bounding box.
+
+def bind_native_model(output, end_effector):
+    """Bind a capability record's ``simulator_collision`` block into the derived physics model.
+
+    Only ``<output>/robot.sdf`` (the model Gazebo spawns) changes: each listed link's single
+    mesh collision becomes its slab bounding boxes, keeping the collision's surface
+    (friction/contact) parameters. The MoveIt/planning description (``robot.urdf`` and
+    ``robot_description``) keeps the original mesh, so planning, the controller-interval
+    certificate and grasp qualification are unchanged. ``spec.json`` gets the binding and the
+    new ``native_description_sha256`` that the receipt check verifies. None when the record
+    declares no block.
     """
-    if package_share is None:
-        from ament_index_python.packages import get_package_share_directory as package_share
-    root = ET.fromstring(xml)
-    by_name = {link.get('name'): link for link in root.findall('link')}
+    errors = block_errors(end_effector)
+    if errors:
+        raise SimulationCollisionError(' '.join(errors))
+    block = end_effector.get('simulator_collision')
+    if block is None:
+        return None
+    output = Path(output); model_path = output / 'robot.sdf'
+    if not model_path.is_file():
+        raise SimulationCollisionError('SIMULATOR_COLLISION_REQUIRES_NATIVE_MODEL: no derived robot.sdf to bind')
+    original = model_path.read_bytes()
+    root = ET.fromstring(original)
+    links = {link.get('name'): link for link in root.iter('link')}
+    axis, cuts = block.get('axis'), tuple(block.get('cuts_m') or ())
     records = []
-    for name in links:
-        link = by_name.get(name)
+    for name in block['links']:
+        link = links.get(name)
         collisions = link.findall('collision') if link is not None else []
         if len(collisions) != 1:
             raise SimulationCollisionError(f'{name}: exactly one collision element required, found {len(collisions)}')
         collision = collisions[0]
         geometry = collision.find('geometry'); mesh = geometry.find('mesh') if geometry is not None else None
-        if mesh is None:
+        if mesh is None or not mesh.findtext('uri'):
             raise SimulationCollisionError(f'{name}: collision is not a mesh')
-        path = _resolve(mesh.get('filename', ''), package_share).resolve(strict=True)
-        scale = np.array([float(v) for v in mesh.get('scale', '1 1 1').split()])
+        if collision.find('pose') is not None and collision.find('pose').get('relative_to'):
+            raise SimulationCollisionError(f'{name}: relative_to collision poses are unsupported')
+        path = Path(mesh.findtext('uri').removeprefix('file://')).resolve(strict=True)
+        scale = np.array([float(v) for v in (mesh.findtext('scale') or '1 1 1').split()])
         if scale.shape != (3,) or not np.isfinite(scale).all() or (scale <= 0).any():
             raise SimulationCollisionError(f'{name}: invalid mesh scale')
         triangles, count, sha256 = _binary_stl_triangles(path)
-        triangles = triangles * scale
         try:
-            boxes = slab_boxes(triangles, axis, cuts)
+            boxes = slab_boxes(triangles * scale, axis, cuts)
         except SimulationCollisionError as exc:
             raise SimulationCollisionError(f'{name}: {exc}') from exc
         if any(((high - low) <= 0).any() for low, high in boxes):
             raise SimulationCollisionError(f'{name}: degenerate mesh extent')
-        origin = collision.find('origin')
-        xyz = np.array([float(v) for v in (origin.get('xyz', '0 0 0') if origin is not None else '0 0 0').split()])
-        rpy = [float(v) for v in (origin.get('rpy', '0 0 0') if origin is not None else '0 0 0').split()]
+        xyz, rpy = _pose(collision.findtext('pose'))
         position = list(link).index(collision)
         link.remove(collision)
         shapes = []
         for index, (low, high) in enumerate(boxes):
             size, centre = high - low, (high + low) / 2
             shifted = xyz + _rpy(*rpy) @ centre
-            element = ET.Element('collision', {**collision.attrib, **({'name': f"{collision.get('name')}_{index}"} if collision.get('name') else {})})
-            ET.SubElement(element, 'origin', xyz=' '.join(repr(float(v)) for v in shifted), rpy=' '.join(repr(v) for v in rpy))
-            ET.SubElement(ET.SubElement(element, 'geometry'), 'box', size=' '.join(repr(float(v)) for v in size))
+            element = copy.deepcopy(collision)
+            element.set('name', f"{collision.get('name', name)}_box{index}")
+            for old in element.findall('pose'):
+                element.remove(old)
+            pose = ET.Element('pose'); pose.text = ' '.join(repr(float(v)) for v in list(shifted) + list(rpy))
+            element.insert(0, pose)
+            box_geometry = element.find('geometry')
+            for old in list(box_geometry):
+                box_geometry.remove(old)
+            ET.SubElement(ET.SubElement(box_geometry, 'box'), 'size').text = ' '.join(repr(float(v)) for v in size)
             link.insert(position + index, element)
-            shapes.append(dict(box_size_m=size.tolist(), box_centre_m=centre.tolist(), origin_xyz_m=shifted.tolist()))
-        records.append(dict(link=name, mesh=str(path), mesh_sha256=sha256, triangles=count, scale=scale.tolist(),
-                            origin_rpy_rad=rpy, boxes=shapes))
-    mode = 'mesh_slab_bounding_boxes' if axis is not None and cuts else 'mesh_bounding_box'
-    return ET.tostring(root, encoding='unicode'), dict(mode=mode, axis=axis, cuts_m=list(cuts), links=records, evidence=evidence)
-
-
-def bind_from_capability(xml, end_effector):
-    """Apply a capability record's ``simulator_collision`` block; None when it declares none."""
-    errors = block_errors(end_effector)
-    if errors:
-        raise SimulationCollisionError(' '.join(errors))
-    block = end_effector.get('simulator_collision')
-    if block is None:
-        return xml, None
-    return bind_mesh_bounding_boxes(xml, block['links'], evidence=block['evidence'],
-                                    axis=block.get('axis'), cuts=tuple(block.get('cuts_m') or ()))
-
-
-def augment_spec(output, binding):
-    """Record the binding in the prepared simulator spec (read by the receipt)."""
-    spec_path = Path(output) / 'spec.json'
+            shapes.append(dict(box_size_m=size.tolist(), box_centre_m=centre.tolist(), pose=list(shifted) + list(rpy)))
+        records.append(dict(link=name, mesh=str(path), mesh_sha256=sha256, triangles=count, scale=scale.tolist(), boxes=shapes))
+    model_path.write_text(ET.tostring(root, encoding='unicode'))
+    digest = lambda data: hashlib.sha256(data).hexdigest()
+    binding = dict(mode=block['mode'], axis=axis, cuts_m=list(cuts), links=records, evidence=block['evidence'],
+                   source_native_description_sha256=digest(original),
+                   native_description_sha256=digest(model_path.read_bytes()))
+    spec_path = output / 'spec.json'
     spec = json.loads(spec_path.read_text())
+    if spec.get('native_description_sha256') != binding['source_native_description_sha256']:
+        model_path.write_bytes(original)
+        raise SimulationCollisionError('SIMULATOR_COLLISION_SOURCE_CHANGED: robot.sdf differs from the prepared spec')
+    spec['native_description_sha256'] = binding['native_description_sha256']
     spec['simulator_collision_primitives'] = binding
     spec_path.write_text(json.dumps(spec, indent=2))
     return binding
