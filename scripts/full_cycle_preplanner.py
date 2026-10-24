@@ -30,6 +30,14 @@ from perceived_object_grasp_plan import (
 from physical_destination import check_object_containment
 from grasp_strategy_candidates import generate_strategy_candidates
 
+# Position reserve past the refined first opposing contact on the simulator path.
+# 0.804/80 (one coarse closure step, 0.01005 rad) let finger_pinch_basic::000 pivot
+# 0.00912-0.01012 rad in the pinch against the 0.0100 rad retention limit (LENLEG
+# 2026-10-24). 0.0125 rad keeps the planned pad penetration (~0.057 m/rad, 0.58 mm
+# at 0.01005) under the unchanged 1 mm GRASP_GEOMETRY limit; the actuator effort
+# limit, the only force bound, is unchanged.
+SIMULATOR_CLOSURE_RESERVE_RAD = 0.0125
+
 
 @dataclass(frozen=True)
 class PreplanOperations:
@@ -331,7 +339,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                             lower = middle
                         refinement_iterations += 1
                     first_opposing = upper
-                    close = first_opposing+closure_step
+                    close = first_opposing+SIMULATOR_CLOSURE_RESERVE_RAD
                     if close > 0.804:
                         raise RuntimeError('no closure reserve remains within gripper range')
                     planned_contacts = target_contact_links(closure_contacts(close))
