@@ -24,6 +24,7 @@
 #include <QLabel>
 #include <QString>
 #include <QJsonObject>
+#include <QVariant>
 #include <QMap>
 #include <QSet>
 #include <QLineEdit>
@@ -47,6 +48,8 @@ namespace fs = boost::filesystem;
 
 namespace workcell_builder {
 struct WorkcellStudioCanvasModel;
+class MateToolController;
+class MateToolPanel;
 }
 
 QT_BEGIN_NAMESPACE
@@ -144,6 +147,14 @@ private:
   void setup_studio_shell();
   void build_studio_header_actions();
   void apply_studio_theme();
+  Q_INVOKABLE void show_workflow_feedback(const QString & kind, const QString & text);
+  void run_scene_validation_truthfully(const QString & label);
+  QSet<QString> scene_task_destination_ids() const;
+  void set_validation_state(const QString & state, const QString & detail);
+  void set_validation_lists(const QStringList & blockers, const QStringList & warnings);
+  QString validation_state_{QStringLiteral("not_validated")};
+  QString validation_state_detail_;
+  QString validation_state_text() const;
   void append_studio_log(
     const QString & message,
     workcell_builder::StudioLogSeverity severity = workcell_builder::StudioLogSeverity::Info,
@@ -364,10 +375,35 @@ private:
   void apply_inspector_pose_to_item();
   bool mounting_update_guard_{false};
   QJsonArray mounting_items() const;
+  bool mounted_pose_unchanged(const QString & id, double x, double y, double z, double roll, double pitch, double yaw) const;
   QJsonObject run_mounting_request(QJsonObject request);
   bool commit_mounting_request(QJsonObject request);
   void apply_mounting_snapshot(const QVector<ScenePreviewWidget::PreviewItem> & snapshot);
   void edit_selected_mounting();
+  // Visual Mate tool (R3.2): pick faces in 3D, preview, apply via the mounting resolver.
+  void begin_visual_mate();
+  void end_visual_mate(bool applied, const QString & message);
+  void push_mate_overlay();
+  void cancel_mate_for_other_cell(int scene_index);
+  void handle_embedded_mate_state(const QVariantMap & mate);
+  void notify_mate_scene_changed();
+  bool mate_active() const;
+  QString mate_backend_note() const;
+  workcell_builder::MateToolController * mate_controller_{nullptr};
+  workcell_builder::MateToolPanel * mate_panel_{nullptr};
+  QPushButton * scene_builder_mate_button_{nullptr};
+  QPushButton * inspector_mate_button_{nullptr};
+  bool mate_selection_passthrough_{false};
+  bool mate_web_supported_{false};
+  QString mate_scene_path_;
+  qint64 mate_seen_pick_seq_{0};
+  qint64 mate_seen_hover_seq_{0};
+  qint64 mate_seen_cancel_seq_{0};
+  qint64 mate_overlay_sent_ms_{0};
+  QJsonObject mate_last_pick_evidence_;
+  bool mate_scene_change_pending_{false};
+  void refresh_mount_relation_context();
+  QString mount_relation_text_for(const QString & id) const;
   void apply_selection_transform_from_editor();
   void revert_selection_transform_editor();
   void copy_selection_transform_to_clipboard();
@@ -550,6 +586,7 @@ private:
   QLabel * selection_scene_end_effector_label_{ nullptr };
   QLabel * selection_scene_launch_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
+  QLabel * inspector_mount_relation_label_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
   QDoubleSpinBox * inspector_y_{ nullptr };
   QDoubleSpinBox * inspector_z_{ nullptr };

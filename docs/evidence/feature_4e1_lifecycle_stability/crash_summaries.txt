@@ -1,0 +1,63 @@
+===== repro_4e: CRASHES=6/20
+-- run 3: corrupted double-linked list exit=134
+#10 QObject::~QObject() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#11 (anonymous namespace)::AssetDropWebEngineView::~AssetDropWebEngineView() ()
+#12 (anonymous namespace)::AssetDropWebEngineView::~AssetDropWebEngineView() ()
+#13 QObjectPrivate::deleteChildren() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#14 QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#15 QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+-- run 6: Segmentation fault exit=139
+#4  QGraphicsViewPrivate::~QGraphicsViewPrivate() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#5  QGraphicsViewPrivate::~QGraphicsViewPrivate() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#6  QGraphicsView::~QGraphicsView() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#7  QObjectPrivate::deleteChildren() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#8  QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#9  QFrame::~QFrame() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+-- run 9: Segmentation fault exit=139
+#4  QGraphicsViewPrivate::~QGraphicsViewPrivate() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#5  QGraphicsViewPrivate::~QGraphicsViewPrivate() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#6  QGraphicsView::~QGraphicsView() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#7  QObjectPrivate::deleteChildren() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#8  QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#9  QFrame::~QFrame() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+-- run 12: Segmentation fault exit=139
+#4   at /lib/x86_64-linux-gnu/libQt5WebEngineCore.so.5
+#5   ()
+-- run 15: Segmentation fault exit=139
+#4  QTypedArrayData<char>::deallocate(QArrayData*) ()
+#5  QByteArray::~QByteArray() ()
+#6  OwnedProductViewServer::~OwnedProductViewServer() ()
+#7  OwnedProductViewServer::~OwnedProductViewServer() ()
+#8  QObjectPrivate::deleteChildren() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#9  QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+-- run 20: Segmentation fault exit=139
+#4  QTypedArrayData<char>::deallocate(QArrayData*) ()
+#5  QByteArray::~QByteArray() ()
+#6  OwnedProductViewServer::~OwnedProductViewServer() ()
+#7  OwnedProductViewServer::~OwnedProductViewServer() ()
+#8  QObjectPrivate::deleteChildren() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#9  QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+===== repro_3188: CRASHES=2/20
+-- run 3: corrupted double-linked list exit=134
+#10 QObject::~QObject() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#11 (anonymous namespace)::AssetDropWebEngineView::~AssetDropWebEngineView() ()
+#12 (anonymous namespace)::AssetDropWebEngineView::~AssetDropWebEngineView() ()
+#13 QObjectPrivate::deleteChildren() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#14 QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#15 QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+-- run 14: corrupted double-linked list exit=134
+#10 QObject::~QObject() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#11 (anonymous namespace)::AssetDropWebEngineView::~AssetDropWebEngineView() ()
+#12 (anonymous namespace)::AssetDropWebEngineView::~AssetDropWebEngineView() ()
+#13 QObjectPrivate::deleteChildren() at /lib/x86_64-linux-gnu/libQt5Core.so.5
+#14 QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+#15 QWidget::~QWidget() at /lib/x86_64-linux-gnu/libQt5Widgets.so.5
+
+===== bisection
+repro_native: CRASHES=0/20
+repro_nogpu: CRASHES=5/20
+repro_mcheck: CRASHES=2/10
+repro_qcheck: CRASHES=16/16
+repro_qcheck_fixed: CRASHES=0/10
+repro_fixed: CRASHES=0/30
+qcheck hits before fix: 16/16

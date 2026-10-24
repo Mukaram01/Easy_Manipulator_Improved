@@ -141,3 +141,40 @@ TEST(WorkcellSceneIdentity, CanonicalScenesUseTheSameReadyContractAsHome)
     EXPECT_TRUE(found->fake_hardware_ready) << scene_name;
   }
 }
+
+TEST(WorkcellSceneIdentity, SameCellInTwoWorkspaceRootsKeepsBothAndOpensOnlyByCanonicalPath)
+{
+  // Two checkouts carry "ur5_2f_test" with different authored X (0.45 / 0.47).
+  const fs::path base = fs::temp_directory_path() / fs::unique_path("workcell_dupes_%%%%-%%%%");
+  const fs::path ws_a = base / "ws_a", ws_b = base / "ws_b";
+  const fs::path scene_a = ws_a / "src/easy_manipulation_deployment/scenes/ur5_2f_test";
+  const fs::path scene_b = ws_b / "src/easy_manipulation_deployment/scenes/ur5_2f_test";
+  for (const auto & scene : {scene_a, scene_b}) {
+    fs::create_directories(scene / "layout");
+    std::ofstream(scene / "environment.yaml") << "robot:\n  name: ur5\n";
+  }
+  std::ofstream(scene_a / "layout/workcell_studio_layout.yaml") << "layout:\n  items:\n    - id: target_bin_default\n      pose:\n        xyz: [0.45, 0.22, 0.1]\n";
+  std::ofstream(scene_b / "layout/workcell_studio_layout.yaml") << "layout:\n  items:\n    - id: target_bin_default\n      pose:\n        xyz: [0.47, 0.22, 0.1]\n";
+
+  // Workspace A selected, workspace B supplied as the remembered output root: both are listed, never merged.
+  const auto both = workcell_builder::discover_workcell_studio_scenes(ws_a, scene_b.parent_path());
+  int named = 0;
+  for (const auto & scene : both.scenes) if (scene.scene_name == "ur5_2f_test") ++named;
+  ASSERT_EQ(named, 2);
+  const int index_a = workcell_builder::find_scene_by_identity(both, scene_a, "ur5_2f_test");
+  const int index_b = workcell_builder::find_scene_by_identity(both, scene_b, "ur5_2f_test");
+  ASSERT_GE(index_a, 0); ASSERT_GE(index_b, 0);
+  EXPECT_NE(index_a, index_b);
+  EXPECT_EQ(both.scenes[static_cast<std::size_t>(index_a)].canonical_scene_dir, workcell_builder::canonical_scene_identity(scene_a));
+  EXPECT_EQ(both.scenes[static_cast<std::size_t>(index_b)].canonical_scene_dir, workcell_builder::canonical_scene_identity(scene_b));
+  // A display name alone is ambiguous here and must not pick either copy.
+  EXPECT_EQ(workcell_builder::find_scene_by_identity(both, fs::path(), "ur5_2f_test"), -1);
+  // A stale/deleted explicit path never falls back to the same-name cell.
+  EXPECT_EQ(workcell_builder::find_scene_by_identity(both, base / "gone/ur5_2f_test", "ur5_2f_test"), -1);
+
+  // Re-discovery from the other workspace keeps the selection by canonical path or reports it missing.
+  const auto only_b = workcell_builder::discover_workcell_studio_scenes(ws_b);
+  EXPECT_EQ(workcell_builder::find_scene_by_identity(only_b, scene_a, "ur5_2f_test"), -1);
+  EXPECT_GE(workcell_builder::find_scene_by_identity(only_b, scene_b, "ur5_2f_test"), 0);
+  fs::remove_all(base);
+}

@@ -1,0 +1,771 @@
+{
+    "backend": "embedded_web3d",
+    "bin_move_1_bin_table_local": [
+        -0.3036256653961117,
+        0.3020627036091185,
+        0.1
+    ],
+    "bin_move_2_bin_table_local": [
+        -0.32072667256239523,
+        0.25507807256982307,
+        0.1
+    ],
+    "bin_move_3_bin_table_local": [
+        -0.3002054639628551,
+        0.3114596298169776,
+        0.1
+    ],
+    "datums": {
+        "bin": {
+            "bottom": {
+                "catalog_asset_id": "bin_standard",
+                "datum_type": "plane",
+                "label": "Bottom face (normal points down)",
+                "pose_rpy": [
+                    3.141592653589793,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    -0.1
+                ]
+            },
+            "centre_axis": {
+                "catalog_asset_id": "bin_standard",
+                "datum_type": "axis",
+                "label": "Vertical centre axis",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "origin": {
+                "datum_type": "origin",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "rim": {
+                "catalog_asset_id": "bin_standard",
+                "datum_type": "plane",
+                "label": "Rim plane (normal points up)",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0.1
+                ]
+            }
+        },
+        "camera": {
+            "origin": {
+                "datum_type": "origin",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0
+                ]
+            }
+        },
+        "stand": {
+            "base": {
+                "catalog_asset_id": "camera_stand",
+                "datum_type": "plane",
+                "label": "Base plate (normal points down)",
+                "pose_rpy": [
+                    3.141592653589793,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    -0.6
+                ]
+            },
+            "mast_axis": {
+                "catalog_asset_id": "camera_stand",
+                "datum_type": "axis",
+                "label": "Mast axis",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "origin": {
+                "datum_type": "origin",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "top": {
+                "catalog_asset_id": "camera_stand",
+                "datum_type": "plane",
+                "label": "Top mounting face (normal points up)",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0.6
+                ]
+            }
+        },
+        "table": {
+            "origin": {
+                "datum_type": "origin",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0
+                ]
+            },
+            "surface": {
+                "datum_type": "plane",
+                "pose_rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "pose_xyz": [
+                    0,
+                    0,
+                    0
+                ]
+            }
+        }
+    },
+    "dialog_bin-on-table": {
+        "apply_enabled": true,
+        "mountAlignment": "Flush — plane faces touch, normals opposed",
+        "mountAnchor": "surface · plane",
+        "mountChildDatum": "bottom · plane — Bottom face (normal points down)",
+        "mountTo": "Industrial Workbench [support_surface_table]",
+        "opened": true,
+        "preview": "Destination Bin at X 0.4500 · Y 0.2200 · Z 0.0991 m, roll 0.0° · pitch 0.0° · yaw 0.0° (moves 0.9 mm)\nOffset X -0.261 · Y 0.420 · Z 0.000 m\nRoll 0.0° · pitch 0.0° · yaw 0.0°\nFollows: place_zone_default (destination zone, keeps its target-local placement)",
+        "return_applies": true
+    },
+    "dialog_bin-reparent": {
+        "apply_enabled": true,
+        "mountAlignment": "Flush — plane faces touch, normals opposed",
+        "mountAnchor": "top · plane — Top mounting face (normal points up)",
+        "mountChildDatum": "bottom · plane — Bottom face (normal points down)",
+        "mountTo": "Camera Stand [camera_01]",
+        "opened": true,
+        "preview": "Destination Bin at X 0.3724 · Y 0.1055 · Z 0.0991 m, roll 0.0° · pitch 0.0° · yaw 20.0° (moves 0.0 mm)\nOffset X 0.275 · Y 0.553 · Z -1.201 m\nRoll 0.0° · pitch 0.0° · yaw 5.0°",
+        "return_applies": true
+    },
+    "dialog_camera-detach": {
+        "opened": true
+    },
+    "dialog_camera-on-stand": {
+        "apply_enabled": true,
+        "mountAlignment": "Coincident — datum frames line up",
+        "mountAnchor": "top · plane — Top mounting face (normal points up)",
+        "mountChildDatum": "origin · origin",
+        "mountTo": "Camera Stand [camera_01]",
+        "opened": true,
+        "preview": "Fixed RealSense D435i at X 0.4000 · Y -0.3600 · Z 1.2500 m, roll 0.0° · pitch 90.0° · yaw 0.0° (moves 400.0 mm)\nOffset X 0.150 · Y 0.090 · Z 0.050 m\nRoll 0.0° · pitch 90.0° · yaw 0.0°",
+        "return_applies": true
+    },
+    "dialog_invalid-axis-plane": {
+        "apply_enabled": false,
+        "mountAlignment": "Coincident — datum frames line up",
+        "mountAnchor": "surface · plane",
+        "mountChildDatum": "centre_axis · axis — Vertical centre axis",
+        "mountTo": "Industrial Workbench [support_surface_table]",
+        "opened": true,
+        "preview": "Cannot apply: asset target_bin_default: an axis datum cannot coincide with a plane datum (centre_axis is axis, support_surface_table.surface is plane); select matching datum types",
+        "return_applies": true
+    },
+    "dialog_invalid-cycle": {
+        "apply_enabled": false,
+        "mountAlignment": "Coincident — datum frames line up",
+        "mountAnchor": "rim · plane — Rim plane (normal points up)",
+        "mountChildDatum": "origin · origin",
+        "mountTo": "Destination Bin [target_bin_default]",
+        "opened": true,
+        "preview": "Cannot apply: mounting cycle at asset 'support_surface_table'; select a parent outside its descendants",
+        "return_applies": true
+    },
+    "dialog_invalid-flush-origin": {
+        "apply_enabled": false,
+        "mountAlignment": "Flush — plane faces touch, normals opposed",
+        "mountAnchor": "surface · plane",
+        "mountChildDatum": "origin · origin",
+        "mountTo": "Industrial Workbench [support_surface_table]",
+        "opened": true,
+        "preview": "Cannot apply: asset target_bin_default: flush needs two plane datums, but origin is origin and support_surface_table.surface is plane; choose Coincident or select plane datums",
+        "return_applies": true
+    },
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "final_items": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{\"parent_object\": \"camera_01\", \"parent_link\": \"top\", \"joint_type\": \"fixed\", \"origin\": {\"x\": 0.15, \"y\": 0.09, \"z\": 0.05, \"roll\": 0.0, \"pitch\": 1.5707963267948966, \"yaw\": -0.0}}",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0.2617993877991494
+            ],
+            "pose_xyz": [
+                0.3715951598841334,
+                -0.37424381886860575,
+                1.25
+            ],
+            "role": "camera"
+        },
+        {
+            "catalog_asset_id": "table_standard_1200",
+            "category": "environment",
+            "id": "support_surface_table",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.761,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "catalog_asset_id": "bin_standard",
+            "category": "environment",
+            "id": "target_bin_default",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.3002054639628551, \"y\": 0.3114596298169776, \"z\": -1.951563910473908e-18, \"roll\": 0.0, \"pitch\": -0.0, \"yaw\": 0.0}, \"mounting_anchors\": {\"bottom\": {\"pose_xyz\": [0.0, 0.0, -0.1], \"pose_rpy\": [3.141592653589793, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Bottom face (normal points down)\", \"source\": \"catalog:bin_standard\"}}, \"mate\": {\"child_datum\": \"bottom\", \"alignment\": \"flush\"}}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.3723736735643327,
+                -0.010000000000000037,
+                0.09910000050067902
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "catalog_asset_id": "camera_stand",
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ]
+            },
+            "mounting_yaml": "{\"mounting_anchors\": {\"top\": {\"pose_xyz\": [0.0, 0.0, 0.6], \"pose_rpy\": [0.0, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Top mounting face (normal points up)\", \"source\": \"catalog:camera_stand\"}}}",
+            "pose_rpy": [
+                0,
+                0,
+                0.2617993877991494
+            ],
+            "pose_xyz": [
+                0.25,
+                -0.5,
+                0.6
+            ],
+            "role": "camera"
+        }
+    ],
+    "invalid_relations_rejected_without_change": true,
+    "mated": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{\"parent_object\": \"camera_01\", \"parent_link\": \"top\", \"joint_type\": \"fixed\", \"origin\": {\"x\": 0.15, \"y\": 0.09, \"z\": 0.05, \"roll\": 0.0, \"pitch\": 1.5707963267948966, \"yaw\": -0.0}}",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.36,
+                1.25
+            ],
+            "role": "camera"
+        },
+        {
+            "catalog_asset_id": "table_standard_1200",
+            "category": "environment",
+            "id": "support_surface_table",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "catalog_asset_id": "bin_standard",
+            "category": "environment",
+            "id": "target_bin_default",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.2607, \"y\": 0.42, \"z\": 0, \"roll\": 0.0, \"pitch\": 0.0, \"yaw\": 0.0}, \"mounting_anchors\": {\"bottom\": {\"pose_xyz\": [0.0, 0.0, -0.1], \"pose_rpy\": [3.141592653589793, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Bottom face (normal points down)\", \"source\": \"catalog:bin_standard\"}}, \"mate\": {\"child_datum\": \"bottom\", \"alignment\": \"flush\"}}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4499668243408203,
+                0.21999999999999997,
+                0.09910000050067902
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "catalog_asset_id": "camera_stand",
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ]
+            },
+            "mounting_yaml": "{\"mounting_anchors\": {\"top\": {\"pose_xyz\": [0.0, 0.0, 0.6], \"pose_rpy\": [0.0, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Top mounting face (normal points up)\", \"source\": \"catalog:camera_stand\"}}}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.25,
+                -0.45,
+                0.6
+            ],
+            "role": "camera"
+        }
+    ],
+    "mated_bin_table_local": [
+        -0.2607,
+        0.42,
+        0.1
+    ],
+    "moved": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{\"parent_object\": \"camera_01\", \"parent_link\": \"top\", \"joint_type\": \"fixed\", \"origin\": {\"x\": 0.15, \"y\": 0.09, \"z\": 0.05, \"roll\": 0.0, \"pitch\": 1.5707963267948966, \"yaw\": -0.0}}",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0.2617993877991494
+            ],
+            "pose_xyz": [
+                0.3715951598841334,
+                -0.37424381886860575,
+                1.25
+            ],
+            "role": "camera"
+        },
+        {
+            "catalog_asset_id": "table_standard_1200",
+            "category": "environment",
+            "id": "support_surface_table",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.761,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "catalog_asset_id": "bin_standard",
+            "category": "environment",
+            "id": "target_bin_default",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.2607, \"y\": 0.42, \"z\": 0, \"roll\": 0.0, \"pitch\": 0.0, \"yaw\": 0.0}, \"mounting_anchors\": {\"bottom\": {\"pose_xyz\": [0.0, 0.0, -0.1], \"pose_rpy\": [3.141592653589793, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Bottom face (normal points down)\", \"source\": \"catalog:bin_standard\"}}, \"mate\": {\"child_datum\": \"bottom\", \"alignment\": \"flush\"}}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.3723736735643328,
+                0.10550624936507969,
+                0.09910000050067902
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "catalog_asset_id": "camera_stand",
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ]
+            },
+            "mounting_yaml": "{\"mounting_anchors\": {\"top\": {\"pose_xyz\": [0.0, 0.0, 0.6], \"pose_rpy\": [0.0, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Top mounting face (normal points up)\", \"source\": \"catalog:camera_stand\"}}}",
+            "pose_rpy": [
+                0,
+                0,
+                0.2617993877991494
+            ],
+            "pose_xyz": [
+                0.25,
+                -0.5,
+                0.6
+            ],
+            "role": "camera"
+        }
+    ],
+    "placed_items": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                1.570000000000127,
+                0
+            ],
+            "pose_xyz": [
+                0.40000000000000013,
+                -0.36004294887185107,
+                0.8499999999999998
+            ],
+            "role": "camera"
+        },
+        {
+            "catalog_asset_id": "table_standard_1200",
+            "category": "environment",
+            "id": "support_surface_table",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "surface_z_m: 0.0",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "catalog_asset_id": "bin_standard",
+            "category": "environment",
+            "id": "target_bin_default",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.45,
+                0.22,
+                0.1
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "catalog_asset_id": "camera_stand",
+            "category": "camera_sensor",
+            "id": "camera_01",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ]
+            },
+            "mounting_yaml": "",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.25,
+                -0.45,
+                0.6
+            ],
+            "role": "camera"
+        }
+    ],
+    "redone_bin_table_local": [
+        -0.26070000000000004,
+        0.42,
+        0.1
+    ],
+    "reparent_preview": "Destination Bin at X 0.3724 · Y 0.1055 · Z 0.0991 m, roll 0.0° · pitch 0.0° · yaw 20.0° (moves 0.0 mm)\nOffset X 0.275 · Y 0.553 · Z -1.201 m\nRoll 0.0° · pitch 0.0° · yaw 5.0°",
+    "result": "PASS",
+    "save_0": {
+        "bin": "id: target_bin_default\ntype: target_bin\nrole: place_target_bin\ndisplay_name: Destination Bin\ncategory: environment\nframe: world\npose_xyz:\n  - 0.3723736735643328\n  - 0.10550624936507969\n  - 0.09910000050067902\npose_rpy:\n  - 0\n  - 0\n  - 0.3490658503988659\nlayout_item_ref: target_bin_default\ngeometry_type: mesh\nmesh:\n  path: package://sorting_bin_description/meshes/sorting_bin.stl\n  scale:\n    - 0.001\n    - 0.001\n    - 0.001\n  rpy:\n    - 1.5707963267948966\n    - 0\n    - 1.5707963267948966\n  origin_offset:\n    - -0.173899436593\n    - 0\n    - -0.1\nasset_class: registered\ncollision:\n  enabled: true\n  mode: mesh\ncatalog_asset_id: bin_standard\nsupport_surface_ref: support_surface_table\ntask_zone_ref: default_drop_zone\nusable_placement:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.01\n  pose_rpy:\n    - 0.0\n    - 0.0\n    - 0.0\n  dimensions:\n    - 0.24\n    - 0.12\n    - 0.14\n  review: \"Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json.\"\nparent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.2607\n  y: 0.42\n  z: 0\n  roll: 0.0\n  pitch: 0.0\n  yaw: 0.0\nmounting_anchors:\n  bottom:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - -0.1\n    pose_rpy:\n      - 3.141592653589793\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Bottom face (normal points down)\n    source: catalog:bin_standard\nmate:\n  child_datum: bottom\n  alignment: flush",
+        "zone": "id: default_drop_zone\ntype: place_zone\nrole: place_zone\ndisplay_name: Place Free Region\ncategory: zone\nframe: world\npose_xyz:\n  - 0.3723736735643328\n  - 0.10550624936507969\n  - 0.10910000050067901\npose_rpy:\n  - 0.0\n  - -0.0\n  - 0.3490658503988659\nlayout_item_ref: place_zone_default\ngeometry_type: box\ndimensions:\n  - 0.2\n  - 0.1\n  - 0.12\nasset_class: primitive\ntarget_ref: target_bin_default\nsupport_surface_ref: support_surface_table\nshape: box\nbottom_clearance_m: 0.005\nplacement_local:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.009999999999999995\n  pose_rpy:\n    - 0.0\n    - -0.0\n    - 0.0\n  dimensions:\n    - 0.2\n    - 0.1\n    - 0.12"
+    },
+    "save_1": {
+        "bin": "id: target_bin_default\ntype: target_bin\nrole: place_target_bin\ndisplay_name: Destination Bin\ncategory: environment\nframe: world\npose_xyz:\n  - 0.3723736735643328\n  - -0.01999999999999999\n  - 0.09910000050067902\npose_rpy:\n  - 0\n  - 0\n  - 0.3490658503988659\nlayout_item_ref: target_bin_default\ngeometry_type: mesh\nmesh:\n  path: package://sorting_bin_description/meshes/sorting_bin.stl\n  scale:\n    - 0.001\n    - 0.001\n    - 0.001\n  rpy:\n    - 1.5707963267948966\n    - 0\n    - 1.5707963267948966\n  origin_offset:\n    - -0.173899436593\n    - 0\n    - -0.1\nasset_class: registered\ncollision:\n  enabled: true\n  mode: mesh\ncatalog_asset_id: bin_standard\nsupport_surface_ref: support_surface_table\ntask_zone_ref: default_drop_zone\nusable_placement:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.01\n  pose_rpy:\n    - 0.0\n    - 0.0\n    - 0.0\n  dimensions:\n    - 0.24\n    - 0.12\n    - 0.14\n  review: \"Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json.\"\nparent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.3036256653961117\n  y: 0.3020627036091185\n  z: -1.951563910473908e-18\n  roll: 0.0\n  pitch: -0.0\n  yaw: 0.0\nmounting_anchors:\n  bottom:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - -0.1\n    pose_rpy:\n      - 3.141592653589793\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Bottom face (normal points down)\n    source: catalog:bin_standard\nmate:\n  child_datum: bottom\n  alignment: flush",
+        "zone": "id: default_drop_zone\ntype: place_zone\nrole: place_zone\ndisplay_name: Place Free Region\ncategory: zone\nframe: world\npose_xyz:\n  - 0.3723736735643328\n  - -0.01999999999999999\n  - 0.10910000050067901\npose_rpy:\n  - 0.0\n  - -0.0\n  - 0.3490658503988659\nlayout_item_ref: place_zone_default\ngeometry_type: box\ndimensions:\n  - 0.2\n  - 0.1\n  - 0.12\nasset_class: primitive\ntarget_ref: target_bin_default\nsupport_surface_ref: support_surface_table\nshape: box\nbottom_clearance_m: 0.005\nplacement_local:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.009999999999999995\n  pose_rpy:\n    - 0.0\n    - -0.0\n    - 0.0\n  dimensions:\n    - 0.2\n    - 0.1\n    - 0.12"
+    },
+    "save_2": {
+        "bin": "id: target_bin_default\ntype: target_bin\nrole: place_target_bin\ndisplay_name: Destination Bin\ncategory: environment\nframe: world\npose_xyz:\n  - 0.37237367356433276\n  - -0.07000000000000006\n  - 0.09910000050067902\npose_rpy:\n  - 0\n  - 0\n  - 0.3490658503988659\nlayout_item_ref: target_bin_default\ngeometry_type: mesh\nmesh:\n  path: package://sorting_bin_description/meshes/sorting_bin.stl\n  scale:\n    - 0.001\n    - 0.001\n    - 0.001\n  rpy:\n    - 1.5707963267948966\n    - 0\n    - 1.5707963267948966\n  origin_offset:\n    - -0.173899436593\n    - 0\n    - -0.1\nasset_class: registered\ncollision:\n  enabled: true\n  mode: mesh\ncatalog_asset_id: bin_standard\nsupport_surface_ref: support_surface_table\ntask_zone_ref: default_drop_zone\nusable_placement:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.01\n  pose_rpy:\n    - 0.0\n    - 0.0\n    - 0.0\n  dimensions:\n    - 0.24\n    - 0.12\n    - 0.14\n  review: \"Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json.\"\nparent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.3207266725623952\n  y: 0.25507807256982307\n  z: -1.951563910473908e-18\n  roll: 0.0\n  pitch: -0.0\n  yaw: 0.0\nmounting_anchors:\n  bottom:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - -0.1\n    pose_rpy:\n      - 3.141592653589793\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Bottom face (normal points down)\n    source: catalog:bin_standard\nmate:\n  child_datum: bottom\n  alignment: flush",
+        "zone": "id: default_drop_zone\ntype: place_zone\nrole: place_zone\ndisplay_name: Place Free Region\ncategory: zone\nframe: world\npose_xyz:\n  - 0.37237367356433276\n  - -0.07000000000000006\n  - 0.10910000050067901\npose_rpy:\n  - 0.0\n  - -0.0\n  - 0.3490658503988659\nlayout_item_ref: place_zone_default\ngeometry_type: box\ndimensions:\n  - 0.2\n  - 0.1\n  - 0.12\nasset_class: primitive\ntarget_ref: target_bin_default\nsupport_surface_ref: support_surface_table\nshape: box\nbottom_clearance_m: 0.005\nplacement_local:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.009999999999999995\n  pose_rpy:\n    - 0.0\n    - -0.0\n    - 0.0\n  dimensions:\n    - 0.2\n    - 0.1\n    - 0.12"
+    },
+    "save_3": {
+        "bin": "id: target_bin_default\ntype: target_bin\nrole: place_target_bin\ndisplay_name: Destination Bin\ncategory: environment\nframe: world\npose_xyz:\n  - 0.37237367356433265\n  - -0.010000000000000035\n  - 0.09910000050067902\npose_rpy:\n  - 0\n  - 0\n  - 0.3490658503988659\nlayout_item_ref: target_bin_default\ngeometry_type: mesh\nmesh:\n  path: package://sorting_bin_description/meshes/sorting_bin.stl\n  scale:\n    - 0.001\n    - 0.001\n    - 0.001\n  rpy:\n    - 1.5707963267948966\n    - 0\n    - 1.5707963267948966\n  origin_offset:\n    - -0.173899436593\n    - 0\n    - -0.1\nasset_class: registered\ncollision:\n  enabled: true\n  mode: mesh\ncatalog_asset_id: bin_standard\nsupport_surface_ref: support_surface_table\ntask_zone_ref: default_drop_zone\nusable_placement:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.01\n  pose_rpy:\n    - 0.0\n    - 0.0\n    - 0.0\n  dimensions:\n    - 0.24\n    - 0.12\n    - 0.14\n  review: \"Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json.\"\nparent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.3002054639628551\n  y: 0.3114596298169776\n  z: -1.951563910473908e-18\n  roll: 0.0\n  pitch: -0.0\n  yaw: 0.0\nmounting_anchors:\n  bottom:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - -0.1\n    pose_rpy:\n      - 3.141592653589793\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Bottom face (normal points down)\n    source: catalog:bin_standard\nmate:\n  child_datum: bottom\n  alignment: flush",
+        "zone": "id: default_drop_zone\ntype: place_zone\nrole: place_zone\ndisplay_name: Place Free Region\ncategory: zone\nframe: world\npose_xyz:\n  - 0.37237367356433265\n  - -0.010000000000000035\n  - 0.10910000050067901\npose_rpy:\n  - 0.0\n  - -0.0\n  - 0.3490658503988659\nlayout_item_ref: place_zone_default\ngeometry_type: box\ndimensions:\n  - 0.2\n  - 0.1\n  - 0.12\nasset_class: primitive\ntarget_ref: target_bin_default\nsupport_surface_ref: support_surface_table\nshape: box\nbottom_clearance_m: 0.005\nplacement_local:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.009999999999999995\n  pose_rpy:\n    - 0.0\n    - -0.0\n    - 0.0\n  dimensions:\n    - 0.2\n    - 0.1\n    - 0.12"
+    },
+    "saved": true,
+    "scene_path": "/home/user/datum-accept-ws/src/easy_manipulation_deployment/scenes/datum_mating_acceptance",
+    "studio_log_tail": "ayout.yaml\nInspector transform saved: scene=datum_mating_acceptance id=pick_zone_main path=/home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=datum_mating_acceptance id=camera_01 path=/home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nSave Layout persistence verified: 5 editable item(s), stable IDs, metadata, and transforms match the atomic YAML write.\nSave Layout persisted authored YAML only; generated collision/scene artifacts remain stale until explicit Generate/Validate.\nSave committed physical assets, camera and semantic zones into environment.yaml.\nSaved scene layout metadata to /home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nSave Layout: serialized 5 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.\nSave Layout: live authored session retained without Product View regeneration (selection id='target_bin_default').\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=datum_mating_acceptance id=target_bin_default editable=true locked=false source_layer=editable_layout\nSelected item: target_bin_default (unknown) type=place_target_bin source=editable_layout editable=true locked=false\nLoaded 9 scenes from /home/user/wcb-mate-wt/scenes\nWeb3D Save Layout: unified authored transaction complete: metadata, structure, and validated Web3D transforms serialized by stable item ID\nWeb3D Save Layout: browser rebase complete: rebased=1 cleared=1 preserved_newer=0 dirty_count=0\nWeb3D Save Layout: saved: browser baseline rebased in place; no Product View regeneration required\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=datum_mating_acceptance id=target_bin_default editable=true locked=false source_layer=editable_layout\nSelected item: target_bin_default (unknown) type=place_target_bin source=editable_layout editable=true locked=false\nWeb3D Save Layout: save requested\nWeb3D Save Layout: checking edits\nWeb3D Save Layout: patch summary: scene_id=datum_mating_acceptance dirty_edit_count=1\nWeb3D Save Layout: patch edit: item_id=target_bin_default operation=update_transform old_xyz=[0.37237367,-0.07,0.099100001] rpy=[0,0,0.34906585] new_xyz=[0.37237367,-0.01,0.099100001] rpy=[0,0,0.34906585] persistence_source=layout/workcell_studio_layout.yaml\nSave Layout composition validated: 1 Web3D transform edit(s) merged with native authored metadata/structure by stable canonical ID.\nBackup before write created: /home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml.20261022_210958_986.bak.yaml\nSave reconciliation: id=pick_zone_main session_xyz=[0.40000000000000002,-0.20000000000000001,0.29999999999999999] canvas_before=[0.40000000000000002,-0.20000000000000001,0.29999999999999999]\nSave reconciliation: id=realsense_overhead session_xyz=[0.37159515988413339,-0.37424381886860575,1.25] canvas_before=[0.37159515988413339,-0.37424381886860575,1.25]\nSave reconciliation: id=support_surface_table session_xyz=[0.7609999999999999,-0.20000000000000001,-0.00089999949932098393] canvas_before=[0.7609999999999999,-0.20000000000000001,-0.00089999949932098393]\nSave reconciliation: id=target_bin_default session_xyz=[0.37237367356433271,-0.010000000000000037,0.09910000050067902] canvas_before=[0.37237367356433265,-0.010000000000000035,0.09910000050067902]\nSave reconciliation: id=camera_01 session_xyz=[0.25,-0.5,0.59999999999999998] canvas_before=[0.25,-0.5,0.59999999999999998]\nInspector transform saved: scene=datum_mating_acceptance id=support_surface_table path=/home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=datum_mating_acceptance id=target_bin_default path=/home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=datum_mating_acceptance id=realsense_overhead path=/home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=datum_mating_acceptance id=pick_zone_main path=/home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=datum_mating_acceptance id=camera_01 path=/home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nSave Layout persistence verified: 5 editable item(s), stable IDs, metadata, and transforms match the atomic YAML write.\nSave Layout persisted authored YAML only; generated collision/scene artifacts remain stale until explicit Generate/Validate.\nSave committed physical assets, camera and semantic zones into environment.yaml.\nSaved scene layout metadata to /home/user/wcb-mate-wt/scenes/datum_mating_acceptance/layout/workcell_studio_layout.yaml\nSave Layout: serialized 5 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.\nSave Layout: live authored session retained without Product View regeneration (selection id='target_bin_default').\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=datum_mating_acceptance id=target_bin_default editable=true locked=false source_layer=editable_layout\nSelected item: target_bin_default (unknown) type=place_target_bin source=editable_layout editable=true locked=false\nLoaded 9 scenes from /home/user/wcb-mate-wt/scenes\nWeb3D Save Layout: unified authored transaction complete: metadata, structure, and validated Web3D transforms serialized by stable item ID\nWeb3D Save Layout: browser rebase complete: rebased=1 cleared=1 preserved_newer=0 dirty_count=0\nWeb3D Save Layout: saved: browser baseline rebased in place; no Product View regeneration required",
+    "table_moved_bin_table_local": [
+        -0.26070000000000004,
+        0.42,
+        0.1
+    ],
+    "undo_redo_detach_reparent": true,
+    "wizard_created": "/home/user/datum-accept-ws/src/easy_manipulation_deployment/scenes/datum_mating_acceptance"
+}

@@ -1,0 +1,1885 @@
+{
+    "A_applied_flush": {
+        "gap_m": -1.951563910473908e-18,
+        "normal_dot": -1
+    },
+    "A_bin_bottom_hover": {
+        "hover": {
+            "asset_id": "target_bin_default",
+            "asset_label": "Destination Bin",
+            "datum": "bottom",
+            "label": "Bottom face (normal points down)",
+            "reason": "Matched Bottom face (normal points down): the clicked face is 0.0 mm from the datum plane and 0.0° from its normal.",
+            "reason_code": "MATCHED",
+            "seq": 2,
+            "valid": true
+        },
+        "label": "Destination Bin: Bottom face (normal points down)",
+        "point": [
+            0.5800000000000001,
+            0.27,
+            0
+        ],
+        "widget": [
+            348,
+            113
+        ]
+    },
+    "A_bin_bottom_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "target_bin_default",
+                "asset_label": "Destination Bin",
+                "datum": "bottom",
+                "label": "Bottom face (normal points down)",
+                "reason": "Matched Bottom face (normal points down): the clicked face is 0.0 mm from the datum plane and 0.0° from its normal.",
+                "reason_code": "MATCHED",
+                "seq": 2,
+                "valid": true
+            },
+            "label": "Destination Bin: Bottom face (normal points down)",
+            "point": [
+                0.5800000000000001,
+                0.27,
+                0
+            ],
+            "widget": [
+                348,
+                113
+            ]
+        }
+    ],
+    "A_bin_bottom_pick": {
+        "asset_id": "target_bin_default",
+        "candidates": [
+            {
+                "accepted": true,
+                "datum": "bottom",
+                "normal_angle_deg": 0,
+                "note": "",
+                "plane_distance_m": 1.6723952076739005e-17,
+                "type": "plane"
+            },
+            {
+                "accepted": false,
+                "datum": "rim",
+                "normal_angle_deg": 180,
+                "note": "the face points down but the datum points up; the face is 200.0 mm from the datum plane",
+                "plane_distance_m": 0.2,
+                "type": "plane"
+            }
+        ],
+        "datum": "bottom",
+        "datum_label": "Bottom face (normal points down)",
+        "datum_source": "reviewed catalog datum (bin_standard), copied into the cell when used",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            2.220446049250313e-16,
+            -4.930380657631324e-32,
+            -1
+        ],
+        "normal_world": [
+            2.220446049250313e-16,
+            -4.930380657631324e-32,
+            -1
+        ],
+        "plane_distance_m": 1.6723952076739005e-17,
+        "point_local": [
+            0.12961953702199852,
+            0.05040327021841137,
+            -0.09999999999999999
+        ],
+        "point_world": [
+            0.5796195370219985,
+            0.2704032702184114,
+            1.0551331722785345e-17
+        ],
+        "raw": {
+            "asset_id": "target_bin_default",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "target_bin_default_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/sorting_bin_description/meshes/sorting_bin.stl",
+            "normal_world": [
+                2.2204460492503128e-16,
+                -4.930380657631323e-32,
+                -0.9999999999999999
+            ],
+            "object_pose_world": [
+                0.45,
+                0.22,
+                0.1,
+                0,
+                0,
+                0
+            ],
+            "point_world": [
+                0.5796195370219985,
+                0.2704032702184114,
+                1.0551331722785345e-17
+            ],
+            "ray_direction_world": [
+                -0.06145518141616883,
+                0.11110081341494259,
+                0.9919071881661328
+            ],
+            "triangle_index": 76
+        },
+        "reason": "Matched Bottom face (normal points down): the clicked face is 0.0 mm from the datum plane and 0.0° from its normal.",
+        "reason_code": "MATCHED",
+        "valid": true
+    },
+    "A_overlay_state": {
+        "active": true,
+        "cancelSeq": 0,
+        "ghostCount": 1,
+        "hover": {
+            "asset_id": "support_surface_table",
+            "client": {
+                "x": 333,
+                "y": 309
+            },
+            "geometry": "surface",
+            "geometry_source": "support_surface_table_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/workbench_description/meshes/visual/table.stl",
+            "normal_world": [
+                0,
+                0,
+                0.9999999999999999
+            ],
+            "object_pose_world": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839,
+                0,
+                0,
+                0
+            ],
+            "point_world": [
+                0.9484772084407841,
+                -0.24288748510774327,
+                -0.001199999630450975
+            ],
+            "ray_direction_world": [
+                -0.4601514695769214,
+                0.6941980790915209,
+                -0.5534886196046327
+            ],
+            "seq": 3,
+            "triangle_index": 11244
+        },
+        "hoverResolution": {
+            "asset_id": "support_surface_table",
+            "asset_label": "Industrial Workbench",
+            "datum": "surface",
+            "label": "surface · plane (points up)",
+            "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+            "reason_code": "MATCHED",
+            "seq": 3,
+            "valid": true
+        },
+        "hoverSeq": 3,
+        "isolatedAsset": "",
+        "labelText": "Industrial Workbench: surface · plane (points up)",
+        "markerCount": 2,
+        "pick": {
+            "asset_id": "support_surface_table",
+            "client": {
+                "x": 333,
+                "y": 309
+            },
+            "geometry": "surface",
+            "geometry_source": "support_surface_table_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/workbench_description/meshes/visual/table.stl",
+            "normal_world": [
+                0,
+                0,
+                0.9999999999999999
+            ],
+            "object_pose_world": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839,
+                0,
+                0,
+                0
+            ],
+            "point_world": [
+                0.9484772084407841,
+                -0.24288748510774327,
+                -0.001199999630450975
+            ],
+            "ray_direction_world": [
+                -0.4601514695769214,
+                0.6941980790915209,
+                -0.5534886196046327
+            ],
+            "seq": 3,
+            "triangle_index": 11244
+        },
+        "sceneId": "ur5_2f_test",
+        "seq": 3,
+        "viewSeq": 2
+    },
+    "A_preview": {
+        "child_summary": "Destination Bin moves 0.9 mm to X 0.4500 · Y 0.2200 · Z 0.0991 m, roll 0.0° · pitch 0.0° · yaw 0.0°.",
+        "error": "",
+        "followers": [
+            "place_zone_default (destination zone, keeps its target-local placement)"
+        ],
+        "moved": [
+            {
+                "display_name": "Destination Bin",
+                "id": "target_bin_default",
+                "moved_m": 0.0008999994993209859,
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "turned_rad": 0,
+                "xyz": [
+                    0.45,
+                    0.22000000000000003,
+                    0.09910000050067902
+                ]
+            }
+        ],
+        "ok": true,
+        "request": {
+            "alignment": "flush",
+            "child_datum": "bottom",
+            "id": "target_bin_default",
+            "parent_link": "surface",
+            "parent_object": "support_surface_table",
+            "relative_pose": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "xyz": [
+                    -0.2606668243408203,
+                    0.42000000000000004,
+                    0
+                ]
+            }
+        }
+    },
+    "A_relation": "{parent_object: support_surface_table, parent_link: surface, joint_type: fixed, origin: {x: -0.2606668243408203, y: 0.42000000000000004, z: 0, roll: 0.0, pitch: 0.0, yaw: 0.0}, mounting_anchors: {bottom: {pose_xyz: [0.0, 0.0, -0.1], pose_rpy: [3.141592653589793, 0.0, 0.0], datum_type: plane, label: Bottom face (normal points down), source: catalog:bin_standard}}, mate: {child_datum: bottom, alignment: flush}}",
+    "A_side_wall_hover": {
+        "hover": {
+            "asset_id": "target_bin_default",
+            "asset_label": "Destination Bin",
+            "datum": "",
+            "label": "",
+            "reason": "not a mounting surface",
+            "reason_code": "NO_MATCHING_DATUM",
+            "seq": 1,
+            "valid": false
+        },
+        "label": "Destination Bin: not a mounting surface",
+        "point": [
+            0.6261,
+            0.22,
+            0.1
+        ],
+        "widget": [
+            338,
+            223
+        ]
+    },
+    "A_side_wall_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "target_bin_default",
+                "asset_label": "Destination Bin",
+                "datum": "",
+                "label": "",
+                "reason": "not a mounting surface",
+                "reason_code": "NO_MATCHING_DATUM",
+                "seq": 1,
+                "valid": false
+            },
+            "label": "Destination Bin: not a mounting surface",
+            "point": [
+                0.6261,
+                0.22,
+                0.1
+            ],
+            "widget": [
+                338,
+                223
+            ]
+        }
+    ],
+    "A_side_wall_pick": {
+        "asset_id": "target_bin_default",
+        "candidates": [
+            {
+                "accepted": false,
+                "datum": "bottom",
+                "normal_angle_deg": 90.00000000000001,
+                "note": "the face points +X but the datum points down; the face is 87.7 mm from the datum plane",
+                "plane_distance_m": 0.08769866157498184,
+                "type": "plane"
+            },
+            {
+                "accepted": false,
+                "datum": "rim",
+                "normal_angle_deg": 89.99999999999999,
+                "note": "the face points +X but the datum points up; the face is 112.3 mm from the datum plane",
+                "plane_distance_m": 0.11230133842501817,
+                "type": "plane"
+            }
+        ],
+        "datum": "",
+        "datum_label": "",
+        "datum_source": "",
+        "datum_type": "",
+        "normal_angle_deg": -1,
+        "normal_local": [
+            1,
+            -2.220446049250313e-16,
+            2.220446049250313e-16
+        ],
+        "normal_world": [
+            1,
+            -2.220446049250313e-16,
+            2.220446049250313e-16
+        ],
+        "plane_distance_m": -1,
+        "point_local": [
+            0.16210056340700002,
+            0.01615840867653051,
+            -0.012301338425018168
+        ],
+        "point_world": [
+            0.612100563407,
+            0.2361584086765305,
+            0.08769866157498184
+        ],
+        "raw": {
+            "asset_id": "target_bin_default",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "target_bin_default_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/sorting_bin_description/meshes/sorting_bin.stl",
+            "normal_world": [
+                0.9999999999999999,
+                -2.2204460492503128e-16,
+                2.2204460492503128e-16
+            ],
+            "object_pose_world": [
+                0.45,
+                0.22,
+                0.1,
+                0,
+                0,
+                0
+            ],
+            "point_world": [
+                0.612100563407,
+                0.2361584086765305,
+                0.08769866157498184
+            ],
+            "ray_direction_world": [
+                -0.5055122472479487,
+                0.7670671760891667,
+                -0.3950510286645511
+            ],
+            "triangle_index": 71
+        },
+        "reason": "This face of target_bin_default (points +X) is not a verified mounting surface. Verified surfaces: bottom (the face points +X but the datum points down; the face is 87.7 mm from the datum plane); rim (the face points +X but the datum points up; the face is 112.3 mm from the datum plane). Click a verified surface or its marker, or choose a datum manually.",
+        "reason_code": "NO_MATCHING_DATUM",
+        "valid": false
+    },
+    "A_table_local_bin": [
+        -0.2606668243408203,
+        0.42000000000000004,
+        0.1
+    ],
+    "A_table_moved_flush": {
+        "gap_m": -1.951563910473908e-18,
+        "normal_dot": -1
+    },
+    "A_table_top_hover": {
+        "hover": {
+            "asset_id": "support_surface_table",
+            "asset_label": "Industrial Workbench",
+            "datum": "surface",
+            "label": "surface · plane (points up)",
+            "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+            "reason_code": "MATCHED",
+            "seq": 3,
+            "valid": true
+        },
+        "label": "Industrial Workbench: surface · plane (points up)",
+        "point": [
+            0.95,
+            -0.25,
+            0
+        ],
+        "widget": [
+            333,
+            309
+        ]
+    },
+    "A_table_top_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "support_surface_table",
+                "asset_label": "Industrial Workbench",
+                "datum": "surface",
+                "label": "surface · plane (points up)",
+                "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+                "reason_code": "MATCHED",
+                "seq": 3,
+                "valid": true
+            },
+            "label": "Industrial Workbench: surface · plane (points up)",
+            "point": [
+                0.95,
+                -0.25,
+                0
+            ],
+            "widget": [
+                333,
+                309
+            ]
+        }
+    ],
+    "A_table_top_pick": {
+        "asset_id": "support_surface_table",
+        "candidates": [
+            {
+                "accepted": true,
+                "datum": "surface",
+                "normal_angle_deg": 0,
+                "note": "",
+                "plane_distance_m": 0.0003000001311299911,
+                "type": "plane"
+            }
+        ],
+        "datum": "surface",
+        "datum_label": "surface · plane (points up)",
+        "datum_source": "reviewed support surface (surface_z_m)",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            0,
+            1
+        ],
+        "normal_world": [
+            0,
+            0,
+            1
+        ],
+        "plane_distance_m": 0.0003000001311299911,
+        "point_local": [
+            0.2378103840999638,
+            -0.04288748510774326,
+            -0.0003000001311299911
+        ],
+        "point_world": [
+            0.9484772084407841,
+            -0.24288748510774327,
+            -0.001199999630450975
+        ],
+        "raw": {
+            "asset_id": "support_surface_table",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "support_surface_table_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/workbench_description/meshes/visual/table.stl",
+            "normal_world": [
+                0,
+                0,
+                0.9999999999999999
+            ],
+            "object_pose_world": [
+                0.7106668243408203,
+                -0.2,
+                -0.0008999994993209839,
+                0,
+                0,
+                0
+            ],
+            "point_world": [
+                0.9484772084407841,
+                -0.24288748510774327,
+                -0.001199999630450975
+            ],
+            "ray_direction_world": [
+                -0.4601514695769214,
+                0.6941980790915209,
+                -0.5534886196046327
+            ],
+            "triangle_index": 11244
+        },
+        "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+        "reason_code": "MATCHED",
+        "valid": true
+    },
+    "B_bin_still_flush_flush": {
+        "gap_m": -1.951563910473908e-18,
+        "normal_dot": -1
+    },
+    "B_camera_body_hover": {
+        "hover": {
+            "asset_id": "realsense_overhead",
+            "asset_label": "Fixed RealSense D435i",
+            "datum": "",
+            "label": "",
+            "reason": "no mounting faces; use a datum marker",
+            "reason_code": "NO_PLANE_DATUMS",
+            "seq": 5,
+            "valid": false
+        },
+        "label": "Fixed RealSense D435i: no mounting faces; use a datum marker",
+        "point": [
+            0.4,
+            -0.395,
+            0.85
+        ],
+        "widget": [
+            238,
+            151
+        ]
+    },
+    "B_camera_body_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "",
+                "asset_label": "",
+                "datum": "",
+                "label": "",
+                "reason": "The click did not hit an asset. Click a face of a placed asset.",
+                "reason_code": "NO_ASSET",
+                "seq": 4,
+                "valid": false
+            },
+            "label": "",
+            "point": [
+                0.4,
+                -0.32499999999999996,
+                0.85
+            ],
+            "widget": [
+                247,
+                148
+            ]
+        },
+        {
+            "hover": {
+                "asset_id": "realsense_overhead",
+                "asset_label": "Fixed RealSense D435i",
+                "datum": "",
+                "label": "",
+                "reason": "no mounting faces; use a datum marker",
+                "reason_code": "NO_PLANE_DATUMS",
+                "seq": 5,
+                "valid": false
+            },
+            "label": "Fixed RealSense D435i: no mounting faces; use a datum marker",
+            "point": [
+                0.4,
+                -0.395,
+                0.85
+            ],
+            "widget": [
+                238,
+                151
+            ]
+        }
+    ],
+    "B_camera_body_pick": {
+        "asset_id": "realsense_overhead",
+        "candidates": [
+        ],
+        "datum": "",
+        "datum_label": "",
+        "datum_source": "",
+        "datum_type": "",
+        "normal_angle_deg": -1,
+        "normal_local": [
+            -0.9908865112154011,
+            -0.06618007660442954,
+            0.11732058366715918
+        ],
+        "normal_world": [
+            0.1165314770724767,
+            -0.06618007660442954,
+            0.990979622551311
+        ],
+        "plane_distance_m": -1,
+        "point_local": [
+            0.0029310433957262065,
+            -0.033409999828691195,
+            0.00019962655210113632
+        ],
+        "point_world": [
+            0.400201960556952,
+            -0.39345294870054226,
+            0.8470691165015697
+        ],
+        "raw": {
+            "asset_id": "realsense_overhead",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "mesh · package://realsense2_description/meshes/d435.dae",
+            "normal_world": [
+                0.1165314770724767,
+                -0.06618007660442954,
+                0.990979622551311
+            ],
+            "object_pose_world": [
+                0.40000000000000013,
+                -0.36004294887185107,
+                0.8499999999999998,
+                0,
+                1.570000000000127,
+                0
+            ],
+            "point_world": [
+                0.400201960556952,
+                -0.39345294870054226,
+                0.8470691165015697
+            ],
+            "ray_direction_world": [
+                -0.6958024253816172,
+                0.671775962118706,
+                -0.2541181645466253
+            ],
+            "triangle_index": 184874
+        },
+        "reason": "realsense_overhead has no verified mounting surfaces (no plane datums). Pick one of its datum markers or choose a datum manually.",
+        "reason_code": "NO_PLANE_DATUMS",
+        "valid": false
+    },
+    "B_camera_offset_error_m": 0,
+    "B_camera_origin_hover": {
+        "hover": {
+            "asset_id": "realsense_overhead",
+            "asset_label": "Fixed RealSense D435i",
+            "datum": "origin",
+            "label": "Asset origin",
+            "reason": "Picked the Asset origin datum marker of realsense_overhead.",
+            "reason_code": "DATUM_MARKER",
+            "seq": 6,
+            "valid": true
+        },
+        "label": "Fixed RealSense D435i: Asset origin",
+        "point": [
+            0.40000000000000013,
+            -0.36004294887185107,
+            0.8499999999999998
+        ],
+        "widget": [
+            242,
+            149
+        ]
+    },
+    "B_camera_origin_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "realsense_overhead",
+                "asset_label": "Fixed RealSense D435i",
+                "datum": "origin",
+                "label": "Asset origin",
+                "reason": "Picked the Asset origin datum marker of realsense_overhead.",
+                "reason_code": "DATUM_MARKER",
+                "seq": 6,
+                "valid": true
+            },
+            "label": "Fixed RealSense D435i: Asset origin",
+            "point": [
+                0.40000000000000013,
+                -0.36004294887185107,
+                0.8499999999999998
+            ],
+            "widget": [
+                242,
+                149
+            ]
+        }
+    ],
+    "B_camera_origin_pick": {
+        "asset_id": "realsense_overhead",
+        "candidates": [
+        ],
+        "datum": "origin",
+        "datum_label": "Asset origin",
+        "datum_source": "asset origin",
+        "datum_type": "origin",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            0,
+            1
+        ],
+        "normal_world": [
+            0.9999996829318347,
+            0,
+            0.0007963267106062538
+        ],
+        "plane_distance_m": 0,
+        "point_local": [
+            -0.0042139787877145335,
+            -0.009800546406433464,
+            0.007092159118405006
+        ],
+        "point_world": [
+            0.4070888011658407,
+            -0.36984349527828453,
+            0.8542196251273376
+        ],
+        "raw": {
+            "asset_id": "realsense_overhead",
+            "backend": "embedded_web3d",
+            "datum_name": "origin",
+            "geometry": "datum_marker",
+            "geometry_source": "datum marker",
+            "normal_world": [
+                0.9999996829318347,
+                0,
+                0.0007963267106062538
+            ],
+            "point_world": [
+                0.4070888011658407,
+                -0.36984349527828453,
+                0.8542196251273376
+            ],
+            "ray_direction_world": [
+                -0.6906412163431586,
+                0.678447171033693,
+                -0.25044789159508085
+            ],
+            "triangle_index": -1
+        },
+        "reason": "Picked the Asset origin datum marker of realsense_overhead.",
+        "reason_code": "DATUM_MARKER",
+        "valid": true
+    },
+    "B_preview": {
+        "child_summary": "Fixed RealSense D435i moves 424.3 mm to X 0.3000 · Y -0.2600 · Z 1.2500 m, roll 0.0° · pitch 90.0° · yaw 0.0°.",
+        "error": "",
+        "followers": [
+        ],
+        "moved": [
+            {
+                "display_name": "Fixed RealSense D435i",
+                "id": "realsense_overhead",
+                "moved_m": 0.42427419391117344,
+                "rpy": [
+                    0,
+                    1.5707963267948966,
+                    0
+                ],
+                "turned_rad": 0.0007963267947694863,
+                "xyz": [
+                    0.3,
+                    -0.26,
+                    1.25
+                ]
+            }
+        ],
+        "ok": true,
+        "request": {
+            "alignment": "coincident",
+            "child_datum": "origin",
+            "id": "realsense_overhead",
+            "parent_link": "top",
+            "parent_object": "object_01",
+            "relative_pose": {
+                "rpy": [
+                    0,
+                    1.5707963267948966,
+                    0
+                ],
+                "xyz": [
+                    0.15,
+                    0.09,
+                    0.05
+                ]
+            }
+        }
+    },
+    "B_stand_face_hover": {
+        "hover": {
+            "asset_id": "object_01",
+            "asset_label": "Camera Stand",
+            "datum": "top",
+            "label": "Top mounting face (normal points up)",
+            "reason": "Matched Top mounting face (normal points up): the clicked face is 0.0 mm from the datum plane and 0.0° from its normal.",
+            "reason_code": "MATCHED",
+            "seq": 7,
+            "valid": true
+        },
+        "label": "Camera Stand: Top mounting face (normal points up)",
+        "point": [
+            0.18,
+            -0.31999999999999995,
+            1.2
+        ],
+        "widget": [
+            305,
+            258
+        ]
+    },
+    "B_stand_face_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "object_01",
+                "asset_label": "Camera Stand",
+                "datum": "top",
+                "label": "Top mounting face (normal points up)",
+                "reason": "Matched Top mounting face (normal points up): the clicked face is 0.0 mm from the datum plane and 0.0° from its normal.",
+                "reason_code": "MATCHED",
+                "seq": 7,
+                "valid": true
+            },
+            "label": "Camera Stand: Top mounting face (normal points up)",
+            "point": [
+                0.18,
+                -0.31999999999999995,
+                1.2
+            ],
+            "widget": [
+                305,
+                258
+            ]
+        }
+    ],
+    "B_stand_face_outcome": "MATCHED",
+    "B_stand_face_pick": {
+        "asset_id": "object_01",
+        "candidates": [
+            {
+                "accepted": false,
+                "datum": "base",
+                "normal_angle_deg": 180,
+                "note": "the face points up but the datum points down; the face is 1200.0 mm from the datum plane",
+                "plane_distance_m": 1.2000000238418576,
+                "type": "plane"
+            },
+            {
+                "accepted": true,
+                "datum": "top",
+                "normal_angle_deg": 0,
+                "note": "",
+                "plane_distance_m": 2.3841857599293803e-08,
+                "type": "plane"
+            }
+        ],
+        "datum": "top",
+        "datum_label": "Top mounting face (normal points up)",
+        "datum_source": "reviewed catalog datum (camera_stand), copied into the cell when used",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            0,
+            1
+        ],
+        "normal_world": [
+            0,
+            0,
+            1
+        ],
+        "plane_distance_m": 2.3841857599293803e-08,
+        "point_local": [
+            0.029323346971264486,
+            0.028880429425337917,
+            0.6000000238418576
+        ],
+        "point_world": [
+            0.17932334697126448,
+            -0.32111957057466206,
+            1.2000000238418576
+        ],
+        "raw": {
+            "asset_id": "object_01",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "object_01_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl",
+            "normal_world": [
+                0,
+                0,
+                1
+            ],
+            "object_pose_world": [
+                0.15,
+                -0.35,
+                0.6,
+                0,
+                0,
+                0
+            ],
+            "point_world": [
+                0.17932334697126448,
+                -0.32111957057466206,
+                1.2000000238418576
+            ],
+            "ray_direction_world": [
+                -0.3072385905921023,
+                0.025326409853528912,
+                -0.9512954438106543
+            ],
+            "triangle_index": 2
+        },
+        "reason": "Matched Top mounting face (normal points up): the clicked face is 0.0 mm from the datum plane and 0.0° from its normal.",
+        "reason_code": "MATCHED",
+        "valid": true
+    },
+    "B_stand_top_skipped": true,
+    "C_applied_flush": {
+        "gap_m": 2.5804011705155006e-17,
+        "normal_dot": -1
+    },
+    "C_bin_rim_hover": {
+        "hover": {
+            "asset_id": "target_bin_default",
+            "asset_label": "Destination Bin",
+            "datum": "rim",
+            "label": "Rim plane (normal points up)",
+            "reason": "Picked the Rim plane (normal points up) datum marker of target_bin_default.",
+            "reason_code": "DATUM_MARKER",
+            "seq": 10,
+            "valid": true
+        },
+        "label": "Destination Bin: Rim plane (normal points up)",
+        "point": [
+            0.3724048484864537,
+            0.0755175961087873,
+            0.19910000050067903
+        ],
+        "widget": [
+            295,
+            227
+        ]
+    },
+    "C_bin_rim_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "target_bin_default",
+                "asset_label": "Destination Bin",
+                "datum": "rim",
+                "label": "Rim plane (normal points up)",
+                "reason": "Picked the Rim plane (normal points up) datum marker of target_bin_default.",
+                "reason_code": "DATUM_MARKER",
+                "seq": 10,
+                "valid": true
+            },
+            "label": "Destination Bin: Rim plane (normal points up)",
+            "point": [
+                0.3724048484864537,
+                0.0755175961087873,
+                0.19910000050067903
+            ],
+            "widget": [
+                295,
+                227
+            ]
+        }
+    ],
+    "C_bin_rim_pick": {
+        "asset_id": "target_bin_default",
+        "candidates": [
+        ],
+        "datum": "rim",
+        "datum_label": "Rim plane (normal points up)",
+        "datum_source": "reviewed catalog datum (bin_standard), copied into the cell when used",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            0,
+            1
+        ],
+        "normal_world": [
+            0,
+            0,
+            1
+        ],
+        "plane_distance_m": 0,
+        "point_local": [
+            0.0018571539168181798,
+            -0.008589702249228288,
+            0.1
+        ],
+        "point_world": [
+            0.3770878535121573,
+            0.06808110033924734,
+            0.19910000050067903
+        ],
+        "raw": {
+            "asset_id": "target_bin_default",
+            "backend": "embedded_web3d",
+            "datum_name": "rim",
+            "geometry": "datum_marker",
+            "geometry_source": "datum marker",
+            "normal_world": [
+                0,
+                0,
+                1
+            ],
+            "point_world": [
+                0.3770878535121573,
+                0.06808110033924734,
+                0.19910000050067903
+            ],
+            "ray_direction_world": [
+                -0.5758346871586648,
+                0.7104621984704809,
+                -0.4045465085863106
+            ],
+            "triangle_index": -1
+        },
+        "reason": "Picked the Rim plane (normal points up) datum marker of target_bin_default.",
+        "reason_code": "DATUM_MARKER",
+        "valid": true
+    },
+    "C_detach_undo": true,
+    "C_invalid_preview": {
+        "child_summary": "",
+        "error": "mounting cycle at asset Industrial Workbench; select a parent outside its descendants",
+        "followers": [
+        ],
+        "moved": [
+        ],
+        "ok": false,
+        "request": {
+            "alignment": "flush",
+            "child_datum": "surface",
+            "id": "support_surface_table",
+            "parent_link": "rim",
+            "parent_object": "target_bin_default"
+        }
+    },
+    "C_redone_flush": {
+        "gap_m": 2.5804011705155006e-17,
+        "normal_dot": -1
+    },
+    "C_self_hover": {
+        "hover": {
+            "asset_id": "support_surface_table",
+            "asset_label": "Industrial Workbench",
+            "datum": "surface",
+            "label": "surface · plane (points up)",
+            "reason": "Matched surface · plane (points up): the clicked face is 0.9 mm from the datum plane and 0.0° from its normal.",
+            "reason_code": "MATCHED",
+            "seq": 9,
+            "valid": true
+        },
+        "label": "Industrial Workbench: surface · plane (points up)",
+        "point": [
+            1,
+            0.25,
+            0
+        ],
+        "widget": [
+            380,
+            268
+        ]
+    },
+    "C_self_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "support_surface_table",
+                "asset_label": "Industrial Workbench",
+                "datum": "surface",
+                "label": "surface · plane (points up)",
+                "reason": "Matched surface · plane (points up): the clicked face is 0.9 mm from the datum plane and 0.0° from its normal.",
+                "reason_code": "MATCHED",
+                "seq": 9,
+                "valid": true
+            },
+            "label": "Industrial Workbench: surface · plane (points up)",
+            "point": [
+                1,
+                0.25,
+                0
+            ],
+            "widget": [
+                380,
+                268
+            ]
+        }
+    ],
+    "C_self_pick": {
+        "asset_id": "support_surface_table",
+        "candidates": [
+            {
+                "accepted": true,
+                "datum": "surface",
+                "normal_angle_deg": 0,
+                "note": "",
+                "plane_distance_m": 0.0008999994993209839,
+                "type": "plane"
+            }
+        ],
+        "datum": "surface",
+        "datum_label": "surface · plane (points up)",
+        "datum_source": "reviewed support surface (surface_z_m)",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            0,
+            1
+        ],
+        "normal_world": [
+            0,
+            0,
+            1
+        ],
+        "plane_distance_m": 0.0008999994993209839,
+        "point_local": [
+            0.3874665359316063,
+            0.36367077749266086,
+            0.0008999994993209839
+        ],
+        "point_world": [
+            1.0007167131750112,
+            0.24426010615855573,
+            0
+        ],
+        "raw": {
+            "asset_id": "support_surface_table",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "support_surface_table_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/workbench_description/meshes/visual/table.stl",
+            "normal_world": [
+                0,
+                0,
+                1
+            ],
+            "object_pose_world": [
+                0.761,
+                -0.23,
+                -0.0008999994993209839,
+                0,
+                0,
+                0.34906585039886584
+            ],
+            "point_world": [
+                1.0007167131750112,
+                0.24426010615855573,
+                0
+            ],
+            "ray_direction_world": [
+                -0.405966051062402,
+                0.7812631449557238,
+                -0.47415130888640505
+            ],
+            "triangle_index": 72979
+        },
+        "reason": "Matched surface · plane (points up): the clicked face is 0.9 mm from the datum plane and 0.0° from its normal.",
+        "reason_code": "MATCHED",
+        "valid": true
+    },
+    "C_stand_base_hover": {
+        "hover": {
+            "asset_id": "object_01",
+            "asset_label": "Camera Stand",
+            "datum": "base",
+            "label": "Base plate (normal points down)",
+            "reason": "Picked the Base plate (normal points down) datum marker of object_01.",
+            "reason_code": "DATUM_MARKER",
+            "seq": 11,
+            "valid": true
+        },
+        "label": "Camera Stand: Base plate (normal points down)",
+        "point": [
+            0.2,
+            -0.35,
+            0
+        ],
+        "widget": [
+            238,
+            265
+        ]
+    },
+    "C_stand_base_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "object_01",
+                "asset_label": "Camera Stand",
+                "datum": "base",
+                "label": "Base plate (normal points down)",
+                "reason": "Picked the Base plate (normal points down) datum marker of object_01.",
+                "reason_code": "DATUM_MARKER",
+                "seq": 11,
+                "valid": true
+            },
+            "label": "Camera Stand: Base plate (normal points down)",
+            "point": [
+                0.2,
+                -0.35,
+                0
+            ],
+            "widget": [
+                238,
+                265
+            ]
+        }
+    ],
+    "C_stand_base_pick": {
+        "asset_id": "object_01",
+        "candidates": [
+        ],
+        "datum": "base",
+        "datum_label": "Base plate (normal points down)",
+        "datum_source": "reviewed catalog datum (camera_stand), copied into the cell when used",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            -1.2246467991473532e-16,
+            -1
+        ],
+        "normal_world": [
+            3.169619151431765e-17,
+            -1.1829179713786698e-16,
+            -1
+        ],
+        "plane_distance_m": 0,
+        "point_local": [
+            -0.0008080130982888246,
+            -0.003753273381590839,
+            -0.6000000000000002
+        ],
+        "point_world": [
+            0.20019093791301504,
+            -0.3538345128709313,
+            -2.215849615017223e-16
+        ],
+        "raw": {
+            "asset_id": "object_01",
+            "backend": "embedded_web3d",
+            "datum_name": "base",
+            "geometry": "datum_marker",
+            "geometry_source": "datum marker",
+            "normal_world": [
+                3.169619151431765e-17,
+                -1.1829179713786698e-16,
+                -1
+            ],
+            "point_world": [
+                0.20019093791301504,
+                -0.3538345128709313,
+                -2.215849615017223e-16
+            ],
+            "ray_direction_world": [
+                -0.6422353973847933,
+                0.6028925576684903,
+                -0.47334369991998726
+            ],
+            "triangle_index": -1
+        },
+        "reason": "Picked the Base plate (normal points down) datum marker of object_01.",
+        "reason_code": "DATUM_MARKER",
+        "valid": true
+    },
+    "C_table_child_hover": {
+        "hover": {
+            "asset_id": "support_surface_table",
+            "asset_label": "Industrial Workbench",
+            "datum": "surface",
+            "label": "surface · plane (points up)",
+            "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+            "reason_code": "MATCHED",
+            "seq": 8,
+            "valid": true
+        },
+        "label": "Industrial Workbench: surface · plane (points up)",
+        "point": [
+            0.95,
+            -0.25,
+            0
+        ],
+        "widget": [
+            334,
+            295
+        ]
+    },
+    "C_table_child_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "support_surface_table",
+                "asset_label": "Industrial Workbench",
+                "datum": "surface",
+                "label": "surface · plane (points up)",
+                "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+                "reason_code": "MATCHED",
+                "seq": 8,
+                "valid": true
+            },
+            "label": "Industrial Workbench: surface · plane (points up)",
+            "point": [
+                0.95,
+                -0.25,
+                0
+            ],
+            "widget": [
+                334,
+                295
+            ]
+        }
+    ],
+    "C_table_child_pick": {
+        "asset_id": "support_surface_table",
+        "candidates": [
+            {
+                "accepted": true,
+                "datum": "surface",
+                "normal_angle_deg": 0,
+                "note": "",
+                "plane_distance_m": 0.0003000001311302186,
+                "type": "plane"
+            }
+        ],
+        "datum": "surface",
+        "datum_label": "surface · plane (points up)",
+        "datum_source": "reviewed support surface (surface_z_m)",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            0,
+            1
+        ],
+        "normal_world": [
+            0,
+            0,
+            1
+        ],
+        "plane_distance_m": 0.0003000001311302186,
+        "point_local": [
+            0.1741709213245159,
+            -0.08402579704711753,
+            -0.0003000001311302186
+        ],
+        "point_world": [
+            0.9534056446732393,
+            -0.24938845796625603,
+            -0.0011999996304512025
+        ],
+        "raw": {
+            "asset_id": "support_surface_table",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "support_surface_table_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/workbench_description/meshes/visual/table.stl",
+            "normal_world": [
+                0,
+                0,
+                1
+            ],
+            "object_pose_world": [
+                0.761,
+                -0.23,
+                -0.0008999994993209839,
+                0,
+                0,
+                0.34906585039886584
+            ],
+            "point_world": [
+                0.9534056446732393,
+                -0.24938845796625603,
+                -0.0011999996304512025
+            ],
+            "ray_direction_world": [
+                -0.4682125492406874,
+                0.7077804485270369,
+                -0.5289837855893158
+            ],
+            "triangle_index": 9967
+        },
+        "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+        "reason_code": "MATCHED",
+        "valid": true
+    },
+    "C_table_parent_hover": {
+        "hover": {
+            "asset_id": "support_surface_table",
+            "asset_label": "Industrial Workbench",
+            "datum": "surface",
+            "label": "surface · plane (points up)",
+            "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+            "reason_code": "MATCHED",
+            "seq": 12,
+            "valid": true
+        },
+        "label": "Industrial Workbench: surface · plane (points up)",
+        "point": [
+            0.95,
+            -0.25,
+            0
+        ],
+        "widget": [
+            334,
+            295
+        ]
+    },
+    "C_table_parent_hover_attempts": [
+        {
+            "hover": {
+                "asset_id": "support_surface_table",
+                "asset_label": "Industrial Workbench",
+                "datum": "surface",
+                "label": "surface · plane (points up)",
+                "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+                "reason_code": "MATCHED",
+                "seq": 12,
+                "valid": true
+            },
+            "label": "Industrial Workbench: surface · plane (points up)",
+            "point": [
+                0.95,
+                -0.25,
+                0
+            ],
+            "widget": [
+                334,
+                295
+            ]
+        }
+    ],
+    "C_table_parent_pick": {
+        "asset_id": "support_surface_table",
+        "candidates": [
+            {
+                "accepted": true,
+                "datum": "surface",
+                "normal_angle_deg": 0,
+                "note": "",
+                "plane_distance_m": 0.0003000001311302186,
+                "type": "plane"
+            }
+        ],
+        "datum": "surface",
+        "datum_label": "surface · plane (points up)",
+        "datum_source": "reviewed support surface (surface_z_m)",
+        "datum_type": "plane",
+        "normal_angle_deg": 0,
+        "normal_local": [
+            0,
+            0,
+            1
+        ],
+        "normal_world": [
+            0,
+            0,
+            1
+        ],
+        "plane_distance_m": 0.0003000001311302186,
+        "point_local": [
+            0.1741709213245159,
+            -0.08402579704711753,
+            -0.0003000001311302186
+        ],
+        "point_world": [
+            0.9534056446732393,
+            -0.24938845796625603,
+            -0.0011999996304512025
+        ],
+        "raw": {
+            "asset_id": "support_surface_table",
+            "backend": "embedded_web3d",
+            "geometry": "surface",
+            "geometry_source": "support_surface_table_mesh · build/workcell_studio_web_scene/assets/ur5_2f_test/workbench_description/meshes/visual/table.stl",
+            "normal_world": [
+                0,
+                0,
+                1
+            ],
+            "object_pose_world": [
+                0.761,
+                -0.23,
+                -0.0008999994993209839,
+                0,
+                0,
+                0.34906585039886584
+            ],
+            "point_world": [
+                0.9534056446732393,
+                -0.24938845796625603,
+                -0.0011999996304512025
+            ],
+            "ray_direction_world": [
+                -0.4682125492406874,
+                0.7077804485270369,
+                -0.5289837855893158
+            ],
+            "triangle_index": 9967
+        },
+        "reason": "Matched surface · plane (points up): the clicked face is 0.3 mm from the datum plane and 0.0° from its normal.",
+        "reason_code": "MATCHED",
+        "valid": true
+    },
+    "C_undo_redo": true,
+    "_canvas_offset": [
+        0,
+        0
+    ],
+    "backend": "embedded_web3d",
+    "baseline_environment_sha256": "e3ea1f594b4df72fa55e1bf62ca92df1fcb5d75c470a2cab18b9ea3e2534bc21",
+    "builder_validation_state": "passed — Offline validation passed for ur5_2f_test.",
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "final_items": [
+        {
+            "category": "zone",
+            "id": "pick_zone_main",
+            "mounting_yaml": "{}",
+            "pose_rpy": [
+                0,
+                0,
+                0
+            ],
+            "pose_xyz": [
+                0.4,
+                -0.2,
+                0.3
+            ],
+            "role": "pick_source_zone"
+        },
+        {
+            "category": "environment",
+            "id": "realsense_overhead",
+            "mounting_yaml": "{\"parent_object\": \"object_01\", \"parent_link\": \"top\", \"joint_type\": \"fixed\", \"origin\": {\"x\": 0.15, \"y\": 0.09, \"z\": 0.05, \"roll\": 0.0, \"pitch\": 1.5707963267948966, \"yaw\": -0.0}}",
+            "pose_rpy": [
+                0,
+                1.5707963267948966,
+                0.26179938779914935
+            ],
+            "pose_xyz": [
+                0.32159515988413334,
+                -0.22424381886860573,
+                1.2491000005006792
+            ],
+            "role": "camera"
+        },
+        {
+            "catalog_asset_id": "table_standard_1200",
+            "category": "environment",
+            "id": "support_surface_table",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"surface_z_m\": 0.0}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.761,
+                -0.23,
+                -0.0008999994993209839
+            ],
+            "role": "support_surface_table"
+        },
+        {
+            "catalog_asset_id": "bin_standard",
+            "category": "environment",
+            "id": "target_bin_default",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    0.001,
+                    0.001,
+                    0.001
+                ]
+            },
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.2606668243408203, \"y\": 0.42000000000000004, \"z\": 0, \"roll\": 0.0, \"pitch\": 0.0, \"yaw\": 0.0}, \"mounting_anchors\": {\"bottom\": {\"pose_xyz\": [0.0, 0.0, -0.1], \"pose_rpy\": [3.141592653589793, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Bottom face (normal points down)\", \"source\": \"catalog:bin_standard\"}}, \"mate\": {\"child_datum\": \"bottom\", \"alignment\": \"flush\"}}",
+            "pose_rpy": [
+                0,
+                0,
+                0.3490658503988659
+            ],
+            "pose_xyz": [
+                0.3724048484864537,
+                0.0755175961087873,
+                0.09910000050067902
+            ],
+            "role": "place_target_bin"
+        },
+        {
+            "catalog_asset_id": "camera_stand",
+            "category": "environment_object",
+            "id": "object_01",
+            "mesh": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ]
+            },
+            "mounting_yaml": "{\"parent_object\": \"support_surface_table\", \"parent_link\": \"surface\", \"joint_type\": \"fixed\", \"origin\": {\"x\": -0.5682099774599748, \"y\": 0.07911018591139116, \"z\": 0, \"roll\": 0.0, \"pitch\": 0.0, \"yaw\": -0.0872664625997165}, \"mounting_anchors\": {\"top\": {\"pose_xyz\": [0.0, 0.0, 0.6], \"pose_rpy\": [0.0, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Top mounting face (normal points up)\", \"source\": \"catalog:camera_stand\"}, \"base\": {\"pose_xyz\": [0.0, 0.0, -0.6], \"pose_rpy\": [3.141592653589793, 0.0, 0.0], \"datum_type\": \"plane\", \"label\": \"Base plate (normal points down)\", \"source\": \"catalog:camera_stand\"}}, \"mate\": {\"child_datum\": \"base\", \"alignment\": \"flush\"}}",
+            "pose_rpy": [
+                0,
+                0,
+                0.26179938779914935
+            ],
+            "pose_xyz": [
+                0.19999999999999996,
+                -0.35,
+                0.599100000500679
+            ],
+            "role": "object"
+        }
+    ],
+    "hierarchy_context_menu": [
+        "Rename",
+        "Duplicate",
+        "Remove from Scene",
+        "Focus",
+        "Properties",
+        "Mate by Picking Faces…",
+        "Mount To / Relative Pose…"
+    ],
+    "manual_dialog": {
+        "mountAlignment": "coincident",
+        "mountAnchor": "top",
+        "mountChildDatum": "origin",
+        "mountTo": "object_01",
+        "offset_x": 0.15,
+        "preview": "Fixed RealSense D435i at X 0.3216 · Y -0.2242 · Z 1.2491 m, roll 0.0° · pitch 90.0° · yaw 25.0° (moves 0.0 mm)\nOffset X 0.150 · Y 0.090 · Z 0.050 m\nRoll 0.0° · pitch 90.0° · yaw 10.0°"
+    },
+    "mate_start_overlay": {
+        "active": true,
+        "cancelSeq": 0,
+        "ghostCount": 0,
+        "hover": null,
+        "hoverResolution": null,
+        "hoverSeq": 0,
+        "isolatedAsset": "",
+        "labelText": "",
+        "markerCount": 11,
+        "pick": null,
+        "sceneId": "ur5_2f_test",
+        "seq": 0,
+        "viewSeq": 0
+    },
+    "requested_window_size": [
+        1366,
+        768
+    ],
+    "result": "PASS",
+    "robot_motion_commanded": false,
+    "saved_bin": "id: target_bin_default\ntype: target_bin\nrole: place_target_bin\ndisplay_name: Destination Bin\ncategory: environment\nframe: world\npose_xyz:\n  - 0.3724048484864537\n  - 0.0755175961087873\n  - 0.09910000050067902\npose_rpy:\n  - 0\n  - 0\n  - 0.3490658503988659\nlayout_item_ref: target_bin_default\ngeometry_type: mesh\nmesh:\n  path: package://sorting_bin_description/meshes/sorting_bin.stl\n  scale:\n    - 0.001\n    - 0.001\n    - 0.001\n  rpy:\n    - 1.5707963267948966\n    - 0\n    - 1.5707963267948966\n  origin_offset:\n    - -0.173899436593\n    - 0\n    - -0.1\nasset_class: registered\ncollision:\n  enabled: true\n  mode: mesh\ncatalog_asset_id: bin_standard\nsupport_surface_ref: support_surface_table\ntask_zone_ref: default_drop_zone\nusable_placement:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.01\n  pose_rpy:\n    - 0.0\n    - 0.0\n    - 0.0\n  dimensions:\n    - 0.24\n    - 0.12\n    - 0.14\n  review: \"Calibrated sorting_bin STL: 316 triangles; target-local box has zero triangle intersections. Mesh origin offset and RPY included. R1.9 usable_mesh_check.json.\"\nparent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.2606668243408203\n  y: 0.42000000000000004\n  z: 0\n  roll: 0.0\n  pitch: 0.0\n  yaw: 0.0\nmounting_anchors:\n  bottom:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - -0.1\n    pose_rpy:\n      - 3.141592653589793\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Bottom face (normal points down)\n    source: catalog:bin_standard\nmate:\n  child_datum: bottom\n  alignment: flush",
+    "saved_camera": "id: realsense_overhead\ntype: realsense\nrole: camera\ndisplay_name: Fixed RealSense D435i\ncategory: environment\nframe: world\npose_xyz:\n  - 0.3215951598841334\n  - -0.22424381886860573\n  - 1.2491000005006792\npose_rpy:\n  - 0\n  - 1.5707963267948966\n  - 0.26179938779914935\nlayout_item_ref: realsense_overhead\ngeometry_type: mesh\nmesh:\n  path: package://realsense2_description/meshes/d435.dae\n  scale:\n    - 1\n    - 1\n    - 1\nasset_class: registered\ncollision:\n  enabled: true\n  mode: urdf\n  link: camera_link\ndescription:\n  package: realsense2_description\n  xacro: urdf/_d435i.urdf.xacro\n  macro: sensor_d435i\nmaterial:\n  color:\n    - 0.12\n    - 0.13\n    - 0.15\n    - 1\nparent_object: object_01\nparent_link: top\njoint_type: fixed\norigin:\n  x: 0.15\n  y: 0.09\n  z: 0.05\n  roll: 0.0\n  pitch: 1.5707963267948966\n  yaw: -0.0",
+    "saved_drop_zone": "id: default_drop_zone\ntype: place_zone\nrole: place_zone\ndisplay_name: Place Free Region\ncategory: zone\nframe: world\npose_xyz:\n  - 0.3724048484864537\n  - 0.0755175961087873\n  - 0.10910000050067901\npose_rpy:\n  - 0.0\n  - -0.0\n  - 0.3490658503988659\nlayout_item_ref: place_zone_default\ngeometry_type: box\ndimensions:\n  - 0.2\n  - 0.1\n  - 0.12\nasset_class: primitive\ntarget_ref: target_bin_default\nsupport_surface_ref: support_surface_table\nshape: box\nbottom_clearance_m: 0.005\nplacement_local:\n  pose_xyz:\n    - 0.0\n    - 0.0\n    - 0.009999999999999995\n  pose_rpy:\n    - 0.0\n    - -0.0\n    - 0.0\n  dimensions:\n    - 0.2\n    - 0.1\n    - 0.12",
+    "saved_environment_sha256": "090201079d7f8444a3228d11aae6f5b70a9d195a24d2b20f60d4e28ea56fad18",
+    "saved_stand": "id: object_01\ntype: environment_object\nrole: object\ndisplay_name: Camera Stand\ncategory: environment_object\nmesh:\n  path: assets/imported/catalog/c593697820fb50de.stl\n  scale:\n    - 1\n    - 1\n    - 1\ncatalog_asset_id: camera_stand\ncollision:\n  enabled: true\n  mode: mesh\nlayout_item_ref: object_01\npose_xyz:\n  - 0.2\n  - -0.35\n  - 0.599100000500679\npose_rpy:\n  - 0\n  - 0\n  - 0.26179938779914935\nparent_object: support_surface_table\nparent_link: surface\njoint_type: fixed\norigin:\n  x: -0.5682099774599748\n  y: 0.07911018591139116\n  z: 0\n  roll: 0.0\n  pitch: 0.0\n  yaw: -0.0872664625997165\nmounting_anchors:\n  top:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - 0.6\n    pose_rpy:\n      - 0.0\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Top mounting face (normal points up)\n    source: catalog:camera_stand\n  base:\n    pose_xyz:\n      - 0.0\n      - 0.0\n      - -0.6\n    pose_rpy:\n      - 3.141592653589793\n      - 0.0\n      - 0.0\n    datum_type: plane\n    label: Base plate (normal points down)\n    source: catalog:camera_stand\nmate:\n  child_datum: base\n  alignment: flush",
+    "scene_path": "/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+    "screenshots": [
+        "08p_stand_placed_live_mesh",
+        "01_mate_started_markers",
+        "02_rejected_side_wall",
+        "03_isolated_bottom_view",
+        "04_child_picked",
+        "05_preview_flush_ghost",
+        "06_applied",
+        "07_table_moved_bin_follows",
+        "08a_stand_top_face_view",
+        "08b_stand_top_face_matched",
+        "08_camera_on_stand_preview",
+        "09_stand_moved_camera_follows",
+        "10_invalid_cycle_rejected",
+        "11_corrected_preview",
+        "13_saved_generated"
+    ],
+    "stand": "object_01",
+    "stand_after_save_render": {
+        "category": "camera",
+        "display_name": "Camera Stand",
+        "expectedSupportFootprintM": null,
+        "expected_support_footprint_m": null,
+        "fallbackVisible": false,
+        "fallback_reason": "",
+        "fallback_visible": false,
+        "id": "object_01",
+        "meshLoaded": true,
+        "mesh_loaded": true,
+        "mesh_uri": "build/workcell_studio_web_scene/assets/ur5_2f_test/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl",
+        "renderStatus": "mesh_loaded",
+        "render_status": "mesh_loaded",
+        "supportSurfaceDisplayType": "",
+        "supportSurfaceHeightM": null,
+        "supportSurfaceKind": "",
+        "support_surface_display_type": "",
+        "support_surface_height_m": null,
+        "support_surface_kind": "",
+        "topSurfaceZM": null,
+        "top_surface_z_m": null,
+        "visualBoundsStatus": "valid",
+        "visual_bounds_status": "valid"
+    },
+    "stand_live_render": {
+        "category": "camera",
+        "display_name": "Camera Stand",
+        "expectedSupportFootprintM": null,
+        "expected_support_footprint_m": null,
+        "fallbackVisible": false,
+        "fallback_reason": "",
+        "fallback_visible": false,
+        "id": "object_01",
+        "meshLoaded": true,
+        "mesh_loaded": true,
+        "mesh_uri": "build/workcell_studio_web_scene/assets/ur5_2f_test/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl",
+        "renderStatus": "mesh_loaded",
+        "render_status": "mesh_loaded",
+        "supportSurfaceDisplayType": "",
+        "supportSurfaceHeightM": null,
+        "supportSurfaceKind": "",
+        "support_surface_display_type": "",
+        "support_surface_height_m": null,
+        "support_surface_kind": "",
+        "topSurfaceZM": null,
+        "top_surface_z_m": null,
+        "visualBoundsStatus": "valid",
+        "visual_bounds_status": "valid"
+    },
+    "stand_placement_state": {
+        "armed": false,
+        "collidingOwnerIds": [
+        ],
+        "collision": false,
+        "persistent": false,
+        "proposedPoint": null,
+        "supportValid": false,
+        "valid": null
+    },
+    "stand_staged_mesh": {
+        "library_mesh": "workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl",
+        "sha256": "c593697820fb50deb701367fab5373fddf8608596334d2026dbd36ac8555646e",
+        "uri": "build/workcell_studio_web_scene/assets/ur5_2f_test/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl"
+    },
+    "stand_staging_log": [
+        "Product View: staged the mesh of live item object_01 for Web3D: workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl -> build/workcell_studio_web_scene/assets/ur5_2f_test/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl"
+    ],
+    "steps": [
+        "load cell",
+        "wait for the 3D view",
+        "baseline and entry points",
+        "stand drawn live with its staged mesh before Save",
+        "Save keeps the live session and the stand mesh",
+        "stand drawn",
+        "Scenario A: start Mate from the toolbar",
+        "Native: honest fallback, hierarchy and datum lists",
+        "Native: applied view",
+        "Scenario A: datum markers drawn",
+        "Scenario A: bin side wall is rejected honestly",
+        "Scenario A: isolate the bin and look at its bottom",
+        "Scenario A: click the bin bottom face (geometry)",
+        "Scenario A: view returns to the cell",
+        "Scenario A: click the table top (geometry)",
+        "Scenario A: flush preview with ghost, nothing mutated",
+        "Scenario A: Apply",
+        "Scenario A: applied view",
+        "Scenario A: move and rotate the table",
+        "Scenario A: moved view",
+        "Scenario B: start Mate from the Inspector",
+        "Scenario B: camera body has no mounting faces",
+        "Scenario B: click the camera origin marker",
+        "Scenario B: choose the stand in the hierarchy, isolate it and look at its top",
+        "Scenario B: stand top face click matches the top datum",
+        "Scenario B: stand top datum marker",
+        "Scenario B: coincident with offset and orientation",
+        "Scenario B: move and rotate the stand",
+        "Scenario B: moved view",
+        "Scenario C: start Mate from the context menu",
+        "Scenario C: pick the table top as the moving part",
+        "Scenario C: self-mate is refused",
+        "Scenario C: pick the bin rim marker (cycle)",
+        "Scenario C: invalid cycle is shown, Apply disabled, nothing changed",
+        "Scenario C: correct the child (stand base marker)",
+        "Scenario C: correct the parent (table top)",
+        "Scenario C: table top as the parent",
+        "Scenario C: corrected mate applies; undo, redo",
+        "Scenario C: detach keeps the world pose (Mount To dialog), then undo",
+        "Manual datum mating still works (Mount To dialog on the camera)",
+        "Save",
+        "saved: disk equals the editor",
+        "Generate and Validate"
+    ],
+    "studio_log_tail": "ayout: checking edits\nWeb3D Save Layout: patch summary: scene_id=ur5_2f_test dirty_edit_count=4\nWeb3D Save Layout: patch edit: item_id=support_surface_table operation=update_transform old_xyz=[0.71066682,-0.2,-0.0008999995] rpy=[0,0,0] new_xyz=[0.761,-0.23,-0.0008999995] rpy=[0,0,0.34906585] persistence_source=layout/workcell_studio_layout.yaml\nWeb3D Save Layout: patch edit: item_id=target_bin_default operation=update_transform old_xyz=[0.45,0.22,0.1] rpy=[0,0,0] new_xyz=[0.37240485,0.075517596,0.099100001] rpy=[0,0,0.34906585] persistence_source=layout/workcell_studio_layout.yaml\nWeb3D Save Layout: patch edit: item_id=realsense_overhead operation=update_transform old_xyz=[0.4,-0.36004295,0.85] rpy=[0,1.57,0] new_xyz=[0.32159516,-0.22424382,1.2491] rpy=[0,1.5707963,0.26179939] persistence_source=layout/workcell_studio_layout.yaml\nWeb3D Save Layout: patch edit: item_id=object_01 operation=update_transform old_xyz=[0.15,-0.35,0.6] rpy=[0,0,0] new_xyz=[0.2,-0.35,0.5991] rpy=[0,0,0.26179939] persistence_source=\nSave Layout composition validated: 4 Web3D transform edit(s) merged with native authored metadata/structure by stable canonical ID.\nBackup before write created: /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml.20261023_183642_253.bak.yaml\nSave reconciliation: id=pick_zone_main session_xyz=[0.40000000000000002,-0.20000000000000001,0.29999999999999999] canvas_before=[0.40000000000000002,-0.20000000000000001,0.29999999999999999]\nSave reconciliation: id=realsense_overhead session_xyz=[0.32159515988413334,-0.22424381886860573,1.2491000005006792] canvas_before=[0.3215951598841334,-0.22424381886860573,1.2491000005006792]\nSave reconciliation: id=support_surface_table session_xyz=[0.7609999999999999,-0.23000000000000001,-0.00089999949932098393] canvas_before=[0.7609999999999999,-0.23000000000000001,-0.00089999949932098393]\nSave reconciliation: id=target_bin_default session_xyz=[0.37240484848645372,0.075517596108787305,0.09910000050067902] canvas_before=[0.37240484848645372,0.075517596108787305,0.09910000050067902]\nSave reconciliation: id=object_01 session_xyz=[0.20000000000000001,-0.34999999999999998,0.59910000050067902] canvas_before=[0.20000000000000001,-0.34999999999999998,0.59910000050067902]\nInspector transform saved: scene=ur5_2f_test id=support_surface_table path=/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=target_bin_default path=/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=realsense_overhead path=/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=pick_zone_main path=/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=object_01 path=/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nSave Layout persistence verified: 5 editable item(s), stable IDs, metadata, and transforms match the atomic YAML write.\nSave Layout persisted authored YAML only; generated collision/scene artifacts remain stale until explicit Generate/Validate.\nSave committed physical assets, camera and semantic zones into environment.yaml.\nSaved scene layout metadata to /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nSave Layout: serialized 5 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.\nSave Layout: live authored session retained without Product View regeneration (selection id='realsense_overhead').\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=ur5_2f_test id=realsense_overhead editable=true locked=false source_layer=editable_layout\nSelected item: realsense_overhead (unknown) type=camera source=editable_layout editable=true locked=false\nLoaded 16 scenes from /home/user/workcell_ws/src/easy_manipulation_deployment/scenes\nWeb3D Save Layout: unified authored transaction complete: metadata, structure, and validated Web3D transforms serialized by stable item ID\nWeb3D Save Layout: browser rebase failed closed: persisted_owner_unavailable; reopen before another save; no Product View regeneration was requested\nCheck Canvas/RViz Parity command: python3 '/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scripts/validate_scene_builder_canvas_generated_parity.py' '/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test' --json --output '/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/smoke/scene_builder_canvas_generated_parity_report.json' --mode pre_generation\nCheck Canvas/RViz Parity mode: pre_generation\nCheck Canvas/RViz Parity exit status: 0\nCheck Canvas/RViz Parity report path: /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/smoke/scene_builder_canvas_generated_parity_report.json\nCheck Canvas/RViz Parity summary: mismatches=0 warnings=3 blockers=0\nCheck Canvas/RViz Parity recommendation: Run Generate Scene Package for strict parity.\nGenerate ROS Scene Package pre-generation parity: Pre-generation parity warnings (mismatches=0, warnings=3).\nGenerated YAML from the saved task and current physical resolution.\nLoaded 16 scenes from /home/user/workcell_ws/src/easy_manipulation_deployment/scenes\nAsset support preflight: unsupported placed asset id='object_01' type='environment_object'. Expected behavior: generator keeps metadata and may skip geometry/runtime wiring for this item.\nGenerate ROS Scene Package: python3 '/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scripts/generate_workcell_from_cell_definition.py' '/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/cell_definition.yaml' '--output-dir' '/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes' '--package-name' 'ur5_2f_test' '--existing-package-dir' '/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test'\nGenerated package location: /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test\nNext: colcon build --symlink-install --packages-select ur5_2f_test\nNext: source install/setup.bash\nNext: ros2 launch ur5_2f_test demo.launch.py use_fake_hardware:=true launch_rviz:=true\nstdout: WARN: generated package at /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test\nPASS: package.xml -> /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/package.xml\nPASS: CMakeLists.txt -> /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/CMakeLists.txt\nPASS: environment.yaml -> /home/user/wcs-libmesh-ws/src/easy_manipu\nLoaded 16 scenes from /home/user/workcell_ws/src/easy_manipulation_deployment/scenes\nProduct View lifecycle requested: scene=ur5_2f_test generation=4 payload_revision=2 origin=post_save force=true.\nPreparing embedded Product View: scene=ur5_2f_test generation=4 payload_revision=2 origin=user_retry repo_root=/home/user/wcs-libmesh-ws/src/easy_manipulation_deployment command=python3 scripts/ensure_workcell_studio_web_scene_fresh.py --scene /home/user/wcs-libmesh-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test --output build/workcell_studio_web_scene/preparations/ur5_2f_test-r2-g4-4ae0bd80b8d53a51dcaaab89d3060e0b2815697650552abd6a6bb14145d84677.web_scene.json --stage-assets --force\nValidation state: running — Offline validation is running…\nValidation state: passed — Offline validation passed for ur5_2f_test.\nLoaded 16 scenes from /home/user/workcell_ws/src/easy_manipulation_deployment/scenes",
+    "toolbar": [
+        {
+            "name": "sceneBuilderModeSelect",
+            "needs": 55,
+            "text": "Select",
+            "width": 61
+        },
+        {
+            "name": "sceneBuilderModeMove",
+            "needs": 48,
+            "text": "Move",
+            "width": 56
+        },
+        {
+            "name": "sceneBuilderModeRotate",
+            "needs": 56,
+            "text": "Rotate",
+            "width": 64
+        },
+        {
+            "name": "sceneBuilderToolbarAddObject",
+            "needs": 82,
+            "text": "Add Object",
+            "width": 93
+        },
+        {
+            "name": "sceneBuilderToolbarFit",
+            "needs": 31,
+            "text": "Fit",
+            "width": 39
+        },
+        {
+            "name": "sceneBuilderToolbarMate",
+            "needs": 46,
+            "text": "Mate",
+            "width": 54
+        },
+        {
+            "name": "sceneBuilderToolbarUndo",
+            "needs": 34,
+            "text": "",
+            "width": 34
+        },
+        {
+            "name": "sceneBuilderToolbarRedo",
+            "needs": 34,
+            "text": "",
+            "width": 34
+        },
+        {
+            "name": "sceneBuilderToolbarSave",
+            "needs": 86,
+            "text": "Save Layout",
+            "width": 97
+        }
+    ],
+    "window_size": [
+        1366,
+        768
+    ]
+}

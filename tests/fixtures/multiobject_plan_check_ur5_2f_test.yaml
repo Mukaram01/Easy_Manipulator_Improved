@@ -1,0 +1,57 @@
+schema_version: detected_objects/v1
+source:
+  mode: replayed_snapshot
+  description: >-
+    Authored commissioning fixture for the Feature 4B multi-object plan-only acceptance on
+    ur5_2f_test. Not sensor data and not a live simulator state. cup-01 reuses the reviewed
+    canonical R1.4 cup pose; cup-03 is deliberately enclosed by four recorded bottles to
+    exercise collision rejection; cup-04 sits at the far corner of pick_zone_main.
+objects:
+- object_id: cup-01
+  class_id: cup
+  confidence: 0.99
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.26, -0.08, 0.051], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.10]
+- object_id: cup-02
+  class_id: cup
+  confidence: 0.97
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.45, -0.12, 0.051], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.10]
+- object_id: cup-03
+  class_id: cup
+  confidence: 0.96
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.38, -0.25, 0.051], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.10]
+- object_id: cup-04
+  class_id: cup
+  confidence: 0.95
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.565, -0.34, 0.051], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.10]
+- object_id: bottle-n
+  class_id: bottle
+  confidence: 0.99
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.38, -0.182, 0.091], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.18]
+- object_id: bottle-s
+  class_id: bottle
+  confidence: 0.99
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.38, -0.318, 0.091], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.18]
+- object_id: bottle-e
+  class_id: bottle
+  confidence: 0.99
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.448, -0.25, 0.091], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.18]
+- object_id: bottle-w
+  class_id: bottle
+  confidence: 0.99
+  age_seconds: 0.0
+  pose: {frame_id: world, xyz: [0.312, -0.25, 0.091], rpy: [0.0, 0.0, 0.0]}
+  dimensions: [0.06, 0.06, 0.18]

@@ -985,6 +985,17 @@ def _normalize_generated_urdf_mesh_preview_item(item: Json) -> None:
         item["fallback_reason"] = ""
 
 
+CAMERA_MOUNT_TOKENS = ("camera_stand", "camera stand", "camera_mount", "camera mount", "camera_bracket",
+                       "camera bracket", "camera_frame", "camera frame", "camera_gantry", "camera gantry",
+                       "camera_clamp", "camera clamp")
+
+
+def _is_camera_mount_text(text: str) -> bool:
+    """Stands, brackets, frames and gantries carry a camera; they are physical
+    fixtures, not the cell's camera (a cell has one physical camera owner)."""
+    return any(token in text for token in CAMERA_MOUNT_TOKENS) and not any(token in text for token in ("realsense", "d435"))
+
+
 def _section_from_item(item: Mapping[str, Any]) -> str:
     if _is_transform_anchor(item):
         return "frames"
@@ -997,7 +1008,7 @@ def _section_from_item(item: Mapping[str, Any]) -> str:
         return "robots"
     # Camera IDs may contain task/tool vocabulary (for example
     # realsense_suction_overhead); explicit camera semantics own classification.
-    if category == "camera" or role == "camera" or "camera" in text or "realsense" in text:
+    if category == "camera" or role == "camera" or (("camera" in text or "realsense" in text) and not _is_camera_mount_text(text)):
         return "sensors"
     if (
         category in {"tool", "gripper", "end_effector"}
@@ -1497,7 +1508,7 @@ def _annotate_owner_relative_physical_visual_transforms(
             visual_world_pose = item.get("final_transform") or item.get("world_from_visual") or item.get("pose")
             source_owner = owner
             owner_world_pose = source_owner.get("pose") or source_owner.get("world_pose") or source_owner.get("final_transform")
-            relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose, child_ros_rpy=True)
+            relative_pose = _parent_to_child_pose(owner_world_pose, visual_world_pose)
             if relative_pose is None:
                 continue
             # This is the transform of the generated item root in its authored
@@ -1793,7 +1804,7 @@ def _apply_web_scene_transform_parity_fallbacks(data: Dict[str, Any], generated:
                 _set_item_pose(item, authored_camera_pose, "web_export_authored_camera_transform_fallback")
 
 
-def _rpy_xyz_matrix(rpy: Sequence[float]) -> List[List[float]]:
+def _ros_rpy_matrix(rpy: Sequence[float]) -> List[List[float]]:
     import math
     r = float(rpy[0] if len(rpy) > 0 else 0.0)
     p = float(rpy[1] if len(rpy) > 1 else 0.0)
@@ -1801,13 +1812,12 @@ def _rpy_xyz_matrix(rpy: Sequence[float]) -> List[List[float]]:
     cr, sr = math.cos(r), math.sin(r)
     cp, sp = math.cos(p), math.sin(p)
     cy, sy = math.cos(y), math.sin(y)
-    # Match THREE.Euler(..., 'XYZ') exactly. Three.js uses intrinsic XYZ
-    # composition here (Rx * Ry * Rz), which is not the same matrix as the
-    # common URDF fixed-axis RPY expression once more than one angle is nonzero.
+    # ROS/URDF fixed-axis RPY, Rz(yaw) * Ry(pitch) * Rx(roll). The Web3D viewer
+    # applies every pose with THREE.Euler(..., 'ZYX'), which is this matrix.
     return [
-        [cp * cy, -cp * sy, sp],
-        [cr * sy + sr * sp * cy, cr * cy - sr * sp * sy, -sr * cp],
-        [sr * sy - cr * sp * cy, sr * cy + cr * sp * sy, cr * cp],
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp, cp * sr, cp * cr],
     ]
 
 
@@ -1823,23 +1833,22 @@ def _matrix_vec_multiply(m: Sequence[Sequence[float]], v: Sequence[float]) -> Li
     return [sum(float(m[i][k]) * float(v[k]) for k in range(3)) for i in range(3)]
 
 
-def _rpy_from_xyz_matrix(m: Sequence[Sequence[float]]) -> List[float]:
+def _ros_rpy_from_matrix(m: Sequence[Sequence[float]]) -> List[float]:
     import math
-    # Inverse of the Three.js intrinsic XYZ matrix above. These branches mirror
-    # Euler.setFromRotationMatrix(..., 'XYZ'), including its gimbal-lock case.
-    sy = float(m[0][2])
-    if abs(sy) < 0.999999:
-        pitch = math.asin(sy)
-        roll = math.atan2(-float(m[1][2]), float(m[2][2]))
-        yaw = math.atan2(-float(m[0][1]), float(m[0][0]))
+    # Inverse of the ROS RPY matrix above. These branches mirror
+    # Euler.setFromRotationMatrix(..., 'ZYX'), including its gimbal-lock case.
+    m20 = max(-1.0, min(1.0, float(m[2][0])))
+    pitch = math.asin(-m20)
+    if abs(m20) < 0.9999999:
+        roll = math.atan2(float(m[2][1]), float(m[2][2]))
+        yaw = math.atan2(float(m[1][0]), float(m[0][0]))
     else:
-        pitch = math.copysign(math.pi / 2.0, sy)
-        roll = math.atan2(float(m[2][1]), float(m[1][1]))
-        yaw = 0.0
+        roll = 0.0
+        yaw = math.atan2(-float(m[0][1]), float(m[1][1]))
     return [roll, pitch, yaw]
 
 
-def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any, *, child_ros_rpy: bool = False) -> Optional[Json]:
+def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any) -> Optional[Json]:
     parent_xyz = _pose_xyz(parent_world_pose)
     child_xyz = _pose_xyz(child_world_pose)
     if parent_xyz is None or child_xyz is None:
@@ -1847,20 +1856,14 @@ def _parent_to_child_pose(parent_world_pose: Any, child_world_pose: Any, *, chil
     parent_rpy = _as_list(_as_map(parent_world_pose).get("rpy") or [0.0, 0.0, 0.0])
     child_rpy = _as_list(_as_map(child_world_pose).get("rpy") or [0.0, 0.0, 0.0])
     try:
-        parent_rot = _rpy_xyz_matrix([float(v) for v in parent_rpy[:3]])
-        if child_ros_rpy:
-            # URDF FK emits fixed-axis RPY (Rz Ry Rx); editable Three.js owners
-            # and owner-relative transforms use intrinsic XYZ. Convert through
-            # the rotation matrix, never reinterpret the URDF angles as XYZ.
-            from extract_scene_urdf_visual_mesh_index import tf_from_xyz_rpy
-            child_rot = [row[:3] for row in tf_from_xyz_rpy([0, 0, 0], child_rpy)[:3]]
-        else:
-            child_rot = _rpy_xyz_matrix([float(v) for v in child_rpy[:3]])
+        # Authored owners, URDF FK poses and the viewer all use ROS RPY.
+        parent_rot = _ros_rpy_matrix([float(v) for v in parent_rpy[:3]])
+        child_rot = _ros_rpy_matrix([float(v) for v in child_rpy[:3]])
         parent_inv = _matrix_transpose(parent_rot)
         delta = [child_xyz[i] - parent_xyz[i] for i in range(3)]
         local_xyz = _matrix_vec_multiply(parent_inv, delta)
         local_rot = _matrix_multiply(parent_inv, child_rot)
-        local_rpy = _rpy_from_xyz_matrix(local_rot)
+        local_rpy = _ros_rpy_from_matrix(local_rot)
     except Exception:  # noqa: BLE001 - diagnostics should not break export
         return None
     return {"xyz": [float(v) for v in local_xyz], "rpy": [float(v) for v in local_rpy]}

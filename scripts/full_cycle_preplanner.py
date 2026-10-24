@@ -24,7 +24,7 @@ from perceived_object_grasp_plan import (
     rotate_vector,
     tool_pose_for_grasp,
 )
-from physical_destination import check_object_containment
+from physical_destination import PLACEMENT_TOLERANCE_M, check_object_containment
 from grasp_strategy_candidates import generate_strategy_candidates
 
 
@@ -254,7 +254,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         motion('PREPLAN_PLACE', operations.translated_pose(tool_at_grasp, *delta))
         reached = operations.fk(view.robot_state, contract['tool_link'])
         achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
-        if math.dist(achieved[:3], destination['pose_xyz']) > 0.003:
+        if math.dist(achieved[:3], destination["pose_xyz"]) > PLACEMENT_TOLERANCE_M:
             raise RuntimeError('planned placement differs from destination by more than 3 mm')
         check_code = 'DESTINATION_CONTAINMENT'
         if intent is not None:

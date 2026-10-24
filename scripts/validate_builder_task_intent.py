@@ -9,7 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
-from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, TOOL_CAPABILITY_MAP
+from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, TOOL_CAPABILITY_MAP, STRATEGY_DIR
 try:
     import yaml
 except Exception:
@@ -101,7 +101,7 @@ def validate_payload(payload, scene_package=None, grasp_dir=None):
             if safety.get('real_hardware_enabled') is True or safety.get('require_fake_hardware') is False:
                 diagnostics.append({'code': 'SAFETY_LOCK_REQUIRED', 'message': 'Task authoring requires fake hardware and the real robot lock.'})
             strategy_ref = normalized.get('pick', {}).get('grasp', {}).get('strategy_ref')
-            catalog_dir = grasp_dir or (SCRIPT_DIR.parent / 'catalog' / 'grasp_strategies')
+            catalog_dir = grasp_dir or STRATEGY_DIR
             if strategy_ref and not (catalog_dir / f'{strategy_ref}.yaml').is_file():
                 diagnostics.append({'code': 'STRATEGY_NOT_FOUND', 'message': f'strategy {strategy_ref} is not in the real catalog'})
             required = normalized.get('pick', {}).get('grasp', {}).get('required_capability')

@@ -35,6 +35,9 @@ class Scene3DViewportWidget;
 class QWebEngineView;
 #endif
 
+// The user-facing cause of a failed Product View preparation (stderr "error:" lines first).
+QString concise_preparation_error(const QString & detail);
+
 class ScenePreviewWidget : public QWidget
 {
   Q_OBJECT
@@ -268,10 +271,18 @@ public:
     double roll, double pitch, double yaw);
   void set_authoring_item_metadata(
     const QString & id, const QString & display_name, const QString & semantic_role);
+  // Live-session addItem payload. A library mesh outside the browser-served
+  // roots is staged into the exporter's cache so Web3D draws it immediately.
+  QJsonObject live_authoring_item_payload(const PreviewItem & item);
   void add_authoring_item(const PreviewItem & item);
   void duplicate_authoring_item(const QString & source_id, const PreviewItem & item);
   void remove_authoring_item(const QString & id);
   void set_live_visible_item_ids(const QSet<QString> & ids);
+  // Visual mate picking (R3.2): Builder sends the overlay (datum markers,
+  // highlights, ghost); the viewer reports raw picks through the editor poll.
+  void set_mate_overlay(const QJsonObject & overlay);
+  void clear_mate_overlay();
+  void set_mate_hover_resolution(const QJsonObject & resolution);
   void request_authoring_save();
   void arm_embedded_asset_placement(
     const QString & asset_id, const QString & mesh_uri, double mesh_scale,
@@ -365,6 +376,9 @@ signals:
     double world_x_m, double world_y_m, double world_z_m,
     double roll_rad, double pitch_rad, double yaw_rad, bool repeat_commit);
   void embedded_authoring_context_menu_requested(const QPoint & global_position);
+  // Mate picking state from the embedded viewer: {active, seq, pick, hoverSeq, hover, cancelSeq};
+  // empty when the loaded viewer has no mate support.
+  void embedded_mate_state_reported(const QVariantMap & mate);
   void embedded_product_view_runtime_state_changed(const QString & state, bool has_usable_content);
   void authoring_mode_changed(const QString & mode);
   void embedded_authoring_save_requested();

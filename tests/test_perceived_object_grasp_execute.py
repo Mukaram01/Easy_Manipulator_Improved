@@ -318,3 +318,73 @@ def test_support_binding_uses_reviewed_asset_footprint_not_nearest_obstacle():
     obj['pose'][:3] = [.1, .2, .0155]
     environment['assets'][0].pop('usable_placement')
     assert MODULE.legitimate_support_ids(obj, environment, manifest) == set()
+
+
+def sequence_intent(policy, requested=None):
+    return {"place": {"target": {"asset_ref": "bin", "region_ref": "drop"},
+                      "placement": {"policy": policy, "requested_local_pose": requested, "clearance_m": 0.005}}}
+
+
+SEQUENCE_ENVIRONMENT = {
+    "assets": [{"id": "bin", "frame": "world", "pose_xyz": [0.45, 0.22, 0.1], "pose_rpy": [0, 0, 0],
+                "collision": {"enabled": True},
+                "usable_placement": {"pose_xyz": [0, 0, 0.01], "pose_rpy": [0, 0, 0], "dimensions": [0.24, 0.12, 0.14]}}],
+    "task_zones": [{"id": "drop", "target_ref": "bin", "frame": "world", "pose_xyz": [0.45, 0.22, 0.11],
+                    "pose_rpy": [0, 0, 0], "dimensions": [0.2, 0.1, 0.12],
+                    "placement_local": {"pose_xyz": [0, 0, 0.01], "pose_rpy": [0, 0, 0], "dimensions": [0.2, 0.1, 0.12]}}]}
+CUP = [0.06, 0.06, 0.10]
+
+
+def test_sequence_exact_placement_is_planned_unchanged():
+    poses, allocation = MODULE.sequence_place_poses(
+        sequence_intent("EXACT", {"xyz_m": [0, 0, 0.01], "rpy_rad": [0, 0, 0]}), SEQUENCE_ENVIRONMENT, [], CUP)
+    assert poses == [None] and allocation["applied"] is False and allocation["authored_policy"] == "EXACT"
+
+
+def test_sequence_auto_placement_skips_places_taken_by_earlier_objects():
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, [], CUP)
+    assert allocation["applied"] is True and len(poses) == 3
+    # Clearance plus the planner's 3 mm placement tolerance from the region wall.
+    assert poses[0]["xyz_m"] == pytest.approx([-0.062, 0, 0.01])
+    assert all(MODULE.math.dist(a["xyz_m"], b["xyz_m"]) >= 0.02 for a in poses for b in poses if a is not b)
+    placed = [([0.388, 0.22, 0.11, 0, 0, 0, 1], CUP)]
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, placed, CUP)
+    assert poses[0]["xyz_m"] == pytest.approx([0.006, 0, 0.01])  # Flush: size + clearance + tolerance apart.
+    assert allocation["objects_checked_for_overlap"] == 1
+    placed.append(([0.456, 0.22, 0.11, 0, 0, 0, 1], CUP))
+    assert MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, placed, CUP)[0] == []
+
+
+def test_sequence_preferred_placement_tries_the_nearest_free_place_first():
+    poses, _ = MODULE.sequence_place_poses(
+        sequence_intent("PREFERRED", {"xyz_m": [0.05, 0.0, 0.01], "rpy_rad": [0, 0, 0]}), SEQUENCE_ENVIRONMENT, [], CUP)
+    assert poses[0]["xyz_m"] == pytest.approx([0.05, 0, 0.01])
+
+
+def test_furthest_attempt_reports_how_far_a_place_got():
+    ok = [dict(stage=s, success=True) for s in ("PREPLAN_APPROACH", "PREPLAN_GRASP", "PREPLAN_CLOSE_GRIPPER", "PREPLAN_LIFT")]
+    pick_blocked = {"stages": [dict(stage="PREPLAN_APPROACH", success=True), dict(stage="PREPLAN_GRASP", success=False)],
+                    "checks": [dict(status="FAIL", code="PREPLAN_GRASP", reason="collision")]}
+    place_blocked = {"stages": ok + [dict(stage="PREPLAN_TRANSFER", success=True), dict(stage="PREPLAN_PLACE", success=False)],
+                     "checks": [dict(status="PASS", code="ATTACH"), dict(status="FAIL", code="PREPLAN_PLACE", reason="collision")]}
+    assert MODULE.furthest_attempt([]) == (None, {}, 0)
+    _, failed, progress = MODULE.furthest_attempt([pick_blocked])
+    assert failed["code"] == "PREPLAN_GRASP" and progress < MODULE.PLACE_INDEPENDENT_STAGES
+    best, failed, progress = MODULE.furthest_attempt([pick_blocked, place_blocked])
+    assert best is place_blocked and failed["code"] == "PREPLAN_PLACE" and progress == 5
+
+
+def test_sequence_chosen_place_is_tried_alone_unless_already_occupied():
+    chosen = {"xyz_m": [0.065, 0.0, 0.01], "rpy_rad": [0, 0, 0]}
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, [], CUP, chosen=chosen)
+    assert poses == [chosen] and allocation["operator_selected"] is True and allocation["conflicts"] == []
+    placed = [([0.385, 0.22, 0.11, 0, 0, 0, 1], CUP), ([0.51, 0.22, 0.11, 0, 0, 0, 1], CUP)]
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("EXACT", chosen), SEQUENCE_ENVIRONMENT, placed, CUP,
+                                                    chosen=chosen)
+    assert poses == [] and allocation["conflicts"] == [1]  # A choice overrides EXACT, never an occupied place.
+
+
+def test_sequence_automatic_places_keep_clear_of_places_chosen_for_later_objects():
+    later = [([0.388, 0.22, 0.11, 0, 0, 0, 1], CUP)]  # Near end reserved for a later object.
+    poses, allocation = MODULE.sequence_place_poses(sequence_intent("AUTO"), SEQUENCE_ENVIRONMENT, [], CUP, reserved=later)
+    assert poses[0]["xyz_m"] == pytest.approx([0.006, 0, 0.01]) and allocation["reserved_for_later_objects"] == 1

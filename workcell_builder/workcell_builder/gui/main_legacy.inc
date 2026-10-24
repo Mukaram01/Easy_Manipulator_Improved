@@ -1218,7 +1218,20 @@ int main(int argc, char * argv[])
     return report.value("pass").toBool() ? 0 : 1;
   }
 
-  a.setStyleSheet(workcell_builder::workcellStudioStyleSheet());
+  workcell_builder::applyStudioApplicationAppearance(&a);
+
+  if (has_cli_flag(args, "--repeat-save-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene-path");
+    // This acceptance may only edit a disposable fixture below its output directory.
+    if (output.isEmpty() || QFileInfo(scene).canonicalFilePath() !=
+        QFileInfo(output + "/scenes/ur5_2f_test").canonicalFilePath() ||
+        !QFileInfo::exists(scene + "/environment.yaml")) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_repeat_save_acceptance(&w, &a, output, scene,
+      cli_value(args, "--axis") == "y", has_cli_flag(args, "--reopen"));
+    return a.exec();
+  }
 
   if (has_cli_flag(args, "--persistence-only")) {
     const QString output = cli_value(args, "--smoke-output");
@@ -1229,6 +1242,27 @@ int main(int argc, char * argv[])
     return a.exec();
   }
 
+  if (has_cli_flag(args, "--visual-mate-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    const QString size = cli_value(args, "--window-size");
+    const auto parts = size.split('x');
+    const QSize window_size = parts.size() == 2 ? QSize(parts[0].toInt(), parts[1].toInt()) : QSize(1366, 768);
+    w.resize(window_size);
+    w.show();
+    TestMain::start_visual_mate_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"), window_size);
+    return a.exec();
+  }
+  if (has_cli_flag(args, "--datum-mating-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_datum_mating_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"));
+    return a.exec();
+  }
   if (has_cli_flag(args, "--asset-mounting-acceptance") || has_cli_flag(args, "--newcell-task-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     const QString scene = cli_value(args, "--scene");
@@ -1263,6 +1297,16 @@ int main(int argc, char * argv[])
     if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(QJsonObject{{"cycles", cycles}, {"exit_code", rc},
       {"rss_kib_after_each_close", rss_kib}, {"windows_alive_after_close", QApplication::topLevelWidgets().size()}}).toJson());
     return rc;
+  }
+  if (has_cli_flag(args, "--multiobject-plan-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString recording = cli_value(args, "--observations");
+    if (output.isEmpty() || recording.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_multiobject_plan_acceptance(&w, &a, output, recording, has_cli_flag(args, "--reopen"),
+                                                has_cli_flag(args, "--no-plan-check"), cli_value(args, "--sequence-order"),
+                                                cli_value(args, "--sequence-places"), cli_value(args, "--expect-sequence"));
+    return a.exec();
   }
   if (has_cli_flag(args, "--full-cycle-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");

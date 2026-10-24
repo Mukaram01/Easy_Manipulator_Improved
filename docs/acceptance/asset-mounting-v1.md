@@ -13,6 +13,8 @@ existing asset record's `mounting_anchors` mapping (`pose_xyz`/`pose_rpy`).
 Cycles, duplicate IDs, missing parents/anchors, unsupported joints, nonfinite
 poses and stale projections fail closed. Task zones retain destination ownership;
 mount their physical target instead. Parent deletion requires detaching children.
+Typed datums and datum-to-datum mates extend this relation; see
+[datum mating](asset-datum-mating-v1.md).
 
 ## Reproduce
 
