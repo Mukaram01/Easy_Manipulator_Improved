@@ -809,6 +809,10 @@ def test_failure_classification_separates_safety_functional_and_task_quality():
         'execution_results':[{'stage':'EXECUTE_HOME'}]})
     assert report['functional_success'] is True and report['strict_benchmark_compliant'] is False
     assert report['placement']=={'error_to_destination_m':.001} and report['executed_stages']==['EXECUTE_HOME']
+    dropped=MODULE.functional_report({'result':'FAIL','failure':'measured grasp retention lost: contact/slip',
+        'grasp_recovery':{'details':{'missing_contacts':['tip'],'rotation_error_rad':.05}}},failure='command failed (1): executor ...')
+    assert dropped['failure_category']=='functional' and dropped['failure_cause'].startswith('measured grasp retention lost')
+    assert dropped['retention_loss']['missing_contacts']==['tip']
 
 
 @pytest.mark.parametrize('argv,message',[

@@ -564,14 +564,16 @@ def functional_report(summary,failure=None):
     result=summary.get("result")
     retention=summary.get("retention_findings") or {}
     acceptance=summary.get("full_cycle_physical_acceptance") or {}
+    # The executor's own failure text classifies better than the runner's command wrapper.
+    cause=summary.get("failure") if isinstance(summary.get("failure"),str) and summary.get("failure") else failure
     return dict(functional_success=result in ("PASS","FUNCTIONAL_PASS"),
                 strict_benchmark_compliant=result=="PASS",
                 strict_retention_compliant=summary.get("strict_retention_compliant"),
                 retention_peak=retention.get("peak"),retention_findings=retention.get("findings"),
                 placement=acceptance.get("placement"),
                 executed_stages=[r.get("stage") for r in summary.get("execution_results",[])],
-                failed_stage=summary.get("failed_stage"),
-                failure=failure,failure_category=classify_failure(failure,summary) if failure else None)
+                failed_stage=summary.get("failed_stage"),retention_loss=((summary.get("grasp_recovery") or {}).get("details")),
+                failure=failure,failure_cause=cause,failure_category=classify_failure(cause,summary) if cause else None)
 
 
 def prior_evidence(directory,capability_sha):
