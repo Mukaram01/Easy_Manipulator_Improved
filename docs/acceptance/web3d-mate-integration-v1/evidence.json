@@ -1,0 +1,219 @@
+{
+ "schema": "web3d_mate_combined_acceptance/v1",
+ "scene": "ur5_2f_test",
+ "sources": {
+  "pr3205": "abe5781d62b1ce1e11dbcbcf295438565fbe2f37",
+  "pr3206": "debb12ef5fb04c2fc0a2096c8b9608584c592d14",
+  "pr3207": "384d14a36d5f1e972d71191d2d6ab5b56fe4424b",
+  "merge": "c7f953ff"
+ },
+ "fake_hardware_only": true,
+ "execution_goals_sent": 0,
+ "robot_motion_commanded": false,
+ "gui": {
+  "authoring": {
+   "result": "PASS",
+   "process_exit": 0,
+   "isolated_compound_camera": {
+    "camera_rpy": [
+     0,
+     1.5707963267948966,
+     0.2617993877991494
+    ],
+    "xyz_order_error_deg": 21.182822269620377,
+    "isolated_asset": "realsense_overhead",
+    "camera_body_pick": {
+     "asset_id": "realsense_overhead",
+     "reason_code": "NO_PLANE_DATUMS",
+     "geometry": "surface",
+     "geometry_source": "mesh \u00b7 package://realsense2_description/meshes/d435.dae",
+     "object_pose_world": [
+      0.3215951598841334,
+      -0.22424381886860573,
+      1.25,
+      0,
+      1.5707963267948966,
+      0.2617993877991494
+     ],
+     "normal_local": [
+      -1.6042995010498085e-16,
+      -1.1102230246251565e-16,
+      1.0000000000000002
+     ]
+    },
+    "drawn_position_error_m": 0,
+    "drawn_rotation_error_deg": 0,
+    "stand_probe_while_isolated": {
+     "asset_id": "",
+     "reason_code": "NO_ASSET",
+     "isolatedAsset": "realsense_overhead"
+    },
+    "stand_probe_after_isolation_off": {
+     "asset_id": "object_01",
+     "reason_code": "NO_MATCHING_DATUM",
+     "isolatedAsset": ""
+    }
+   },
+   "isolated_table": {
+    "isolated_asset": "support_surface_table",
+    "pick": {
+     "valid": true,
+     "asset_id": "support_surface_table",
+     "datum": "surface",
+     "reason_code": "MATCHED",
+     "plane_distance_m": 0.0003000001311302186,
+     "normal_angle_deg": 0
+    },
+    "note": "ur5_2f_test table has no generated (reparented) visual; reparented table covered by the harness"
+   }
+  },
+  "reopen": {
+   "result": "PASS",
+   "process_exit": 0,
+   "relations_match_disk": true,
+   "camera_rpy": [
+    0,
+    1.5707963267948966,
+    0.26179938779914935
+   ],
+   "web3d_selected_rpy": {
+    "x": 0,
+    "y": 1.5707963267948966,
+    "z": 0.26179938779914935
+   },
+   "layout_clean_and_environment_unchanged_after_inspection": true,
+   "isolated_compound_camera": {
+    "camera_rpy": [
+     0,
+     1.5707963267948966,
+     0.26179938779914935
+    ],
+    "xyz_order_error_deg": 21.182822269620377,
+    "isolated_asset": "realsense_overhead",
+    "camera_body_pick": {
+     "asset_id": "realsense_overhead",
+     "reason_code": "NO_PLANE_DATUMS",
+     "geometry": "surface",
+     "geometry_source": "mesh \u00b7 package://realsense2_description/meshes/d435.dae",
+     "object_pose_world": [
+      0.3215951598841334,
+      -0.22424381886860573,
+      1.2491000005006792,
+      0,
+      1.5707963267948966,
+      0.26179938779914935
+     ],
+     "normal_local": [
+      0.6512643147703154,
+      -0.758850913745563,
+      0.0002881219803102398
+     ]
+    },
+    "drawn_position_error_m": 0,
+    "drawn_rotation_error_deg": 0,
+    "stand_probe_while_isolated": {
+     "asset_id": "",
+     "reason_code": "NO_ASSET",
+     "isolatedAsset": "realsense_overhead"
+    },
+    "stand_probe_after_isolation_off": {
+     "asset_id": "object_01",
+     "reason_code": "NO_MATCHING_DATUM",
+     "isolatedAsset": ""
+    }
+   }
+  },
+  "native_scene3d": {
+   "result": "PASS",
+   "process_exit": 0
+  },
+  "saved_camera_relation": {
+   "pose_xyz": [
+    0.3215951598841334,
+    -0.22424381886860573,
+    1.2491000005006792
+   ],
+   "pose_rpy": [
+    0,
+    1.5707963267948966,
+    0.26179938779914935
+   ],
+   "parent_object": "object_01",
+   "parent_link": "top",
+   "origin": {
+    "x": 0.15,
+    "y": 0.09,
+    "z": 0.05,
+    "roll": 0.0,
+    "pitch": 1.5707963267948966,
+    "yaw": -0.0
+   }
+  }
+ },
+ "harness_production_render_pick_path": {
+  "fixture": "scratch ur5_2f_test copy with camera (0, pi/2, 15 deg) and table yaw 20 deg, exported by the repository exporter; generated table visual CONSTRUCTED (ur5_2f_test exports none)",
+  "combined_result": "PASS",
+  "camera_isolation": {
+   "kept": 3,
+   "hidden": 4
+  },
+  "table_isolation": {
+   "kept": 4,
+   "hidden": 3
+  },
+  "restored_exactly": true,
+  "pre_hidden_root_stays_hidden": true,
+  "table_ray_while_camera_isolated": {
+   "asset_id": "",
+   "geometry_source": "no hit"
+  },
+  "camera_pick": {
+   "asset_id": "realsense_overhead",
+   "geometry_source": "urdf_visual_16_camera_link_visual_16_package_realsense2_description_meshes_d435_dae_physical_mesh \u00b7 package://realsense2_description/meshes/d435.dae",
+   "object_pose_world": [
+    0.40000000000000013,
+    -0.36004294887185107,
+    0.8499999999999998,
+    0,
+    1.5707963267948966,
+    0.2617993877991494
+   ]
+  },
+  "table_pick": {
+   "asset_id": "support_surface_table",
+   "geometry_source": "fixture_generated_table_top_visual_physical_mesh \u00b7 package://workbench_description/meshes/visual/table.stl",
+   "object_pose_world": [
+    0.7106668243408203,
+    -0.2,
+    -0.0008999994993209839,
+    0,
+    0,
+    0.34906585039886584
+   ]
+  },
+  "editor_select": [
+   "realsense_overhead",
+   "support_surface_table"
+  ],
+  "selected_camera_rpy": {
+   "x": 0,
+   "y": 1.5707963267948966,
+   "z": 0.2617993877991494
+  },
+  "drawn_errors": {
+   "camera_owner_drawn_rotation_error_rad": 3.986091072867591e-17,
+   "camera_visual_drawn_rotation_error_rad": 4.749649238197451e-16,
+   "camera_visual_drawn_position_error_m": 0,
+   "table_visual_drawn_rotation_error_rad": 0,
+   "table_visual_drawn_position_error_m": 0
+  },
+  "pr3206_alone": "FAIL: camera isolated: D435 visual must stay visible",
+  "pr3207_alone": "FAIL: camera owner drawn 0.3697 rad (21.18 deg) from authored"
+ },
+ "tests": {
+  "base_abe5781d": "85 failed / 452 passed (39 files)",
+  "integration": "83 failed / 457 passed / 1 skipped",
+  "new_failures": [],
+  "stale_bundle": "current"
+ }
+}

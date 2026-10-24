@@ -23,6 +23,7 @@
 #include <QLabel>
 #include <QString>
 #include <QJsonObject>
+#include <QVariant>
 #include <QMap>
 #include <QSet>
 #include <QLineEdit>
@@ -46,6 +47,8 @@ namespace fs = boost::filesystem;
 
 namespace workcell_builder {
 struct WorkcellStudioCanvasModel;
+class MateToolController;
+class MateToolPanel;
 }
 
 QT_BEGIN_NAMESPACE
@@ -375,6 +378,28 @@ private:
   bool commit_mounting_request(QJsonObject request);
   void apply_mounting_snapshot(const QVector<ScenePreviewWidget::PreviewItem> & snapshot);
   void edit_selected_mounting();
+  // Visual Mate tool (R3.2): pick faces in 3D, preview, apply via the mounting resolver.
+  void begin_visual_mate();
+  void end_visual_mate(bool applied, const QString & message);
+  void push_mate_overlay();
+  void cancel_mate_for_other_cell(int scene_index);
+  void handle_embedded_mate_state(const QVariantMap & mate);
+  void notify_mate_scene_changed();
+  bool mate_active() const;
+  QString mate_backend_note() const;
+  workcell_builder::MateToolController * mate_controller_{nullptr};
+  workcell_builder::MateToolPanel * mate_panel_{nullptr};
+  QPushButton * scene_builder_mate_button_{nullptr};
+  QPushButton * inspector_mate_button_{nullptr};
+  bool mate_selection_passthrough_{false};
+  bool mate_web_supported_{false};
+  QString mate_scene_path_;
+  qint64 mate_seen_pick_seq_{0};
+  qint64 mate_seen_hover_seq_{0};
+  qint64 mate_seen_cancel_seq_{0};
+  qint64 mate_overlay_sent_ms_{0};
+  QJsonObject mate_last_pick_evidence_;
+  bool mate_scene_change_pending_{false};
   void refresh_mount_relation_context();
   QString mount_relation_text_for(const QString & id) const;
   void apply_selection_transform_from_editor();

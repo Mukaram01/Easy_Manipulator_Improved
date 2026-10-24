@@ -1,0 +1,117 @@
+{
+  "schema": "web3d_ros_rpy_acceptance/v1",
+  "scene": "ur5_2f_test",
+  "harness": "workcell_builder --visual-mate-acceptance (compound-pose steps after Scenario B and in --reopen)",
+  "fake_hardware_only": true,
+  "execution_goals_sent": 0,
+  "robot_motion_commanded": false,
+  "compound_pose": "realsense_overhead pitched 90 deg on the camera stand turned 15 deg",
+  "before_xyz_viewer": {
+    "viewer": "abe5781d viewer.js/bundle and exporter",
+    "result": "FAIL",
+    "failed_step": "Compound pose: camera face click is drawn as authored, not a stale view",
+    "failure": "compound camera pose refused as a stale view: The 3D view draws realsense_overhead 0.0 mm and 21.18\u00b0 away from its authored pose (the view may still be refreshing, or it cannot draw this orientation exactly). Pick its datum marker instead, or wait and pick again.",
+    "D_camera_rpy": [
+      0,
+      1.5707963267948966,
+      0.2617993877991494
+    ],
+    "D_camera_xyz_order_error_deg": 21.182822269620377,
+    "D_drawn_position_error_m": 0,
+    "D_drawn_rotation_error_deg": 21.182822269620377,
+    "pick": {
+      "valid": false,
+      "reason_code": "STALE_VIEW",
+      "reason": "The 3D view draws realsense_overhead 0.0 mm and 21.18\u00b0 away from its authored pose (the view may still be refreshing, or it cannot draw this orientation exactly). Pick its datum marker instead, or wait and pick again.",
+      "asset_id": "realsense_overhead",
+      "normal_local": [
+        0,
+        0,
+        0
+      ],
+      "raw": {
+        "geometry": "surface",
+        "geometry_source": "mesh \u00b7 package://realsense2_description/meshes/d435.dae",
+        "triangle_index": 25391,
+        "point_world": [
+          0.33234849973374614,
+          -0.20177300709573665,
+          1.238640808623093
+        ],
+        "object_pose_world": [
+          0.3215951598841334,
+          -0.22424381886860573,
+          1.25,
+          1.5707963267948957,
+          1.3089969389957479,
+          1.5707963267948957
+        ]
+      }
+    },
+    "process_exit": 139
+  },
+  "after_ros_rpy_viewer": {
+    "result": "PASS",
+    "D_camera_rpy": [
+      0,
+      1.5707963267948966,
+      0.2617993877991494
+    ],
+    "D_camera_xyz_order_error_deg": 21.182822269620377,
+    "D_drawn_position_error_m": 0,
+    "D_drawn_rotation_error_deg": 0,
+    "pick": {
+      "valid": false,
+      "reason_code": "NO_PLANE_DATUMS",
+      "reason": "realsense_overhead has no verified mounting surfaces (no plane datums). Pick one of its datum markers or choose a datum manually.",
+      "asset_id": "realsense_overhead",
+      "normal_local": [
+        -1.6042995010498085e-16,
+        -1.1102230246251565e-16,
+        1.0000000000000002
+      ],
+      "raw": {
+        "geometry": "surface",
+        "geometry_source": "mesh \u00b7 package://realsense2_description/meshes/d435.dae",
+        "triangle_index": 81982,
+        "point_world": [
+          0.3254684863901161,
+          -0.20091225181821878,
+          1.2384726243985928
+        ],
+        "object_pose_world": [
+          0.3215951598841334,
+          -0.22424381886860573,
+          1.25,
+          0,
+          1.5707963267948966,
+          0.2617993877991494
+        ]
+      }
+    },
+    "process_exit": 0
+  },
+  "reopen": {
+    "result": "PASS",
+    "relations_match_disk": true,
+    "reopen_camera_rpy": [
+      0,
+      1.5707963267948966,
+      0.26179938779914935
+    ],
+    "reopen_camera_xyz_order_error_deg": 21.182822269620377,
+    "reopen_camera_web3d_rpy": {
+      "x": 0,
+      "y": 1.5707963267948966,
+      "z": 0.26179938779914935
+    },
+    "layout_dirty_after_selection": false,
+    "process_exit": 0
+  },
+  "native_scene3d": {
+    "result": "PASS",
+    "backend": "native_scene3d",
+    "process_exit": 0
+  },
+  "exported_payload_final_transform_mismatches": []
+}

@@ -1,0 +1,148 @@
+{
+    "backend": "native_scene3d",
+    "baseline_environment_sha256": "e3ea1f594b4df72fa55e1bf62ca92df1fcb5d75c470a2cab18b9ea3e2534bc21",
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "hierarchy_context_menu": [
+        "Rename",
+        "Duplicate",
+        "Remove from Scene",
+        "Focus",
+        "Properties",
+        "Mate by Picking Faces…",
+        "Mount To / Relative Pose…"
+    ],
+    "native_applied_flush": {
+        "gap_m": -1.951563910473908e-18,
+        "normal_dot": -1
+    },
+    "native_backend_note": "Face picking is not available in the native Scene3D fallback view: its picking only knows bounding boxes, not faces. Click a part in the 3D view or the Scene Hierarchy, then choose its datum from the list.",
+    "native_preview": {
+        "child_summary": "Destination Bin moves 0.9 mm to X 0.4500 · Y 0.2200 · Z 0.0991 m, roll 0.0° · pitch 0.0° · yaw 0.0°.",
+        "error": "",
+        "followers": [
+            "place_zone_default (destination zone, keeps its target-local placement)"
+        ],
+        "moved": [
+            {
+                "display_name": "Destination Bin",
+                "id": "target_bin_default",
+                "moved_m": 0.0008999994993209859,
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "turned_rad": 0,
+                "xyz": [
+                    0.45,
+                    0.22000000000000003,
+                    0.09910000050067902
+                ]
+            }
+        ],
+        "ok": true,
+        "request": {
+            "alignment": "flush",
+            "child_datum": "bottom",
+            "id": "target_bin_default",
+            "parent_link": "surface",
+            "parent_object": "support_surface_table",
+            "relative_pose": {
+                "rpy": [
+                    0,
+                    0,
+                    0
+                ],
+                "xyz": [
+                    -0.2606668243408203,
+                    0.42000000000000004,
+                    0
+                ]
+            }
+        }
+    },
+    "native_relation": "{parent_object: support_surface_table, parent_link: surface, joint_type: fixed, origin: {x: -0.2606668243408203, y: 0.42000000000000004, z: 0, roll: 0.0, pitch: 0.0, yaw: 0.0}, mounting_anchors: {bottom: {pose_xyz: [0.0, 0.0, -0.1], pose_rpy: [3.141592653589793, 0.0, 0.0], datum_type: plane, label: Bottom face (normal points down), source: catalog:bin_standard}}, mate: {child_datum: bottom, alignment: flush}}",
+    "requested_window_size": [
+        1366,
+        768
+    ],
+    "result": "PASS",
+    "robot_motion_commanded": false,
+    "scene_path": "/home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+    "screenshots": [
+        "native_01_preview",
+        "native_02_applied"
+    ],
+    "stand": "object_01",
+    "steps": [
+        "load cell",
+        "wait for the 3D view",
+        "baseline and entry points",
+        "stand saved; refresh the Product View",
+        "stand drawn",
+        "Scenario A: start Mate from the toolbar",
+        "Native: honest fallback, hierarchy and datum lists"
+    ],
+    "studio_log_tail": "nerated_urdf_visual active_visual_source=mesh_preview\nUR5_FINAL_APPEND_CHECK missing=[base_link_inertia,shoulder_link,upper_arm_link,forearm_link,wrist_1_link,wrist_2_link,wrist_3_link]\nUR5_FINAL_APPEND final_required_count=0\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/build/workcell_studio_web_scene/ur5_2f_test.web_scene.json\nScene load: scene=ur5_2f_test source=builder_revision:3 navigation=2 type=asset_discovery hash=64cd6b08293f content={\"items\":9}\nScene load: scene=ur5_2f_test source=builder_revision:3 navigation=2 type=visual_mesh_index hash=e51081dda5e5 content={\"mesh_items\":4,\"warnings\":6}\nScene load: scene=ur5_2f_test source=builder_revision:3 navigation=2 type=package_resolution hash=16b03b69c69f content={\"unresolved_packages\":0}\nScene3D final viewport audit for ur5_2f_test: {\"added_required_ur5_link_count\":0,\"excluded_non_visual_ur5_links\":[\"base_link_inertia: inertial-only/non-visual unless present as real final draw row\"],\"missing_required_visible_ur5_links\":[\"wrist_3_link\",\"upper_arm_link\",\"forearm_link\",\"wrist_1_link\",\"wrist_2_link\",\"shoulder_link\"],\"rendered_camera_count\":0,\"rendered_robotiq_link_count\":0,\"rendered_table_count\":0,\"rendered_ur5_link_count\":0,\"rendered_ur5_link_records\":[],\"required_ur5_visibility_blocker\":\"\"}\nPreview warning: ur5_2f_test retained visual rows missing after loader filtering: final visible viewport/renderable UR5 links missing=[wrist_3_link,upper_arm_link,forearm_link,wrist_1_link,wrist_2_link,shoulder_link]\nScene3D full payload committed: scene=ur5_2f_test total=9 visible=9 mesh=4 locked=4\nScene3D canvas: scene=ur5_2f_test received=12 cached=12 visible=12 rendered=12 selectable=12 mesh=4 fallback=0 locked=6 skipped=0\nScene3D: editable=5, mesh=4, generated=4, fallback=0, missing=0, locked=6 | Scene3D warnings: extraction_mode=unknown, safe_for_preview=false, missing_mesh=0, unresolved_package_uri=0, unsupported_extension=0, stale_or_absolute_only_mesh_index=0 | Editable layout: 5 items. Preview fallback: 3 items loaded from scene metadata. Metadata warnings: 1.\nBackup before write created: /home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml.20261023_171337_132.bak.yaml\nSave reconciliation: id=pick_zone_main session_xyz=[0.40000000000000002,-0.20000000000000001,0.29999999999999999] canvas_before=[0.40000000000000002,-0.20000000000000001,0.29999999999999999]\nSave reconciliation: id=realsense_overhead session_xyz=[0.40000000000000013,-0.36004294887185107,0.84999999999999976] canvas_before=[0.40000000000000013,-0.36004294887185107,0.84999999999999976]\nSave reconciliation: id=support_surface_table session_xyz=[0.71066682434082029,-0.20000000000000001,-0.00089999949932098393] canvas_before=[0.71066682434082029,-0.20000000000000001,-0.00089999949932098393]\nSave reconciliation: id=target_bin_default session_xyz=[0.45000000000000001,0.22,0.10000000000000001] canvas_before=[0.45000000000000001,0.22,0.10000000000000001]\nSave reconciliation: id=object_01 session_xyz=[0.14999999999999999,-0.34999999999999998,0.59999999999999998] canvas_before=[0.14999999999999999,-0.34999999999999998,0.59999999999999998]\nInspector transform saved: scene=ur5_2f_test id=support_surface_table path=/home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=target_bin_default path=/home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=realsense_overhead path=/home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=pick_zone_main path=/home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nInspector transform saved: scene=ur5_2f_test id=object_01 path=/home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nSave Layout persistence verified: 5 editable item(s), stable IDs, metadata, and transforms match the atomic YAML write.\nSave Layout persisted authored YAML only; generated collision/scene artifacts remain stale until explicit Generate/Validate.\nSave committed physical assets, camera and semantic zones into environment.yaml.\nSaved scene layout metadata to /home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/layout/workcell_studio_layout.yaml\nSave Layout: serialized 5 editable layout item(s) to canonical layout only; no task/generated/plan_preview directories or runtime/ROS artifacts were bootstrapped.\nSave Layout: live authored session retained without Product View regeneration (selection id='object_01').\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=ur5_2f_test id=object_01 editable=true locked=false source_layer=editable_layout\nSelected item: object_01 (unknown) type=object source=/home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl editable=true locked=false\nLoaded 17 scenes from /home/user/wcs-r32-datum-ws/src/easy_manipulation_deployment/scenes\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=ur5_2f_test id=target_bin_default editable=true locked=false source_layer=editable_layout\nSelected item: target_bin_default (unknown) type=place_target_bin source=editable_layout editable=true locked=false\nMate tool started for ur5_2f_test (hierarchy and datum lists).\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=ur5_2f_test id=support_surface_table editable=true locked=false source_layer=editable_layout\nSelected item: support_surface_table (unknown) type=support_surface_table source=editable_layout editable=true locked=false\nScene3D diagnostic: active robot-preview selection-owner contract unavailable; category fallback was not used: /home/user/wcs-r32-native-ws/src/easy_manipulation_deployment/build/workcell_studio_web_scene/ur5_2f_test.web_scene.json\nScene load: scene=ur5_2f_test source=builder_revision:4 navigation=2 type=asset_discovery hash=64cd6b08293f content={\"items\":9}\nScene load: scene=ur5_2f_test source=builder_revision:4 navigation=2 type=visual_mesh_index hash=e51081dda5e5 content={\"mesh_items\":4,\"warnings\":6}\nScene load: scene=ur5_2f_test source=builder_revision:4 navigation=2 type=package_resolution hash=16b03b69c69f content={\"unresolved_packages\":0}\nScene3D final viewport audit for ur5_2f_test: {\"added_required_ur5_link_count\":0,\"excluded_non_visual_ur5_links\":[\"base_link_inertia: inertial-only/non-visual unless present as real final draw row\"],\"missing_required_visible_ur5_links\":[\"wrist_3_link\",\"upper_arm_link\",\"forearm_link\",\"wrist_1_link\",\"wrist_2_link\",\"shoulder_link\"],\"rendered_camera_count\":0,\"rendered_robotiq_link_count\":0,\"rendered_table_count\":0,\"rendered_ur5_link_count\":0,\"rendered_ur5_link_records\":[],\"required_ur5_visibility_blocker\":\"\"}\nPreview warning: ur5_2f_test retained visual rows missing after loader filtering: final visible viewport/renderable UR5 links missing=[wrist_3_link,upper_arm_link,forearm_link,wrist_1_link,wrist_2_link,shoulder_link]\nMate: Mated Destination Bin (bottom) flush on Industrial Workbench (surface).\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=ur5_2f_test id=target_bin_default editable=true locked=false source_layer=editable_layout\nSelected item: target_bin_default (unknown) type=place_target_bin source=editable_layout editable=true locked=false",
+    "toolbar": [
+        {
+            "name": "sceneBuilderModeSelect",
+            "needs": 55,
+            "text": "Select",
+            "width": 61
+        },
+        {
+            "name": "sceneBuilderModeMove",
+            "needs": 48,
+            "text": "Move",
+            "width": 56
+        },
+        {
+            "name": "sceneBuilderModeRotate",
+            "needs": 56,
+            "text": "Rotate",
+            "width": 64
+        },
+        {
+            "name": "sceneBuilderToolbarAddObject",
+            "needs": 82,
+            "text": "Add Object",
+            "width": 93
+        },
+        {
+            "name": "sceneBuilderToolbarFit",
+            "needs": 31,
+            "text": "Fit",
+            "width": 39
+        },
+        {
+            "name": "sceneBuilderToolbarMate",
+            "needs": 46,
+            "text": "Mate",
+            "width": 54
+        },
+        {
+            "name": "sceneBuilderToolbarUndo",
+            "needs": 34,
+            "text": "",
+            "width": 34
+        },
+        {
+            "name": "sceneBuilderToolbarRedo",
+            "needs": 34,
+            "text": "",
+            "width": 34
+        },
+        {
+            "name": "sceneBuilderToolbarSave",
+            "needs": 86,
+            "text": "Save Layout",
+            "width": 97
+        }
+    ],
+    "window_size": [
+        1366,
+        768
+    ]
+}

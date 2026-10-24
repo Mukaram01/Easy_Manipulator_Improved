@@ -265,3 +265,27 @@ TEST(AssetLibraryModel, DiscoveryRefreshDoesNotDuplicateImportedManifestEntry)
   EXPECT_EQ(count_id(first), 1);
   EXPECT_EQ(count_id(second), 1);
 }
+
+TEST(AssetLibraryModel, CameraStandsAreFixturesNotSecondCameras)
+{
+  const fs::path repo = make_tmp_dir("repo_camera_mounts");
+  const fs::path ws = make_tmp_dir("ws_camera_mounts");
+  write_text(repo / "assets" / "environment" / "camera_stand_description" / "meshes" / "camera_stand.stl", "solid s\nendsolid s\n");
+  write_text(repo / "assets" / "environment" / "realsense2_description" / "meshes" / "d435.dae", "<COLLADA/>\n");
+  const AssetCatalogModel model = discover_asset_catalog(ws.string(), repo.string(), std::string());
+  bool stand = false, camera = false;
+  for (const auto & entry : model.assets) {
+    if (entry.path.find("camera_stand.stl") != std::string::npos) {
+      stand = true;
+      EXPECT_EQ(entry.category, "environment_object");
+      ASSERT_FALSE(entry.role_hints.empty());
+      EXPECT_EQ(entry.role_hints.front(), "fixture");
+    }
+    if (entry.path.find("d435.dae") != std::string::npos) {
+      camera = true;
+      EXPECT_EQ(entry.category, "camera_sensor");
+    }
+  }
+  EXPECT_TRUE(stand);
+  EXPECT_TRUE(camera);
+}

@@ -215,7 +215,13 @@ add_executable(workcell_builder
     src_rviz_preview_runner.cpp
     src_visual_mesh_source_resolver.cpp
     include/rviz_preview_runner.hpp
-    include/visual_mesh_source_resolver.hpp)
+    include/visual_mesh_source_resolver.hpp
+    include/mate_pick.hpp
+    src_mate_pick.cpp
+    gui/mate_tool_controller.cpp
+    gui/mate_tool_controller.hpp
+    gui/mate_tool_panel.cpp
+    gui/mate_tool_panel.hpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
@@ -516,6 +522,21 @@ if(BUILD_TESTING)
   if(TARGET workcell_datum_mating_text_test)
     target_include_directories(workcell_datum_mating_text_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
     target_link_libraries(workcell_datum_mating_text_test Qt5::Core yaml-cpp)
+  endif()
+  ament_add_gtest(workcell_mate_pick_test test/mate_pick_test.cpp src_mate_pick.cpp)
+  if(TARGET workcell_mate_pick_test)
+    target_include_directories(workcell_mate_pick_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_mate_pick_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_mate_tool_controller_test test/mate_tool_controller_test.cpp
+    gui/mate_tool_controller.cpp gui/mate_tool_controller.hpp src_mate_pick.cpp)
+  if(TARGET workcell_mate_tool_controller_test)
+    set_target_properties(workcell_mate_tool_controller_test PROPERTIES AUTOMOC ON)
+    target_include_directories(workcell_mate_tool_controller_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_compile_definitions(workcell_mate_tool_controller_test PRIVATE
+      WORKCELL_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    target_link_libraries(workcell_mate_tool_controller_test Qt5::Core)
   endif()
   ament_add_gtest(workcell_inspector_spin_config_test test/inspector_spin_config_test.cpp)
   if(TARGET workcell_inspector_spin_config_test)
@@ -884,6 +905,8 @@ if(BUILD_TESTING)
     save_projection_failure_test.cpp
     datum_mating_text_test.cpp
     teardown_connections_test.cpp
+    mate_pick_test.cpp
+    mate_tool_controller_test.cpp
     support_contact_policy_test.cpp
   )
   ament_add_gtest(workcell_studio_log_issue_tracker_test
@@ -936,6 +959,7 @@ install(PROGRAMS
   scripts/publish_sample_epd_snapshot.py
   scripts/epd_to_workcell_snapshot_node.py
   ../../scripts/task_intent_authoring.py
+  ../../scripts/simulation_batch_preview.py
   ../../scripts/task_intent_v2.py
   ../../scripts/task_intent_resolver.py
   ../../scripts/validate_builder_task_intent.py

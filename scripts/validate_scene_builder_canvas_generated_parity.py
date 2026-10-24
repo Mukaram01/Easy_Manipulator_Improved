@@ -206,8 +206,8 @@ def _final_transform_mismatches(scene_dir: Path, payload_path: Path | None = Non
         if item.get("mesh") != canonical.get("mesh"):
             mismatches.append({"asset_id": item["id"], "reason": "editor mesh differs from authoritative environment.yaml"})
     def viewer_matrix(pose):
-        from export_workcell_studio_web_scene_impl import _rpy_xyz_matrix
-        rotation = _rpy_xyz_matrix(pose["rpy"])
+        from export_workcell_studio_web_scene_impl import _ros_rpy_matrix
+        rotation = _ros_rpy_matrix(pose["rpy"])
         return [rotation[r] + [pose["xyz"][r]] for r in range(3)] + [[0, 0, 0, 1]]
     owners = {str(item.get("id")): item for item in payload.get("ui_selection_owners", [])}
     def matrix(row, runtime=False):
