@@ -1182,6 +1182,7 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
         'plan_segment':plan,'scene_now':lambda:'scene','action':record('hold-action'),'stage':record('stage'),
         'execute_client':'execute','ExecuteTrajectory':SimpleNamespace(Goal=lambda trajectory:trajectory),
         'label':'ATTACH','time':__import__('time'),
+        'tool':SimpleNamespace(planning_group='tool_group'),
         'hold_profile':SimpleNamespace(method='opposing_contact',hold_reserve_rad=.002,
             contact_verified=lambda touch,measured:set(touch)<=set(measured),evidence=lambda:{'capability_id':'test'})}
     tree=ast.parse(SCRIPT.read_text())
@@ -1201,7 +1202,7 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
         assert summary['stationary_retention']['duration_sim_ns']>=1_000_000_000
         assert calls.index('admission')<calls.index('stop')<calls.index('establish')<calls.index('hold')<calls.index('retention')
         assert calls.index('stop')<calls.index('hold-plan')<calls.index('hold-action')<calls.index('establish')
-        assert holds==[('COMMISSION_GRASP_HOLD',{'gripper_finger1_joint':pytest.approx(.5868)},'gripper')]
+        assert holds==[('COMMISSION_GRASP_HOLD',{'gripper_finger1_joint':pytest.approx(.5868)},'tool_group')]   # group from the tool interface
         assert summary['grasp_hold']['hold_command_rad']==pytest.approx(.5868) and summary['grasp_hold']['certified_close_rad']==.5949
         assert summary['grasp_hold']['profile']=={'capability_id':'test'} and summary['grasp_hold']['reserve_rad']==.002
         assert calls.count('establish')==1 and calls.count('admission')==1
@@ -1786,10 +1787,37 @@ def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_meas
     assert "contact_guard.retention_policy=args.retention_policy" in source
     assert "a recorded retention policy applies to the full-cycle functional validation only" in source
     boundary=source[source.index("measurements = Measurements(node,args.simulator_receipt,"):source.index("capture_model = CaptureModel(")]
-    assert "hold_profile = load_hold_profile(contract.get('end_effector_capability'))" in boundary
+    assert "hold_profile = load_hold_profile(contract.get('end_effector_capability'),\n" in boundary
+    assert "variant=contract.get('end_effector_hold_variant'))" in boundary
     assert "summary['end_effector_hold'] = verify_hold_binding(hold_profile, measurements.receipt)" in boundary
     release=source[source.index("if step['stage']=='PREPLAN_OPEN_GRIPPER' and summary.get('grasp_hold'):"):
                    source.index("result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)")]
-    assert "plan_segment(scene_now(),label,open_goal,group='gripper')" in release      # same goal, actual start
+    assert "plan_segment(scene_now(),label,open_goal,group=tool.planning_group)" in release      # same goal, actual start
     assert "start_deviation_rad']>.01" in release and "abs(live_goal[n]-open_goal[n])>1e-4+1e-12" in release
     assert "tolerance_above=0.0001, tolerance_below=0.0001" in source       # the planner's own goal tolerance
+
+
+def test_tool_interface_and_live_revalidation_gate_every_run_before_planning():
+    source=SCRIPT.read_text()
+    preflight=source[source.index("contract = _PLANNER.load_grasp_contract(package)"):source.index("cell = yaml.safe_load((package/'cell_definition.yaml').read_text())")]
+    assert "tool = interface_from_contract(contract)" in preflight and "summary['tool_interface'] = tool.evidence()" in preflight
+    boundary=source[source.index("contract['robot_model_sha256'] = sha256("):source.index("summary['trajectory_execution_enabled'] = params[1].bool_value")]
+    assert "revalidate_against_description(" in boundary and "srdf_xml=semantic or None" in boundary
+    assert "touch_links=contract['allowed_touch_links']" in boundary and "tcp_link=contract['grasp_frame']" in boundary
+    assert "raise RuntimeError('TOOL_REVALIDATION_FAILED: '" in boundary
+    # No tool-specific joint or group literal remains in the executor.
+    assert "gripper_finger1_joint=0.0" not in source and "group='gripper'" not in source
+    assert "group != tool.planning_group" in source and "dict(home, **tool.release_goal())" in source
+
+
+def test_keep_level_transport_is_a_path_constraint_on_the_free_transfer_pose_only():
+    source=SCRIPT.read_text()
+    guard=source[source.index("if transport_tilt_tolerance_rad is not None and ("):source.index("if closure_clearance is not None and (")]
+    assert "name != 'PREPLAN_TRANSFER' or isinstance(goal, dict) or straight or cartesian_corridor is not None" in guard
+    assert "TRANSPORT_POLICY_CONTEXT" in guard
+    constraint=source[source.index("if transport_tilt_tolerance_rad is not None:\n            # Keep the carried payload level"):
+                      source.index("goal_msg = MoveGroup.Goal(request=request)")]
+    assert "abs(tool_axis[2]) < math.cos(transport_tilt_tolerance_rad)" in constraint        # vertical approach axis only
+    assert "TRANSPORT_KEEP_LEVEL_UNSUPPORTED" in constraint
+    assert "request.path_constraints.orientation_constraints = [keep_level_constraint(" in constraint
+    assert "{'transport_tilt_tolerance_rad': transport_tilt_tolerance_rad}" in source       # recorded in plan metadata

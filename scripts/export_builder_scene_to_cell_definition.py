@@ -483,6 +483,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
             "id": ee_id,
             "name": ee_name,
             "capability": ee_env.get("capability") or ee_meta.get("capability_id"),
+            **({"hold_variant": ee_env["hold_variant"]} if ee_env.get("hold_variant") else {}),
             "type": ee_env.get("type") or ee_meta.get("family") or "custom",
             "grasp_frame": ee_env.get("grasp_frame", ee_env.get("base_link", "tool0")),
             "parent_link": ee_parent_link,
@@ -558,6 +559,11 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         warnings.append("Robot capability is unknown; review required before runtime commissioning.")
     if robot_meta.get("preview_only"):
         warnings.append("Selected robot is preview_only; runtime execution remains blocked.")
+
+    # Authored motion policy (e.g. transport_policy/v1) passes through unchanged; the
+    # grasp contract validates it, so an invalid policy fails planning, not export.
+    if isinstance(env.get('motion_policy'), dict):
+        cell_def['motion_policy'] = env['motion_policy']
 
     profile_id = env.get('workcell_studio', {}).get('recommended_profile')
     if profile_id:

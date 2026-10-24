@@ -55,9 +55,38 @@ end_effector:
     actuation:
       kind: single_actuated_joint
       grasp_force_range_n: [20, 235]    # Robotiq 2F-85 specification
-      commanded_grasp_force_n: 20
+      commanded_grasp_force_n: 20       # = the default force variant below
+      # Stage-A experimental force settings (LENLEG 2026-10-24, 15-run functional report). Neither is
+      # qualified as reliable or universally suitable; a cell selects one with end_effector.hold_variant.
+      default_force_variant: stage_a_20n
+      force_variants:
+        stage_a_20n:
+          commanded_grasp_force_n: 20
+          status: experimental
+          evidence: "LENLEG 2026-10-24 functional batch force20: 0/5 complete; 3 lost in transfer, 2 seated then a pad unloaded"
+        stage_a_90n:
+          commanded_grasp_force_n: 90.4
+          status: experimental
+          evidence: "LENLEG 2026-10-24 functional batches force90/force90b: 2/10 sequences complete, 1 functional pass, 0 strict"
       pad_force_per_actuator_torque:
         n_per_nm: 8.94                  # measured 90.4 N @ 10.114 N m, 39.6 N @ 4.474, 20.0 N @ 2.237 (linear within 1 %)
         measured_closure_rad: 0.5848
         evidence: LENLEG 2026-10-24 transmitted joint wrenches, stage_a1_finish_lenleg_hold_full4 and targeted stationary runs force40_st1 / force20_st1
     release: open_until_clear
+  # How the task pipeline drives this tool (end_effector_interface/v1). Values are the Robotiq
+  # 2F-85 description's own (robotiq_85_description): gripper_finger1_joint 0..0.804 rad, group
+  # "gripper" in robotiq_85_moveit_config, fingertip links carry collision meshes.
+  interface:
+    schema: end_effector_interface/v1
+    kind: joint_position
+    grasp_capabilities: [two_finger_parallel]
+    planning_group: gripper
+    command_joints: [gripper_finger1_joint]
+    open_positions_rad: {gripper_finger1_joint: 0.0}
+    closure:
+      closed_position_rad: 0.804
+      search_steps: 80
+    max_aperture_m: 0.085
+    touch_links: [gripper_finger1_finger_tip_link, gripper_finger2_finger_tip_link]
+    tcp_link: ee_palm
+    recovery: {strategy: stop_and_require_operator, release_outside_destination: false}

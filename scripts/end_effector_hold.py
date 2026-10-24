@@ -102,6 +102,7 @@ def _actuation_errors(actuation):
         errors.append("Field 'actuation.commanded_grasp_force_n' must be a positive number.")
     elif span is not None and not span[0] <= commanded <= span[1]:
         errors.append("Field 'actuation.commanded_grasp_force_n' must lie within grasp_force_range_n.")
+    errors.extend(_variant_errors(actuation, span))
     mapping = actuation.get('pad_force_per_actuator_torque')
     if not isinstance(mapping, dict):
         errors.append("Field 'actuation.pad_force_per_actuator_torque' must be a mapping/object.")
@@ -112,6 +113,35 @@ def _actuation_errors(actuation):
             errors.append("Field 'pad_force_per_actuator_torque.measured_closure_rad' must be numeric.")
         if not isinstance(mapping.get('evidence'), str) or not mapping['evidence'].strip():
             errors.append("Field 'pad_force_per_actuator_torque.evidence' must name the measurement.")
+    return errors
+
+
+VARIANT_STATUSES = ('experimental', 'qualified')
+
+
+def _variant_errors(actuation, span):
+    """Named force settings a cell may select; the top-level force must equal the default's."""
+    variants = actuation.get('force_variants')
+    if variants is None:
+        return [] if actuation.get('default_force_variant') is None else \
+            ["Field 'actuation.default_force_variant' needs force_variants."]
+    if not isinstance(variants, dict) or not variants:
+        return ["Field 'actuation.force_variants' must be a non-empty mapping."]
+    errors = []
+    for name, variant in variants.items():
+        force = variant.get('commanded_grasp_force_n') if isinstance(variant, dict) else None
+        if not _positive(force) or (span is not None and not span[0] <= force <= span[1]):
+            errors.append(f"Force variant {name!r} needs a commanded_grasp_force_n within grasp_force_range_n.")
+        if not isinstance(variant, dict) or variant.get('status') not in VARIANT_STATUSES:
+            errors.append(f"Force variant {name!r} status must be one of {list(VARIANT_STATUSES)}.")
+        if not isinstance(variant, dict) or not isinstance(variant.get('evidence'), str) or not variant['evidence'].strip():
+            errors.append(f"Force variant {name!r} must name its evidence.")
+    default = actuation.get('default_force_variant')
+    if default not in variants:
+        errors.append("Field 'actuation.default_force_variant' must name one of force_variants.")
+    elif isinstance(variants[default], dict) and \
+            variants[default].get('commanded_grasp_force_n') != actuation.get('commanded_grasp_force_n'):
+        errors.append("Field 'actuation.commanded_grasp_force_n' must equal the default force variant's.")
     return errors
 
 
@@ -144,6 +174,8 @@ class HoldProfile:
     min_contact_links: int | None = None      # None: every contact link of the cell
     actuation: dict | None = None
     vacuum: dict | None = None
+    force_variant: str | None = None          # selected named force setting, when the record declares them
+    force_variant_status: str | None = None
 
     def required_contact_links(self, touch_links, measured):
         """Contact links a verified hold must keep, given the measured set."""
@@ -180,13 +212,14 @@ class HoldProfile:
                           commanded_grasp_force_n=self.expected_pad_force_n(),
                           grasp_force_range_n=list(self.actuation['grasp_force_range_n']),
                           pad_force_per_actuator_torque=dict(self.actuation['pad_force_per_actuator_torque']),
-                          simulated_actuator_effort_nm=self.simulated_actuator_effort_nm())
+                          simulated_actuator_effort_nm=self.simulated_actuator_effort_nm(),
+                          force_variant=self.force_variant, force_variant_status=self.force_variant_status)
         else:
             record.update(vacuum=dict(self.vacuum))
         return record
 
 
-def profile_from_record(capability_id, payload, path, raw):
+def profile_from_record(capability_id, payload, path, raw, variant=None):
     errors = hold_block_errors(payload)
     if errors:
         raise HoldProfileError(f'{capability_id}: ' + ' '.join(errors))
@@ -194,15 +227,27 @@ def profile_from_record(capability_id, payload, path, raw):
     if hold is None:
         raise HoldProfileError(f'{capability_id}: capability record declares no hold profile')
     minimum = hold.get('contact_verification', {}).get('min_contact_links') if hold['method'] in CONTACT_METHODS else None
+    actuation = dict(hold['actuation']) if hold['method'] in CONTACT_METHODS else None
+    selected = status = None
+    variants = (actuation or {}).get('force_variants')
+    if variant is not None and not variants:
+        raise HoldProfileError(f'HOLD_FORCE_VARIANT_UNKNOWN: {capability_id} declares no force variants')
+    if variants:
+        selected = variant if variant is not None else actuation['default_force_variant']
+        if selected not in variants:
+            raise HoldProfileError(f'HOLD_FORCE_VARIANT_UNKNOWN: {capability_id} has no force variant {selected!r}')
+        actuation['commanded_grasp_force_n'] = variants[selected]['commanded_grasp_force_n']
+        status = variants[selected]['status']
     return HoldProfile(capability_id=capability_id, family=payload['family'], method=hold['method'], path=str(path),
                        sha256=hashlib.sha256(raw).hexdigest(), release=hold['release'],
                        hold_reserve_rad=float(hold['hold_reserve_rad']) if hold['method'] in CONTACT_METHODS else None,
                        min_contact_links=None if minimum in (None, 'all') else int(minimum),
-                       actuation=dict(hold['actuation']) if hold['method'] in CONTACT_METHODS else None,
-                       vacuum=dict(hold['vacuum']) if hold['method'] == 'vacuum_seal' else None)
+                       actuation=actuation,
+                       vacuum=dict(hold['vacuum']) if hold['method'] == 'vacuum_seal' else None,
+                       force_variant=selected, force_variant_status=status)
 
 
-def load_hold_profile(capability_id, capabilities_dir=None):
+def load_hold_profile(capability_id, capabilities_dir=None, variant=None):
     """The hold profile of one catalog capability id; fails closed when unbound."""
     if not isinstance(capability_id, str) or not capability_id.strip():
         raise HoldProfileError('HOLD_PROFILE_REQUIRED: the cell binds no end-effector capability')
@@ -210,18 +255,21 @@ def load_hold_profile(capability_id, capabilities_dir=None):
     record = load_capability_registry(Path(capabilities_dir) if capabilities_dir else None).get(capability_id)
     if record is None:
         raise HoldProfileError(f'HOLD_PROFILE_REQUIRED: unknown end-effector capability {capability_id!r}')
-    return profile_from_record(capability_id, record.payload, record.path, Path(record.path).read_bytes())
+    return profile_from_record(capability_id, record.payload, record.path, Path(record.path).read_bytes(), variant)
 
 
 def load_cell_hold_profile(cell_definition_path, capabilities_dir=None):
-    """The hold profile bound by a cell definition, or None when the cell binds no capability."""
+    """The hold profile bound by a cell definition, or None when the cell binds no capability.
+
+    ``end_effector.hold_variant`` selects a named force setting; absent, the record's default.
+    """
     import yaml
     cell = yaml.safe_load(Path(cell_definition_path).read_text(encoding='utf-8')) or {}
     end_effector = cell.get('end_effector') if isinstance(cell.get('end_effector'), dict) else {}
     capability = end_effector.get('capability')
     if capability is None:
         return None
-    return load_hold_profile(capability, capabilities_dir)
+    return load_hold_profile(capability, capabilities_dir, end_effector.get('hold_variant'))
 
 
 def bind_actuation(root, command_joints, profile):
@@ -254,7 +302,7 @@ def bind_actuation(root, command_joints, profile):
                 actuated_joint=actuated[0], source_effort_nm=source, derived_effort_nm=derived,
                 commanded_grasp_force_n=profile.expected_pad_force_n(),
                 pad_force_per_actuator_torque_n_per_nm=profile.actuation['pad_force_per_actuator_torque']['n_per_nm'],
-                hold_reserve_rad=profile.hold_reserve_rad)
+                hold_reserve_rad=profile.hold_reserve_rad, force_variant=profile.force_variant)
 
 
 def bind_source_description(xml, profile):
@@ -289,6 +337,7 @@ def verify_hold_binding(profile, receipt):
     derived = binding.get('derived_effort_nm')
     if (binding.get('capability_id') != profile.capability_id or binding.get('sha256') != profile.sha256 or
             binding.get('method') != profile.method or binding.get('hold_reserve_rad') != profile.hold_reserve_rad or
+            binding.get('force_variant') != profile.force_variant or
             not _positive(derived) or expected is None or abs(derived - expected) > 1e-9 * max(1., abs(expected))):
         raise RuntimeError('HOLD_PROFILE_BINDING_MISMATCH: simulator was derived from a different hold profile')
     return dict(profile=profile.evidence(), receipt_binding=dict(binding))

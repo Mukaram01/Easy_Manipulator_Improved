@@ -52,7 +52,7 @@ GATES=("resolve","cancel","telemetry","stationary","contact-release","full-cycle
 RUN_SCOPES={"full":"STAGE_A_ACCEPTANCE_SEQUENCE","targeted":"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE",
             "fast":"DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE","functional":"FUNCTIONAL_VALIDATION_NOT_STAGE_A_ACCEPTANCE"}
 # Run settings whose silent defaults change what the evidence means.
-INVOCATION_SETTINGS=("world_profile","search_timeout","segment_planning_time")
+INVOCATION_SETTINGS=("world_profile","search_timeout","segment_planning_time","motion_policy")
 # First-reply service retries (perceived_object_grasp_execute.SERVICE_RETRY_ALLOWANCE_S):
 # 11 clients x 2 retries x 10 s may precede or interleave the search in every session.
 SERVICE_RETRY_ALLOWANCE_S=220
@@ -74,7 +74,8 @@ REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-
 FAST_TEST_FILES=(
     "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
-    "tests/test_end_effector_hold.py",
+    "tests/test_end_effector_hold.py","tests/test_end_effector_selection.py",
+    "tests/test_tool_interface.py","tests/test_transport_policy.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
     "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
     "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",
@@ -336,10 +337,19 @@ def discover_source_world(explicit:Path|None,workspace:Path,profile:str="pile")-
     raise RuntimeError("pristine Stage-A world not found on this workstation; checked: "+checked)
 
 
-def prepare_scene(repo:Path,destination:Path,class_id:str)->Path:
-    """Materialize the tracked canonical cell into the exact Stage-A task policy."""
+def prepare_scene(repo:Path,destination:Path,class_id:str,motion_policy:dict|None=None)->Path:
+    """Materialize the tracked canonical cell into the exact Stage-A task policy.
+
+    ``motion_policy`` (opt-in) is authored into the copy's environment.yaml, the
+    same place a cell author writes it; the tracked scene is never modified.
+    """
     source=repo/"scenes/ur5_2f_test"
     shutil.copytree(source,destination)
+    if motion_policy is not None:
+        environment_path=destination/"environment.yaml"
+        authored=yaml.safe_load(environment_path.read_text())
+        authored["motion_policy"]=motion_policy
+        environment_path.write_text(yaml.safe_dump(authored,sort_keys=False))
     # export_scene's existing validator resolves the strategy catalog relative
     # to the scene parent; provide the tracked catalog there rather than
     # weakening validation or teaching commissioning a second lookup rule.
@@ -627,7 +637,9 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
     session=args.output/f"{index:02d}-{gate}"
     if session.exists():raise RuntimeError(f"refusing to reuse evidence directory {session}")
     session.mkdir(parents=True)
-    scene=prepare_scene(repo,session/"ur5_2f_test",args.class_id)
+    policy=getattr(args,"motion_policy_document",None)
+    scene=(prepare_scene(repo,session/"ur5_2f_test",args.class_id) if policy is None else
+           prepare_scene(repo,session/"ur5_2f_test",args.class_id,policy))
     runtime=session/"runtime";receipt=runtime/"receipt.json";observations=session/"parts.yaml"
     domain=args.base_domain+index-1
     if not 1<=domain<=232:raise RuntimeError("ROS domain range exhausted")
@@ -759,6 +771,9 @@ def main(argv=None):
     parser.add_argument("--partition-prefix",default="stage_a1_finish")
     parser.add_argument("--class-id",default="part")
     parser.add_argument("--segment-planning-time",type=float,default=3.0)
+    parser.add_argument("--motion-policy",type=Path,
+        help="opt-in YAML motion policy (e.g. a transport_policy/v1 'transport' block) authored into the session's "
+             "scene copy; validated before any session starts")
     parser.add_argument("--search-timeout",type=float,default=300.,
         help="Bounded candidate search time in seconds, including continuous collision certification")
     parser.add_argument("--through",choices=GATES,
@@ -784,12 +799,25 @@ def main(argv=None):
     probe=copy.deepcopy(parser);probe.set_defaults(**{key:unset for key in INVOCATION_SETTINGS})
     explicit=vars(probe.parse_args(argv))
     invocation={"argv":argv,"defaulted":sorted(key for key in INVOCATION_SETTINGS if explicit[key] is unset),
-                "effective":{key:getattr(args,key) for key in INVOCATION_SETTINGS}}
+                "effective":{key:(str(getattr(args,key)) if isinstance(getattr(args,key),Path) else getattr(args,key))
+                             for key in INVOCATION_SETTINGS}}
 
     repo=Path(__file__).resolve().parents[1];workspace=repo.parent.parent
     args.output=args.output.resolve()
     if args.output.exists():parser.error("choose a new output directory")
     if not 0<args.segment_planning_time<=10:parser.error("segment planning time must be in (0,10]")
+    args.motion_policy_document=None
+    if args.motion_policy is not None:
+        sys.path.insert(0,str(repo/"scripts"))
+        from transport_policy import TransportPolicyError,parse_transport_policy
+        try:
+            document=yaml.safe_load(args.motion_policy.read_text())
+            if not isinstance(document,dict) or set(document)!={"transport"}:
+                raise TransportPolicyError("a motion policy file holds exactly one 'transport' block")
+            parse_transport_policy(document["transport"])
+        except (OSError,yaml.YAMLError,TransportPolicyError) as exc:
+            parser.error(f"invalid --motion-policy: {exc}")
+        args.motion_policy_document=document
     if not math.isfinite(args.search_timeout) or args.search_timeout<=0:
         parser.error("search timeout must be finite and positive")
     if args.mode=="full":

@@ -71,6 +71,15 @@ def load_grasp_contract(scene_package):
     links = end_effector.get("allowed_touch_links")
     if not isinstance(links, list) or not links or any(not isinstance(v, str) or not v for v in links):
         raise ValueError(f"{source}: allowed_touch_links must designate contact links")
+    # A cell that binds an end-effector capability gets that tool's interface; a cell
+    # that binds none keeps the legacy two-finger values (tool_interface.LEGACY_TWO_FINGER).
+    tool_interface = None
+    if end_effector.get("capability"):
+        from tool_interface import load_tool_interface
+        tool_interface = load_tool_interface(end_effector["capability"]).as_contract()
+    # Authored carried-payload transport (transport_policy/v1); absent keeps free transfer.
+    from transport_policy import parse_transport_policy
+    transport = parse_transport_policy((cell.get("motion_policy") or {}).get("transport"))
     return {
         "approach_distance_m": float(distances[0]),
         "retreat_distance_m": float(distances[1]),
@@ -78,6 +87,9 @@ def load_grasp_contract(scene_package):
         "tcp_pose": list(tcp_xyz) + quaternion_from_rpy(tcp_rpy),
         "allowed_touch_links": list(dict.fromkeys(links)),
         "end_effector_capability": end_effector.get("capability"),
+        "end_effector_hold_variant": end_effector.get("hold_variant"),
+        "tool_interface": tool_interface,
+        "transport_policy": transport.as_contract() if transport is not None else None,
         "geometric_qualification": end_effector.get("geometric_qualification"),
         "tool_link": cell["robot"]["tool_link"],
         "grasp_frame": end_effector["grasp_frame"],

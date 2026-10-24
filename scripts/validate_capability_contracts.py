@@ -361,6 +361,11 @@ def validate_contract(contract: dict[str, Any], strict: bool = False) -> tuple[l
             sys.path.insert(0, str(Path(__file__).resolve().parent))
             from end_effector_hold import hold_block_errors
             errors.extend(hold_block_errors(ee))
+        if "interface" in ee:
+            import sys
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from tool_interface import interface_block_errors
+            errors.extend(interface_block_errors(ee))
 
     elif kind == "sensor":
         sensor = contract.get("sensor")

@@ -25,3 +25,11 @@ end_effector:
       effective_area_mm2: 8500
       simulator_support: none
     release: staged_zone_release
+  interface:
+    schema: end_effector_interface/v1
+    kind: io_signal
+    grasp_capabilities: [suction]
+    signals: {engage: vacuum_zone_a, release: vacuum_zone_a, feedback: vacuum_zone_a, release_mode: deassert}
+    touch_links: [cup_1, cup_2, cup_3, cup_4]
+    tcp_link: array_center
+    recovery: {strategy: stop_and_require_operator, release_outside_destination: false}
