@@ -9,6 +9,8 @@
 #include <ignition/gazebo/components/Joint.hh>
 #include <ignition/gazebo/components/JointPosition.hh>
 #include <ignition/gazebo/components/JointVelocity.hh>
+#include <ignition/gazebo/components/JointAxis.hh>
+#include <ignition/gazebo/components/JointTransmittedWrench.hh>
 #include <ignition/gazebo/components/Link.hh>
 #include <ignition/gazebo/components/Model.hh>
 #include <ignition/plugin/Register.hh>
@@ -56,6 +58,9 @@ class SimulatorMeasurements: public sim::System, public sim::ISystemConfigure,
    ecm.Each<c::Joint>([&](const sim::Entity& e,const c::Joint*) {
      if(!ecm.Component<c::JointPosition>(e))ecm.CreateComponent(e,c::JointPosition());
      if(!ecm.Component<c::JointVelocity>(e))ecm.CreateComponent(e,c::JointVelocity());
+     // Read-only: the Physics system only fills this component (actuator/contact
+     // load evidence for grasp retention); nothing reads it back into the step.
+     if(!ecm.Component<c::JointTransmittedWrench>(e))ecm.CreateComponent(e,c::JointTransmittedWrench());
      return true;
    });
  }
@@ -104,6 +109,18 @@ class SimulatorMeasurements: public sim::System, public sim::ISystemConfigure,
    first=true;out<<"},\"joints\":{";
    ecm.Each<c::Joint,c::JointPosition,c::JointVelocity>([&](const sim::Entity& e,const c::Joint*,const c::JointPosition* p,const c::JointVelocity* v){
      if(p->Data().size()==1 && v->Data().size()==1){if(!first)out<<",";first=false;out<<std::quoted(name(e))<<":["<<p->Data()[0]<<","<<v->Data()[0]<<"]";}return true;
+   });
+   // Transmitted wrench in the joint frame and its torque about the joint axis.
+   first=true;out<<"},\"joint_wrenches\":{";
+   ecm.Each<c::Joint,c::JointTransmittedWrench>([&](const sim::Entity& e,const c::Joint*,const c::JointTransmittedWrench* w){
+     const auto& f=w->Data().force();const auto& t=w->Data().torque();
+     double axis_torque=0.;
+     if(const auto* axis=ecm.Component<c::JointAxis>(e)) {
+       const auto u=axis->Data().Xyz().Normalized();axis_torque=t.x()*u.X()+t.y()*u.Y()+t.z()*u.Z();
+     }
+     if(!first)out<<",";first=false;
+     out<<std::quoted(name(e))<<":["<<f.x()<<","<<f.y()<<","<<f.z()<<","<<t.x()<<","<<t.y()<<","<<t.z()<<","<<axis_torque<<"]";
+     return true;
    });
    first=true;out<<"},\"contacts\":[";
    std::set<std::pair<uint64_t,uint64_t>> seen;
