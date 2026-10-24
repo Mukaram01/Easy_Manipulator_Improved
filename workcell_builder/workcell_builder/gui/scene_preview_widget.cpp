@@ -1,4 +1,5 @@
 #include "scene_preview_widget.h"
+#include "live_mesh_staging.hpp"
 // Compatibility token for static tests: Preview selection cleared after refresh (id missing):
 
 #include <QRectF>
@@ -3125,13 +3126,14 @@ void ScenePreviewWidget::arm_embedded_asset_placement(
   const QString & asset_id, const QString & mesh_uri, double mesh_scale, bool persistent)
 {
   if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
-  QString browser_mesh_uri = mesh_uri.trimmed();
-  const QFileInfo mesh_info(browser_mesh_uri);
-  const QString repo_root = preview_context_.absolute_repo_root.trimmed();
-  if (mesh_info.isAbsolute() && !repo_root.isEmpty()) {
-    const QString relative = QDir(repo_root).relativeFilePath(mesh_info.absoluteFilePath());
-    browser_mesh_uri = relative.startsWith(QStringLiteral("../"))
-      ? QString() : QDir::cleanPath(relative);
+  // The ghost needs loaded geometry before a click can commit, so a library
+  // mesh is staged exactly as for the placed live item.
+  const auto staging = workcell_builder::stage_live_authoring_mesh(
+    preview_context_.absolute_repo_root, preview_context_.absolute_scene_dir, preview_context_.scene_id, mesh_uri);
+  const QString browser_mesh_uri = staging.uri;
+  if (!staging.ok() && !mesh_uri.trimmed().isEmpty()) {
+    emit studio_log_requested(QStringLiteral("Product View: placement preview of %1 is a placeholder (%2): %3")
+      .arg(asset_id, staging.status, staging.reason));
   }
   const QJsonObject options{
     {QStringLiteral("persistent"), persistent},
@@ -3303,6 +3305,33 @@ void ScenePreviewWidget::set_authoring_item_metadata(
   run_embedded_editor_command(script);
 }
 
+QJsonObject ScenePreviewWidget::live_authoring_item_payload(const PreviewItem & item)
+{
+  QString mesh_source = item.mesh_path.trimmed();
+  if (mesh_source.isEmpty()) mesh_source = item.source_path.trimmed();
+  const auto staging = workcell_builder::stage_live_authoring_mesh(
+    preview_context_.absolute_repo_root, preview_context_.absolute_scene_dir, preview_context_.scene_id, mesh_source);
+  const QFileInfo mesh_info(mesh_source);
+  if (mesh_info.isAbsolute() && mesh_info.isFile() && !preview_context_.absolute_repo_root.isEmpty()) {
+    const QString relative = QDir(preview_context_.absolute_repo_root).relativeFilePath(mesh_info.absoluteFilePath());
+    if (!relative.startsWith(QStringLiteral("../"))) mesh_source = QDir::cleanPath(relative);
+  }
+  QJsonObject live_item = authoring_overlay_item(item, mesh_source);
+  if (!mesh_source.isEmpty()) live_item.insert(QStringLiteral("mesh_staging_status"), staging.status);
+  if (staging.ok()) {
+    live_item.insert(QStringLiteral("mesh_uri"), staging.uri);
+    if (staging.status == QStringLiteral("staged")) {
+      emit studio_log_requested(QStringLiteral("Product View: staged the mesh of live item %1 for Web3D: %2 -> %3")
+        .arg(item.id, mesh_source, staging.uri));
+    }
+  } else if (!mesh_source.isEmpty()) {
+    live_item.insert(QStringLiteral("mesh_resolve_warning"), staging.reason);
+    emit studio_log_requested(QStringLiteral("Product View: live item %1 is drawn as a placeholder (%2): %3")
+      .arg(item.id, staging.status, staging.reason));
+  }
+  return live_item;
+}
+
 void ScenePreviewWidget::add_authoring_item(const PreviewItem & item)
 {
   const QString stable_id = item.id.trimmed();
@@ -3316,22 +3345,8 @@ void ScenePreviewWidget::add_authoring_item(const PreviewItem & item)
   }
   if (!replaced) preview_items_.push_back(item);
   if (!embedded_web_authoring_active()) return;
-  QString mesh_source = item.mesh_path.trimmed();
-  if (mesh_source.isEmpty()) mesh_source = item.source_path.trimmed();
-  const QFileInfo mesh_info(mesh_source);
-  if (mesh_info.isAbsolute() && mesh_info.isFile() && !preview_context_.absolute_repo_root.isEmpty()) {
-    const QString relative = QDir(preview_context_.absolute_repo_root).relativeFilePath(mesh_info.absoluteFilePath());
-    if (!relative.startsWith(QStringLiteral("../"))) mesh_source = QDir::cleanPath(relative);
-  }
-  QJsonObject live_item = authoring_overlay_item(item, mesh_source);
-  if (mesh_source.startsWith(QStringLiteral("assets/")) ||
-      mesh_source.startsWith(QStringLiteral("scenes/")) ||
-      mesh_source.startsWith(QStringLiteral("workcell_studio_web/")) ||
-      mesh_source.startsWith(QStringLiteral("build/workcell_studio_web_scene/assets/"))) {
-    live_item.insert(QStringLiteral("mesh_uri"), mesh_source);
-  }
   const QString payload = QString::fromUtf8(
-    QJsonDocument(live_item).toJson(QJsonDocument::Compact));
+    QJsonDocument(live_authoring_item_payload(item)).toJson(QJsonDocument::Compact));
   run_embedded_editor_command(QStringLiteral(
     "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
     "return a&&typeof a.addItem==='function'?a.addItem(%1):{error:'missing_addItem'};})()")
@@ -3352,22 +3367,8 @@ void ScenePreviewWidget::duplicate_authoring_item(
   }
   if (!replaced) preview_items_.push_back(item);
   if (!embedded_web_authoring_active()) return;
-  QString mesh_source = item.mesh_path.trimmed();
-  if (mesh_source.isEmpty()) mesh_source = item.source_path.trimmed();
-  const QFileInfo mesh_info(mesh_source);
-  if (mesh_info.isAbsolute() && mesh_info.isFile() && !preview_context_.absolute_repo_root.isEmpty()) {
-    const QString relative = QDir(preview_context_.absolute_repo_root).relativeFilePath(mesh_info.absoluteFilePath());
-    if (!relative.startsWith(QStringLiteral("../"))) mesh_source = QDir::cleanPath(relative);
-  }
-  QJsonObject live_item = authoring_overlay_item(item, mesh_source);
-  if (mesh_source.startsWith(QStringLiteral("assets/")) ||
-      mesh_source.startsWith(QStringLiteral("scenes/")) ||
-      mesh_source.startsWith(QStringLiteral("workcell_studio_web/")) ||
-      mesh_source.startsWith(QStringLiteral("build/workcell_studio_web_scene/assets/"))) {
-    live_item.insert(QStringLiteral("mesh_uri"), mesh_source);
-  }
   const QString payload = QString::fromUtf8(
-    QJsonDocument(live_item).toJson(QJsonDocument::Compact));
+    QJsonDocument(live_authoring_item_payload(item)).toJson(QJsonDocument::Compact));
   const QString encoded_source = QString::fromUtf8(
     QJsonDocument(QJsonArray{source_id}).toJson(QJsonDocument::Compact)).mid(1).chopped(1);
   run_embedded_editor_command(QStringLiteral(
