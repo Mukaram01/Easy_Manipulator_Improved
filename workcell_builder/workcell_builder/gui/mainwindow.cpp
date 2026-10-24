@@ -21,6 +21,10 @@
 #include "readiness_pack_command.hpp"
 #include "save_projection_failure.hpp"
 #include "datum_mating_text.hpp"
+#include "teardown_connections.hpp"
+#include "mate_pick.hpp"
+#include "mate_tool_controller.hpp"
+#include "mate_tool_panel.hpp"
 #include "gui/web_edit_policy.hpp"
 #include "gui/semantic_role_edit.hpp"
 #include "studio_page_navigation.hpp"
@@ -168,6 +172,7 @@
 #include "include/default_asset_paths.h"
 #include "include/workcell_directory_inspection.h"
 #include "workcell_studio_scene_browser.hpp"
+#include "epd_detection_readiness_model.hpp"
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
 #include "embedded_web_edit_save_controller.hpp"
@@ -2065,6 +2070,7 @@ bool MainWindow::open_scene_builder_for_scene_index(
   // Navigation happens before editor ownership changes. Home callbacks are
   // therefore inactive before the canonical editor refresh begins.
   show_studio_page(StudioPage::SceneBuilderPage);
+  cancel_mate_for_other_cell(scene_index);
   selected_scene_index_ = scene_index;
   try {
     refresh_scene_builder_selection_state_ui();
@@ -2953,6 +2959,8 @@ void MainWindow::setup_studio_shell()
     });
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_authoring_context_menu_requested,
     this, &MainWindow::show_canvas_context_menu);
+  connect(scene_preview_widget_, &ScenePreviewWidget::embedded_mate_state_reported,
+    this, &MainWindow::handle_embedded_mate_state);
   scene_preview_widget_->catalog_asset_drag_enter_cb = [this](const QString & asset_id) {
     const auto match = std::find_if(asset_catalog_entries_.cbegin(), asset_catalog_entries_.cend(),
       [&asset_id](const AssetCatalogEntry & entry) { return entry.asset_id == asset_id; });
@@ -3076,6 +3084,15 @@ void MainWindow::setup_studio_shell()
   operator_preview_button_->setToolTip(scene_builder_action("operate.operator_preview")->toolTip());
   connect(operator_preview_button_, &QPushButton::clicked, this, [this]() { open_operator_preview(); });
   primary_controls->addWidget(operator_preview_button_);
+  scene_builder_mate_button_ = new QPushButton("Mate", scene_builder);
+  scene_builder_mate_button_->setObjectName("sceneBuilderToolbarMate");
+  scene_builder_mate_button_->setCheckable(true);
+  scene_builder_mate_button_->setToolTip("Mate (CAD-style): click a face of the part to move, then the face it should sit on; "
+    "preview, choose Flush or Coincident, Apply. Esc cancels. Nothing changes until Apply.");
+  connect(scene_builder_mate_button_, &QPushButton::clicked, this, [this](bool) {
+    if (mate_active()) mate_controller_->cancel(); else begin_visual_mate();
+  });
+  primary_controls->addWidget(scene_builder_mate_button_);
   primary_controls->addStretch(1);
   place_mode_persistent_box_ = new QCheckBox("Keep placing", scene_builder);
   place_mode_persistent_box_->setChecked(false);
@@ -3177,7 +3194,9 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_button_->setText("Panels & Tools");
   scene_builder_secondary_overflow_button_->setPopupMode(QToolButton::InstantPopup);
   scene_builder_secondary_overflow_menu_ = new QMenu(scene_builder_secondary_overflow_button_);
-  auto * keep_placing_action = new QWidgetAction(scene_builder_secondary_overflow_menu_);
+  // Owned by the window: the overflow menu is cleared and rebuilt, and a
+  // menu-owned action would delete place_mode_persistent_box_ with it.
+  auto * keep_placing_action = new QWidgetAction(this);
   keep_placing_action->setDefaultWidget(place_mode_persistent_box_);
   auto * snap_menu_action = canvas_more_menu->menuAction();
   snap_menu_action->setText("Snap");
@@ -3497,6 +3516,25 @@ void MainWindow::setup_studio_shell()
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
   ar_layout->addWidget(new QLabel("<b>Perception Status</b>"));
   approach_retreat_details_label_ = new QLabel("Camera: unknown\nFrame: unknown\nFOV: unknown\nRange: unknown\nPick coverage: unknown\nDetection mode: Not Configured\nDetection status: Waiting for live nodes\nDetails: Perception preview unavailable until mode/config is selected.\nModes: Live EPD / RealSense | Saved EPD Snapshot | Simulated / Manual | Not Configured\nStatuses: Configured | Missing metadata | Preview only | Waiting for live nodes\nDetection count: 0\nWarnings: no camera item found | no pick source found | camera frame unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
+  epd_readiness_label_ = new QLabel("EPD readiness: UNKNOWN", ar_card);
+  epd_readiness_label_->setObjectName("epdReadinessStatusLabel");
+  epd_readiness_label_->setWordWrap(true);
+  ar_layout->addWidget(epd_readiness_label_);
+  epd_readiness_table_ = new QTableWidget(0, 7, ar_card);
+  epd_readiness_table_->setObjectName("epdReadinessTable");
+  epd_readiness_table_->setHorizontalHeaderLabels(
+    {"Class", "Conf", "Track", "State", "Position (m)", "Orientation", "Reason"});
+  epd_readiness_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  epd_readiness_table_->setSelectionMode(QAbstractItemView::NoSelection);
+  epd_readiness_table_->verticalHeader()->setVisible(false);
+  epd_readiness_table_->horizontalHeader()->setStretchLastSection(true);
+  epd_readiness_table_->setMinimumHeight(140);
+  ar_layout->addWidget(epd_readiness_table_);
+  // Poll the monitor artifact on the GUI thread; no ROS executor runs inside Builder.
+  epd_readiness_timer_ = new QTimer(this);
+  epd_readiness_timer_->setInterval(1000);
+  connect(epd_readiness_timer_, &QTimer::timeout, this, &MainWindow::refresh_epd_readiness_panel);
+  epd_readiness_timer_->start();
   auto * task_diagnostics = new QGroupBox("Advanced task diagnostics", workflow_tab);
   task_diagnostics->setCheckable(true); task_diagnostics->setChecked(false);
   auto * task_diagnostics_layout = new QVBoxLayout(task_diagnostics);
@@ -3545,6 +3583,12 @@ void MainWindow::setup_studio_shell()
   mounting_button->setToolTip("Mount this asset to another asset: align one of its datums (origin, point, axis or plane) "
     "with a parent datum, coincident or flush, with an offset. Reparent and detach preserve its world pose.");
   selected_item_card_layout->addWidget(mounting_button);
+  inspector_mate_button_ = new QPushButton("Mate by Picking Faces…", scene_builder);
+  inspector_mate_button_->setObjectName("sceneBuilderMateTool");
+  inspector_mate_button_->setToolTip("Place this asset by its faces: click its mounting face, then the face it should sit on, "
+    "check the preview and Apply. Uses the same relation as Mount To.");
+  selected_item_card_layout->addWidget(inspector_mate_button_);
+  connect(inspector_mate_button_, &QPushButton::clicked, this, &MainWindow::begin_visual_mate);
   inspector_mount_relation_label_ = new QLabel(scene_builder);
   inspector_mount_relation_label_->setObjectName("sceneBuilderMountRelation");
   inspector_mount_relation_label_->setWordWrap(true);
@@ -3637,6 +3681,35 @@ void MainWindow::setup_studio_shell()
   scene_builder_inspector_tabs_->addTab(workflow_tab, "Task");
   scene_builder_inspector_tabs_->addTab(readiness_tab, "Checks");
   inspector_scroll_layout->addWidget(scene_builder_inspector_tabs_);
+  {
+    // Visual Mate tool: the resolver hooks are the same ones Mount To uses.
+    workcell_builder::MateToolController::Hooks hooks;
+    hooks.run_resolver = [this](const QJsonObject & request) { return run_mounting_request(request); };
+    hooks.commit = [this](const QJsonObject & request) { return commit_mounting_request(request); };
+    hooks.current_items = [this]() { return mounting_items(); };
+    hooks.display_name = [this](const QString & id) {
+      for (const auto & p : all_scene_preview_items_) if (p.id == id) return p.display_name;
+      return QString();
+    };
+    hooks.zones_following = [this](const QString & id) {
+      QStringList zones;
+      for (const auto & p : all_scene_preview_items_) if (!p.target_ref.isEmpty() && p.target_ref == id) zones << p.display_name;
+      return zones;
+    };
+    mate_controller_ = new workcell_builder::MateToolController(hooks, this);
+    mate_panel_ = new workcell_builder::MateToolPanel(mate_controller_, inspector_scroll_contents);
+    mate_panel_->hide();
+    inspector_scroll_layout->insertWidget(0, mate_panel_);
+    connect(mate_controller_, &workcell_builder::MateToolController::changed, this, &MainWindow::push_mate_overlay);
+    connect(mate_controller_, &workcell_builder::MateToolController::finished, this, &MainWindow::end_visual_mate);
+    connect(mate_panel_, &workcell_builder::MateToolPanel::manual_dialog_requested, this, [this]() {
+      QString asset = mate_controller_->child() ? mate_controller_->child()->asset_id : mate_controller_->pending_asset();
+      if (asset.isEmpty()) asset = current_selected_scene_item_id_;
+      mate_controller_->cancel(QStringLiteral("Mate tool closed; choose the datums in the Mount To dialog. Nothing was applied."));
+      if (!asset.isEmpty()) apply_scene_selection(asset, QString(), false, false);
+      edit_selected_mounting();
+    });
+  }
   inspector_scroll->setWidget(inspector_scroll_contents);
   right_layout->addWidget(inspector_scroll, 1);
   auto * existing = new QWidget(studio_pages_); auto * el=new QVBoxLayout(existing);
@@ -3995,7 +4068,7 @@ void MainWindow::setup_studio_shell()
     }
   }
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
-  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
+  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ if (mate_active()) { mate_controller_->cancel(); return; } set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
   auto * rename_sc = new QShortcut(QKeySequence(Qt::Key_F2), scene_builder);
   rename_sc->setContext(Qt::ApplicationShortcut);
@@ -5465,6 +5538,7 @@ void MainWindow::select_scene_by_row(int row)
       QString::fromStdString(scene_browser_result_.scenes[row].scene_dir.string()))) return;
   const QString previous_scene_path = selected_scene_path();
   if (place_asset_armed_) set_canvas_interaction_mode(CanvasInteractionMode::Select);
+  cancel_mate_for_other_cell(row);
   selected_scene_index_ = row;
   sync_selected_scene_state();
   refresh_selected_scene_metadata_panel();
@@ -5768,6 +5842,10 @@ void MainWindow::open_scene_bundle_export_folder()
 
 MainWindow::~MainWindow()
 {
+  // Child widgets are deleted after every MainWindow member. Destroying the
+  // canvas scene emits selectionChanged for its selected item, which ran
+  // on_canvas_selection_changed() on destroyed members and corrupted the heap.
+  workcell_builder::retire_inbound_connections_from_descendants(this);
   delete ui;
 }
 
@@ -7985,6 +8063,12 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
 
 void MainWindow::apply_scene_selection(const QString & id, const QString & role, bool intentional_clear, bool center_canvas)
 {
+  if (mate_active() && !mate_selection_passthrough_) {
+    // While mating, a hierarchy click or an asset-level viewport click chooses
+    // the part for the current step; it never changes the mate behind its back.
+    if (!id.trimmed().isEmpty()) mate_controller_->hint_asset(id.trimmed());
+    return;
+  }
   sync_selected_scene_state();
   const QString selected_id = id.trimmed();
   const QString selected_role = role.trimmed().isEmpty() ? QStringLiteral("unknown") : role.trimmed();
@@ -8091,7 +8175,10 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     }
   }
 
-  if (scene_preview_widget_) scene_preview_widget_->select_preview_item(selected_id);
+  // The Web3D mate overlay highlights the mate's parts itself; its selection and gizmo stay put.
+  if (scene_preview_widget_ && !(mate_selection_passthrough_ && scene_preview_widget_->embedded_web_authoring_active())) {
+    scene_preview_widget_->select_preview_item(selected_id);
+  }
   selection_update_guard_ = false;
 
   const bool selection_resolved = matched_tree_item || matched_canvas_item || matched_preview_item;
@@ -8138,6 +8225,7 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   layout_dirty_ = true;
   schedule_operator_preview_update();
   layout_saved_ = false;
+  notify_mate_scene_changed();
   validation_stale_ = true;
   launch_artifacts_ready_ = false;
   // Structural edits are native-session authority even when Web3D owns the
@@ -9649,6 +9737,7 @@ void MainWindow::apply_mounting_snapshot(const QVector<ScenePreviewWidget::Previ
   refresh_scene_hierarchy_tree_from_current_items();
   capture_active_editable_layout_session();
   if (scene_preview_widget_ && !scene_preview_widget_->embedded_web_authoring_active()) apply_scene3d_preview_layer_filters(false);
+  notify_mate_scene_changed();
 }
 
 bool MainWindow::commit_mounting_request(QJsonObject request)
@@ -9842,6 +9931,196 @@ void MainWindow::edit_selected_mounting()
     if (commit_mounting_request(build_request())) dialog.accept();
   });
   dialog.exec();
+}
+
+namespace
+{
+
+workcell_builder::MateVec3 mate_vec3(const QVariant & value)
+{
+  const auto list = value.toList();
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  if (list.size() != 3) return {nan, nan, nan};
+  workcell_builder::MateVec3 out{};
+  for (int k = 0; k < 3; ++k) {
+    bool ok = false;
+    out[k] = list[k].toDouble(&ok);
+    if (!ok) out[k] = nan;
+  }
+  return out;
+}
+
+workcell_builder::MateRawPick mate_raw_pick(const QVariantMap & map, const QString & backend)
+{
+  workcell_builder::MateRawPick pick;
+  pick.backend = backend;
+  pick.asset_id = map.value(QStringLiteral("asset_id")).toString();
+  pick.geometry = map.value(QStringLiteral("geometry")).toString() == QStringLiteral("datum_marker")
+    ? workcell_builder::MatePickGeometry::DatumMarker : workcell_builder::MatePickGeometry::Surface;
+  pick.datum_name = map.value(QStringLiteral("datum_name")).toString();
+  pick.point_world = mate_vec3(map.value(QStringLiteral("point_world")));
+  pick.normal_world = mate_vec3(map.value(QStringLiteral("normal_world")));
+  pick.ray_direction_world = mate_vec3(map.value(QStringLiteral("ray_direction_world")));
+  const auto pose = map.value(QStringLiteral("object_pose_world")).toList();
+  if (pose.size() == 6) {
+    pick.has_object_pose = true;
+    for (int k = 0; k < 6; ++k) pick.object_pose_world[k] = pose[k].toDouble();
+  }
+  pick.geometry_source = map.value(QStringLiteral("geometry_source")).toString();
+  pick.triangle_index = map.value(QStringLiteral("triangle_index"), -1).toInt();
+  return pick;
+}
+
+}  // namespace
+
+bool MainWindow::mate_active() const
+{
+  return mate_controller_ && mate_controller_->active();
+}
+
+QString MainWindow::mate_backend_note() const
+{
+  if (!scene_preview_widget_) {
+    return QStringLiteral("No 3D view is available. Choose the parts in the Scene Hierarchy and their datums from the lists.");
+  }
+  if (scene_preview_widget_->embedded_web_authoring_active()) {
+    if (mate_web_supported_) return QString();
+    return QStringLiteral("The loaded Product View cannot pick faces yet (reload the cell). Choose the parts in the Scene "
+      "Hierarchy and their datums from the lists.");
+  }
+  return QStringLiteral("Face picking is not available in the native Scene3D fallback view: its picking only knows "
+    "bounding boxes, not faces. Click a part in the 3D view or the Scene Hierarchy, then choose its datum from the list.");
+}
+
+void MainWindow::begin_visual_mate()
+{
+  if (!mate_controller_ || !mate_panel_) return;
+  if (mate_active()) return;
+  const auto stop = [this](const QString & message) {
+    if (scene_builder_mate_button_) { const QSignalBlocker blocker(scene_builder_mate_button_); scene_builder_mate_button_->setChecked(false); }
+    append_studio_log(message);
+    QMessageBox::information(this, QStringLiteral("Mate"), message);
+  };
+  if (!has_selected_scene()) { stop(QStringLiteral("Open a cell before using Mate.")); return; }
+  mate_scene_path_ = selected_scene_state_.path;
+  mate_last_pick_evidence_ = {};
+  QString error;
+  if (!mate_controller_->begin(current_selected_scene_item_id_, &error)) { stop(error); return; }
+  mate_controller_->set_backend_note(mate_backend_note());
+  apply_scene_builder_panel_visibility(true, true);
+  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->hide();
+  mate_panel_->show();
+  append_studio_log(QStringLiteral("Mate tool started for %1 (%2).").arg(selected_scene_state_.name,
+    mate_backend_note().isEmpty() ? QStringLiteral("face picking in Web3D") : QStringLiteral("hierarchy and datum lists")));
+  push_mate_overlay();
+}
+
+void MainWindow::end_visual_mate(bool applied, const QString & message)
+{
+  if (mate_panel_) mate_panel_->hide();
+  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->show();
+  if (scene_builder_mate_button_) { const QSignalBlocker blocker(scene_builder_mate_button_); scene_builder_mate_button_->setChecked(false); }
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) scene_preview_widget_->clear_mate_overlay();
+  append_studio_log(QStringLiteral("Mate: %1").arg(message));
+  if (applied && !mate_last_pick_evidence_.value("child").toString().isEmpty()) {
+    apply_scene_selection(mate_last_pick_evidence_.value("child").toString(), QString(), false, false);
+  }
+  refresh_selected_item_card();
+}
+
+void MainWindow::cancel_mate_for_other_cell(int scene_index)
+{
+  // Mate belongs to the cell it started in; Apply must never commit into another one.
+  if (mate_active() && scene_index != selected_scene_index_) {
+    mate_controller_->cancel(QStringLiteral("Mate cancelled: another cell was opened. Nothing was applied."));
+  }
+}
+
+void MainWindow::push_mate_overlay()
+{
+  if (!mate_controller_) return;
+  const bool active = mate_controller_->active();
+  if (scene_builder_mate_button_) { const QSignalBlocker blocker(scene_builder_mate_button_); scene_builder_mate_button_->setChecked(active); }
+  if (!active) return;
+  if (mate_scene_path_ != selected_scene_state_.path) {
+    mate_controller_->cancel(QStringLiteral("Mate cancelled: another cell was opened. Nothing was applied."));
+    return;
+  }
+  const auto & child = mate_controller_->child();
+  const auto & parent = mate_controller_->parent();
+  if (child) mate_last_pick_evidence_.insert("child", child->asset_id);
+  // Hierarchy and selection card follow the part of the current step.
+  QString focus = mate_controller_->pending_asset();
+  if (focus.isEmpty()) focus = parent ? parent->asset_id : (child ? child->asset_id : QString());
+  if (!focus.isEmpty() && focus != current_selected_scene_item_id_) {
+    const QScopedValueRollback<bool> passthrough(mate_selection_passthrough_, true);
+    apply_scene_selection(focus, QString(), false, false);
+  }
+  if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()) {
+    scene_preview_widget_->set_mate_overlay(mate_controller_->overlay());
+    mate_overlay_sent_ms_ = QDateTime::currentMSecsSinceEpoch();
+  }
+}
+
+void MainWindow::handle_embedded_mate_state(const QVariantMap & mate)
+{
+  const bool supported = !mate.isEmpty();
+  if (supported != mate_web_supported_) {
+    mate_web_supported_ = supported;
+    if (mate_active()) mate_controller_->set_backend_note(mate_backend_note());
+  }
+  if (!supported) return;
+  const qint64 pick_seq = mate.value(QStringLiteral("seq")).toLongLong();
+  const qint64 hover_seq = mate.value(QStringLiteral("hoverSeq")).toLongLong();
+  const qint64 cancel_seq = mate.value(QStringLiteral("cancelSeq")).toLongLong();
+  if (!mate_active()) {
+    // Ignore anything the viewer recorded outside a mate operation.
+    mate_seen_pick_seq_ = pick_seq; mate_seen_hover_seq_ = hover_seq; mate_seen_cancel_seq_ = cancel_seq;
+    if (mate.value(QStringLiteral("active")).toBool() && scene_preview_widget_) scene_preview_widget_->clear_mate_overlay();
+    return;
+  }
+  // A reloaded viewer counts from zero again: rebase so its next click and Esc are not ignored.
+  const bool viewer_active = mate.value(QStringLiteral("active")).toBool();
+  if (workcell_builder::mate_viewer_counters_rebase({mate_seen_pick_seq_, mate_seen_hover_seq_, mate_seen_cancel_seq_},
+        {pick_seq, hover_seq, cancel_seq}, viewer_active)) {
+    mate_seen_pick_seq_ = pick_seq; mate_seen_hover_seq_ = hover_seq; mate_seen_cancel_seq_ = cancel_seq;
+  }
+  if (!viewer_active) {
+    if (QDateTime::currentMSecsSinceEpoch() - mate_overlay_sent_ms_ > 1000) push_mate_overlay();  // the viewer reloaded its scene; restore the overlay
+    return;
+  }
+  if (cancel_seq > mate_seen_cancel_seq_) {
+    mate_seen_cancel_seq_ = cancel_seq;
+    mate_controller_->cancel();
+    return;
+  }
+  if (pick_seq > mate_seen_pick_seq_) {
+    mate_seen_pick_seq_ = pick_seq;
+    const auto resolution = mate_controller_->pick(mate_raw_pick(mate.value(QStringLiteral("pick")).toMap(), QStringLiteral("embedded_web3d")));
+    append_studio_log(QStringLiteral("Mate pick (%1): %2").arg(resolution.reason_code, resolution.reason));
+  }
+  if (hover_seq > mate_seen_hover_seq_ && scene_preview_widget_ && mate_active()) {
+    mate_seen_hover_seq_ = hover_seq;
+    const auto hover = mate.value(QStringLiteral("hover")).toMap();
+    QJsonObject result{{"seq", hover_seq}};
+    if (!hover.isEmpty()) {
+      const auto r = mate_controller_->hover(mate_raw_pick(hover, QStringLiteral("embedded_web3d")));
+      result = QJsonObject{{"seq", hover_seq}, {"asset_id", r.asset_id}, {"asset_label", mate_controller_->display_name(r.asset_id)},
+        {"datum", r.datum_name}, {"valid", r.valid}, {"label", r.datum_label},
+        {"reason", workcell_builder::MateToolController::short_reason(r)}, {"reason_code", r.reason_code}};
+    }
+    scene_preview_widget_->set_mate_hover_resolution(result);
+  }
+}
+
+void MainWindow::notify_mate_scene_changed()
+{
+  if (!mate_active() || mate_scene_change_pending_) return;
+  mate_scene_change_pending_ = true;
+  QTimer::singleShot(0, this, [this]() {
+    mate_scene_change_pending_ = false;
+    if (mate_active()) mate_controller_->scene_changed();
+  });
 }
 
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
@@ -11207,6 +11486,12 @@ void MainWindow::show_scene_hierarchy_context_menu(const QPoint & position)
   menu.addSeparator();
   auto * focus = menu.addAction(QStringLiteral("Focus"));
   auto * properties = menu.addAction(QStringLiteral("Properties"));
+  menu.addSeparator();
+  auto * mate = menu.addAction(QStringLiteral("Mate by Picking Faces…"));
+  mate->setObjectName(QStringLiteral("contextMenuMate"));
+  mate->setEnabled(editable && !mate_active());
+  auto * mount = menu.addAction(QStringLiteral("Mount To / Relative Pose…"));
+  mount->setEnabled(editable && !mate_active());
 
   QAction * chosen = menu.exec(scene_hierarchy_tree_->viewport()->mapToGlobal(position));
   if (chosen == rename) rename_selected_item();
@@ -11218,6 +11503,10 @@ void MainWindow::show_scene_hierarchy_context_menu(const QPoint & position)
   } else if (chosen == properties) {
     apply_scene_builder_panel_visibility(true, true);
     if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  } else if (chosen == mate) {
+    begin_visual_mate();
+  } else if (chosen == mount) {
+    edit_selected_mounting();
   }
 }
 
@@ -11240,6 +11529,12 @@ void MainWindow::show_canvas_context_menu(const QPoint & global_position)
   menu.addSeparator();
   auto * focus = menu.addAction(QStringLiteral("Focus"));
   auto * properties = menu.addAction(QStringLiteral("Properties"));
+  menu.addSeparator();
+  auto * mate = menu.addAction(QStringLiteral("Mate by Picking Faces…"));
+  mate->setObjectName(QStringLiteral("contextMenuMate"));
+  mate->setEnabled(editable && !mate_active());
+  auto * mount = menu.addAction(QStringLiteral("Mount To / Relative Pose…"));
+  mount->setEnabled(editable && !mate_active());
 
   QAction * chosen = menu.exec(global_position);
   if (chosen == rename) rename_selected_item();
@@ -11251,6 +11546,10 @@ void MainWindow::show_canvas_context_menu(const QPoint & global_position)
   } else if (chosen == properties) {
     apply_scene_builder_panel_visibility(true, true);
     if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
+  } else if (chosen == mate) {
+    begin_visual_mate();
+  } else if (chosen == mount) {
+    edit_selected_mounting();
   }
 }
 
@@ -15995,4 +16294,37 @@ void MainWindow::refresh_run_next_menu(const std::vector<RecommendedWorkflowActi
       trigger_recommended_workflow_action(handler);
     });
   }
+}
+
+void MainWindow::refresh_epd_readiness_panel()
+{
+  if (!epd_readiness_label_ || !epd_readiness_table_) return;
+  const auto view = workcell_builder::load_epd_readiness_view(
+    workcell_builder::epd_readiness_artifact_path(selected_scene_path()),
+    static_cast<double>(QDateTime::currentMSecsSinceEpoch()) / 1000.0);
+  epd_readiness_label_->setText(workcell_builder::format_epd_readiness_summary(view));
+  epd_readiness_table_->setRowCount(view.rows.size());
+  for (int i = 0; i < view.rows.size(); ++i) {
+    const auto & r = view.rows[i];
+    const QString reason = r.reasons.isEmpty() ? r.note : (r.note.isEmpty() ? r.reasons : r.reasons + "; " + r.note);
+    const QStringList cells{
+      r.class_label,
+      r.confidence >= 0.0 ? QString::number(r.confidence, 'f', 2) : QStringLiteral("n/a"),
+      r.track_id.isEmpty() ? QStringLiteral("—") : r.track_id,
+      r.state,
+      workcell_builder::format_epd_readiness_position(r),
+      r.orientation_valid ? QStringLiteral("valid") : QStringLiteral("unavailable"),
+      reason.isEmpty() ? QStringLiteral("—") : reason};
+    for (int c = 0; c < cells.size(); ++c) {
+      auto * item = epd_readiness_table_->item(i, c);
+      if (!item) {
+        item = new QTableWidgetItem;
+        epd_readiness_table_->setItem(i, c, item);
+      }
+      item->setText(cells[c]);
+      item->setToolTip(QString("%1 (%2) track %3\nState: %4\nPosition (camera frame, m): %5\nOrientation: %6\nReason: %7")
+        .arg(cells[0], cells[1], cells[2], cells[3], cells[4], cells[5], cells[6]));
+    }
+  }
+  epd_readiness_table_->resizeColumnsToContents();
 }

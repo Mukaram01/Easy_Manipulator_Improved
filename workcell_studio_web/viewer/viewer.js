@@ -884,7 +884,7 @@ function vector3ToDiagnostics(value) {
   return xyz ? { x: xyz[0], y: xyz[1], z: xyz[2] } : null;
 }
 function quaternionToDiagnostics(q) { return q ? { x: q.x, y: q.y, z: q.z, w: q.w } : null; }
-function eulerToDiagnostics(e) { return e ? { x: e.x, y: e.y, z: e.z, order: e.order || 'XYZ' } : null; }
+function eulerToDiagnostics(e) { return e ? { x: e.x, y: e.y, z: e.z, order: e.order || 'ZYX' } : null; }
 function worldUpDiagnosticsForObject(object) {
   if (!object || !THREE?.Vector3) return null;
   object.updateMatrixWorld(true);
@@ -1150,7 +1150,7 @@ function collectRenderedMeshDiagnostics() {
     const itemBounds = box3DiagnosticsForObject(rendered.object3d);
     const worldQuaternion = new THREE.Quaternion();
     rendered.object3d.getWorldQuaternion(worldQuaternion);
-    const worldEuler = new THREE.Euler().setFromQuaternion(worldQuaternion, 'XYZ');
+    const worldEuler = new THREE.Euler().setFromQuaternion(worldQuaternion, 'ZYX');
     const inferredUpAxis = worldUpDiagnosticsForObject(rendered.object3d);
     const expectedDimensions = expectedDimensionsOf(item);
     const meshLocal = meshLocalTransformOf(item);
@@ -1904,7 +1904,7 @@ function applyExportedOwnerRelativeVisualTransform(rendered, owner) {
   if (rendered.object3d.parent !== owner.object3d) owner.object3d.add(rendered.object3d);
   const pose = poseBlockOf(relative);
   rendered.object3d.position.copy(pose.xyz);
-  rendered.object3d.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  applyRosRpy(rendered.object3d, pose.rpy);
   // The rendered root follows the item's root-scale contract.  In particular,
   // generated URDF roots are unit scale; their mesh/unit conversion is applied
   // exactly once below this root by applyLoadedMeshScaleHandling().  Ignoring
@@ -1966,7 +1966,7 @@ function selectionIsEditable(rendered) {
   return Boolean(rendered && !rendered.readOnlyPick && !isTaskOnlyHelperItem(rendered.item) && !isDebugOverlayItem(rendered.item) && canonicalEditOwnerRendered(rendered) === rendered && canEditItem(rendered.item));
 }
 function transformFromObject(object) {
-  return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
+  return { pose: { xyz: { x: object.position.x, y: object.position.y, z: object.position.z }, rpy: rosRpyOfObject(object) }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } };
 }
 function translationSnapValue() { const v = Number(el.translationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? v : null; }
 function rotationSnapRadians() { const v = Number(el.rotationSnap?.value || 0); return Number.isFinite(v) && v > 0 ? THREE.MathUtils.degToRad(v) : null; }
@@ -1986,7 +1986,7 @@ function isFiniteTransform(transform) {
 function applyTransformToObject(object, transform) {
   if (!isFiniteTransform(transform)) return false;
   object.position.set(transform.pose.xyz.x, transform.pose.xyz.y, transform.pose.xyz.z);
-  object.rotation.set(transform.pose.rpy.x, transform.pose.rpy.y, transform.pose.rpy.z, 'XYZ');
+  applyRosRpy(object, transform.pose.rpy);
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   return true;
 }
@@ -2696,15 +2696,33 @@ function makeSensorMarker(item) {
   applyFallbackRenderMetadata(group, item, 'sensor_fallback');
   return group;
 }
+// Every Web3D pose uses ROS/URDF fixed-axis roll-pitch-yaw, R = Rz(yaw)·Ry(pitch)·Rx(roll),
+// which is three.js Euler order 'ZYX': the same as the resolver, native Scene3D,
+// the generated URDF and RViz. Poses are written with applyRosRpy and read back
+// with rosRpyOfObject, so a pose round-trips exactly through the editor bridge.
 function applyRosRpy(object, rpy) {
   object.rotation.set(rpy.x, rpy.y, rpy.z, 'ZYX');
+}
+function rosRpyEuler(rpy) {
+  return new THREE.Euler(rpy.x, rpy.y, rpy.z, 'ZYX');
+}
+function rosRpyFromQuaternion(quaternion) {
+  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'ZYX');
+  return { x: euler.x, y: euler.y, z: euler.z };
+}
+function rosRpyOfObject(object) {
+  // The angles applyRosRpy wrote are returned exactly (gizmo edits keep the
+  // order). Anything rotated in another order is decomposed into ROS RPY.
+  const rotation = object.rotation;
+  if (rotation.order && rotation.order !== 'ZYX' && object.quaternion) return rosRpyFromQuaternion(object.quaternion);
+  return { x: rotation.x, y: rotation.y, z: rotation.z };
 }
 function applyPose(object, item) {
   const validation = validateRenderableTransform(item);
   if (!validation.valid) return false;
   const pose = validation.pose;
   object.position.copy(pose.xyz);
-  object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  applyRosRpy(object, pose.rpy);
   const s = validation.scale;
   object.scale.set(s.x, s.y, s.z);
   return true;
@@ -3013,7 +3031,7 @@ function matrixFromPoseBlock(source) {
   const pose = poseBlockOf(source || {});
   return new THREE.Matrix4().compose(
     pose.xyz,
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ')),
+    new THREE.Quaternion().setFromEuler(rosRpyEuler(pose.rpy)),
     new THREE.Vector3(1, 1, 1),
   );
 }
@@ -3022,8 +3040,8 @@ function poseBlockFromMatrix(matrix) {
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   matrix.decompose(xyz, quaternion, scale);
-  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
-  return { xyz, rpy: new THREE.Vector3(euler.x, euler.y, euler.z), matrix: matrix.clone() };
+  const rpy = rosRpyFromQuaternion(quaternion);
+  return { xyz, rpy: new THREE.Vector3(rpy.x, rpy.y, rpy.z), matrix: matrix.clone() };
 }
 function localFramePoseSource(frame) {
   return frame?.world_pose || frame?.world_transform || frame?.pose || frame?.transform || frame?.origin || frame;
@@ -3216,7 +3234,7 @@ function renderFrameDebugOverlays() {
     const axes = new THREE.AxesHelper(0.12);
     axes.name = `${name}_debug_frame_axes`;
     axes.position.copy(pose.xyz);
-    axes.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+    applyRosRpy(axes, pose.rpy);
     addDebugRenderedObject(axes, diagnosticDebugItem(`debug_frame_axes_${name}`, `${name} frame axes`));
   }
   for (const [parent, child] of [['wrist_3_link', 'tool0'], ['tool0', 'gripper_base_link']]) {
@@ -3346,6 +3364,7 @@ function initThree() {
     el.canvas.addEventListener('pointercancel', onCanvasPointerCancel);
     el.canvas.addEventListener('contextmenu', onCanvasContextMenu);
     window.addEventListener('keydown', onEditorKeyDown);
+    installMatePickListeners();
     animate();
   } catch (err) {
     showError(`Bundled Three.js module load failure: ${err.message || err}`);
@@ -3363,6 +3382,7 @@ function animate() {
   const { renderer, scene, camera, controls } = state.three;
   if (!renderer) return;
   state.animationId = requestAnimationFrame(animate);
+  if (state.mate?.active) suppressGizmoForMate();
   controls.update();
   renderer.render(scene, camera);
   updateLabels();
@@ -4245,6 +4265,9 @@ function disposeOwnedMaterial(material) {
 }
 function resetSceneLifecycleState() {
   cancelPlacement();
+  // Mate's isolation and markers refer to the objects being replaced. End it here;
+  // Builder sees Mate inactive and restores the overlay on the new scene.
+  clearMateMode();
   robotPreviewLoadToken += 1;
   physicalLoadToken += 1;
   cancelInitialCameraFitRetry();
@@ -4682,7 +4705,7 @@ function jointOriginForChildItem(item, parentItem) {
 function applyPoseBlockToObject(object, poseSource) {
   const pose = poseBlockOf(poseSource || {});
   object.position.copy(pose.xyz);
-  object.rotation.set(pose.rpy.x, pose.rpy.y, pose.rpy.z, 'XYZ');
+  applyRosRpy(object, pose.rpy);
   object.scale.set(1, 1, 1);
 }
 function assemblyGroupKey(item) {
@@ -5592,7 +5615,8 @@ function composePlacementOrientation() {
     if (state.placement.previewRoot?.rotation) state.placement.previewRoot.rotation.z = state.placement.yaw;
     return null;
   }
-  const presetQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(preset.roll, preset.pitch, 0, 'XYZ'));
+  // Rz(yaw)·Ry(pitch)·Rx(roll): the world-Z yaw composes into one ROS RPY.
+  const presetQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(preset.roll, preset.pitch, 0, 'ZYX'));
   const yawQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), state.placement.yaw);
   state.placement.orientationQuaternion = yawQuaternion.multiply(presetQuaternion);
   state.placement.previewRoot?.quaternion?.copy?.(state.placement.orientationQuaternion);
@@ -5601,8 +5625,8 @@ function composePlacementOrientation() {
 function placementCanonicalRpy() {
   const quaternion = state.placement.orientationQuaternion || composePlacementOrientation();
   if (!quaternion || !THREE?.Euler) return { roll: 0, pitch: 0, yaw: state.placement.yaw };
-  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
-  return { roll: euler.x, pitch: euler.y, yaw: euler.z };
+  const rpy = rosRpyFromQuaternion(quaternion);
+  return { roll: rpy.x, pitch: rpy.y, yaw: rpy.z };
 }
 function placementRequest(point, repeat) {
   return { ...point, ...placementCanonicalRpy(), repeat };
@@ -5961,6 +5985,9 @@ function applyKeyboardTransformStep(event, command) {
 }
 function onEditorKeyDown(event) {
   if (keyboardEventTargetsEditorControl(event)) return;
+  // Mate owns the 3D view until Apply or cancel: no keyboard transform steps,
+  // pastes or undo/redo behind its back (its capture listener handles Esc).
+  if (state.mate?.active) return;
   if (event.key === 'Escape') {
     if (state.placement.armed) { cancelPlacement(); event.preventDefault?.(); return; }
     if (cancelActiveTransformOperation('Escape')) event.preventDefault?.();
@@ -6083,6 +6110,9 @@ function previewTransientPivotDrag(owner) {
     owner.object3d.scale.set(state.gizmoDragStart.scale.x, state.gizmoDragStart.scale.y, state.gizmoDragStart.scale.z);
     owner.object3d.updateMatrixWorld(true);
     next = transformFromObject(owner.object3d);
+    // A translate drag never turns the part. Keep the start RPY exactly instead of
+    // re-deriving it from the matrix, which drifts at pitch +/-90 degrees.
+    next.pose.rpy = { ...state.gizmoDragStart.pose.rpy };
   }
   if (!next) return false;
   applyTransformChanges(linkedTransformChanges(owner, state.gizmoDragStart, next, state.gizmoDragGroupStart));
@@ -6970,6 +7000,430 @@ function rebasePersistedPatch(patch) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Visual mate picking (R3.2). Workcell Builder owns the mate. This viewer only
+// reports what a click actually hit (asset, world hit point, face normal and the
+// asset pose as drawn) or which datum marker was clicked, and draws the overlay
+// Builder sends: datum markers at the resolver's frames, pick highlights and a
+// ghost of the resolver's proposed poses. No mate semantics or transform math
+// live here. Picks are exposed through getMateState() with sequence numbers, so
+// a dropped poll cannot lose a click.
+// ---------------------------------------------------------------------------
+const MATE_COLORS = Object.freeze({ candidate: 0x94a3b8, hover: 0xfacc15, child: 0x3b82f6, parent: 0xf97316, pending: 0xe2e8f0, ghost: 0x60a5fa, click: 0xffffff });
+function mateState() {
+  state.mate ||= { active: false, overlay: null, group: null, hoverGroup: null, ghosts: [], pickables: [], seq: 0, pick: null, hoverSeq: 0, hover: null, hoverResolution: null, cancelSeq: 0, lastHoverAt: 0, label: null, materials: [] };
+  return state.mate;
+}
+function mateRosRpyFromMatrix(matrix) {
+  const e = matrix.elements;
+  const sx = Math.hypot(e[0], e[1], e[2]) || 1, sy = Math.hypot(e[4], e[5], e[6]) || 1, sz = Math.hypot(e[8], e[9], e[10]) || 1;
+  const r00 = e[0] / sx, r10 = e[1] / sx, r20 = e[2] / sx, r01 = e[4] / sy, r11 = e[5] / sy, r21 = e[6] / sy, r22 = e[10] / sz;
+  const pitch = Math.asin(Math.max(-1, Math.min(1, -r20)));
+  if (Math.abs(Math.cos(pitch)) < 1e-9) return [0, pitch, Math.atan2(-r01, r11)];
+  return [Math.atan2(r21, r22), pitch, Math.atan2(r10, r00)];
+}
+function mateRaycast(event) {
+  const rect = el.canvas?.getBoundingClientRect?.();
+  const { raycaster, pointer, camera } = state.three;
+  if (!rect?.width || !rect?.height || !raycaster || !camera) return null;
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const direction = raycaster.ray.direction;
+  const base = { ray_direction_world: [direction.x, direction.y, direction.z], client: { x: event.clientX - rect.left, y: event.clientY - rect.top } };
+  const mate = mateState();
+  // Markers are drawn on top. Where they overlap (a centre axis through a plane
+  // centre), planes win over points and axes; then the nearest.
+  const MARKER_PRIORITY = { plane: 0, origin: 1, point: 1, axis: 2 };
+  const markerHits = (mate.pickables.length ? raycaster.intersectObjects(mate.pickables, false) : [])
+    .sort((a, b) => (MARKER_PRIORITY[a.object.userData.mateMarker?.type] ?? 3) - (MARKER_PRIORITY[b.object.userData.mateMarker?.type] ?? 3) || a.distance - b.distance);
+  if (markerHits.length) {
+    const marker = markerHits[0].object.userData.mateMarker;
+    const p = markerHits[0].point;
+    return { ...base, geometry: 'datum_marker', asset_id: marker.asset_id, datum_name: marker.datum, point_world: [p.x, p.y, p.z], normal_world: marker.normal, geometry_source: 'datum marker', triangle_index: -1 };
+  }
+  const rootCandidates = [...state.objects.map(o => o.object3d), ...state.pickRecords.map(o => o.pickRoot || o.object3d)]
+    .filter((root, index, all) => root?.visible !== false && !excludedPickNode(root) && all.indexOf(root) === index);
+  const candidateSet = new Set(rootCandidates);
+  const roots = rootCandidates.filter(root => {
+    for (let ancestor = root.parent; ancestor; ancestor = ancestor.parent) if (candidateSet.has(ancestor)) return false;
+    return true;
+  });
+  const hits = raycaster.intersectObjects(roots, true).filter(hit => !hiddenPickSubtree(hit?.object));
+  const candidate = rankedPickingCandidates(hits).find(c => Number.isFinite(c.priority) && c.eligible);
+  if (!candidate) return { ...base, geometry: 'surface', asset_id: '', point_world: [0, 0, 0], normal_world: [0, 0, 0], geometry_source: 'no hit', triangle_index: -1 };
+  const hit = candidate.hit;
+  const ownerId = candidate.selectionOwner?.item?.id || explicitUiSelectionItemId(candidate.rendered);
+  const owner = renderedById(ownerId) || candidate.rendered;
+  let normal = [0, 0, 0];
+  if (hit.face?.normal && hit.object?.matrixWorld) {
+    const world = hit.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
+    normal = [world.x, world.y, world.z];
+  }
+  let fallback = false;
+  for (let node = hit.object; node; node = node.parent) {
+    if (String(node.userData?.render_status || '').includes('fallback')) { fallback = true; break; }
+    if (node === owner?.object3d) break;
+  }
+  const result = { ...base, geometry: 'surface', asset_id: ownerId || '', point_world: [hit.point.x, hit.point.y, hit.point.z], normal_world: normal,
+    geometry_source: fallback ? 'fallback_primitive' : `${hit.object?.name || 'mesh'}${owner?.item ? ` · ${displayMeshUri(owner.item) || 'primitive'}` : ''}`,
+    triangle_index: Number.isInteger(hit.faceIndex) ? hit.faceIndex : -1 };
+  if (owner?.object3d) {
+    owner.object3d.updateMatrixWorld(true);
+    const position = new THREE.Vector3().setFromMatrixPosition(owner.object3d.matrixWorld);
+    result.object_pose_world = [position.x, position.y, position.z, ...mateRosRpyFromMatrix(owner.object3d.matrixWorld)];
+  }
+  return result;
+}
+function mateMaterial(color, opacity, extra = {}) {
+  const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide, ...extra });
+  mateState().materials.push(material);
+  return material;
+}
+function mateLineMaterial(color) {
+  const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false });
+  mateState().materials.push(material);
+  return material;
+}
+function mateMarkerColor(marker, overlay) {
+  const resolution = mateState().hoverResolution;
+  if (marker.role === 'child') return MATE_COLORS.child;
+  if (marker.role === 'parent') return MATE_COLORS.parent;
+  if (resolution?.valid && resolution.asset_id === marker.asset_id && resolution.datum === marker.datum) return MATE_COLORS.hover;
+  return MATE_COLORS.candidate;
+}
+function buildMateMarker(marker, overlay) {
+  const vec = value => new THREE.Vector3(Number(value?.[0]) || 0, Number(value?.[1]) || 0, Number(value?.[2]) || 0);
+  const origin = vec(marker.origin), normal = vec(marker.normal).normalize(), xAxis = vec(marker.x_axis).normalize();
+  if (!Number.isFinite(origin.x + origin.y + origin.z) || normal.lengthSq() < 0.5) return null;
+  const group = new THREE.Group();
+  group.name = `mate_marker:${marker.asset_id}:${marker.datum}`;
+  const color = mateMarkerColor(marker, overlay);
+  // Size marks the picked datums only; hover changes colour, never what a click hits.
+  const emphasised = marker.role !== 'candidate';
+  const hovered = color === MATE_COLORS.hover;
+  const pickedAsset = overlay.child_asset === marker.asset_id || overlay.parent_asset === marker.asset_id;
+  if (overlay.step === 'ready' && marker.role === 'candidate') return null;  // only the mated pair once both are picked
+  const basis = new THREE.Matrix4().makeBasis(xAxis, new THREE.Vector3().crossVectors(normal, xAxis).normalize(), normal);
+  let pickable = null;
+  if (marker.type === 'plane') {
+    const size = emphasised ? 0.1 : 0.05;
+    pickable = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mateMaterial(color, emphasised || hovered ? 0.55 : 0.28));
+    pickable.applyMatrix4(basis);
+    pickable.position.copy(origin);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(pickable.geometry), mateLineMaterial(color));
+    edges.applyMatrix4(basis); edges.position.copy(origin);
+    group.add(pickable, edges);
+    const arrow = new THREE.ArrowHelper(normal, origin, emphasised ? 0.12 : 0.08, color, 0.025, 0.015);
+    arrow.traverse(node => { if (node.material) { node.material.depthTest = false; node.material.transparent = true; mateState().materials.push(node.material); } });
+    group.add(arrow);
+  } else if (marker.type === 'axis') {
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin.clone().addScaledVector(normal, -0.15), origin.clone().addScaledVector(normal, 0.15)]), mateLineMaterial(color));
+    pickable = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.3, 8), mateMaterial(color, emphasised ? 0.5 : 0.2));
+    pickable.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+    pickable.position.copy(origin);
+    group.add(line, pickable);
+  } else {
+    pickable = new THREE.Mesh(new THREE.SphereGeometry(emphasised ? 0.018 : 0.013, 16, 12), mateMaterial(color, emphasised ? 0.75 : (pickedAsset ? 0.5 : 0.35)));
+    pickable.position.copy(origin);
+    const axes = new THREE.AxesHelper(0.05);
+    axes.applyMatrix4(basis); axes.position.copy(origin);
+    axes.material.depthTest = false; axes.material.transparent = true; mateState().materials.push(axes.material);
+    group.add(pickable, axes);
+  }
+  pickable.userData.mateMarker = { asset_id: marker.asset_id, datum: marker.datum, type: marker.type, normal: [normal.x, normal.y, normal.z] };
+  pickable.renderOrder = 1000;
+  group.traverse(node => { node.renderOrder = Math.max(node.renderOrder || 0, 999); });
+  mateState().pickables.push(pickable);
+  return group;
+}
+function buildMateGhost(entry) {
+  const rendered = renderedById(String(entry?.id || ''));
+  const xyz = entry?.xyz, rpy = entry?.rpy;
+  if (!rendered?.object3d || !Array.isArray(xyz) || !Array.isArray(rpy)) return null;
+  const ghost = rendered.object3d.clone(true);
+  const material = mateMaterial(MATE_COLORS.ghost, 0.32, { depthTest: true });
+  ghost.traverse(node => {
+    node.userData = { mate_ghost: true, selectable: false, exclude_from_physical_bounds: true, exclude_from_fit_bounds: true };
+    node.name = `mate_ghost:${node.name || ''}`;
+    if (node.isMesh) { node.material = material; node.castShadow = false; node.receiveShadow = false; node.renderOrder = 997; }
+    else if (node.isLine || node.isLineSegments || node.isPoints || node.isSprite) node.visible = false;
+  });
+  // The resolver's ROS RPY, drawn the way applyPose draws it, so the ghost is exactly what Apply will show.
+  ghost.position.set(Number(xyz[0]), Number(xyz[1]), Number(xyz[2]));
+  applyRosRpy(ghost, { x: Number(rpy[0]), y: Number(rpy[1]), z: Number(rpy[2]) });
+  ghost.scale.copy(rendered.object3d.scale);
+  (rendered.object3d.parent || state.three.scene).add(ghost);
+  return ghost;
+}
+function matePhysicalBox(rendered) {
+  // The selection's physical bounds: no frustums, labels or helper geometry.
+  const physical = collectSelectionPhysicalBounds(rendered)?.bounds;
+  if (physical && !physical.isEmpty()) return physical.clone();
+  const box = rendered?.object3d ? new THREE.Box3().setFromObject(rendered.object3d) : new THREE.Box3();
+  return box;
+}
+function mateHighlight(assetId, color, track = true) {
+  const rendered = assetId ? renderedById(assetId) : null;
+  if (!rendered?.object3d) return null;
+  const box = matePhysicalBox(rendered);
+  if (box.isEmpty()) return null;
+  const helper = new THREE.Box3Helper(box, color);
+  helper.material.depthTest = false; helper.material.transparent = true;
+  if (track) mateState().materials.push(helper.material);
+  helper.renderOrder = 996;
+  return helper;
+}
+function disposeMateOverlay() {
+  const mate = mateState();
+  for (const ghost of mate.ghosts) ghost.parent?.remove(ghost);  // ghosts share geometry with the real objects
+  mate.ghosts = [];
+  for (const group of [mate.group, mate.hoverGroup]) {
+    if (!group) continue;
+    group.parent?.remove(group);
+    group.traverse(node => { if (node.geometry && !node.userData?.mate_shared_geometry) node.geometry.dispose?.(); });
+  }
+  mate.group = null; mate.hoverGroup = null; mate.pickables = [];
+  for (const material of mate.materials) material.dispose?.();
+  mate.materials = [];
+}
+function suppressGizmoForMate() {
+  const gizmo = state.three?.transformControls;
+  if (gizmo) { gizmo.enabled = false; gizmo.visible = false; }
+}
+function mateLabel() {
+  const mate = mateState();
+  if (!mate.label && el.canvas?.parentElement && typeof document !== 'undefined') {
+    const label = document.createElement('div');
+    label.className = 'mate-hover-label';
+    label.setAttribute('role', 'status');
+    Object.assign(label.style, { position: 'absolute', pointerEvents: 'none', zIndex: '40', maxWidth: '340px', padding: '4px 8px', borderRadius: '6px',
+      background: 'rgba(15,23,42,0.92)', color: '#f8fafc', font: '12px/1.35 system-ui, sans-serif', boxShadow: '0 2px 8px rgba(0,0,0,0.35)', display: 'none' });
+    el.canvas.parentElement.appendChild(label);
+    mate.label = label;
+  }
+  return mate.label;
+}
+function updateMateLabel() {
+  const mate = mateState();
+  const label = mateLabel();
+  if (!label) return;
+  const hover = mate.hover;
+  if (!mate.active || !hover?.client || !hover.asset_id) { label.style.display = 'none'; return; }
+  const resolution = mate.hoverResolution;
+  let text = 'Checking…';
+  if (resolution && resolution.asset_id === hover.asset_id && resolution.seq <= hover.seq) {
+    text = resolution.valid ? `${resolution.asset_label || hover.asset_id}: ${resolution.label}` : `${resolution.asset_label || hover.asset_id}: ${resolution.reason}`;
+    label.style.borderLeft = `3px solid ${resolution.valid ? '#facc15' : '#ef4444'}`;
+  } else {
+    label.style.borderLeft = '3px solid #94a3b8';
+  }
+  label.textContent = text;
+  label.style.left = `${Math.round(hover.client.x + 14)}px`;
+  label.style.top = `${Math.round(hover.client.y + 14)}px`;
+  label.style.display = 'block';
+}
+function updateMateHoverVisual(hover) {
+  const mate = mateState();
+  if (mate.hoverGroup) {
+    mate.hoverGroup.parent?.remove(mate.hoverGroup);
+    mate.hoverGroup.traverse(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); });
+    mate.hoverGroup = null;
+  }
+  if (hover?.asset_id && state.three?.scene) {
+    const group = new THREE.Group();
+    group.name = 'mate_hover';
+    const highlight = mateHighlight(hover.asset_id, MATE_COLORS.hover, false);
+    if (highlight) group.add(highlight);
+    const normal = new THREE.Vector3(...(hover.normal_world || [0, 0, 0]));
+    if (hover.geometry === 'surface' && normal.lengthSq() > 0.5) {
+      const ray = new THREE.Vector3(...(hover.ray_direction_world || [0, 0, -1]));
+      if (normal.dot(ray) > 0) normal.negate();  // the visible side
+      const arrow = new THREE.ArrowHelper(normal.normalize(), new THREE.Vector3(...hover.point_world), 0.07, MATE_COLORS.hover, 0.02, 0.012);
+      arrow.traverse(node => { if (node.material) { node.material.depthTest = false; node.material.transparent = true; } });
+      group.add(arrow);
+    }
+    markPlacementPreviewHelper(group);
+    group.name = 'mate_hover';
+    state.three.scene.add(group);
+    mate.hoverGroup = group;
+  }
+  updateMateLabel();
+}
+function rebuildMateOverlay(overlay) {
+  const mate = mateState();
+  disposeMateOverlay();
+  if (!state.three?.scene) return;
+  const group = new THREE.Group();
+  for (const marker of Array.isArray(overlay.markers) ? overlay.markers : []) {
+    const built = buildMateMarker(marker, overlay);
+    if (built) group.add(built);
+  }
+  for (const [assetId, color] of [[overlay.pending_asset, MATE_COLORS.pending], [overlay.child_asset, MATE_COLORS.child], [overlay.parent_asset, MATE_COLORS.parent]]) {
+    const highlight = mateHighlight(assetId, color);
+    if (highlight) group.add(highlight);
+  }
+  if (mate.pick?.point_world && overlay.step !== 'ready') {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), mateMaterial(MATE_COLORS.click, 0.9));
+    dot.position.set(...mate.pick.point_world);
+    group.add(dot);
+  }
+  markPlacementPreviewHelper(group);
+  group.name = 'workcell_mate_overlay';
+  for (const pickable of mate.pickables) pickable.userData.selectable = false;
+  state.three.scene.add(group);
+  mate.group = group;
+  if (overlay.preview_ok) for (const entry of Array.isArray(overlay.ghost) ? overlay.ghost : []) {
+    const ghost = buildMateGhost(entry);
+    if (ghost) mate.ghosts.push(ghost);
+  }
+}
+function applyMateIsolation(assetId) {
+  const mate = mateState();
+  if ((mate.isolatedAsset || '') === (assetId || '')) return;
+  for (const [object, visible] of mate.hiddenByIsolation || []) object.visible = visible;
+  mate.hiddenByIsolation = [];
+  mate.isolatedAsset = assetId || '';
+  if (!assetId) return;
+  const keep = renderedById(assetId)?.object3d;
+  if (!keep) return;
+  // Keep the part's ancestors and its descendants: generated camera and table
+  // visuals are reparented under their authored owner and are the faces we pick.
+  const onChain = (from, target) => { for (let node = from; node; node = node.parent) if (node === target) return true; return false; };
+  for (const record of [...state.objects, ...state.pickRecords]) {
+    const root = record?.object3d;
+    if (!root || root === keep || root.visible === false) continue;
+    if (onChain(keep.parent, root) || onChain(root.parent, keep)) continue;
+    mate.hiddenByIsolation.push([root, root.visible]);
+    root.visible = false;
+  }
+}
+function applyMateFaceView(view) {
+  const mate = mateState();
+  const seq = Number(view?.seq || 0);
+  if (!seq || seq <= (mate.viewSeq || 0)) return;
+  mate.viewSeq = seq;
+  if (view.reset === true) { resetView({ userInitiated: true, preset: 'isometric' }); return; }
+  const { camera, controls } = state.three;
+  const origin = new THREE.Vector3(...(view.origin || [0, 0, 0]));
+  const normal = new THREE.Vector3(...(view.normal || [0, 0, 1]));
+  if (!camera || !controls || normal.lengthSq() < 0.5 || !Number.isFinite(origin.x + origin.y + origin.z)) return;
+  normal.normalize();
+  const rendered = renderedById(String(view.asset_id || ''));
+  const box = rendered?.object3d ? matePhysicalBox(rendered) : null;
+  const size = box && !box.isEmpty() ? box.getSize(new THREE.Vector3()).length() : 0.5;
+  const distance = Math.min(1.2, Math.max(0.45, size * 0.9));
+  // Look at the face from outside, off-axis so its edges read in perspective.
+  // The camera keeps the scene's Z-up (orbit controls are built around it).
+  const side = new THREE.Vector3().crossVectors(normal, THREE.Object3D.DEFAULT_UP);
+  if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+  side.normalize();
+  camera.position.copy(origin).addScaledVector(normal, distance).addScaledVector(side, distance * 0.35);
+  controls.target.copy(origin);
+  camera.lookAt(origin);
+  controls.update();
+  markCameraUserControlled();
+}
+function projectWorldPoint(point) {
+  const { camera } = state.three;
+  const rect = el.canvas?.getBoundingClientRect?.();
+  if (!camera || !rect?.width || !Array.isArray(point)) return null;
+  const v = new THREE.Vector3(Number(point[0]), Number(point[1]), Number(point[2])).project(camera);
+  return { x: rect.left + (v.x + 1) / 2 * rect.width, y: rect.top + (1 - v.y) / 2 * rect.height, inFront: v.z < 1 && v.z > -1,
+    canvas: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, devicePixelRatio: window.devicePixelRatio || 1 };
+}
+function setMateMode(overlay) {
+  const mate = mateState();
+  if (!overlay || overlay.active !== true) { clearMateMode(); return editorState(); }
+  if (!mate.active) {
+    if (state.placement.armed) cancelPlacement();
+    if (el.canvas?.style) el.canvas.style.cursor = 'crosshair';
+    el.canvas?.classList?.add?.('mate-picking');
+  }
+  mate.active = true;
+  mate.overlay = overlay;
+  suppressGizmoForMate();
+  applyMateIsolation(String(overlay.isolate_asset || ''));
+  rebuildMateOverlay(overlay);
+  applyMateFaceView(overlay.view);
+  return editorState();
+}
+function clearMateMode() {
+  const mate = mateState();
+  const wasActive = mate.active;
+  mate.active = false; mate.overlay = null; mate.pick = null; mate.hover = null; mate.hoverResolution = null;
+  applyMateIsolation('');
+  disposeMateOverlay();
+  updateMateHoverVisual(null);
+  if (wasActive) {
+    if (el.canvas?.style) el.canvas.style.cursor = '';
+    el.canvas?.classList?.remove?.('mate-picking');
+    const gizmo = state.three?.transformControls;
+    if (gizmo) { gizmo.enabled = true; gizmo.visible = Boolean(gizmo.object); }
+  }
+  return editorState();
+}
+function setMateHoverResolution(resolution) {
+  const mate = mateState();
+  if (!mate.active) return editorState();
+  const previous = mate.hoverResolution;
+  mate.hoverResolution = resolution && typeof resolution === 'object' ? resolution : null;
+  const changedMarker = previous?.asset_id !== mate.hoverResolution?.asset_id || previous?.datum !== mate.hoverResolution?.datum || previous?.valid !== mate.hoverResolution?.valid;
+  if (changedMarker && mate.overlay) rebuildMateOverlay(mate.overlay);
+  updateMateLabel();
+  return editorState();
+}
+function getMateState() {
+  const mate = mateState();
+  const strip = value => value ? { ...value } : null;
+  return { active: mate.active, seq: mate.seq, pick: strip(mate.pick), hoverSeq: mate.hoverSeq, hover: strip(mate.hover), cancelSeq: mate.cancelSeq,
+    markerCount: mate.pickables.length, ghostCount: mate.ghosts.length, isolatedAsset: mate.isolatedAsset || '', viewSeq: mate.viewSeq || 0,
+    hoverResolution: strip(mate.hoverResolution), labelText: mate.label?.style?.display === 'block' ? mate.label.textContent : '', sceneId: sceneId() };
+}
+function onMatePointerDownCapture(event) {
+  const mate = state.mate;
+  if (!mate?.active || event.target !== el.canvas || event.button !== 0) return;  // right/middle still orbit and pan
+  event.preventDefault?.();
+  event.stopImmediatePropagation?.();
+  event.stopPropagation?.();
+  const pick = mateRaycast(event);
+  if (!pick) return;
+  mate.seq += 1;
+  mate.pick = { seq: mate.seq, ...pick };
+  if (mate.overlay) rebuildMateOverlay(mate.overlay);
+}
+function onMatePointerMoveCapture(event) {
+  const mate = state.mate;
+  if (!mate?.active || event.target !== el.canvas) return;
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  if (now - mate.lastHoverAt < 60) return;
+  mate.lastHoverAt = now;
+  const hover = mateRaycast(event);
+  mate.hoverSeq += 1;
+  mate.hover = hover ? { seq: mate.hoverSeq, ...hover } : null;
+  updateMateHoverVisual(mate.hover);
+}
+function onMateKeyDownCapture(event) {
+  if (!state.mate?.active || event.key !== 'Escape') return;
+  state.mate.cancelSeq += 1;
+  event.preventDefault?.();
+  event.stopImmediatePropagation?.();
+}
+function onMateContextMenuCapture(event) {
+  if (!state.mate?.active || event.target !== el.canvas) return;
+  // No selection or context menu while picking faces; right-drag still orbits.
+  event.preventDefault?.();
+  event.stopImmediatePropagation?.();
+}
+function installMatePickListeners() {
+  if (typeof window === 'undefined' || window.__WORKCELL_MATE_LISTENERS__) return;
+  window.__WORKCELL_MATE_LISTENERS__ = true;
+  window.addEventListener('pointerdown', onMatePointerDownCapture, true);
+  window.addEventListener('pointermove', onMatePointerMoveCapture, true);
+  window.addEventListener('keydown', onMateKeyDownCapture, true);
+  window.addEventListener('contextmenu', onMateContextMenuCapture, true);
+}
+
 window.__WORKCELL_EDITOR_API_V1__ = {
   apiVersion: '1.1.0',
   getCapabilities: () => Object.freeze({
@@ -7027,6 +7481,13 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   getEditPatch: () => buildEditPatch(),
   rebasePersistedPatch: patch => rebasePersistedPatch(patch),
   drainEvents: () => { const events = state.editorEvents.slice(); state.editorEvents.length = 0; return events; },
+  // Visual mate picking (optional; Builder checks for these before use).
+  setMateMode: overlay => setMateMode(overlay),
+  clearMateMode: () => clearMateMode(),
+  setMateHoverResolution: resolution => setMateHoverResolution(resolution),
+  getMateState: () => getMateState(),
+  // Diagnostics: where a world point appears on the canvas (page coordinates).
+  projectWorldPoint: point => projectWorldPoint(point),
 };
 
 const editorApiInstalledAt = new Date().toISOString();

@@ -167,6 +167,7 @@ add_executable(workcell_builder
     src_workcell_zone_model.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
+    src_epd_detection_readiness_model.cpp
     src_task_intent_readiness.cpp
     src_task_intent_model.cpp
     src_class_routing_model.cpp
@@ -219,7 +220,15 @@ add_executable(workcell_builder
     gui/operator_preview_launcher.cpp
     gui/operator_preview_launcher.hpp
     include/operator_preview_request.hpp
-    src_operator_preview_request.cpp)
+    src_operator_preview_request.cpp
+    include/mate_pick.hpp
+    src_mate_pick.cpp
+    include/live_mesh_staging.hpp
+    src_live_mesh_staging.cpp
+    gui/mate_tool_controller.cpp
+    gui/mate_tool_controller.hpp
+    gui/mate_tool_panel.cpp
+    gui/mate_tool_panel.hpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
@@ -474,6 +483,7 @@ if(BUILD_TESTING)
     test/scene_preview_widget_ui_test.cpp
     gui/scene_load_diagnostic_context.cpp
     gui/scene_preview_widget.cpp
+    src_live_mesh_staging.cpp
     gui/robot_home_yaml_io.cpp
     gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
@@ -528,10 +538,35 @@ if(BUILD_TESTING)
     target_include_directories(workcell_save_projection_failure_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
     target_link_libraries(workcell_save_projection_failure_test Qt5::Core)
   endif()
+  ament_add_gtest(workcell_teardown_connections_test test/teardown_connections_test.cpp)
+  if(TARGET workcell_teardown_connections_test)
+    target_include_directories(workcell_teardown_connections_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_teardown_connections_test Qt5::Widgets)
+  endif()
   ament_add_gtest(workcell_datum_mating_text_test test/datum_mating_text_test.cpp)
   if(TARGET workcell_datum_mating_text_test)
     target_include_directories(workcell_datum_mating_text_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
     target_link_libraries(workcell_datum_mating_text_test Qt5::Core yaml-cpp)
+  endif()
+  ament_add_gtest(workcell_mate_pick_test test/mate_pick_test.cpp src_mate_pick.cpp)
+  if(TARGET workcell_mate_pick_test)
+    target_include_directories(workcell_mate_pick_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_mate_pick_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_live_mesh_staging_test test/live_mesh_staging_test.cpp src_live_mesh_staging.cpp)
+  if(TARGET workcell_live_mesh_staging_test)
+    target_include_directories(workcell_live_mesh_staging_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_live_mesh_staging_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_mate_tool_controller_test test/mate_tool_controller_test.cpp
+    gui/mate_tool_controller.cpp gui/mate_tool_controller.hpp src_mate_pick.cpp)
+  if(TARGET workcell_mate_tool_controller_test)
+    set_target_properties(workcell_mate_tool_controller_test PROPERTIES AUTOMOC ON)
+    target_include_directories(workcell_mate_tool_controller_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_compile_definitions(workcell_mate_tool_controller_test PRIVATE
+      WORKCELL_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    target_link_libraries(workcell_mate_tool_controller_test Qt5::Core)
   endif()
   ament_add_gtest(workcell_inspector_spin_config_test test/inspector_spin_config_test.cpp)
   if(TARGET workcell_inspector_spin_config_test)
@@ -867,6 +902,7 @@ if(BUILD_TESTING)
     task_intent_model_test.cpp
     planning_readiness_test.cpp
     workcell_perception_snapshot_test.cpp
+    epd_detection_readiness_model_test.cpp
     robot_tool_compatibility_inference_test.cpp
     new_cell_wizard_test.cpp
     workspace_validation_test.cpp
@@ -900,8 +936,19 @@ if(BUILD_TESTING)
     inspector_spin_config_test.cpp
     save_projection_failure_test.cpp
     datum_mating_text_test.cpp
+    teardown_connections_test.cpp
+    mate_pick_test.cpp
+    live_mesh_staging_test.cpp
+    mate_tool_controller_test.cpp
     support_contact_policy_test.cpp
   )
+  ament_add_gtest(workcell_epd_detection_readiness_model_test
+    test/epd_detection_readiness_model_test.cpp
+    src_epd_detection_readiness_model.cpp)
+  target_include_directories(workcell_epd_detection_readiness_model_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(workcell_epd_detection_readiness_model_test Qt5::Core)
+
   ament_add_gtest(workcell_studio_log_issue_tracker_test
     test/studio_log_issue_tracker_test.cpp)
 
@@ -952,7 +999,13 @@ install(PROGRAMS
   scripts/conveyor_sorting_live_preview_node.py
   scripts/publish_sample_epd_snapshot.py
   scripts/epd_to_workcell_snapshot_node.py
+  scripts/epd_readiness_monitor_node.py
   ../../scripts/task_intent_authoring.py
+  ../../scripts/workcell_camera_probe.py
+  ../../scripts/capture_selected_live_epd.py
+  ../../scripts/continuous_epd_task_binding.py
+  ../../scripts/simulation_batch_preview.py
+  ../../scripts/simulation_batch_plan_check.py
   ../../scripts/task_intent_v2.py
   ../../scripts/task_intent_resolver.py
   ../../scripts/operator_preview_projection.py

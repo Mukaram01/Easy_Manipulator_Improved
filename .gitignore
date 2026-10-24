@@ -52,6 +52,8 @@ src/ros_industrial_cmake_boilerplate/
 
 # Workcell Studio generated scene cache/artifacts
 scenes/*/generated/
+# Runtime EPD readiness status written by epd_readiness_monitor_node.py
+scenes/*/preview/epd_detection_readiness.json
 !scenes/*/generated/.gitkeep
 
 # Workcell Studio local authoring backups

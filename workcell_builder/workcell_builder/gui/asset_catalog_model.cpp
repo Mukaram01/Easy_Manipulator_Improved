@@ -210,6 +210,19 @@ void classify_entry(AssetCatalogEntry & entry, const fs::path & path, bool place
     entry.readiness = placeholder ? "PREVIEW_ONLY" : "READY_WITH_WARNINGS";
     if (!placeholder) entry.warnings.push_back("Verify mount frame and RPY against the selected robot description.");
     entry.suggested_action = "Set as End Effector";
+  } else if (identity.find("camera") != std::string::npos &&
+             identity.find("realsense") == std::string::npos && identity.find("d435") == std::string::npos &&
+             (identity.find("stand") != std::string::npos || identity.find("mount") != std::string::npos ||
+              identity.find("bracket") != std::string::npos || identity.find("gantry") != std::string::npos ||
+              identity.find("clamp") != std::string::npos || identity.find("camera_frame") != std::string::npos))
+  {
+    // A camera stand/mount carries the camera: it is a physical fixture, not a
+    // second camera sensor (the cell has one physical camera owner).
+    entry.category = "environment_object";
+    entry.role_hints = {"fixture"};
+    entry.icon_key = "🧱";
+    entry.readiness = placeholder ? "PREVIEW_ONLY" : "READY";
+    entry.suggested_action = "Add as fixture";
   } else if (identity.find("camera") != std::string::npos ||
              identity.find("realsense") != std::string::npos ||
              identity.find("d435") != std::string::npos)

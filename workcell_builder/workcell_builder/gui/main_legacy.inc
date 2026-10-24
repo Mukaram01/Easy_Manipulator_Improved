@@ -1250,6 +1250,19 @@ int main(int argc, char * argv[])
     TestMain::start_operator_preview_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"));
     return a.exec();
   }
+  if (has_cli_flag(args, "--visual-mate-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    const QString size = cli_value(args, "--window-size");
+    const auto parts = size.split('x');
+    const QSize window_size = parts.size() == 2 ? QSize(parts[0].toInt(), parts[1].toInt()) : QSize(1366, 768);
+    w.resize(window_size);
+    w.show();
+    TestMain::start_visual_mate_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"), window_size);
+    return a.exec();
+  }
   if (has_cli_flag(args, "--datum-mating-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     const QString scene = cli_value(args, "--scene");
@@ -1264,6 +1277,43 @@ int main(int argc, char * argv[])
     if (output.isEmpty() || scene.isEmpty()) return 2;
     MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
     TestMain::start_mounting_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"), has_cli_flag(args, "--newcell-task-acceptance"), cli_value(args, "--observations"));
+    return a.exec();
+  }
+  if (has_cli_flag(args, "--epd-readiness-acceptance")) {
+    // Open/close the real window repeatedly; each cycle records panel states and process RSS.
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    const int cycles = std::max(1, cli_value(args, "--cycles").toInt());
+    const int first_duration = std::max(5, cli_value(args, "--duration-s").toInt());
+    QJsonArray rss_kib;
+    int rc = 0;
+    for (int cycle = 1; cycle <= cycles && rc == 0; ++cycle) {
+      {
+        MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+        TestMain::start_epd_readiness_acceptance(&w, &a, output, scene, cli_value(args, "--scene-path"),
+          cycle, cycle == 1 ? first_duration : 8);
+        rc = a.exec();
+      }
+      QCoreApplication::processEvents();
+      QFile statm("/proc/self/status"); statm.open(QIODevice::ReadOnly);
+      for (const auto & line : QString::fromUtf8(statm.readAll()).split('\n')) {
+        if (line.startsWith("VmRSS:")) rss_kib.append(line.section(QRegularExpression("\\s+"), 1, 1).toInt());
+      }
+    }
+    QFile f(output + "/lifecycle.json");
+    if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(QJsonObject{{"cycles", cycles}, {"exit_code", rc},
+      {"rss_kib_after_each_close", rss_kib}, {"windows_alive_after_close", QApplication::topLevelWidgets().size()}}).toJson());
+    return rc;
+  }
+  if (has_cli_flag(args, "--multiobject-plan-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString recording = cli_value(args, "--observations");
+    if (output.isEmpty() || recording.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
+    TestMain::start_multiobject_plan_acceptance(&w, &a, output, recording, has_cli_flag(args, "--reopen"),
+                                                has_cli_flag(args, "--no-plan-check"), cli_value(args, "--sequence-order"),
+                                                cli_value(args, "--sequence-places"), cli_value(args, "--expect-sequence"));
     return a.exec();
   }
   if (has_cli_flag(args, "--full-cycle-acceptance")) {

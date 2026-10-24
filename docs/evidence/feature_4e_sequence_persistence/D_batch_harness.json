@@ -1,0 +1,30 @@
+{
+  "batch_report": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234322Z/batch_plan_check.json",
+  "final_details": "1. runtime::cup-01 [cup] \u2192 default_drop_zone: PLANNABLE (grasp strategy top_2f, all nine stages planned)\n2. runtime::cup-02 [cup] \u2192 default_drop_zone: PLANNABLE (grasp strategy top_2f, all nine stages planned)\n3. runtime::cup-03 [cup] \u2192 default_drop_zone: COLLISION\n   first failed stage: PREPLAN_GRASP\n   reason: MoveIt action failed: status=6, code=-27\n   collides with: runtime::bottle-e, runtime::bottle-w\nObstacle (not picked): runtime::bottle-e [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle (not picked): runtime::bottle-n [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle (not picked): runtime::bottle-s [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle (not picked): runtime::bottle-w [bottle] \u2014 CLASS_OR_COLOUR_MISMATCH\nObstacle (not picked): runtime::cup-04 [cup] \u2014 OUTSIDE_PICK_VOLUME\nEach object was planned from the same recorded scene; picking one first is not simulated, so the batch order is NOT validated.\nGRASP plans are not reachability-free execution approvals. No robot movement was performed.\nEvidence: /ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234322Z",
+  "final_status": "Finished plan check (no motion): 3 objects \u2014 1 COLLISION, 2 PLANNABLE. Sequence not validated.",
+  "generate_wait_ticks": 11,
+  "last_progress": "Checking 3 of 3: runtime::cup-03 (cup) \u2014 PREPLAN_GRASP. No motion.",
+  "outcome_counts": {
+    "BLOCKED": 0,
+    "COLLISION": 1,
+    "INVALID_GEOMETRY": 0,
+    "INVALID_INPUT": 0,
+    "MISSING_DESTINATION": 0,
+    "NO_VALID_GRASP": 0,
+    "PLANNABLE": 2,
+    "SEQUENCE_BLOCKED": 0,
+    "STALE_INPUT": 0,
+    "UNREACHABLE": 0
+  },
+  "phase": "author",
+  "progress": {
+    "has_selected_scene": true,
+    "load_watcher_running": false,
+    "phase": 6,
+    "ticks": 1
+  },
+  "result": "PASS",
+  "robot_motion_commanded": false,
+  "sequence_status": "SEQUENCE_NOT_VALIDATED",
+  "status": "CHECKED"
+}

@@ -346,6 +346,42 @@ def edit(rows, identifier, *, parent_object=None, parent_link=None,
     return updated
 
 
+def datum_frames(rows):
+    """World frames of every datum, for visual mate picking.
+
+    The resolver owns the transform: each asset's resolved world pose composed
+    with its datum frame (own anchors, the reviewed support surface and, while
+    the mesh calibration matches, reviewed catalog datums). Viewports only
+    compare picked geometry against these frames; task zones are not physical
+    mounting targets and are omitted.
+    """
+    resolved = validate(rows)
+    result = {}
+    for row in rows:
+        if semantic_zone(row):
+            continue
+        world = resolved[row['id']]
+        own = anchors(row)
+        frames = {}
+        for name, datum in {**catalog_datums(row), **own}.items():
+            xyz, rot = compose(world, pose(datum))
+            if name == 'origin':
+                source = 'asset origin'
+            elif name == 'surface' and 'surface' not in (row.get('mounting_anchors') or {}):
+                source = 'reviewed support surface (surface_z_m)'
+            elif 'catalog_asset_id' in datum:
+                source = f"reviewed catalog datum ({datum['catalog_asset_id']}), copied into the cell when used"
+            else:
+                source = datum.get('source') or 'asset mounting anchor'
+            frames[name] = {
+                'datum_type': datum['datum_type'], 'label': datum.get('label', ''), 'source': source,
+                'xyz': xyz, 'rpy': angles(rot),
+                'x_axis': [rot[0][0], rot[1][0], rot[2][0]], 'normal': [rot[0][2], rot[1][2], rot[2][2]]}
+        xyz, rot = world
+        result[row['id']] = {'world': {'xyz': xyz, 'rpy': angles(rot)}, 'datums': frames}
+    return result
+
+
 def physical_rows(physical):
     return [item for key in COLLECTIONS for item in physical.get(key, [])]
 
@@ -383,6 +419,8 @@ if __name__ == '__main__':
         if request.get('operation') == 'anchors':
             validate(rows)
             result = {row['id']: {**catalog_datums(row), **anchors(row)} for row in rows}
+        elif request.get('operation') == 'datum_frames':
+            result = datum_frames(rows)
         else:
             result = edit(rows, request.pop('id'), **{
                 key: value for key, value in request.items()

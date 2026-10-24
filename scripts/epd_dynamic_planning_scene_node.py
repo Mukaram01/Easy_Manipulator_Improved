@@ -23,6 +23,7 @@ from capture_epd_detected_objects import convert_epd_message_to_detected_objects
 from dynamic_object_planning_scene_bridge import (
     apply_and_verify, build_collision_object, build_remove_collision_object)
 from epd_snapshot_adapter import normalize_detected_objects_snapshot
+from continuous_epd_task_binding import load_bound_live_task, bound_epd_message_error
 
 
 def load_task_contract(scene_package: str) -> dict[str, Any]:
@@ -241,8 +242,38 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout-seconds", type=float, default=5.0)
     parser.add_argument("--summary-output", type=Path, default=Path("/tmp/workcell_perception_summary.json"))
     parser.add_argument("--snapshot-output", type=Path, default=Path("/tmp/workcell_perception_snapshot.json"))
+    parser.add_argument("--task-intent-scene", type=Path,
+        help="Opt in to strict saved TaskIntent v2 camera/topic and generated-scene parity")
+    parser.add_argument("--preflight-only", action="store_true",
+        help="Inspect TaskIntent/generated scene without starting ROS or writing PlanningScene")
     args, ros_args = parser.parse_known_args(argv)
-    contract = load_task_contract(args.scene_package)
+    if args.preflight_only and args.task_intent_scene is None:
+        parser.error("--preflight-only requires --task-intent-scene")
+    try:
+        bound = load_bound_live_task(args.task_intent_scene) if args.task_intent_scene is not None else None
+        if bound is not None:
+            # Legacy fixture defaults are never accepted for a task-bound session.
+            args.scene_package = bound["scene"]
+            args.topic = bound["topic"]
+            args.message_type = bound["message_type"]
+            args.camera_id = bound["camera_id"]
+            args.frame_fallback = ""  # Native EPD headers required; no invented optical frame.
+            args.planning_frame = bound["planning_frame"]
+        contract = load_task_contract(args.scene_package)
+        if bound is not None and (
+            contract["filter"].get("class_id") != bound["target_class"] or
+            contract["task"]["pick"]["source_ref"] != bound["pick_zone"]
+        ):
+            raise ValueError("TASK_GENERATION_STALE: generated handoff disagrees with saved TaskIntent")
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        if args.preflight_only:
+            print(json.dumps({"status": "BLOCKED", "error": str(exc),
+                              "planning_ready": False, "robot_motion_commanded": False}))
+            return 1
+        raise
+    if args.preflight_only:
+        print(json.dumps(bound, indent=2, sort_keys=True))
+        return 0
 
     import rclpy
     from epd_msgs.msg import EPDObjectLocalization, EPDObjectTracking
@@ -260,6 +291,12 @@ def main(argv: list[str] | None = None) -> int:
     listener = TransformListener(buffer, node)  # noqa: F841
     publisher = node.create_publisher(String, args.normalized_topic, 10)
     summary = initial_summary()
+    if bound is not None:
+        summary.update(
+            task_binding="saved_task_intent_v2", camera_source=bound["camera_source"],
+            camera_id=bound["camera_id"], source_identity_attested=False,
+            planning_ready=False, no_robot_motion=True,
+            note="Configured ROS transport only; not authenticated hardware or full-cycle planning")
     applied_ids: set[str] = set()
     latest_objects: dict[str, Any] = {}
     ownership = {"id": "", "object": None}
@@ -300,22 +337,40 @@ def main(argv: list[str] | None = None) -> int:
     def process_message(message: Any) -> None:
         nonlocal seen_message, latest_snapshot, last_stamp_ns
         seen_message = True
+        if bound is not None:
+            failure = bound_epd_message_error(
+                message, bound, node.get_clock().now().nanoseconds, last_stamp_ns)
+            if failure:
+                raise ValueError(failure)
         detected, warnings = convert_epd_message_to_detected_objects(
             message, args.topic, args.scene_package, args.frame_fallback)
         summary["objects_received"] += len(detected["objects"])
-        profile = {"scene_id": args.scene_package, "perception": {"camera": {
+        profile = {"scene_id": bound["scene_id"] if bound is not None else args.scene_package,
+                   "perception": {"camera": {
             "camera_id": args.camera_id, "frame_id": detected["source"]["frame_id"]}}}
         normalized = normalize_detected_objects_snapshot(detected, profile)
         summary["objects_normalized"] += len(normalized["objects"])
+        if bound is not None:
+            # This remains only the configured topic/scene binding, not proof
+            # of real D435i or Gazebo sensor origin. No camera identity forgery.
+            normalized["configured_camera_source"] = bound["camera_source"]
+            normalized["source_identity_attested"] = False
         from perceived_object_grasp_plan import _collision_object_dict
         eligible = []
         rejected = {}
+        scene_observed_ids: set[str] = set()
+        geometry_blockers: dict[str, str] = {}
         stamp_ns = detected["source"].get("source_stamp_ns")
         last_stamp_ns = stamp_ns or 0
         used_runtime_ids: set[str] = set()
         for observed in normalized["objects"]:
             assign_stable_runtime_id(observed, previous_associations, next_association_ids, used_runtime_ids)
-            reason = observation_gate(observed, stamp_ns, node.get_clock().now().nanoseconds, contract)
+            is_target = str(observed.get("label", "")).casefold() == str(contract["filter"]["class_id"]).casefold()
+            # In the task-bound mode, other classes remain measured *collision
+            # obstacles*, not pick candidates. Never erase bottles just because
+            # the task asks for cups. The frame/stamp gate above covers both.
+            reason = (observation_gate(observed, stamp_ns, node.get_clock().now().nanoseconds, contract)
+                      if is_target or bound is None else "")
             if reason:
                 rejected[str(observed["object_id"])] = reason
                 continue
@@ -324,17 +379,20 @@ def main(argv: list[str] | None = None) -> int:
             if built.status != "PASS":
                 summary["tf_failures"] += int("TF unavailable" in built.reason)
                 summary["geometry_blocked"] += int("geometry" in built.reason)
+                if bound is not None:
+                    geometry_blockers[object_id] = built.reason
                 node.get_logger().warning(f"{built.status} {object_id}: {built.reason}")
                 continue
             box = _collision_object_dict(built.collision_object)
-            pick_zone = contract["zones"][contract["task"]["pick"]["source_ref"]]
-            try:
-                if not zone_contains_box(pick_zone, box):
-                    rejected[object_id] = "outside pick zone (complete perceived box must fit)"
+            if is_target or bound is None:
+                pick_zone = contract["zones"][contract["task"]["pick"]["source_ref"]]
+                try:
+                    if not zone_contains_box(pick_zone, box):
+                        rejected[object_id] = "outside pick zone (complete perceived box must fit)"
+                        continue
+                except ValueError as exc:
+                    rejected[object_id] = str(exc)
                     continue
-            except ValueError as exc:
-                rejected[object_id] = str(exc)
-                continue
             latest_objects[object_id] = built.collision_object
             if ownership["id"] == object_id and ownership["object"] is None:
                 ownership["object"] = built.collision_object
@@ -357,14 +415,21 @@ def main(argv: list[str] | None = None) -> int:
             if applied.status == "PASS":
                 record_verified(summary, object_id)
                 applied_ids.add(object_id)
-                item = copy.deepcopy(observed)
-                item["pose"] = {"frame_id": args.planning_frame, "position": box["pose"][:3],
-                                "orientation_xyzw": box["pose"][3:]}
-                eligible.append(item)
+                scene_observed_ids.add(object_id)
+                if is_target:
+                    item = copy.deepcopy(observed)
+                    item["pose"] = {"frame_id": args.planning_frame, "position": box["pose"][:3],
+                                    "orientation_xyzw": box["pose"][3:]}
+                    eligible.append(item)
             else:
+                if bound is not None:
+                    geometry_blockers[object_id] = "PlanningScene ADD/verification failed: " + applied.reason
                 node.get_logger().error(f"{applied.status} {object_id}: {applied.reason}")
         eligible_ids = {str(item["object_id"]) for item in eligible}
-        removals = set(normalized.get("lost_object_ids", [])) | (applied_ids - eligible_ids)
+        # Task-bound continuous scenes retain *all* successfully observed
+        # collision objects, even if their class does not match pick intent.
+        retained_ids = scene_observed_ids if bound is not None else eligible_ids
+        removals = set(normalized.get("lost_object_ids", [])) | (applied_ids - retained_ids)
         for raw_id in sorted(removals):
             object_id = str(raw_id)
             if object_id == ownership["id"]:
@@ -395,11 +460,26 @@ def main(argv: list[str] | None = None) -> int:
         # Publish the normalized runtime contract after stable association and
         # planning-frame conversion. Raw EPD IDs would make localization-only
         # updates look like new collision objects.
-        publisher.publish(String(data=json.dumps(latest_snapshot, sort_keys=True)))
+        if bound is None:
+            publisher.publish(String(data=json.dumps(latest_snapshot, sort_keys=True)))
         summary["eligible_ids"] = sorted(eligible_ids)
+        summary["collision_obstacle_ids"] = sorted(scene_observed_ids - eligible_ids)
         summary["rejected_objects"] = rejected
-        summary["result"] = "READY" if eligible else "BLOCKED"
-        summary["blocker"] = "" if eligible else "no eligible live perception target"
+        if bound is not None and geometry_blockers:
+            summary["result"] = "BLOCKED"
+            summary["blocker"] = "unqualified perceived collision geometry or MoveIt update"
+            summary["geometry_blockers"] = geometry_blockers
+            summary["eligible_ids"] = []
+            # Never publish candidate targets as motion/plan-ready when a
+            # nearby non-target obstacle could not be represented safely.
+            latest_snapshot["objects"] = []
+            latest_snapshot["rejected_objects"].update(geometry_blockers)
+            publisher.publish(String(data=json.dumps(latest_snapshot, sort_keys=True)))
+        else:
+            summary["result"] = "READY" if eligible else "BLOCKED"
+            summary["blocker"] = "" if eligible else "no eligible live perception target"
+            if bound is not None:
+                publisher.publish(String(data=json.dumps(latest_snapshot, sort_keys=True)))
         write_summary(args.snapshot_output, latest_snapshot)
         if warnings:
             summary["adapter_warnings"] = warnings

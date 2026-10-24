@@ -60,7 +60,11 @@ def _wizard_intent(scene, env):
                                 'approach': {'axis': 'z_down', 'distance_m': 0.1}, 'clearance_m': 0.01,
                                 'retreat': {'axis': 'z_up', 'distance_m': 0.1}},
                   'release': {'strategy': 'tool_release'}},
-        'perception': {'mode': {'recorded_perception': 'replayed_snapshot', 'live_epd_realsense': 'live_epd'}.get(source.get('mode'), 'off'), 'replay_path': ''},
+        'perception': {
+            'mode': {'recorded_perception': 'replayed_snapshot', 'live_epd_realsense': 'live_epd'}.get(source.get('mode'), 'off'),
+            'replay_path': '',
+            **({'camera_source': 'realsense_d435i'} if source.get('mode') == 'live_epd_realsense' else {}),
+        },
         'safety': {'execution_mode': 'simulation_preview', 'require_fake_hardware': True,
                    'real_hardware_enabled': False, 'preview_policy': 'diagnostic_if_unresolved'},
     }
@@ -102,6 +106,13 @@ def planning_input(scene, intent, override=None):
         raise ValueError('LIVE_INPUT_REQUIRED: live mode needs current normalized observations, not a replay template.')
     if replay and snapshot.get('source', {}).get('mode') != 'replayed_snapshot':
         raise ValueError('REPLAY_INPUT_REQUIRED: select a snapshot declaring source.mode=replayed_snapshot.')
+    if not replay:
+        chosen_camera = binding.get('camera_source')
+        if chosen_camera not in ('simulated_rgbd', 'realsense_d435i'):
+            raise ValueError('CAMERA_SOURCE_REQUIRED: choose Simulated RGB-D or Intel RealSense D435i in Task settings.')
+        reported_camera = snapshot['source'].get('camera_source')
+        if reported_camera != chosen_camera:
+            raise ValueError(f'CAMERA_SOURCE_MISMATCH: selected {chosen_camera}, but the normalized live observation declares {reported_camera!r}; verify the EPD adapter and camera connection.')
     # Reuse the runtime normalizer and shared selection/zone authority. This is
     # input eligibility, never a replacement for collision-aware cycle planning.
     from runtime_pick_inputs import normalize, replay_snapshot
@@ -147,6 +158,15 @@ def load_authoring(scene, draft=None):
     except (ValueError, OSError, yaml.YAMLError) as exc:
         report['planning_input_blocker'] = str(exc)
     report['pick_zones'] = [z['id'] for z in env.get('task_zones', []) if z.get('type') == 'pick_zone']
+    intent = parsed['normalized']
+    if intent is not None and intent.get('sequence') is not None:
+        # The same review the queue preview and the full-sequence check apply to this (draft) task.
+        from simulation_batch_preview import review_sequence
+        try:
+            report['sequence_review'] = review_sequence(scene, intent)
+        except (ValueError, KeyError, TypeError, OSError, yaml.YAMLError) as exc:  # never hide the task itself
+            report['sequence_review'] = {'status': 'BLOCKED', 'items': [], 'order': [], 'placements': {},
+                                         'summary': f'BLOCKED: the saved sequence cannot be checked: {exc}'}
     return report
 
 

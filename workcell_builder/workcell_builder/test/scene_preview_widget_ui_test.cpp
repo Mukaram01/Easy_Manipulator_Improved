@@ -26,13 +26,31 @@
 #include <functional>
 
 namespace {
+// The QApplication must be destroyed inside main(). As a function-local static
+// it was destroyed by exit(), after Qt's per-thread storage; QtWebEngine's post
+// routine then deleted its shared QOpenGLContext through that storage and the
+// test process crashed after every test had finished.
+class QtApplicationEnvironment : public ::testing::Environment
+{
+public:
+  void TearDown() override
+  {
+    delete app;
+    app = nullptr;
+  }
+  static QApplication * app;
+};
+QApplication * QtApplicationEnvironment::app = nullptr;
+[[maybe_unused]] ::testing::Environment * const qt_application_environment =
+  ::testing::AddGlobalTestEnvironment(new QtApplicationEnvironment);
+
 QApplication * ensure_app()
 {
   if (QApplication::instance()) return qobject_cast<QApplication *>(QApplication::instance());
   static int argc = 0;
   static char * argv[] = { nullptr };
-  static QApplication app(argc, argv);
-  return &app;
+  QtApplicationEnvironment::app = new QApplication(argc, argv);
+  return QtApplicationEnvironment::app;
 }
 
 TEST(ScenePreviewWidgetUi, AuthoringOverlayPreservesCatalogIdentityScaleAndDistinctInstances)
@@ -365,6 +383,55 @@ TEST(ScenePreviewWidgetUi, EquivalentPreviewContextsPrepareProductViewOnlyOnce)
   widget.set_preview_context(first_context);
   widget.set_preview_scene_name(" ur5_2f_test ");
   EXPECT_EQ(widget.embedded_web_preparation_request_count(), preparations + 1);
+}
+
+TEST(ScenePreviewWidgetUi, LiveLibraryPartIsHandedItsStagedMesh)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  QTemporaryDir temporary_root;
+  ASSERT_TRUE(temporary_root.isValid());
+  const QString repo = QFileInfo(temporary_root.path()).canonicalFilePath();
+  const QString library = QStringLiteral(
+    "workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl");
+  ASSERT_TRUE(QDir().mkpath(QFileInfo(QDir(repo).filePath(library)).absolutePath()));
+  QFile mesh(QDir(repo).filePath(library));
+  ASSERT_TRUE(mesh.open(QIODevice::WriteOnly));
+  mesh.write("solid camera_stand\nendsolid camera_stand\n");
+  mesh.close();
+
+  ScenePreviewWidget widget;
+  widget.preview_context_.scene_id = QStringLiteral("ur5_2f_test");
+  widget.preview_context_.absolute_scene_dir = QDir(repo).filePath("scenes/ur5_2f_test");
+  widget.preview_context_.absolute_repo_root = repo;
+  QStringList logs;
+  QObject::connect(&widget, &ScenePreviewWidget::studio_log_requested, [&logs](const QString & line) { logs << line; });
+
+  // Catalog placement holds the absolute Asset Library path, outside the served roots.
+  ScenePreviewWidget::PreviewItem stand;
+  stand.id = QStringLiteral("object_01");
+  stand.catalog_asset_id = QStringLiteral("camera_stand");
+  stand.category = QStringLiteral("environment_object");
+  stand.source_path = stand.mesh_path = QDir(repo).filePath(library);
+  stand.mesh_type = QStringLiteral("stl");
+  stand.source_layer = QStringLiteral("editable_layout");
+  stand.editable = true;
+  const QJsonObject payload = widget.live_authoring_item_payload(stand);
+  const QString staged = QStringLiteral("build/workcell_studio_web_scene/assets/ur5_2f_test/") + library;
+  EXPECT_EQ(payload.value("mesh_uri").toString(), staged);
+  EXPECT_EQ(payload.value("mesh_staging_status").toString(), QStringLiteral("staged"));
+  EXPECT_EQ(payload.value("source_mesh_path").toString(), library);
+  EXPECT_TRUE(QFileInfo(QDir(repo).filePath(staged)).isFile());
+  ASSERT_EQ(logs.size(), 1);
+  EXPECT_TRUE(logs.front().contains(staged));
+
+  // A mesh the viewer cannot load leaves the placeholder, and says why.
+  stand.id = QStringLiteral("object_02");
+  stand.source_path = stand.mesh_path = QStringLiteral("/nonexistent/part.stl");
+  const QJsonObject missing = widget.live_authoring_item_payload(stand);
+  EXPECT_FALSE(missing.contains("mesh_uri"));
+  EXPECT_EQ(missing.value("mesh_staging_status").toString(), QStringLiteral("missing_file"));
+  ASSERT_EQ(logs.size(), 2);
+  EXPECT_TRUE(logs.back().contains(QStringLiteral("placeholder")));
 }
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE

@@ -8,12 +8,14 @@ class QFormLayout;
 class QLabel;
 class QComboBox;
 class QTimer;
+class QProcess;
 
 class TaskIntentEditor : public QGroupBox
 {
   Q_OBJECT
 public:
   explicit TaskIntentEditor(QWidget * parent = nullptr);
+  ~TaskIntentEditor() override;
   bool confirm_scene_change(const QString & scene);
   bool load_scene(const QString & scene, const QString & helper);
   bool save(QString * error = nullptr);
@@ -28,6 +30,10 @@ signals:
   void edited();
   void saved();
 private:
+  void start_plan_check(bool sequence = false);
+  void on_plan_check_output();
+  void finish_plan_check(int exit_code, bool normal_exit);
+  bool stop_plan_check(int wait_ms);
   void set_field(const QString & path, const QJsonValue & value);
   void refresh_fields();
   QJsonObject request(bool draft);
@@ -48,4 +54,25 @@ private:
   QComboBox * assets_;
   QComboBox * regions_;
   QComboBox * pick_zones_;
+  // Feature 4B: owned plan-only batch check (fake hardware, never executes).
+  QProcess * plan_check_{nullptr};
+  QString plan_check_scene_, plan_check_task_bytes_;
+  QByteArray plan_check_buffer_;
+  QJsonObject plan_check_report_;
+  QStringList plan_check_lines_;
+  int plan_check_total_{0};
+  bool plan_check_sequence_{false};
+  void clear_sequence_results(const QString & why);
+  // Feature 4E: the pick sequence saved in the task (sequence block), edited in the Task tab.
+  void rebuild_sequence(const QJsonObject & report);
+  void apply_sequence_review(const QJsonObject & review);
+  void refresh_sequence_texts();
+  void show_selected_place();
+  void write_sequence();
+  void update_dirty_ui();
+public:
+  void revert();
+private:
+  QString sequence_source_sha_;
+  bool sequence_loading_{false}, sequence_rebind_pending_{false};
 };
