@@ -63,7 +63,10 @@ int main(int argc, char** argv) {
     dynamics::BodyNode* pad;
     if (k == 0) {
       pad = gripper->createJointAndBodyNodePair<dynamics::PrismaticJoint>(palm, pj).second;
-      pad->getParentJoint()->setActuatorType(dynamics::Joint::FORCE);
+      if (std::getenv("SERVO_V")) {    // stalled velocity servo with an effort cap, as ign_ros2_control position mode
+        pad->getParentJoint()->setActuatorType(dynamics::Joint::SERVO);
+        pad->getParentJoint()->setForceUpperLimit(0, force); pad->getParentJoint()->setForceLowerLimit(0, -force);
+      } else pad->getParentJoint()->setActuatorType(dynamics::Joint::FORCE);
     } else {
       dynamics::WeldJoint::Properties wj; wj.mName = "pad2"; wj.mT_ParentBodyToJoint = tool0.inverse() * tip;
       pad = gripper->createJointAndBodyNodePair<dynamics::WeldJoint>(palm, wj).second;
@@ -106,7 +109,8 @@ int main(int argc, char** argv) {
     Eigen::Vector6d twist = math::logMap(now.inverse() * target) / world->getTimeStep();
     palm->getParentJoint()->setCommands(twist);
   };
-  auto squeeze = [&]() { pads[0]->getParentJoint()->setCommand(0, force); };
+  const double servo_v = std::getenv("SERVO_V") ? std::stod(std::getenv("SERVO_V")) : 0.0;
+  auto squeeze = [&]() { pads[0]->getParentJoint()->setCommand(0, std::getenv("SERVO_V") ? servo_v : force); };
   auto relative = [&]() { return Isometry3d(palm->getWorldTransform().inverse() * body->getWorldTransform()); };
   auto padload = [&](int k) {      // normal force on one pad from the last solve (sum over its contacts)
     double sum = 0; const auto& res = world->getLastCollisionResult();
