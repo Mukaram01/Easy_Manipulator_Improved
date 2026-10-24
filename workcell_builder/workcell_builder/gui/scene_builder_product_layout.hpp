@@ -18,6 +18,7 @@
 #include <QSettings>
 #include <QSizePolicy>
 #include <QSplitter>
+#include <QStyle>
 #include <QStringList>
 #include <QTabBar>
 #include <QTabWidget>
@@ -29,6 +30,7 @@
 
 #include "gui/mainwindow.h"
 #include "scene_preview_widget.h"
+#include "workcell_builder_ui_utils.hpp"
 
 namespace workcell_builder
 {
@@ -218,6 +220,30 @@ inline QPushButton * make_proxy_button(
   return button;
 }
 
+// 8 px side padding on the button itself (wins over inherited toolbar rules) and a
+// minimum width from its bold label, so "Select"/"Rotate" never collapse to
+// "Selec/Rotat" and the toolbar still fits Mate at 1366 px.
+enum class ToolbarSegment { None, First, Middle, Last };
+inline void compact_toolbar_button(QPushButton * button, ToolbarSegment segment = ToolbarSegment::None)
+{
+  if (!button) return;
+  // A widget's own style sheet wins over inherited rules property by property,
+  // so a segment restates its joined-segment borders here.
+  QString rules = QStringLiteral("padding-left: 8px; padding-right: 8px;");
+  const QString radius = workcell_builder::studioTokens().radiusS;
+  if (segment != ToolbarSegment::None) rules += QStringLiteral(" border-radius: 0; border-right-width: 0;");
+  if (segment == ToolbarSegment::First) {
+    rules += QStringLiteral(" border-top-left-radius: %1; border-bottom-left-radius: %1;").arg(radius);
+  } else if (segment == ToolbarSegment::Last) {
+    rules += QStringLiteral(" border-top-right-radius: %1; border-bottom-right-radius: %1; border-right-width: 1px;").arg(radius);
+  }
+  button->setStyleSheet(QStringLiteral("QPushButton { %1 }").arg(rules));
+  button->ensurePolished();
+  QFont bold = button->font();
+  bold.setBold(true);
+  button->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(button->text()) + 2 * 8 + 6);
+}
+
 inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * preview)
 {
   if (!scene_page) return;
@@ -235,6 +261,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   if (move) move->setObjectName(QStringLiteral("sceneBuilderModeMove"));
   if (rotate) rotate->setObjectName(QStringLiteral("sceneBuilderModeRotate"));
   if (save) save->setObjectName(QStringLiteral("sceneBuilderToolbarSave"));
+  QPushButton * mate = scene_page->findChild<QPushButton *>(QStringLiteral("sceneBuilderToolbarMate"));
 
   QPushButton * embedded_add = button_with_text(preview, QStringLiteral("Add object"));
   QPushButton * embedded_fit = preview ? preview->findChild<QPushButton *>(QStringLiteral("embeddedFitButton")) : nullptr;
@@ -270,6 +297,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     duplicate->setFocusPolicy(Qt::NoFocus);
   }
 
+  layout->setSpacing(4);  // Mate fits at 1366 px without squeezing Select/Move/Rotate
   const auto add_existing = [layout](QWidget * widget) {
     if (!widget) return;
     widget->show();
@@ -285,18 +313,33 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     if (!button) continue;
     button->show();
     button->setMinimumHeight(32);
+    compact_toolbar_button(button, button == select ? ToolbarSegment::First
+      : button == rotate ? ToolbarSegment::Last : ToolbarSegment::Middle);
     button->setProperty("editModeSegment", true);
     edit_mode_layout->addWidget(button);
   }
   layout->addWidget(edit_mode_group);
-  layout->addSpacing(10);
+  layout->addSpacing(4);
   if (place) place->hide();
+  for (auto * compact : {fit, mate}) compact_toolbar_button(compact);
   add_existing(add_object);
   add_existing(fit);
+  add_existing(mate);
   layout->addStretch(1);
+  // Undo/Redo as compact icon buttons so the toolbar fits a 1366 px display;
+  // the text stays as tooltip and accessible name.
+  for (auto * button : {undo, redo}) {
+    if (!button) continue;
+    const bool is_undo = button == undo;
+    button->setIcon(host->style()->standardIcon(is_undo ? QStyle::SP_ArrowBack : QStyle::SP_ArrowForward));
+    button->setToolTip(is_undo ? QStringLiteral("Undo (Ctrl+Z)") : QStringLiteral("Redo (Ctrl+Shift+Z)"));
+    button->setAccessibleName(button->text());
+    button->setText(QString());
+    button->setFixedWidth(34);
+  }
   add_existing(undo);
   add_existing(redo);
-  layout->addSpacing(8);
+  layout->addSpacing(4);
   add_existing(save);
   add_existing(overflow);
 
@@ -388,7 +431,11 @@ inline void simplify_inspector(QWidget * scene_page)
       }
     }
     for (auto * spin : selection_page->findChildren<QDoubleSpinBox *>()) {
-      if (spin) spin->setMinimumWidth(76);
+      if (!spin) continue;
+      // Prefix + unit suffix make the spin box's size hint wider than a third
+      // of the inspector; share the row width instead of overflowing it.
+      spin->setMinimumWidth(64);
+      spin->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     }
     for (auto * scroll : selection_page->findChildren<QScrollArea *>()) {
       if (scroll) scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -444,25 +491,30 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   auto * right = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderRightPanel"));
   auto * splitter = scene_page->findChild<QSplitter *>(QStringLiteral("sceneBuilderMainSplitter"));
   if (left) {
-    left->setMinimumWidth(240);
+    left->setMinimumWidth(200);
     left->setMaximumWidth(340);
   }
-  if (center) center->setMinimumWidth(760);
+  // 200 + 600 + 470 = 1270 px of panels: measured at 1366 px the page offers
+  // ~1280 px, so neither the toolbar (~600 px) nor the inspector (~466 px for
+  // three unit spin boxes per row) is squeezed or pushed off-screen.
+  if (center) center->setMinimumWidth(600);
   if (right) {
-    right->setMinimumWidth(300);
-    right->setMaximumWidth(400);
+    // Unit suffixes (m, °) widen the transform spin boxes; keep the inspector
+    // wide enough that no field or button is ever clipped.
+    right->setMinimumWidth(470);
+    right->setMaximumWidth(540);
     right->show();
   }
   if (splitter) {
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 10);
     splitter->setStretchFactor(2, 1);
-    splitter->setSizes({280, 1040, 340});
+    splitter->setSizes({280, 960, 480});
   }
 
   QSettings settings;
   settings.setValue(QStringLiteral("scene_builder/preferred_left_width"), 280);
-  settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 340);
+  settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 480);
   settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), true);
 
   simplify_hierarchy(scene_page);
@@ -474,39 +526,44 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   rebuild_single_toolbar(scene_page, preview);
   hide_embedded_preview_chrome(preview);
 
-  scene_page->setStyleSheet(scene_page->styleSheet() + QStringLiteral(R"QSS(
-    QWidget#workcellStudioSceneBuilderPage { background:#F7F9FC; color:#172B3F; }
-    QTabBar#sceneBuilderMajorTabs { background:#FFFFFF; border-bottom:1px solid #DDE5EE; }
-    QTabBar#sceneBuilderMajorTabs::tab { min-width:74px; padding:10px 16px; color:#5C6F82; border:0; border-bottom:2px solid transparent; font-weight:600; }
-    QTabBar#sceneBuilderMajorTabs::tab:selected { color:#125FC3; border-bottom:2px solid #246FE5; }
-    QWidget#sceneBuilderWorkspace { background:#FFFFFF; border:1px solid #DDE5EE; border-radius:0px; }
-    QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background:#FFFFFF; border:0px; }
-    QFrame#sceneBuilderProductViewPanel { background:#F8FAFC; border:0px; }
-    QWidget#scene_builder_top_controls_host { background:#FFFFFF; border:0px; }
-    QWidget#scene_builder_top_controls_host QPushButton { min-height:32px; padding:4px 10px; border:1px solid #D5DEE8; border-radius:6px; background:#FFFFFF; color:#40566B; }
-    QWidget#sceneBuilderEditModeGroup QPushButton { border-radius:0; border-right-width:0; min-width:64px; }
-    QPushButton#sceneBuilderModeSelect { border-top-left-radius:6px; border-bottom-left-radius:6px; }
-    QPushButton#sceneBuilderModeRotate { border-top-right-radius:6px; border-bottom-right-radius:6px; border-right-width:1px; }
-    QWidget#sceneBuilderEditModeGroup QPushButton:checked { background:#246FE5; color:#FFFFFF; border-color:#246FE5; font-weight:600; }
-    QPushButton#sceneBuilderToolbarSave[layoutDirty="true"] { background:#246FE5; color:#FFFFFF; border-color:#246FE5; font-weight:600; }
-    QPushButton#sceneBuilderToolbarSave[layoutDirty="false"] { background:#F4F7FA; color:#708092; border-color:#DCE4EC; }
-    QTreeWidget#studioSceneHierarchyTree { background:#FFFFFF; border:0px; outline:0px; }
-    QTreeWidget#studioSceneHierarchyTree::item { min-height:28px; padding:2px 4px; }
-    QTreeWidget#studioSceneHierarchyTree::item:selected { background:#EAF2FB; color:#153B5F; border-radius:4px; }
-    QLineEdit#sceneBuilderHierarchySearch { min-height:30px; border:1px solid #D8E2EC; border-radius:6px; padding:2px 8px; background:#FFFFFF; }
-    QGroupBox#sceneBuilderLayersGroup { border:1px solid #DCE5EE; border-radius:6px; margin-top:8px; padding:8px; font-weight:600; }
-    QFrame#sceneBuilderBottomStatusBar { min-height:32px; max-height:32px; background:#F8FAFC; border-top:1px solid #DDE5EE; border-left:0; border-right:0; border-bottom:0; border-radius:0; }
-    QPushButton#sceneBuilderActivityStrip { min-height:32px; max-height:32px; padding:0 10px; border:0; border-radius:0; background:transparent; color:#5C6F82; text-align:left; }
-    QPushButton#sceneBuilderActivityStrip:hover, QPushButton#sceneBuilderActivityStrip:checked { background:#EEF3F8; color:#27445F; }
-    QPushButton#sceneBuilderActivityStrip[hasIssues="true"] { color:#9A4D18; }
-    QPushButton#sceneBuilderPlaceAsset { background:#246FE5; color:#FFFFFF; border:1px solid #246FE5; font-weight:600; min-height:32px; }
-    QPushButton#sceneBuilderAssetDetails, QPushButton#sceneBuilderInspectorApply, QPushButton#sceneBuilderInspectorRevert, QPushButton#sceneBuilderInspectorCopyTransform, QPushButton#sceneBuilderInspectorPasteTransform { background:#FFFFFF; color:#52677B; border:1px solid #D7E0E9; }
-    QTabWidget#sceneBuilderInspectorTabs::pane { border:0px; background:#FFFFFF; }
-    QTabWidget#sceneBuilderInspectorTabs QTabBar::tab { padding:7px 10px; }
-    QGraphicsView#digital_twin_minimap { border:1px solid #D8E2EC; border-radius:6px; background:#F8FAFC; }
-    QGroupBox#sceneBuilderInspectorAdvancedDetails { margin-top:6px; padding:5px; }
-    QFrame#sceneBuilderRightPanel QDoubleSpinBox { min-width:76px; }
-  )QSS"));
+  scene_page->setStyleSheet(scene_page->styleSheet() + studioQss(QStringLiteral(R"QSS(
+    QWidget#workcellStudioSceneBuilderPage { background: @bg; color: @text; }
+    QTabBar#sceneBuilderMajorTabs { background: @surface; border-bottom: 1px solid @border; }
+    QTabBar#sceneBuilderMajorTabs::tab { min-width: 74px; padding: 10px 16px; color: @textSecondary; border: 0; border-bottom: 2px solid transparent; font-weight: 600; }
+    QTabBar#sceneBuilderMajorTabs::tab:selected { color: @accent; border-bottom: 2px solid @accent; }
+    QWidget#sceneBuilderWorkspace { background: @surface; border: 1px solid @border; border-radius: 0px; }
+    QFrame#sceneBuilderLeftPanel, QFrame#sceneBuilderRightPanel { background: @surface; border: 0px; }
+    QFrame#sceneBuilderProductViewPanel { background: @surfaceSunken; border: 0px; }
+    QWidget#scene_builder_top_controls_host { background: @glass; border: 0px; border-bottom: 1px solid @glassBorder; }
+    QWidget#scene_builder_top_controls_host QPushButton { min-height: 32px; padding: 4px 12px; border: 1px solid @borderStrong; border-radius: @radiusS; background: @surface; color: @text; }
+    QWidget#scene_builder_top_controls_host QPushButton:hover { background: @accentSoft; border-color: @accent; }
+    QWidget#sceneBuilderEditModeGroup QPushButton { border-radius: 0; border-right-width: 0; }
+    QWidget#scene_builder_top_controls_host QPushButton#sceneBuilderToolbarMate:checked { background: @accent; color: @accentText; border-color: @accent; font-weight: 600; }
+    QPushButton#sceneBuilderModeSelect { border-top-left-radius: @radiusS; border-bottom-left-radius: @radiusS; }
+    QPushButton#sceneBuilderModeRotate { border-top-right-radius: @radiusS; border-bottom-right-radius: @radiusS; border-right-width: 1px; }
+    QWidget#sceneBuilderEditModeGroup QPushButton:checked { background: @accent; color: @accentText; border-color: @accent; font-weight: 600; }
+    QPushButton#sceneBuilderToolbarSave[layoutDirty="true"] { background: @accent; color: @accentText; border-color: @accent; font-weight: 650; }
+    QPushButton#sceneBuilderToolbarSave[layoutDirty="true"]:hover { background: @accentHover; border-color: @accentHover; }
+    QPushButton#sceneBuilderToolbarSave[layoutDirty="false"] { background: @surfaceSunken; color: @textMuted; border-color: @border; }
+    QTreeWidget#studioSceneHierarchyTree { background: @surface; border: 0px; outline: 0px; }
+    QTreeWidget#studioSceneHierarchyTree::item { min-height: 28px; padding: 2px 4px; border-radius: 4px; }
+    QTreeWidget#studioSceneHierarchyTree::item:hover { background: @surfaceSunken; }
+    QTreeWidget#studioSceneHierarchyTree::item:selected { background: @accentSoft; color: @text; border-left: 3px solid @accent; }
+    QLineEdit#sceneBuilderHierarchySearch { min-height: 30px; border: 1px solid @borderStrong; border-radius: @radiusS; padding: 2px 8px; background: @surface; }
+    QGroupBox#sceneBuilderLayersGroup { border: 1px solid @border; border-radius: @radiusS; margin-top: 8px; padding: 8px; font-weight: 600; }
+    QFrame#sceneBuilderBottomStatusBar { min-height: 32px; max-height: 32px; background: @surfaceRaised; border-top: 1px solid @border; border-left: 0; border-right: 0; border-bottom: 0; border-radius: 0; }
+    QPushButton#sceneBuilderActivityStrip { min-height: 32px; max-height: 32px; padding: 0 10px; border: 0; border-radius: 0; background: transparent; color: @textSecondary; text-align: left; }
+    QPushButton#sceneBuilderActivityStrip:hover, QPushButton#sceneBuilderActivityStrip:checked { background: @surfaceSunken; color: @text; }
+    QPushButton#sceneBuilderActivityStrip[hasIssues="true"] { color: @warning; font-weight: 650; }
+    QPushButton#sceneBuilderPlaceAsset { background: @accent; color: @accentText; border: 1px solid @accent; font-weight: 600; min-height: 32px; }
+    QPushButton#sceneBuilderAssetDetails, QPushButton#sceneBuilderInspectorApply, QPushButton#sceneBuilderInspectorRevert, QPushButton#sceneBuilderInspectorCopyTransform, QPushButton#sceneBuilderInspectorPasteTransform { background: @surface; color: @text; border: 1px solid @borderStrong; }
+    QPushButton#sceneBuilderInspectorApply { background: @accentSoft; color: @accent; border-color: @accent; font-weight: 650; }
+    QTabWidget#sceneBuilderInspectorTabs::pane { border: 0px; background: @surface; }
+    QTabWidget#sceneBuilderInspectorTabs QTabBar::tab { padding: 7px 10px; }
+    QGraphicsView#digital_twin_minimap { border: 1px solid @border; border-radius: @radiusS; background: @surfaceSunken; }
+    QGroupBox#sceneBuilderInspectorAdvancedDetails { margin-top: 6px; padding: 5px; }
+    QFrame#sceneBuilderRightPanel QDoubleSpinBox { min-width: 64px; padding: 2px 4px; }
+  )QSS")));
 }
 
 }  // namespace scene_builder_product_layout

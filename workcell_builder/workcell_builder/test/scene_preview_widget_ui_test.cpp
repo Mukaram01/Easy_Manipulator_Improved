@@ -19,8 +19,11 @@
 #include "scene3d_viewport_widget.h"
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+#include <QWebEnginePage>
 #include <QWebEngineView>
 #endif
+
+#include <functional>
 
 namespace {
 QApplication * ensure_app()
@@ -923,3 +926,215 @@ TEST(SceneBuilderWorkspaceSource, CompactBottomStatusBarUsesSingleRowAndExisting
   EXPECT_FALSE(focus_block.contains(QStringLiteral("scene_builder_log_panel_->setVisible")));
   EXPECT_FALSE(focus_block.contains(QStringLiteral("request_embedded_web_product_view_refresh")));
 }
+
+TEST(ScenePreviewPreparationFailure, ShowsStderrCauseBeforeCommandDetail)
+{
+  const QString detail = QStringLiteral(
+    "prepare command failed with exit code 3; old output is rejected even if present; executable=python3 "
+    "arguments='scripts/ensure_workcell_studio_web_scene_fresh.py' '--scene' '/ws/scenes/ur5_airpick4_test' "
+    "'--output' 'build/x' working_directory=/ws exit_status=normal exit_code=3 stderr=error: command failed with "
+    "exit code 3: /usr/bin/python3 scripts/export_workcell_studio_web_scene.py\n"
+    "error: task/physical destination: destination zone 'place_zone_main' missing or ambiguous");
+  const QString concise = concise_preparation_error(detail);
+  EXPECT_TRUE(concise.contains(QStringLiteral("destination zone 'place_zone_main' missing or ambiguous")));
+  EXPECT_FALSE(concise.contains(QStringLiteral("executable=")));
+  // Without stderr the summary falls back to the leading detail, bounded in length.
+  const QString fallback = concise_preparation_error(QString(400, QLatin1Char('x')));
+  EXPECT_EQ(fallback.size(), 320);
+}
+
+#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+namespace {
+
+// A minimal checkout that passes resolve_embedded_web_repo_root's markers and
+// whose preparation script fails like a real blocked scene (exit 3).
+QString make_scene_checkout(const QString & root, const QString & scene)
+{
+  EXPECT_TRUE(QDir().mkpath(QDir(root).filePath(QStringLiteral("scenes/%1").arg(scene))));
+  EXPECT_TRUE(QDir().mkpath(QDir(root).filePath(QStringLiteral("workcell_studio_web/viewer"))));
+  EXPECT_TRUE(QDir().mkpath(QDir(root).filePath(QStringLiteral("scripts"))));
+  QFile index(QDir(root).filePath(QStringLiteral("workcell_studio_web/viewer/index.html")));
+  EXPECT_TRUE(index.open(QIODevice::WriteOnly));
+  index.write("<html></html>");
+  index.close();
+  QFile script(QDir(root).filePath(QStringLiteral("scripts/ensure_workcell_studio_web_scene_fresh.py")));
+  EXPECT_TRUE(script.open(QIODevice::WriteOnly));
+  script.write("import sys\nsys.stderr.write('error: test checkout cannot prepare\\n')\nsys.exit(3)\n");
+  script.close();
+  return QFileInfo(QDir(root).filePath(QStringLiteral("scenes/%1").arg(scene))).canonicalFilePath();
+}
+
+ScenePreviewWidget::PreviewItem authored_bin_at(double x)
+{
+  ScenePreviewWidget::PreviewItem item;
+  item.id = QStringLiteral("target_bin_default");
+  item.display_name = QStringLiteral("Target bin");
+  item.category = QStringLiteral("bin");
+  item.role = QStringLiteral("target_bin");
+  item.source_layer = QStringLiteral("editable_layout");
+  item.editable = true;
+  item.locked = false;
+  item.x = x;
+  item.y = 0.2;
+  item.sx = item.sy = item.sz = 0.1;
+  return item;
+}
+
+bool wait_until(const std::function<bool()> & predicate, int timeout_ms)
+{
+  QElapsedTimer timer;
+  timer.start();
+  while (!predicate() && timer.elapsed() < timeout_ms) QApplication::processEvents(QEventLoop::AllEvents, 50);
+  return predicate();
+}
+
+bool page_html_contains(QWebEngineView * view, const QString & needle, int timeout_ms)
+{
+  if (!view || !view->page()) return false;
+  QElapsedTimer timer;
+  timer.start();
+  while (timer.elapsed() < timeout_ms) {
+    bool done = false;
+    QString html;
+    view->page()->toHtml([&](const QString & value) { html = value; done = true; });
+    while (!done && timer.elapsed() < timeout_ms) QApplication::processEvents(QEventLoop::AllEvents, 50);
+    if (html.contains(needle)) return true;
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+  }
+  return false;
+}
+
+ScenePreviewWidget::PreviewContext checkout_context(const QString & scene, const QString & scene_dir, const QString & repo_root)
+{
+  ScenePreviewWidget::PreviewContext context;
+  context.scene_id = scene;
+  context.absolute_scene_dir = scene_dir;
+  context.absolute_repo_root = repo_root;
+  return context;
+}
+}  // namespace
+
+// Two checkouts hold the same cell id "ur5_2f_test" with different authored
+// geometry. Switching between them is a scene handoff, not a same-scene refresh:
+// the previous checkout's frame, editor callbacks, payload and in-flight
+// completions must not survive, and only the new checkout's own payload may be
+// prepared, displayed or made editable.
+TEST(ScenePreviewWidgetUi, SameNamedSceneInAnotherCheckoutIsAnOwnershipHandoff)
+{
+  ASSERT_NE(ensure_app(), nullptr);
+  QTemporaryDir root_a, root_b;
+  ASSERT_TRUE(root_a.isValid() && root_b.isValid());
+  const QString scene = QStringLiteral("ur5_2f_test");
+  const QString dir_a = make_scene_checkout(root_a.path(), scene);
+  const QString dir_b = make_scene_checkout(root_b.path(), scene);
+  const QString repo_a = QFileInfo(root_a.path()).canonicalFilePath();
+  const QString repo_b = QFileInfo(root_b.path()).canonicalFilePath();
+  ASSERT_NE(dir_a, dir_b);
+
+  ScenePreviewWidget widget;
+  if (widget.product_view_backend_ != ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D || !widget.embedded_web_view_) {
+    GTEST_SKIP() << "embedded Web3D Product View backend not active in this environment";
+  }
+  const auto context_a = checkout_context(scene, dir_a, repo_a);
+  const auto context_b = checkout_context(scene, dir_b, repo_b);
+
+  // Checkout A is open: payload committed (X = 0.47), viewer ready, editor live.
+  widget.set_preview_context(context_a);
+  ASSERT_EQ(widget.embedded_web_prepare_process_, nullptr);
+  widget.preview_items_ = {authored_bin_at(0.47)};
+  widget.preview_payload_fingerprint_ = ScenePreviewWidget::preview_payload_fingerprint(widget.preview_items_);
+  widget.preview_payload_revision_ = 1;
+  const QByteArray fingerprint_a = widget.preview_payload_fingerprint_;
+  const auto identity_a = widget.embedded_web_request_identity(++widget.embedded_web_request_generation_);
+  ASSERT_EQ(identity_a.absolute_scene_dir, dir_a);
+  widget.embedded_web_active_identity_ = identity_a;
+  widget.embedded_web_has_active_identity_ = true;
+  widget.embedded_web_prepared_identity_ = identity_a;
+  widget.embedded_web_loading_identity_ = identity_a;
+  widget.embedded_web_has_committed_surface_ = true;
+  widget.embedded_editor_contract_state_ = ScenePreviewWidget::EmbeddedEditorContractState::Accepted;
+  widget.embedded_editor_contract_ready_ = true;
+  widget.set_embedded_product_view_state(ScenePreviewWidget::EmbeddedProductViewState::Ready, QStringLiteral("test: A ready"));
+  ASSERT_TRUE(widget.embedded_web_identity_is_current(identity_a));
+  ASSERT_TRUE(widget.embedded_editor_polling_);
+  const quint64 editor_token_a = widget.embedded_editor_state_request_token_;
+  const quint64 navigation_token_a = widget.embedded_web_navigation_token_;
+  const quint64 readiness_token_a = widget.embedded_web_readiness_token_;
+
+  // ---- A -> B: same display name, other canonical checkout ----
+  widget.set_preview_context(context_b);
+  EXPECT_EQ(widget.preview_context_.absolute_scene_dir, dir_b);
+  // Previous visual and editor state are retired immediately.
+  EXPECT_FALSE(widget.embedded_web_has_committed_surface_);
+  EXPECT_FALSE(widget.embedded_web_identity_is_current(identity_a));
+  EXPECT_FALSE(widget.embedded_editor_polling_);
+  EXPECT_FALSE(widget.embedded_web_authoring_active());
+  EXPECT_GT(widget.embedded_editor_state_request_token_, editor_token_a);
+  EXPECT_NE(widget.embedded_product_view_state_, ScenePreviewWidget::EmbeddedProductViewState::Ready);
+  // B's directory is never prepared with A's payload: no request may carry A's
+  // fingerprint, and nothing runs until B's own payload is committed.
+  EXPECT_EQ(widget.embedded_web_prepare_process_, nullptr);
+  EXPECT_FALSE(widget.embedded_web_has_active_identity_ &&
+    widget.embedded_web_active_identity_.payload_fingerprint == fingerprint_a);
+  EXPECT_FALSE(widget.embedded_web_has_active_identity_ &&
+    widget.embedded_web_active_identity_.absolute_scene_dir == dir_b &&
+    widget.embedded_web_active_identity_.payload_fingerprint == fingerprint_a);
+  EXPECT_NE(widget.preview_payload_fingerprint_, fingerprint_a);
+  // The viewport shows the loading document, not A's frame.
+  EXPECT_TRUE(page_html_contains(widget.embedded_web_view_, QStringLiteral("Loading Product View"), 8000));
+
+  // Obsolete completions for A cannot publish a frame or re-enable editing.
+  QProcess * stale_a = completed_preparation(widget, identity_a, QStringLiteral("stale-a"));
+  widget.on_embedded_web_prepare_finished(identity_a, stale_a, 0, QProcess::NormalExit);
+  EXPECT_FALSE(widget.embedded_web_has_committed_surface_);
+  EXPECT_NE(widget.embedded_product_view_state_, ScenePreviewWidget::EmbeddedProductViewState::Ready);
+  EXPECT_FALSE(widget.embedded_web_prepared_identity_ == identity_a);
+  widget.poll_embedded_web_readiness(identity_a, navigation_token_a, readiness_token_a,
+    identity_a.generated_web_scene_path, QStringLiteral("http://127.0.0.1:1/viewer"));
+  EXPECT_FALSE(widget.embedded_web_has_committed_surface_);
+  EXPECT_NE(widget.embedded_product_view_state_, ScenePreviewWidget::EmbeddedProductViewState::Ready);
+  EXPECT_FALSE(widget.embedded_editor_polling_);
+
+  // Only B's own payload (X = 0.45) may be requested for B's directory.
+  widget.set_preview_items({authored_bin_at(0.45)});
+  ASSERT_TRUE(widget.embedded_web_has_active_identity_);
+  const auto identity_b = widget.embedded_web_active_identity_;
+  EXPECT_EQ(identity_b.absolute_scene_dir, dir_b);
+  EXPECT_EQ(identity_b.absolute_repo_root, repo_b);
+  EXPECT_NE(identity_b.payload_fingerprint, fingerprint_a);
+  EXPECT_TRUE(widget.embedded_web_identity_is_current(identity_b));
+  // A failed request displays an error for B, never A's frame.
+  ASSERT_TRUE(wait_until([&]() {
+    return widget.embedded_product_view_state_ == ScenePreviewWidget::EmbeddedProductViewState::Failed;
+  }, 20000));
+  stop_preparation(widget);
+  EXPECT_FALSE(widget.embedded_web_has_committed_surface_);
+  EXPECT_TRUE(widget.embedded_web_last_error_.contains(QStringLiteral("exit code 3")));
+  EXPECT_FALSE(widget.embedded_web_authoring_active());
+  EXPECT_TRUE(page_html_contains(widget.embedded_web_view_, QStringLiteral("Product View preparation failed"), 8000));
+
+  // A same-canonical-scene context refresh stays non-destructive.
+  widget.embedded_web_has_committed_surface_ = true;
+  widget.set_embedded_product_view_state(ScenePreviewWidget::EmbeddedProductViewState::Ready, QStringLiteral("test: B ready"));
+  widget.set_preview_context(context_b);
+  EXPECT_TRUE(widget.embedded_web_has_committed_surface_);
+  EXPECT_EQ(widget.embedded_product_view_state_, ScenePreviewWidget::EmbeddedProductViewState::Ready);
+  EXPECT_TRUE(widget.embedded_web_identity_is_current(identity_b));
+
+  // ---- B -> A is again a handoff, even with A's original payload coming back ----
+  const QByteArray fingerprint_b = widget.preview_payload_fingerprint_;
+  widget.set_preview_context(context_a);
+  EXPECT_FALSE(widget.embedded_web_has_committed_surface_);
+  EXPECT_FALSE(widget.embedded_web_identity_is_current(identity_b));
+  EXPECT_EQ(widget.embedded_web_prepare_process_, nullptr);
+  EXPECT_FALSE(widget.embedded_web_has_active_identity_ &&
+    widget.embedded_web_active_identity_.payload_fingerprint == fingerprint_b);
+  // Committing A's payload again (identical to the one A had before) must still
+  // produce A's own request: the handoff forgot the previous checkout's payload.
+  widget.set_preview_items({authored_bin_at(0.47)});
+  ASSERT_TRUE(widget.embedded_web_has_active_identity_);
+  EXPECT_EQ(widget.embedded_web_active_identity_.absolute_scene_dir, dir_a);
+  EXPECT_EQ(widget.embedded_web_active_identity_.payload_fingerprint, fingerprint_a);
+  stop_preparation(widget);
+}
+#endif

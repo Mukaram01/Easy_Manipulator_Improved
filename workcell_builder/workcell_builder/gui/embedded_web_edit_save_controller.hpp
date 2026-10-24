@@ -578,6 +578,10 @@ private:
         clearActiveSaveTransaction();
         busy_ = false;
         setStatus(QStringLiteral("Authored-session save failed"), QStringLiteral("error"));
+        if (QWidget * top = preview_ ? preview_->window() : nullptr) {   // top-bar outcome banner (MainWindow::show_workflow_feedback)
+          QMetaObject::invokeMethod(top, "show_workflow_feedback", Qt::QueuedConnection,
+            Q_ARG(QString, QStringLiteral("error")), Q_ARG(QString, QStringLiteral("Save failed: %1").arg(native_error)));
+        }
         QMessageBox::critical(preview_, QStringLiteral("Save Product View Layout"), native_error);
         logPhase(QStringLiteral("unified authored transaction failed before write: %1").arg(native_error));
         pollEditorState();

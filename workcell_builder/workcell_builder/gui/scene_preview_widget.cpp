@@ -1632,6 +1632,22 @@ main{max-width:42rem;padding:2rem}h1{font-size:1.3rem}code{color:#93c5fd}</style
 #endif
 }
 
+QString concise_preparation_error(const QString & detail)
+{
+  // The preparation chain reports the real blocker on stderr as "error: ..." lines
+  // after a long command summary; show those first so the user sees the cause.
+  const int stderr_at = detail.indexOf(QStringLiteral(" stderr="));
+  QStringList causes;
+  if (stderr_at >= 0) {
+    for (const QString & raw : detail.mid(stderr_at + 8).split('\n', Qt::SkipEmptyParts)) {
+      const QString line = raw.trimmed();
+      if (line.startsWith(QStringLiteral("error:"), Qt::CaseInsensitive) && !causes.contains(line)) causes << line;
+    }
+  }
+  if (!causes.isEmpty()) return causes.join(QStringLiteral("\n")).left(600);
+  return detail.trimmed().left(320);
+}
+
 void ScenePreviewWidget::show_embedded_web_preparation_failure(
   const EmbeddedWebRequestIdentity & identity, const QString & detail)
 {
@@ -1643,15 +1659,17 @@ void ScenePreviewWidget::show_embedded_web_preparation_failure(
     return;
   }
   native_compatibility_fallback_active_ = false;
-  const QString concise_error = detail.trimmed().left(320).toHtmlEscaped();
+  const QString concise_error = concise_preparation_error(detail).toHtmlEscaped();
+  const QString full_detail = detail.trimmed().left(1600).toHtmlEscaped();
   const QString scene = identity.scene_id.toHtmlEscaped();
   const QString html = QStringLiteral(R"HTML(<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;background:#0f172a;color:#e2e8f0;font:15px sans-serif;display:grid;place-items:center;height:100vh}
 main{max-width:46rem;padding:2rem}h1{color:#fca5a5}code{color:#93c5fd}.error{background:#1e293b;padding:1rem;border-radius:.5rem}
 </style></head>
 <body><main><h1>Product View preparation failed</h1><p>Scene: <code>%1</code></p><p class="error">%2</p>
-<p>Correct the scene-authoring blockers (required scene files, metadata, and referenced assets), then use Retry in the Product View toolbar.</p>
-</main></body></html>)HTML").arg(scene, concise_error);
+<p>Fix the problem above in the scene (environment, task or referenced assets), then use Retry in the Product View toolbar.</p>
+<details><summary>Technical details</summary><p class="error"><small>%3</small></p></details>
+</main></body></html>)HTML").arg(scene, concise_error, full_detail);
   set_embedded_product_view_state(EmbeddedProductViewState::Failed, detail);
   embedded_web_view_->setVisible(true);
   if (compatibility_scene3d_viewport_) compatibility_scene3d_viewport_->setVisible(false);
@@ -1943,8 +1961,9 @@ ScenePreviewWidget::EmbeddedWebRequestIdentity ScenePreviewWidget::embedded_web_
 
 bool ScenePreviewWidget::embedded_web_identity_is_current(const EmbeddedWebRequestIdentity & identity) const
 {
-  const QString selected_scene = normalized_preview_context(preview_context_).scene_id;
-  return !embedded_web_destroying_ && !selected_scene.isEmpty() && identity.scene_id == selected_scene &&
+  const PreviewContext selected = normalized_preview_context(preview_context_);
+  return !embedded_web_destroying_ && !selected.scene_id.isEmpty() && identity.scene_id == selected.scene_id &&
+    identity.absolute_scene_dir == selected.absolute_scene_dir &&
     embedded_web_has_active_identity_ && embedded_web_active_identity_ == identity;
 }
 
@@ -2977,7 +2996,7 @@ void ScenePreviewWidget::poll_embedded_editor_events()
   if (!embedded_editor_polling_ || !embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
   const quint64 state_request_token = ++embedded_editor_state_request_token_;
-  static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents()}; })()";
+  static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents(),mate:(typeof api.getMateState === 'function' ? api.getMateState() : null)}; })()";
   embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, guard = QPointer<ScenePreviewWidget>(this), identity, state_request_token](const QVariant & value){
     if (!guard || embedded_web_destroying_) return;
     if (!embedded_web_identity_is_current(identity)) return;
@@ -3089,6 +3108,7 @@ void ScenePreviewWidget::poll_embedded_editor_events()
     if (context_menu_requested) {
       emit embedded_authoring_context_menu_requested(context_menu_global_position);
     }
+    if (scene_identity_matches) emit embedded_mate_state_reported(payload.value(QStringLiteral("mate")).toMap());
     if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
       if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
     });
@@ -3388,6 +3408,33 @@ void ScenePreviewWidget::set_live_visible_item_ids(const QSet<QString> & ids)
     .arg(payload));
 }
 
+void ScenePreviewWidget::set_mate_overlay(const QJsonObject & overlay)
+{
+  if (!embedded_web_authoring_active()) return;
+  const QString payload = QString::fromUtf8(QJsonDocument(overlay).toJson(QJsonDocument::Compact));
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setMateMode==='function'?a.setMateMode(%1):{error:'missing_setMateMode'};})()").arg(payload));
+}
+
+void ScenePreviewWidget::clear_mate_overlay()
+{
+  if (!embedded_web_authoring_active()) return;
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.clearMateMode==='function'?a.clearMateMode():{error:'missing_clearMateMode'};})()"));
+}
+
+void ScenePreviewWidget::set_mate_hover_resolution(const QJsonObject & resolution)
+{
+  if (!embedded_web_authoring_active()) return;
+  const QString payload = QString::fromUtf8(QJsonDocument(resolution).toJson(QJsonDocument::Compact));
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setMateHoverResolution==='function'?a.setMateHoverResolution(%1):{error:'missing_setMateHoverResolution'};})()")
+    .arg(payload));
+}
+
 void ScenePreviewWidget::request_authoring_save()
 {
   if (embedded_web_authoring_active()) emit embedded_authoring_save_requested();
@@ -3428,8 +3475,13 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
     return;
   }
 
-  const QString previous_scene_id = normalized_preview_context(preview_context_).scene_id;
-  const bool scene_identity_changed = previous_scene_id != normalized.scene_id;
+  const PreviewContext previous_context = normalized_preview_context(preview_context_);
+  const QString previous_scene_id = previous_context.scene_id;
+  // Ownership rule: a Product View scene is its display id AND its canonical
+  // directory. The same cell id in another checkout is another scene, so the
+  // handoff below must run for it exactly as for a differently named scene.
+  const bool scene_identity_changed = previous_scene_id != normalized.scene_id ||
+    previous_context.absolute_scene_dir != normalized.absolute_scene_dir;
   const QString effective_scene_name = normalized.scene_id.isEmpty() ?
     QStringLiteral("No scene") : normalized.scene_id;
   const bool scene_name_changed = preview_scene_name_ != effective_scene_name;
@@ -3443,6 +3495,14 @@ void ScenePreviewWidget::set_preview_context(const PreviewContext & context)
   // until its replacement proves ready.
   if (scene_identity_changed) {
     invalidate_embedded_web_scene_handoff(normalized.scene_id);
+    // The previous scene's committed payload is not this scene's payload. Forget
+    // it so no request for the new directory can carry the old authoring-session
+    // overlay, and so the next payload commit (even an identical one) restarts
+    // the request lifecycle instead of being coalesced as "unchanged".
+    preview_payload_revision_ = 0;
+    preview_payload_fingerprint_.clear();
+    last_visual_quality_revision_logged_ = -1;
+    emitted_scene_diagnostic_keys_.clear();
   }
 
   if (!normalized.scene_id.isEmpty()) {

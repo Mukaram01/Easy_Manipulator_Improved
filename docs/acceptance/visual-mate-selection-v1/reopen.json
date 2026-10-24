@@ -1,0 +1,53 @@
+{
+    "backend": "embedded_web3d",
+    "execution_goals_sent": 0,
+    "fake_hardware_only": true,
+    "relations_match_disk": true,
+    "reopen_overlay": {
+        "active": true,
+        "cancelSeq": 0,
+        "ghostCount": 0,
+        "hover": null,
+        "hoverResolution": null,
+        "hoverSeq": 0,
+        "isolatedAsset": "",
+        "labelText": "",
+        "markerCount": 11,
+        "pick": null,
+        "sceneId": "ur5_2f_test",
+        "seq": 0,
+        "viewSeq": 0
+    },
+    "reopened_bin_flush": {
+        "gap_m": -1.951563910473908e-18,
+        "normal_dot": -1
+    },
+    "reopened_stand_flush": {
+        "gap_m": 2.5804011705155006e-17,
+        "normal_dot": -1
+    },
+    "requested_window_size": [
+        1920,
+        1080
+    ],
+    "result": "PASS",
+    "robot_motion_commanded": false,
+    "scene_path": "/home/user/wcs-r32-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test",
+    "screenshots": [
+        "20_reopened",
+        "21_reopened_mate_markers"
+    ],
+    "selection_relation_text": "Mated: bottom flush (face to face) to Industrial Workbench · surface\nOffset X -0.261 · Y 0.420 · Z 0.000 m\nRoll 0.0° · pitch 0.0° · yaw 0.0°",
+    "steps": [
+        "load cell",
+        "wait for the 3D view",
+        "reopened relations equal disk",
+        "selecting a mated asset keeps the layout clean",
+        "reopened overlay shows datum markers; Esc cancels"
+    ],
+    "studio_log_tail": "85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae\nResolved package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae from repo assets: /home/user/wcs-r32-mate-wt/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae\nResolved package://robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae from repo assets: /home/user/wcs-r32-mate-wt/assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae\nResolved package://realsense2_description/meshes/d435.dae from repo assets: /home/user/wcs-r32-mate-wt/assets/environment/realsense2_description/meshes/d435.dae\nVisual mesh index loaded from: /home/user/wcs-r32-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/scene_visual_mesh_index.json\nVisual mesh index safe_for_preview: true\nVisual mesh index extraction_mode: real_xacro_expanded\nVisual mesh index loaded: 18 visual items\nMesh items: 8, primitive items: 0, unknown items: 2\nVisual mesh preview items added: 8 / 18\nSkipped visual items (canonical): duplicate_generated_visual_index_row=8 unknown_role_no_fallback=2\nScene3D visual ingestion semantic/helper rows skipped: 2\nScene3D visual ingestion true duplicate mesh rows skipped: 8\nScene3D visual ingestion preserved generated URDF robot mesh rows: 0\nVisual mesh index parse_error=0\nLoader fallbacks: package_uri_resolved_by_loader=8 source_path_from_resolved_path=0 non_mesh_geometry_added=0 non_mesh_geometry_unsupported=2\nResolved source path diagnostics: stale_resolved_source_path=8 package_uri_resolved_after_stale=8\nTransform source: baked_world_visual_pose from generated/scene_visual_mesh_index.json (count=8, source=urdf_fk_link_world_times_visual_origin)\nTransform diagnostics: transform_chain_applied_count=2 visual_origin_applied_count=2 baked_world_visual_pose_count=8 robot_base_frame=world robot_world_pose=xyz=[-0.0785465,0.13359,0.447282] rpy=[3.10785,1.54999,-1.60524] missing_chain_warnings=0\nScene3D generated URDF visuals ordered before semantic overlays for renderer handoff: first_item=home_pose source_layer=locked_generated_urdf_visual active_visual_source=mesh_preview\nPreview placeholder suppression diagnostics: healthy_xacro_mesh_index_omits_legacy_placeholder=2 (examples=robot_base=>authoritative_xacro_mesh_index via healthy_xacro_mesh_index_omits_legacy_placeholder; robot_reach=>authoritative_xacro_mesh_index via healthy_xacro_mesh_index_omits_legacy_placeholder authoritative_mesh_index_equivalence_keys=36 preserved_editable_source_of_truth=6; authoritative_mesh_index_healthy=true; suppressed items are omitted without viewport warning placeholders)\nPreview placeholder suppression: omitted 2 legacy placeholders because authoritative xacro/xacro-lite mesh index is healthy\nPreviewContext resolved: scene_id=ur5_2f_test repo_root=/home/user/wcs-r32-accept-ws/src/easy_manipulation_deployment scene_dir=/home/user/wcs-r32-accept-ws/src/easy_manipulation_deployment/scenes/ur5_2f_test\nScene3D canvas: scene=ur5_2f_test received=17 cached=17 visible=19 rendered=19 selectable=17 mesh=9 fallback=0 locked=12 skipped=10\nScene3D: editable=5, mesh=9, generated=9, fallback=0, missing=0, locked=12 | Scene3D warnings: extraction_mode=real_xacro_expanded, safe_for_preview=true, missing_mesh=0, unresolved_package_uri=0, unsupported_extension=0, stale_or_absolute_only_mesh_index=0 | Editable layout: 6 items. Preview fallback: 3 items loaded from scene metadata. | Visuals: added 8/18 • skipped=10 Metadata warnings: 0.\nStudio navigation settled: requested_page=1 nav_row=1 page_index=1 scene_id=ur5_2f_test\nEmbedded Product View preparation terminal: outcome=success scene=ur5_2f_test generation=3 payload_revision=1 exit_status=normal exit_code=0 expected_json_exists=true\nProduct View owned server bound: pid=378213 port=33279 session=80149784-5ed3-4ab1-ab6a-047ab203c392 root=/home/user/wcs-r32-accept-ws/src/easy_manipulation_deployment\nEmbedded Web 3D Product View server verified: all required resources returned HTTP 200 on port 33279.\nEmbedded Product View teardown before scene navigation: scene=ur5_2f_test navigation=4 disposed=false already_disposed=false reason=lifecycle_api_unavailable\nScene load: scene=ur5_2f_test source=builder_revision:1 navigation=4 type=terminal_readiness hash=81f3f5009cac content={\"failed_required_item_count\":0,\"failed_stage\":\"\",\"fatal_error\":\"\",\"pending_required_loads\":[],\"rendered_physical_item_count\":0,\"state\":\"scene_loading\",\"terminal\":false}\nProduct View HTTP optional browser resource: path='/favicon.ico' status=404 detail='code 404, message File not found'\n\nScene load: scene=ur5_2f_test source=builder_revision:1 navigation=4 type=terminal_readiness hash=f47ea2fed6d5 content={\"failed_required_item_count\":0,\"failed_stage\":\"\",\"fatal_error\":\"\",\"pending_required_loads\":[\"robot_arm:expanded_urdf_loader\",\"attached_tool_gripper:expanded_urdf_loader\",\"workbench_support_surface:support_surface_table\",\"configured_camera:realsense_overhead\"],\"rendered_physical_item_count\":5,\"state\":\"scene_loading\",\"terminal\":false}\nScene load: scene=ur5_2f_test source=builder_revision:1 navigation=4 type=terminal_readiness hash=c5a9dc4c6064 content={\"failed_required_item_count\":0,\"failed_stage\":\"\",\"fatal_error\":\"\",\"pending_required_loads\":[],\"rendered_physical_item_count\":6,\"state\":\"scene_ready\",\"terminal\":true}\nEmbedded Product View live-authoring capability handshake accepted: schema=workcell_studio_live_authoring_capabilities/v1 api=1.1.0; scene=ur5_2f_test navigation=4 browser_load=4 readiness=4 attempt=1 view_url=http://127.0.0.1:33279/workcell_studio_web/viewer/index.html?scene=build/workcell_studio_web_scene/ur5_2f_test.web_scene.json&builderRevision=1&embedded=1&viewerBuild=a7df9d07a37c39c1572e5875bda6dc1f6070f9408d18d47a323e05e9bc5a5128 page_url=http://127.0.0.1:33279/workcell_studio_web/viewer/index.html?scene=build/workcell_studio_web_scene/ur5_2f_test.web_scene.json&builderRevision=1&embedded=1&viewerBuild=a7df9d07a37c39c1572e5875bda6dc1f6070f9408d18d47a323e05e9bc5a5128 document_url=http://127.0.0.1:33279/workcell_studio_web/viewer/index.html?scene=build/workcell_studio_web_scene/ur5_2f_test.web_scene.json&builderRevision=1&embedded=1&viewerBuild=a7df9d07a37c39c1572e5875bda6dc1f6070f9408d18d47a323e05e9bc5a5128 ready_state=complete api_type=object api_keys=[__WORKCELL_CANONICAL_SELECTION_STATE_INSTALLED__,addItem,apiVersion,applyCameraPreset,armPlacement,cancelPlacement,clearMateMode,clearSelection,commitPlacementPointer,drainEvents,duplicateItem,fitScene,fitSelection,getCapabilities,getEditPatch,getMateState,getPlacementState,getState,placementPointFromViewport,projectWorldPoint,rebasePersistedPatch,redo,removeItem,selectItem,selectionDiagnostics,setItemMetadata,setItemPose,setItemTransform,setMateHoverResolution,setMateMode,setMode,setSnap,setTransformSpace,setVisibleItemIds,syncItemTransform,undo,updatePlacementPointer] getCapabilities_type=function api_version=1.1.0 viewer_scene=ur5_2f_test viewer_lifecycle=scene_ready viewer_terminal=true marker={\"apiVersion\":\"1.1.0\",\"buildId\":\"workcell-editor-api-1.1.0-20260820\",\"installedAt\":\"2026-10-23T17:13:20.026Z\",\"locationHref\":\"http://127.0.0.1:33279/workcell_studio_web/viewer/index.html?scene=build/workcell_studio_web_scene/ur5_2f_test.web_scene.json&builderRevision=1&embedded=1&viewerBuild=a7df9d07a37c39c1572e5875bda6dc1f6070f9408d18d47a323e05e9bc5a5128\",\"schemaVersion\":\"workcell_studio_editor_runtime/v1\",\"viewerBuild\":\"a7df9d07a37c39c1572e5875bda6dc1f6070f9408d18d47a323e05e9bc5a5128\"}\nselected item reach status: preview-only\nselected item collision status: preview-only\nScene3D selection changed: scene=ur5_2f_test id=target_bin_default editable=true locked=false source_layer=editable_layout\nSelected item: target_bin_default (unknown) type=place_target_bin source=editable_layout editable=true locked=false\nMate tool started for ur5_2f_test (face picking in Web3D).\nMate: Mate cancelled; nothing changed.",
+    "window_size": [
+        1850,
+        1016
+    ]
+}
