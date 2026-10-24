@@ -171,6 +171,7 @@
 #include "include/default_asset_paths.h"
 #include "include/workcell_directory_inspection.h"
 #include "workcell_studio_scene_browser.hpp"
+#include "epd_detection_readiness_model.hpp"
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
 #include "embedded_web_edit_save_controller.hpp"
@@ -3505,6 +3506,25 @@ void MainWindow::setup_studio_shell()
   auto * ar_card = new QFrame(right_panel); ar_card->setObjectName("studioCard"); auto * ar_layout = new QVBoxLayout(ar_card);
   ar_layout->addWidget(new QLabel("<b>Perception Status</b>"));
   approach_retreat_details_label_ = new QLabel("Camera: unknown\nFrame: unknown\nFOV: unknown\nRange: unknown\nPick coverage: unknown\nDetection mode: Not Configured\nDetection status: Waiting for live nodes\nDetails: Perception preview unavailable until mode/config is selected.\nModes: Live EPD / RealSense | Saved EPD Snapshot | Simulated / Manual | Not Configured\nStatuses: Configured | Missing metadata | Preview only | Waiting for live nodes\nDetection count: 0\nWarnings: no camera item found | no pick source found | camera frame unknown"); approach_retreat_details_label_->setWordWrap(true); ar_layout->addWidget(approach_retreat_details_label_);
+  epd_readiness_label_ = new QLabel("EPD readiness: UNKNOWN", ar_card);
+  epd_readiness_label_->setObjectName("epdReadinessStatusLabel");
+  epd_readiness_label_->setWordWrap(true);
+  ar_layout->addWidget(epd_readiness_label_);
+  epd_readiness_table_ = new QTableWidget(0, 7, ar_card);
+  epd_readiness_table_->setObjectName("epdReadinessTable");
+  epd_readiness_table_->setHorizontalHeaderLabels(
+    {"Class", "Conf", "Track", "State", "Position (m)", "Orientation", "Reason"});
+  epd_readiness_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  epd_readiness_table_->setSelectionMode(QAbstractItemView::NoSelection);
+  epd_readiness_table_->verticalHeader()->setVisible(false);
+  epd_readiness_table_->horizontalHeader()->setStretchLastSection(true);
+  epd_readiness_table_->setMinimumHeight(140);
+  ar_layout->addWidget(epd_readiness_table_);
+  // Poll the monitor artifact on the GUI thread; no ROS executor runs inside Builder.
+  epd_readiness_timer_ = new QTimer(this);
+  epd_readiness_timer_->setInterval(1000);
+  connect(epd_readiness_timer_, &QTimer::timeout, this, &MainWindow::refresh_epd_readiness_panel);
+  epd_readiness_timer_->start();
   auto * task_diagnostics = new QGroupBox("Advanced task diagnostics", workflow_tab);
   task_diagnostics->setCheckable(true); task_diagnostics->setChecked(false);
   auto * task_diagnostics_layout = new QVBoxLayout(task_diagnostics);
@@ -16186,4 +16206,37 @@ void MainWindow::refresh_run_next_menu(const std::vector<RecommendedWorkflowActi
       trigger_recommended_workflow_action(handler);
     });
   }
+}
+
+void MainWindow::refresh_epd_readiness_panel()
+{
+  if (!epd_readiness_label_ || !epd_readiness_table_) return;
+  const auto view = workcell_builder::load_epd_readiness_view(
+    workcell_builder::epd_readiness_artifact_path(selected_scene_path()),
+    static_cast<double>(QDateTime::currentMSecsSinceEpoch()) / 1000.0);
+  epd_readiness_label_->setText(workcell_builder::format_epd_readiness_summary(view));
+  epd_readiness_table_->setRowCount(view.rows.size());
+  for (int i = 0; i < view.rows.size(); ++i) {
+    const auto & r = view.rows[i];
+    const QString reason = r.reasons.isEmpty() ? r.note : (r.note.isEmpty() ? r.reasons : r.reasons + "; " + r.note);
+    const QStringList cells{
+      r.class_label,
+      r.confidence >= 0.0 ? QString::number(r.confidence, 'f', 2) : QStringLiteral("n/a"),
+      r.track_id.isEmpty() ? QStringLiteral("—") : r.track_id,
+      r.state,
+      workcell_builder::format_epd_readiness_position(r),
+      r.orientation_valid ? QStringLiteral("valid") : QStringLiteral("unavailable"),
+      reason.isEmpty() ? QStringLiteral("—") : reason};
+    for (int c = 0; c < cells.size(); ++c) {
+      auto * item = epd_readiness_table_->item(i, c);
+      if (!item) {
+        item = new QTableWidgetItem;
+        epd_readiness_table_->setItem(i, c, item);
+      }
+      item->setText(cells[c]);
+      item->setToolTip(QString("%1 (%2) track %3\nState: %4\nPosition (camera frame, m): %5\nOrientation: %6\nReason: %7")
+        .arg(cells[0], cells[1], cells[2], cells[3], cells[4], cells[5], cells[6]));
+    }
+  }
+  epd_readiness_table_->resizeColumnsToContents();
 }

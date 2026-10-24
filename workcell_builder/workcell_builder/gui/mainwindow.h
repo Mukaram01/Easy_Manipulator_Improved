@@ -20,6 +20,7 @@
 #include <QStackedWidget>
 #include <QMainWindow>
 #include <QTableWidget>
+#include <QTimer>
 #include <QLabel>
 #include <QString>
 #include <QJsonObject>
@@ -198,6 +199,7 @@ private:
   void delete_selected_scene();
   bool is_safe_scene_path_for_trash_move(const boost::filesystem::path & scene_path, QString * reason = nullptr) const;
   void refresh_task_intent_panel();
+  void refresh_epd_readiness_panel();
   void refresh_environment_task_editor();
   bool save_environment_task_editor(QString * error);
   bool save_authored_environment_from_layout(QString * error);
@@ -630,6 +632,10 @@ private:
   QLabel * pick_place_details_label_{ nullptr };
   QLabel * grasp_details_label_{ nullptr };
   QLabel * approach_retreat_details_label_{ nullptr };
+  // EPD per-detection readiness (diagnostic only; never a planning input).
+  QLabel * epd_readiness_label_{ nullptr };
+  QTableWidget * epd_readiness_table_{ nullptr };
+  QTimer * epd_readiness_timer_{ nullptr };
   QLabel * preview_actions_label_{ nullptr };
   QLabel * mode_chip_label_{ nullptr };
   QLabel * asset_catalog_panel_label_{ nullptr };

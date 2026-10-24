@@ -167,6 +167,7 @@ add_executable(workcell_builder
     src_workcell_zone_model.cpp
     src_conveyor_pick_preview.cpp
     src_workcell_perception_snapshot.cpp
+    src_epd_detection_readiness_model.cpp
     src_task_intent_readiness.cpp
     src_task_intent_model.cpp
     src_class_routing_model.cpp
@@ -879,6 +880,7 @@ if(BUILD_TESTING)
     task_intent_model_test.cpp
     planning_readiness_test.cpp
     workcell_perception_snapshot_test.cpp
+    epd_detection_readiness_model_test.cpp
     robot_tool_compatibility_inference_test.cpp
     new_cell_wizard_test.cpp
     workspace_validation_test.cpp
@@ -918,6 +920,13 @@ if(BUILD_TESTING)
     mate_tool_controller_test.cpp
     support_contact_policy_test.cpp
   )
+  ament_add_gtest(workcell_epd_detection_readiness_model_test
+    test/epd_detection_readiness_model_test.cpp
+    src_epd_detection_readiness_model.cpp)
+  target_include_directories(workcell_epd_detection_readiness_model_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(workcell_epd_detection_readiness_model_test Qt5::Core)
+
   ament_add_gtest(workcell_studio_log_issue_tracker_test
     test/studio_log_issue_tracker_test.cpp)
 
@@ -967,6 +976,7 @@ install(PROGRAMS
   scripts/conveyor_sorting_live_preview_node.py
   scripts/publish_sample_epd_snapshot.py
   scripts/epd_to_workcell_snapshot_node.py
+  scripts/epd_readiness_monitor_node.py
   ../../scripts/task_intent_authoring.py
   ../../scripts/workcell_camera_probe.py
   ../../scripts/capture_selected_live_epd.py
