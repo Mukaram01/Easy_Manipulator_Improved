@@ -542,29 +542,55 @@ class PlanningCrossCheckGate:
     keep running every tick, so the cross-check is deferred and has to pass again before the
     next execution goal is sent. Every deferral window is recorded in the summary with its
     first and last deferred sample and the check that cleared it.
+
+    A deferral is accepted only while the measured arm is stationary (every arm joint below
+    the stop window's 0.002 rad/s) and only within the planning goal's own wait bound; a
+    moving arm or an expired window fails closed and interrupts the plan. The live OPEN
+    release replan once ran during the PLACE settling tail (up to 0.14 rad/s, LENLEG
+    2026-10-24, 8 of 47 recorded windows), with the cross-check skipped while the arm moved.
     """
+    STATIONARY_RAD_S = .002
+
     def __init__(self, summary):
         self.summary = summary; self.planning = False; self.window = None; self.clearing = None; self.cross_check = None
+        self.limit_s = None; self.started = None
 
     @property
     def pending(self):
         return self.window is not None and self.window.get('cleared') is None
 
     @contextmanager
-    def planning_goal(self):
-        self.planning = True
+    def planning_goal(self, limit_s):
+        """The in-flight planning goal; deferral is bounded by the goal's own wait (seconds)."""
+        if not isinstance(limit_s, (int, float)) or isinstance(limit_s, bool) or not math.isfinite(limit_s) or limit_s <= 0:
+            raise RuntimeError('DEFERRED_CROSS_CHECK_UNBOUNDED: planning goal has no finite wait bound')
+        self.planning = True; self.limit_s = float(limit_s); self.started = time.monotonic()
         try:
             yield
         finally:
-            self.planning = False
+            self.planning = False; self.limit_s = None; self.started = None
 
-    def defer(self, stamp):
-        """Record one deferred cross-check (stamp: wall_ns and sim_ns of the current sample)."""
+    def defer(self, stamp, arm_velocities):
+        """Record one deferred cross-check (stamp: wall_ns and sim_ns of the current sample).
+
+        ``arm_velocities``: measured velocity (rad/s) of every arm joint in that sample.
+        """
+        if not self.planning or self.started is None:
+            raise RuntimeError('DEFERRED_CROSS_CHECK_OUTSIDE_PLANNING')
+        if time.monotonic() - self.started > self.limit_s:
+            raise RuntimeError('DEFERRED_CROSS_CHECK_EXPIRED: planning outlived its wait bound')
+        speeds = [abs(v) for v in (arm_velocities or {}).values()]
+        if not speeds or any(not math.isfinite(v) for v in speeds):
+            raise RuntimeError('DEFERRED_CROSS_CHECK_REQUIRES_MEASURED_ARM')
+        if max(speeds) >= self.STATIONARY_RAD_S:
+            raise RuntimeError(f'DEFERRED_CROSS_CHECK_REQUIRES_STATIONARY_ARM: {max(speeds):.4f} rad/s')
         if not self.pending:
-            self.window = dict(stage=self.summary.get('current_stage'), count=0, first=dict(stamp), last=None, cleared=None)
+            self.window = dict(stage=self.summary.get('current_stage'), count=0, first=dict(stamp), last=None, cleared=None,
+                               max_arm_velocity_rad_s=0.)
             self.summary.setdefault('deferred_measured_collision_checks', []).append(self.window)
         self.window['count'] += 1
         self.window['last'] = dict(stamp)
+        self.window['max_arm_velocity_rad_s'] = max(self.window.get('max_arm_velocity_rad_s', 0.), max(speeds))
 
     def passed(self, check):
         """A cross-check passed (check: sim_ns, wall_ns, valid, contacts); it clears a pending window."""
@@ -1599,7 +1625,7 @@ def main():
             else:
                 until=time.monotonic()+timeout
                 timer=getattr(measurements,'loop_timer',lambda:None)() if measurements else None   # GIL probe only
-                with cross_check_gate.planning_goal() if client is plan_client else nullcontext():
+                with cross_check_gate.planning_goal(timeout) if client is plan_client else nullcontext():
                     while not future.done() and time.monotonic()<until:
                         started=time.monotonic_ns()
                         rclpy.spin_once(node,timeout_sec=.005)
@@ -1751,7 +1777,9 @@ def main():
         from simulator_execution import validate_measured_contacts,measured_attachment
         s=measurements.fresh()
         if cross_check_gate.planning:
-            cross_check_gate.defer(dict(wall_ns=time.time_ns(),sim_ns=s['sim_ns']));return
+            arm=measurements.joints(s)
+            cross_check_gate.defer(dict(wall_ns=time.time_ns(),sim_ns=s['sim_ns']),
+                                   {n:arm[n][1] for n in contract['home_joint_names'] if n in arm});return
         state=copy.deepcopy(initial.robot_state)
         measured=measurements.joints(s)
         state=updated_state(state,{k:v[0] for k,v in measured.items()}, {})
@@ -2723,6 +2751,13 @@ def main():
                         # The held finger rests at its measured closure, not at the certified
                         # closure the prevalidated OPEN starts from (MoveIt start tolerance 0.01
                         # rad). Plan the same OPEN goal from the verified actual state.
+                        # PLACE succeeds at the controller's goal tolerance while the arm still settles
+                        # (0.07 -> 0.015 rad/s). Release planning starts only from a measured stop, so the
+                        # deferred cross-check never stands in for one while the arm moves.
+                        if not wait_stopped(monitor_contacts=True):
+                            raise RuntimeError('RELEASE_REQUIRES_MEASURED_STATIONARY_ARM')
+                        summary['release_planning_stop']=dict(stopped_measurement=copy.deepcopy(summary['stopped_measurement']),
+                                                              stopped_window=copy.deepcopy(summary['stopped_window']))
                         prevalidated=trajectory.joint_trajectory
                         open_goal=dict(zip(prevalidated.joint_names,prevalidated.points[-1].positions))
                         deadline=time.monotonic()+30

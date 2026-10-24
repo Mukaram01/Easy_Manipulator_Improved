@@ -1599,19 +1599,19 @@ def test_executor_freezes_the_planning_heap_only_with_live_telemetry_and_before_
 def test_cross_check_gate_records_each_deferral_window_and_what_cleared_it():
     summary={'current_stage':'COMMISSION_RELEASE'}; gate=MODULE.PlanningCrossCheckGate(summary)
     assert gate.pending is False and gate.planning is False
-    with gate.planning_goal():
-        gate.defer(dict(wall_ns=10,sim_ns=100)); gate.defer(dict(wall_ns=20,sim_ns=200))
+    with gate.planning_goal(30):
+        gate.defer(dict(wall_ns=10,sim_ns=100),{'shoulder_pan_joint':0.,'elbow_joint':.001}); gate.defer(dict(wall_ns=20,sim_ns=200),{'shoulder_pan_joint':0.,'elbow_joint':.001})
     assert gate.planning is False and gate.pending is True
     gate.passed(dict(sim_ns=300,wall_ns=30,valid=True,contacts=0))            # a monitor tick cleared it
     assert gate.pending is False
-    with gate.planning_goal():gate.defer(dict(wall_ns=40,sim_ns=400))
+    with gate.planning_goal(30):gate.defer(dict(wall_ns=40,sim_ns=400),{'shoulder_pan_joint':0.,'elbow_joint':.001})
     gate.cross_check=lambda:gate.passed(dict(sim_ns=500,wall_ns=50,valid=True,contacts=1))
     gate.require_clear()
     assert summary['deferred_measured_collision_checks']==[
         dict(stage='COMMISSION_RELEASE',count=2,first=dict(wall_ns=10,sim_ns=100),last=dict(wall_ns=20,sim_ns=200),
-             cleared=dict(by='monitor',sim_ns=300,wall_ns=30,valid=True,contacts=0)),
+             cleared=dict(by='monitor',sim_ns=300,wall_ns=30,valid=True,contacts=0),max_arm_velocity_rad_s=.001),
         dict(stage='COMMISSION_RELEASE',count=1,first=dict(wall_ns=40,sim_ns=400),last=dict(wall_ns=40,sim_ns=400),
-             cleared=dict(by='require_clear',sim_ns=500,wall_ns=50,valid=True,contacts=1))]
+             cleared=dict(by='require_clear',sim_ns=500,wall_ns=50,valid=True,contacts=1),max_arm_velocity_rad_s=.001)]
     gate.passed(dict(sim_ns=600,wall_ns=60,valid=True,contacts=0))            # passes with nothing pending record nothing
     assert len(summary['deferred_measured_collision_checks'])==2
 
@@ -1619,7 +1619,7 @@ def test_cross_check_gate_records_each_deferral_window_and_what_cleared_it():
 def test_cross_check_gate_planning_flag_is_cleared_when_the_goal_raises():
     gate=MODULE.PlanningCrossCheckGate({})
     with pytest.raises(RuntimeError):
-        with gate.planning_goal():
+        with gate.planning_goal(30):
             assert gate.planning
             raise RuntimeError('action result timed out')
     assert gate.planning is False
@@ -1629,11 +1629,11 @@ def test_cross_check_gate_requires_a_deferred_check_to_pass_before_an_execution_
     gate=MODULE.PlanningCrossCheckGate({}); runs=[]
     gate.require_clear()                                   # nothing deferred: nothing to do, no cross-check needed
     stamp=dict(wall_ns=1,sim_ns=1)
-    with gate.planning_goal():gate.defer(stamp)
+    with gate.planning_goal(30):gate.defer(stamp,{'shoulder_pan_joint':0.,'elbow_joint':.001})
     with pytest.raises(RuntimeError,match='has no cross-check to run'):gate.require_clear()   # armed path only
     def passing():runs.append('check');gate.passed(dict(sim_ns=2,wall_ns=2,valid=True,contacts=0))
     gate.cross_check=passing; gate.require_clear(); assert runs==['check'] and gate.pending is False
-    with gate.planning_goal():gate.defer(stamp)
+    with gate.planning_goal(30):gate.defer(stamp,{'shoulder_pan_joint':0.,'elbow_joint':.001})
     def rejecting():runs.append('reject');raise RuntimeError('unpermitted measured contact')
     gate.cross_check=rejecting
     with pytest.raises(RuntimeError,match='unpermitted measured contact'):gate.require_clear()   # fails closed with the check's reason
@@ -1654,10 +1654,11 @@ def test_executor_defers_the_fcl_cross_check_during_planning_goals_and_clears_it
     source=SCRIPT.read_text()
     fcl=source.index("    def measured_fcl():")
     assert source.index("if cross_check_gate.planning:",fcl)<source.index("state=copy.deepcopy(initial.robot_state)",fcl)
-    assert "cross_check_gate.defer(dict(wall_ns=time.time_ns(),sim_ns=s['sim_ns']));return" in source
+    assert "cross_check_gate.defer(dict(wall_ns=time.time_ns(),sim_ns=s['sim_ns']),\n" in source
+    assert "{n:arm[n][1] for n in contract['home_joint_names'] if n in arm});return" in source        # measured arm velocities
     assert source.index("cross_check_gate.passed(dict(summary['last_measured_collision_check'],wall_ns=time.time_ns()))",fcl)>source.index("summary['last_measured_collision_check']=",fcl)
     assert "contact_guard.validate_current=measured_fcl\n            cross_check_gate.cross_check=contact_guard.drain" in source
-    assert "with cross_check_gate.planning_goal() if client is plan_client else nullcontext():" in source
+    assert "with cross_check_gate.planning_goal(timeout) if client is plan_client else nullcontext():" in source   # the goal's own wait
     action=source.index("def action(client, goal, timeout):")
     clear=source.index("cross_check_gate.require_clear()")
     assert action<source.index("RECOVERY_EXECUTION_INVALIDATED")<clear<source.index("sent = client.send_goal_async(goal)")   # last precondition
@@ -1684,7 +1685,7 @@ def test_executor_defers_the_fcl_cross_check_during_planning_goals_and_clears_it
 def test_real_action_refuses_an_execute_goal_whose_deferred_cross_check_does_not_pass(outcome):
     from moveit_msgs.action import ExecuteTrajectory
     gate=MODULE.PlanningCrossCheckGate({}); runs=[]
-    with gate.planning_goal():gate.defer(dict(wall_ns=1,sim_ns=1))
+    with gate.planning_goal(30):gate.defer(dict(wall_ns=1,sim_ns=1),{'shoulder_pan_joint':0.,'elbow_joint':.001})
     def rejecting():runs.append('reject');raise RuntimeError('unpermitted measured contact')
     def silent():runs.append('silent')
     gate.cross_check=rejecting if outcome=='rejecting' else silent
@@ -1712,7 +1713,7 @@ def test_real_measured_fcl_returns_before_any_scene_or_validity_traffic_while_pl
     sample={'sim_ns':69389000000,'iteration':69389,'wall_ns':1000,'joints':{'arm':[0.2,0.0]}}
     summary={'current_stage':'COMMISSION_RELEASE'}; gate=MODULE.PlanningCrossCheckGate(summary); traffic=[]
     def refuse(*a,**k):traffic.append(a);raise AssertionError('MoveIt traffic during planning')
-    context=dict(vars(MODULE),cross_check_gate=gate,copy=copy,
+    context=dict(vars(MODULE),cross_check_gate=gate,copy=copy,contract={'home_joint_names':['arm']},
         measurements=SimpleNamespace(fresh=lambda:sample,joints=lambda s:s['joints']),
         initial=PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'],position=[0.0]))),
         contact_guard=SimpleNamespace(planning_attached=False,held=True,phase='lift',separation=None,predicate=None,pile_objects={}),
@@ -1720,11 +1721,17 @@ def test_real_measured_fcl_returns_before_any_scene_or_validity_traffic_while_pl
         validity_client=SimpleNamespace(call_async=refuse),node=object(),summary=summary,
         rclpy=SimpleNamespace(spin_until_future_complete=refuse))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-measured-fcl-deferral>','exec'),context)
-    with gate.planning_goal():
+    with gate.planning_goal(30):
         context['measured_fcl']()
     assert traffic==[] and gate.pending
     window,=summary['deferred_measured_collision_checks']
     assert window['count']==1 and window['first']['sim_ns']==69389000000 and window['cleared'] is None and window['stage']=='COMMISSION_RELEASE'
+    # A moving arm is never deferred: the real cross-check path fails closed with no MoveIt traffic.
+    sample['joints']={'arm':[0.2,0.0695]}
+    with gate.planning_goal(30):
+        with pytest.raises(RuntimeError,match='DEFERRED_CROSS_CHECK_REQUIRES_STATIONARY_ARM'):
+            context['measured_fcl']()
+    assert traffic==[] and window['count']==1
 
 
 def test_identity_graph_waits_for_the_controller_manager_without_relaxing_exactly_one():
@@ -1793,3 +1800,44 @@ def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_meas
     assert "plan_segment(scene_now(),label,open_goal,group='gripper')" in release      # same goal, actual start
     assert "start_deviation_rad']>.01" in release and "abs(live_goal[n]-open_goal[n])>1e-4+1e-12" in release
     assert "tolerance_above=0.0001, tolerance_below=0.0001" in source       # the planner's own goal tolerance
+
+
+def test_cross_check_deferral_requires_a_measured_stationary_arm_and_fails_closed_otherwise():
+    summary={'current_stage':'EXECUTE_OPEN_GRIPPER'};gate=MODULE.PlanningCrossCheckGate(summary);stamp=dict(wall_ns=1,sim_ns=1)
+    with gate.planning_goal(30):
+        gate.defer(stamp,{'shoulder_pan_joint':.0019,'wrist_3_joint':-.0019})        # just under the stop window threshold
+        # The PLACE settling tail measured 0.07 -> 0.015 rad/s while the release replan deferred the check.
+        for moving in ({'shoulder_pan_joint':.0695},{'wrist_3_joint':-.002}):
+            with pytest.raises(RuntimeError,match='DEFERRED_CROSS_CHECK_REQUIRES_STATIONARY_ARM'):gate.defer(stamp,moving)
+        for unmeasured in ({},None,{'elbow_joint':float('nan')}):
+            with pytest.raises(RuntimeError,match='DEFERRED_CROSS_CHECK_REQUIRES_MEASURED_ARM'):gate.defer(stamp,unmeasured)
+    assert summary['deferred_measured_collision_checks'][0]['count']==1                 # rejected samples never extend a window
+    assert gate.pending                                                                # and never clear it
+
+
+def test_cross_check_deferral_is_bounded_by_the_planning_goal_wait(monkeypatch):
+    gate=MODULE.PlanningCrossCheckGate({});clock=[100.]
+    monkeypatch.setattr(MODULE.time,'monotonic',lambda:clock[0])
+    still={'shoulder_pan_joint':0.}
+    with pytest.raises(RuntimeError,match='DEFERRED_CROSS_CHECK_OUTSIDE_PLANNING'):gate.defer(dict(wall_ns=1,sim_ns=1),still)
+    for bad in (None,0,-1.,float('inf'),True):
+        with pytest.raises(RuntimeError,match='DEFERRED_CROSS_CHECK_UNBOUNDED'):
+            with gate.planning_goal(bad):pass
+    assert gate.planning is False
+    with gate.planning_goal(2.):
+        clock[0]=101.9;gate.defer(dict(wall_ns=1,sim_ns=1),still)                       # delayed but within the wait
+        clock[0]=102.1
+        with pytest.raises(RuntimeError,match='DEFERRED_CROSS_CHECK_EXPIRED'):gate.defer(dict(wall_ns=2,sim_ns=2),still)
+    assert gate.planning is False and gate.limit_s is None and gate.started is None
+    with pytest.raises(RuntimeError,match='DEFERRED_CROSS_CHECK_OUTSIDE_PLANNING'):gate.defer(dict(wall_ns=3,sim_ns=3),still)   # cancelled/finished goal
+
+
+def test_release_is_planned_only_after_a_measured_stop_and_executed_only_after_a_passing_cross_check():
+    source=SCRIPT.read_text()
+    release=source[source.index("if step['stage']=='PREPLAN_OPEN_GRIPPER' and summary.get('grasp_hold'):"):
+                   source.index("result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)")]
+    stop=release.index("if not wait_stopped(monitor_contacts=True):")
+    assert stop<release.index("RELEASE_REQUIRES_MEASURED_STATIONARY_ARM")<release.index("plan_segment(scene_now(),label,open_goal")
+    assert "summary['release_planning_stop']=" in release
+    action=source[source.index("def action(client, goal, timeout):"):source.index("sent = client.send_goal_async(goal)")]
+    assert "cross_check_gate.require_clear()" in action                               # premature execution is refused
