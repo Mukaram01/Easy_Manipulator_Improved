@@ -425,6 +425,35 @@ TEST(TaskIntentEditor, RuntimeParityCreatesFreshCellAndSavesReplayTask) {
   }
 }
 
+TEST(TaskIntentEditor, MultiObjectPreviewIsSavedReplayOnlyAndDoesNotLaunchOnSave) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * preview = editor.findChild<QPushButton *>("taskSimulationBatchPreview");
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  ASSERT_NE(preview, nullptr); ASSERT_NE(mode, nullptr);
+  ASSERT_NE(editor.findChild<QLabel *>("taskSimulationBatchStatus"), nullptr);
+  EXPECT_FALSE(preview->isEnabled());  // No user-selected input; no implicit default.
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  edit(editor, "taskReplayPath",
+       QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml");
+  EXPECT_FALSE(preview->isEnabled());  // Unsaved task cannot launch preview.
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preview->isEnabled());  // Enabled, not automatically executed.
+  edit(editor, "taskTargetClass", "cup");
+  EXPECT_FALSE(preview->isEnabled());
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preview->isEnabled());
+  mode->setCurrentIndex(mode->findData("live_epd"));
+  ASSERT_TRUE(editor.save());
+  EXPECT_FALSE(preview->isEnabled());  // Live camera never masquerades as commissioning.
+  mode->setCurrentIndex(mode->findData("off"));
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(preview->isEnabled());  // Explicit saved replay remains a commissioning input.
+  edit(editor, "taskReplayPath", "");
+  ASSERT_TRUE(editor.save());
+  EXPECT_FALSE(preview->isEnabled());
+}
+
 TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {
   application(); QTemporaryDir dir; seed(dir.path()); TaskIntentEditor editor;
   ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
