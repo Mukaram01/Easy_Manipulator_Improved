@@ -93,6 +93,21 @@ def provisional_pile_guard(tmp_path,monkeypatch):
     return guard,sample,advance,contact
 
 
+def test_establish_takes_the_required_contact_links_from_the_hold_profile(tmp_path,monkeypatch):
+    from end_effector_hold import load_hold_profile
+    guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)
+    guard.begin_pile_admission();advance();guard.check(sample)
+    guard.hold_profile=load_hold_profile('robotiq_2f_85')
+    guard.establish()
+    assert guard.held.required=={'left','right'}
+    (tmp_path/'second').mkdir()
+    guard2,sample2,advance2,_=provisional_pile_guard(tmp_path/'second',monkeypatch)
+    sample2['contacts']=[c for c in sample2['contacts'] if 'right' not in c['b']]
+    guard2.begin_pile_admission();advance2();guard2.check(sample2)
+    guard2.hold_profile=load_hold_profile('robotiq_2f_85')
+    with pytest.raises(RuntimeError,match='closure lacks measured opposing'):guard2.establish()
+
+
 def test_live_postclose_admission_carries_current_geometry_then_freezes(tmp_path,monkeypatch):
     guard,sample,advance,contact=provisional_pile_guard(tmp_path,monkeypatch)
     guard.begin_pile_admission()

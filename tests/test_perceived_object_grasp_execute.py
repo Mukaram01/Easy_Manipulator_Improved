@@ -1181,7 +1181,9 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
         'leaders':{'gripper_finger1_joint'},'cycle':{'steps':[{'stage':'PREPLAN_CLOSE_GRIPPER','trajectory':trajectory(.5949)}]},
         'plan_segment':plan,'scene_now':lambda:'scene','action':record('hold-action'),'stage':record('stage'),
         'execute_client':'execute','ExecuteTrajectory':SimpleNamespace(Goal=lambda trajectory:trajectory),
-        'label':'ATTACH','time':__import__('time')}
+        'label':'ATTACH','time':__import__('time'),
+        'hold_profile':SimpleNamespace(method='opposing_contact',hold_reserve_rad=.002,
+            contact_verified=lambda touch,measured:set(touch)<=set(measured),evidence=lambda:{'capability_id':'test'})}
     tree=ast.parse(SCRIPT.read_text())
     branch=next(n for n in ast.walk(tree) if isinstance(n,ast.If) and
         ast.unparse(n.test)=="step['kind'] == 'attach'" and 'begin_pile_admission' in ast.unparse(n))
@@ -1201,6 +1203,7 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
         assert calls.index('stop')<calls.index('hold-plan')<calls.index('hold-action')<calls.index('establish')
         assert holds==[('COMMISSION_GRASP_HOLD',{'gripper_finger1_joint':pytest.approx(.5868)},'gripper')]
         assert summary['grasp_hold']['hold_command_rad']==pytest.approx(.5868) and summary['grasp_hold']['certified_close_rad']==.5949
+        assert summary['grasp_hold']['profile']=={'capability_id':'test'} and summary['grasp_hold']['reserve_rad']==.002
         assert calls.count('establish')==1 and calls.count('admission')==1
         assert 'unchecked' not in calls
         if mode=='stationary':
@@ -1752,9 +1755,16 @@ def test_full_cycle_judges_home_only_after_the_measured_stationary_window():
 def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_measured_state():
     source=SCRIPT.read_text()
     attach=source[source.index("raise RuntimeError('physical closure did not converge')"):source.index("summary['stationary_hold_start']")]
-    assert attach.index("GRASP_HOLD_REQUIRES_OPPOSING_CONTACT")<attach.index("grasp_hold_target(")<attach.index(
-        "plan_segment(scene_now(),'COMMISSION_GRASP_HOLD'")<attach.index("GRASP_HOLD_LOST_OPPOSING_CONTACT")<attach.index(
+    assert attach.index("GRASP_HOLD_CONTACT_NOT_VERIFIED")<attach.index("grasp_hold_target(")<attach.index(
+        "plan_segment(scene_now(),'COMMISSION_GRASP_HOLD'")<attach.index("GRASP_HOLD_CONTACT_LOST")<attach.index(
         "contact_guard.establish()")
+    # The profile, not the executor, decides which measured contacts verify the hold and how far to reserve.
+    assert attach.count("hold_profile.contact_verified(touch,contact_guard.fingers)")==2
+    assert "grasp_hold_target(hold_before['leader_position_rad'],hold_profile.hold_reserve_rad," in attach
+    assert "GRASP_HOLD_RESERVE_RAD" not in attach
+    boundary=source[source.index("measurements = Measurements(node,args.simulator_receipt,"):source.index("capture_model = CaptureModel(")]
+    assert "hold_profile = load_hold_profile(contract.get('end_effector_capability'))" in boundary
+    assert "summary['end_effector_hold'] = verify_hold_binding(hold_profile, measurements.receipt)" in boundary
     release=source[source.index("if step['stage']=='PREPLAN_OPEN_GRIPPER' and summary.get('grasp_hold'):"):
                    source.index("result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)")]
     assert "plan_segment(scene_now(),label,open_goal,group='gripper')" in release      # same goal, actual start

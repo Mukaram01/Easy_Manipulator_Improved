@@ -738,6 +738,45 @@ def test_targeted_full_cycle_is_refused_because_it_needs_same_run_prerequisite_e
     assert seen==[] and stubbed_preflight==[] and not (tmp_path/'evidence').exists()
 
 
+def completed_run(root,capability='test',failed=None):
+    for gate in ('cancel','telemetry','stationary','contact-release'):
+        path=root/f'{MODULE.GATES.index(gate)+1:02d}-{gate}'/gate/'summary.json';path.parent.mkdir(parents=True)
+        result='FAILED' if gate==failed else MODULE.EXPECTED_RESULTS[gate]
+        path.write_text(json.dumps({'result':result,'commissioning_capability':{'sha256':capability}}))
+    return root
+
+
+def test_targeted_full_cycle_with_prior_evidence_is_a_diagnostic_transfer_trial(tmp_path,monkeypatch,stubbed_preflight):
+    seen=record_sessions(monkeypatch)
+    prior=completed_run(tmp_path/'prior');output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','targeted','--gate','full-cycle','--prior-evidence',str(prior)])==0
+    assert len(seen)==1 and seen[0][:2]==('full-cycle',6)
+    assert {gate:path.name for gate,path in seen[0][2].items()}=={g:'summary.json' for g in ('cancel','telemetry','stationary','contact-release')}
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['status']=='PASS' and report['stage_a_acceptance'] is False
+    assert report['scope']=='DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE'
+    assert set(report['prior_evidence'])=={'cancel','telemetry','stationary','contact-release'}
+    assert report['gates']['full-cycle']['end_effector_hold'] is None       # stub summary carries no profile
+
+
+@pytest.mark.parametrize('argv,message',[
+    (['--mode','targeted','--gate','stationary','--prior-evidence','x'],'targeted full-cycle only'),
+    (['--mode','full','--prior-evidence','x'],'targeted full-cycle only'),
+])
+def test_prior_evidence_is_accepted_for_a_targeted_full_cycle_only(tmp_path,monkeypatch,stubbed_preflight,argv,message,capsys):
+    with pytest.raises(SystemExit):MODULE.main(['--output',str(tmp_path/'evidence')]+argv)
+    assert message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('problem,match',[('failed','did not pass'),('capability','different commissioning capability'),('missing','lacks the')])
+def test_prior_evidence_must_be_a_complete_passing_run_on_the_current_capability(tmp_path,problem,match):
+    root=completed_run(tmp_path/'prior',capability='other' if problem=='capability' else 'test',
+                       failed='telemetry' if problem=='failed' else None)
+    if problem=='missing':(root/'04-stationary/stationary/summary.json').unlink()
+    with pytest.raises(RuntimeError,match=match):MODULE.prior_evidence(root,'test')
+    assert set(MODULE.prior_evidence(completed_run(tmp_path/'good'),'test'))=={'cancel','telemetry','stationary','contact-release'}
+
+
 @pytest.mark.parametrize('argv,message',[
     (['--mode','targeted'],'targeted mode requires --gate'),
     (['--gate','telemetry'],'use --mode targeted'),

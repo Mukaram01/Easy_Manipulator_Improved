@@ -1064,6 +1064,9 @@ class ContactGuard:
         self.pile_expired=set();self.pile_origin=None;self.pile_height=0.;self.planning_attached=False
         self.ownership='UNHELD';self.release_goal=None;self.release_candidate=None;self.release_transition=None
         self.library=library;self.pile_admitting=False;self.pile_live_sequence=False;self.pile_last_iteration=None
+        # The end-effector capability's hold profile decides which measured contact
+        # links a verified hold must keep (set by the executor; None keeps every touch link).
+        self.hold_profile=None
 
     def bind_pile(self,objects,binding):
         """Bind perceived BOX geometry to the receipt's immutable physical world."""
@@ -1353,7 +1356,8 @@ class ContactGuard:
         self.leader=leaders[0]
         obj=self.m.object_pose(s,self.name);tool=self.m.frame(s,self.tool)
         if self.ownership!='UNHELD':raise RuntimeError('physical ownership cannot regress to carried')
-        self.held=HeldObject(tool,obj,self.fingers,self.touch,joints[self.leader][0],self.open_position)
+        required=self.hold_profile.required_contact_links(self.touch,self.fingers) if self.hold_profile else self.touch
+        self.held=HeldObject(tool,obj,self.fingers,required,joints[self.leader][0],self.open_position)
         self.ownership='CARRIED'
         self.held_start_sim_ns=s['sim_ns'];self.held_samples=1
         self.held_proof=dict(run_id=s['run_id'],target=self.object,

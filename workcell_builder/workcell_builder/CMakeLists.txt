@@ -955,6 +955,10 @@ install(PROGRAMS
   ../../scripts/grasp_strategy_candidates.py
   ../../scripts/perceived_object_grasp_execute.py
   ../../scripts/simulator_backend.py
+  ../../scripts/measurement_clock.py
+  ../../scripts/destination_binding.py
+  ../../scripts/capability_registry.py
+  ../../scripts/end_effector_hold.py
   ../../scripts/simulator_observations.py
   ../../scripts/simulator_execution.py
   ../../scripts/run_p8b_replay_planning_scene_smoke.sh

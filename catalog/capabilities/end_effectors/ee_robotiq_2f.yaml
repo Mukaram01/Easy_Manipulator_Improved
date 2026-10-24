@@ -43,3 +43,21 @@ end_effector:
   - finger_top
   - auto
   - finger_pinch_basic
+  # Physical hold profile consumed by the execution architecture (end_effector_hold/v1).
+  # The 2F-85 pads are driven through a rigid linkage by one actuated joint, so the
+  # simulated actuator torque cap sets the saturated per-pad grasp force.
+  hold:
+    schema: end_effector_hold/v1
+    method: opposing_contact
+    contact_verification:
+      min_contact_links: all            # both pads measured against the target
+    hold_reserve_rad: 0.002             # measured-contact hold (LENLEG 2026-10-24, bbe4f433)
+    actuation:
+      kind: single_actuated_joint
+      grasp_force_range_n: [20, 235]    # Robotiq 2F-85 specification
+      commanded_grasp_force_n: 40
+      pad_force_per_actuator_torque:
+        n_per_nm: 8.94                  # measured 90.4 N @ 10.114 N m, 39.6 N @ 4.474, 20.0 N @ 2.237 (linear within 1 %)
+        measured_closure_rad: 0.5848
+        evidence: LENLEG 2026-10-24 transmitted joint wrenches, stage_a1_finish_lenleg_hold_full4 and targeted stationary runs force40_st1 / force20_st1
+    release: open_until_clear

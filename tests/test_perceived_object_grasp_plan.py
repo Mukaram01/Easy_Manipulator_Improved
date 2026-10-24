@@ -56,6 +56,7 @@ def test_tool_goal_keeps_the_authored_clearance_at_the_grasp_frame():
     tool = MODULE.tool_pose_for_grasp(grasp, contract)
     assert tool[2] == pytest.approx(grasp[2] + 0.14)
     assert MODULE.compose_pose(tool, contract["tcp_pose"]) == pytest.approx(grasp)
+    assert contract["end_effector_capability"] == "robotiq_2f_85"      # the hold profile binding of the cell
 
 
 def test_tcp_conversion_handles_lateral_offsets_and_rotated_mounts():

@@ -71,6 +71,7 @@ REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-
 FAST_TEST_FILES=(
     "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
+    "tests/test_end_effector_hold.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
     "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
     "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",
@@ -531,6 +532,27 @@ def assert_gate(gate,summary,capability_sha,overlay_identity):
             raise RuntimeError("full physical cycle final acceptance is incomplete")
 
 
+def prior_evidence(directory,capability_sha):
+    """Passing prerequisite summaries of a completed run, for a diagnostic targeted full-cycle.
+
+    The executor re-proves the capability and overlay binaries of every record; this
+    only refuses an incomplete or failed run early. Reused evidence never makes the
+    targeted session Stage-A acceptance.
+    """
+    directory=Path(directory)
+    prior={}
+    for gate in ("cancel","telemetry","stationary","contact-release"):
+        path=directory/f"{GATES.index(gate)+1:02d}-{gate}"/gate/"summary.json"
+        if not path.is_file():raise RuntimeError(f"prior evidence lacks the {gate} summary: {path}")
+        summary=json.loads(path.read_text())
+        if summary.get("result")!=EXPECTED_RESULTS[gate]:
+            raise RuntimeError(f"prior {gate} evidence did not pass ({summary.get('result')!r})")
+        if summary.get("commissioning_capability",{}).get("sha256")!=capability_sha:
+            raise RuntimeError(f"prior {gate} evidence was produced by a different commissioning capability binary")
+        prior[gate]=path
+    return prior
+
+
 def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None,search_timeout=300.):
     cmd=[sys.executable,str(repo/"scripts/perceived_object_grasp_execute.py"),
          "--scene-package",str(scene),"--backend","simulator","--simulator-receipt",str(receipt),
@@ -696,6 +718,9 @@ def main(argv=None):
     parser.add_argument("--mode",choices=MODES,default="full",
         help="full: six-gate acceptance; targeted: one gate in its own session; fast: no ROS launch")
     parser.add_argument("--gate",choices=GATES,help="targeted mode only: the single gate to run")
+    parser.add_argument("--prior-evidence",type=Path,
+        help="targeted --gate full-cycle only: completed run whose passing cancel, telemetry, stationary and "
+             "contact-release summaries are reused for a diagnostic transfer trial (never Stage-A acceptance)")
     parser.add_argument("--gil-watchdog-ms",type=float,
         help="opt-in executor diagnostic: dump every thread's stack when one holds the GIL this long")
     parser.add_argument("--gil-probe-ms",type=float,
@@ -720,15 +745,19 @@ def main(argv=None):
         parser.error("search timeout must be finite and positive")
     if args.mode=="full":
         if args.gate is not None:parser.error("--gate selects a targeted run; use --mode targeted")
+        if args.prior_evidence is not None:parser.error("--prior-evidence applies to a targeted full-cycle only")
         args.through=args.through or "full-cycle"
     else:
         if args.through is not None:parser.error("--through applies to the full sequence only")
         if args.mode=="fast" and args.gate is not None:parser.error("fast mode runs no gate")
         if args.mode=="targeted":
             if args.gate is None:parser.error("targeted mode requires --gate")
-            if args.gate not in TARGETABLE_GATES:
+            if args.gate not in TARGETABLE_GATES and args.prior_evidence is None:
                 parser.error("full-cycle consumes the cancel, telemetry, stationary and contact-release "
-                             "evidence of the same run and cannot run alone; use --mode full")
+                             "evidence of the same run and cannot run alone; use --mode full, or reuse a completed "
+                             "run's evidence with --prior-evidence for a diagnostic transfer trial")
+        if args.prior_evidence is not None and (args.mode!="targeted" or args.gate!="full-cycle"):
+            parser.error("--prior-evidence applies to a targeted full-cycle only")
     if args.gil_watchdog_ms is not None:
         if args.mode=="fast":parser.error("the GIL watchdog observes executor sessions; fast mode runs none")
         if args.mode!="targeted" or args.gate not in GIL_WATCHDOG_GATES:
@@ -780,6 +809,9 @@ def main(argv=None):
         overall["preflight"].update(source_world=str(source_world),world_profile=args.world_profile,
             source_world_git_blob=SOURCE_WORLDS[args.world_profile][1],source_world_sha256=sha256(source_world))
         prior={}
+        if args.prior_evidence is not None:
+            prior=prior_evidence(args.prior_evidence,build["sha256"])
+            overall["prior_evidence"]={gate:str(path) for gate,path in prior.items()}
         # A targeted gate keeps its full-run session index, so it gets the same
         # ROS domain and partition as in the sequence and its own fresh session.
         selected=[(GATES.index(args.gate)+1,args.gate)] if args.mode=="targeted" else \
@@ -803,7 +835,8 @@ def main(argv=None):
                 raise
             if args.mode=="targeted" and gate=="cancel":overall["cancellation_qualified_this_run"]=True
             prior[gate]=path;overall["gates"][gate]={"status":"PASS","summary":str(path.relative_to(args.output)),
-                                                     "duration_s":round(time.monotonic()-began,1)}
+                                                     "duration_s":round(time.monotonic()-began,1),
+                                                     "end_effector_hold":(json.loads(path.read_text()).get("end_effector_hold") or {}).get("profile")}
             overall["status"]="PASS" if gate==last else "IN_PROGRESS"
         overall["stage_a_acceptance"]=args.mode=="full" and args.through=="full-cycle" and overall["status"]=="PASS"
         return 0

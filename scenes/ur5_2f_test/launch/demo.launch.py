@@ -338,12 +338,27 @@ def _launch_setup(context):
             from ament_index_python.packages import get_package_prefix
             sys.path.insert(0, str(Path(get_package_prefix('workcell_builder')) / 'lib/workcell_builder'))
         import simulator_backend
+        import end_effector_hold
         output = LaunchConfiguration("simulator_output").perform(context)
+        # The cell's end-effector capability profile states how this tool holds
+        # (method, reserve, actuator force). Its actuator cap is bound into the
+        # source description here, outside the evidence-bound simulator_backend
+        # module, so the derived model and the receipt carry it.
+        hold_profile = end_effector_hold.load_cell_hold_profile(
+            os.path.join(get_package_share_directory(scene_pkg), "cell_definition.yaml"))
+        if hold_profile is None and LaunchConfiguration("simulator_commissioning").perform(context).lower() == "true":
+            raise RuntimeError("simulator commissioning requires the cell to bind an end-effector capability with a hold profile")
+        hold_binding = None
+        if hold_profile is not None:
+            robot_description_config, hold_binding = end_effector_hold.bind_source_description(
+                robot_description_config, hold_profile)
         robot_description_config, controllers_config_path, simulator_spec = simulator_backend.prepare(
             robot_description_config, controllers_config_path,
             LaunchConfiguration("simulator_world").perform(context),
             f"{scene_pkg}_robot_state_publisher", output,
             collision_manifest_path=collision_manifest_path)
+        if hold_binding is not None:
+            simulator_spec['end_effector_hold'] = end_effector_hold.augment_spec(output, hold_binding)
         # Destination (bin floor) binding for the contact guard; kept outside the
         # evidence-bound simulator_backend module. Fails closed on a floor mismatch.
         import destination_binding

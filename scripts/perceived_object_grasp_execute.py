@@ -2446,6 +2446,11 @@ def main():
             until=time.monotonic()+5
             while measurements.latest is None and time.monotonic()<until:
                 rclpy.spin_once(node,timeout_sec=.05)
+            # The tool's hold method and force come from its capability profile; the
+            # running simulator must have been derived from this exact profile.
+            from end_effector_hold import load_hold_profile, verify_hold_binding
+            hold_profile = load_hold_profile(contract.get('end_effector_capability'))
+            summary['end_effector_hold'] = verify_hold_binding(hold_profile, measurements.receipt)
             capture_model = CaptureModel(params[2].string_value, contract['allowed_touch_links'])
             srdf = call(params_client,GetParameters.Request(names=['robot_description_semantic'])).values[0].string_value
             if not srdf.strip():raise RuntimeError('missing SRDF qualification evidence')
@@ -2622,6 +2627,7 @@ def main():
             support=next((s['metadata']['initial_support_contact'] for s in cycle['steps'] if s.get('metadata',{}).get('initial_support_contact')),None)
             selected=next(o for o in objects if o['id']==selected_id)
             contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,contract['tool_link'])
+            contact_guard.hold_profile=hold_profile
             contact_guard.bind_pile(objects,dict(resolution_sha256=summary['resolution_sha256'],
                 execution_attempt=measurements.receipt['run_id']+':'+str(time.monotonic_ns()),
                 selected_grasp_index=summary['selected_grasp_index'],
@@ -2784,18 +2790,19 @@ def main():
                         raise RuntimeError('physical closure did not converge')
                     # Grasp-to-hold: the certified CLOSE command leaves the stalled finger a
                     # standing ~0.01 rad servo error that ratchets it 0.1 mrad per pad-manifold
-                    # regeneration and jolts the part (LENLEG 2026-10-24). Once opposing contact
-                    # is measured and settled, hold at the measured closure plus a small reserve,
-                    # never beyond the certified closure. Retention is then proven under the hold.
-                    from simulator_execution import GRASP_HOLD_RESERVE_RAD,grasp_hold_target,grasp_load_evidence
+                    # regeneration and jolts the part (LENLEG 2026-10-24). Once the profile's
+                    # contact verification holds and has settled, hold at the measured closure
+                    # plus the profile's reserve, never beyond the certified closure. Retention
+                    # is then proven under the hold.
+                    from simulator_execution import grasp_hold_target,grasp_load_evidence
                     touch=contract['allowed_touch_links'];leader=next(iter(leaders))
                     closed=contact_guard.checked_current()
-                    if not set(touch)<=contact_guard.fingers:
-                        raise RuntimeError('GRASP_HOLD_REQUIRES_OPPOSING_CONTACT')
+                    if not hold_profile.contact_verified(touch,contact_guard.fingers):
+                        raise RuntimeError('GRASP_HOLD_CONTACT_NOT_VERIFIED: '+hold_profile.method)
                     close_motion=next(s for s in cycle['steps'] if s['stage']=='PREPLAN_CLOSE_GRIPPER')['trajectory'].joint_trajectory
                     certified_close=close_motion.points[-1].positions[list(close_motion.joint_names).index(leader)]
                     hold_before=grasp_load_evidence(closed,leader,touch,contact_guard.name)
-                    hold_command=grasp_hold_target(hold_before['leader_position_rad'],GRASP_HOLD_RESERVE_RAD,
+                    hold_command=grasp_hold_target(hold_before['leader_position_rad'],hold_profile.hold_reserve_rad,
                                                    certified_close,contact_guard.open_position)
                     deadline=time.monotonic()+30
                     hold=plan_segment(scene_now(),'COMMISSION_GRASP_HOLD',{leader:hold_command},group='gripper')
@@ -2805,10 +2812,10 @@ def main():
                     if not wait_stopped(monitor_contacts=True):
                         raise RuntimeError('GRASP_HOLD_DID_NOT_SETTLE')
                     held_sample=contact_guard.checked_current()
-                    if not set(touch)<=contact_guard.fingers:
-                        raise RuntimeError('GRASP_HOLD_LOST_OPPOSING_CONTACT')
-                    summary['grasp_hold']=dict(reserve_rad=GRASP_HOLD_RESERVE_RAD,certified_close_rad=certified_close,
-                        hold_command_rad=hold_command,
+                    if not hold_profile.contact_verified(touch,contact_guard.fingers):
+                        raise RuntimeError('GRASP_HOLD_CONTACT_LOST: '+hold_profile.method)
+                    summary['grasp_hold']=dict(reserve_rad=hold_profile.hold_reserve_rad,certified_close_rad=certified_close,
+                        profile=hold_profile.evidence(),hold_command_rad=hold_command,
                         hold_trajectory_start_rad=hold_points.points[0].positions[list(hold_points.joint_names).index(leader)],
                         before=hold_before,after=grasp_load_evidence(held_sample,leader,touch,contact_guard.name),
                         hold_metadata={k:v for k,v in hold['metadata'].items() if k in ('moveit_code','points','planning_time','success')})
