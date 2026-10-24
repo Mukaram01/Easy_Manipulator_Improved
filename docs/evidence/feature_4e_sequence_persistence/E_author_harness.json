@@ -1,0 +1,87 @@
+{
+  "batch_report": "/ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234247Z/sequence_plan_check.json",
+  "chosen_places": {
+    "runtime::cup-01": "1. cup-01 (cup)  \u2192  Automatic",
+    "runtime::cup-02": "2. cup-02 (cup)  \u2192  Automatic",
+    "runtime::cup-03": "3. cup-03 (cup)  \u2192  Automatic"
+  },
+  "edited_sequence": [
+    "1. cup-01 (cup)  \u2192  Automatic (expected: near end)",
+    "2. cup-02 (cup)  \u2192  Automatic (next free place)",
+    "\u26a0 3. cup-03 (cup)  \u2192  Automatic  \u2014  BLOCKED"
+  ],
+  "edited_summary": "Unsaved changes \u2014 BLOCKED: 1 of 3 saved object(s) need attention. runtime::cup-03: INSUFFICIENT_CAPACITY: default_drop_zone has no room left for this 0.060 x 0.060 m object with 0.005 m clearance after 2 other object(s). Remove an object from the sequence or use a larger destination.",
+  "final_details": "No complete plan check. No robot motion was performed.\nEvidence: /ws/src/easy_manipulation_deployment/scenes/ur5_2f_test/generated/multiobject_plan_check/20261017T234247Z",
+  "final_status": "BLOCKED \u2014 SEQUENCE_BLOCKED: BLOCKED: 1 of 3 saved object(s) need attention. runtime::cup-03: INSUFFICIENT_CAPACITY: default_drop_zone has no room left for this 0.060 x 0.060 m object with 0.005 m clearance after 2 other object(s). Remove an object from the sequence or use a larger destination.",
+  "generate_wait_ticks": 32,
+  "phase": "author",
+  "preview_summary_before": "Saved sequence: 2 object(s), 1 chosen place(s), 1 automatic. Ready for the full-sequence check.",
+  "progress": {
+    "has_selected_scene": true,
+    "load_watcher_running": false,
+    "phase": 6,
+    "ticks": 1
+  },
+  "reason": "SEQUENCE_BLOCKED: BLOCKED: 1 of 3 saved object(s) need attention. runtime::cup-03: INSUFFICIENT_CAPACITY: default_drop_zone has no room left for this 0.060 x 0.060 m object with 0.005 m clearance after 2 other object(s). Remove an object from the sequence or use a larger destination.",
+  "result": "PASS",
+  "robot_motion_commanded": false,
+  "saved_sequence": {
+    "items": [
+      {
+        "class_id": "cup",
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "object_id": "runtime::cup-01",
+        "observed_xyz_m": [
+          0.26,
+          -0.08,
+          0.051
+        ],
+        "placement": {
+          "mode": "AUTO"
+        }
+      },
+      {
+        "class_id": "cup",
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "object_id": "runtime::cup-02",
+        "observed_xyz_m": [
+          0.45,
+          -0.12,
+          0.051
+        ],
+        "placement": {
+          "mode": "AUTO"
+        }
+      },
+      {
+        "class_id": "cup",
+        "dimensions_m": [
+          0.06,
+          0.06,
+          0.1
+        ],
+        "object_id": "runtime::cup-03",
+        "observed_xyz_m": [
+          0.38,
+          -0.25,
+          0.051
+        ],
+        "placement": {
+          "mode": "AUTO"
+        }
+      }
+    ],
+    "source_sha256": "bc94da59df646fa2ebc42bcc9b8fe0d720b5c6a192f742c0bf7d29fdac3c3ca5"
+  },
+  "sequence_order": "runtime::cup-01,runtime::cup-02,runtime::cup-03",
+  "sequence_status": "SEQUENCE_BLOCKED",
+  "status": "BLOCKED"
+}

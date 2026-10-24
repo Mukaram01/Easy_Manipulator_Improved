@@ -17,6 +17,8 @@
 #include <QCheckBox>
 #include <QTimer>
 #include <QTextEdit>
+#include <QLineEdit>
+#include <QPlainTextEdit>
 #include <cmath>
 #include <limits>
 #include <yaml-cpp/yaml.h>
@@ -425,6 +427,235 @@ public:
         }
       }
     } catch (const std::exception & error) { s->evidence["failure"] = QString::fromUtf8(error.what()); write(); timer->stop(); app->exit(1); } });
+    timer->start();
+  }
+
+  // Feature 4B: Task tab -> Save -> Generate -> "Check plans (no motion)"; --reopen proves persistence + recheck.
+  static void start_multiobject_plan_acceptance(MainWindow * window, QApplication * app,
+      const QString & output, const QString & recording, bool reopen, bool skip_check = false,
+      const QString & sequence_order = QString(), const QString & sequence_places = QString(),
+      const QString & expect_sequence = QString()) {
+    // Sequence runs: the author run builds the sequence in the Task tab (Preview, tick, drag, choose places),
+    // saves it in the task and generates; the reopen run checks the saved sequence exactly as reopened.
+    struct Session { int phase=0, ticks=0; QString scene; QJsonObject evidence; bool configured=false; };
+    auto s = std::make_shared<Session>(); QDir().mkpath(output);
+    const QString tag = reopen ? "reopen" : "author";
+    s->evidence = {{"result", "FAIL"}, {"phase", tag}, {"robot_motion_commanded", false}};
+    auto write = [=]() { QFile f(output + "/" + tag + ".json"); if (f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson()); };
+    auto require = [](bool value, const char * message) { if (!value) throw std::runtime_error(message); };
+    auto * modal_watch = new QTimer(window); modal_watch->setInterval(250);
+    QObject::connect(modal_watch, &QTimer::timeout, window, [=]() {
+      for (auto * widget : QApplication::topLevelWidgets()) if (auto * message = qobject_cast<QMessageBox *>(widget)) {
+        if (!message->isVisible()) continue;
+        s->evidence["modal_dialog"] = message->text() + "\n" + message->informativeText();
+        window->grab().save(output + "/" + tag + "_modal.png"); message->grab().save(output + "/" + tag + "_modal_dialog.png");
+        write(); message->reject(); app->exit(1);
+      }
+    }); modal_watch->start();
+    auto * timer = new QTimer(window); timer->setInterval(500);
+    QObject::connect(timer, &QTimer::timeout, window, [=]() { try {
+      if (++s->ticks > 4800) throw std::runtime_error("multi-object plan acceptance timed out");
+      const bool loading = window->load_watcher_ && window->load_watcher_->isRunning();
+      if (s->ticks % 20 == 1) {
+        s->evidence["progress"] = QJsonObject{{"phase", s->phase}, {"ticks", s->ticks}, {"load_watcher_running", loading},
+                                              {"has_selected_scene", window->has_selected_scene()}};
+        write();
+      }
+      if (loading && s->phase != 4 && s->phase != 6) return;
+      auto * editor = window->environment_task_editor_;
+      switch (s->phase) {
+        case 0: {
+          if (s->ticks < 6) return;
+          s->scene = QFileInfo(window->detect_workspace_root() + "/src/easy_manipulation_deployment/scenes/ur5_2f_test").canonicalFilePath();
+          int index = -1;
+          for (size_t i = 0; i < window->scene_browser_result_.scenes.size(); ++i)
+            if (QFileInfo(QString::fromStdString(window->scene_browser_result_.scenes[i].scene_dir.string())).canonicalFilePath() == s->scene) index = int(i);
+          require(index >= 0, "ur5_2f_test not discovered in the selected workspace");
+          require(window->open_scene_builder_for_scene_index(index, "4B multi-object plan acceptance"), "scene did not open");
+          s->phase = 1; s->ticks = 0; break;
+        }
+        case 1: {
+          if (s->ticks < 8) return;
+          auto * mode = editor->findChild<QComboBox *>("taskPerceptionMode");
+          auto * path = editor->findChild<QLineEdit *>("taskReplayPath");
+          auto * target = editor->findChild<QLineEdit *>("taskTargetClass");
+          require(mode && path && target, "Task tab controls missing");
+          if (reopen) {
+            s->evidence["reopened_fields"] = QJsonObject{{"mode", mode->currentData().toString()},
+              {"replay_path", path->text()}, {"target_class", target->text()}, {"dirty", editor->dirty()}};
+            require(mode->currentData().toString() == "replayed_snapshot" && path->text() == recording &&
+                    target->text() == "cup" && !editor->dirty() &&
+                    editor->findChild<QComboBox *>("taskGraspPolicy")->currentText() == "AUTO" &&
+                    editor->findChild<QComboBox *>("taskPlacePolicy")->currentText() == "AUTO" &&
+                    std::abs(editor->findChild<QDoubleSpinBox *>("taskPlaceClearance")->value() - 0.005) < 1e-9 &&
+                    std::abs(editor->findChild<QDoubleSpinBox *>("taskMaximumAge")->value() - 300.0) < 1e-9,
+                    "saved task did not reopen identically");
+            if (!sequence_order.isEmpty()) {  // The saved sequence, with no Preview: order, objects and places.
+              auto * order = editor->findChild<QListWidget *>("taskSequenceOrder");
+              QJsonArray rows; QStringList ids;
+              for (int i = 0; i < order->count(); ++i) {
+                rows.append(order->item(i)->text());
+                if (order->item(i)->checkState() == Qt::Checked) ids << order->item(i)->data(Qt::UserRole).toString();
+              }
+              s->evidence["reopened_sequence"] = rows;
+              s->evidence["reopened_sequence_summary"] = editor->findChild<QLabel *>("taskSequenceSummary")->text();
+              require(ids.join(',') == sequence_order, "saved sequence order did not reopen identically");
+              // A sequence expected to need review may legitimately describe its saved places differently.
+              for (const auto & pair : expect_sequence.isEmpty() ? sequence_places.split(',', Qt::SkipEmptyParts) : QStringList()) {
+                const auto id = pair.section('=', 0, 0), choice = pair.section('=', 1);
+                const auto text = order->item(ids.indexOf(id))->text();
+                require(choice == "auto" ? text.contains("Automatic") : text.contains(QString("Place %1 of").arg(choice.section('-', 1))),
+                        "saved place did not reopen identically");
+              }
+              if (!expect_sequence.isEmpty())
+                require(s->evidence["reopened_sequence_summary"].toString().startsWith(expect_sequence),
+                        "reopened sequence review did not report the expected status");
+              s->configured = true;
+            }
+            s->phase = 3; s->ticks = 0; break;
+          }
+          mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+          path->setText(recording); emit path->textEdited(recording);
+          target->setText("cup"); emit target->textEdited("cup");
+          // Beginner Task-tab choices: let the resolver try every grasp candidate, and use a
+          // placement clearance the authored 0.12 m drop region can satisfy for a 0.10 m cup.
+          auto * policy = editor->findChild<QComboBox *>("taskGraspPolicy");
+          auto * clearance = editor->findChild<QDoubleSpinBox *>("taskPlaceClearance");
+          require(policy && clearance, "grasp policy / placement clearance controls missing");
+          policy->setCurrentText("AUTO");
+          clearance->setValue(0.005);
+          // AUTO placement lets a multi-object sequence give each object its own free place.
+          auto * place_policy = editor->findChild<QComboBox *>("taskPlacePolicy");
+          require(place_policy, "placement policy control missing");
+          place_policy->setCurrentText("AUTO");
+          // A static commissioning recording: allow time for every grasp candidate to be planned.
+          auto * max_age = editor->findChild<QDoubleSpinBox *>("taskMaximumAge");
+          require(max_age, "maximum observation age control missing");
+          max_age->setValue(300.0);
+          QString error;
+          require(editor->save(&error), "Task save failed");
+          s->phase = 5; s->ticks = 0; break;
+        }
+        case 5: {  // Generate exactly as the user does, once Product View live authoring is ready.
+          if (!window->ensure_live_authoring_mutation_available("4B acceptance")) {
+            s->evidence["generate_wait_ticks"] = s->ticks;
+            require(s->ticks < 180, "Product View live authoring never became available; Generate is locked");
+            return;
+          }
+          window->generate_scene_package_for_selected_scene();
+          s->phase = 2; s->ticks = 0; break;
+        }
+        case 2: {
+          if (s->ticks < 10) return;
+          QFile task(s->scene + "/config/workcell_builder_task_intent.yaml"); task.open(QIODevice::ReadOnly);
+          s->evidence["saved_task_intent"] = QString::fromUtf8(task.readAll());
+          s->phase = 3; s->ticks = 0; break;
+        }
+        case 3: {
+          if (s->ticks < 4) return;
+          auto * check = editor->findChild<QPushButton *>("taskSimulationBatchPlanCheck");
+          require(check && check->isEnabled(), "Check plans is not enabled for the saved task");
+          if (!sequence_order.isEmpty()) {
+            auto * sequence = editor->findChild<QPushButton *>("taskSimulationSequenceCheck");
+            require(sequence && sequence->isEnabled(), "sequence controls unavailable");
+            if (!s->configured) {  // Build it in the Task tab from the queue preview, as a user does.
+              auto * preview = editor->findChild<QPushButton *>("taskSimulationBatchPreview");
+              require(preview && preview->isEnabled(), "Preview queue is not enabled for the saved task");
+              s->evidence["preview_summary_before"] = editor->findChild<QLabel *>("taskSequenceSummary")->text();
+              preview->click(); s->phase = 7; s->ticks = 0; break;
+            }
+            s->evidence["sequence_order"] = sequence_order;
+            sequence->click(); s->phase = 4; s->ticks = 0; break;
+          }
+          if (skip_check) {  // Lifecycle-only cycle: open, verify persisted Task, close.
+            s->evidence["result"] = "PASS"; s->evidence["plan_check_skipped"] = true; write();
+            timer->stop(); window->close(); app->exit(0); break;
+          }
+          check->click(); s->phase = 4; s->ticks = 0; break;
+        }
+        case 4: {
+          auto * cancel = editor->findChild<QPushButton *>("taskSimulationBatchPlanCancel");
+          auto * status = editor->findChild<QLabel *>("taskSimulationBatchStatus");
+          if (s->ticks % 20 == 0) { s->evidence["last_progress"] = status->text(); write(); }
+          if (cancel->isEnabled() || s->ticks < 4) return;
+          const QString details = editor->findChild<QPlainTextEdit *>("taskSimulationBatchDetails")->toPlainText();
+          s->evidence["final_status"] = status->text();
+          s->evidence["final_details"] = details;
+          const QString evidence_dir = details.section("Evidence: ", 1).trimmed();
+          const QString report_name = sequence_order.isEmpty() ? "/batch_plan_check.json" : "/sequence_plan_check.json";
+          QFile report(evidence_dir + report_name);
+          require(report.open(QIODevice::ReadOnly), "plan check report missing");
+          const auto batch = QJsonDocument::fromJson(report.readAll()).object();
+          s->evidence["batch_report"] = evidence_dir + report_name;
+          s->evidence["outcome_counts"] = batch.value("outcome_counts");
+          s->evidence["sequence_status"] = batch.value("sequence_status");
+          s->evidence["status"] = batch.value("status");
+          s->evidence["reason"] = batch.value("reason");
+          if (!expect_sequence.isEmpty()) {
+            require(batch.value("status").toString() == "BLOCKED" && batch.value("reason").toString().startsWith("SEQUENCE_") &&
+                    !batch.value("moveit_planning_attempted").toBool(), "an invalid saved sequence was planned");
+          } else {
+            require(batch.value("status").toString() == "CHECKED", "batch did not complete");
+          }
+          require(!batch.value("execution_attempted").toBool() && !batch.value("motion_commanded").toBool(), "motion observed");
+          for (int i = 0; i < window->scene_builder_inspector_tabs_->count(); ++i)
+            if (window->scene_builder_inspector_tabs_->widget(i)->isAncestorOf(editor))
+              window->scene_builder_inspector_tabs_->setCurrentIndex(i);
+          s->phase = 6; s->ticks = 0; write(); break;
+        }
+        case 7: {  // Preview filled the list: tick, drag into order and choose places, then Save and Generate.
+          auto * order = editor->findChild<QListWidget *>("taskSequenceOrder");
+          auto * place = editor->findChild<QComboBox *>("taskSequencePlace");
+          require(place != nullptr, "place control missing");
+          if (order->count() == 0 || editor->findChild<QLabel *>("taskSimulationBatchStatus")->text().startsWith("Checking")) {
+            require(s->ticks < 120, "Preview queue never filled the sequence"); return;
+          }
+          const auto ids = sequence_order.split(',', Qt::SkipEmptyParts);
+          for (int i = 0; i < order->count(); ++i)  // Tick exactly the chosen objects.
+            order->item(i)->setCheckState(ids.contains(order->item(i)->data(Qt::UserRole).toString()) ? Qt::Checked : Qt::Unchecked);
+          for (int target = 0; target < ids.size(); ++target) {  // Drag each into position.
+            int row = -1;
+            for (int i = 0; i < order->count(); ++i) if (order->item(i)->data(Qt::UserRole).toString() == ids[target]) row = i;
+            require(row >= 0, "sequence object missing from the preview queue");
+            if (row != target) require(order->model()->moveRow(QModelIndex(), row, QModelIndex(), target), "drag failed");
+          }
+          QJsonObject chosen;
+          for (const auto & pair : sequence_places.split(',', Qt::SkipEmptyParts)) {
+            const auto id = pair.section('=', 0, 0), choice = pair.section('=', 1);
+            const int row = ids.indexOf(id);
+            require(row >= 0, "place chosen for an object not in the sequence");
+            order->setCurrentRow(row);
+            const int index = choice == "auto" ? 0 : place->findData(choice);
+            require(place->isEnabled() && index >= 0, "place option not offered by the preview");
+            place->setCurrentIndex(index); emit place->activated(index);
+            chosen[id] = order->item(row)->text();
+          }
+          s->evidence["chosen_places"] = chosen;
+          editor->validate_now();
+          QJsonArray rows;
+          for (int i = 0; i < order->count(); ++i) rows.append(order->item(i)->text());
+          s->evidence["edited_sequence"] = rows;
+          s->evidence["edited_summary"] = editor->findChild<QLabel *>("taskSequenceSummary")->text();
+          window->grab().save(output + "/" + tag + "_sequence_edited.png");
+          QString error;
+          require(editor->save(&error), "Task save with sequence failed");
+          QFile task(s->scene + "/config/workcell_builder_task_intent.yaml"); task.open(QIODevice::ReadOnly);
+          s->evidence["saved_sequence"] = QJsonDocument::fromJson(task.readAll()).object().value("sequence");
+          s->configured = true;
+          s->phase = 5; s->ticks = 0; break;  // The sequence changed the task: Generate again.
+        }
+        case 6: {  // Let the Task tab lay out before capturing it.
+          if (s->ticks < 3) return;
+          auto * results = editor->findChild<QLabel *>("taskSimulationBatchStatus")->parentWidget();
+          results->grab().save(output + "/" + tag + "_task_results.png");
+          window->grab().save(output + "/" + tag + "_window.png");
+          s->evidence["result"] = "PASS"; write(); timer->stop(); window->close(); app->exit(0); break;
+        }
+      }
+    } catch (const std::exception & e) {
+      s->evidence["failure"] = e.what(); window->grab().save(output + "/" + tag + "_failure.png"); write();
+      timer->stop(); app->exit(1);
+    } });
     timer->start();
   }
 

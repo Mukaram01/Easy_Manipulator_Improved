@@ -9,6 +9,12 @@ import copy
 import itertools
 import math
 
+# The full-cycle planner accepts a planned placement within this distance of the
+# requested place. Allocated places keep this much extra room from neighbours and
+# region walls, so an object that lands within tolerance still keeps its clearance
+# and passes the planner's containment check.
+PLACEMENT_TOLERANCE_M = 0.003
+
 
 def vector(value, name, size=3):
     if (not isinstance(value, (list, tuple)) or len(value) != size or
@@ -176,6 +182,154 @@ def check_object_containment(destination, object_pose, object_dimensions, cleara
         contains(destination['usable_placement'], center, orient, dims, clearance)
     else:
         contains(destination, values[:3], rot, dims, clearance)
+
+
+def _region_frame(destination):
+    """The containment region check_object_containment enforces, as (origin, rotation, half extents)."""
+    region = destination.get('region_local', destination['placement_local'])
+    rp, rr = pose(region)
+    tr = rotation(destination['target_pose_rpy'])
+    origin = [a+b for a, b in zip(destination['target_pose_xyz'], apply(tr, rp))]
+    return rp, rr, multiply(tr, rr), origin, [d/2 for d in dimensions(region)]
+
+
+def _quaternion_matrix(values):
+    qx, qy, qz, qw = values
+    return [[1-2*(qy*qy+qz*qz), 2*(qx*qy-qz*qw), 2*(qx*qz+qy*qw)],
+            [2*(qx*qy+qz*qw), 1-2*(qx*qx+qz*qz), 2*(qy*qz-qx*qw)],
+            [2*(qx*qz-qy*qw), 2*(qy*qz+qx*qw), 1-2*(qx*qx+qy*qy)]]
+
+
+def _footprint(to_region, orient, dims):
+    local = multiply(to_region, orient)
+    return [sum(abs(v)*d/2 for v, d in zip(row, dims)) for row in local]
+
+
+def _occupied_boxes(destination, occupied):
+    _, _, world_rot, origin, _ = _region_frame(destination)
+    to_region = transpose(world_rot)
+    boxes = []
+    for world_pose, dims in occupied:
+        values = vector(world_pose, 'occupied pose', 7)
+        boxes.append((apply(to_region, [a-b for a, b in zip(values[:3], origin)]),
+                      _footprint(to_region, _quaternion_matrix(values[3:]), vector(dims, 'occupied dimensions'))))
+    return boxes
+
+
+def _overlapping(center, half, boxes, clearance):
+    return [i for i, (c, h) in enumerate(boxes)
+            if all(abs(a-b) < x+y+clearance-1e-9 for a, b, x, y in zip(center, c, half, h))]
+
+
+def local_to_world_pose(destination, local_pose):
+    """A target-local {xyz_m, rpy_rad} placement as a world [x, y, z, qx, qy, qz, qw] pose."""
+    tr = rotation(destination['target_pose_rpy'])
+    xyz = [a+b for a, b in zip(destination['target_pose_xyz'], apply(tr, vector(local_pose['xyz_m'], 'local xyz')))]
+    m = multiply(tr, rotation(local_pose['rpy_rad']))
+    w = math.sqrt(max(0., 1+m[0][0]+m[1][1]+m[2][2]))/2
+    x = math.copysign(math.sqrt(max(0., 1+m[0][0]-m[1][1]-m[2][2]))/2, m[2][1]-m[1][2])
+    y = math.copysign(math.sqrt(max(0., 1-m[0][0]+m[1][1]-m[2][2]))/2, m[0][2]-m[2][0])
+    z = math.copysign(math.sqrt(max(0., 1-m[0][0]-m[1][1]+m[2][2]))/2, m[1][0]-m[0][1])
+    return xyz + [x, y, z, w]
+
+
+def place_conflicts(destination, local_pose, object_dimensions, clearance=0., occupied=(), separation=0.):
+    """Indices of `occupied` (world 7-pose, dimensions) whose footprint a chosen place overlaps.
+
+    Footprints must stay `clearance` + `separation` apart.
+    """
+    rp, rr, _, _, _ = _region_frame(destination)
+    to_region = transpose(rr)
+    center = apply(to_region, [a-b for a, b in zip(vector(local_pose['xyz_m'], 'local xyz'), rp)])
+    half = _footprint(to_region, rotation(local_pose['rpy_rad']), vector(object_dimensions, 'object dimensions'))
+    return _overlapping(center, half, _occupied_boxes(destination, occupied), clearance+separation)
+
+
+def wall_margin_ok(destination, local_pose, object_dimensions, clearance=0., margin=0.):
+    """Does a place keep clearance + margin to the region walls horizontally? (Height: containment.)"""
+    rp, rr, _, _, halves = _region_frame(destination)
+    to_region = transpose(rr)
+    center = apply(to_region, [a-b for a, b in zip(vector(local_pose['xyz_m'], 'local xyz'), rp)])
+    half = _footprint(to_region, rotation(local_pose['rpy_rad']), vector(object_dimensions, 'object dimensions'))
+    return all(abs(c)+h+clearance+margin <= w+1e-8 for c, h, w in zip(center[:2], half[:2], halves[:2]))
+
+
+def placement_slots(destination, object_dimensions, clearance=0., occupied=(), step=0.01, separation=0.):
+    """Free target-local poses for one more object inside the authored region.
+
+    Candidates lie on a grid inside the containment region (the one
+    check_object_containment enforces), packed from the region's -x/-y corner
+    so later objects keep room. `occupied` holds (world 7-pose, dimensions) of
+    objects already there; a slot whose footprint, inflated by `clearance`,
+    overlaps one is dropped. Gripper clearance is not modelled here: the
+    full-cycle planner remains the only feasibility check for every slot.
+    Objects keep `clearance` + `separation` from each other and from the region walls.
+    """
+    rp, rr, _, _, (hx, hy, hz) = _region_frame(destination)
+    ox, oy, oz = (d/2 for d in vector(object_dimensions, 'object dimensions'))
+    boxes = _occupied_boxes(destination, occupied)
+
+    def axis(h, o, i):
+        lo, hi = -h+o+clearance+separation, h-o-clearance-separation
+        if lo > hi+1e-9:
+            return []
+        # The authored region is centred on its frame: keep the centre-line on the grid.
+        inner = [k*step for k in range(int(math.ceil(lo/step-1e-9)), int(math.floor(hi/step+1e-9))+1)]
+        # Flush against each occupied footprint, so a placed object's planning tolerance
+        # does not cost a whole grid step of room.
+        flush = [c[i]+side*(half[i]+o+clearance+separation) for c, half in boxes for side in (-1, 1)]
+        return sorted({round(v, 9) for v in [lo, hi] + inner + flush if lo-1e-9 <= v <= hi+1e-9})
+
+    if oz+clearance > hz+1e-8:
+        return []
+    slots = []
+    for x in axis(hx, ox, 0):
+        for y in sorted(axis(hy, oy, 1), key=abs):
+            if _overlapping([x, y, 0.], [ox, oy, oz], boxes, clearance+separation):
+                continue
+            slots.append({'xyz_m': [a+b for a, b in zip(rp, apply(rr, [x, y, 0.]))],
+                          'rpy_rad': angles(rr)})
+    return slots
+
+
+def place_options(destination, object_dimensions, clearance=0., robot_xyz=None, limit=12):
+    """Fixed places an operator can choose for one object in the empty region, with a description.
+
+    Places form an evenly spread grid of as many places as fit with clearance +
+    PLACEMENT_TOLERANCE_M to the walls and between neighbours. They never move
+    when other objects are chosen, so a saved choice keeps meaning the same spot.
+    Descriptions say how far along the region's long axis a place lies from the robot
+    (`robot_xyz`, world); returns [(target-local pose, description)].
+    """
+    rp, rr, world_rot, origin, halves = _region_frame(destination)
+    dims = vector(object_dimensions, 'object dimensions')
+    if dims[2]/2+clearance > halves[2]+1e-8:
+        return []
+    pitch = [d+clearance+PLACEMENT_TOLERANCE_M for d in dims[:2]]
+    axes = []
+    for h, d, p in zip(halves[:2], dims[:2], pitch):
+        lo, hi = -h+d/2+clearance+PLACEMENT_TOLERANCE_M, h-d/2-clearance-PLACEMENT_TOLERANCE_M
+        if lo > hi+1e-9:
+            return []
+        count = 1 + int(math.floor((hi-lo)/p+1e-9))
+        axes.append([0.] if count == 1 else [lo+(hi-lo)*k/(count-1) for k in range(count)])
+    long_axis = 0 if halves[0] >= halves[1] else 1
+    toward = [0., 0.]
+    if robot_xyz is not None:  # Order and describe from the end nearest the robot.
+        robot = apply(transpose(world_rot), [a-b for a, b in zip(vector(robot_xyz, 'robot xyz'), origin)])
+        toward = [-1. if robot[i] < 0 else 1. for i in range(2)]
+    along = sorted(axes[long_axis], key=lambda v: toward[long_axis]*v, reverse=True)
+    across = sorted(axes[1-long_axis], key=lambda v: toward[1-long_axis]*v, reverse=True)
+    words = {1: ['centre'], 2: ['near end', 'far end'], 3: ['near end', 'middle', 'far end']}
+    places = []
+    for i, a in enumerate(along):
+        where = (words.get(len(along)) or [f'position {k} from the near end' for k in range(1, len(along)+1)])[i]
+        for j, c in enumerate(across):
+            xy = [0., 0.]
+            xy[long_axis], xy[1-long_axis] = a, c
+            pose = {'xyz_m': [u+v for u, v in zip(rp, apply(rr, [xy[0], xy[1], 0.]))], 'rpy_rad': angles(rr)}
+            places.append((pose, where if len(across) == 1 else f'{where}, row {j+1} of {len(across)}'))
+    return places[:limit]
 
 
 def is_destination_zone(zone):

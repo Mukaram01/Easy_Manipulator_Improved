@@ -217,3 +217,32 @@ def test_refresh_publishes_current_task_identity_without_replacing_curated_metad
     assert refreshed['resolution_sha256'] == 'current-result'
     assert 'grasp_strategy' not in refreshed
     assert existing['task_recipe']['enabled'] is False
+
+
+def test_copied_install_validates_using_installed_strategy_catalog(tmp_path):
+    """Ordinary installs must validate the same task as source/symlink installs."""
+    import json
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    root = scene(tmp_path)
+    task = root / 'config/workcell_builder_task_intent.yaml'
+    task.write_text(yaml.safe_dump(valid_intent('EXACT', 'EXACT')))
+    prefix = tmp_path / 'install/workcell_builder'
+    installed = prefix / 'lib/workcell_builder'
+    installed.mkdir(parents=True)
+    for name in ('validate_builder_task_intent.py', 'task_intent_v2.py', 'capability_registry.py',
+                 'workcell_studio_layout_source.py', 'physical_destination.py'):
+        shutil.copy2(ROOT / 'scripts' / name, installed / name)
+    shutil.copytree(ROOT / 'catalog/grasp_strategies',
+                    prefix / 'share/workcell_builder/catalog/grasp_strategies')
+    env = dict(os.environ)
+    env.pop('PYTHONPATH', None)
+    result = subprocess.run([sys.executable, str(installed / 'validate_builder_task_intent.py'),
+                             str(task), '--scene-package', str(root), '--json'],
+                            cwd=tmp_path, env=env, text=True, capture_output=True)
+    report = json.loads(result.stdout)
+    assert result.returncode == 0, report
+    assert report['status'] == 'PASS'
