@@ -627,3 +627,38 @@ TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {
   EXPECT_EQ(reopened.model().pick_selection.source_type, "manual_simulated");
   EXPECT_EQ(reopened.model().pick_selection.source_ref, "pick");
 }
+
+TEST(TaskIntentEditor, DestinationChangeSurvivesReorderToggleSaveUntilPlaceReselected) {
+  application(); QTemporaryDir dir; seed_sequence(dir.path());
+  auto environment = read(dir.path() + "/environment.yaml");
+  environment.replace("assets:\n", "assets:\n- {id: bin2, frame: world, pose_xyz: [1, 2, 3], pose_rpy: [0, 0, 0], collision: {enabled: true}, usable_placement: {pose_xyz: [0, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.4, 0.3, 0.2]}}\n");
+  environment += "- {id: drop2, target_ref: bin2, frame: world, pose_xyz: [1.05, 2, 3.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1], placement_local: {pose_xyz: [0.05, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1]}}\n";
+  write(dir.path() + "/environment.yaml", environment);
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  editor.bind_destination("drop2");
+  editor.validate_now();
+  auto * order = editor.findChild<QListWidget *>("taskSequenceOrder");
+  ASSERT_EQ(order->count(), 2);
+  ASSERT_TRUE(order->model()->moveRow(QModelIndex(), 1, QModelIndex(), 0));
+  order->item(1)->setCheckState(Qt::Unchecked);
+  order->item(1)->setCheckState(Qt::Checked);
+  editor.validate_now();
+  const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(editor.model().to_yaml()))).object();
+  const auto placement = root["sequence"].toObject()["items"].toArray()[0].toObject()["placement"].toObject();
+  EXPECT_EQ(placement["asset_ref"].toString(), "bin");
+  EXPECT_EQ(placement["region_ref"].toString(), "drop");
+  EXPECT_TRUE(editor.findChild<QLabel *>("taskSequenceSummary")->text().contains("DESTINATION_CHANGED"));
+  ASSERT_TRUE(editor.save());
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  EXPECT_TRUE(reopened.findChild<QLabel *>("taskSequenceSummary")->text().contains("DESTINATION_CHANGED"));
+  auto * again = reopened.findChild<QListWidget *>("taskSequenceOrder");
+  again->setCurrentRow(0);
+  choose_place(reopened, "Place 3 of 3 — far end");
+  ASSERT_TRUE(reopened.save());
+  const auto updated = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(reopened.model().to_yaml()))).object();
+  const auto selected = updated["sequence"].toObject()["items"].toArray()[0].toObject()["placement"].toObject();
+  EXPECT_EQ(selected["asset_ref"].toString(), "bin2");
+  EXPECT_EQ(selected["region_ref"].toString(), "drop2");
+}

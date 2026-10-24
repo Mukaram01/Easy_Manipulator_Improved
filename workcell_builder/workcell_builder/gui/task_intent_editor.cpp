@@ -35,6 +35,7 @@ constexpr int kObjectIdRole = Qt::UserRole;
 constexpr int kPlaceOptionsRole = Qt::UserRole + 1;
 constexpr int kManualPoseRole = Qt::UserRole + 2;     // target-local pose, empty object = Automatic
 constexpr int kBindingRole = Qt::UserRole + 3;        // class_id, observed_xyz_m, dimensions_m
+constexpr int kDestinationRole = Qt::UserRole + 6;    // original manual asset/region binding
 constexpr int kReviewRole = Qt::UserRole + 4;         // status, message, place_label from the review
 
 QString sequence_object_id(const QListWidgetItem * item)
@@ -294,6 +295,10 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     for (const auto & value : item->data(kPlaceOptionsRole).toJsonArray())
       if (value.toObject().value("id").toString() == id) pose = value.toObject().value("local_pose").toObject();
     item->setData(kManualPoseRole, pose);
+    // Only an explicit place selection may bind a local pose to a new destination.
+    item->setData(kDestinationRole, pose.isEmpty() ? QJsonObject() : QJsonObject{
+        {"asset_ref", QString::fromStdString(model_.place.asset_ref)},
+        {"region_ref", QString::fromStdString(model_.place.region_ref)}});
     item->setData(kReviewRole, QJsonObject());  // Re-reviewed on validation.
     write_sequence();
   });
@@ -630,6 +635,13 @@ void TaskIntentEditor::rebuild_sequence(const QJsonObject & report)
     observed[value.toObject().value("object_id").toString()] = value.toObject();
   const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(
       workcell_builder::canonical_task_intent_json_for_testing(model_.to_yaml()))).object();
+  QMap<QString, QJsonObject> saved_destinations;
+  for (const auto & value : value_at(root, "sequence/items").toArray()) {
+    const auto item = value.toObject();
+    const auto placement = item.value("placement").toObject();
+    saved_destinations[item.value("object_id").toString()] = QJsonObject{
+        {"asset_ref", placement.value("asset_ref")}, {"region_ref", placement.value("region_ref")}};
+  }
   const QString saved_sha = value_at(root, "sequence/source_sha256").toString();
   sequence_source_sha_ = preview ? report.value("source_sha256").toString() : saved_sha;
   sequence_rebind_pending_ = saved && preview && sequence_source_sha_ != saved_sha;
@@ -646,6 +658,7 @@ void TaskIntentEditor::rebuild_sequence(const QJsonObject & report)
     item->setData(kBindingRole, binding);
     item->setData(kPlaceOptionsRole, options);
     item->setData(kManualPoseRole, manual);
+    item->setData(kDestinationRole, saved_destinations.value(id));
     item->setData(kReviewRole, item_review);
     listed.insert(id);
   };
@@ -757,7 +770,7 @@ void TaskIntentEditor::show_selected_place()
   };
   if (!included) lines << "Not in the sequence: tick it to pick this object.";
   else if (!manual.isEmpty()) lines << QString("Chosen place, in the %1 frame: %2.").arg(
-      QString::fromStdString(model_.place.asset_ref), coordinates(manual));
+      item->data(kDestinationRole).toJsonObject().value("asset_ref").toString(), coordinates(manual));
   else if (!expected.isEmpty()) lines << QString("Automatic: allocated when the sequence is checked (expected %1, "
                                                  "in the %2 frame).").arg(coordinates(expected),
                                                  QString::fromStdString(model_.place.asset_ref));
@@ -778,9 +791,10 @@ void TaskIntentEditor::write_sequence()
     const auto binding = row->data(kBindingRole).toJsonObject();
     if (row->checkState() != Qt::Checked || binding.isEmpty()) continue;
     const auto pose = row->data(kManualPoseRole).toJsonObject();
+    const auto destination = row->data(kDestinationRole).toJsonObject();
     const QJsonObject placement = pose.isEmpty() ? QJsonObject{{"mode", "AUTO"}} : QJsonObject{
-        {"mode", "MANUAL"}, {"asset_ref", QString::fromStdString(model_.place.asset_ref)},
-        {"region_ref", QString::fromStdString(model_.place.region_ref)}, {"local_pose", pose}};
+        {"mode", "MANUAL"}, {"asset_ref", destination.value("asset_ref")},
+        {"region_ref", destination.value("region_ref")}, {"local_pose", pose}};
     items.append(QJsonObject{{"object_id", sequence_object_id(row)}, {"class_id", binding.value("class_id")},
                              {"observed_xyz_m", binding.value("observed_xyz_m")},
                              {"dimensions_m", binding.value("dimensions_m")}, {"placement", placement}});
