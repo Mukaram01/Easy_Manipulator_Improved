@@ -23,6 +23,12 @@ MAX_PIXELS = 4096 * 4096
 MAX_BYTES = 64 * 1024 * 1024
 
 
+def intrinsics_present(k) -> bool:
+    """Plain bool: rclpy delivers CameraInfo.k as a numpy array, whose comparisons are not JSON-serializable."""
+    values = [float(v) for v in k]
+    return bool(len(values) == 9 and all(math.isfinite(v) for v in values) and values[0] > 0 and values[4] > 0)
+
+
 def camera_config(scene: Path, selected: str) -> dict[str, str]:
     if selected not in CAMERA_SOURCES:
         raise ValueError("CAMERA_SOURCE_UNSUPPORTED: select simulated RGB-D or RealSense D435i")
@@ -168,8 +174,7 @@ def capture(config: dict[str, Any], output_dir: Path, timeout: float) -> dict[st
             return
         info.update(frame_id=msg.header.frame_id, width=msg.width, height=msg.height,
                     distortion_model=msg.distortion_model,
-                    intrinsics_present=all(math.isfinite(float(v)) for v in msg.k) and
-                    msg.k[0] > 0 and msg.k[4] > 0)
+                    intrinsics_present=intrinsics_present(msg.k))
 
     def on_status(msg):
         try:
