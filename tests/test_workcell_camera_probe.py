@@ -110,3 +110,14 @@ def test_malformed_environment_blocks_with_actionable_reason(tmp_path):
     (tmp_path / "environment.yaml").write_text("null\n")
     with pytest.raises(ValueError, match="CAMERA_SCENE_INVALID"):
         probe.camera_config(tmp_path, "simulated_rgbd")
+
+
+def test_intrinsics_check_is_json_safe_for_rclpy_numpy_arrays():
+    """rclpy delivers CameraInfo.k as a numpy array; the report must still serialize (real D435i)."""
+    import json
+    import numpy as np
+    k = np.array([615.0, 0.0, 320.0, 0.0, 615.0, 240.0, 0.0, 0.0, 1.0])
+    assert type(probe.intrinsics_present(k)) is bool
+    assert json.dumps({"intrinsics_present": probe.intrinsics_present(k)}) == '{"intrinsics_present": true}'
+    assert probe.intrinsics_present(np.zeros(9)) is False
+    assert probe.intrinsics_present(np.array([float("nan")] * 9)) is False
