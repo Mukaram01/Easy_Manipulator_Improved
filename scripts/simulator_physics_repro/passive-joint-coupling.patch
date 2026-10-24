@@ -163,14 +163,15 @@
      // child already has a parent joint
 --- a/dartsim/src/SDFFeatures.cc
 +++ b/dartsim/src/SDFFeatures.cc
-@@ -1,3 +1,6 @@
+@@ -1,3 +1,7 @@
 +#include <sstream>
 +#include "JointCouplingConstraint.hpp"
 +#include <dart/constraint/ConstraintSolver.hpp>
++#include "TouchingBulletContacts.hpp"
  /*
   * Copyright (C) 2018 Open Source Robotics Foundation
   *
-@@ -584,7 +587,7 @@
+@@ -584,7 +588,7 @@
      const Identity &_modelID,
      const ::sdf::Link &_sdfLink)
  {
@@ -179,7 +180,7 @@
    dart::dynamics::BodyNode::Properties bodyProperties;
    bodyProperties.mName = _sdfLink.Name();
  
-@@ -675,7 +678,7 @@
+@@ -675,7 +679,7 @@
      const Identity &_modelID,
      const ::sdf::Joint &_sdfJoint)
  {
@@ -188,7 +189,20 @@
  
    if (_sdfJoint.ChildLinkName() == "world")
    {
-@@ -964,11 +967,21 @@
+@@ -872,6 +876,12 @@
+                                      ->GetElement("contact");
+     if (bitmaskElement->HasElement("collide_bitmask"))
+       collideBitmask = bitmaskElement->Get<int>("collide_bitmask");
++    // Authored contact surface layer, <surface><contact><ode><min_depth>: the
++    // depth a contact may reach before correction. Applied per contact pair by
++    // the physical contact detector (TouchingBulletContacts); absent: rigid.
++    const auto contactOde = bitmaskElement->FindElement("ode");
++    if (contactOde && contactOde->HasElement("min_depth"))
++      workcell::setSurfaceLayer(node, contactOde->Get<double>("min_depth"));
+   }
+ 
+   node->setRelativeTransform(ResolveSdfPose(_collision.SemanticPose()) *
+@@ -964,11 +974,21 @@
  
  /////////////////////////////////////////////////
  Identity SDFFeatures::ConstructSdfJoint(
@@ -211,7 +225,7 @@
    // if a specified link is named "world" but cannot be found, we'll assume the
    // joint is connected to the world
    bool worldParent = (!_parent && _sdfJoint.ParentLinkName() == "world");
-@@ -1113,6 +1126,46 @@
+@@ -1113,6 +1133,46 @@
    // internally increment the BodyNode's version after Joint::moveTo.
    _child->incrementVersion();
  
@@ -415,7 +429,7 @@
 +}
 --- /dev/null
 +++ b/dartsim/src/TouchingBulletContacts.hpp
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,199 @@
 +#pragma once
 +#include <algorithm>
 +#include <cmath>
@@ -427,10 +441,38 @@
 +#include <dart/collision/ode/OdeCollisionDetector.hpp>
 +#include <dart/dynamics/BoxShape.hpp>
 +#include <dart/dynamics/ShapeFrame.hpp>
++#include <dart/dynamics/ShapeNode.hpp>
++#include <dart/dynamics/SmartPointer.hpp>
 +#include <memory>
 +#include <stdexcept>
 +#include <vector>
 +namespace workcell {
++// Authored contact surface layers (<surface><contact><ode><min_depth>: depth allowed before contact
++// correction is applied) by shape. A pair's layer is the smaller of its two surfaces' layers, so a pair
++// with a surface that authors none stays rigid. Within the layer the contact stays active and rigid but
++// uncorrected; only depth beyond it is corrected. DART 6.12 has one world-wide error allowance, so the
++// detector reports the corrected depth, max(0, depth - layer), for that pair alone.
++inline std::vector<std::pair<dart::dynamics::WeakShapeNodePtr, double>>& surfaceLayers() {
++  static std::vector<std::pair<dart::dynamics::WeakShapeNodePtr, double>> layers;
++  return layers;
++}
++inline void setSurfaceLayer(dart::dynamics::ShapeNode* node, double layer) {
++  if (!node || !std::isfinite(layer) || layer < 0. || layer > 1e-3)
++    throw std::invalid_argument("unsupported contact surface layer (min_depth)");
++  auto& layers = surfaceLayers();
++  layers.erase(std::remove_if(layers.begin(), layers.end(), [&](const auto& entry) {
++                 auto held = entry.first.lock();
++                 return !held || held.get() == node;
++               }), layers.end());
++  if (layer > 0.) layers.emplace_back(node, layer);
++}
++inline double surfaceLayer(const dart::dynamics::ShapeFrame* frame) {
++  for (const auto& [weak, layer] : surfaceLayers()) {
++    auto held = weak.lock();
++    if (held && held.get() == frame) return layer;
++  }
++  return 0.;
++}
 +// Keep the original Bullet collision objects and filter semantics. BOX pairs
 +// use double precision geometry; all other pairs retain Bullet manifolds.
 +class PhysicalBulletGroup : public dart::collision::BulletCollisionGroup {
@@ -477,6 +519,12 @@
 +    BulletCollisionDetector::collide(group, query, &raw);
 +    touching(raw, option.maxNumContacts, &physical);
 +    addBoxes(*actual, option, physical);
++    for (std::size_t i = 0; i < physical.getNumContacts(); ++i) {
++      auto& contact = physical.getContact(i);
++      const double layer = std::min(surfaceLayer(contact.collisionObject1->getShapeFrame()),
++                                    surfaceLayer(contact.collisionObject2->getShapeFrame()));
++      contact.penetrationDepth = std::max(0., contact.penetrationDepth - layer);
++    }
 +    if (result) *result = physical;
 +    return physical.getNumContacts() != 0;
 +  }
