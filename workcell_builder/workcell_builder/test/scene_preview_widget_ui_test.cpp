@@ -26,13 +26,31 @@
 #include <functional>
 
 namespace {
+// The QApplication must be destroyed inside main(). As a function-local static
+// it was destroyed by exit(), after Qt's per-thread storage; QtWebEngine's post
+// routine then deleted its shared QOpenGLContext through that storage and the
+// test process crashed after every test had finished.
+class QtApplicationEnvironment : public ::testing::Environment
+{
+public:
+  void TearDown() override
+  {
+    delete app;
+    app = nullptr;
+  }
+  static QApplication * app;
+};
+QApplication * QtApplicationEnvironment::app = nullptr;
+[[maybe_unused]] ::testing::Environment * const qt_application_environment =
+  ::testing::AddGlobalTestEnvironment(new QtApplicationEnvironment);
+
 QApplication * ensure_app()
 {
   if (QApplication::instance()) return qobject_cast<QApplication *>(QApplication::instance());
   static int argc = 0;
   static char * argv[] = { nullptr };
-  static QApplication app(argc, argv);
-  return &app;
+  QtApplicationEnvironment::app = new QApplication(argc, argv);
+  return QtApplicationEnvironment::app;
 }
 
 TEST(ScenePreviewWidgetUi, AuthoringOverlayPreservesCatalogIdentityScaleAndDistinctInstances)
