@@ -7,7 +7,8 @@ checkout-relative name and bytes (qualification.bound_identity). Each step reuse
 tools and writes only inside a NEW overlay root; a historical overlay or its evidence is never touched.
 
   1. build    build_ros_gz_bridge_shutdown_overlay.py --build-only (pinned source + reviewed patch)
-  2. observe  observe.py, 5 natural shutdowns each of the installed and the patched bridge
+  2. observe  observe.py, 5 natural shutdowns each of the installed and the patched bridge (an admitted
+              historical batch of the unchanged installed bridge may be referenced instead: --baseline-batch)
   3. assemble the observed evidence record from those batches and pinned dependency sources,
               then the reviewer packet (exact implementation identities to review)
   4. review   performed by an independent reviewer, who writes qualification/mechanism-review.json
@@ -75,12 +76,45 @@ def build(args):
                     '--build-only'], check=True, env=runtime_env())
 
 
+MAX_OBSERVATION_ATTEMPTS = 8
+
+
+def _admitted_batch(p, name):
+    """Whether a batch passes the reviewed admission contract (5 clean, identity-bound, ordered cycles)."""
+    folder = p[name]
+    try:
+        rows = json.loads((folder / 'results.json').read_text())
+        binary = q.identity(OPT_BRIDGE.resolve() if name == 'baseline' else p['binary'])
+        manifest = dict(executable=q.identity(p['binary']), library=q.identity(OPT_LIBRARY),
+                        baseline=dict(executable=binary['path'], sha256=binary['sha256']),
+                        runtime_environment=dict(RMW_IMPLEMENTATION='rmw_fastrtps_cpp', ROS_LOCALHOST_ONLY='1',
+                                                 LD_PRELOAD='', LD_AUDIT='', VALGRIND_LIB='', VALGRIND_OPTS=''))
+        dependencies = [item for item in rows[0]['loaded_identities'] if Path(item['path']).name != OPT_LIBRARY.name]
+        q._observed_batch(_batch(folder), manifest, dependencies, name == 'patched', set())
+        return True
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+        print(f'{name} batch {folder.name} not admitted: {exc}', flush=True)
+        return False
+
+
 def observe(args):
+    """Observe until each batch passes admission, at most MAX_OBSERVATION_ATTEMPTS times.
+
+    Every batch that does not pass (a natural baseline crash, an ordering that did not show the race,
+    an observer failure) is kept as <name>-rejected-<n> and listed in the review packet; nothing is deleted.
+    """
     p = paths(args.root)
     for name, binary in (('baseline', OPT_BRIDGE.resolve()), ('patched', p['binary'])):
-        subprocess.run([sys.executable, SCRIPTS / 'bridge_shutdown_repro/observe.py', '--binary', binary,
-                        '--publisher', p['publisher'], '--output', p[name], '--cycles', '5'],
-                       check=True, env=runtime_env())
+        while not (p[name].exists() and _admitted_batch(p, name)):
+            rejected = sorted(p['record'].glob(f'observations/{name}-rejected-*'))
+            if p[name].exists():
+                p[name].rename(p[name].with_name(f'{name}-rejected-{len(rejected) + 1}'))
+                rejected = sorted(p['record'].glob(f'observations/{name}-rejected-*'))
+            if len(rejected) >= MAX_OBSERVATION_ATTEMPTS:
+                raise SystemExit(f'{name}: no admissible batch in {len(rejected)} attempts; qualification BLOCKED')
+            subprocess.run([sys.executable, SCRIPTS / 'bridge_shutdown_repro/observe.py', '--binary', binary,
+                            '--publisher', p['publisher'], '--output', p[name], '--cycles', '5'],
+                           env=runtime_env())
 
 
 def _batch(folder):
@@ -95,7 +129,10 @@ def assemble(args):
         target = sources_root / name
         if not target.exists():
             subprocess.run(['git', 'clone', '--depth', '1', '--branch', tag, url, str(target)], check=True)
-    baseline, patched = _batch(p['baseline']), _batch(p['patched'])
+    # The baseline characterises the unchanged installed bridge; an admitted historical batch of the same
+    # binary and observer bytes may be referenced in place (read-only) instead of re-observed.
+    baseline_folder = Path(args.baseline_batch).resolve() if args.baseline_batch else p['baseline']
+    baseline, patched = _batch(baseline_folder), _batch(p['patched'])
     rows = json.loads(Path(patched['results']['path']).read_text())
     dependencies = [item for item in rows[0]['loaded_identities'] if Path(item['path']).name != OPT_LIBRARY.name]
     dependency_records = {}
@@ -128,6 +165,8 @@ def assemble(args):
     p['packet'].write_text(json.dumps(dict(
         schema='workcell_bridge_review_packet/v1', evidence=q.identity(p['evidence']),
         review_schema='workcell_bridge_observed_shutdown_review/v1', implementation=unique,
+        rejected_observation_attempts=sorted(str(item) for item in p['record'].glob('observations/*-rejected-*')),
+        baseline_batch=str(baseline_folder),
         required_assessment=['causal_adequacy', 'scheduling', 'correction', 'runtime_isolation', 'claim_limits',
                              'uninstall_join'],
         instructions='An independent reviewer (not the producer) inspects the evidence and implementation and writes '
@@ -170,6 +209,8 @@ def main(argv=None):
         if name == 'assemble':
             step.add_argument('--sources', type=Path, required=True, help='pinned dependency source checkouts')
             step.add_argument('--producer', required=True, help='who produced the evidence (the reviewer must differ)')
+            step.add_argument('--baseline-batch', type=Path,
+                              help='existing admitted observation batch of the installed bridge (referenced, not copied)')
     args = parser.parse_args(argv)
     return globals()[args.step](args) or 0
 
