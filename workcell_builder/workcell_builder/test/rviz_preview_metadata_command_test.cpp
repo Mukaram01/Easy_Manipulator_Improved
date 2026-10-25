@@ -165,3 +165,25 @@ TEST(RvizPreviewMetadataCommandTest, SavedTaskUsesOneExistingSupervisorAndPlanOn
   scene.scene_name = "uncommissioned";
   EXPECT_FALSE(workcell_builder::build_full_cycle_command(scene, "/tmp/ws", "/tmp/out", 201, true).isEmpty());
 }
+
+TEST(RvizPreviewMetadataCommandTest, PhysicsCycleRunsTheQualifiedRunnerOnTheSavedCellOnly)
+{
+  auto scene = runnable_scene();
+  scene.scene_name = "beginner_cell";
+  scene.scene_dir = "/home/user/cells/beginner_cell";
+  const auto command = workcell_builder::build_physics_cycle_command(scene, "/home/user/workcell_ws", "/tmp/physics evidence");
+  // The runtime is the workspace's registered, re-validated record: never a hand-edited script.
+  EXPECT_TRUE(command.startsWith("eval \"$(python3 '"));
+  EXPECT_TRUE(command.contains("qualified_physics_runtime.py' env)\" && "));
+  EXPECT_FALSE(command.contains("workcell_qualified_physics.bash"));
+  EXPECT_TRUE(command.contains("run_stage_a1_finish.py' --mode targeted --gate full-cycle --scene-package '/home/user/cells/beginner_cell'"));
+  EXPECT_TRUE(command.contains("--stream-status --output '/tmp/physics evidence'"));
+  EXPECT_TRUE(command.contains("--prior-evidence \"$WORKCELL_STAGE_A_PRIOR_EVIDENCE\""));
+  EXPECT_TRUE(command.contains("exec python3"));             // Cancel's SIGTERM reaches the runner itself
+  EXPECT_FALSE(command.contains("ros2 launch"));             // the qualified runner owns the one simulator session
+  EXPECT_FALSE(command.contains("--class-id"));              // the saved task decides what to pick
+  EXPECT_FALSE(command.contains("--source-world"));          // the world is derived from the saved cell
+  EXPECT_FALSE(command.contains("real_hardware"));
+  scene.scene_dir.clear();
+  EXPECT_TRUE(workcell_builder::build_physics_cycle_command(scene, "/tmp/ws", "/tmp/out").isEmpty());
+}

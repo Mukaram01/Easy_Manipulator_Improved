@@ -143,6 +143,15 @@ TEST(NewCellWizard, IndustrialScenarioCatalogDrivesCanonicalChoices)
   EXPECT_GE(choices.size(), 10);
 }
 
+TEST(NewCellWizard, PhysicsMaterialsComeOnlyFromTheQualifiedCatalog)
+{
+  // The manual test object's physics material is chosen from qualified entries, never a free default.
+  const auto materials = NewCellWizard::load_qualified_physics_materials(
+    repository_root() + "/catalog/simulation/qualified_physics.yaml");
+  EXPECT_EQ(materials, QStringList{"qualified_test_polymer"});
+  EXPECT_TRUE(NewCellWizard::load_qualified_physics_materials("/nonexistent/qualified_physics.yaml").isEmpty());
+}
+
 TEST(NewCellWizard, ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview)
 {
   ensure_application();

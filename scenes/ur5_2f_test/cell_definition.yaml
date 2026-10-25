@@ -42,7 +42,7 @@ robot:
 end_effector:
   id: robotiq_85_gripper
   name: robotiq_85_gripper
-  capability: null
+  capability: robotiq_2f_85
   type: finger
   grasp_frame: ee_palm
   parent_link: tool0

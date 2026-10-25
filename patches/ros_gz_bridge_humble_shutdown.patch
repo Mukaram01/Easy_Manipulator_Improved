@@ -1,0 +1,37 @@
+diff --git a/src/parameter_bridge.cpp b/src/parameter_bridge.cpp
+index e03e89d..a43aabf 100644
+--- a/src/parameter_bridge.cpp
++++ b/src/parameter_bridge.cpp
+@@ -66,6 +66,23 @@ using BridgeDirection = ros_gz_bridge::BridgeDirection;
+ using BridgeConfig = ros_gz_bridge::BridgeConfig;
+ 
+ //////////////////////////////////////////////////
++// Only an invalid node caused by its already-invalid shutdown context is
++// expected here. Errors while running and all other return codes still fail.
++void spin_bridge_node(const std::shared_ptr<rclcpp::Node> & node)
++{
++  try {
++    rclcpp::spin(node);
++  } catch (const rclcpp::exceptions::RCLError & error) {
++    if (error.ret != RCL_RET_NODE_INVALID ||
++      node->get_node_base_interface()->get_context()->is_valid())
++    {
++      throw;
++    }
++  }
++  // Join deferred signal shutdown before process-global logging destruction.
++  rclcpp::shutdown();
++}
++
+ int main(int argc, char * argv[])
+ {
+   if (argc < 2) {
+@@ -170,7 +187,7 @@ int main(int argc, char * argv[])
+   }
+ 
+   // ROS 2 spinner
+-  rclcpp::spin(bridge_node);
++  spin_bridge_node(bridge_node);
+ 
+   return 0;
+ }

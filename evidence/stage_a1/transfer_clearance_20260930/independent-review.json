@@ -1,0 +1,77 @@
+{
+  "reviewer": "/root/moveit_evidence",
+  "reviewed_wall_ns": 1790809378089048206,
+  "disposition": "Accepted source/soundness review; inspected two complete CERTIFIED_CLEAR replays and successful native PLAN_ONLY; no Stage-A acceptance claim",
+  "report": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/independent-surface-cover-review.md",
+    "sha256": "c3768a6370de8815d92efda1b263b4c3db11c17de166dfcbcb05eba09ec7dcac"
+  },
+  "header": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/controller_interval_certificate.hpp",
+    "sha256": "f60f4d820b975430c8ae4c29f6f0f67d0041d848a1f65c587e443f360cf9cf2a"
+  },
+  "tests": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/support_contact_policy_test.cpp",
+    "sha256": "c96e714e1a6731525c3601fe9c0a250fac39af317caa2f2846fdd121d01d3f9f"
+  },
+  "fixtures": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/piece_fixture.fixture.txt",
+      "sha256": "a51fc7f74c4ee8672ea3ab52bfb0e81ab348d5b952dee71961680464ff27a36b"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/finger-bin.fixture.txt",
+      "sha256": "678d6abe829016c3a115cb622ac2799cbda4a22fd4eca2f7874beb3c2af88570"
+    }
+  ],
+  "prior_review": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/independent-clearance-review.json",
+    "sha256": "dce5927cec5338306c9c76fb9eb2454c82c5f3c75e2d1a2c7d8a7f0ae0c95371"
+  },
+  "repository_fixtures": [
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/evidence/stage_a1_transfer_axes_20260930/bin.fixture.txt",
+      "sha256": "a51fc7f74c4ee8672ea3ab52bfb0e81ab348d5b952dee71961680464ff27a36b"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/evidence/stage_a1_transfer_axes_20260930/finger-bin.fixture.txt",
+      "sha256": "678d6abe829016c3a115cb622ac2799cbda4a22fd4eca2f7874beb3c2af88570"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/evidence/stage_a1_transfer_axes_20260930/later-vertices.csv",
+      "sha256": "39597a9349dc9057897985eb746ff607dbb9f271bc88b496bbd5ff7b948ca16d"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/evidence/stage_a1_transfer_axes_20260930/provenance.json",
+      "sha256": "33a15966dd9ce32514b37799aa47e155ffad8df97bde58859cb61a25506f5c4e"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/test/evidence/stage_a1_transfer_axes_20260930/vertices.csv",
+      "sha256": "0b8530072b67b0c3761ff8e0886807d5e4e76d153568ea70c520ad4aac114531"
+    }
+  ],
+  "source_review_disposition": "No source/soundness blocker",
+  "inspected_final_verification": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate-surface-cover-replay-results.json",
+      "sha256": "eb4f3b69ebafe49a366c55ba3033eb5f80ff207305e2a31cfe5e2cbdde032f8f"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/production-nearest-plan/results.json",
+      "sha256": "7b6406de4387bdfe695f8d038ba64f8da28ce953645a5e5d4d0eb4cd53db1505"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/finger-green.log",
+      "sha256": "11e8c6f3b6a42fc435d3eaf042eec2a0e1c27276fa0080054b9510ca6745393c"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/independent-final-negatives.log",
+      "sha256": "51cf445deca3f85033eb55eea2ebe9c1ec91b3b78e1376e236a649c718345815"
+    }
+  ],
+  "previous_surface_review": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/independent-surface-cover-review.before-strict-negative.json",
+    "sha256": "f04cffd236de48bc92bbf1e29ba2cea9adca54b002b217981120c4c85ecc526c"
+  },
+  "final_assertion_review": "Exactly one source assertion tightened its request and expected ceiling from 1e-8 to 1e-12 across all 632 face-contact perturbations; independent focused test PASS (218 ms). Production source/artifact unchanged."
+}

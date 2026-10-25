@@ -1,0 +1,7 @@
+result 2
+reason PRECISION_OR_DEPTH_LIMIT
+interval 2576165 2576166
+inspected 181
+seconds 0.526464
+contact_timestamps 0
+initial_contacts_expired 0

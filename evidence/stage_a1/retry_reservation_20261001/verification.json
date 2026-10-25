@@ -1,0 +1,41 @@
+{
+  "scope": "Simulator discovery reserves the existing ranked retry beam within the unchanged total search deadline. Unit results are not Stage-A runtime acceptance.",
+  "observed_failure": "Real 900-second Resolve performed 37 discovery attempts and no retries despite three retryable candidates; see observed-before.json.",
+  "change": "Opt-in simulator search stops starting discovery when known retryable candidates exist and remaining time reaches the next discovery slice plus the existing retry beam. EXACT, resolved revalidation, ordering, branch binding, deadlines and watchdogs are unchanged.",
+  "tests": {
+    "combined_focused": "538 passed in 15.34s",
+    "full_cycle_preplanner": "90 passed",
+    "cases": [
+      "observed discovery timing plus complete shared preplanner retry",
+      "EXACT remains first-candidate only",
+      "no retryable candidate preserves discovery",
+      "true global expiry remains budget failure",
+      "resolved revalidation unchanged"
+    ]
+  },
+  "independent_review": "moveit_evidence reviewed production and tests: no blocking finding.",
+  "inputs": [
+    {
+      "path": "scripts/perceived_object_grasp_execute.py",
+      "sha256": "e63f9afbc88e55a1a30922e5dae741af12a1c5ca8c8a9b5d3370cbae56226be4"
+    },
+    {
+      "path": "tests/test_full_cycle_preplanner.py",
+      "sha256": "20ed8a144d98710fba8d504baf72316de4be2f4e3a634c6cdb1149dcddd2fee2"
+    }
+  ],
+  "logs": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20261001-retry-reservation/focused-tests.log",
+      "sha256": "3dc8c41cccea448c3da34cf651f62eb25ae9f394a0cb3ee1eeb3cfeac470daf9"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/retry-reservation-suite.log",
+      "sha256": "d53f082ed6fdb1c20269b8d3948c4a0b8488a3b6deefbe8ceb7aa1de577a2194"
+    }
+  ],
+  "limitations": [
+    "Reservation is checked between owned planning calls. In-flight work must drain and may overrun a soft candidate allowance.",
+    "Fresh six-gate runtime acceptance remains required."
+  ]
+}

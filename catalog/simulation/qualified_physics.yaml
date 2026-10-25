@@ -1,0 +1,36 @@
+# Qualified physics content for the Workcell Studio physics simulator (Gazebo Fortress, DART).
+#
+# Only what the Stage-A six-gate acceptance qualified is listed here (commit f739fcd8, evidence
+# stage_a1_acceptance_contact_cfm_full3_20261025_010434, world template
+# scenes/ur5_2f_test/worlds/stage_a0_sparse.sdf). simulator_world.py builds a cell's world from the
+# cell's own geometry plus these entries; anything a cell needs that is not listed (another robot or
+# tool, an object material, a non-box object) is refused, never approximated.
+# tests/test_simulator_world.py checks every value against the pinned qualified world.
+schema_version: workcell_qualified_physics/v1
+engine:
+  # The world element's engine/system configuration (physics, systems, gravity, scene, light) is taken
+  # verbatim from the pinned template; its world name is bound by the qualified bridge configuration
+  # (scripts/bridge_shutdown_repro/bridges.yaml: /world/a0/...).
+  template: scenes/ur5_2f_test/worlds/stage_a0_sparse.sdf
+  world_name: a0
+commissioned:
+  # Robot model (cell robot.model) -> end-effector capabilities (cell end_effector.capability) whose
+  # hold profile and simulator contact geometry were qualified with it.
+  ur5: [robotiq_2f_85]
+materials:
+  # Stage-A test part material (part_04): density from 0.020 kg / (0.025 m)^3.
+  qualified_test_polymer:
+    density_kg_m3: 1280.0
+    friction_mu: 0.65
+    contact: {kp: 100000.0, kd: 1.0, max_vel: 0.05, min_depth: 0.0001}
+    visual_diffuse: [0.72, 0.44, 0.16, 1.0]
+    qualified_dimensions_m: [0.025, 0.025, 0.025]
+surfaces:
+  support: {friction_mu: 0.8}
+  destination: {friction_mu: 0.7}
+construction:
+  # Qualified spawn clearance of a resting part above its support (template part_04: 0.0128 - 0.0125 m).
+  object_spawn_clearance_m: 0.0003
+  # Static box proxies of a container mesh (template bin wall / floor thickness).
+  container_wall_thickness_m: 0.01
+  container_floor_thickness_m: 0.01

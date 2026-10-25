@@ -123,7 +123,21 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   };
   auto * what = section("What / Pick eligibility");
   text_field(what, "taskTargetClass", "Object class", "pick/selection/object_filter/class_id");
-
+  {
+    // Classes that must never become pick targets (e.g. pick cups, ignore bottles).
+    auto * excluded = new QLineEdit(this); excluded->setObjectName("taskExcludeClasses");
+    excluded->setPlaceholderText("comma-separated classes, e.g. bottle"); what->addRow("Exclude classes", excluded);
+    const QString path = "pick/selection/object_filter/exclude_class_ids";
+    readers_[path] = [excluded](const QJsonValue & v) {
+      QStringList names; for (const auto & item : v.toArray()) names << item.toString();
+      excluded->setText(names.join(", "));
+    };
+    connect(excluded, &QLineEdit::textEdited, this, [this, path](const QString & text) {
+      QJsonArray names;
+      for (const auto & part : text.split(',')) if (!part.trimmed().isEmpty()) names.append(part.trimmed());
+      set_field(path, names);
+    });
+  }
   pick_zones_ = choice_field(what, "taskPickZone", "Search region", "pick/selection/zone_ref", {});
   auto * perception = section("Object input");
   auto * mode = new QComboBox(this); mode->setObjectName("taskPerceptionMode");
@@ -559,6 +573,23 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   number_field(place, "taskPlaceClearance", "Placement clearance", "place/placement/clearance_m", " m");
   number_field(place, "taskPlaceApproach", "Place approach", "place/placement/approach/distance_m", " m");
   number_field(place, "taskPlaceRetreat", "Place retreat", "place/placement/retreat/distance_m", " m");
+  // Explicit consent for the qualified physics simulator; the executor refuses a backend the saved task does not name.
+  auto * run = section("Run");
+  auto * backend = new QComboBox(this); backend->setObjectName("taskExecutionBackend");
+  backend->addItem("MoveIt fake hardware (plan / preview)", "fake");
+  backend->addItem("Qualified physics simulation (Gazebo)", "simulator");
+  run->addRow("Execution backend", backend);
+  readers_["safety/execution_backend"] = [backend](const QJsonValue & v) {
+    const auto value = v.toString("fake");
+    if (backend->findData(value) < 0) backend->addItem(value, value);  // never relabel an unknown authored value
+    backend->setCurrentIndex(backend->findData(value));
+  };
+  connect(backend, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, backend](int) {
+    const auto value = backend->currentData().toString();
+    set_field("safety/execution_backend", value);
+    set_field("safety/require_fake_hardware", value == "fake");
+  });
+  run->addRow(new QLabel("Physics simulation runs only from an explicit cycle action after its safety gates; real robot locked.", this));
   auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. In a full-sequence check, AUTO and PREFERRED give each object its own free place in the region; EXACT sends every object to the same place. You can also choose a place for each object under Pick sequence. Local poses use the physical target's frame; values are never clamped.", this);
   help->setWordWrap(true); layout->addWidget(help);
   auto * advanced = new QGroupBox("Advanced task settings", this);
@@ -591,7 +622,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   vector_field(form, "taskPlaceTolerance", "Placement tolerance (rad)", "place/placement/orientation/tolerance_rad");
   text_field(form, "taskPlaceApproachAxis", "Place approach axis", "place/placement/approach/axis");
   text_field(form, "taskPlaceRetreatAxis", "Place retreat axis", "place/placement/retreat/axis");
-  form->addRow(new QLabel("Release: installed tool release. Fake hardware required; real robot locked.", this));
+  form->addRow(new QLabel("Release: installed tool release. Real robot locked.", this));
   status_ = new QLabel(this); status_->setObjectName("taskValidationStatus"); status_->setWordWrap(true); layout->addWidget(status_);
   auto * buttons = new QHBoxLayout;
   auto * save_button = new QPushButton("Save task", this); save_button->setObjectName("taskSave");

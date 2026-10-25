@@ -10,7 +10,10 @@ grasp_strategy:
   approach_distance_m: 0.09
   retreat_distance_m: 0.1
   allowed_yaw_angles_deg: [0, 90, 180, 270]
-  tool_frame_offset_xyz: [0.0, 0.0, 0.0]
+  # Centre the loaded pad band on the part's centre of mass: under the ~90 N squeeze the
+  # pads bear on their lower ~15 mm, 3.7-4.3 mm below a 25 mm part's centre (LENLEG
+  # 2026-10-24); the lever drove in-pinch rotation creep. Tool Z points into the part.
+  tool_frame_offset_xyz: [0.0, 0.0, -0.004]
   tool_frame_offset_rpy: [0.0, 0.0, 0.0]
   contact:
     type: pinch

@@ -6,9 +6,11 @@ import tempfile
 import yaml
 import re
 import subprocess
+import sys
+from pathlib import Path
 
 from launch import LaunchDescription
-from launch.actions import OpaqueFunction
+from launch.actions import OpaqueFunction, ExecuteProcess
 from launch.actions import DeclareLaunchArgument
 from launch.actions import TimerAction
 from launch.conditions import IfCondition, UnlessCondition
@@ -17,6 +19,32 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 scene_pkg = "ur5_2f_test"
+# scene_package_dir:=<authored cell> runs this qualified launch on a Builder-saved cell's own files
+# (environment, layout, model, controllers, collision manifest, cell definition) instead of the
+# installed reference package. Other packages (robot, tool, MoveIt configs) still resolve normally.
+_SCENE_PACKAGE_DIR = None
+
+
+def _share(package_name):
+    if package_name == scene_pkg and _SCENE_PACKAGE_DIR:
+        return _SCENE_PACKAGE_DIR
+    return get_package_share_directory(package_name)
+
+
+def _bind_scene_package_dir(value):
+    global _SCENE_PACKAGE_DIR
+    if not value:
+        _SCENE_PACKAGE_DIR = None
+        return None
+    path = os.path.realpath(value)
+    required = ("environment.yaml", "cell_definition.yaml", "urdf/scene.urdf.xacro", "urdf/arm_hand.srdf.xacro",
+                "config/ros2_controllers.yaml", "config/moveit_collision_objects.yaml")
+    missing = [rel for rel in required if not os.path.isfile(os.path.join(path, rel))]
+    if missing:
+        raise RuntimeError(f"scene_package_dir {path} is not a generated cell package; missing {missing}. "
+                           "Generate the cell in Workcell Builder first.")
+    _SCENE_PACKAGE_DIR = path
+    return path
 robot_model = "ur5"
 planning_group = "manipulator"
 world_frame = "world"
@@ -25,6 +53,55 @@ tool_mount_link = "tool0"
 gripper_profile = "robotiq_85_gripper"
 grasp_frame = "ee_palm"
 robot_moveit_pkg = "ur5_moveit_config"
+
+# Reference-scene runtime identity. A bound cell package supplies its own (_cell_runtime).
+REFERENCE_RUNTIME = dict(
+    robot_model=robot_model, planning_group=planning_group, tool_mount_link=tool_mount_link,
+    gripper_profile=gripper_profile, grasp_frame=grasp_frame, robot_moveit_pkg=robot_moveit_pkg,
+    arm_controller="ur5_arm_controller", tool_controller="ur5_gripper_controller",
+    arm_joints=["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"],
+    tool_joints=["gripper_finger1_joint"],
+    support_pose_id="support_surface_table", camera_pose_id="realsense_overhead",
+)
+
+
+def _cell_runtime():
+    """Robot, tool, MoveIt package, controllers, joints and mount ids of the launched scene package.
+
+    Reference package: REFERENCE_RUNTIME. Bound cell: its saved robot/end effector (environment.yaml),
+    generated runtime bindings (cell_definition.yaml runtime) and controllers (config/ros2_controllers.yaml);
+    a missing or inconsistent value fails closed instead of falling back to the reference cell.
+    """
+    if not _SCENE_PACKAGE_DIR:
+        return dict(REFERENCE_RUNTIME)
+    def load(rel):
+        with open(os.path.join(_SCENE_PACKAGE_DIR, rel), "r", encoding="utf-8") as file:
+            return yaml.safe_load(file) or {}
+    environment, cell, controllers = load("environment.yaml"), load("cell_definition.yaml"), load(CONTROLLERS_REL_PATH)
+    robot, tool, runtime = environment.get("robot") or {}, environment.get("end_effector") or environment.get("tool") or {}, cell.get("runtime") or {}
+    supports = (environment.get("environment") or {}).get("support_surfaces") or []
+    def controller_joints(name):
+        joints = ((controllers.get(name) or {}).get("ros__parameters") or {}).get("joints")
+        if not name or not isinstance(joints, list) or not joints:
+            raise RuntimeError(f"cell controller {name!r} has no joints in {CONTROLLERS_REL_PATH}; Generate the cell again")
+        return [str(joint) for joint in joints]
+    values = dict(
+        robot_model=str(robot.get("model") or "").lower(), planning_group=robot.get("planning_group"),
+        tool_mount_link=robot.get("tool_mount_link"), gripper_profile=tool.get("profile"),
+        grasp_frame=tool.get("grasp_frame"), robot_moveit_pkg=runtime.get("robot_moveit_package"),
+        arm_controller=runtime.get("arm_controller"), tool_controller=runtime.get("tool_controller"),
+        support_pose_id=supports[0].get("id") if len(supports) == 1 else None,
+        camera_pose_id=(environment.get("camera") or {}).get("camera_id"))
+    missing = sorted(key for key, value in values.items() if not value)
+    if missing:
+        raise RuntimeError(f"cell {_SCENE_PACKAGE_DIR} lacks runtime identity {missing}; Generate the cell again")
+    values.update(arm_joints=controller_joints(values["arm_controller"]), tool_joints=controller_joints(values["tool_controller"]))
+    command_joints = runtime.get("tool_command_joints")
+    if command_joints is not None and list(command_joints) != values["tool_joints"]:
+        raise RuntimeError(f"cell tool command joints {command_joints} differ from its tool controller {values['tool_joints']}")
+    return values
+
 
 CANONICAL_LAYOUT_REL_PATH = "layout/workcell_studio_layout.yaml"
 COLLISION_MANIFEST_REL_PATH = "config/moveit_collision_objects.yaml"
@@ -49,11 +126,11 @@ def _format_xacro_vector(values):
     return " ".join(format(value, ".17g") for value in values)
 
 
-def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
+def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None, required_ids=REQUIRED_AUTHORED_POSE_IDS):
     """Load runtime mount poses from authoritative environment.yaml."""
     if layout_path is None:
         layout_path = os.path.join(
-            get_package_share_directory(package_name),
+            _share(package_name),
             "environment.yaml",
         )
 
@@ -75,7 +152,7 @@ def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
         for item in physical.get(section, [])]
 
     poses = {}
-    for required_id in REQUIRED_AUTHORED_POSE_IDS:
+    for required_id in required_ids:
         matches = [
             item
             for item in items
@@ -120,7 +197,7 @@ def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
 def load_authored_robot_pose(package_name=scene_pkg, environment_path=None):
     """Load the robot mounting pose from the authored environment contract."""
     if environment_path is None:
-        environment_path = os.path.join(get_package_share_directory(package_name), "environment.yaml")
+        environment_path = os.path.join(_share(package_name), "environment.yaml")
     try:
         with open(environment_path, "r", encoding="utf-8") as file:
             environment = yaml.safe_load(file)
@@ -139,7 +216,7 @@ def load_authored_robot_pose(package_name=scene_pkg, environment_path=None):
 
 
 def load_xacro(package_name, rel_path, mappings=None):
-    pkg_share = get_package_share_directory(package_name)
+    pkg_share = _share(package_name)
     abs_path = os.path.join(pkg_share, rel_path)
     if not os.path.exists(abs_path):
         raise FileNotFoundError(f"Missing file: {abs_path}")
@@ -176,7 +253,7 @@ def load_xacro(package_name, rel_path, mappings=None):
 
 
 def load_yaml(package_name, rel_path):
-    pkg_share = get_package_share_directory(package_name)
+    pkg_share = _share(package_name)
     abs_path = os.path.join(pkg_share, rel_path)
     if not os.path.exists(abs_path):
         return {}
@@ -264,30 +341,33 @@ def _validate_ros_param_types(value, path="root"):
 
 
 def _write_robot_description_file(scene_name, robot_description_config):
-    path = os.path.join(
-        tempfile.gettempdir(),
-        f"{scene_name}_robot_description.urdf",
-    )
-    with open(path, "w", encoding="utf-8") as file:
+    # One file per launch: concurrent sessions (or cells) never read each other's model.
+    descriptor, path = tempfile.mkstemp(prefix=f"{scene_name}_", suffix="_robot_description.urdf")
+    with os.fdopen(descriptor, "w", encoding="utf-8") as file:
         file.write(robot_description_config)
     return path
 
 
 def _launch_setup(context):
+    _bind_scene_package_dir(LaunchConfiguration("scene_package_dir").perform(context))
+    backend = LaunchConfiguration("execution_backend").perform(context)
+    if backend not in ("fake", "simulator"):
+        raise RuntimeError("Unknown execution backend")
+    simulator_actions = []
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_fake_hardware = LaunchConfiguration("use_fake_hardware")
     launch_rviz = LaunchConfiguration("launch_rviz")
     joint_states_topic = "/joint_states"
     canonical_layout_path = os.path.join(
-        get_package_share_directory(scene_pkg),
+        _share(scene_pkg),
         CANONICAL_LAYOUT_REL_PATH,
     )
     collision_manifest_path = os.path.join(
-        get_package_share_directory(scene_pkg),
+        _share(scene_pkg),
         COLLISION_MANIFEST_REL_PATH,
     )
     controllers_config_path = os.path.join(
-        get_package_share_directory(scene_pkg),
+        _share(scene_pkg),
         CONTROLLERS_REL_PATH,
     )
     if not os.path.isfile(controllers_config_path):
@@ -296,22 +376,24 @@ def _launch_setup(context):
             f"Rebuild/install {scene_pkg} before launching."
         )
 
-    canonical_poses = load_canonical_layout_poses()
-    table_pose = canonical_poses["support_surface_table"]
-    camera_pose = canonical_poses["realsense_overhead"]
+    cell_runtime = _cell_runtime()
+    canonical_poses = load_canonical_layout_poses(
+        required_ids=(cell_runtime["support_pose_id"], cell_runtime["camera_pose_id"]))
+    table_pose = canonical_poses[cell_runtime["support_pose_id"]]
+    camera_pose = canonical_poses[cell_runtime["camera_pose_id"]]
     robot_pose = load_authored_robot_pose()
 
     robot_description_config = load_xacro(
         scene_pkg,
         "urdf/scene.urdf.xacro",
         mappings={
-            "ur_type": robot_model,
-            "name": robot_model,
+            "ur_type": cell_runtime["robot_model"],
+            "name": cell_runtime["robot_model"],
             "tf_prefix": "",
             "world_frame": world_frame,
-            "tool_mount_link": tool_mount_link,
-            "gripper_profile": gripper_profile,
-            "grasp_frame": grasp_frame,
+            "tool_mount_link": cell_runtime["tool_mount_link"],
+            "gripper_profile": cell_runtime["gripper_profile"],
+            "grasp_frame": cell_runtime["grasp_frame"],
             "use_fake_hardware": use_fake_hardware.perform(context),
             "table_world_xyz": _format_xacro_vector(table_pose["xyz"]),
             "table_world_rpy": _format_xacro_vector(table_pose["rpy"]),
@@ -321,6 +403,63 @@ def _launch_setup(context):
             "robot_world_rpy": _format_xacro_vector(robot_pose["rpy"]),
         },
     )
+    if backend == "simulator":
+        if use_sim_time.perform(context).lower() != "true" or use_fake_hardware.perform(context).lower() != "true":
+            raise RuntimeError("Simulator requires use_sim_time:=true and safe mock-source model derivation")
+        # Source checkout and installed entry points use the same reusable backend.
+        source_scripts = Path(__file__).resolve().parents[3] / "scripts"
+        if source_scripts.is_dir():
+            sys.path.insert(0, str(source_scripts))
+        else:
+            from ament_index_python.packages import get_package_prefix
+            sys.path.insert(0, str(Path(get_package_prefix('workcell_builder')) / 'lib/workcell_builder'))
+        import simulator_backend
+        import end_effector_hold
+        output = LaunchConfiguration("simulator_output").perform(context)
+        # The cell's end-effector capability profile states how this tool holds
+        # (method, reserve, actuator force). Its actuator cap is bound into the
+        # source description here, outside the evidence-bound simulator_backend
+        # module, so the derived model and the receipt carry it.
+        hold_profile = end_effector_hold.load_cell_hold_profile(
+            os.path.join(_share(scene_pkg), "cell_definition.yaml"))
+        if hold_profile is None and LaunchConfiguration("simulator_commissioning").perform(context).lower() == "true":
+            raise RuntimeError("simulator commissioning requires the cell to bind an end-effector capability with a hold profile")
+        hold_binding = None
+        if hold_profile is not None:
+            robot_description_config, hold_binding = end_effector_hold.bind_source_description(
+                robot_description_config, hold_profile)
+        robot_description_config, controllers_config_path, simulator_spec = simulator_backend.prepare(
+            robot_description_config, controllers_config_path,
+            LaunchConfiguration("simulator_world").perform(context),
+            f"{scene_pkg}_robot_state_publisher", output,
+            collision_manifest_path=collision_manifest_path)
+        if hold_binding is not None:
+            simulator_spec['end_effector_hold'] = end_effector_hold.augment_spec(output, hold_binding)
+        # Physics contact geometry declared by the same capability record: primitive pads
+        # replace the concave fingertip meshes in the spawned physics model (robot.sdf) only;
+        # MoveIt keeps the exact mesh. The new model hash goes into the spec the receipt verifies.
+        if hold_profile is not None:
+            import simulation_collision
+            from capability_registry import load_capability_registry
+            record = load_capability_registry().get(hold_profile.capability_id)
+            collision_binding = simulation_collision.bind_native_model(output, record.payload)
+            if collision_binding is not None:
+                simulator_spec['simulator_collision_primitives'] = collision_binding
+                simulator_spec['native_description_sha256'] = collision_binding['native_description_sha256']
+        # Destination (bin floor) binding for the contact guard; kept outside the
+        # evidence-bound simulator_backend module. Fails closed on a floor mismatch.
+        import destination_binding
+        simulator_spec['destination_geometry_binding'] = destination_binding.augment_spec(output, collision_manifest_path,
+            measured_floor=_SCENE_PACKAGE_DIR is not None)  # a derived cell world measures its own floor
+        simulator_actions = [
+            ExecuteProcess(cmd=[sys.executable, simulator_backend.__file__, output], output='screen',
+                           additional_env={'LIBGL_ALWAYS_SOFTWARE': '1'}),
+            Node(package='ros_gz_bridge', executable=simulator_backend.bridge_executable(
+                     LaunchConfiguration('simulator_commissioning').perform(context).lower() == 'true'),
+                 parameters=[{'config_file': str(Path(output)/'bridges.yaml')}], output='screen'),
+            TimerAction(period=5.0, actions=[Node(package='controller_manager', executable='spawner',
+                arguments=['physical_joint_states', '--param-file', controllers_config_path], output='screen')]),
+        ]
     robot_description = {"robot_description": robot_description_config}
 
     robot_description_file = _write_robot_description_file(
@@ -331,10 +470,10 @@ def _launch_setup(context):
     robot_description_semantic_config = load_xacro(scene_pkg, "urdf/arm_hand.srdf.xacro")
     robot_description_semantic = {"robot_description_semantic": robot_description_semantic_config}
 
-    kinematics_yaml = load_yaml(robot_moveit_pkg, "config/kinematics.yaml")
+    kinematics_yaml = load_yaml(cell_runtime["robot_moveit_pkg"], "config/kinematics.yaml")
     robot_description_kinematics = {"robot_description_kinematics": kinematics_yaml} if kinematics_yaml else {}
 
-    ompl_planning_yaml = load_yaml(robot_moveit_pkg, "config/ompl_planning.yaml")
+    ompl_planning_yaml = load_yaml(cell_runtime["robot_moveit_pkg"], "config/ompl_planning.yaml")
 
     planning_pipelines_config = {
         "planning_pipelines": ["ompl"],
@@ -346,6 +485,8 @@ def _launch_setup(context):
             "planning_plugin": "ompl_interface/OMPLPlanner",
             "request_adapters": " ".join([
                 "workcell/InitialSupportContact",
+            ] + (["workcell/PlanningEvidence"] if os.environ.get('WORKCELL_PLANNING_TRACE_DIR') else []) + [
+                "workcell/StraightCartesianPath",
                 "default_planner_request_adapters/AddTimeOptimalParameterization",
                 "default_planner_request_adapters/FixWorkspaceBounds",
                 "default_planner_request_adapters/FixStartStateBounds",
@@ -364,31 +505,27 @@ def _launch_setup(context):
 
     moveit_simple_controller_manager = {
         "moveit_simple_controller_manager": {
-            "controller_names": ["ur5_arm_controller", "ur5_gripper_controller"],
-            "ur5_arm_controller": {
+            "controller_names": [cell_runtime["arm_controller"], cell_runtime["tool_controller"]],
+            cell_runtime["arm_controller"]: {
                 "action_ns": "follow_joint_trajectory",
                 "type": "FollowJointTrajectory",
                 "default": True,
-                "joints": [
-                    "shoulder_pan_joint",
-                    "shoulder_lift_joint",
-                    "elbow_joint",
-                    "wrist_1_joint",
-                    "wrist_2_joint",
-                    "wrist_3_joint",
-                ],
+                "joints": cell_runtime["arm_joints"],
             },
-            "ur5_gripper_controller": {
+            cell_runtime["tool_controller"]: {
                 "action_ns": "follow_joint_trajectory",
                 "type": "FollowJointTrajectory",
                 "default": False,
-                "joints": ["gripper_finger1_joint"],
+                "joints": cell_runtime["tool_joints"],
             },
         }
     }
 
     fake_hardware_enabled = use_fake_hardware.perform(context).lower() == "true"
     execution_requested = LaunchConfiguration("allow_trajectory_execution").perform(context).lower() == "true"
+    commissioning = LaunchConfiguration("simulator_commissioning").perform(context).lower() == "true"
+    if commissioning and (backend != 'simulator' or not execution_requested):
+        raise RuntimeError('simulator_commissioning requires simulator backend and explicit trajectory execution')
     if execution_requested and not fake_hardware_enabled:
         raise RuntimeError("This scene permits trajectory execution only with use_fake_hardware:=true")
     trajectory_execution = {
@@ -396,10 +533,15 @@ def _launch_setup(context):
         # while trajectory execution requires explicit fake-hardware opt-in.
         "allow_trajectory_execution": False,
         "moveit_manage_controllers": False,
-        "use_fake_hardware": fake_hardware_enabled,
+        "use_fake_hardware": fake_hardware_enabled and backend == "fake",
+        "execution_backend": backend,
+        "simulator_commissioning": commissioning,
     }
     if execution_requested:
         trajectory_execution["allow_trajectory_execution"] = True
+    if commissioning:
+        trajectory_execution.update(capabilities='workcell/CommissionExecuteTrajectory',
+            disable_capabilities='move_group/MoveGroupExecuteTrajectoryAction')
 
     planning_scene_monitor_params = {
         "publish_planning_scene": True,
@@ -528,7 +670,7 @@ def _launch_setup(context):
         output="screen",
         condition=IfCondition(use_fake_hardware),
         arguments=[
-            "ur5_arm_controller",
+            cell_runtime["arm_controller"],
             "--controller-manager",
             "/controller_manager",
             "--param-file",
@@ -543,7 +685,7 @@ def _launch_setup(context):
         output="screen",
         condition=IfCondition(use_fake_hardware),
         arguments=[
-            "ur5_gripper_controller",
+            cell_runtime["tool_controller"],
             "--controller-manager",
             "/controller_manager",
             "--param-file",
@@ -574,7 +716,7 @@ def _launch_setup(context):
         ],
     )
 
-    rviz_config_file = os.path.join(get_package_share_directory(scene_pkg), "launch", "demo.rviz")
+    rviz_config_file = os.path.join(_share(scene_pkg), "launch", "demo.rviz")
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -631,7 +773,7 @@ def _launch_setup(context):
         robot_state_publisher,
         static_tf,
         joint_state_publisher,
-        control_node,
+        *([control_node] if backend == "fake" else simulator_actions),
         # ros2_control_node must advertise its controller-manager services
         # before the spawners query them; staggering also prevents three
         # simultaneous configure requests from racing on Humble.
@@ -639,7 +781,7 @@ def _launch_setup(context):
         TimerAction(period=3.0, actions=[arm_controller_spawner]),
         TimerAction(period=4.0, actions=[gripper_controller_spawner]),
         move_group,
-        canonical_mesh_preview,
+        *([canonical_mesh_preview] if backend == "fake" else []),
         planning_scene_loader,
         rviz_node,
     ]
@@ -647,6 +789,11 @@ def _launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument("execution_backend", default_value="fake"),
+        DeclareLaunchArgument("scene_package_dir", default_value=""),
+        DeclareLaunchArgument("simulator_world", default_value=""),
+        DeclareLaunchArgument("simulator_output", default_value=""),
+        DeclareLaunchArgument("simulator_commissioning", default_value="false"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument(
             "allow_trajectory_execution", default_value="false",

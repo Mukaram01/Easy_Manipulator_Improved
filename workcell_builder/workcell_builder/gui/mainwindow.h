@@ -23,6 +23,7 @@
 #include <QTimer>
 #include <QLabel>
 #include <QString>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QVariant>
 #include <QMap>
@@ -118,6 +119,7 @@ private slots:
   void run_preview_build();
   void run_fake_hardware_preview();
   void run_full_cycle();
+  void run_physics_cycle();
   void stop_preview_process();
   void handle_preview_stdout();
   void handle_preview_stderr();
@@ -862,9 +864,40 @@ private:
   QTextEdit * preview_commands_{ nullptr };
   QPlainTextEdit * preview_log_{ nullptr };
   QPushButton * run_preview_button_{ nullptr };
+  QPushButton * run_physics_button_{ nullptr };
   QLabel * cycle_status_label_{ nullptr };
   QCheckBox * cycle_rviz_box_{ nullptr };
   bool full_cycle_mode_{ false };
+  bool physics_cycle_mode_{ false };
+  QString physics_cycle_blocker() const;
+  // physics_cycle_preflight.py for the selected saved cell, re-run only when its saved or generated
+  // inputs or the workspace's qualified runtime record change.
+  QJsonObject physics_preflight() const;
+  mutable QString physics_preflight_key_;
+  mutable QJsonObject physics_preflight_;
+  // READY, PLANNING, RUNNING, BLOCKED, CANCELLED, FAILED or COMPLETED, shown beside the action.
+  void set_physics_state(const QString & state, const QString & detail);
+  QLabel * physics_state_label_{ nullptr };
+  QString physics_state_;
+  // Live perception of the selected cell's bound camera through EPD (live_perception_session.py):
+  // perception preview and task eligibility only; robot planning stays blocked without calibration.
+  void discover_live_cameras();
+  void save_live_camera_binding();
+  void toggle_live_perception();
+  void refresh_live_perception();
+  QString live_perception_command(const QString & arguments) const;
+  QComboBox * perception_camera_combo_{ nullptr };
+  QPushButton * perception_discover_button_{ nullptr };
+  QPushButton * perception_bind_button_{ nullptr };
+  QPushButton * perception_start_button_{ nullptr };
+  QLabel * perception_preview_label_{ nullptr };
+  QLabel * perception_status_label_{ nullptr };
+  QTableWidget * perception_table_{ nullptr };
+  QProcess * perception_process_{ nullptr };
+  QTimer * perception_timer_{ nullptr };
+  QString perception_session_dir_;
+  QString perception_session_cell_;
+  QJsonArray perception_cameras_;
   QString cycle_output_dir_;
   QString cycle_stdout_buffer_;
   QJsonObject cycle_result_;

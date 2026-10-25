@@ -1,0 +1,107 @@
+{
+  "scope": "Additional minimal MoveIt lifecycle checks in the final qualified source environment; no Stage-A1 simulator gate or hardware claim.",
+  "date": "2026-09-29",
+  "repository_head": "b6414628e41f546f94757ee858d59f029c5421fe",
+  "result": "PASS",
+  "rmw": "rmw_fastrtps_cpp",
+  "ros_domain_id": "197",
+  "ros_localhost_only": "1",
+  "clean_environment": true,
+  "source_chain": [
+    "/opt/ros/humble/setup.bash",
+    "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/local_setup.bash",
+    "/home/user/workcell_ws/install/local_setup.bash",
+    "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/setup.bash"
+  ],
+  "moveit_manifest": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/provenance.json",
+    "sha256": "604663397226de55e700450f85211e641bdc1fee90edd17fd35c04fdca5b1dab"
+  },
+  "bridge_manifest": {
+    "path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/provenance.json",
+    "sha256": "a6b7b3208bb48583d1d642ca585a3f9cebf1469690bc7498e33020b516a9fcc1"
+  },
+  "tem_library": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10",
+    "sha256": "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc",
+    "soname": "libmoveit_trajectory_execution_manager.so.2.5.10"
+  },
+  "move_group_executable": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+    "sha256": "e79a53216e74c270702f12f881226bf07ad879b5fea723afd91e0c57e0fe1fe1"
+  },
+  "qualified_reproducer": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+    "sha256": "297d30146548bf00b11ef8a62db6436a09d5b31420c6f08707bd83023c55cec9"
+  },
+  "installed_artifacts_are_ordinary_files": true,
+  "results": {
+    "tem": {
+      "completed": 20,
+      "passed": 20,
+      "returncodes": [
+        0
+      ],
+      "readiness_passed": true,
+      "timed_out": false,
+      "core_inventory_changed": false,
+      "owned_process_survivors": [],
+      "checked_in_file": "tem-results.json",
+      "sha256": "8066082eb7233f567d3696bb710d80080031b0b45071d1e80b6c4a4f64c97850",
+      "original_path": "/home/user/workcell_ws/diagnostics/moveit-closeout-20260929/tem/results.json"
+    },
+    "move-group": {
+      "completed": 20,
+      "passed": 20,
+      "returncodes": [
+        0
+      ],
+      "readiness_passed": true,
+      "timed_out": false,
+      "core_inventory_changed": false,
+      "owned_process_survivors": [],
+      "checked_in_file": "move-group-results.json",
+      "sha256": "1e549069e2f82808b734d5daace62eaea696ff597aa91833817f37f697333b8f",
+      "original_path": "/home/user/workcell_ws/diagnostics/moveit-closeout-20260929/move-group/results.json"
+    }
+  },
+  "original_qualification": {
+    "preserved": true,
+    "baseline_sigsegv_cycles": 2,
+    "patched_successful_cycles": 40,
+    "manifest_sha256_unchanged": true,
+    "raw_root": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/evidence/run-20260927"
+  },
+  "additional_audit": {
+    "completed": 40,
+    "executable_and_library_paths_devices_inodes_match": true,
+    "no_live_owned_processes": true,
+    "fastdds_mapped_every_cycle": true,
+    "old_moveit_overlay_not_mapped": true,
+    "all_mapped_shared_library_devices_inodes_match": true,
+    "unique_mapped_shared_libraries": 180,
+    "scripts_unchanged": true
+  },
+  "evidence": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/moveit-closeout-20260929/verification.json",
+      "sha256": "fe0dea41eaa3570e3ddbfa6a24d571ba17b6e06bde6da19ec842e02ad047755f"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/moveit-closeout-20260929/admission-before.json",
+      "sha256": "4be4dcbf95c7326f567178d091dffb92f0c68725544df718bf8fba82c7b7314c"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/moveit-closeout-20260929/driver.log",
+      "sha256": "edd0cffc0c29f8151a869efac54cb3e1edcc77ed406dc1f5558f5657dd176647"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/moveit-closeout-20260929/run-clean.sh",
+      "sha256": "c66c2ae609dc9b63026952d9a3ef02724397d8706f71514e3410df4de346eafe"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/moveit-closeout-20260929/audit.py",
+      "sha256": "acf1ee9ff326404ceee95c8e8796dc3434e8bbd997b9dceed0836476384ff36e"
+    }
+  ]
+}

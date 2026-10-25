@@ -45,6 +45,27 @@ def describe(profile_id):
     return dict(profile, rows=rows, robot=source['robot'], tool=source['tool'])
 
 
+def apply_destination_regions(environment, regions):
+    """The profile's measured physical destination regions (target-local) for a new cell."""
+    if not regions:
+        return
+    from physical_destination import resolve_destination, apply, rotation
+    target = next(a for a in environment['assets'] if a['id'] == regions['asset'])
+    target['usable_placement'].update(pose_xyz=list(regions['usable_placement']['pose_xyz']),
+                                      dimensions=list(regions['usable_placement']['dimensions']))
+    target['usable_placement']['review'] = ('Measured container floor (target-local z %s); footprint as reviewed, '
+                                            'extended to the floor (profile destination_regions).'
+                                            % regions['measured_floor_top_local_z'])
+    for zone_id, region in regions['zones'].items():
+        zone = next(z for z in environment['task_zones'] if z['id'] == zone_id)
+        local = zone['placement_local']
+        local.update(pose_xyz=list(region['pose_xyz']), dimensions=list(region['dimensions']))
+        offset = apply(rotation(target['pose_rpy']), local['pose_xyz'])
+        zone['pose_xyz'] = [a + b for a, b in zip(target['pose_xyz'], offset)]
+        zone['dimensions'] = list(region['dimensions'])
+        resolve_destination(environment, zone_id)          # projection and containment stay consistent
+
+
 def materialize(scene, profile_id, destination):
     from authored_yaml import write_preserving
     from task_intent_authoring import load_authoring
@@ -91,6 +112,11 @@ def materialize(scene, profile_id, destination):
     tool['grasp_frame'] = studio['tool']['tcp']
     tool['mount_pose_xyz'], tool['mount_pose_rpy'] = frames['tool_mount_pose']['xyz'], frames['tool_mount_pose']['rpy']
     authored['end_effector'] = copy.deepcopy(tool)
+    # The reviewed tool's catalog capability (and with it the hold profile the qualified
+    # simulator binds) belongs to the selected tool model; keep it rather than drop it.
+    if defaults['end_effector'].get('capability'):
+        authored['end_effector']['capability'] = defaults['end_effector']['capability']
+    apply_destination_regions(authored['environment'], profile.get('destination_regions'))
     camera = authored['camera']
     physical_camera = next(item for item in authored['environment']['assets'] if item['id'] == camera['camera_id'])
     camera['pose'] = physical_camera['pose_xyz'] + physical_camera['pose_rpy']

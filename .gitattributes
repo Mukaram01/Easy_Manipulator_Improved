@@ -1,1 +1,3 @@
 workcell_studio_web/viewer/dist/viewer.bundle.js linguist-generated=true
+# Unified-diff context preserves upstream blank lines and tab indentation.
+scripts/simulator_physics_repro/*.patch whitespace=-blank-at-eol,-space-before-tab

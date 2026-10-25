@@ -1,0 +1,286 @@
+{
+  "status": "CONFIRMED",
+  "scope": "MoveIt dependency lifecycle: copied unchanged TEM20, patched idle MoveGroup20, genuine saved UR5 PLAN_ONLY shutdown5",
+  "overlay": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930",
+  "provenance": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/provenance.json",
+    "sha256": "51ebeaef1a174dfe370d5a167928851e34149a183b4cfe24e256162ea5498326"
+  },
+  "artifacts": {
+    "library": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10",
+      "sha256": "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc"
+    },
+    "executable": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "sha256": "f0c74c14d01ba94564a382503cc8e2e2cb11c7a88899041c2443424800eb5026"
+    },
+    "capabilities": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/moveit_ros_move_group/lib/libmoveit_move_group_default_capabilities.so.2.5.10",
+      "sha256": "f0f2445968ed04d3739e0840a46a64468c99335b5f6b3353492e88c8eefe6df1"
+    },
+    "tem_reproducer": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/repro_build/workcell_tem_teardown_repro",
+      "sha256": "297d30146548bf00b11ef8a62db6436a09d5b31420c6f08707bd83023c55cec9"
+    }
+  },
+  "source": {
+    "version": "2.5.10",
+    "commit": "66d37b40594e2b0ce8e8bd407122d20791d8c3b5",
+    "upstream_commit": "c283a36186a6f7a5985360e6674bf8fd0790e485",
+    "release_tag": "release/humble/moveit_ros_move_group/2.5.10-1",
+    "debian_commit": "b3c911be97bd87141eaf6481497f4184cc202dd8",
+    "package_source_sha256": "60069c2088533b8b4c05539a7b853b71287e01872e9b3ae1fe2bfb5d21772815"
+  },
+  "patch": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/patches/moveit_humble_capability_teardown.patch",
+    "sha256": "72fa9aab3d9c109aaf3bbfe3d5348f356fb9bead3681ffea5fdff7d225180855"
+  },
+  "retained_tem_qualification": {
+    "provenance": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/provenance.json",
+      "sha256": "604663397226de55e700450f85211e641bdc1fee90edd17fd35c04fdca5b1dab"
+    },
+    "source": {
+      "version": "2.5.10",
+      "commit": "c62753946ae3629a8cb745767844f7e69ca51489",
+      "release_commit": "c62753946ae3629a8cb745767844f7e69ca51489",
+      "upstream_commit": "c283a36186a6f7a5985360e6674bf8fd0790e485",
+      "upstream_url": "https://github.com/ros2-gbp/moveit2-release.git",
+      "release_tag": "release/humble/moveit_ros_planning/2.5.10-1",
+      "debian_commit": "4e3d4445099fccf3d3732e893bf461e71e86522d",
+      "package_source_sha256": "ad7a192774440cdbb4c0b312567bdeb42335bdf4c66fe07e61484761d4bedb41"
+    },
+    "build": {
+      "command": "MAKEFLAGS=\"-j2 -l2\" colcon build --packages-select moveit_ros_planning --allow-overriding moveit_ros_planning --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF -DAMENT_CMAKE_SYMLINK_INSTALL=OFF",
+      "log": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/evidence/run-20260927/build.log"
+    },
+    "artifact": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10",
+      "sha256": "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc"
+    },
+    "copied_from": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10",
+      "sha256": "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc",
+      "soname": "libmoveit_trajectory_execution_manager.so.2.5.10"
+    },
+    "original_proof": {
+      "baseline_returncode": -11,
+      "cycles": 20,
+      "passed": 20,
+      "all_success": true,
+      "results_path": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/evidence/run-20260927/patched/results.json"
+    }
+  },
+  "native_counts": {
+    "tem_idle": 20,
+    "move_group_idle": 20,
+    "real_active_plan_shutdown": 5
+  },
+  "audit": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/artifact-mapping-audit.json",
+    "sha256": "8600f183e2aa1efd7e46d5dce9a01bb6c620281805ef224633e6e4ce86dd435f"
+  },
+  "mapped_library_count": 195,
+  "current_admission": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/final-admission.json",
+    "sha256": "1d5f7963fa6f1c3dac43a8c9666f51d71d37051ac99e6f2e66fa1c32334923e6"
+  },
+  "build": {
+    "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/candidate-build.json",
+    "sha256": "31ee6b6bbc8c63e7c6dcee372193726174f890a3242f3996873875c65eb4f7b7"
+  },
+  "proof": {
+    "tem-idle-native": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/tem-idle-native/results.json",
+      "sha256": "0241870c7894076cf709dee894f55e9257dd99e6a3a614c0374d9d7db10640ce"
+    },
+    "move-group-idle-native": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/move-group-idle-native/results.json",
+      "sha256": "4156b6dc426ced5d0c3aec212a5ecea9f00f701e2e6c0bd763673e49d9099823"
+    },
+    "active-plan-shutdown-native": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/results.json",
+      "sha256": "0e23541f2ba9eca85e2909c76f89fe47b004cb2e89171d88563b24c66a331d06"
+    }
+  },
+  "active_inputs": {
+    "binary": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "sha256": "f0c74c14d01ba94564a382503cc8e2e2cb11c7a88899041c2443424800eb5026"
+    },
+    "library": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10",
+      "sha256": "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc"
+    },
+    "capabilities": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/moveit_ros_move_group/lib/libmoveit_move_group_default_capabilities.so.2.5.10",
+      "sha256": "f0f2445968ed04d3739e0840a46a64468c99335b5f6b3353492e88c8eefe6df1"
+    },
+    "request": {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-hybrid-trace/1790801758939452254_18.request.cdr",
+      "sha256": "4848d88d7ffa1eeac2ef2a52eea691f32234e958576ada969253955dae6a253d"
+    },
+    "scene": {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-hybrid-trace/1790801758939452254_18.scene.cdr",
+      "sha256": "dc87495e354d0a0a3f5cf06a7cc78e449a867bab525d53fde47bb1f0d99dd62e"
+    },
+    "urdf": {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-hybrid-lift/01-resolve/resolve/qualification.urdf",
+      "sha256": "a27bfcec39167c4a08dc75acf9b8cc961afeccf28baaabb371834e3853ec6e8e"
+    },
+    "srdf": {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-hybrid-lift/01-resolve/resolve/qualification.srdf",
+      "sha256": "1ab6c7792467f9e43ec9e121eaba1c92ef1f000266f82874e2e96570ed305caf"
+    },
+    "support_adapter": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/inputs/libworkcell_support_contact.so",
+      "sha256": "d0f9b7530d2480d1a1865daf8165d726281e91476e799af859eb87cd5543ced5"
+    },
+    "parameters": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/parameters.yaml",
+      "sha256": "f015781fa4eaf8343628bd69289f82edf1b38e1e01edba64df671f222f424800"
+    },
+    "verifier": {
+      "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/inputs/verify_active_plan.py",
+      "sha256": "632f53a22fe9e7352d14a13cd1844e0c267cbcbe5419140bb6e93fe627b3ff49"
+    }
+  },
+  "active_cycles": [
+    {
+      "cycle": 1,
+      "pid": 71094,
+      "returncode": 0,
+      "goal_uuid": "11fbf8330d204ce8b5b63f2c275863d1",
+      "certificate": "result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1647 certified=867 subdivided=780 depth=4 interval=[-1,-1] seconds=15.366088 contact_timestamps=0 initial_contacts_expired=0",
+      "log": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/01/move-group.log",
+        "sha256": "2d861343b06ddaa6bac1017e1d5d14d85d11e5e0878b906c884aeab780795e0d"
+      },
+      "maps": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/01/move-group.maps",
+        "sha256": "c229da2547e4f44a24e810ca3eee1c7656ff37a909f0299be354701f2d86eedf"
+      },
+      "owned_sigint": true,
+      "pending_at_signal": true,
+      "signal_handler_observed": true,
+      "production_certificate_after_signal": true,
+      "plan_result_after_signal": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false
+    },
+    {
+      "cycle": 2,
+      "pid": 71221,
+      "returncode": 0,
+      "goal_uuid": "a18c47f8c2344f0cb4849cd5dce0ff6a",
+      "certificate": "result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1647 certified=867 subdivided=780 depth=4 interval=[-1,-1] seconds=14.470602 contact_timestamps=0 initial_contacts_expired=0",
+      "log": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/02/move-group.log",
+        "sha256": "c8c7c050dea1eb396beda5da7e77e32c194a5bc1d7b6712067be479eca926ed7"
+      },
+      "maps": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/02/move-group.maps",
+        "sha256": "b9a70c92633bce413f8c14050e4b67f2b541587af6e5e9005209fa1312969406"
+      },
+      "owned_sigint": true,
+      "pending_at_signal": true,
+      "signal_handler_observed": true,
+      "production_certificate_after_signal": true,
+      "plan_result_after_signal": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false
+    },
+    {
+      "cycle": 3,
+      "pid": 71285,
+      "returncode": 0,
+      "goal_uuid": "e38a6631c2694c7389cb86542dfaacf8",
+      "certificate": "result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1647 certified=867 subdivided=780 depth=4 interval=[-1,-1] seconds=15.338416 contact_timestamps=0 initial_contacts_expired=0",
+      "log": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/03/move-group.log",
+        "sha256": "77d6c744be3577fa17a15818386cc22a635eba90a1d1e5795130940c011bb7ba"
+      },
+      "maps": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/03/move-group.maps",
+        "sha256": "d315b32fee114f7691d5088a217b1b72167e6e95c0f9c23e988ff7e73812080d"
+      },
+      "owned_sigint": true,
+      "pending_at_signal": true,
+      "signal_handler_observed": true,
+      "production_certificate_after_signal": true,
+      "plan_result_after_signal": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false
+    },
+    {
+      "cycle": 4,
+      "pid": 71351,
+      "returncode": 0,
+      "goal_uuid": "66f21f1cb3b446189c05b4994db1259c",
+      "certificate": "result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1647 certified=867 subdivided=780 depth=4 interval=[-1,-1] seconds=15.107821 contact_timestamps=0 initial_contacts_expired=0",
+      "log": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/04/move-group.log",
+        "sha256": "904d92b6cc0fc8fee1090d257118378674ad90b0335d0755ca21efd9b2476b9f"
+      },
+      "maps": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/04/move-group.maps",
+        "sha256": "78c86fe31410f20e0a1e5ff5b3d940a6c73182482ef3ad6daf093d0f1af59720"
+      },
+      "owned_sigint": true,
+      "pending_at_signal": true,
+      "signal_handler_observed": true,
+      "production_certificate_after_signal": true,
+      "plan_result_after_signal": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false
+    },
+    {
+      "cycle": 5,
+      "pid": 71415,
+      "returncode": 0,
+      "goal_uuid": "d1a315ab0c1245428dba9e7352cb674a",
+      "certificate": "result=0 reason=ALL_INTERVALS_CERTIFIED inspected=1647 certified=867 subdivided=780 depth=4 interval=[-1,-1] seconds=14.605646 contact_timestamps=0 initial_contacts_expired=0",
+      "log": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/05/move-group.log",
+        "sha256": "62dcea7e202ed9a85ec51676f1aef161719e94da22a1e318cc1f7ceae66d798f"
+      },
+      "maps": {
+        "path": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown-native/05/move-group.maps",
+        "sha256": "27db997170eafc96e87939ffc06319c89ed908d1da4b00314161fcd461796a59"
+      },
+      "owned_sigint": true,
+      "pending_at_signal": true,
+      "signal_handler_observed": true,
+      "production_certificate_after_signal": true,
+      "plan_result_after_signal": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false
+    }
+  ],
+  "original_overlay_preserved": true,
+  "source_sequence": [
+    "/opt/ros/humble/setup.bash",
+    "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/install/local_setup.bash",
+    "/home/user/workcell_ws/install/local_setup.bash",
+    "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/setup.bash"
+  ],
+  "tests": {
+    "command": "python3 -m pytest -q tests/test_simulator_backend.py tests/test_moveit_overlay_publication.py tests/test_moveit_active_result_shutdown.py tests/test_stage_a1_finish_runner.py",
+    "passed": 186,
+    "log": {
+      "path": "/home/user/workcell_ws/diagnostics/moveit-active-plan-20260930-tests-final.log",
+      "sha256": "b413f869284512af4cddb8b3ebea9ec82c657265c6a25302b4226b187d7390ee"
+    }
+  },
+  "failed_prequalification_attempts": [
+    {
+      "evidence": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/tem-launch-diagnostic.log",
+      "reason": "Sandbox disallowed default ~/.ros/log; set explicit writable ROS_LOG_DIR before qualification"
+    },
+    {
+      "evidence": "/home/user/workcell_ws/moveit_teardown_overlay_active_plan_20260930/evidence/active-plan-shutdown/results.json",
+      "reason": "Sandbox cycle exited0 after real production certificate but observer rejected an incorrect assumed signal marker. Fixed observer against pinned rclcpp source and reran all final cycles on host; no rejected attempt was republished as passing."
+    }
+  ]
+}

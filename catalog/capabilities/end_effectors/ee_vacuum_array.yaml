@@ -15,3 +15,13 @@ end_effector:
   release_behaviour: staged_zone_release
   limitations_warnings:
     - Needs flat target contact area for all active cups.
+  hold:
+    schema: end_effector_hold/v1
+    method: vacuum_seal
+    vacuum:
+      seal_contact_links: all
+      vacuum_signal: vacuum_zone_a
+      supply_vacuum_kpa: 60
+      effective_area_mm2: 8500
+      simulator_support: none
+    release: staged_zone_release

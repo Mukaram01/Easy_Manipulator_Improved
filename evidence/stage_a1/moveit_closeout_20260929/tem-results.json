@@ -1,0 +1,315 @@
+{
+  "cycles": 20,
+  "completed": 20,
+  "passed": true,
+  "expected_crash": false,
+  "library": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10",
+  "executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+  "executable_sha256": "297d30146548bf00b11ef8a62db6436a09d5b31420c6f08707bd83023c55cec9",
+  "command": [
+    "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro"
+  ],
+  "library_sha256": "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc",
+  "results": [
+    {
+      "cycle": 1,
+      "pid": 11121,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 2,
+      "pid": 11134,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 3,
+      "pid": 11147,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 4,
+      "pid": 11160,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 5,
+      "pid": 11173,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 6,
+      "pid": 11186,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 7,
+      "pid": 11199,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 8,
+      "pid": 11212,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 9,
+      "pid": 11225,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 10,
+      "pid": 11238,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 11,
+      "pid": 11251,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 12,
+      "pid": 11264,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 13,
+      "pid": 11277,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 14,
+      "pid": 11290,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 15,
+      "pid": 11307,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 16,
+      "pid": 11320,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 17,
+      "pid": 11333,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 18,
+      "pid": 11346,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 19,
+      "pid": 11359,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 20,
+      "pid": 11372,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/repro_build/workcell_tem_teardown_repro",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    }
+  ]
+}

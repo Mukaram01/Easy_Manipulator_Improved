@@ -22,6 +22,7 @@ from physical_destination import (
 )
 from task_intent_v2 import (
     TOOL_CAPABILITY_MAP,
+    STRATEGY_DIR,
     canonical_hash,
     normalized_intent_hash,
     parse_validate_normalize,
@@ -29,6 +30,61 @@ from task_intent_v2 import (
 
 
 STRATEGY_ORDER = ("top_2f", "side_grip_basic", "finger_pinch_basic")
+
+
+def _catalog_strategy(strategy_ref):
+    path = STRATEGY_DIR / f"{strategy_ref}.yaml"
+    if not path.is_file():
+        raise ValueError(f"strategy catalog entry missing: {strategy_ref}")
+    payload = (yaml.safe_load(path.read_text()) or {}).get("grasp_strategy") or {}
+    if payload.get("id") != strategy_ref:
+        raise ValueError(f"strategy catalog identity mismatch: {strategy_ref}")
+    return payload
+
+
+def _candidate_constraints(strategy_ref, effective_grasp):
+    """Generator constraints: the approach distance, plus the authored TCP offset for the pinch."""
+    constraints = {"approach_distance_m": effective_grasp["approach"]["distance_m"]}
+    offset = effective_grasp.get("tcp_offset_xyz_m", [0.0, 0.0, 0.0])
+    if strategy_ref == "finger_pinch_basic" and any(abs(v) > 1e-12 for v in offset):
+        constraints["tcp_offset_xyz_m"] = list(offset)
+    return constraints
+
+
+def _effective_intent_for_strategy(normalized, strategy_ref):
+    """Return the exact grasp constraints evaluated for one strategy.
+
+    EXACT and the requested PREFERRED strategy consume authored constraints
+    unchanged. AUTO choices and PREFERRED substitute strategies use the
+    selected strategy's reviewed catalog geometry instead of inheriting a
+    different strategy's axis/orientation.
+    """
+    effective = copy.deepcopy(normalized)
+    grasp = effective["pick"]["grasp"]
+    requested = grasp.get("strategy_ref")
+    if grasp["policy"] == "EXACT" or (
+            grasp["policy"] == "PREFERRED" and strategy_ref == requested):
+        return effective
+
+    catalog = _catalog_strategy(strategy_ref)
+    grasp["strategy_ref"] = strategy_ref
+    grasp["approach"] = {
+        "axis": catalog["approach_axis"],
+        "distance_m": catalog["approach_distance_m"],
+    }
+    grasp["orientation"] = {
+        "mode": catalog["orientation_mode"],
+        "allowed_roll_deg": list(catalog.get("allowed_roll_angles_deg", [0.0])),
+        "allowed_yaw_deg": list(catalog.get("allowed_yaw_angles_deg", [0.0, 90.0, 180.0, 270.0])),
+        "tolerance_rad": [0.0, 0.0, 0.0],
+    }
+    grasp["tcp_offset_xyz_m"] = list(catalog.get("tool_frame_offset_xyz", [0.0, 0.0, 0.0]))
+    grasp["tcp_offset_rpy_rad"] = list(catalog.get("tool_frame_offset_rpy", [0.0, 0.0, 0.0]))
+    grasp["lift"] = {
+        "axis": "z_up",
+        "distance_m": catalog["retreat_distance_m"],
+    }
+    return effective
 
 
 def _finite(value):
@@ -41,11 +97,12 @@ def _vector(value, size):
             and all(_finite(item) for item in value))
 
 
-def observation_rejection(observation, filters, now):
+def observation_rejection(observation, filters, now, max_age_cap=None):
     """Return (code, reason) for the first eligibility check that fails, else None.
 
     This is the only object-eligibility rule set; selection and operator
-    explanations both use it.
+    explanations both use it. ``max_age_cap`` is the source's freshness ceiling
+    (observation_age_cap); the task's max_age_seconds can only tighten it.
     """
     if not isinstance(observation, dict):
         return "OBSERVATION_INVALID", "Observation is not a mapping."
@@ -53,6 +110,7 @@ def observation_rejection(observation, filters, now):
     timestamp = observation.get("timestamp")
     pose = observation.get("pose")
     dimensions = observation.get("dimensions")
+    max_age = min(filters.get("max_age_seconds") or math.inf, math.inf if max_age_cap is None else max_age_cap)
     if not isinstance(observation.get("id"), str) or not observation["id"]:
         return "OBSERVATION_INVALID", "Observation has no identifier."
     if observation.get("frame_id") != "world":
@@ -67,8 +125,8 @@ def observation_rejection(observation, filters, now):
             "Confidence is unavailable or below the task minimum.")
     if not _finite(timestamp) or timestamp > now:
         return "TIMESTAMP_INVALID", "Observation timestamp is missing or in the future."
-    if now - timestamp > (filters.get("max_age_seconds") or math.inf):
-        return "OBSERVATION_STALE", "Observation is older than the task's maximum age."
+    if now - timestamp > max_age:
+        return "OBSERVATION_STALE", "Observation is older than the task's maximum age or the source's freshness limit."
     if not _vector(pose, 7) or math.hypot(*pose[3:]) < 1e-9:
         return "POSE_INVALID", "Observation pose is not finite."
     if not _vector(dimensions, 3) or any(v <= 0 for v in dimensions):
@@ -76,16 +134,38 @@ def observation_rejection(observation, filters, now):
     for key, code in (("class_id", "CLASS_NOT_TARGETED"), ("color", "COLOR_NOT_TARGETED")):
         if filters.get(key) not in (None, "") and observation.get(key) != filters[key]:
             return code, f"{key} {observation.get(key)!r} is not the task target {filters[key]!r}."
+    if observation.get("class_id") in (filters.get("exclude_class_ids") or []):
+        # never a pick target; an obstacle only with validated geometry and frame
+        return "CLASS_EXCLUDED", f"class_id {observation.get('class_id')!r} is excluded by the task."
     return None
 
 
-def _eligible_observations(observations, filters, now):
+def _observation_priority(item):
+    """Prefer confidence, then physically exposed/high targets, then stable ID.
+
+    Missing-confidence simulator/perception observations previously fell back to
+    lexical IDs, which makes a piled-bin search spend its budget on buried
+    objects first. Height is only a deterministic search-order hint: complete
+    collision-aware cycle planning remains the acceptance authority.
+    """
+    try:
+        from perceived_object_grasp_plan import build_grasp_target, oriented_box_extents
+        z_extent = oriented_box_extents(build_grasp_target(item))[2]
+        top_z = float(item["pose"][2]) + float(z_extent) / 2.0
+    except (KeyError, TypeError, ValueError, IndexError):
+        top_z = float(item.get("pose", [0.0, 0.0, -math.inf])[2])
+    confidence = item.get("confidence")
+    return (confidence is None, -(confidence or 0.0), -top_z, item["id"])
+
+
+def _eligible_observations(observations, filters, now, max_age_cap=None):
     eligible = [copy.deepcopy(observation) for observation in observations
-                if observation_rejection(observation, filters, now) is None]
-    return sorted(eligible, key=lambda item: (item["confidence"] is None, -(item["confidence"] or 0.0), item["id"]))
+                if observation_rejection(observation, filters, now, max_age_cap) is None]
+    return sorted(eligible, key=_observation_priority)
 
 
-def select_observations(intent, environment, observations, now):
+def select_observations(intent, environment, observations, now, max_age_cap=None):
+    """``max_age_cap``: the actual producer's freshness ceiling (task_intent_v2.observation_age_cap)."""
     from runtime_pick_inputs import zone, contained
     import perceived_object_grasp_plan as geometry
     selection = intent['pick']['selection']
@@ -94,20 +174,20 @@ def select_observations(intent, environment, observations, now):
             (source_type == 'manual_simulated' and source_ref == selection['zone_ref'])):
         raise ValueError('PICK_SOURCE_UNSUPPORTED: select detected_objects/v1 or the manual simulated pick region')
     region = zone({'environment': environment}, selection['zone_ref'])
-    return [item for item in _eligible_observations(observations, selection['object_filter'], now)
+    return [item for item in _eligible_observations(observations, selection['object_filter'], now, max_age_cap)
             if contained(item, region, geometry)]
 
 
-def explain_observations(intent, environment, observations, now):
+def explain_observations(intent, environment, observations, now, max_age_cap=None):
     """Per-observation selection decisions, using exactly select_observations' rules."""
     from runtime_pick_inputs import zone, contained
     import perceived_object_grasp_plan as geometry
     selection = intent['pick']['selection']
     region = zone({'environment': environment}, selection['zone_ref'])
-    selected = {item['id'] for item in select_observations(intent, environment, observations, now)}
+    selected = {item['id'] for item in select_observations(intent, environment, observations, now, max_age_cap)}
     decisions = []
     for observation in observations:
-        rejection = observation_rejection(observation, selection['object_filter'], now)
+        rejection = observation_rejection(observation, selection["object_filter"], now, max_age_cap)
         if rejection is None and not contained(observation, region, geometry):
             rejection = ("OUTSIDE_PICK_ZONE", f"Outside pick zone {selection['zone_ref']}.")
         accepted = rejection is None and observation.get('id') in selected
@@ -252,14 +332,27 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                               'Observed objects changed; explicitly resolve the saved task again.')
         chosen = checked['grasp_resolution']
         observation = next(item for item in eligible if item['id'] == chosen['selected_object_id'])
+        try:
+            effective_intent = _effective_intent_for_strategy(
+                normalized, chosen['selected_strategy_ref'])
+        except (ValueError, KeyError, TypeError) as exc:
+            return _readiness(result, 'BLOCKED', 'GRASP_CANDIDATE_INVALID', str(exc))
+        effective_grasp = effective_intent['pick']['grasp']
+        if (chosen.get('effective_grasp') is not None and
+                chosen['effective_grasp'] != effective_grasp):
+            return _readiness(result, 'BLOCKED', 'TASK_GRASP_EFFECTIVE_CHANGED',
+                              'Resolved strategy-effective grasp constraints changed; resolve again.')
         candidates = generate_strategy_candidates(chosen['selected_strategy_ref'], observation,
-            {'approach_distance_m': grasp['approach']['distance_m']})
+            _candidate_constraints(chosen['selected_strategy_ref'], effective_grasp))
         candidate = next((item for item in candidates if item.candidate_id == chosen['selected_candidate_id']), None)
         if candidate is None:
             return _readiness(result, 'BLOCKED', 'TASK_CANDIDATE_CHANGED', 'Resolved candidate is no longer available.')
-        evaluation = cycle_evaluator({'intent': copy.deepcopy(normalized), 'cell': copy.deepcopy(cell),
+        evaluation = cycle_evaluator({'intent': effective_intent, 'cell': copy.deepcopy(cell),
             'strategy_ref': candidate.strategy_ref, 'observation': copy.deepcopy(observation),
-            'candidate': candidate, 'destination': copy.deepcopy(checked['place_resolution']['destination'])})
+            'candidate': candidate, 'destination': copy.deepcopy(checked['place_resolution']['destination']),
+            'approach_ik': copy.deepcopy(chosen.get('approach_ik')),
+            'transfer_ik_seed': copy.deepcopy(chosen.get('transfer_ik_seed')),
+            'extraction_intent': copy.deepcopy(chosen.get('extraction_intent'))})
         checks = copy.deepcopy(evaluation.get('checks', []))
         checked['readiness']['checks'] = checks
         if evaluation.get('success') is not True or any(c.get('status') in ('FAIL', 'BLOCKED') for c in checks):
@@ -290,19 +383,30 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                 world_pose={'xyz_m': list(destination['pose_xyz']), 'rpy_rad': list(destination['pose_rpy'])},
                 destination=copy.deepcopy(destination))
         for strategy in strategies:
+            try:
+                effective_intent = _effective_intent_for_strategy(normalized, strategy)
+                effective_grasp = effective_intent["pick"]["grasp"]
+            except (ValueError, KeyError, TypeError) as exc:
+                return _readiness(result, "BLOCKED", "GRASP_CANDIDATE_INVALID", str(exc))
             for observation in eligible:
                 try:
                     candidates = generate_strategy_candidates(
-                        strategy, observation,
-                        {"approach_distance_m": grasp["approach"]["distance_m"]})
+                        strategy, observation, _candidate_constraints(strategy, effective_grasp))
                 except (ValueError, KeyError, TypeError) as exc:
                     return _readiness(result, "BLOCKED", "GRASP_CANDIDATE_INVALID", str(exc))
                 for candidate in candidates:
                     evaluation = cycle_evaluator({
-                        "intent": copy.deepcopy(normalized), "cell": copy.deepcopy(cell),
+                        "intent": copy.deepcopy(effective_intent), "cell": copy.deepcopy(cell),
                         "strategy_ref": strategy, "observation": copy.deepcopy(observation),
                         "candidate": candidate, "destination": copy.deepcopy(destination),
                     })
+                    # A phased evaluator may defer this candidate without
+                    # testing it. Keep control flow out of feasibility evidence.
+                    if evaluation.get("deferred") is True:
+                        if evaluation.get("stop_search") or grasp["policy"] == "EXACT":
+                            return _readiness(result, "BLOCKED", last_failure["reason_code"],
+                                              last_failure["reason"])
+                        continue
                     checks = copy.deepcopy(evaluation.get("checks", []))
                     success = evaluation.get("success") is True and not any(
                         check.get("status") in ("FAIL", "BLOCKED") for check in checks)
@@ -312,12 +416,25 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                         "checks": checks,
                         "reason_code": evaluation.get("reason_code"),
                         "reason": evaluation.get("reason"),
+                        "extraction_attempts": copy.deepcopy(evaluation.get("extraction_attempts", [])),
                     })
                     result["readiness"]["checks"] = checks
+                    if evaluation.get("stop_search"):
+                        return _readiness(
+                            result, "BLOCKED",
+                            evaluation.get("reason_code") or "SEARCH_BUDGET_EXHAUSTED",
+                            evaluation.get("reason") or "Candidate search budget exhausted.")
                     if success:
                         grasp_resolution.update(selected_strategy_ref=strategy,
                                                 selected_object_id=observation["id"],
-                                                selected_candidate_id=candidate.candidate_id)
+                                                selected_candidate_id=candidate.candidate_id,
+                                                effective_grasp=copy.deepcopy(effective_grasp))
+                        if evaluation.get('extraction_intent') is not None:
+                            grasp_resolution['extraction_intent'] = copy.deepcopy(evaluation['extraction_intent'])
+                        if evaluation.get('approach_ik') is not None:
+                            grasp_resolution['approach_ik'] = copy.deepcopy(evaluation['approach_ik'])
+                        if evaluation.get('transfer_ik_seed') is not None:
+                            grasp_resolution['transfer_ik_seed'] = copy.deepcopy(evaluation['transfer_ik_seed'])
                         if grasp["policy"] == "PREFERRED" and strategy != requested:
                             grasp_resolution["fallback"] = {"used": True, **preferred_failure}
                         fallbacks = [block["fallback"] for block in (grasp_resolution, place_resolution)

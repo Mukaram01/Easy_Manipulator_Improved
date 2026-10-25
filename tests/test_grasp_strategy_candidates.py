@@ -192,3 +192,29 @@ def test_finger_pinch_basic_rejects_unconsumed_authored_constraints(field, value
     with pytest.raises(ValueError, match='unsupported|incompatible'):
         generate_strategy_candidates('finger_pinch_basic', {},
                                      {'approach_distance_m': .07, field: value})
+
+
+def test_finger_pinch_basic_honours_the_authored_tool_frame_offset_along_the_approach():
+    from grasp_strategy_candidates import generate_strategy_candidates
+    observation = dict(id='part', frame_id='world', dimensions=[.025]*3, pose=[.4, -.2, .0125, 0., 0., 0., 1.])
+    base = {'approach_distance_m': .09, 'approach_axis': 'tool_z', 'orientation_mode': 'tool_aligned'}
+    plain = generate_strategy_candidates('finger_pinch_basic', observation, base)
+    raised = generate_strategy_candidates('finger_pinch_basic', observation, dict(base, tcp_offset_xyz_m=[0., 0., -.004]))
+    for a, b in zip(plain, raised):
+        # Tool Z points down into the upright part: -4 mm along it raises contact and approach by 4 mm.
+        assert b.grasp_pose[:3] == pytest.approx([a.grasp_pose[0], a.grasp_pose[1], a.grasp_pose[2]+.004])
+        assert b.approach_pose[:3] == pytest.approx([a.approach_pose[0], a.approach_pose[1], a.approach_pose[2]+.004])
+        assert b.grasp_pose[3:] == pytest.approx(a.grasp_pose[3:])
+        assert b.effective == dict(base, tcp_offset_xyz_m=[0., 0., -.004]) and a.effective == base
+    for bad in ([0., 0.], [0., 0., float('nan')], [0., 0., True], 'down'):
+        with pytest.raises(ValueError):
+            generate_strategy_candidates('finger_pinch_basic', observation, dict(base, tcp_offset_xyz_m=bad))
+    with pytest.raises(ValueError, match='unsupported'):
+        generate_strategy_candidates('side_grip_basic', observation, dict(base, tcp_offset_xyz_m=[0., 0., -.004]))
+
+
+def test_catalog_pinch_offset_centres_the_loaded_pad_band():
+    import yaml
+    catalog = yaml.safe_load((Path(__file__).parents[1] / 'catalog/grasp_strategies/finger_pinch_basic.yaml').read_text())
+    assert catalog['grasp_strategy']['tool_frame_offset_xyz'] == [0.0, 0.0, -0.004]
+    assert catalog['grasp_strategy']['tool_frame_offset_rpy'] == [0.0, 0.0, 0.0]

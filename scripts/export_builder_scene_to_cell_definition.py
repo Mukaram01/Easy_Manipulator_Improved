@@ -484,7 +484,7 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         "end_effector": {
             "id": ee_id,
             "name": ee_name,
-            "capability": ee_meta.get("capability_id"),
+            "capability": ee_env.get("capability") or ee_meta.get("capability_id"),
             "type": ee_env.get("type") or ee_meta.get("family") or "custom",
             "grasp_frame": ee_env.get("grasp_frame", ee_env.get("base_link", "tool0")),
             "parent_link": ee_parent_link,

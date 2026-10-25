@@ -29,6 +29,11 @@ QString package_prefix_check_command(
 QString build_launch_shell_command(
   const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root);
+// One bounded qualified-physics pick/place cycle of the saved cell (Stage-A runner, targeted full-cycle).
+// runtime_env is the workstation's qualified physics runtime (overlays, physics root, prior evidence);
+// empty when it is not configured, in which case no command is produced.
+QString build_physics_cycle_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir);
 QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root, const QString & output_dir,
   int domain_id, bool launch_rviz);

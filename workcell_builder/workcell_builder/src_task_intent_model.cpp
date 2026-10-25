@@ -41,7 +41,8 @@ std::optional<T> optional_scalar(const YAML::Node & node, const char * key)
 }
 double number_or(const YAML::Node & node, const char * key, double fallback = 0.0)
 {
-  return node && node.IsMap() && node[key] ? node[key].as<double>() : fallback;
+  // An explicit null (e.g. an aperture not yet bound to a tool capability) is absent, not a number.
+  return node && node.IsMap() && node[key] && !node[key].IsNull() ? node[key].as<double>() : fallback;
 }
 std::string json_quote(const std::string & value)
 {

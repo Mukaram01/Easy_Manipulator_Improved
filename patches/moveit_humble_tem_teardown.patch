@@ -1,0 +1,37 @@
+diff --git a/trajectory_execution_manager/src/trajectory_execution_manager.cpp b/trajectory_execution_manager/src/trajectory_execution_manager.cpp
+index 440717a..bd1be8d 100644
+--- a/trajectory_execution_manager/src/trajectory_execution_manager.cpp
++++ b/trajectory_execution_manager/src/trajectory_execution_manager.cpp
+@@ -77,10 +77,31 @@ TrajectoryExecutionManager::~TrajectoryExecutionManager()
+ {
+   run_continuous_execution_thread_ = false;
+   stopExecution(true);
+-  private_executor_->cancel();
++  // The continuous worker can retain controller handles. Join it while its
++  // controller callbacks still have an executor, before releasing resources.
++  if (continuous_execution_thread_ && continuous_execution_thread_->joinable())
++    continuous_execution_thread_->join();
++  continuous_execution_thread_.reset();
++  while (!continuous_execution_queue_.empty())
++  {
++    delete continuous_execution_queue_.front();
++    continuous_execution_queue_.pop_front();
++  }
++  if (private_executor_)
++    private_executor_->cancel();
+   if (private_executor_thread_.joinable())
+     private_executor_thread_.join();
+   private_executor_.reset();
++
++  // Callback groups retain weak client control blocks whose deleters live in
++  // the controller plugin. Destroy the owned handles/manager/node before the
++  // loader, not in the reverse declaration order. Keep the public ABI intact.
++  clear();
++  active_handles_.clear();
++  callback_handler_.reset();
++  controller_manager_.reset();
++  controller_mgr_node_.reset();
++  controller_manager_loader_.reset();
+ }
+ 
+ void TrajectoryExecutionManager::initialize()

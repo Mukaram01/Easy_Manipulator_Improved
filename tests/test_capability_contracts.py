@@ -98,6 +98,16 @@ class CapabilityFixturesTests(unittest.TestCase):
             self.assertTrue(path.exists(), f"Missing {subdir}")
             self.assertTrue(path.is_dir(), f"Not a directory: {subdir}")
 
+    def test_end_effector_hold_block_is_validated(self) -> None:
+        import copy
+        import yaml
+        contract = yaml.safe_load((CATALOG_DIR / "end_effectors" / "ee_robotiq_2f.yaml").read_text())
+        self.assertEqual(validator.validate_contract(contract), ([], []))
+        broken = copy.deepcopy(contract)
+        broken["end_effector"]["hold"]["actuation"]["commanded_grasp_force_n"] = 500
+        errors, _ = validator.validate_contract(broken)
+        self.assertTrue(any("grasp_force_range_n" in e for e in errors), errors)
+
     def test_catalog_directory_validation(self) -> None:
         results = validator.validate_path(CATALOG_DIR)
         self.assertGreaterEqual(len(results), 10)

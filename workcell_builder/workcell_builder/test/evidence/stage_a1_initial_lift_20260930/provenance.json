@@ -1,0 +1,177 @@
+{
+  "schema": "workcell_saved_controller_regression/v1",
+  "scope": "Actual Stage-A1 PREPLAN_LIFT scene and trajectory; offline regression only, not runtime acceptance.",
+  "source_capture": "stage-a1-closeout-20260930-confirmation/01-resolve",
+  "certificate": "certificate_1790725993889876818_1",
+  "request": "1790725993800509191_6",
+  "transformation": "Only URDF mesh filename prefixes change from the captured workspace install paths to package:// URIs; geometry, scales, origins, joints and all other bytes are unchanged. Scene/trajectory/request CDR and SRDF are byte-identical.",
+  "conditional_policy": "CDR loses DecideContactFn values. The test restores only initial typed PileContact pairs present in the captured request and verified by complete strict initial contact enumeration.",
+  "files": {
+    "robot.urdf": {
+      "source_path": "/home/user/workcell_ws/stage-a1-closeout-20260930-confirmation/01-resolve/resolve/qualification.urdf",
+      "source_sha256": "63cd9395eeefcbc7bd7d8ccca329343b8e6e5fe0b6ca71f6a40fb5d73a4e2487",
+      "fixture_sha256": "06fd8e9bfdf88c3ae84db566faa9aa0dd15c703c10bcc9e49d92edcb94faf0e4",
+      "bytes": 28944
+    },
+    "robot.srdf": {
+      "source_path": "/home/user/workcell_ws/stage-a1-closeout-20260930-confirmation/01-resolve/resolve/qualification.srdf",
+      "source_sha256": "1ab6c7792467f9e43ec9e121eaba1c92ef1f000266f82874e2e96570ed305caf",
+      "fixture_sha256": "1ab6c7792467f9e43ec9e121eaba1c92ef1f000266f82874e2e96570ed305caf",
+      "bytes": 10793
+    },
+    "scene.cdr": {
+      "source_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-confirmation-trace/certificate_1790725993889876818_1.scene.cdr",
+      "source_sha256": "5022f40ded837425eece592bfd9c3bd5885a0e0e2fbe82b1c08556e2ff2761d9",
+      "fixture_sha256": "5022f40ded837425eece592bfd9c3bd5885a0e0e2fbe82b1c08556e2ff2761d9",
+      "bytes": 14073
+    },
+    "trajectory.cdr": {
+      "source_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-confirmation-trace/certificate_1790725993889876818_1.trajectory.cdr",
+      "source_sha256": "ec6a2629ac3f5ccf040c2b53b6edfe85481dc97a28eadde04c78ab9924f021be",
+      "fixture_sha256": "ec6a2629ac3f5ccf040c2b53b6edfe85481dc97a28eadde04c78ab9924f021be",
+      "bytes": 7908
+    },
+    "request.cdr": {
+      "source_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-confirmation-trace/1790725993800509191_6.request.cdr",
+      "source_sha256": "c3415ed15e7956f8d82655b4e2b3ac67222fcc71747c326f922b17b1b03bb6e0",
+      "fixture_sha256": "c3415ed15e7956f8d82655b4e2b3ac67222fcc71747c326f922b17b1b03bb6e0",
+      "bytes": 2292
+    },
+    "captured-result.txt": {
+      "source_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-confirmation-trace/certificate_1790725993889876818_1.result.txt",
+      "source_sha256": "1b438e0b1aa11f37977a577d95e882966d06224e930ac97702e1be59ac66d123",
+      "fixture_sha256": "1b438e0b1aa11f37977a577d95e882966d06224e930ac97702e1be59ac66d123",
+      "bytes": 85
+    }
+  },
+  "collision_meshes": [
+    {
+      "link": "base_link_inertia",
+      "source_uri": "file:///home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/collision/base.stl",
+      "fixture_uri": "package://ur_description/meshes/ur5/collision/base.stl",
+      "sha256": "81c2ad265f7140313c305d9bfdf98d5b00f5978e9b01acbf12243602dc4dd151",
+      "bytes": 11834,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "shoulder_link",
+      "source_uri": "file:///home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/collision/shoulder.stl",
+      "fixture_uri": "package://ur_description/meshes/ur5/collision/shoulder.stl",
+      "sha256": "1d62e23a8c3ff9e6334fb157c805e6202037bcfca65bc6a36c5c9ae866751b3b",
+      "bytes": 33784,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "upper_arm_link",
+      "source_uri": "file:///home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/collision/upperarm.stl",
+      "fixture_uri": "package://ur_description/meshes/ur5/collision/upperarm.stl",
+      "sha256": "55c11ac0ad1e144f230849b2033532e8b140b2e818ea497296d08dfb88757440",
+      "bytes": 58884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "forearm_link",
+      "source_uri": "file:///home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/collision/forearm.stl",
+      "fixture_uri": "package://ur_description/meshes/ur5/collision/forearm.stl",
+      "sha256": "8e79aa80a532494ba5320c30b40363ff63d228e3d59e2904703dca341dcba2ac",
+      "bytes": 52584,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "wrist_1_link",
+      "source_uri": "file:///home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/collision/wrist1.stl",
+      "fixture_uri": "package://ur_description/meshes/ur5/collision/wrist1.stl",
+      "sha256": "0a1fd12150140efdee91650dcb4c2d0443065551a9207a2d2dbde58ff1fb4eb7",
+      "bytes": 35184,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "wrist_2_link",
+      "source_uri": "file:///home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/collision/wrist2.stl",
+      "fixture_uri": "package://ur_description/meshes/ur5/collision/wrist2.stl",
+      "sha256": "c1d9f7843366068cb331f3f5c43fa716d3eceeb8c80216eccbbc878905dab123",
+      "bytes": 35184,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "wrist_3_link",
+      "source_uri": "file:///home/user/workcell_ws/install/ur_description/share/ur_description/meshes/ur5/collision/wrist3.stl",
+      "fixture_uri": "package://ur_description/meshes/ur5/collision/wrist3.stl",
+      "sha256": "cf7220397b56f1d3047be9465eea1181d471b40fc82728052e31c97588585b4b",
+      "bytes": 22384,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_base_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_base_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_base_link.stl",
+      "sha256": "50ef681abf67a1ba26742a5ecf4f0bd2ee7461ce1b3aeda96af7227a767f15cc",
+      "bytes": 1862984,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger1_knuckle_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "sha256": "3e451aed9d7228ab26399c3d972f522f709b4d91607d5fd52e747c3c4942d177",
+      "bytes": 63884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger2_knuckle_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+      "sha256": "3e451aed9d7228ab26399c3d972f522f709b4d91607d5fd52e747c3c4942d177",
+      "bytes": 63884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger1_finger_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "sha256": "039775f2845e76c2d2071f17456e254dab8670b379fa6e5b8944c3dc975dd3a1",
+      "bytes": 95884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger2_finger_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+      "sha256": "039775f2845e76c2d2071f17456e254dab8670b379fa6e5b8944c3dc975dd3a1",
+      "bytes": 95884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger1_inner_knuckle_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "sha256": "072d6a173cbd8385b7a90bd2d46c87c906b93bddc5e2b49747be184bb93ef658",
+      "bytes": 104884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger2_inner_knuckle_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+      "sha256": "072d6a173cbd8385b7a90bd2d46c87c906b93bddc5e2b49747be184bb93ef658",
+      "bytes": 104884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger1_finger_tip_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "sha256": "5663b94049ead2f0d8a7e6a36a327e0e67ccf03d1423d52110db5b9ce3627eec",
+      "bytes": 121884,
+      "scale": "1 1 1"
+    },
+    {
+      "link": "gripper_finger2_finger_tip_link",
+      "source_uri": "file:///home/user/workcell_ws/install/robotiq_85_description/share/robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "fixture_uri": "package://robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+      "sha256": "5663b94049ead2f0d8a7e6a36a327e0e67ccf03d1423d52110db5b9ce3627eec",
+      "bytes": 121884,
+      "scale": "1 1 1"
+    }
+  ]
+}

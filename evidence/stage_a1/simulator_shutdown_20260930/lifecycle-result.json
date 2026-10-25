@@ -1,0 +1,283 @@
+{
+  "checked_wall_ns": 1790806345571915075,
+  "scope": "Owned simulator wrapper lifecycle correction; native real Gazebo/ROS control proof only, not Stage-A gate acceptance. No bridge, MoveGroup, planning or motion goals in fixed native cycles.",
+  "implementation": [
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scripts/simulator_backend.py",
+      "sha256": "255ff862959c5f81b837e99349000970775c46d6c2221f1c665d44e642d7f8c7",
+      "bytes": 45401
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/tests/test_simulator_backend.py",
+      "sha256": "8d12d9361f7e578385ec9ab8f99b3b4ef15ca6560aaf127577266fa07d3b1036",
+      "bytes": 34708
+    }
+  ],
+  "tests": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/lifecycle-red.log",
+      "sha256": "bb5f6fe7ec5b22f2f73cafa9d90e624e89d7bb409fe2e1924ae0f65b56fd7b2b",
+      "bytes": 2843
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/lifecycle-green.log",
+      "sha256": "b8970d7e5d0d90d3c5bcff1dd559f4e4d9a3b58cf4e9aad29eeb7ef3ea629455",
+      "bytes": 113
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/backend-tests.log",
+      "sha256": "81f747a8952bba80656b669a2b7a6c9136af6ef64c037a82d483f5f0d60a5b10",
+      "bytes": 99
+    }
+  ],
+  "red": "Both focused tests failed on prior implementation: duplicated child interrupt and forced kill hidden as exit0.",
+  "green": "2 focused cases passed; entire simulator_backend test file69passed in5.02s.",
+  "prior_stage_run": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/active-plan/shutdown-timeline.json",
+    "sha256": "eb4167cac2c3078eb89852e55bc7dcadae42d86ea61aa5136e198fdb688e26c8",
+    "bytes": 5441
+  },
+  "native_results": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-results.json",
+    "sha256": "9768f80979bbc8969d865dcca69144997ca22e61567b543098148050a174bf90",
+    "bytes": 2371
+  },
+  "native_probe": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed_native_backend.py",
+    "sha256": "31f1f3855385eef581b76af04a3d070fb4d6f6670f840eea044402f0fb775ead",
+    "bytes": 3986
+  },
+  "native_cycles": [
+    {
+      "cycle": 1,
+      "wrapper_pid": 78239,
+      "rsp_pid": 78238,
+      "backend_sha256": "255ff862959c5f81b837e99349000970775c46d6c2221f1c665d44e642d7f8c7",
+      "forced_cleanup": false,
+      "server_pid": 78252,
+      "controllers_active": true,
+      "server_argv": [
+        "ign gazebo -s -r /home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/world.sdf -v 3",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "signal_wall_ns": 1790806267141578584,
+      "repeated_signal_sent": true,
+      "wrapper_returncode": 0,
+      "shutdown_seconds": 0.2752408029991784,
+      "server_still_live": false,
+      "passed": true,
+      "rsp_returncode": 0
+    },
+    {
+      "cycle": 2,
+      "wrapper_pid": 78464,
+      "rsp_pid": 78463,
+      "backend_sha256": "255ff862959c5f81b837e99349000970775c46d6c2221f1c665d44e642d7f8c7",
+      "forced_cleanup": false,
+      "server_pid": 78477,
+      "controllers_active": true,
+      "server_argv": [
+        "ign gazebo -s -r /home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/world.sdf -v 3",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "signal_wall_ns": 1790806275630587525,
+      "repeated_signal_sent": true,
+      "wrapper_returncode": 0,
+      "shutdown_seconds": 0.4897495990007883,
+      "server_still_live": false,
+      "passed": true,
+      "rsp_returncode": 0
+    },
+    {
+      "cycle": 3,
+      "wrapper_pid": 78687,
+      "rsp_pid": 78686,
+      "backend_sha256": "255ff862959c5f81b837e99349000970775c46d6c2221f1c665d44e642d7f8c7",
+      "forced_cleanup": false,
+      "server_pid": 78700,
+      "controllers_active": true,
+      "server_argv": [
+        "ign gazebo -s -r /home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/world.sdf -v 3",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "signal_wall_ns": 1790806289648438756,
+      "repeated_signal_sent": true,
+      "wrapper_returncode": 0,
+      "shutdown_seconds": 0.37519342199811945,
+      "server_still_live": false,
+      "passed": true,
+      "rsp_returncode": 0
+    }
+  ],
+  "native_inputs": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/native.log",
+      "sha256": "6594775ca6295eecf5866ae38870eddea4e8fa045816a196794ef966ea220447",
+      "bytes": 24374
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/server.maps",
+      "sha256": "4caa8e2533c8730d441109afc18b6fc1c77d3aa8967f4feda59d1c141ab45019",
+      "bytes": 168261
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/spec.json",
+      "sha256": "c080c9f1a02deb24d6050150b91f56a1c0566da9fb487ad6ec33f3ca938402bf",
+      "bytes": 1935
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/world.sdf",
+      "sha256": "a95bab87afc4257f812f13073d86d780eca3a278b6fffe334f435eddf928f747",
+      "bytes": 12054
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/robot.urdf",
+      "sha256": "5e180e2fd3acaaffb40095350b0344a7b3b324395f348f896cc2ba78b99451ac",
+      "bytes": 30727
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/controllers.yaml",
+      "sha256": "b50fa879083c3f7769fe59fb476b40625957453a5b55bf17888b340dcab1ae7b",
+      "bytes": 1390
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/receipt.json",
+      "sha256": "6711d80c32d7d4197308960249e651eaca5f914a21a3d14388bd7891dc38e76c",
+      "bytes": 2078
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-1/rsp.yaml",
+      "sha256": "042ff3efac53b0675e1cee8aa6856f3819897c9e41bcea1771c1c05efd23d8e0",
+      "bytes": 32922
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/native.log",
+      "sha256": "d102f5a469d4ab88ad459a97f3d19e08929d4184b4cbb036f1e293fa10991360",
+      "bytes": 23942
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/server.maps",
+      "sha256": "6f1eb3e4eca43174b64dbb4d3d40d1ce68c024399a892fdccd69f73cbcefb898",
+      "bytes": 168497
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/spec.json",
+      "sha256": "c0e3395eaf218a22c181247f732442804b321052d83209bb020540c6bc30616c",
+      "bytes": 1935
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/world.sdf",
+      "sha256": "35d93515d633d4c6e2bc174cae5e78aeca293fc4aeeb368f128a8770bc5e6c3b",
+      "bytes": 12054
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/robot.urdf",
+      "sha256": "86b37a27aba50b166371e7064f7e2892d103eef801ce501ab7d045f4749ba85e",
+      "bytes": 30727
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/controllers.yaml",
+      "sha256": "b50fa879083c3f7769fe59fb476b40625957453a5b55bf17888b340dcab1ae7b",
+      "bytes": 1390
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/receipt.json",
+      "sha256": "2fb976077653c22a40b443863dd4afc6ddc727b89a2ff049b31748bc6202516b",
+      "bytes": 2079
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-2/rsp.yaml",
+      "sha256": "0dd639d1cd95554756eb545eb6a9b24a903cb0e838f5e2f5e14f46378529017e",
+      "bytes": 32922
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/native.log",
+      "sha256": "78839a1a9e0df4f2979d898c43840b9dafc0c1cf0eced6b041c49ff70dab4440",
+      "bytes": 24514
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/server.maps",
+      "sha256": "3e2132d0fe11fe50c2ab5f465361c4216913ce0f6f656c936602d653c25f83b2",
+      "bytes": 168379
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/spec.json",
+      "sha256": "95a4fc76652f489d6925cffc0f42bd51b3a1d41be84eff0355211ab789240407",
+      "bytes": 1935
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/world.sdf",
+      "sha256": "8b34c5740aa4f23b45c5ace78b655d8b1a4c5061375044bef4a62c43c2909d42",
+      "bytes": 12054
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/robot.urdf",
+      "sha256": "2b395d704702fea43e2275468c11de92c61a6b9dd7d01d3ee0dea42b46800636",
+      "bytes": 30727
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/controllers.yaml",
+      "sha256": "b50fa879083c3f7769fe59fb476b40625957453a5b55bf17888b340dcab1ae7b",
+      "bytes": 1390
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/receipt.json",
+      "sha256": "1729b0d3bdbaa49c55f8d5a8895c6d1f92bd4c043202f4a247e736cc3cb119d0",
+      "bytes": 2079
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-3/rsp.yaml",
+      "sha256": "7606ae9ce7dcf7f9e6c36bb1ab55bd61f302332777d8bdc3e0ba4ec74c4e0c60",
+      "bytes": 32922
+    }
+  ],
+  "no_remaining_diagnostic_processes": true,
+  "limitations": [
+    "The original long-run Gazebo stall was not reproduced in a short full idle baseline. Back-to-back signals can coalesce; world-only success does not disprove repeated-signal effects.",
+    "The fixed wrapper is proved to retain/reap its child and expose forced termination; it does not establish a repair of every native Gazebo deadlock.",
+    "The first full-probe starts were rejected for stale bridge test identity, disabled required commissioning execution parameter, then invalidDDS domain234. Those artifacts are preserved and excluded.",
+    "The changed backend/test hashes invalidate the prior bridge whole-file review. Independent review and fresh20native+5Memcheck qualification are still required before full-chain launch."
+  ]
+}

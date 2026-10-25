@@ -45,7 +45,8 @@ def generate_strategy_candidates(
     if strategy_ref not in {'top_2f', 'side_grip_basic', 'finger_pinch_basic'}:
         raise ValueError(f'unsupported grasp strategy: {strategy_ref}')
     allowed = ({'approach_distance_m'} if strategy_ref == 'top_2f' else
-               {'approach_distance_m', 'approach_axis', 'orientation_mode'})
+               {'approach_distance_m', 'approach_axis', 'orientation_mode'} |
+               ({'tcp_offset_xyz_m'} if strategy_ref == 'finger_pinch_basic' else set()))
     if set(grasp_intent) - allowed:
         raise ValueError(f'unsupported grasp constraints for {strategy_ref}')
     catalog = None
@@ -71,14 +72,22 @@ def generate_strategy_candidates(
         # Tool Z points into local +Z face; tool Y is the finger-closing axis.
         # Compose in object space so roll/pitch as well as yaw follow live truth.
         height = observation['dimensions'][2] / 2.0
+        # Authored TCP offset in the tool frame (tool Z into the part): honoured, never dropped.
+        offset = grasp_intent.get('tcp_offset_xyz_m', [0.0, 0.0, 0.0])
+        if (not isinstance(offset, (list, tuple)) or len(offset) != 3 or
+                any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in offset)):
+            raise ValueError('pinch TCP offset must be three finite meters')
         effective = dict(approach_distance_m=approach_distance,
                          approach_axis='tool_z', orientation_mode='tool_aligned')
+        if any(abs(v) > 1e-12 for v in offset):
+            effective['tcp_offset_xyz_m'] = [float(v) for v in offset]
+        shift = [float(v) for v in offset] + [0.0, 0.0, 0.0, 1.0]
         candidates = []
         for index, yaw in enumerate(catalog['allowed_yaw_angles_deg']):
             orientation = quaternion_from_rpy([math.pi, 0.0, math.radians(yaw)])
-            contact = compose_pose(observation['pose'], [0.0, 0.0, height] + orientation)
-            approach = compose_pose(observation['pose'],
-                                    [0.0, 0.0, height + approach_distance] + orientation)
+            contact = compose_pose(compose_pose(observation['pose'], [0.0, 0.0, height] + orientation), shift)
+            approach = compose_pose(compose_pose(observation['pose'],
+                                    [0.0, 0.0, height + approach_distance] + orientation), shift)
             candidates.append(GraspCandidate(
                 strategy_ref, f'{strategy_ref}::{index:03}', observation['id'],
                 tuple(contact), tuple(approach), dict(effective)))
