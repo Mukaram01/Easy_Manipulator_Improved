@@ -183,26 +183,44 @@ def migrate_v1(payload: dict[str, Any], environment: dict[str, Any] | None = Non
     return normalize_v2(model)
 
 
-# Source-specific observation freshness (pick.selection.source_type -> policy). The authored
-# object_filter.max_age_seconds may tighten, never exceed, its source's ceiling; every source is
-# compared in one wall-clock domain (sensor capture, replay capture or simulator measurement time)
-# and the resolver rejects observations stamped in the future.
-OBSERVATION_FRESHNESS_POLICY = {
+# Observation freshness by producer. Every producer stamps one wall-clock domain (sensor capture,
+# replay capture or simulator measurement time); the resolver rejects observations stamped in the future.
+OBSERVATION_PRODUCER_CEILING_S = {
     # Live sensing: a moving scene may change within a frame period.
-    "perception": {"max_age_s": 2.0, "clock": "sensor capture (wall)"},
-    "live_epd_realsense": {"max_age_s": 2.0, "clock": "sensor capture (wall)"},
-    "recorded_perception": {"max_age_s": 2.0, "clock": "replay capture (wall)"},
-    # A resting simulated object measured from the physics world. Its snapshot is renewed only after a
-    # fresh simulator readback proves the geometry unchanged (before revalidation and before motion)
-    # and it is re-measured live at closure, so the ceiling bounds capture-to-selection in the
-    # qualified Stage-A runtime (resolve search included), not object motion.
-    "manual_simulated": {"max_age_s": 180.0, "clock": "simulator measurement (wall)",
-                         "renewal": "geometry_readback_before_revalidation_and_motion"},
+    "live_sensor": 2.0,
+    "replay": 2.0,
+    # A resting object measured from the physics world. The snapshot is renewed only after a fresh
+    # simulator readback proves the geometry unchanged (before revalidation and before motion) and is
+    # re-measured live at closure, so the ceiling bounds capture-to-selection in the qualified Stage-A
+    # runtime (resolve search included), not object motion.
+    "simulator_measurement": 180.0,
 }
+# The producers each authored source type admits. A detected_objects/v1 perception source is fed by a
+# live sensor, or in the physics simulator by its receipt-bound measurement snapshot.
+SOURCE_PRODUCERS = {
+    "perception": ("live_sensor", "simulator_measurement"),
+    "live_epd_realsense": ("live_sensor",),
+    "recorded_perception": ("replay",),
+    "manual_simulated": ("simulator_measurement",),
+}
+OBSERVATION_FRESHNESS_POLICY = {
+    source: {"max_age_s": max(OBSERVATION_PRODUCER_CEILING_S[p] for p in producers), "producers": producers}
+    for source, producers in SOURCE_PRODUCERS.items()}
 
 
 def freshness_policy(source_type):
-    return OBSERVATION_FRESHNESS_POLICY.get(source_type)
+    """The authoring ceiling of a source type; a default for a live source is its live ceiling."""
+    policy = OBSERVATION_FRESHNESS_POLICY.get(source_type)
+    if policy is None:
+        return None
+    return dict(policy, default_s=OBSERVATION_PRODUCER_CEILING_S[policy["producers"][0]])
+
+
+def observation_age_cap(source_type, producer):
+    """Ceiling for observations actually produced by ``producer`` (fails closed when the source does not admit it)."""
+    if producer not in SOURCE_PRODUCERS.get(source_type, ()):
+        raise ValueError(f"OBSERVATION_PRODUCER_REJECTED: {source_type!r} observations may not come from {producer!r}")
+    return OBSERVATION_PRODUCER_CEILING_S[producer]
 
 
 def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
@@ -224,7 +242,7 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
               or age > policy["max_age_s"]):
             errors.append({"code": "OBSERVATION_FRESHNESS_POLICY",
                            "message": f"object_filter.max_age_seconds {age!r} must be in (0, {policy['max_age_s']}] s for "
-                                      f"{selection.get('source_type')} observations ({policy['clock']})"})
+                                      f"{selection.get('source_type')} observations (producers {list(policy['producers'])})"})
     grasp = model.get("pick", {}).get("grasp", {})
     placement = model.get("place", {}).get("placement", {})
     for block, label in ((grasp, "grasp"), (placement, "place")):

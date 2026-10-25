@@ -1385,7 +1385,7 @@ def test_execution_boundary_refresh_precedes_unchanged_expiry_check():
     block=text[text.rindex('if measurements:',0,start):expiry]
     assert start<expiry and 'if not motion or not motion[0]' in block
     assert 'time.time()' not in block.split('fresh = select_observations')[0]
-    assert "select_observations(intent, physical, objects, time.time())" in text[start:expiry]
+    assert "select_observations(intent, physical, objects, time.time(), age_cap)" in text[start:expiry]   # same producer cap as selection
 
 
 # ---------------------------------------------------------------- carried-step owned execution wait

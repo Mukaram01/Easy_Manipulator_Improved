@@ -115,7 +115,8 @@ def _observation_priority(item):
     return (confidence is None, -(confidence or 0.0), -top_z, item["id"])
 
 
-def _eligible_observations(observations, filters, now):
+def _eligible_observations(observations, filters, now, max_age_cap=None):
+    max_age = min(filters.get("max_age_seconds") or math.inf, math.inf if max_age_cap is None else max_age_cap)
     eligible = []
     for observation in observations:
         if not isinstance(observation, dict):
@@ -131,7 +132,7 @@ def _eligible_observations(observations, filters, now):
                 or (filters.get("min_confidence") is not None and
                     (confidence is None or confidence < filters["min_confidence"]))
                 or not _finite(timestamp) or timestamp > now
-                or now - timestamp > (filters.get("max_age_seconds") or math.inf)
+                or now - timestamp > max_age
                 or not _vector(pose, 7) or math.hypot(*pose[3:]) < 1e-9
                 or not _vector(dimensions, 3) or any(v <= 0 for v in dimensions)):
             continue
@@ -142,7 +143,8 @@ def _eligible_observations(observations, filters, now):
     return sorted(eligible, key=_observation_priority)
 
 
-def select_observations(intent, environment, observations, now):
+def select_observations(intent, environment, observations, now, max_age_cap=None):
+    """``max_age_cap``: the actual producer's freshness ceiling (task_intent_v2.observation_age_cap)."""
     from runtime_pick_inputs import zone, contained
     import perceived_object_grasp_plan as geometry
     selection = intent['pick']['selection']
@@ -151,7 +153,7 @@ def select_observations(intent, environment, observations, now):
             (source_type == 'manual_simulated' and source_ref == selection['zone_ref'])):
         raise ValueError('PICK_SOURCE_UNSUPPORTED: select detected_objects/v1 or the manual simulated pick region')
     region = zone({'environment': environment}, selection['zone_ref'])
-    return [item for item in _eligible_observations(observations, selection['object_filter'], now)
+    return [item for item in _eligible_observations(observations, selection['object_filter'], now, max_age_cap)
             if contained(item, region, geometry)]
 
 

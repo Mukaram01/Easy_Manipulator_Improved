@@ -20,7 +20,7 @@ def _default_max_age(source_mode):
     policy = freshness_policy(source_mode)
     if policy is None:
         raise ValueError(f'Object source {source_mode!r} has no observation freshness policy.')
-    return policy['max_age_s']
+    return policy['default_s']
 
 
 def _tool_aperture(env):

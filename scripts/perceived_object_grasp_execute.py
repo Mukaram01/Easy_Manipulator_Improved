@@ -2378,9 +2378,18 @@ def main():
             snapshot = inputs.replay_snapshot(snapshot, time.time())
         objects = inputs.normalize(snapshot, time.time(), _PLANNER)
         stage('FILTER_TARGETS')
+        age_cap = None
         if authored:
+            # Freshness follows who produced these observations: the simulator's receipt-bound measurement
+            # snapshot (verified against the live receipt below), a replay, or a live sensor.
+            from task_intent_v2 import observation_age_cap
+            producer = ('simulator_measurement' if args.backend == 'simulator' and snapshot.get('simulator_receipt_sha256')
+                        else 'replay' if args.replay else 'live_sensor')
+            age_cap = observation_age_cap(intent['pick']['selection']['source_type'], producer)
+            summary['observation_freshness'] = dict(producer=producer, ceiling_s=age_cap,
+                authored_max_age_s=intent['pick']['selection']['object_filter']['max_age_seconds'])
             from task_intent_resolver import select_observations, scene_resolution
-            eligible = select_observations(intent, physical, objects, time.time())
+            eligible = select_observations(intent, physical, objects, time.time(), age_cap)
             rejected = {o['id']: 'outside_authored_selection' for o in objects if o not in eligible}
             expected_resolution = None if args.resolve_task else scene_resolution(
                 package, intent, physical, document, require_ready=True)
@@ -2711,7 +2720,7 @@ def main():
             first=motion[0]['trajectory'].joint_trajectory
             snapshot,summary['execution_observation_refresh']=refresh_at_execution_boundary(
                 snapshot,objects,measurements,dict(names=list(first.joint_names),positions=list(first.points[0].positions)))
-        fresh = select_observations(intent, physical, objects, time.time()) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
+        fresh = select_observations(intent, physical, objects, time.time(), age_cap) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
         expected = initial

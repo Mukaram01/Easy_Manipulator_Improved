@@ -153,3 +153,18 @@ def test_wizard_freshness_and_aperture_follow_the_source_policy_and_tool(tmp_pat
     env['end_effector'] = {'capability': 'ee_vacuum_array_placeholder_unknown'}
     with pytest.raises(ValueError, match='not in the capability catalog'):
         intent('manual_simulated')
+
+
+def test_selection_freshness_is_capped_by_the_actual_observation_producer():
+    from scripts.task_intent_v2 import observation_age_cap, validate_intent
+    from scripts.task_intent_resolver import _eligible_observations
+    assert observation_age_cap('perception', 'simulator_measurement') == 180.0     # receipt-bound simulator snapshot
+    assert observation_age_cap('perception', 'live_sensor') == 2.0                 # the same source from a camera stays strict
+    with pytest.raises(ValueError, match='OBSERVATION_PRODUCER_REJECTED'):
+        observation_age_cap('manual_simulated', 'live_sensor')
+    item = dict(id='o', frame_id='world', shape='BOX', confidence=None, timestamp=100.0,
+                pose=[0, 0, 0, 0, 0, 0, 1], dimensions=[.02, .02, .02])
+    filters = dict(max_age_seconds=180.0)
+    assert _eligible_observations([item], filters, now=110.0)                    # within the authored age
+    assert not _eligible_observations([item], filters, now=110.0, max_age_cap=2.0)  # but stale for a live sensor
+    assert not _eligible_observations([item], filters, now=99.0)                  # stamped in the future
