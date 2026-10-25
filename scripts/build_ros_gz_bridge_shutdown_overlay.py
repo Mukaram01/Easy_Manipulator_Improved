@@ -44,7 +44,9 @@ def apply_reviewed_patch(source,patch):
 
 def argument_parser():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output',type=Path,default=Path('/home/ubuntu/workcell_ws/ros_gz_bridge_shutdown_overlay'))
+    parser.add_argument('--output',type=Path,required=True,help='overlay root (a new directory per qualification)')
+    parser.add_argument('--build-only',action='store_true',
+                        help='build the patched bridge and stop: nothing is proved or published (observation input)')
     parser.add_argument('--valgrind',type=Path,default=shutil.which('valgrind'))
     parser.add_argument('--valgrind-lib',type=Path)
     parser.add_argument('--baseline-results',type=Path,
@@ -56,6 +58,9 @@ def argument_parser():
 
 
 def validate_arguments(parser,args):
+    if args.build_only and (args.qualification_method!=LEGACY_METHOD or args.lifetime_evidence or
+                            args.mechanism_review or args.baseline_results):
+        parser.error('--build-only builds the observation input; it takes no qualification records')
     if args.qualification_method in (LIFETIME_METHOD,OBSERVED_METHOD):
         for variable in ('LD_PRELOAD','LD_AUDIT','VALGRIND_LIB','VALGRIND_OPTS'):
             if os.environ.get(variable):
@@ -99,6 +104,8 @@ def main():
          '-DCMAKE_BUILD_TYPE=RelWithDebInfo','-DCMAKE_INSTALL_PREFIX='+str(install),'-DPython3_EXECUTABLE=/usr/bin/python3'])
     run(['cmake','--build',build,'--parallel','2']);run(['cmake','--install',build])
     binary=install/'lib/ros_gz_bridge/parameter_bridge';library=Path('/opt/ros/humble/lib/libros_gz_bridge.so').resolve()
+    if args.build_only:
+        print('Built unqualified bridge for observation (not published): '+str(binary.resolve()));return
     baseline=Path('/opt/ros/humble/lib/ros_gz_bridge/parameter_bridge').resolve()
     (evidence/'source.patch').write_bytes(diff)
     common=['/usr/bin/python3',proof/'verify.py','--publisher',build/'bridge_traffic','--library',library]

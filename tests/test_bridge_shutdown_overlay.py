@@ -116,15 +116,20 @@ def test_publication_removes_old_discovery_when_evidence_is_incomplete(tmp_path)
 
 def test_builder_requires_explicit_method_and_both_alternative_records():
     parser=MODULE.argument_parser()
-    assert parser.parse_args([]).qualification_method=='legacy-installed-baseline/v1'
+    with pytest.raises(SystemExit):parser.parse_args([])          # no machine-specific default overlay root
+    assert parser.parse_args(['--output','o']).qualification_method=='legacy-installed-baseline/v1'
+    for arguments in (['--build-only','--qualification-method','observed-shutdown-order/v1'],
+                      ['--build-only','--mechanism-review','review.json']):
+        with pytest.raises(SystemExit):
+            MODULE.validate_arguments(parser,parser.parse_args(['--output','o',*arguments]))
     with pytest.raises(SystemExit):
-        parser.parse_args(['--qualification-method','unknown/v1'])
+        parser.parse_args(['--output','o','--qualification-method','unknown/v1'])
     for arguments in (['--lifetime-evidence','record.json'],
                       ['--qualification-method','deterministic-source-lifetime/v1'],
                       ['--qualification-method','deterministic-source-lifetime/v1',
                        '--lifetime-evidence','record.json']):
         with pytest.raises(SystemExit):
-            MODULE.validate_arguments(parser,parser.parse_args(arguments))
+            MODULE.validate_arguments(parser,parser.parse_args(['--output','o',*arguments]))
 
 
 def lifetime_admission_fixture(tmp_path):
@@ -487,6 +492,32 @@ def test_observed_admission_requires_real_ordering_contract_without_abort_claim(
     assert 'baseline_returncode' not in data['reproduction']
 
 
+@pytest.mark.parametrize('observer_changed',[False,True])
+def test_observed_admission_binds_reviewed_repository_bytes_not_the_checkout_location(tmp_path,observer_changed):
+    """Evidence recorded from another checkout admits this one only for byte-identical reviewed files."""
+    import json
+    import shutil
+    from bridge_shutdown_repro import qualification as q
+    _,_,data,evidence,review=observed_admission_fixture(tmp_path)
+    repo=SCRIPT.parents[1];old=tmp_path/'qualified-checkout'
+    for name in q.REPOSITORY_FILES:
+        (old/name).parent.mkdir(parents=True,exist_ok=True);shutil.copy2(repo/name,old/name)
+    if observer_changed:
+        with (old/'scripts/bridge_shutdown_repro/observe.gdb.py').open('a') as script:script.write('# reviewed elsewhere\n')
+    def relocate(value):return json.loads(json.dumps(value).replace(str(repo)+'/',str(old)+'/'))
+    for batch in evidence['observations'].values():
+        for key in ('experiment','results'):
+            file=Path(batch[key]['path']);file.write_text(json.dumps(relocate(json.loads(file.read_text()))))
+    data,evidence,review=relocate(data),relocate(evidence),relocate(review)
+    save_observed_fixture(data,evidence,review)
+    shutil.rmtree(old)       # the qualified checkout need not survive; its reviewed bytes must
+    if observer_changed:
+        with pytest.raises(ValueError,match='differs from the reviewed bytes: scripts/bridge_shutdown_repro/observe.gdb.py'):
+            q.validate_observed(data)
+    else:
+        assert q.validate_observed(data)==evidence
+
+
 @pytest.mark.parametrize('fault',['missing-cycle','traffic','nonzero-exit','forced-cleanup','forced-cleanup-flag','preload','canonical-dependency-omission','debugger-command','missing-environment','changed-rmw','runtime-interposition','survivor','core','wrong-library','missing-dependency','map-device','registry-identity','wrong-thread','missing-stack','early-exit','late-drop','missing-join','baseline-inactive','abort-claim','unbound-review','changed-source','runtime-before-review'])
 def test_observed_admission_rejects_incomplete_or_misbound_shutdown_evidence(tmp_path,fault):
     import json
@@ -545,7 +576,7 @@ def test_observed_admission_rejects_incomplete_or_misbound_shutdown_evidence(tmp
 
 def test_observed_builder_requires_both_bound_records_and_memcheck():
     parser=MODULE.argument_parser()
-    args=['--qualification-method','observed-shutdown-order/v1']
+    args=['--output','o','--qualification-method','observed-shutdown-order/v1']
     for extra in ([],['--lifetime-evidence','record.json'],
                   ['--mechanism-review','review.json']):
         with pytest.raises(SystemExit):
@@ -638,6 +669,6 @@ def test_alternative_builder_rejects_ambient_interposition(tmp_path,monkeypatch,
     for key in ('LD_PRELOAD','LD_AUDIT','VALGRIND_LIB','VALGRIND_OPTS'):monkeypatch.delenv(key,raising=False)
     monkeypatch.setenv(variable,'unreviewed-instrumentation')
     parser=MODULE.argument_parser()
-    args=parser.parse_args(['--qualification-method',method,'--lifetime-evidence','record.json',
+    args=parser.parse_args(['--output','o','--qualification-method',method,'--lifetime-evidence','record.json',
                            '--mechanism-review','review.json','--valgrind','/usr/bin/valgrind'])
     with pytest.raises(SystemExit):MODULE.validate_arguments(parser,args)

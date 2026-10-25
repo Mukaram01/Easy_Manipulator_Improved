@@ -45,10 +45,39 @@ def method(manifest):
     return qualification['method']
 
 
+# Repository-tracked admission, harness and observation files. A record of one is
+# bound to its checkout-relative name and bytes and is checked against the running
+# checkout, so the same reviewed bytes in a relocated checkout are the same
+# implementation while any changed byte still fails closed. Every other record is
+# evidence, checked in place at its absolute path.
+REPOSITORY_FILES = (
+    'patches/ros_gz_bridge_humble_shutdown.patch',
+    'scripts/build_ros_gz_bridge_shutdown_overlay.py', 'scripts/simulator_backend.py',
+    'scripts/bridge_shutdown_repro/qualification.py', 'scripts/bridge_shutdown_repro/verify.py',
+    'scripts/bridge_shutdown_repro/observe.py', 'scripts/bridge_shutdown_repro/observe.gdb.py',
+    'scripts/bridge_shutdown_repro/CMakeLists.txt', 'scripts/bridge_shutdown_repro/publisher.cpp',
+    'scripts/bridge_shutdown_repro/bridges.yaml', 'scripts/bridge_shutdown_repro/shutdown_context_test.cpp',
+    'tests/test_bridge_shutdown_overlay.py')
+
+
+def bound_identity(record):
+    """Identity key of a record: its repository name, or its checked absolute evidence path."""
+    if not isinstance(record, dict) or not isinstance(record.get('path'), str):
+        raise ValueError('missing evidence file identity')
+    path = Path(record['path'])
+    for name in REPOSITORY_FILES:
+        parts = Path(name).parts
+        if path.is_absolute() and path.parts[-len(parts):] == parts:
+            if digest(Path(__file__).resolve().parents[2] / name) != record.get('sha256'):
+                raise ValueError('repository implementation differs from the reviewed bytes: ' + name)
+            return name
+    return str(checked_file(record).resolve())
+
+
 def _identities(records):
     if not isinstance(records, list) or not records:
         raise ValueError('nonempty source/build identities required')
-    paths = [str(checked_file(item).resolve()) for item in records]
+    paths = [bound_identity(item) for item in records]
     if len(set(paths)) != len(paths):
         raise ValueError('duplicate source/build identity')
     return dict(zip(paths, (item['sha256'] for item in records)))
@@ -173,7 +202,7 @@ def validate_lifetime(manifest, include_runtime=True):
         _identities(harness['files'])
         _identities(harness['instrumentation'])
         for item in implementation:
-            checked_file(item)
+            bound_identity(item)
         bound = evidence['finite_bound_seconds']
         if type(bound) not in (int, float) or not math.isfinite(bound) or bound <= 0:
             raise ValueError('a positive finite lifetime test bound is required')
@@ -219,7 +248,7 @@ def validate_lifetime(manifest, include_runtime=True):
             'scripts/bridge_shutdown_repro/bridges.yaml', 'scripts/bridge_shutdown_repro/shutdown_context_test.cpp',
             'tests/test_bridge_shutdown_overlay.py'))
         reviewed = _identities(review['implementation'])
-        if any(reviewed.get(str(Path(item['path']).resolve())) != item['sha256'] for item in implementation):
+        if any(reviewed.get(bound_identity(item)) != item['sha256'] for item in implementation):
             raise ValueError('independent review is not bound to the exact admission/harness implementation')
         if include_runtime:
             validate_runtime(manifest, review['reviewed_at_ns'])
@@ -463,13 +492,15 @@ def _observed_batch(batch, manifest, dependencies, corrected, seen_pids):
         any(type(experiment[key]) not in (int, float) or not math.isfinite(experiment[key]) or
             experiment[key] <= 0 for key in ('traffic_timeout_seconds', 'shutdown_timeout_seconds'))):
         raise ValueError('five complete bounded observations and active traffic required')
-    _identities(experiment['instrumentation'])
     for key in ('publisher', 'config', 'verifier'):
-        checked_file(experiment[key])
+        bound_identity(experiment[key])
     repo = Path(__file__).resolve().parents[2]
-    observer_paths = [repo / 'scripts/bridge_shutdown_repro' / name for name in ('observe.py', 'observe.gdb.py')]
-    if _identities(experiment['instrumentation']) != _identities([identity(path) for path in observer_paths]):
+    observer_names = ['scripts/bridge_shutdown_repro/' + name for name in ('observe.py', 'observe.gdb.py')]
+    if _identities(experiment['instrumentation']) != _identities([identity(repo / name) for name in observer_names]):
         raise ValueError('observational scripts differ from reviewed implementation')
+    # The commands bind the debugger script that actually ran, which the check above
+    # proves byte-identical to this checkout's reviewed observer.
+    debugger_script = next(item['path'] for item in experiment['instrumentation'] if bound_identity(item) == observer_names[1])
     if (experiment['config']['sha256'] != digest(repo / 'scripts/bridge_shutdown_repro/bridges.yaml') or
         experiment['verifier']['sha256'] != digest(repo / 'scripts/bridge_shutdown_repro/verify.py')):
         raise ValueError('observational verifier/configuration changed')
@@ -500,7 +531,7 @@ def _observed_batch(batch, manifest, dependencies, corrected, seen_pids):
         seen_pids.update(pids.values())
         expected_commands = [
             ['publisher', [experiment['publisher']['path']]],
-            ['debugger', ['/usr/bin/gdb', '-q', '-nx', '-batch', '-x', str(observer_paths[1]),
+            ['debugger', ['/usr/bin/gdb', '-q', '-nx', '-batch', '-x', debugger_script,
                           '--args', expected_binary['path'], '--ros-args', '-p',
                           'config_file:=' + experiment['config']['path']]]]
         if row['commands'] != expected_commands:
@@ -596,7 +627,7 @@ def validate_observed(manifest, include_runtime=True):
             'scripts/bridge_shutdown_repro/bridges.yaml', 'scripts/bridge_shutdown_repro/shutdown_context_test.cpp',
             'tests/test_bridge_shutdown_overlay.py'))
         reviewed = _identities(review['implementation'])
-        if any(reviewed.get(str(Path(item['path']).resolve())) != item['sha256'] for item in implementation):
+        if any(reviewed.get(bound_identity(item)) != item['sha256'] for item in implementation):
             raise ValueError('independent review is not bound to observed evidence/source/admission implementation')
         if include_runtime:
             checked_file(dict(path=context['log_path'], sha256=context['log_sha256']))
