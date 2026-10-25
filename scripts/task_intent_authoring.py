@@ -101,7 +101,8 @@ def load_authoring(scene, draft=None):
         if payload.get('schema') == 'workcell_builder_task_intent/v1':
             payload = migrate_v1(payload, env)
     else:
-        payload = _wizard_intent(scene, {**env, 'workcell_studio': scene_doc.get('workcell_studio', {})})
+        payload = _wizard_intent(scene, {**env, 'workcell_studio': scene_doc.get('workcell_studio', {}),
+                                         'end_effector': env.get('end_effector', scene_doc.get('end_effector'))})
     parsed = parse_validate_normalize(payload)
     report = validate_payload(payload, scene)
     # A physical blocker does not prevent saving the authored request unchanged.

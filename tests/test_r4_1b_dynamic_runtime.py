@@ -71,6 +71,8 @@ def test_the_grasp_contract_binds_the_tool_command_joint_group_and_range_to_the_
     from perceived_object_grasp_plan import bind_tool_actuation, load_grasp_contract
     contract = load_grasp_contract(cell)
     assert contract['tool_command_joint'] == 'gripper_finger1_joint' and contract['tool_aperture_max_m'] == 0.085
+    saved = json.loads((cell / 'config/workcell_builder_task_intent.yaml').read_text())
+    assert saved['pick']['grasp']['aperture'] == {'min_m': 0.0, 'max_m': 0.085}         # the cell's own tool opening
     urdf = '<robot name="r"><joint name="gripper_finger1_joint" type="revolute"><limit lower="0" upper="0.804"/></joint>' \
            '<joint name="gripper_finger2_joint" type="revolute"><mimic joint="gripper_finger1_joint"/></joint></robot>'
     srdf = '<robot name="r"><group name="manipulator"><joint name="shoulder_pan_joint"/></group>' \

@@ -6122,7 +6122,8 @@ void MainWindow::refresh_preview_launch_ui()
     if (!physics_cycle_mode_) {
       if (!has_scene) set_physics_state(QString(), QString());
       else if (!blocker.isEmpty()) set_physics_state("BLOCKED", blocker.toHtmlEscaped());
-      else if (!current.ready) set_physics_state("BLOCKED", "Generate and Validate the saved cell first.");
+      else if (!current.ready) set_physics_state("BLOCKED", (current.blockers.isEmpty() ? QString("Generate and Validate the saved cell first.")
+                                                          : current.blockers.join("; ")).toHtmlEscaped());
       else if (physics_state_ != "COMPLETED" && physics_state_ != "FAILED" && physics_state_ != "CANCELLED") {
         const auto cell = physics_preflight().value("cell").toObject();
         QStringList objects; for (const auto & item : cell.value("objects").toArray()) objects << item.toString();
@@ -6400,8 +6401,10 @@ void MainWindow::run_physics_cycle()
 {
   if (preview_process_->state() != QProcess::NotRunning) return;
   const auto blocker = physics_cycle_blocker();
-  if (!blocker.isEmpty() || !selected_scene_readiness().ready) {
-    set_physics_state("BLOCKED", (blocker.isEmpty() ? QString("Generate and Validate the saved cell first.") : blocker).toHtmlEscaped());
+  const auto readiness = selected_scene_readiness();
+  if (!blocker.isEmpty() || !readiness.ready) {
+    set_physics_state("BLOCKED", (!blocker.isEmpty() ? blocker : readiness.blockers.isEmpty() ?
+      QString("Generate and Validate the saved cell first.") : readiness.blockers.join("; ")).toHtmlEscaped());
     return;
   }
   const auto preflight = physics_preflight(); const auto cell = preflight.value("cell").toObject();
