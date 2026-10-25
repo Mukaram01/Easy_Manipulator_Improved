@@ -42,6 +42,21 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   };
   auto * what = section("What / Pick eligibility");
   text_field(what, "taskTargetClass", "Object class", "pick/selection/object_filter/class_id");
+  {
+    // Classes that must never become pick targets (e.g. pick cups, ignore bottles).
+    auto * excluded = new QLineEdit(this); excluded->setObjectName("taskExcludeClasses");
+    excluded->setPlaceholderText("comma-separated classes, e.g. bottle"); what->addRow("Exclude classes", excluded);
+    const QString path = "pick/selection/object_filter/exclude_class_ids";
+    readers_[path] = [excluded](const QJsonValue & v) {
+      QStringList names; for (const auto & item : v.toArray()) names << item.toString();
+      excluded->setText(names.join(", "));
+    };
+    connect(excluded, &QLineEdit::textEdited, this, [this, path](const QString & text) {
+      QJsonArray names;
+      for (const auto & part : text.split(',')) if (!part.trimmed().isEmpty()) names.append(part.trimmed());
+      set_field(path, names);
+    });
+  }
   text_field(what, "taskSource", "Source reference", "pick/selection/source_ref");
   pick_zones_ = choice_field(what, "taskPickZone", "Search region", "pick/selection/zone_ref", {});
   auto * grasp = section("How to grasp");

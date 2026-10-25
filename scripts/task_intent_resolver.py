@@ -139,6 +139,8 @@ def _eligible_observations(observations, filters, now, max_age_cap=None):
         if any(filters.get(key) not in (None, "") and observation.get(key) != filters[key]
                for key in ("class_id", "color")):
             continue
+        if observation.get("class_id") in (filters.get("exclude_class_ids") or []):
+            continue                     # never a pick target; an obstacle only with validated geometry and frame
         eligible.append(copy.deepcopy(observation))
     return sorted(eligible, key=_observation_priority)
 

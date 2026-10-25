@@ -234,7 +234,16 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
         errors.append({"code": "PICK_SELECTION_REQUIRED", "message": "pick.selection.object_filter is required"})
     else:
         policy = freshness_policy(selection.get("source_type"))
-        age = selection["object_filter"].get("max_age_seconds")
+        object_filter = selection["object_filter"]
+        excluded = object_filter.get("exclude_class_ids", [])
+        if (not isinstance(excluded, list) or any(not isinstance(v, str) or not v.strip() for v in excluded)
+                or len(set(excluded)) != len(excluded)):
+            errors.append({"code": "EXCLUDE_CLASSES_INVALID",
+                           "message": "object_filter.exclude_class_ids must be a list of distinct class names"})
+        elif object_filter.get("class_id") and object_filter["class_id"] in excluded:
+            errors.append({"code": "CLASS_BOTH_SELECTED_AND_EXCLUDED",
+                           "message": f"class {object_filter['class_id']!r} is both the pick class and excluded"})
+        age = object_filter.get("max_age_seconds")
         if policy is None:
             errors.append({"code": "OBSERVATION_SOURCE_UNKNOWN",
                            "message": f"pick.selection.source_type {selection.get('source_type')!r} has no freshness policy"})

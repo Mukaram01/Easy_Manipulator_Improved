@@ -168,3 +168,19 @@ def test_selection_freshness_is_capped_by_the_actual_observation_producer():
     assert _eligible_observations([item], filters, now=110.0)                    # within the authored age
     assert not _eligible_observations([item], filters, now=110.0, max_age_cap=2.0)  # but stale for a live sensor
     assert not _eligible_observations([item], filters, now=99.0)                  # stamped in the future
+
+
+def test_excluded_classes_never_become_pick_targets():
+    from scripts.task_intent_resolver import _eligible_observations
+    from scripts.task_intent_v2 import validate_intent
+    base = dict(frame_id='world', shape='BOX', confidence=0.9, timestamp=100.0,
+                pose=[0, 0, 0, 0, 0, 0, 1], dimensions=[.05, .05, .1])
+    cup, bottle = dict(base, id='o1', class_id='cup'), dict(base, id='o2', class_id='bottle')
+    filters = dict(max_age_seconds=2.0, exclude_class_ids=['bottle'])
+    assert [o['id'] for o in _eligible_observations([cup, bottle], filters, now=100.5)] == ['o1']
+    assert [o['id'] for o in _eligible_observations([cup, bottle], dict(filters, class_id='cup'), now=100.5)] == ['o1']
+    model = {'schema': 'workcell_builder_task_intent/v2', 'pick': {'selection': {'source_type': 'live_epd_realsense',
+             'object_filter': {'class_id': 'bottle', 'exclude_class_ids': ['bottle'], 'max_age_seconds': 2.0}}}}
+    assert 'CLASS_BOTH_SELECTED_AND_EXCLUDED' in {e['code'] for e in validate_intent(model)}
+    model['pick']['selection']['object_filter'].update(class_id='cup', exclude_class_ids='bottle')
+    assert 'EXCLUDE_CLASSES_INVALID' in {e['code'] for e in validate_intent(model)}
