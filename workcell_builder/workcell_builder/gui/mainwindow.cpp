@@ -3447,7 +3447,36 @@ void MainWindow::setup_studio_shell()
   workflow_tab_layout->addWidget(task_diagnostics);
   auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); task_diagnostics_actions->addWidget(open_perception_metadata_button);
   auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); task_diagnostics_actions->addWidget(open_epd_docs_button);
-  auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
+  ar_layout->addWidget(new QLabel("<b>Live Perception</b> · camera → EPD · perception only, robot motion locked"));
+  perception_camera_combo_ = new QComboBox(scene_builder); perception_camera_combo_->setObjectName("livePerceptionCamera");
+  perception_camera_combo_->setToolTip("RGB-D cameras publishing in the registered perception ROS graph.");
+  ar_layout->addWidget(perception_camera_combo_);
+  auto * perception_actions = new QHBoxLayout();
+  perception_discover_button_ = new QPushButton("Discover Cameras", scene_builder); perception_discover_button_->setObjectName("livePerceptionDiscover");
+  perception_bind_button_ = new QPushButton("Save Camera Binding", scene_builder); perception_bind_button_->setObjectName("livePerceptionBind");
+  perception_start_button_ = new QPushButton("Start Live Perception", scene_builder); perception_start_button_->setObjectName("livePerceptionStart");
+  perception_actions->addWidget(perception_discover_button_); perception_actions->addWidget(perception_bind_button_);
+  perception_actions->addWidget(perception_start_button_); ar_layout->addLayout(perception_actions);
+  perception_preview_label_ = new QLabel("No live preview: Start Live Perception.", scene_builder);
+  perception_preview_label_->setObjectName("livePerceptionPreview"); perception_preview_label_->setMinimumHeight(180);
+  perception_preview_label_->setAlignment(Qt::AlignCenter); ar_layout->addWidget(perception_preview_label_);
+  perception_status_label_ = new QLabel(scene_builder); perception_status_label_->setObjectName("livePerceptionStatus");
+  perception_status_label_->setWordWrap(true); perception_status_label_->setTextFormat(Qt::RichText); ar_layout->addWidget(perception_status_label_);
+  perception_table_ = new QTableWidget(0, 7, scene_builder); perception_table_->setObjectName("livePerceptionDetections");
+  perception_table_->setHorizontalHeaderLabels({"Class", "Confidence", "Camera XYZ (m)", "Size (m)", "Age (s)", "Task", "Why"});
+  perception_table_->horizontalHeader()->setStretchLastSection(true); perception_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  perception_table_->setMinimumHeight(120); ar_layout->addWidget(perception_table_);
+  perception_process_ = new QProcess(this);
+  perception_timer_ = new QTimer(this); perception_timer_->setInterval(500);
+  connect(perception_timer_, &QTimer::timeout, this, &MainWindow::refresh_live_perception);
+  connect(perception_discover_button_, &QPushButton::clicked, this, &MainWindow::discover_live_cameras);
+  connect(perception_bind_button_, &QPushButton::clicked, this, &MainWindow::save_live_camera_binding);
+  connect(perception_start_button_, &QPushButton::clicked, this, &MainWindow::toggle_live_perception);
+  connect(perception_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this](int, QProcess::ExitStatus) {
+    perception_timer_->stop(); refresh_live_perception();
+    perception_start_button_->setText("Start Live Perception");
+    append_studio_log("Live perception stopped; EPD processes shut down by the session.");
+  });
   workflow_tab_layout->addWidget(ar_card);
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("", scene_builder); live_coordinate_label_->hide(); selected_item_card_layout->addWidget(live_coordinate_label_);
@@ -5694,6 +5723,10 @@ void MainWindow::closeEvent(QCloseEvent * event)
     if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !environment_task_editor_->save())) {
       event->ignore(); return;
     }
+  }
+  if (perception_process_ && perception_process_->state() != QProcess::NotRunning) {
+    perception_process_->terminate();                 // the session stops EPD, then exits
+    if (!perception_process_->waitForFinished(20000)) perception_process_->kill();
   }
   if (preview_process_ && preview_process_->state() != QProcess::NotRunning) {
     close_after_preview_stop_ = true;
@@ -15298,4 +15331,135 @@ void MainWindow::refresh_run_next_menu(const std::vector<RecommendedWorkflowActi
       trigger_recommended_workflow_action(handler);
     });
   }
+}
+
+QString MainWindow::live_perception_command(const QString & arguments) const
+{
+  QString script;
+  if (!helper_script_exists("live_perception_session.py", &script)) return {};
+  const auto quoted = "'" + QString(script).replace("'", "'\\''") + "'";
+  // The registered perception runtime (EPD install, ROS domain) is re-validated and its environment
+  // printed by the helper; the command fails instead of guessing when it is missing.
+  return QString("eval \"$(python3 %1 env)\" && exec python3 %1 %2").arg(quoted, arguments);
+}
+
+static QString shell_quote(QString value) { return "'" + value.replace("'", "'\\''") + "'"; }
+
+void MainWindow::discover_live_cameras()
+{
+  const auto command = live_perception_command("discover --timeout 3");
+  if (command.isEmpty()) { perception_status_label_->setText("BLOCKED: live_perception_session.py is unavailable."); return; }
+  QProcess process; process.start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
+  if (!process.waitForFinished(30000)) { process.kill(); perception_status_label_->setText("BLOCKED: camera discovery timed out."); return; }
+  const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  perception_camera_combo_->clear();
+  perception_cameras_ = report.value("cameras").toArray();
+  for (const auto & item : perception_cameras_) {
+    const auto camera = item.toObject();
+    QStringList nodes; for (const auto & n : camera.value("publisher_nodes").toArray()) nodes << n.toString();
+    perception_camera_combo_->addItem(QString("%1 · %2").arg(camera.value("camera_namespace").toString(), nodes.join(", ")));
+  }
+  perception_status_label_->setText(perception_cameras_.isEmpty() ?
+    QString("No RGB-D camera is publishing in the perception ROS graph%1. Start the camera driver, then Discover again.")
+      .arg(report.contains("ros_domain_id") ? " (ROS_DOMAIN_ID " + report.value("ros_domain_id").toString() + ")" :
+           ": " + QString::fromUtf8(process.readAllStandardError()).left(300).toHtmlEscaped()) :
+    QString("%1 camera(s) discovered. Select one and Save Camera Binding.").arg(perception_cameras_.size()));
+}
+
+void MainWindow::save_live_camera_binding()
+{
+  if (!has_selected_scene()) { perception_status_label_->setText("Select a saved cell first."); return; }
+  const int index = perception_camera_combo_->currentIndex();
+  if (index < 0 || index >= perception_cameras_.size()) { perception_status_label_->setText("Discover and select a camera first."); return; }
+  const auto camera = perception_cameras_.at(index).toObject();
+  const auto depth = camera.value("aligned_depth_topics").toArray();
+  if (depth.isEmpty() || camera.value("optical_frame").toString().isEmpty()) {
+    perception_status_label_->setText("BLOCKED: this camera publishes no aligned depth or no CameraInfo frame; 3D localisation needs both.");
+    return;
+  }
+  const auto command = live_perception_command(QString("bind --cell %1 --rgb-topic %2 --aligned-depth-topic %3 --camera-info-topic %4 --optical-frame %5")
+    .arg(shell_quote(selected_scene_path()), shell_quote(camera.value("rgb_topic").toString()), shell_quote(depth.first().toString()),
+         shell_quote(camera.value("camera_info_topic").toString()), shell_quote(camera.value("optical_frame").toString())));
+  QProcess process; process.start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
+  const bool ok = process.waitForFinished(30000) && process.exitCode() == 0;
+  const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  perception_status_label_->setText(ok ? QString("Camera binding saved with the cell (camera %1, calibration %2).")
+      .arg(report.value("live_camera").toObject().value("camera_id").toString().toHtmlEscaped(),
+           report.value("live_camera").toObject().value("calibration").toObject().value("status").toString().toHtmlEscaped()) :
+    "BLOCKED: " + report.value("reason").toString(QString::fromUtf8(process.readAllStandardError()).left(300)).toHtmlEscaped());
+  append_studio_log("Live camera binding: " + perception_status_label_->text());
+}
+
+void MainWindow::toggle_live_perception()
+{
+  if (perception_process_->state() != QProcess::NotRunning) {
+    perception_start_button_->setText("Stopping…"); perception_process_->terminate(); return;
+  }
+  if (!has_selected_scene()) { perception_status_label_->setText("Select a saved cell first."); return; }
+  perception_session_cell_ = selected_scene_path();
+  perception_session_dir_ = detect_workspace_root() + "/log/live_perception/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  const auto command = live_perception_command(QString("run --cell %1 --session-dir %2")
+    .arg(shell_quote(perception_session_cell_), shell_quote(perception_session_dir_)));
+  if (command.isEmpty()) { perception_status_label_->setText("BLOCKED: live_perception_session.py is unavailable."); return; }
+  perception_table_->setRowCount(0); perception_preview_label_->setText("Starting EPD on the bound camera…");
+  perception_process_->start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
+  perception_start_button_->setText("Stop Live Perception"); perception_timer_->start();
+  append_studio_log("Live perception started (explicit operator action): " + perception_session_dir_);
+}
+
+void MainWindow::refresh_live_perception()
+{
+  QFile file(perception_session_dir_ + "/status.json");
+  if (!file.open(QIODevice::ReadOnly)) {
+    if (perception_process_->state() == QProcess::NotRunning) {
+      const auto report = QJsonDocument::fromJson(perception_process_->readAllStandardOutput()).object();
+      perception_status_label_->setText("<b>Live perception: BLOCKED</b><br/>" +
+        report.value("reason").toString(QString::fromUtf8(perception_process_->readAllStandardError()).left(400)).toHtmlEscaped());
+    }
+    return;
+  }
+  const auto status = QJsonDocument::fromJson(file.readAll()).object();
+  const auto readiness = status.value("readiness").toObject();
+  const auto camera = status.value("camera").toObject(), epd = status.value("epd").toObject();
+  const auto rgb = camera.value("rgb").toObject();
+  auto line = [](const QString & label, const QString & value) { return "<b>" + label + "</b> " + value.toHtmlEscaped() + "<br/>"; };
+  QString text = "<b>Live perception: " + status.value("state").toString() + "</b> · camera " +
+    status.value("camera_id").toString().toHtmlEscaped() + "<br/>";
+  text += line("Camera:", QString("%1 · RGB %2 Hz · depth %3 Hz · RGB-D pairs %4 Hz · frame age %5 s · valid depth %6%")
+    .arg(readiness.value("camera").toString()).arg(rgb.value("rate_hz").toDouble(), 0, 'f', 1)
+    .arg(camera.value("aligned_depth").toObject().value("rate_hz").toDouble(), 0, 'f', 1)
+    .arg(camera.value("synchronized_rgbd_hz").toDouble(), 0, 'f', 1)
+    .arg(rgb.value("receipt_minus_stamp_s").toDouble(), 0, 'f', 2)
+    .arg(camera.value("depth_valid_pixel_ratio").toDouble() * 100.0, 0, 'f', 0));
+  text += line("EPD:", QString("%1 · %2 results/s · result age %3 s · inference %4 ms · %5")
+    .arg(readiness.value("epd").toString()).arg(epd.value("results_hz").toDouble(), 0, 'f', 2)
+    .arg(epd.value("result_age_s").toDouble(), 0, 'f', 2).arg(epd.value("process_time_ms").toInt())
+    .arg(QFileInfo(epd.value("model").toString()).fileName()));
+  text += line("Perception:", readiness.value("perception").toString());
+  text += line("Calibration:", readiness.value("calibration").toString() + " — " +
+    status.value("calibration").toObject().value("reason").toString());
+  text += line("Task eligibility:", readiness.value("task").toString());
+  text += line("Robot planning:", readiness.value("robot_planning").toString());
+  text += line("Robot execution:", readiness.value("robot_execution").toString());
+  if (status.value("state").toString() == "STOPPED")
+    text += line("Shutdown:", status.value("shutdown").toObject().value("clean").toBool() ? "clean (EPD processes stopped)" : "UNCLEAN: check processes");
+  perception_status_label_->setText(text);
+  const auto detections = status.value("detections").toArray();
+  perception_table_->setRowCount(detections.size());
+  for (int row = 0; row < detections.size(); ++row) {
+    const auto d = detections.at(row).toObject();
+    QStringList xyz, size, reasons;
+    for (const auto & v : d.value("position_camera").toArray()) xyz << QString::number(v.toDouble(), 'f', 3);
+    for (const auto & v : d.value("dimensions_m").toArray()) size << QString::number(v.toDouble(), 'f', 3);
+    for (const auto & v : d.value("reasons").toArray()) reasons << v.toString();
+    const QStringList cells{d.value("label").toString(),
+      d.value("confidence").isDouble() ? QString::number(d.value("confidence").toDouble(), 'f', 2) : QString("n/a"),
+      xyz.join(", "), size.join(" × "), QString::number(d.value("age_s").toDouble(), 'f', 2),
+      d.value("task_eligible").toBool() ? "eligible" : d.value("excluded").toBool() ? "excluded" : "not eligible",
+      reasons.join("; ")};
+    for (int column = 0; column < cells.size(); ++column) perception_table_->setItem(row, column, new QTableWidgetItem(cells[column]));
+  }
+  QPixmap preview(perception_session_dir_ + "/preview.jpg");
+  if (!preview.isNull())
+    perception_preview_label_->setPixmap(preview.scaled(perception_preview_label_->width(), 360, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 }

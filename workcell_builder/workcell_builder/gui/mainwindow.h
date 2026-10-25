@@ -22,6 +22,7 @@
 #include <QTableWidget>
 #include <QLabel>
 #include <QString>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
 #include <QSet>
@@ -818,6 +819,25 @@ private:
   void set_physics_state(const QString & state, const QString & detail);
   QLabel * physics_state_label_{ nullptr };
   QString physics_state_;
+  // Live perception of the selected cell's bound camera through EPD (live_perception_session.py):
+  // perception preview and task eligibility only; robot planning stays blocked without calibration.
+  void discover_live_cameras();
+  void save_live_camera_binding();
+  void toggle_live_perception();
+  void refresh_live_perception();
+  QString live_perception_command(const QString & arguments) const;
+  QComboBox * perception_camera_combo_{ nullptr };
+  QPushButton * perception_discover_button_{ nullptr };
+  QPushButton * perception_bind_button_{ nullptr };
+  QPushButton * perception_start_button_{ nullptr };
+  QLabel * perception_preview_label_{ nullptr };
+  QLabel * perception_status_label_{ nullptr };
+  QTableWidget * perception_table_{ nullptr };
+  QProcess * perception_process_{ nullptr };
+  QTimer * perception_timer_{ nullptr };
+  QString perception_session_dir_;
+  QString perception_session_cell_;
+  QJsonArray perception_cameras_;
   QString cycle_output_dir_;
   QString cycle_stdout_buffer_;
   QJsonObject cycle_result_;

@@ -23,6 +23,71 @@
 
 class TestMain {
 public:
+  // R4.2: the real Builder window's Live Perception panel on the cell's bound real camera:
+  // Discover -> select -> Save Camera Binding -> Start -> observe -> Stop. Robot motion is never involved.
+  static void start_live_perception_acceptance(MainWindow * window, QApplication * app, const QString & output,
+                                               const QString & scene_path, int observe_s) {
+    struct Session { int phase=0, ticks=0; QJsonArray samples; QJsonObject evidence; };
+    auto s=std::make_shared<Session>(); QDir().mkpath(output);
+    s->evidence={{"result","FAIL"},{"scene",scene_path},{"observe_s",observe_s}};
+    auto write=[s,output](){ s->evidence["samples"]=s->samples; QFile f(output+"/acceptance.json"); if(f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson()); };
+    // The whole window plus the Live Perception card itself (it lives in the Inspector's Task tab).
+    auto snapshot=[window,output](const QString & name){
+      window->grab().save(output+"/"+name+".png");
+      if(auto * card=window->perception_status_label_->parentWidget()) card->grab().save(output+"/"+name+"_panel.png"); };
+    auto * timer=new QTimer(window); timer->setInterval(500);
+    QObject::connect(timer,&QTimer::timeout,window,[=](){ try {
+      if(++s->ticks>4*observe_s+2400) throw std::runtime_error("live perception acceptance timed out");
+      switch(s->phase){
+        case 0:{ if(window->load_watcher_&&window->load_watcher_->isRunning()) return;
+          window->refresh_scene_browser_ui(); int index=-1;
+          const auto wanted=workcell_builder::canonical_scene_identity(scene_path.toStdString());
+          for(size_t i=0;i<window->scene_browser_result_.scenes.size();++i)
+            if(window->scene_browser_result_.scenes[i].canonical_scene_dir==wanted) index=int(i);
+          if(index<0) throw std::runtime_error("saved cell not discovered by the scene browser");
+          if(!window->open_scene_builder_for_scene_index(index,"R4.2 live perception acceptance")) throw std::runtime_error("saved cell could not open");
+          s->phase=1; s->ticks=0; break; }
+        case 1:{ if(s->ticks<12) return;
+          window->show_studio_page(MainWindow::StudioPage::SceneBuilderPage);
+          for(int i=0;i<window->scene_builder_inspector_tabs_->count();++i)
+            if(window->scene_builder_inspector_tabs_->widget(i)->isAncestorOf(window->perception_status_label_))
+              window->scene_builder_inspector_tabs_->setCurrentIndex(i);
+          s->evidence["opened"]=QJsonObject{{"perception_running_on_open",window->perception_process_->state()!=QProcess::NotRunning}};
+          if(window->perception_process_->state()!=QProcess::NotRunning) throw std::runtime_error("perception started on opening the cell");
+          window->perception_discover_button_->click();
+          s->evidence["discovered"]=QJsonObject{{"cameras",window->perception_cameras_},{"label",window->perception_status_label_->text()}};
+          if(window->perception_cameras_.isEmpty()) throw std::runtime_error("no camera discovered");
+          window->perception_camera_combo_->setCurrentIndex(0); window->perception_bind_button_->click();
+          s->evidence["binding"]=window->perception_status_label_->text();
+          snapshot("bound"); window->perception_start_button_->click(); s->phase=2; s->ticks=0; break; }
+        case 2:{
+          if(s->ticks%20==0){
+            QFile f(window->perception_session_dir_+"/status.json");
+            if(f.open(QIODevice::ReadOnly)){ const auto st=QJsonDocument::fromJson(f.readAll()).object();
+              s->samples.append(QJsonObject{{"t",s->ticks/2},{"readiness",st.value("readiness")},{"detections",st.value("detections").toArray().size()},
+                {"table_rows",window->perception_table_->rowCount()},{"panel",window->perception_status_label_->text()}}); }
+            if(s->ticks==40||s->ticks==4*observe_s/2) snapshot(QString("live_%1s").arg(s->ticks/2));
+          }
+          if(s->ticks<2*observe_s) return;
+          snapshot("live_final"); s->evidence["before_stop_rows"]=window->perception_table_->rowCount();
+          window->perception_start_button_->click(); s->phase=3; s->ticks=0; break; }
+        case 3:{ if(window->perception_process_->state()!=QProcess::NotRunning) return; if(s->ticks<4) return;
+          window->refresh_live_perception(); snapshot("stopped");
+          QFile f(window->perception_session_dir_+"/status.json"); f.open(QIODevice::ReadOnly);
+          const auto st=QJsonDocument::fromJson(f.readAll()).object();
+          s->evidence["final"]=QJsonObject{{"state",st.value("state")},{"shutdown",st.value("shutdown")},{"session",window->perception_session_dir_},
+            {"panel",window->perception_status_label_->text()}};
+          bool saw_detections=false; for(const auto & v:s->samples) saw_detections|=v.toObject().value("table_rows").toInt()>0;
+          const bool ok=saw_detections && st.value("state").toString()=="STOPPED" && st.value("shutdown").toObject().value("clean").toBool();
+          s->evidence["result"]=ok?"PASS":"FAIL"; write(); timer->stop(); window->close(); app->exit(ok?0:1); break; }
+      }
+    } catch(const std::exception & e){ s->evidence["failure"]=QString::fromUtf8(e.what()); s->evidence["phase"]=s->phase;
+      snapshot("failure"); write(); timer->stop();
+      if(window->perception_process_->state()!=QProcess::NotRunning){ window->perception_process_->terminate(); window->perception_process_->waitForFinished(20000); }
+      app->exit(1); }});
+    timer->start();
+  }
+
   // R4.1b: the real Builder window runs the saved cell's physics cycle through its own button, the
   // confirmation dialog it shows, its live state label and (optionally) its Stop button.
   static void start_physics_cycle_acceptance(MainWindow * window, QApplication * app, const QString & output,

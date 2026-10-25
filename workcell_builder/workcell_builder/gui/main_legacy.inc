@@ -1229,6 +1229,18 @@ int main(int argc, char * argv[])
     return a.exec();
   }
 
+  if (has_cli_flag(args, "--live-perception-acceptance")) {
+    // Run with an isolated XDG_CONFIG_HOME: the cell's output root is set like Create New Cell sets it.
+    const QString output = cli_value(args, "--smoke-output"), scene = cli_value(args, "--scene-path");
+    if (output.isEmpty() || scene.isEmpty() || QFileInfo::exists(output + "/acceptance.json")) return 2;
+    QSettings().setValue("startup/last_scene_output_root", QFileInfo(scene).absolutePath());
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    w.show();
+    const int observe = cli_value(args, "--observe-s").toInt();
+    TestMain::start_live_perception_acceptance(&w, &a, output, scene, observe > 0 ? observe : 60);
+    return a.exec();
+  }
+
   if (has_cli_flag(args, "--physics-cycle-acceptance")) {
     // Run with an isolated XDG_CONFIG_HOME: the cells' output root is set like Create New Cell sets it.
     const QString output = cli_value(args, "--smoke-output"), scene = cli_value(args, "--scene-path");

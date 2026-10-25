@@ -9,6 +9,13 @@ SPEC=importlib.util.spec_from_file_location("run_stage_a1_finish",SCRIPT)
 MODULE=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(MODULE)
 
 
+@pytest.fixture(autouse=True)
+def installed_launch_is_this_checkouts(request,monkeypatch):
+    """Unit tests of main() run without a built workspace; the guard itself has its own test."""
+    if request.node.name!='test_the_installed_scene_launch_must_be_this_checkouts':
+        monkeypatch.setattr(MODULE,'launch_checkout_guard',lambda repo:str(repo/'scenes/ur5_2f_test/launch/demo.launch.py'))
+
+
 @pytest.fixture
 def bridge_preflight(monkeypatch):
     import simulator_backend
