@@ -471,6 +471,18 @@ def cycle_result(overall,output:Path)->dict:
                 stage_a_acceptance=overall.get("stage_a_acceptance"),evidence=str(output))
 
 
+def launch_checkout_guard(repo:Path)->str:
+    """The installed scene launch (and the backend it imports) must be this checkout's, never another workspace's."""
+    from ament_index_python.packages import get_package_share_directory,PackageNotFoundError
+    try:launch=Path(get_package_share_directory("ur5_2f_test"))/"launch/demo.launch.py"
+    except PackageNotFoundError as exc:raise RuntimeError("SCENE_PACKAGE_UNINSTALLED: build ur5_2f_test in this workspace") from exc
+    resolved=launch.resolve()
+    if not resolved.is_relative_to(repo.resolve()):
+        raise RuntimeError(f"SCENE_PACKAGE_FROM_OTHER_CHECKOUT: the installed launch {resolved} is not this checkout's "
+                           f"({repo}); build ur5_2f_test with --symlink-install in this workspace")
+    return str(resolved)
+
+
 def authored_cell(package:Path)->dict:
     """A Workcell Builder-saved cell bound for the qualified simulator, read without modification."""
     package=Path(package).resolve()
@@ -988,6 +1000,7 @@ def main(argv=None):
             (args.output/"authored-world/derivation.json").write_text(json.dumps(world_report,indent=2)+"\n")
             args.authored_cell["world"]=world_report;overall["authored_cell"]=dict(args.authored_cell)
         elif args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
+        launch_checkout_guard(repo)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
         bridge=active_bridge_overlay()
         args.bridge_overlay_identity=bridge_overlay_identity(bridge)

@@ -1243,3 +1243,14 @@ def test_operator_signals_unwind_through_owned_cleanup():
     source=SCRIPT.read_text()
     assert 'for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,cancel_on_signal)' in source
     assert 'except OperatorCancel as exc:\n        overall["status"]="CANCELLED"' in source
+
+
+def test_the_installed_scene_launch_must_be_this_checkouts(tmp_path,monkeypatch):
+    import ament_index_python.packages as packages
+    repo=MODULE.Path(MODULE.__file__).resolve().parents[1]
+    monkeypatch.setattr(packages,'get_package_share_directory',lambda name:str(repo/'scenes/ur5_2f_test'))
+    assert MODULE.launch_checkout_guard(repo).endswith('scenes/ur5_2f_test/launch/demo.launch.py')
+    other=tmp_path/'other_checkout/scenes/ur5_2f_test/launch';other.mkdir(parents=True);(other/'demo.launch.py').write_text('')
+    monkeypatch.setattr(packages,'get_package_share_directory',lambda name:str(other.parent))
+    with pytest.raises(RuntimeError,match='SCENE_PACKAGE_FROM_OTHER_CHECKOUT'):
+        MODULE.launch_checkout_guard(repo)
