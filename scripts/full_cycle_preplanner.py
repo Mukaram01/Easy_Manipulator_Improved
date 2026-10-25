@@ -107,15 +107,17 @@ class MotionFeasibilityFailure(RuntimeError):
 
 
 def seated_destination(xyz, orientation, dimensions, floor_z):
-    """Never command a placed object into the bound physical destination floor.
+    """Seat a placed object on the bound physical destination floor.
 
     The authored destination point is the object centre target. When the simulator binds the
-    physical floor (destination_geometry_binding), a centre that would put the object's lowest
-    point (box in its placed orientation) below that floor is raised to seat it on the floor;
-    a higher target is unchanged. Below the floor, the descent drove the tool 2.5 mm down over a
-    part already seated (LENLEG 2026-10-25), slipping the grip past the 2 mm retention limit; a
-    gap instead drops the part at release (10 mm: 0.18 mm impact depth, rejected by the 0.1 mm
-    floor-contact guard). Returns (target xyz, seat evidence or None when no floor is bound).
+    physical floor (destination_geometry_binding), the centre is moved vertically so the object's
+    lowest point (box in its placed orientation) rests on that floor: raised when it would be
+    below, lowered when it would be above. Below the floor, the descent drove the tool 2.5 mm down
+    over a part already seated (LENLEG 2026-10-25), slipping the grip past the 2 mm retention
+    limit; a gap drops the part at release (10 mm: 0.18 mm impact depth, rejected by the 0.1 mm
+    floor-contact guard), and a measured container floor lies well below a drop region's centre.
+    The seated pose must still lie in the authored region (check_object_containment).
+    Returns (target xyz, seat evidence or None when no floor is bound).
     """
     if floor_z is None:
         return list(xyz), None
@@ -127,7 +129,7 @@ def seated_destination(xyz, orientation, dimensions, floor_z):
     x, y, z, w = (v/norm for v in (x, y, z, w))
     vertical = (2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y))     # world z row of the object rotation
     half_height = sum(abs(r) * d / 2 for r, d in zip(vertical, dimensions))
-    target = [xyz[0], xyz[1], max(xyz[2], floor_z + half_height)]
+    target = [xyz[0], xyz[1], floor_z + half_height]
     return target, dict(floor_z=floor_z, half_height_m=half_height, authored_z=xyz[2],
                         target_z=target[2], raised_m=target[2]-xyz[2])
 
@@ -282,11 +284,13 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if not math.isfinite(contract['retreat_distance_m']) or contract['retreat_distance_m'] <= 0:
             raise RuntimeError('retreat distance must be finite and positive')
         if intent is not None:
-            aperture = intent['pick']['grasp'].get('aperture', {'min_m': 0., 'max_m': 0.085})
-            if not aperture['min_m'] <= aperture_extent <= aperture['max_m']:
+            aperture = intent['pick']['grasp'].get('aperture') or {}
+            authored_max = aperture.get('max_m')
+            if not (aperture.get('min_m') or 0.) <= aperture_extent <= (math.inf if authored_max is None else authored_max):
                 raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: object outside authored aperture')
-        if aperture_extent > 0.085:
-            raise RuntimeError('target exceeds Robotiq aperture')
+        tool_aperture = contract.get('tool_aperture_max_m')
+        if tool_aperture is None or aperture_extent > tool_aperture:
+            raise RuntimeError(f'target extent {aperture_extent:.4f} m exceeds the end effector aperture {tool_aperture} m')
         if any(a > b for a, b in zip(extents, destination['dimensions'])):
             raise RuntimeError('target exceeds destination bounds')
         original = next(o for o in view.world.collision_objects if o.id == observation['id'])
@@ -316,6 +320,9 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         stage('PREPLAN_CLOSE_GRIPPER')
         close = None
         reserve = contract.get('simulator_closure_reserve') is True
+        # The cell's tool command joint, its open position and closing limit (bind_tool_actuation).
+        tool_joint, open_position, closed_limit = (contract['tool_command_joint'], contract['tool_open_rad'],
+                                                    contract['tool_closed_limit_rad'])
         required_contacts = set(contract['allowed_touch_links'])
         first_opposing = None
         if reserve and len(required_contacts) < 2:
@@ -324,7 +331,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         def closure_contacts(position):
             if reserve and time.monotonic() >= deadline:
                 raise budget_failure()
-            trial = operations.updated_state(view.robot_state, {'gripper_finger1_joint': position})
+            trial = operations.updated_state(view.robot_state, {tool_joint: position})
             response = operations.state_validity(trial)
             if response.contacts:
                 try:
@@ -342,9 +349,9 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                 if observation['id'] in (c.contact_body_1, c.contact_body_2)
             }
 
-        closure_step = 0.804/80
+        closure_step = (closed_limit-open_position)/80
         for i in range(1, 81):
-            position = 0.804*i/80
+            position = open_position+closure_step*i
             response = closure_contacts(position)
             if response.contacts and not reserve:
                 close = position
@@ -356,7 +363,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     # Refine the first observed contact bracket before adding
                     # the unchanged reserve. The coarse sample can already
                     # overshoot contact by an entire closure step.
-                    lower, upper = 0.804*(i-1)/80, position
+                    lower, upper = position-closure_step, position
                     refinement_iterations = 0
                     if i == 1 and required_contacts.issubset(
                             target_contact_links(closure_contacts(lower))):
@@ -370,7 +377,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                         refinement_iterations += 1
                     first_opposing = upper
                     close = first_opposing+SIMULATOR_CLOSURE_RESERVE_RAD
-                    if close > 0.804:
+                    if close > closed_limit:
                         raise RuntimeError('no closure reserve remains within gripper range')
                     planned_contacts = target_contact_links(closure_contacts(close))
                     if not required_contacts.issubset(planned_contacts):
@@ -379,7 +386,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if close is None:
             raise RuntimeError('no allowed fingertip contact in closing range')
         grasp_open_state = copy.deepcopy(view.robot_state)
-        motion('PREPLAN_CLOSE_GRIPPER', {'gripper_finger1_joint': close}, group='gripper')
+        motion('PREPLAN_CLOSE_GRIPPER', {tool_joint: close}, group=contract['tool_group'])
         if reserve:
             # A position reserve is not a force measurement. Execution must
             # still establish and continuously retain actual opposing contact.
@@ -495,7 +502,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                         raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: planned placement orientation differs from physical destination')
                 check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=clearance)
                 checks.append(dict(code=check_code, status='PASS'))
-                motion('PREPLAN_OPEN_GRIPPER', {'gripper_finger1_joint': 0.0}, group='gripper')
+                motion('PREPLAN_OPEN_GRIPPER', {tool_joint: open_position}, group=contract['tool_group'])
                 stage('DETACH')
                 before = copy.deepcopy(view)
                 placed = operations.place_detachment_diff(original, contract['grasp_frame'], achieved[:3], achieved[3:]).world.collision_objects[0]

@@ -67,7 +67,8 @@ def test_committed_worlds_bin_floor_sits_at_the_authored_destination_origin():
 
 def test_launch_applies_the_binding_after_prepare_without_touching_the_evidence_bound_backend():
     launch = (REPO / 'scenes/ur5_2f_test/launch/demo.launch.py').read_text()
-    assert "destination_binding.augment_spec(output, collision_manifest_path)" in launch
+    assert ("destination_binding.augment_spec(output, collision_manifest_path,\n"
+            "            measured_floor=_SCENE_PACKAGE_DIR is not None)") in launch
     assert 'destination' not in (REPO / 'scripts/simulator_backend.py').read_text()
 
 

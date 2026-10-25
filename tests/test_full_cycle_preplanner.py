@@ -49,7 +49,9 @@ def fixture(fail_at=None, contacts=True):
     scene.robot_state.joint_state = JointState(name=names, position=[0., 0., .5, 0., 0., 0., 1., 0.])
     contract = dict(tool_link='tool', grasp_frame='grasp', allowed_touch_links=['tip'],
         home_joint_names=names[:7], home_joint_positions=[0., 0., .5, 0., 0., 0., 1.],
-        max_age_seconds=60., approach_distance_m=.12, retreat_distance_m=.15, tcp_pose=[0., 0., 0., 0., 0., 0., 1.])
+        max_age_seconds=60., approach_distance_m=.12, retreat_distance_m=.15, tcp_pose=[0., 0., 0., 0., 0., 0., 1.],
+        tool_command_joint='gripper_finger1_joint', tool_group='gripper', tool_open_rad=0., tool_closed_limit_rad=.804,
+        tool_aperture_max_m=.085)
     trace, goals, validity = [], [], []
     def stage(name):
         trace.append(name)
@@ -1860,7 +1862,8 @@ def test_pinch_tcp_rotation_offset_is_still_refused():
     assert not result.success and 'nonzero authored TCP adjustment' in result.reason and goals == []
 
 
-@pytest.mark.parametrize('floor_z,place_z,raised', [(None, .35, None), (.2, .35, 0.), (.27, .37, .02)])
+# The bound floor seats the part: a target below it is raised, one above it is lowered onto it (no free fall).
+@pytest.mark.parametrize('floor_z,place_z,raised', [(None, .35, None), (.2, .30, -.05), (.27, .37, .02)])
 def test_place_target_never_commands_the_part_into_the_bound_physical_floor(floor_z, place_z, raised):
     # A centre target below floor + half height + clearance drove the tool 2.5 mm down over a part
     # already seated on the simulator's bin floor (LENLEG 2026-10-25), slipping the grip.
@@ -1889,7 +1892,8 @@ def test_seated_destination_uses_the_placed_orientation_and_rejects_invalid_inpu
     target, seat = seated_destination([0., 0., 0.], [s, 0., 0., s], [.04, .04, .1], 0.)              # long axis horizontal
     assert seat['half_height_m'] == pytest.approx(.02) and target[2] == pytest.approx(.02)
     assert seated_destination([0., 0., .5], [0., 0., 0., 1.], [.1, .1, .1], None) == ([0., 0., .5], None)
-    assert seated_destination([0., 0., .5], [0., 0., 0., 1.], [.1, .1, .1], 0.)[0] == [0., 0., .5]     # above: unchanged
+    target, seat = seated_destination([0., 0., .5], [0., 0., 0., 1.], [.1, .1, .1], 0.)             # above: lowered onto it
+    assert target == pytest.approx([0., 0., .05]) and seat['raised_m'] == pytest.approx(-.45)
     for floor, orientation, dims in ((float('nan'), [0, 0, 0, 1], [.1]*3), (0., [0, 0, 0, 0], [.1]*3), (0., [0, 0, 0, 1], [.1, 0., .1])):
         with pytest.raises(RuntimeError, match='floor seating'):
             seated_destination([0., 0., 0.], orientation, dims, floor)

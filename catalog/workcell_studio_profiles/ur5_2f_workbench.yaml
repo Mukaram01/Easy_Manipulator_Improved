@@ -27,3 +27,16 @@ runtime:
   mount_collision_exemptions:
     - [gripper_base_link, tool0]
     - [gripper_base_link, wrist_3_link]
+# Physical destination regions for new cells (target-local, metres). The reference scene's usable
+# placement and drop region bottoms (z -0.06 / -0.05) sit 37 / 47 mm above the measured floor of the
+# sorting_bin.stl container (floor top z -0.097; scripts/container_geometry.py on the generated planning
+# mesh, R4.1b 2026-10-25), so a part placed there would be released in free fall. New cells keep the
+# reviewed footprints and extend both regions down to 2 mm below the measured floor top;
+# tests/test_simulator_world.py re-measures the mesh and checks this.
+destination_regions:
+  asset: target_bin_default
+  measured_floor_top_local_z: -0.097
+  usable_placement: {pose_xyz: [0.0, 0.0, -0.0095], dimensions: [0.24, 0.12, 0.179]}
+  zones:
+    default_drop_zone: {pose_xyz: [0.0, 0.0, -0.0145], dimensions: [0.2, 0.1, 0.169]}
+    place_zone_default: {pose_xyz: [0.0, 0.0, -0.0145], dimensions: [0.2, 0.1, 0.169]}

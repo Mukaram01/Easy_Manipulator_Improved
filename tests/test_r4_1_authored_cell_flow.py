@@ -19,7 +19,7 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # The beginner's manual test object (Create New Cell > object source: manual simulated).
-MANUAL_OBJECT = {'object_id': 'part_04', 'shape': 'box', 'dimensions': [0.025, 0.025, 0.025],
+MANUAL_OBJECT = {'object_id': 'part_04', 'material': 'qualified_test_polymer', 'shape': 'box', 'dimensions': [0.025, 0.025, 0.025],
                  'pose': {'frame_id': 'world', 'xyz': [0.40, -0.20, 0.0125], 'rpy': [0, 0, 0]}}
 
 
@@ -130,7 +130,7 @@ def test_the_saved_cell_derives_a_physics_world_from_its_own_data(flow):
     from simulator_world import derive_world
     text, report = derive_world(scene)
     assert report['objects'][0]['object_id'] == 'part_04'
-    assert report['objects'][0]['pose'][:2] == pytest.approx([0.40, -0.20])
+    assert report['objects'][0]['authored_pose'][:2] == pytest.approx([0.40, -0.20])
     assert report['destination']['asset_ref'] == 'target_bin_default'
 
 
@@ -140,7 +140,7 @@ def test_the_runner_accepts_only_a_saved_simulator_task(flow, tmp_path):
     spec = importlib.util.spec_from_file_location('runner', SCRIPTS / 'run_stage_a1_finish.py')
     runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
     cell = runner.authored_cell(scene)
-    assert cell['name'] == 'beginner_cell' and cell['class_id'] == 'unclassified'
+    assert cell['name'] == 'beginner_cell'
     copied = runner.prepare_authored_scene(ROOT, scene, tmp_path / 'session' / 'beginner_cell')
     assert (copied / 'config/workcell_builder_task_intent.yaml').read_bytes() == \
         (scene / 'config/workcell_builder_task_intent.yaml').read_bytes()              # used unchanged

@@ -25,7 +25,9 @@ from simulator_backend import digest
 WALL_OBJECT_PREFIX = 'workcell::target_bin_physics_'
 
 
-def bind_destination_geometry(xml, manifest_path):
+def bind_destination_geometry(xml, manifest_path, measured_floor=False):
+    """``measured_floor``: the floor must be the planning mesh's own floor below it (derived cell worlds),
+    otherwise the reference contract (floor top at the authored destination origin)."""
     import yaml
     root = ET.fromstring(xml)
     models = root.findall("world/model[@name='target_bin_physics']")
@@ -65,7 +67,12 @@ def bind_destination_geometry(xml, manifest_path):
         if len(fp) != 6 or any(abs(v) > 1e-12 for v in fp[3:]) or len(size) != 3 or min(size) <= 0:
             raise ValueError('destination floor must be an axis-aligned box')
         floor_z = fp[2] + size[2] / 2
-        if math.dist(fp[:2], xyz[:2]) > 1e-6 or abs(floor_z - xyz[2]) > 1e-6:
+        if measured_floor:
+            expected = mesh_floor_below(item, fp[:2], xyz)
+            if abs(floor_z - expected) > 1e-6:
+                raise ValueError('physics destination floor top %.6f differs from the planning mesh floor %.6f below it'
+                                 % (floor_z, expected))
+        elif math.dist(fp[:2], xyz[:2]) > 1e-6 or abs(floor_z - xyz[2]) > 1e-6:
             raise ValueError('physics destination floor top %.6f/(%.4f,%.4f) differs from authored destination origin %.6f/(%.4f,%.4f)'
                              % (floor_z, fp[0], fp[1], xyz[2], xyz[0], xyz[1]))
         walls = []
@@ -84,10 +91,25 @@ def bind_destination_geometry(xml, manifest_path):
         if not walls or len({w['collision'] for w in walls}) != len(walls):
             raise ValueError('destination walls missing or ambiguous')
         return dict(manifest_path=str(path), manifest_sha256=digest(raw), object_id=item['id'],
+                    floor_contract='planning_mesh_floor' if measured_floor else 'destination_origin',
                     model='target_bin_physics', link='bin_link', collision='floor', floor_z=floor_z,
                     floor_xyz=fp[:3], floor_size_m=size, pose_xyz=xyz, walls=walls)
     except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError) as exc:
         raise ValueError('destination geometry binding rejected: ' + str(exc)) from exc
+
+
+def mesh_floor_below(item, xy, origin):
+    """World z of the destination planning mesh's first surface straight below its rim at ``xy``."""
+    from container_geometry import _triangles, ray_hits
+    geometry = item.get('collision_geometry') or {}
+    if geometry.get('type') != 'mesh':
+        raise ValueError('a measured destination floor needs the planning collision mesh')
+    tris = _triangles(geometry['vertices_m'], geometry['triangles'])
+    rim = float(tris[:, :, 2].max()) - 1e-4
+    hits = ray_hits(tris, [xy[0] - origin[0], xy[1] - origin[1], rim], [0.0, 0.0, -1.0])
+    if not len(hits):
+        raise ValueError('no planning mesh floor below the physics destination floor')
+    return origin[2] + rim - float(hits[0])
 
 
 def wall_object_ids(binding):
@@ -128,10 +150,10 @@ def walls_scene_diff(binding):
     return scene
 
 
-def augment_spec(output, manifest_path):
+def augment_spec(output, manifest_path, measured_floor=False):
     """Record the destination binding in the prepared simulator spec (read by the receipt)."""
     output = Path(output)
-    binding = bind_destination_geometry((output / 'world.sdf').read_text(), manifest_path)
+    binding = bind_destination_geometry((output / 'world.sdf').read_text(), manifest_path, measured_floor)
     spec_path = output / 'spec.json'
     spec = json.loads(spec_path.read_text())
     spec['destination_geometry_binding'] = binding
