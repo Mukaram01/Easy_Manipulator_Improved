@@ -322,6 +322,7 @@ def test_session_bridge_mismatch_blocks_resolve_and_records_cleanup(tmp_path,mon
     monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
     monkeypatch.setattr(MODULE,'generate_scene',lambda *args:None)
     monkeypatch.setattr(MODULE,'wait_file',lambda *args:None)
+    monkeypatch.setattr(MODULE,'wait_controllers_active',lambda *args:{})
     monkeypatch.setattr(MODULE,'verify_session_moveit',lambda *args:{'verified':True})
     monkeypatch.setattr(MODULE.subprocess,'Popen',lambda *args,**kwargs:object())
     shutdown={'clean':True,'owned_cleanup':True}
@@ -353,6 +354,7 @@ def test_session_rejects_passing_plan_when_owned_child_crashes(tmp_path,monkeypa
     monkeypatch.setattr(MODULE,'verify_session_bridge',lambda *args:bridge_preflight,raising=False)
     monkeypatch.setattr(MODULE,'generate_scene',lambda *args:None)
     monkeypatch.setattr(MODULE,'wait_file',lambda *args:None)
+    monkeypatch.setattr(MODULE,'wait_controllers_active',lambda *args:{})
     monkeypatch.setattr(MODULE,'assert_plan',lambda *args,**kwargs:None)
     real_popen=subprocess.Popen
     def launch(*args,**kwargs):
@@ -1091,3 +1093,47 @@ def test_failed_gil_probe_build_blocks_before_any_session(tmp_path,monkeypatch,s
     assert MODULE.main(['--output',str(output),'--mode','targeted','--gate','telemetry','--gil-probe-ms','80'])==1
     report=json.loads((output/'stage-a1-targeted-report.json').read_text())
     assert report['status']=='BLOCKED' and 'gil_probe.c' in report['failure'] and seen==[] and stubbed_preflight==[]
+
+
+class _Launch:
+    def __init__(self, rc=None): self.returncode = rc
+    def poll(self): return self.returncode
+
+
+def _probe(monkeypatch, replies):
+    from types import SimpleNamespace
+    calls = []
+    def run(cmd, **kw):
+        calls.append(cmd)
+        reply = replies[min(len(calls), len(replies)) - 1]
+        return SimpleNamespace(returncode=0, stdout=json.dumps(reply) + '\n')
+    monkeypatch.setattr(MODULE.subprocess, 'run', run)
+    monkeypatch.setattr(MODULE.time, 'sleep', lambda s: None)
+    return calls
+
+
+def test_session_waits_for_the_receipts_controllers_before_the_executor(tmp_path, monkeypatch):
+    # The receipt appears at spawn; the gripper spawner can still be loading (LENLEG 2026-10-25,
+    # stage_a1_acceptance_contact_cfm_full2 telemetry: SIMULATOR_IDENTITY_REJECTED controllers not active).
+    receipt = tmp_path/'receipt.json'
+    receipt.write_text(json.dumps({'expected_controllers': ['arm', 'gripper']}))
+    calls = _probe(monkeypatch, [{}, {'arm': 'active', 'gripper': 'inactive'}, {'arm': 'active', 'gripper': 'active'}])
+    states = MODULE.wait_controllers_active(receipt, _Launch(), {}, tmp_path, 60)
+    assert states == {'arm': 'active', 'gripper': 'active'} and len(calls) == 3
+    source = SCRIPT.read_text()
+    start = source[source.index('wait_file(receipt,launch,90'):]
+    assert start.index('wait_controllers_active(receipt,launch,env,repo,60)') < start.index('simulator_observations.py') \
+        < start.index('executor_command(')
+
+
+def test_controller_readiness_fails_closed(tmp_path, monkeypatch):
+    receipt = tmp_path/'receipt.json'
+    receipt.write_text(json.dumps({'expected_controllers': ['arm']}))
+    _probe(monkeypatch, [{'arm': 'inactive'}])
+    with pytest.raises(TimeoutError, match='controllers not active'):
+        MODULE.wait_controllers_active(receipt, _Launch(), {}, tmp_path, 0.01)
+    with pytest.raises(RuntimeError, match='launch exited'):
+        MODULE.wait_controllers_active(receipt, _Launch(rc=1), {}, tmp_path, 60)
+    receipt.write_text(json.dumps({}))
+    with pytest.raises(RuntimeError, match='no expected controllers'):
+        MODULE.wait_controllers_active(receipt, _Launch(), {}, tmp_path, 60)

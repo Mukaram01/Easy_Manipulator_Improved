@@ -291,6 +291,39 @@ def wait_file(path,process,timeout,log=None):
     raise TimeoutError(f"timed out waiting for {path}"+log_tail())
 
 
+CONTROLLER_STATES_PROBE='''import json,rclpy
+from controller_manager_msgs.srv import ListControllers
+rclpy.init();node=rclpy.create_node('stage_a1_controller_readiness');states={}
+try:
+    client=node.create_client(ListControllers,'/controller_manager/list_controllers')
+    if client.wait_for_service(timeout_sec=5.):
+        future=client.call_async(ListControllers.Request());rclpy.spin_until_future_complete(node,future,timeout_sec=5.)
+        if future.done() and future.result() is not None:states={c.name:c.state for c in future.result().controller}
+finally:
+    node.destroy_node();rclpy.shutdown()
+print(json.dumps(states))
+'''
+
+
+def wait_controllers_active(receipt,process,env,cwd,timeout):
+    """The receipt appears at spawn, before the controller spawners finish; the executor's
+    identity preflight then rejects the session (controllers not active). Wait, bounded, for
+    the receipt's expected controllers to be active; the executor still verifies identity."""
+    expected=json.loads(Path(receipt).read_text()).get("expected_controllers") or []
+    if not expected:raise RuntimeError("receipt names no expected controllers")
+    deadline=time.monotonic()+timeout;states={}
+    while time.monotonic()<deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"owned launch exited before controllers became active (rc={process.returncode})")
+        probe=subprocess.run([sys.executable,"-c",CONTROLLER_STATES_PROBE],cwd=cwd,env=env,stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,text=True,timeout=30,check=False)
+        try:states=json.loads(probe.stdout.strip().splitlines()[-1]) if probe.returncode==0 else {}
+        except (ValueError,IndexError):states={}
+        if all(states.get(name)=="active" for name in expected):return states
+        time.sleep(.5)
+    raise TimeoutError(f"controllers not active after {timeout:.0f} s: {states}")
+
+
 def assert_domain_free(env,cwd):
     probe=subprocess.run(["ros2","node","list","--no-daemon"],cwd=cwd,env=env,stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,text=True,timeout=10,check=False)
@@ -648,6 +681,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             "allow_trajectory_execution:=true"]
         launch=subprocess.Popen(launch_cmd,cwd=repo,env=env,stdout=launch_log,stderr=subprocess.STDOUT,start_new_session=True)
         wait_file(receipt,launch,90,session/"launch.log")
+        report["controllers_ready"]=wait_controllers_active(receipt,launch,env,repo,60)
         run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
              "--output",observations,"--class-id",args.class_id],
             env=env,cwd=repo,log=session/"observations.log",timeout=90)
