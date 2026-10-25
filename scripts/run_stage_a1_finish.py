@@ -448,6 +448,9 @@ def authored_cell(package:Path)->dict:
 def prepare_authored_scene(repo:Path,package:Path,destination:Path)->Path:
     """Copy the saved cell verbatim; the session never rewrites its task, scene or tool."""
     shutil.copytree(package,destination,ignore=shutil.ignore_patterns("build","install","log"))
+    # The session regenerates its own copy; the saved cell itself may be read-only and stays untouched.
+    for path in [destination,*destination.rglob("*")]:
+        if not path.is_symlink():path.chmod(path.stat().st_mode|0o200)
     catalog_parent=destination.parent/"catalog"
     if not catalog_parent.exists():
         shutil.copytree(repo/"catalog/grasp_strategies",catalog_parent/"grasp_strategies")

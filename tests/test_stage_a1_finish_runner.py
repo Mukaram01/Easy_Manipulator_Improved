@@ -1179,3 +1179,18 @@ def test_authored_cell_runs_never_count_as_reference_stage_a_acceptance():
     source=SCRIPT.read_text()
     assert 'overall["stage_a_acceptance"]=(not args.authored_cell and args.mode=="full"' in source
     assert 'if args.source_world is not None:raise RuntimeError("--scene-package derives its world' in source
+
+
+def test_a_read_only_saved_cell_is_copied_into_a_writable_session_and_left_untouched(tmp_path):
+    import os,stat
+    package=tmp_path/'saved'/'beginner_cell';(package/'config').mkdir(parents=True)
+    (package/'config/workcell_builder_task_intent.yaml').write_text('{"saved": true}')
+    for path in [package,*package.rglob('*')]:path.chmod(path.stat().st_mode&~0o222)
+    try:
+        repo=MODULE.Path(MODULE.__file__).resolve().parents[1]
+        copied=MODULE.prepare_authored_scene(repo,package,tmp_path/'session'/'beginner_cell')
+        (copied/'config/generated.yaml').write_text('regenerated')            # the session can regenerate
+        assert not os.access(package/'config/workcell_builder_task_intent.yaml',os.W_OK)
+        assert (copied/'config/workcell_builder_task_intent.yaml').read_text()=='{"saved": true}'
+    finally:
+        for path in [package,*package.rglob('*')]:path.chmod(path.stat().st_mode|stat.S_IWUSR)
