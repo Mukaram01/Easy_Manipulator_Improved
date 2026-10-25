@@ -1363,7 +1363,7 @@ def discovered_graph(read_graph, spin, timeout=10.0):
 
 def wait_for_robot_baseline(read_scene, home, mimics=(), timeout=10.0):
     """Wait for initial state publication; never command home or relax tolerance."""
-    required = dict(home, gripper_finger1_joint=0.0)
+    required = dict(home)   # arm home plus the open tool command joint
     deadline = time.monotonic() + timeout
     while True:
         scene = read_scene()
@@ -2001,7 +2001,7 @@ def main():
                      initial_separation_object_ids=None, extraction_intent=None, closure_clearance=None):
         stage(name)
         if closure_clearance is not None and (
-                args.backend != 'simulator' or name != 'PREPLAN_CLOSE_GRIPPER' or group != 'gripper' or
+                args.backend != 'simulator' or name != 'PREPLAN_CLOSE_GRIPPER' or group != contract['tool_group'] or
                 closure_clearance.get('accepted') is not True):
             raise RuntimeError('closure-clearance evidence outside simulator closing context')
         if ik_seed is not None and (name != 'PREPLAN_TRANSFER' or isinstance(goal, dict)
@@ -2390,7 +2390,11 @@ def main():
         else:
             eligible, rejected = inputs.filter_targets(objects, task, cell, time.time(), _PLANNER)
         summary.update(task_request=task, normalized_objects=objects, rejected_objects=rejected)
-        params = call(params_client, GetParameters.Request(names=['use_fake_hardware','allow_trajectory_execution','robot_description'])).values
+        params = call(params_client, GetParameters.Request(names=['use_fake_hardware','allow_trajectory_execution','robot_description',
+                                                                  'robot_description_semantic'])).values
+        _PLANNER.bind_tool_actuation(contract, params[2].string_value, params[3].string_value)
+        summary['tool_actuation'] = {key: contract[key] for key in ('tool_command_joint', 'tool_group', 'tool_open_rad',
+                                                                    'tool_closed_limit_rad', 'tool_aperture_max_m')}
         from hashlib import sha256
         contract['robot_model_sha256'] = sha256(params[2].string_value.encode()).hexdigest()
         summary['trajectory_execution_enabled'] = params[1].bool_value
@@ -2425,7 +2429,8 @@ def main():
             for j in ik_joints.values() for m in j.findall('mimic')]
         stage('UPDATE_PLANNING_SCENE')
         home = dict(zip(contract['home_joint_names'],contract['home_joint_positions']))
-        initial = wait_for_robot_baseline(scene_now, home, mimics, min(10.0, args.timeout))
+        tool_open = {contract['tool_command_joint']: contract['tool_open_rad']}
+        initial = wait_for_robot_baseline(scene_now, dict(home, **tool_open), mimics, min(10.0, args.timeout))
         if initial.robot_state.attached_collision_objects:
             raise RuntimeError('existing attachment requires explicit recovery')
         existing_ids = {o.id for o in initial.world.collision_objects}
@@ -2463,7 +2468,7 @@ def main():
             if not observation_geometry_matches(obj, actual.get(obj['id'])):
                 raise RuntimeError('normalized scene insertion mismatch')
         # A non-home start is not silently corrected with motion before validation.
-        assert_joint_match(initial.robot_state, updated_state(initial.robot_state, dict(home, gripper_finger1_joint=0.0), mimics),0.001)
+        assert_joint_match(initial.robot_state, updated_state(initial.robot_state, dict(home, **tool_open), mimics),0.001)
         baseline = copy.deepcopy(initial.allowed_collision_matrix)
         destination = load_canonical_place_target(package, task['destination_zone'])
         retreat = args.retreat_distance if args.retreat_distance is not None else contract['retreat_distance_m']
@@ -2765,7 +2770,7 @@ def main():
                         prevalidated=trajectory.joint_trajectory
                         open_goal=dict(zip(prevalidated.joint_names,prevalidated.points[-1].positions))
                         deadline=time.monotonic()+30
-                        release=plan_segment(scene_now(),label,open_goal,group='gripper')
+                        release=plan_segment(scene_now(),label,open_goal,group=contract['tool_group'])
                         trajectory=release['trajectory'];live=trajectory.joint_trajectory
                         measured_open=measurements.joints(measurements.fresh())[contact_guard.leader][0]
                         live_start=live.points[0].positions[list(live.joint_names).index(contact_guard.leader)]
@@ -2808,7 +2813,7 @@ def main():
                         if args.simulator_commission=='contact-release':
                             # Plan release in the actual lifted scene with the existing planner.
                             deadline=time.monotonic()+30
-                            release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group='gripper')
+                            release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group=contract['tool_group'])
                             action(execute_client,ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)
                             await_release_ready()
                             measured_reconcile()
@@ -2851,7 +2856,7 @@ def main():
                     hold_command=grasp_hold_target(hold_before['leader_position_rad'],hold_profile.hold_reserve_rad,
                                                    certified_close,contact_guard.open_position)
                     deadline=time.monotonic()+30
-                    hold=plan_segment(scene_now(),'COMMISSION_GRASP_HOLD',{leader:hold_command},group='gripper')
+                    hold=plan_segment(scene_now(),'COMMISSION_GRASP_HOLD',{leader:hold_command},group=contract['tool_group'])
                     hold_points=hold['trajectory'].joint_trajectory
                     action(execute_client,ExecuteTrajectory.Goal(trajectory=hold['trajectory']),30)
                     stage(label)
@@ -2999,7 +3004,7 @@ def main():
             return 0
         final = scene_now()
         assert_scene_match(final, expected, selected_id)
-        intended_home = dict(home, gripper_finger1_joint=0.0)
+        intended_home = dict(home, **tool_open)
         assert_joint_match(final.robot_state, updated_state(final.robot_state, intended_home, mimics), 0.001)
         summary['final_robot_state'] = dict(
             actual_joints=dict(zip(final.robot_state.joint_state.name, final.robot_state.joint_state.position)),

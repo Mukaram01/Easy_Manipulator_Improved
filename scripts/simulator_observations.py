@@ -154,12 +154,14 @@ def verify_snapshot_binding(snapshot, receipt_sha256):
         raise RuntimeError('simulator observation belongs to an unknown/different simulator run')
 
 
-def capture(receipt, output, class_id, timeout=30, refresh_from=None):
+def capture(receipt, output, class_id, timeout=30, refresh_from=None, class_map=None):
     import rclpy
     from tf2_msgs.msg import TFMessage
     import yaml
     verify_receipt_process(receipt)
     r,models=box_models(receipt)
+    if class_map is not None and set(class_map)!=set(models):
+        raise RuntimeError(f'authored object classes {sorted(class_map)} differ from the simulated models {sorted(models)}')
     rclpy.init();node=rclpy.create_node('simulator_box_observations');samples=[]
     def update(msg):
         poses={t.child_frame_id:pose(t.transform) for t in msg.transforms if t.child_frame_id in models}
@@ -178,7 +180,7 @@ def capture(receipt, output, class_id, timeout=30, refresh_from=None):
         verify_receipt_process(receipt)
         snapshot=dict(schema_version='detected_objects/v1',source='Fortress measured model poses',
             simulator_receipt_sha256=digest(Path(receipt).read_bytes()),objects=[
-            dict(object_id=name,class_id=class_id,confidence=None,timestamp=samples[-1]['received_at'],
+            dict(object_id=name,class_id=class_map[name] if class_map is not None else class_id,confidence=None,timestamp=samples[-1]['received_at'],
                  pose=dict(frame_id='world',xyz=b[name][:3],rpy=rpy(b[name])),dimensions=size)
             for name,size in sorted(models.items())])
         refresh_evidence=None
@@ -196,8 +198,10 @@ def capture(receipt, output, class_id, timeout=30, refresh_from=None):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--receipt',required=True,type=Path);parser.add_argument('--output',required=True,type=Path)
-    parser.add_argument('--class-id',required=True)
+    classes=parser.add_mutually_exclusive_group(required=True)
+    classes.add_argument('--class-id',help='one class for every simulated model (reference scene)')
+    classes.add_argument('--class-map',type=json.loads,help='JSON {model: class}: each authored object keeps its own class')
     parser.add_argument('--refresh-from',type=Path,
         help='Renew timestamps only if fresh Fortress geometry still matches this bound snapshot')
     args=parser.parse_args()
-    capture(args.receipt,args.output,args.class_id,refresh_from=args.refresh_from)
+    capture(args.receipt,args.output,args.class_id,refresh_from=args.refresh_from,class_map=args.class_map)

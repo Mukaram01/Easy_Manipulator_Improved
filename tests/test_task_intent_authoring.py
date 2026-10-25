@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 from test_task_intent_resolver import valid_intent, environment
@@ -126,15 +127,29 @@ def test_explicit_simulator_authoring_keeps_real_lock(tmp_path):
         assert validate(path, root)['status'] == 'FAIL'
 
 
-def test_wizard_freshness_default_follows_the_object_source(tmp_path):
-    from scripts.task_intent_authoring import _wizard_intent, LIVE_OBSERVATION_MAX_AGE_S, SIMULATED_OBSERVATION_MAX_AGE_S
+def test_wizard_freshness_and_aperture_follow_the_source_policy_and_tool(tmp_path):
+    from scripts.task_intent_authoring import _wizard_intent
+    from scripts.task_intent_v2 import OBSERVATION_FRESHNESS_POLICY, validate_intent
     env = environment()
     env['task_zones'].append({'id': 'pick_zone_main', 'type': 'pick_zone'})
+    env['end_effector'] = {'capability': 'robotiq_2f_85'}
     target = next(z['target_ref'] for z in env['task_zones'] if z.get('target_ref'))
     def studio(mode):
         return {'workcell_studio': {'scenario': {'id': 'static_table_pick_place'}, 'task_intent': {'grasp_strategy': 'auto'},
                 'pick_zone': {'pick_object_source': 'pick_zone_main', 'object_source': {'mode': mode, 'source_zone_ref': 'pick_zone_main'}},
                 'place_zone': {'target': target}}}
-    filters = lambda mode: _wizard_intent(tmp_path, {**env, **studio(mode)})['pick']['selection']['object_filter']
-    assert filters('manual_simulated')['max_age_seconds'] == SIMULATED_OBSERVATION_MAX_AGE_S == 180.0  # qualified Stage-A policy
-    assert filters('live_perception')['max_age_seconds'] == LIVE_OBSERVATION_MAX_AGE_S == 2.0
+    intent = lambda mode: _wizard_intent(tmp_path, {**env, **studio(mode)})
+    assert intent('manual_simulated')['pick']['selection']['object_filter']['max_age_seconds'] == 180.0
+    assert intent('live_epd_realsense')['pick']['selection']['object_filter']['max_age_seconds'] == 2.0
+    assert OBSERVATION_FRESHNESS_POLICY['recorded_perception']['max_age_s'] == 2.0
+    assert intent('manual_simulated')['pick']['grasp']['aperture']['max_m'] == 0.085        # catalog opening_width_mm
+    model = intent('live_epd_realsense')
+    model['pick']['selection']['object_filter']['max_age_seconds'] = 180.0                   # a live sensor may not inherit it
+    assert 'OBSERVATION_FRESHNESS_POLICY' in {e['code'] for e in validate_intent(model)}
+    model['pick']['selection']['source_type'] = 'unknown_sensor'
+    assert 'OBSERVATION_SOURCE_UNKNOWN' in {e['code'] for e in validate_intent(model)}
+    env['end_effector'] = {'capability': None}                                              # draft: tool not bound yet
+    assert intent('manual_simulated')['pick']['grasp']['aperture']['max_m'] is None
+    env['end_effector'] = {'capability': 'ee_vacuum_array_placeholder_unknown'}
+    with pytest.raises(ValueError, match='not in the capability catalog'):
+        intent('manual_simulated')

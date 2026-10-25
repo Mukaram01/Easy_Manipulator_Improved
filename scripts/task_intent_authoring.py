@@ -14,15 +14,28 @@ from task_intent_v2 import migrate_v1, parse_validate_normalize, normalized_inte
 from validate_builder_task_intent import validate_payload
 
 
-# Live perception must be fresh. A manual simulated object is measured from the physics world by the
-# qualified Stage-A runtime, which bounds the snapshot at 180 s (selection runs ~5 s after capture, the
-# snapshot is renewed before revalidation and the object is re-measured live at closure).
-LIVE_OBSERVATION_MAX_AGE_S = 2.0
-SIMULATED_OBSERVATION_MAX_AGE_S = 180.0
-
-
 def _default_max_age(source_mode):
-    return SIMULATED_OBSERVATION_MAX_AGE_S if source_mode == 'manual_simulated' else LIVE_OBSERVATION_MAX_AGE_S
+    """The source's validated freshness ceiling (task_intent_v2.OBSERVATION_FRESHNESS_POLICY)."""
+    from task_intent_v2 import freshness_policy
+    policy = freshness_policy(source_mode)
+    if policy is None:
+        raise ValueError(f'Object source {source_mode!r} has no observation freshness policy.')
+    return policy['max_age_s']
+
+
+def _tool_aperture(env):
+    """Opening of the cell's bound end-effector capability; None while a draft has no capability bound
+    (planning then still enforces the tool's own opening, contract tool_aperture_max_m)."""
+    sys.path.insert(0, str(SCRIPT_DIR))
+    from perceived_object_grasp_plan import capability_aperture_m
+    tool = env.get('end_effector')
+    capability = tool.get('capability') if isinstance(tool, dict) else None
+    if not capability:
+        return None
+    aperture = capability_aperture_m(capability)
+    if aperture is None:
+        raise ValueError(f'End effector capability {capability!r} declares no opening width; select a commissioned tool.')
+    return aperture
 
 
 def _wizard_intent(scene, env):
@@ -63,7 +76,7 @@ def _wizard_intent(scene, env):
                       'tcp_offset_xyz_m': catalog.get('tool_frame_offset_xyz', [0.0, 0.0, 0.0]),
                       'tcp_offset_rpy_rad': catalog.get('tool_frame_offset_rpy', [0.0, 0.0, 0.0]),
                       'contact': {'required': True, 'min_quality': 0.0},
-                      'aperture': {'min_m': 0.0, 'max_m': 0.085},
+                      'aperture': {'min_m': 0.0, 'max_m': _tool_aperture(env)},
                       'lift': {'axis': 'z_up', 'distance_m': task.get('retreat_distance_m', catalog['retreat_distance_m'])}}},
         'place': {'target': {'asset_ref': target, 'region_ref': studio.get('place_zone', {}).get('region') or (regions[0] if len(regions) == 1 else target)},
                   'placement': {'policy': 'AUTO', 'requested_local_pose': None,

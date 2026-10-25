@@ -1189,7 +1189,7 @@ def test_live_attach_requires_current_grasp_retention_before_handoff(mode,retent
     scope={'summary':summary,'contact_guard':guard,'args':SimpleNamespace(simulator_commission=mode),
         'wait_stopped':record('stop',True),'measurements':SimpleNamespace(fresh=record('unchecked',{'iteration':1})),
         'monitored_hold':hold,'measured_reconcile':record('reconcile'),'measured_attachment':attachment,
-        'step':{'original':'original'},'contract':{'allowed_touch_links':['left','right']},'apply':record('apply'),'baseline':'baseline',
+        'step':{'original':'original'},'contract':{'allowed_touch_links':['left','right'],'tool_group':'gripper'},'apply':record('apply'),'baseline':'baseline',
         'PlanningScene':lambda **kwargs:kwargs,'RuntimeError':RuntimeError,
         'leaders':{'gripper_finger1_joint'},'cycle':{'steps':[{'stage':'PREPLAN_CLOSE_GRIPPER','trajectory':trajectory(.5949)}]},
         'plan_segment':plan,'scene_now':lambda:'scene','action':record('hold-action'),'stage':record('stage'),
@@ -1810,7 +1810,7 @@ def test_grasp_hold_precedes_the_held_reference_and_release_starts_from_the_meas
     assert "summary['end_effector_hold'] = verify_hold_binding(hold_profile, measurements.receipt)" in boundary
     release=source[source.index("if step['stage']=='PREPLAN_OPEN_GRIPPER' and summary.get('grasp_hold'):"):
                    source.index("result=action(execute_client,ExecuteTrajectory.Goal(trajectory=trajectory),wait)")]
-    assert "plan_segment(scene_now(),label,open_goal,group='gripper')" in release      # same goal, actual start
+    assert "plan_segment(scene_now(),label,open_goal,group=contract['tool_group'])" in release      # same goal, actual start
     assert "start_deviation_rad']>.01" in release and "abs(live_goal[n]-open_goal[n])>1e-4+1e-12" in release
     assert "tolerance_above=0.0001, tolerance_below=0.0001" in source       # the planner's own goal tolerance
 

@@ -164,7 +164,7 @@ def test_initial_joint_publication_can_arrive_after_collision_geometry(monkeypat
     ready = scene(['shoulder_pan_joint', 'gripper_finger1_joint'], [1.57, 0.0])
     snapshots = iter([pending, ready])
     monkeypatch.setattr(executor.time, 'sleep', lambda _: None)
-    result = executor.wait_for_robot_baseline(lambda: next(snapshots), {'shoulder_pan_joint': 1.57})
+    result = executor.wait_for_robot_baseline(lambda: next(snapshots), {'shoulder_pan_joint': 1.57, 'gripper_finger1_joint': 0.0})
     assert result is ready
     assert pending.robot_state.joint_state.position == [0.0, 0.0]
 
@@ -174,7 +174,7 @@ def test_baseline_timeout_does_not_accept_wrong_home_or_closed_gripper(positions
     from types import SimpleNamespace as NS
     state = NS(joint_state=NS(name=['shoulder_pan_joint', 'gripper_finger1_joint'], position=positions), is_diff=False)
     with pytest.raises(RuntimeError, match='canonical home/open-gripper state unavailable'):
-        executor.wait_for_robot_baseline(lambda: NS(robot_state=state), {'shoulder_pan_joint': 1.57}, timeout=0)
+        executor.wait_for_robot_baseline(lambda: NS(robot_state=state), {'shoulder_pan_joint': 1.57, 'gripper_finger1_joint': 0.0}, timeout=0)
 
 
 def test_candidate_search_preserves_missing_confidence():

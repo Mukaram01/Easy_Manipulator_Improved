@@ -1145,7 +1145,8 @@ def test_authored_cell_session_runs_the_qualified_launch_on_the_saved_cell(tmp_p
     import simulator_backend
     package=tmp_path/'saved'/'beginner_cell';(package/'config').mkdir(parents=True)
     (package/'config/workcell_builder_task_intent.yaml').write_text('{"saved": true}')
-    authored=dict(package=str(package),name='beginner_cell',class_id='unclassified')
+    authored=dict(package=str(package),name='beginner_cell',
+                  world={'objects':[{'object_id':'part_04','class_id':'part'},{'object_id':'spare_01','class_id':None}]})
     args=SimpleNamespace(output=tmp_path/'run',base_domain=201,partition_prefix='test',authored_cell=authored,
         class_id='part',segment_planning_time=3.,search_timeout=300.,moveit_overlay_identity=('tem','move-group'),
         bridge_overlay_identity=('qualified-exe','qualified-library'))
@@ -1172,7 +1173,8 @@ def test_authored_cell_session_runs_the_qualified_launch_on_the_saved_cell(tmp_p
     assert f'scene_package_dir:={session_scene}' in launch and 'execution_backend:=simulator' in launch
     assert f'simulator_world:={tmp_path/"world.sdf"}' in launch
     observation=next(c for c in observed if any(x.endswith('simulator_observations.py') for x in c))
-    assert observation[observation.index('--class-id')+1]=='unclassified'
+    assert '--class-id' not in observation                                              # never stamped from the filter
+    assert json.loads(observation[observation.index('--class-map')+1])=={'part_04':'part','spare_01':'unclassified'}
 
 
 def test_authored_cell_runs_never_count_as_reference_stage_a_acceptance():
@@ -1220,3 +1222,24 @@ def test_cycle_result_carries_the_executed_gates_measured_outcome(tmp_path):
     # A gate that reported PASS inside a run that then failed is never presented as a passing cycle.
     blocked=MODULE.cycle_result(dict(overall,status='BLOCKED',failure='owned shutdown failed'),tmp_path)
     assert blocked['result']=='FAIL' and blocked['failure']=='owned shutdown failed'
+    # An operator cancel is CANCELLED, and confirmed only by every session's clean owned shutdown.
+    gates={'resolve':{'status':'INTERRUPTED','shutdown':{'clean':True}}}
+    cancelled=MODULE.cycle_result({'status':'CANCELLED','failure':'cancelled by the operator (SIGTERM)','gates':gates},tmp_path)
+    assert cancelled['result']=='CANCELLED' and cancelled['cancellation_confirmed'] is True and cancelled['recovery_required'] is False
+    gates['resolve']['shutdown']['clean']=False
+    assert MODULE.cycle_result({'status':'CANCELLED','gates':gates},tmp_path)['cancellation_confirmed'] is False
+
+
+def test_operator_signals_unwind_through_owned_cleanup():
+    import signal
+    previous={sig:signal.getsignal(sig) for sig in (signal.SIGTERM,signal.SIGINT)}
+    try:
+        with pytest.raises(MODULE.OperatorCancel,match='SIGTERM'):
+            MODULE.cancel_on_signal(signal.SIGTERM,None)
+        assert signal.getsignal(signal.SIGTERM)==signal.SIG_IGN==signal.getsignal(signal.SIGINT)   # cleanup not re-interrupted
+        assert not issubclass(MODULE.OperatorCancel,Exception)                    # never swallowed as an ordinary failure
+    finally:
+        for sig,handler in previous.items():signal.signal(sig,handler)
+    source=SCRIPT.read_text()
+    assert 'for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,cancel_on_signal)' in source
+    assert 'except OperatorCancel as exc:\n        overall["status"]="CANCELLED"' in source

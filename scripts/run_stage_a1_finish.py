@@ -74,7 +74,7 @@ REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-
 FAST_TEST_FILES=(
     "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
-    "tests/test_end_effector_hold.py","tests/test_simulation_collision.py","tests/test_simulator_world.py","tests/test_scene_package_dir_launch.py",
+    "tests/test_end_effector_hold.py","tests/test_simulation_collision.py","tests/test_simulator_world.py","tests/test_scene_package_dir_launch.py","tests/test_r4_1b_dynamic_runtime.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
     "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
     "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",
@@ -432,6 +432,15 @@ def stream(args,stage,**fields):
         print(json.dumps(dict(stage=stage,source="qualified_physics_simulator",live=True,**fields)),flush=True)
 
 
+class OperatorCancel(BaseException):
+    """SIGTERM/SIGINT to the runner (e.g. the Workcell Builder's Cancel): unwind through every owned cleanup."""
+
+
+def cancel_on_signal(signum,frame):
+    for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,signal.SIG_IGN)   # cleanup is never re-interrupted
+    raise OperatorCancel(signal.Signals(signum).name)
+
+
 CYCLE_RESULT_FIELDS=("result","failure","failed_stage","selected_object_id","selected_grasp_index","execution_attempted",
                      "full_cycle_plan_success","full_cycle_execution_success","shutdown_clean","cancellation_confirmed","recovery_required")
 
@@ -448,8 +457,14 @@ def cycle_result(overall,output:Path)->dict:
             summary={key:executed[key] for key in CYCLE_RESULT_FIELDS if key in executed}
             final=(executed.get("release_evidence") or {}).get("final_pose")
             if final is not None:summary["final_object_pose"]=final
+    cancelled=overall.get("status")=="CANCELLED"
+    if cancelled:
+        # Cancellation is confirmed only by the clean owned shutdown of every session that ran.
+        summary.update(cancellation_confirmed=bool(gates) and all((gate.get("shutdown") or {}).get("clean") is True
+                                                                  for gate in gates.values()),
+                       recovery_required=False)   # nothing outlives a torn-down simulator session
     return dict(summary,mode="physics_simulation",live=True,status=overall.get("status"),
-                result=summary.get("result") if overall.get("status")=="PASS" else "FAIL",
+                result=summary.get("result") if overall.get("status")=="PASS" else "CANCELLED" if cancelled else "FAIL",
                 failure=overall.get("failure") or summary.get("failure"),
                 gates={name:gate.get("status") for name,gate in gates.items()},
                 authored_cell=(overall.get("authored_cell") or {}).get("package"),
@@ -470,9 +485,7 @@ def authored_cell(package:Path)->dict:
             safety.get("real_hardware_enabled") is not False):
         raise RuntimeError("AUTHORED_TASK_NOT_SIMULATOR: the saved task does not select the qualified physics "
                            "simulation (Task Editor > Run > Execution backend), so it may not move in the simulator")
-    filters=intent["pick"]["selection"]["object_filter"]
-    return dict(package=str(package),name=package.name,intent_sha256=sha256(package/"config/workcell_builder_task_intent.yaml"),
-                class_id=filters.get("class_id") or "unclassified")
+    return dict(package=str(package),name=package.name,intent_sha256=sha256(package/"config/workcell_builder_task_intent.yaml"))
 
 
 def prepare_authored_scene(repo:Path,package:Path,destination:Path)->Path:
@@ -724,10 +737,11 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
     authored=getattr(args,"authored_cell",None)
     if authored:
         scene=prepare_authored_scene(repo,Path(authored["package"]),session/authored["name"])
-        class_id=authored["class_id"]
+        # Each authored object keeps its own class (an unclassified object never matches a class filter).
+        classes=["--class-map",json.dumps({o["object_id"]:o.get("class_id") or "unclassified" for o in authored["world"]["objects"]})]
     else:
         scene=prepare_scene(repo,session/"ur5_2f_test",args.class_id)
-        class_id=args.class_id
+        classes=["--class-id",args.class_id]
     runtime=session/"runtime";receipt=runtime/"receipt.json";observations=session/"parts.yaml"
     domain=args.base_domain+index-1
     if not 1<=domain<=232:raise RuntimeError("ROS domain range exhausted")
@@ -754,12 +768,12 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         report["controllers_ready"]=wait_controllers_active(receipt,launch,env,repo,60)
         stream(args,"SIMULATOR_READY",gate=gate)
         run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
-             "--output",observations,"--class-id",class_id],
+             "--output",observations,*classes],
             env=env,cwd=repo,log=session/"observations.log",timeout=90)
 
         def refresh_observations(label):
             run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
-                 "--output",observations,"--class-id",class_id,
+                 "--output",observations,*classes,
                  "--refresh-from",observations],
                 env=env,cwd=repo,log=session/f"{label}-observations.log",timeout=90)
 
@@ -954,6 +968,7 @@ def main(argv=None):
         # Only a cancel gate in this run qualifies cancellation on the current binary.
         overall.update(gate=args.gate,cancellation_qualified_this_run=False)
     if args.gil_watchdog_ms is not None:overall["gil_watchdog_ms"]=args.gil_watchdog_ms
+    for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,cancel_on_signal)
     try:
         if args.gil_probe_ms is not None:
             overall["gil_probe"]=dict(build_gil_probe(repo,args.output),threshold_ms=args.gil_probe_ms,
@@ -964,14 +979,14 @@ def main(argv=None):
         if args.scene_package is not None:
             if args.source_world is not None:raise RuntimeError("--scene-package derives its world; do not pass --source-world")
             args.authored_cell=authored_cell(args.scene_package)
-            from simulator_world import derive_world,equivalent_models,TEMPLATE
+            from simulator_world import derive_world,engine_equivalent,TEMPLATE
             if git_blob(TEMPLATE,repo)!=SOURCE_WORLDS["sparse"][1]:raise RuntimeError("qualified world template changed")
             world_text,world_report=derive_world(args.authored_cell["package"])
-            world_report["equivalent_to_qualified_template"]=equivalent_models(world_text,TEMPLATE.read_text())
+            world_report["engine_equivalent_to_qualified_template"]=engine_equivalent(world_text)
             (args.output/"authored-world").mkdir()
             source_world=args.output/"authored-world/world.sdf";source_world.write_text(world_text)
             (args.output/"authored-world/derivation.json").write_text(json.dumps(world_report,indent=2)+"\n")
-            overall["authored_cell"]=dict(args.authored_cell,world=world_report)
+            args.authored_cell["world"]=world_report;overall["authored_cell"]=dict(args.authored_cell)
         elif args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
         bridge=active_bridge_overlay()
@@ -1033,6 +1048,8 @@ def main(argv=None):
         return 0
     except Exception as exc:
         overall["status"]="BLOCKED";overall["failure"]=str(exc);return 1
+    except OperatorCancel as exc:
+        overall["status"]="CANCELLED";overall["failure"]=f"cancelled by the operator ({exc})";return 3
     except BaseException as exc:
         overall["status"]="BLOCKED";overall["failure"]=f"interrupted: {type(exc).__name__}";raise
     finally:

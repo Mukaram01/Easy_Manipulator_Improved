@@ -183,6 +183,28 @@ def migrate_v1(payload: dict[str, Any], environment: dict[str, Any] | None = Non
     return normalize_v2(model)
 
 
+# Source-specific observation freshness (pick.selection.source_type -> policy). The authored
+# object_filter.max_age_seconds may tighten, never exceed, its source's ceiling; every source is
+# compared in one wall-clock domain (sensor capture, replay capture or simulator measurement time)
+# and the resolver rejects observations stamped in the future.
+OBSERVATION_FRESHNESS_POLICY = {
+    # Live sensing: a moving scene may change within a frame period.
+    "perception": {"max_age_s": 2.0, "clock": "sensor capture (wall)"},
+    "live_epd_realsense": {"max_age_s": 2.0, "clock": "sensor capture (wall)"},
+    "recorded_perception": {"max_age_s": 2.0, "clock": "replay capture (wall)"},
+    # A resting simulated object measured from the physics world. Its snapshot is renewed only after a
+    # fresh simulator readback proves the geometry unchanged (before revalidation and before motion)
+    # and it is re-measured live at closure, so the ceiling bounds capture-to-selection in the
+    # qualified Stage-A runtime (resolve search included), not object motion.
+    "manual_simulated": {"max_age_s": 180.0, "clock": "simulator measurement (wall)",
+                         "renewal": "geometry_readback_before_revalidation_and_motion"},
+}
+
+
+def freshness_policy(source_type):
+    return OBSERVATION_FRESHNESS_POLICY.get(source_type)
+
+
 def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     if model.get("schema") != "workcell_builder_task_intent/v2":
@@ -192,6 +214,17 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
     selection = model.get("pick", {}).get("selection", {})
     if not isinstance(selection, dict) or not isinstance(selection.get("object_filter"), dict):
         errors.append({"code": "PICK_SELECTION_REQUIRED", "message": "pick.selection.object_filter is required"})
+    else:
+        policy = freshness_policy(selection.get("source_type"))
+        age = selection["object_filter"].get("max_age_seconds")
+        if policy is None:
+            errors.append({"code": "OBSERVATION_SOURCE_UNKNOWN",
+                           "message": f"pick.selection.source_type {selection.get('source_type')!r} has no freshness policy"})
+        elif (isinstance(age, bool) or not isinstance(age, (int, float)) or not math.isfinite(age) or age <= 0
+              or age > policy["max_age_s"]):
+            errors.append({"code": "OBSERVATION_FRESHNESS_POLICY",
+                           "message": f"object_filter.max_age_seconds {age!r} must be in (0, {policy['max_age_s']}] s for "
+                                      f"{selection.get('source_type')} observations ({policy['clock']})"})
     grasp = model.get("pick", {}).get("grasp", {})
     placement = model.get("place", {}).get("placement", {})
     for block, label in ((grasp, "grasp"), (placement, "place")):
