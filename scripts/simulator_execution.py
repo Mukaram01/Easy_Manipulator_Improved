@@ -1024,7 +1024,10 @@ class Measurements:
             rpy=[float(x) for x in o.get('rpy','0 0 0').split()] if o is not None else [0,0,0]
             transform=compose_pose(xyz+quaternion_from_rpy(rpy),transform);link=j.find('parent').get('link')
         return compose_pose(s['poses'][prefix+link],transform)
-    def object_pose(self,s,name):return s['poses'][self.receipt['world']+'::'+name]
+    def object_pose(self,s,name):
+        # Telemetry JSON writes exact values as integers (an upright resting object's quaternion w is 1);
+        # ROS pose fields accept only float.
+        return [float(v) for v in s['poses'][self.receipt['world']+'::'+name]]
     def joints(self,s):
         prefix=self.receipt['world']+'::'+self.receipt['model']+'::'
         return {k[len(prefix):]:v for k,v in s['joints'].items() if k.startswith(prefix)}

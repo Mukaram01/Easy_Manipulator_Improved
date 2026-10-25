@@ -6799,6 +6799,26 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
     QString text = QString("<b>%1</b> · Live qualified physics simulation<br/>Gates: %2<br/>Target: %3 · Final object position (m): %4<br/>Shutdown: %5 · Real robot motion: locked")
       .arg(pass ? "COMPLETED" : cancelled ? "CANCELLED" : "FAILED", gates.join(", ").toHtmlEscaped(), result.value("selected_object_id").toString("unknown").toHtmlEscaped(),
            pose.isEmpty() ? QString("not measured") : pose.join(", "), result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
+    const auto perception = result.value("perception").toObject();
+    if (!perception.isEmpty()) {
+      // Stage-B: classes came only from the replayed EPD session bound to the measured objects.
+      QStringList bound; const auto bindings = perception.value("bindings").toObject();
+      for (auto it = bindings.begin(); it != bindings.end(); ++it) {
+        const auto b = it.value().toObject();
+        bound << it.key() + " → " + b.value("class_id").toString() +
+          (b.value("confidence").isDouble() ? QString(" %1").arg(b.value("confidence").toDouble(), 0, 'f', 2) : QString());
+      }
+      text += QString("<br/>Perception: EPD replay (%1): %2%3").arg(perception.value("provenance").toString().toHtmlEscaped(),
+        bound.join("; ").toHtmlEscaped(), perception.value("unbound_detections").toArray().isEmpty() ? QString() :
+        QString(" · %1 detection(s) matched no physical object").arg(perception.value("unbound_detections").toArray().size()));
+      QStringList skipped; const auto rejected = result.value("rejected_objects").toObject();
+      for (auto it = rejected.begin(); it != rejected.end(); ++it) {
+        const auto name = QString(it.key()).remove("runtime::");
+        skipped << name + " (" + bindings.value(name).toObject().value("class_id").toString("?") + "): " +
+          QString(it.value().toString()).replace('_', ' ');
+      }
+      if (!skipped.isEmpty()) text += "<br/>Not picked: " + skipped.join("; ").toHtmlEscaped();
+    }
     if (cancelled) text += QString("<br/>Cancellation: %1").arg(result.value("cancellation_confirmed").toBool() ?
       "confirmed (simulator shut down cleanly; nothing to recover)" : "UNCONFIRMED: check for remaining simulator processes");
     else if (!pass) text += "<br/>Failure: " + result.value("failure").toString("See diagnostics").toHtmlEscaped();

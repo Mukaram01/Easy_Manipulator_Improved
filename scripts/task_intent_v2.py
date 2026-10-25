@@ -201,6 +201,11 @@ SOURCE_PRODUCERS = {
     "perception": ("live_sensor", "simulator_measurement"),
     "live_epd_realsense": ("live_sensor",),
     "recorded_perception": ("replay",),
+    # Stage-B: a replayed EPD recording whose detections are bound to the physics simulator's measured objects.
+    # Planning consumes the measured object (its age follows the simulator measurement); the replayed
+    # detection that gave it its class is separately capped at the replay ceiling on the recording clock
+    # (perception_replay.validate_replay; the executor re-checks every binding).
+    "replayed_perception_in_simulation": ("simulator_measurement",),
     "manual_simulated": ("simulator_measurement",),
 }
 OBSERVATION_FRESHNESS_POLICY = {
@@ -230,7 +235,8 @@ def freshness_source_type(model):
         return source_type
     binding = model.get("perception") or {}
     if binding.get("mode") == "replayed_snapshot":
-        return "recorded_perception"
+        simulated = (model.get("safety") or {}).get("execution_backend") == "simulator"
+        return "replayed_perception_in_simulation" if simulated else "recorded_perception"
     if binding.get("mode") == "live_epd" and binding.get("camera_source") != "simulated_rgbd":
         return "live_epd_realsense"
     return source_type

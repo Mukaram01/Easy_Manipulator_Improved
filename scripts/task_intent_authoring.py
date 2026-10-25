@@ -126,6 +126,14 @@ def planning_input(scene, intent, override=None):
         raise ValueError('TASK_INPUT_INVALID: observations must be a list of object mappings.')
     if not isinstance(snapshot.get('source'), dict):
         raise ValueError('TASK_INPUT_INVALID: snapshot source must be a mode mapping.')
+    from task_intent_v2 import freshness_source_type
+    if freshness_source_type(intent) == 'replayed_perception_in_simulation':
+        # Stage-B: EPD replay detections carry visible extents only; their planning geometry comes from the
+        # physics simulator's measured object they bind to. Validate the replay itself (provenance,
+        # calibration, recording clock), not fake-hardware eligibility.
+        from perception_replay import validate_replay
+        validate_replay(snapshot, scene)
+        return path, True
     replay = mode != 'live_epd'
     if not replay and snapshot.get('source', {}).get('mode') == 'replayed_snapshot':
         raise ValueError('LIVE_INPUT_REQUIRED: live mode needs current normalized observations, not a replay template.')

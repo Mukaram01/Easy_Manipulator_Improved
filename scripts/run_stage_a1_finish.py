@@ -75,6 +75,7 @@ FAST_TEST_FILES=(
     "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
     "tests/test_end_effector_hold.py","tests/test_simulation_collision.py","tests/test_simulator_world.py","tests/test_scene_package_dir_launch.py","tests/test_r4_1b_dynamic_runtime.py",
+    "tests/test_perception_replay.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
     "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
     "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",
@@ -442,7 +443,8 @@ def cancel_on_signal(signum,frame):
 
 
 CYCLE_RESULT_FIELDS=("result","failure","failed_stage","selected_object_id","selected_grasp_index","execution_attempted",
-                     "full_cycle_plan_success","full_cycle_execution_success","shutdown_clean","cancellation_confirmed","recovery_required")
+                     "full_cycle_plan_success","full_cycle_execution_success","shutdown_clean","cancellation_confirmed","recovery_required",
+                     "perception","rejected_objects")
 
 
 def cycle_result(overall,output:Path)->dict:
@@ -497,7 +499,19 @@ def authored_cell(package:Path)->dict:
             safety.get("real_hardware_enabled") is not False):
         raise RuntimeError("AUTHORED_TASK_NOT_SIMULATOR: the saved task does not select the qualified physics "
                            "simulation (Task Editor > Run > Execution backend), so it may not move in the simulator")
-    return dict(package=str(package),name=package.name,intent_sha256=sha256(package/"config/workcell_builder_task_intent.yaml"))
+    from task_intent_v2 import freshness_source_type
+    perception=None
+    if freshness_source_type(intent)=="replayed_perception_in_simulation":
+        # Stage-B: the saved Task input is a replayed EPD session; each session detects from its recording again.
+        replay=Path(intent["perception"].get("replay_path") or "")
+        replay=replay if replay.is_absolute() else package/replay
+        if not replay.is_file():
+            raise RuntimeError(f"PERCEPTION_REPLAY_MISSING: {replay}; record and detect the cell camera session first")
+        snapshot=yaml.safe_load(replay.read_text()) or {}
+        perception=dict(replay=str(replay),recording=(snapshot.get("source") or {}).get("recording"),
+                        target_class=intent["pick"]["selection"]["object_filter"].get("class_id"))
+    return dict(package=str(package),name=package.name,intent_sha256=sha256(package/"config/workcell_builder_task_intent.yaml"),
+                perception=perception)
 
 
 def prepare_authored_scene(repo:Path,package:Path,destination:Path)->Path:
@@ -751,6 +765,20 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         scene=prepare_authored_scene(repo,Path(authored["package"]),session/authored["name"])
         # Each authored object keeps its own class (an unclassified object never matches a class filter).
         classes=["--class-map",json.dumps({o["object_id"]:o.get("class_id") or "unclassified" for o in authored["world"]["objects"]})]
+        perception=authored.get("perception")
+        if perception is not None:
+            # Stage-B detect: this session's own deterministic EPD replay of the cell's recording; classes come
+            # only from it (bound to the measured objects by simulator_observations --perception).
+            from perception_replay import PerceptionBlocked,validate_replay
+            detected=session/"perception/perception_replay.yaml"
+            stream(args,"PERCEIVING",gate=gate,motion=False)
+            run([sys.executable,repo/"scripts/perception_replay.py","detect","--recording",perception["recording"],
+                 "--output",detected,"--workspace",perception["workspace"],"--cell",authored["package"]],
+                env=dict(os.environ),cwd=repo,log=session/"perception/detect.log",timeout=600)
+            try:validate_replay(yaml.safe_load(detected.read_text()),authored["package"],
+                                physics_world_sha256=authored["world"]["world_sha256"])
+            except PerceptionBlocked as exc:raise RuntimeError(str(exc)) from exc
+            classes=["--perception",str(detected),*(["--target-class",perception["target_class"]] if perception["target_class"] else [])]
     else:
         scene=prepare_scene(repo,session/"ur5_2f_test",args.class_id)
         classes=["--class-id",args.class_id]
@@ -999,6 +1027,12 @@ def main(argv=None):
             source_world=args.output/"authored-world/world.sdf";source_world.write_text(world_text)
             (args.output/"authored-world/derivation.json").write_text(json.dumps(world_report,indent=2)+"\n")
             args.authored_cell["world"]=world_report;overall["authored_cell"]=dict(args.authored_cell)
+            if args.authored_cell["perception"] is not None:
+                from perception_replay import PerceptionBlocked,validate_replay
+                try:validate_replay(yaml.safe_load(Path(args.authored_cell["perception"]["replay"]).read_text()),
+                                    args.authored_cell["package"],physics_world_sha256=world_report["world_sha256"])
+                except PerceptionBlocked as exc:raise RuntimeError(str(exc)) from exc
+                args.authored_cell["perception"]["workspace"]=str(workspace)
         elif args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
         launch_checkout_guard(repo)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
