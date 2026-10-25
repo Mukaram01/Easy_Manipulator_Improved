@@ -103,9 +103,13 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     import subprocess
     command = subprocess.run(['bash', str(destination / 'generated/generated_gated_dry_run_command.sh')], capture_output=True, text=True)
     assert command.returncode == 2 and 'BLOCKED' in command.stderr
-    _, reviewed = load_profile('ur5_2f_workbench')
+    profile, reviewed = load_profile('ur5_2f_workbench')
     authored = yaml.safe_load((destination / 'environment.yaml').read_text())
-    assert authored['environment'] == reviewed['environment']
+    # Identical to the reviewed environment except the destination regions measured down to the bin floor.
+    from instantiate_workcell_studio_profile import apply_destination_regions
+    expected = copy.deepcopy(reviewed['environment'])
+    apply_destination_regions(expected, profile['destination_regions'])
+    assert authored['environment'] == expected and expected != reviewed['environment']
     # The selected tool keeps its reviewed catalog capability (the qualified simulator binds its hold profile).
     assert authored['end_effector']['capability'] == reviewed['end_effector']['capability'] == 'robotiq_2f_85'
     assert authored['scene']['id'] == destination.name

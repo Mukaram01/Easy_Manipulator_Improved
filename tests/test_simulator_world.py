@@ -98,7 +98,8 @@ def test_profile_destination_regions_reach_the_measured_floor(cells):
     measured = measure_container(mesh['vertices_m'], mesh['triangles'], zone['pose_xyz'][:2], zone['pose_xyz'][2], zone['dimensions'][:2])
     assert measured['floor_top_z'] == pytest.approx(profile['measured_floor_top_local_z'], abs=1e-6)
     for region in (profile['usable_placement'], *profile['zones'].values()):
-        assert region['pose_xyz'][2] - region['dimensions'][2] / 2 <= measured['floor_top_z']
+        # a part seated on the floor keeps the authored placement clearance on its bottom face too
+        assert region['pose_xyz'][2] - region['dimensions'][2] / 2 <= measured['floor_top_z'] - 0.02 + 1e-9
 
 
 def test_the_qualified_catalog_matches_the_pinned_stage_a_world():
