@@ -243,10 +243,12 @@ def place_detachment_diff(original, link_name, place_xyz, place_orientation=None
     scene.robot_state.attached_collision_objects.append(detached)
     placed = copy.deepcopy(original)
     placed.operation = CollisionObject.ADD
-    placed.pose.position.x, placed.pose.position.y, placed.pose.position.z = place_xyz
+    # Measured telemetry poses arrive as JSON, where an exactly flat object's quaternion is integral
+    # ([0, 0, 0, 1]); ROS float fields reject int, so convert at this message boundary.
+    placed.pose.position.x, placed.pose.position.y, placed.pose.position.z = (float(v) for v in place_xyz)
     if place_orientation is not None:
         (placed.pose.orientation.x, placed.pose.orientation.y,
-         placed.pose.orientation.z, placed.pose.orientation.w) = place_orientation
+         placed.pose.orientation.z, placed.pose.orientation.w) = (float(v) for v in place_orientation)
     if (placed.pose.orientation.x ** 2 + placed.pose.orientation.y ** 2
             + placed.pose.orientation.z ** 2 + placed.pose.orientation.w ** 2) < 1e-12:
         placed.pose.orientation.w = 1.0

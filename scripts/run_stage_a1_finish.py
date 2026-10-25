@@ -433,7 +433,7 @@ def stream(args,stage,**fields):
 
 
 CYCLE_RESULT_FIELDS=("result","failure","failed_stage","selected_object_id","selected_grasp_index","execution_attempted",
-                     "full_cycle_execution_success","shutdown_clean","cancellation_confirmed","recovery_required")
+                     "full_cycle_plan_success","full_cycle_execution_success","shutdown_clean","cancellation_confirmed","recovery_required")
 
 
 def cycle_result(overall,output:Path)->dict:

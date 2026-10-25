@@ -332,6 +332,19 @@ def test_place_detachment_preserves_id_and_restores_one_world_object():
     assert [placed.pose.position.x, placed.pose.position.y, placed.pose.position.z] == [0.25, 0.45, 0.20]
 
 
+def test_place_detachment_accepts_an_exactly_flat_measured_pose():
+    # Physics telemetry JSON carries an exactly flat object's quaternion as integers; DETACH of the
+    # beginner cell (part at yaw 0) failed with "The 'w' field must be of type 'float'".
+    from moveit_msgs.msg import CollisionObject
+
+    original = CollisionObject()
+    original.id = "part_04"
+    diff = MODULE.place_detachment_diff(original, "ee_palm", [0, 0, 1], [0, 0, 0, 1])
+    placed = diff.world.collision_objects[0]
+    assert [placed.pose.position.x, placed.pose.position.y, placed.pose.position.z] == [0.0, 0.0, 1.0]
+    assert [placed.pose.orientation.x, placed.pose.orientation.y, placed.pose.orientation.z, placed.pose.orientation.w] == [0.0, 0.0, 0.0, 1.0]
+
+
 def matrix_fixture():
     from moveit_msgs.msg import AllowedCollisionMatrix, AllowedCollisionEntry
     # Existing adjacent-link allowance must survive the contact transition.
