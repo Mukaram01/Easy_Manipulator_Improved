@@ -19,6 +19,32 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 scene_pkg = "ur5_2f_test"
+# scene_package_dir:=<authored cell> runs this qualified launch on a Builder-saved cell's own files
+# (environment, layout, model, controllers, collision manifest, cell definition) instead of the
+# installed reference package. Other packages (robot, tool, MoveIt configs) still resolve normally.
+_SCENE_PACKAGE_DIR = None
+
+
+def _share(package_name):
+    if package_name == scene_pkg and _SCENE_PACKAGE_DIR:
+        return _SCENE_PACKAGE_DIR
+    return get_package_share_directory(package_name)
+
+
+def _bind_scene_package_dir(value):
+    global _SCENE_PACKAGE_DIR
+    if not value:
+        _SCENE_PACKAGE_DIR = None
+        return None
+    path = os.path.realpath(value)
+    required = ("environment.yaml", "cell_definition.yaml", "urdf/scene.urdf.xacro", "urdf/arm_hand.srdf.xacro",
+                "config/ros2_controllers.yaml", "config/moveit_collision_objects.yaml")
+    missing = [rel for rel in required if not os.path.isfile(os.path.join(path, rel))]
+    if missing:
+        raise RuntimeError(f"scene_package_dir {path} is not a generated cell package; missing {missing}. "
+                           "Generate the cell in Workcell Builder first.")
+    _SCENE_PACKAGE_DIR = path
+    return path
 robot_model = "ur5"
 planning_group = "manipulator"
 world_frame = "world"
@@ -55,7 +81,7 @@ def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
     """Load runtime mount poses from authoritative environment.yaml."""
     if layout_path is None:
         layout_path = os.path.join(
-            get_package_share_directory(package_name),
+            _share(package_name),
             "environment.yaml",
         )
 
@@ -122,7 +148,7 @@ def load_canonical_layout_poses(package_name=scene_pkg, layout_path=None):
 def load_authored_robot_pose(package_name=scene_pkg, environment_path=None):
     """Load the robot mounting pose from the authored environment contract."""
     if environment_path is None:
-        environment_path = os.path.join(get_package_share_directory(package_name), "environment.yaml")
+        environment_path = os.path.join(_share(package_name), "environment.yaml")
     try:
         with open(environment_path, "r", encoding="utf-8") as file:
             environment = yaml.safe_load(file)
@@ -141,7 +167,7 @@ def load_authored_robot_pose(package_name=scene_pkg, environment_path=None):
 
 
 def load_xacro(package_name, rel_path, mappings=None):
-    pkg_share = get_package_share_directory(package_name)
+    pkg_share = _share(package_name)
     abs_path = os.path.join(pkg_share, rel_path)
     if not os.path.exists(abs_path):
         raise FileNotFoundError(f"Missing file: {abs_path}")
@@ -178,7 +204,7 @@ def load_xacro(package_name, rel_path, mappings=None):
 
 
 def load_yaml(package_name, rel_path):
-    pkg_share = get_package_share_directory(package_name)
+    pkg_share = _share(package_name)
     abs_path = os.path.join(pkg_share, rel_path)
     if not os.path.exists(abs_path):
         return {}
@@ -276,6 +302,7 @@ def _write_robot_description_file(scene_name, robot_description_config):
 
 
 def _launch_setup(context):
+    _bind_scene_package_dir(LaunchConfiguration("scene_package_dir").perform(context))
     backend = LaunchConfiguration("execution_backend").perform(context)
     if backend not in ("fake", "simulator"):
         raise RuntimeError("Unknown execution backend")
@@ -285,15 +312,15 @@ def _launch_setup(context):
     launch_rviz = LaunchConfiguration("launch_rviz")
     joint_states_topic = "/joint_states"
     canonical_layout_path = os.path.join(
-        get_package_share_directory(scene_pkg),
+        _share(scene_pkg),
         CANONICAL_LAYOUT_REL_PATH,
     )
     collision_manifest_path = os.path.join(
-        get_package_share_directory(scene_pkg),
+        _share(scene_pkg),
         COLLISION_MANIFEST_REL_PATH,
     )
     controllers_config_path = os.path.join(
-        get_package_share_directory(scene_pkg),
+        _share(scene_pkg),
         CONTROLLERS_REL_PATH,
     )
     if not os.path.isfile(controllers_config_path):
@@ -345,7 +372,7 @@ def _launch_setup(context):
         # source description here, outside the evidence-bound simulator_backend
         # module, so the derived model and the receipt carry it.
         hold_profile = end_effector_hold.load_cell_hold_profile(
-            os.path.join(get_package_share_directory(scene_pkg), "cell_definition.yaml"))
+            os.path.join(_share(scene_pkg), "cell_definition.yaml"))
         if hold_profile is None and LaunchConfiguration("simulator_commissioning").perform(context).lower() == "true":
             raise RuntimeError("simulator commissioning requires the cell to bind an end-effector capability with a hold profile")
         hold_binding = None
@@ -646,7 +673,7 @@ def _launch_setup(context):
         ],
     )
 
-    rviz_config_file = os.path.join(get_package_share_directory(scene_pkg), "launch", "demo.rviz")
+    rviz_config_file = os.path.join(_share(scene_pkg), "launch", "demo.rviz")
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -720,6 +747,7 @@ def _launch_setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("execution_backend", default_value="fake"),
+        DeclareLaunchArgument("scene_package_dir", default_value=""),
         DeclareLaunchArgument("simulator_world", default_value=""),
         DeclareLaunchArgument("simulator_output", default_value=""),
         DeclareLaunchArgument("simulator_commissioning", default_value="false"),

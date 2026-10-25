@@ -1137,3 +1137,45 @@ def test_controller_readiness_fails_closed(tmp_path, monkeypatch):
     receipt.write_text(json.dumps({}))
     with pytest.raises(RuntimeError, match='no expected controllers'):
         MODULE.wait_controllers_active(receipt, _Launch(), {}, tmp_path, 60)
+
+
+def test_authored_cell_session_runs_the_qualified_launch_on_the_saved_cell(tmp_path,monkeypatch,bridge_preflight):
+    # R4.1: a Builder-saved cell is copied verbatim and the same qualified launch runs on its files.
+    from types import SimpleNamespace
+    import simulator_backend
+    package=tmp_path/'saved'/'beginner_cell';(package/'config').mkdir(parents=True)
+    (package/'config/workcell_builder_task_intent.yaml').write_text('{"saved": true}')
+    authored=dict(package=str(package),name='beginner_cell',class_id='unclassified')
+    args=SimpleNamespace(output=tmp_path/'run',base_domain=201,partition_prefix='test',authored_cell=authored,
+        class_id='part',segment_planning_time=3.,search_timeout=300.,moveit_overlay_identity=('tem','move-group'),
+        bridge_overlay_identity=('qualified-exe','qualified-library'))
+    args.output.mkdir()
+    monkeypatch.setattr(MODULE,'prepare_scene',lambda *a:pytest.fail('the reference task must not replace the saved one'))
+    monkeypatch.setattr(MODULE,'assert_domain_free',lambda *args:None)
+    monkeypatch.setattr(MODULE,'generate_scene',lambda *args:None)
+    monkeypatch.setattr(MODULE,'wait_file',lambda *args:None)
+    monkeypatch.setattr(MODULE,'wait_controllers_active',lambda *args:{})
+    monkeypatch.setattr(MODULE,'verify_session_moveit',lambda *args:{'verified':True})
+    launched=[]
+    monkeypatch.setattr(MODULE.subprocess,'Popen',lambda cmd,**kwargs:launched.append(cmd) or object())
+    monkeypatch.setattr(MODULE,'stop_owned',lambda *args:{'clean':True,'owned_cleanup':True})
+    def bridge(domain,partition,expected_identity):raise RuntimeError('BRIDGE_OVERLAY_REJECTED: stop after launch')
+    monkeypatch.setattr(simulator_backend,'live_bridge_overlay',bridge,raising=False)
+    observed=[]
+    monkeypatch.setattr(MODULE,'run',lambda command,**kwargs:observed.append([str(c) for c in command]))
+    with pytest.raises(RuntimeError,match='BRIDGE_OVERLAY_REJECTED'):
+        MODULE.one_session(args,MODULE.Path(MODULE.__file__).resolve().parents[1],tmp_path/'world.sdf','test','resolve',1,{})
+    session_scene=args.output/'01-resolve'/'beginner_cell'
+    assert (session_scene/'config/workcell_builder_task_intent.yaml').read_text()=='{"saved": true}'
+    launch=launched[0]
+    assert launch[2].endswith('scenes/ur5_2f_test/launch/demo.launch.py')              # qualified launch, by path
+    assert f'scene_package_dir:={session_scene}' in launch and 'execution_backend:=simulator' in launch
+    assert f'simulator_world:={tmp_path/"world.sdf"}' in launch
+    observation=next(c for c in observed if any(x.endswith('simulator_observations.py') for x in c))
+    assert observation[observation.index('--class-id')+1]=='unclassified'
+
+
+def test_authored_cell_runs_never_count_as_reference_stage_a_acceptance():
+    source=SCRIPT.read_text()
+    assert 'overall["stage_a_acceptance"]=(not args.authored_cell and args.mode=="full"' in source
+    assert 'if args.source_world is not None:raise RuntimeError("--scene-package derives its world' in source

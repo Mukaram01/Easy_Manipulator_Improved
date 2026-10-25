@@ -74,7 +74,7 @@ REPORT_NAMES={"full":"stage-a1-final-report.json","targeted":"stage-a1-targeted-
 FAST_TEST_FILES=(
     "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
-    "tests/test_end_effector_hold.py","tests/test_simulation_collision.py",
+    "tests/test_end_effector_hold.py","tests/test_simulation_collision.py","tests/test_simulator_world.py","tests/test_scene_package_dir_launch.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
     "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
     "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",
@@ -426,6 +426,34 @@ def generate_scene(scene:Path):
     if rc:raise RuntimeError(f"Stage-A package generation failed ({rc})")
 
 
+def authored_cell(package:Path)->dict:
+    """A Workcell Builder-saved cell bound for the qualified simulator, read without modification."""
+    package=Path(package).resolve()
+    for rel in ("environment.yaml","cell_definition.yaml","config/workcell_builder_task_intent.yaml"):
+        if not (package/rel).is_file():
+            raise RuntimeError(f"AUTHORED_CELL_INCOMPLETE: {package} has no {rel}; save and Generate the cell in Workcell Builder")
+    intent=yaml.safe_load((package/"config/workcell_builder_task_intent.yaml").read_text())
+    if not isinstance(intent,dict) or intent.get("schema")!="workcell_builder_task_intent/v2":
+        raise RuntimeError("AUTHORED_TASK_NOT_V2: save the task in the Workcell Builder Task Editor")
+    safety=intent.get("safety") or {}
+    if (safety.get("execution_backend")!="simulator" or safety.get("require_fake_hardware") is not False or
+            safety.get("real_hardware_enabled") is not False):
+        raise RuntimeError("AUTHORED_TASK_NOT_SIMULATOR: the saved task does not select the qualified physics "
+                           "simulation (Task Editor > Run > Execution backend), so it may not move in the simulator")
+    filters=intent["pick"]["selection"]["object_filter"]
+    return dict(package=str(package),name=package.name,intent_sha256=sha256(package/"config/workcell_builder_task_intent.yaml"),
+                class_id=filters.get("class_id") or "unclassified")
+
+
+def prepare_authored_scene(repo:Path,package:Path,destination:Path)->Path:
+    """Copy the saved cell verbatim; the session never rewrites its task, scene or tool."""
+    shutil.copytree(package,destination,ignore=shutil.ignore_patterns("build","install","log"))
+    catalog_parent=destination.parent/"catalog"
+    if not catalog_parent.exists():
+        shutil.copytree(repo/"catalog/grasp_strategies",catalog_parent/"grasp_strategies")
+    return destination
+
+
 def build_commissioning(repo:Path,workspace:Path,output:Path,env:dict)->dict:
     from simulator_backend import active_moveit_overlay,moveit_overlay_identity
     overlay=active_moveit_overlay()
@@ -660,7 +688,13 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
     session=args.output/f"{index:02d}-{gate}"
     if session.exists():raise RuntimeError(f"refusing to reuse evidence directory {session}")
     session.mkdir(parents=True)
-    scene=prepare_scene(repo,session/"ur5_2f_test",args.class_id)
+    authored=getattr(args,"authored_cell",None)
+    if authored:
+        scene=prepare_authored_scene(repo,Path(authored["package"]),session/authored["name"])
+        class_id=authored["class_id"]
+    else:
+        scene=prepare_scene(repo,session/"ur5_2f_test",args.class_id)
+        class_id=args.class_id
     runtime=session/"runtime";receipt=runtime/"receipt.json";observations=session/"parts.yaml"
     domain=args.base_domain+index-1
     if not 1<=domain<=232:raise RuntimeError("ROS domain range exhausted")
@@ -674,21 +708,23 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         assert_domain_free(env,repo)
         generate_scene(scene)
         launch_log=(session/"launch.log").open("w")
-        launch_cmd=["ros2","launch","ur5_2f_test","demo.launch.py",
+        # An authored cell runs this revision's qualified launch on its own generated files.
+        launch_target=[str(repo/"scenes/ur5_2f_test/launch/demo.launch.py")] if authored else ["ur5_2f_test","demo.launch.py"]
+        launch_cmd=["ros2","launch",*launch_target,
             "execution_backend:=simulator","simulator_commissioning:=true",
             f"simulator_world:={source_world}",f"simulator_output:={runtime}",
             "use_sim_time:=true","launch_rviz:=false","use_fake_hardware:=true",
-            "allow_trajectory_execution:=true"]
+            "allow_trajectory_execution:=true",*([f"scene_package_dir:={scene}"] if authored else [])]
         launch=subprocess.Popen(launch_cmd,cwd=repo,env=env,stdout=launch_log,stderr=subprocess.STDOUT,start_new_session=True)
         wait_file(receipt,launch,90,session/"launch.log")
         report["controllers_ready"]=wait_controllers_active(receipt,launch,env,repo,60)
         run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
-             "--output",observations,"--class-id",args.class_id],
+             "--output",observations,"--class-id",class_id],
             env=env,cwd=repo,log=session/"observations.log",timeout=90)
 
         def refresh_observations(label):
             run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
-                 "--output",observations,"--class-id",args.class_id,
+                 "--output",observations,"--class-id",class_id,
                  "--refresh-from",observations],
                 env=env,cwd=repo,log=session/f"{label}-observations.log",timeout=90)
 
@@ -786,6 +822,8 @@ def run_fast_tests(repo:Path,output:Path,env:dict)->dict:
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-world",type=Path)
+    parser.add_argument("--scene-package",type=Path,
+        help="a Workcell Builder-saved cell (package directory); its saved task and derived physics world are used unchanged")
     parser.add_argument("--world-profile",choices=sorted(SOURCE_WORLDS),default="pile",
                         help="pinned physics world: dense pile benchmark (default) or sparse single-workpiece commissioning")
     parser.add_argument("--output",type=Path,required=True)
@@ -881,7 +919,19 @@ def main(argv=None):
                                       native_pc=args.gil_probe_native_pc)
             os.environ[GIL_PROBE_LIB_ENV]=overall["gil_probe"]["library"];os.environ[GIL_PROBE_MS_ENV]=str(args.gil_probe_ms)
             if args.gil_probe_native_pc:os.environ[GIL_PROBE_NATIVE_PC_ENV]="1"
-        if args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
+        args.authored_cell=None
+        if args.scene_package is not None:
+            if args.source_world is not None:raise RuntimeError("--scene-package derives its world; do not pass --source-world")
+            args.authored_cell=authored_cell(args.scene_package)
+            from simulator_world import derive_world,equivalent_models,TEMPLATE
+            if git_blob(TEMPLATE,repo)!=SOURCE_WORLDS["sparse"][1]:raise RuntimeError("qualified world template changed")
+            world_text,world_report=derive_world(args.authored_cell["package"])
+            world_report["equivalent_to_qualified_template"]=equivalent_models(world_text,TEMPLATE.read_text())
+            (args.output/"authored-world").mkdir()
+            source_world=args.output/"authored-world/world.sdf";source_world.write_text(world_text)
+            (args.output/"authored-world/derivation.json").write_text(json.dumps(world_report,indent=2)+"\n")
+            overall["authored_cell"]=dict(args.authored_cell,world=world_report)
+        elif args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
         from simulator_backend import active_bridge_overlay,bridge_overlay_identity,moveit_overlay_identity
         bridge=active_bridge_overlay()
         args.bridge_overlay_identity=bridge_overlay_identity(bridge)
@@ -894,8 +944,12 @@ def main(argv=None):
         if args.mode=="fast":
             overall["fast_tests"]=run_fast_tests(repo,args.output,dict(os.environ))
             overall["status"]="PASS";return 0
-        overall["preflight"].update(source_world=str(source_world),world_profile=args.world_profile,
-            source_world_git_blob=SOURCE_WORLDS[args.world_profile][1],source_world_sha256=sha256(source_world))
+        if args.authored_cell:
+            overall["preflight"].update(source_world=str(source_world),world_profile="authored",
+                source_world_template_git_blob=SOURCE_WORLDS["sparse"][1],source_world_sha256=sha256(source_world))
+        else:
+            overall["preflight"].update(source_world=str(source_world),world_profile=args.world_profile,
+                source_world_git_blob=SOURCE_WORLDS[args.world_profile][1],source_world_sha256=sha256(source_world))
         prior={}
         if args.prior_evidence is not None:
             prior=prior_evidence(args.prior_evidence,build["sha256"])
@@ -932,7 +986,9 @@ def main(argv=None):
                                                      "duration_s":round(time.monotonic()-began,1),
                                                      "end_effector_hold":(json.loads(path.read_text()).get("end_effector_hold") or {}).get("profile")}
             overall["status"]="PASS" if gate==last else "IN_PROGRESS"
-        overall["stage_a_acceptance"]=args.mode=="full" and args.through=="full-cycle" and overall["status"]=="PASS"
+        # Stage-A acceptance is the reference cell's qualification; an authored cell reports its own cycle.
+        overall["stage_a_acceptance"]=(not args.authored_cell and args.mode=="full" and args.through=="full-cycle"
+                                       and overall["status"]=="PASS")
         return 0
     except Exception as exc:
         overall["status"]="BLOCKED";overall["failure"]=str(exc);return 1
