@@ -1194,3 +1194,29 @@ def test_a_read_only_saved_cell_is_copied_into_a_writable_session_and_left_untou
         assert (copied/'config/workcell_builder_task_intent.yaml').read_text()=='{"saved": true}'
     finally:
         for path in [package,*package.rglob('*')]:path.chmod(path.stat().st_mode|stat.S_IWUSR)
+
+
+def test_stream_status_reports_live_physics_stages_only_when_requested(capsys):
+    from types import SimpleNamespace
+    MODULE.stream(SimpleNamespace(stream_status=False),'RESOLVE_TASK')
+    assert capsys.readouterr().out==''
+    MODULE.stream(SimpleNamespace(stream_status=True),'EXECUTE_FULL_CYCLE',gate='full-cycle',motion=True)
+    event=json.loads(capsys.readouterr().out)
+    assert event=={'stage':'EXECUTE_FULL_CYCLE','source':'qualified_physics_simulator','live':True,'gate':'full-cycle','motion':True}
+
+
+def test_cycle_result_carries_the_executed_gates_measured_outcome(tmp_path):
+    summary=tmp_path/'06-full-cycle/full-cycle/summary.json';summary.parent.mkdir(parents=True)
+    summary.write_text(json.dumps({'result':'PASS','selected_object_id':'runtime::part_04','shutdown_clean':True,
+        'full_cycle_execution_success':True,'release_evidence':{'final_pose':[0.45,0.22,0.1125,0,0,0,1]},'unrelated':1}))
+    overall={'status':'PASS','stage_a_acceptance':False,'authored_cell':{'package':'/cells/beginner_cell'},
+             'gates':{'full-cycle':{'status':'PASS','summary':'06-full-cycle/full-cycle/summary.json'}}}
+    result=MODULE.cycle_result(overall,tmp_path)
+    assert result['result']=='PASS' and result['mode']=='physics_simulation' and result['live'] is True
+    assert result['final_object_pose'][:3]==[0.45,0.22,0.1125] and 'unrelated' not in result
+    assert result['gates']=={'full-cycle':'PASS'} and result['authored_cell']=='/cells/beginner_cell'
+    failed=MODULE.cycle_result({'status':'BLOCKED','failure':'AUTHORED_TASK_NOT_SIMULATOR: select it','gates':{}},tmp_path)
+    assert failed['result']=='FAIL' and failed['failure'].startswith('AUTHORED_TASK_NOT_SIMULATOR')
+    # A gate that reported PASS inside a run that then failed is never presented as a passing cycle.
+    blocked=MODULE.cycle_result(dict(overall,status='BLOCKED',failure='owned shutdown failed'),tmp_path)
+    assert blocked['result']=='FAIL' and blocked['failure']=='owned shutdown failed'

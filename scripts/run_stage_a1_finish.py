@@ -426,6 +426,36 @@ def generate_scene(scene:Path):
     if rc:raise RuntimeError(f"Stage-A package generation failed ({rc})")
 
 
+def stream(args,stage,**fields):
+    """--stream-status: one JSON line per real session stage (live qualified physics, never replay)."""
+    if getattr(args,"stream_status",False):
+        print(json.dumps(dict(stage=stage,source="qualified_physics_simulator",live=True,**fields)),flush=True)
+
+
+CYCLE_RESULT_FIELDS=("result","failure","failed_stage","selected_object_id","selected_grasp_index","execution_attempted",
+                     "full_cycle_execution_success","shutdown_clean","cancellation_confirmed","recovery_required")
+
+
+def cycle_result(overall,output:Path)->dict:
+    """The run's outcome for the operator: gate statuses plus the executed gate's own measured summary."""
+    gates=overall.get("gates") or {}
+    summary={}
+    if gates:
+        name,last=list(gates.items())[-1]
+        path=output/last["summary"] if last.get("summary") else output/f"{GATES.index(name)+1:02d}-{name}"/name/"summary.json"
+        if path.is_file():
+            executed=json.loads(path.read_text())
+            summary={key:executed[key] for key in CYCLE_RESULT_FIELDS if key in executed}
+            final=(executed.get("release_evidence") or {}).get("final_pose")
+            if final is not None:summary["final_object_pose"]=final
+    return dict(summary,mode="physics_simulation",live=True,status=overall.get("status"),
+                result=summary.get("result") if overall.get("status")=="PASS" else "FAIL",
+                failure=overall.get("failure") or summary.get("failure"),
+                gates={name:gate.get("status") for name,gate in gates.items()},
+                authored_cell=(overall.get("authored_cell") or {}).get("package"),
+                stage_a_acceptance=overall.get("stage_a_acceptance"),evidence=str(output))
+
+
 def authored_cell(package:Path)->dict:
     """A Workcell Builder-saved cell bound for the qualified simulator, read without modification."""
     package=Path(package).resolve()
@@ -719,8 +749,10 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             "use_sim_time:=true","launch_rviz:=false","use_fake_hardware:=true",
             "allow_trajectory_execution:=true",*([f"scene_package_dir:={scene}"] if authored else [])]
         launch=subprocess.Popen(launch_cmd,cwd=repo,env=env,stdout=launch_log,stderr=subprocess.STDOUT,start_new_session=True)
+        stream(args,"SIMULATOR_LAUNCH",gate=gate)
         wait_file(receipt,launch,90,session/"launch.log")
         report["controllers_ready"]=wait_controllers_active(receipt,launch,env,repo,60)
+        stream(args,"SIMULATOR_READY",gate=gate)
         run([sys.executable,repo/"scripts/simulator_observations.py","--receipt",receipt,
              "--output",observations,"--class-id",class_id],
             env=env,cwd=repo,log=session/"observations.log",timeout=90)
@@ -734,6 +766,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         report["moveit_overlay"]=verify_session_moveit(domain,env["IGN_PARTITION"],args.moveit_overlay_identity)
         report["bridge_overlay"]=verify_session_bridge(domain,env["IGN_PARTITION"],args.bridge_overlay_identity)
         resolve_summary=session/"resolve/summary.json"
+        stream(args,"RESOLVE_TASK",gate=gate,motion=False)
         run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,
                 resolve=True,search_timeout=args.search_timeout),
             env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
@@ -744,6 +777,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         refresh_observations("revalidate")
         generate_scene(scene)
         plan_summary=session/"revalidate/summary.json"
+        stream(args,"REVALIDATE_PLAN",gate=gate,motion=False)
         run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time,
                 search_timeout=args.search_timeout),
             env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
@@ -763,6 +797,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             records=[json.loads(prior[name].read_text()) for name in required]
             evidence=session/"commission-evidence.json";evidence.write_text(json.dumps(records,indent=2)+"\n")
         gate_summary=session/f"{gate}/summary.json"
+        stream(args,"EXECUTE_"+gate.upper().replace("-","_"),gate=gate,motion=True)
         functional=getattr(args,"mode","full")=="functional"
         run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
                 gate=gate,evidence=evidence,search_timeout=args.search_timeout,
@@ -775,6 +810,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
     except Exception as exc:
         report["failure"]=str(exc);raise
     finally:
+        stream(args,"SIMULATOR_SHUTDOWN",gate=gate)
         report["shutdown"]=stop_owned(launch,session/"launch.log" if launch_log is not None else None)
         if launch_log is not None:launch_log.close()
         shutdown_failure=None
@@ -827,6 +863,8 @@ def main(argv=None):
     parser.add_argument("--source-world",type=Path)
     parser.add_argument("--scene-package",type=Path,
         help="a Workcell Builder-saved cell (package directory); its saved task and derived physics world are used unchanged")
+    parser.add_argument("--stream-status",action="store_true",
+        help="print one JSON line per session stage and a final cycle_result for the Workcell Builder")
     parser.add_argument("--world-profile",choices=sorted(SOURCE_WORLDS),default="pile",
                         help="pinned physics world: dense pile benchmark (default) or sparse single-workpiece commissioning")
     parser.add_argument("--output",type=Path,required=True)
@@ -1000,6 +1038,8 @@ def main(argv=None):
     finally:
         overall["finished_wall_ns"]=time.time_ns();overall["duration_s"]=round(time.monotonic()-started,1)
         (args.output/REPORT_NAMES[args.mode]).write_text(json.dumps(overall,indent=2)+"\n")
+        if getattr(args,"stream_status",False):
+            print(json.dumps({"event":"cycle_result","summary":cycle_result(overall,args.output)}),flush=True)
         print(json.dumps(overall,indent=2))
 
 
