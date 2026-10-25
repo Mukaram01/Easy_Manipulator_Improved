@@ -95,6 +95,7 @@ def test_created_cell_binds_the_reviewed_tool_capability_and_a_fresh_v2_task(flo
     created = steps['created']['task_intent']
     assert created['schema'] == 'workcell_builder_task_intent/v2'
     assert created['pick']['selection']['source_type'] == 'manual_simulated'
+    assert created['pick']['selection']['object_filter']['max_age_seconds'] == 180.0   # simulated snapshot policy
     assert created['safety']['execution_backend' if 'execution_backend' in created['safety'] else 'require_fake_hardware'] in ('fake', True)
 
 

@@ -124,3 +124,17 @@ def test_explicit_simulator_authoring_keeps_real_lock(tmp_path):
         bad['safety'].update(change)
         path.write_text(yaml.safe_dump(bad))
         assert validate(path, root)['status'] == 'FAIL'
+
+
+def test_wizard_freshness_default_follows_the_object_source(tmp_path):
+    from scripts.task_intent_authoring import _wizard_intent, LIVE_OBSERVATION_MAX_AGE_S, SIMULATED_OBSERVATION_MAX_AGE_S
+    env = environment()
+    env['task_zones'].append({'id': 'pick_zone_main', 'type': 'pick_zone'})
+    target = next(z['target_ref'] for z in env['task_zones'] if z.get('target_ref'))
+    def studio(mode):
+        return {'workcell_studio': {'scenario': {'id': 'static_table_pick_place'}, 'task_intent': {'grasp_strategy': 'auto'},
+                'pick_zone': {'pick_object_source': 'pick_zone_main', 'object_source': {'mode': mode, 'source_zone_ref': 'pick_zone_main'}},
+                'place_zone': {'target': target}}}
+    filters = lambda mode: _wizard_intent(tmp_path, {**env, **studio(mode)})['pick']['selection']['object_filter']
+    assert filters('manual_simulated')['max_age_seconds'] == SIMULATED_OBSERVATION_MAX_AGE_S == 180.0  # qualified Stage-A policy
+    assert filters('live_perception')['max_age_seconds'] == LIVE_OBSERVATION_MAX_AGE_S == 2.0

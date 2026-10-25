@@ -14,6 +14,17 @@ from task_intent_v2 import migrate_v1, parse_validate_normalize, normalized_inte
 from validate_builder_task_intent import validate_payload
 
 
+# Live perception must be fresh. A manual simulated object is measured from the physics world by the
+# qualified Stage-A runtime, which bounds the snapshot at 180 s (selection runs ~5 s after capture, the
+# snapshot is renewed before revalidation and the object is re-measured live at closure).
+LIVE_OBSERVATION_MAX_AGE_S = 2.0
+SIMULATED_OBSERVATION_MAX_AGE_S = 180.0
+
+
+def _default_max_age(source_mode):
+    return SIMULATED_OBSERVATION_MAX_AGE_S if source_mode == 'manual_simulated' else LIVE_OBSERVATION_MAX_AGE_S
+
+
 def _wizard_intent(scene, env):
     """Materialize the existing Create New Cell selections, without editing them."""
     studio = env.get('workcell_studio', {})
@@ -40,7 +51,8 @@ def _wizard_intent(scene, env):
                           'source_type': source.get('mode', 'manual_simulated'),
                           'zone_ref': pick_zones[0] if len(pick_zones) == 1 else pick.get('pick_object_source', ''),
                           'object_filter': {'class_id': source.get('required_class', ''), 'color': None,
-                                            'min_confidence': source.get('minimum_confidence'), 'max_age_seconds': 2.0}},
+                                            'min_confidence': source.get('minimum_confidence'),
+                                            'max_age_seconds': _default_max_age(source.get('mode', 'manual_simulated'))}},
             'grasp': {'policy': 'AUTO' if authored_strategy == 'auto' else 'EXACT', 'required_capability': 'two_finger_parallel', 'strategy_ref': None if authored_strategy == 'auto' else strategy,
                       'approach': {'axis': task.get('approach_axis', catalog['approach_axis']),
                                    'distance_m': task.get('approach_distance_m', catalog['approach_distance_m'])},
