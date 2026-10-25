@@ -91,6 +91,10 @@ def materialize(scene, profile_id, destination):
     tool['grasp_frame'] = studio['tool']['tcp']
     tool['mount_pose_xyz'], tool['mount_pose_rpy'] = frames['tool_mount_pose']['xyz'], frames['tool_mount_pose']['rpy']
     authored['end_effector'] = copy.deepcopy(tool)
+    # The reviewed tool's catalog capability (and with it the hold profile the qualified
+    # simulator binds) belongs to the selected tool model; keep it rather than drop it.
+    if defaults['end_effector'].get('capability'):
+        authored['end_effector']['capability'] = defaults['end_effector']['capability']
     camera = authored['camera']
     physical_camera = next(item for item in authored['environment']['assets'] if item['id'] == camera['camera_id'])
     camera['pose'] = physical_camera['pose_xyz'] + physical_camera['pose_rpy']

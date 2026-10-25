@@ -421,3 +421,23 @@ TEST(TaskIntentEditor, RuntimeParityCreatesFreshCellAndSavesReplayTask) {
     EXPECT_TRUE(reopened.blocker().isEmpty());
   }
 }
+
+TEST(TaskIntentEditor, ExecutionBackendIsAnExplicitAuthoredChoiceThatSurvivesReopen) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * backend = editor.findChild<QComboBox *>("taskExecutionBackend"); ASSERT_NE(backend, nullptr);
+  EXPECT_EQ(backend->currentData().toString(), "fake");  // absent backend: MoveIt fake hardware, as before
+  backend->setCurrentIndex(backend->findData("simulator"));
+  ASSERT_TRUE(editor.dirty()); ASSERT_TRUE(editor.save());
+  const auto saved = QJsonDocument::fromJson(read(dir.path() + "/config/workcell_builder_task_intent.yaml")).object()["safety"].toObject();
+  EXPECT_EQ(saved["execution_backend"].toString(), "simulator");
+  EXPECT_FALSE(saved["require_fake_hardware"].toBool(true));
+  EXPECT_FALSE(saved["real_hardware_enabled"].toBool(true));
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  EXPECT_EQ(reopened.findChild<QComboBox *>("taskExecutionBackend")->currentData().toString(), "simulator");
+  auto * again = reopened.findChild<QComboBox *>("taskExecutionBackend");
+  again->setCurrentIndex(again->findData("fake")); ASSERT_TRUE(reopened.save());
+  const auto reverted = QJsonDocument::fromJson(read(dir.path() + "/config/workcell_builder_task_intent.yaml")).object()["safety"].toObject();
+  EXPECT_EQ(reverted["execution_backend"].toString(), "fake");
+  EXPECT_TRUE(reverted["require_fake_hardware"].toBool(false));
+}

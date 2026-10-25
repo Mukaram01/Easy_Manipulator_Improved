@@ -106,6 +106,8 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     _, reviewed = load_profile('ur5_2f_workbench')
     authored = yaml.safe_load((destination / 'environment.yaml').read_text())
     assert authored['environment'] == reviewed['environment']
+    # The selected tool keeps its reviewed catalog capability (the qualified simulator binds its hold profile).
+    assert authored['end_effector']['capability'] == reviewed['end_effector']['capability'] == 'robotiq_2f_85'
     assert authored['scene']['id'] == destination.name
     assert 'task' not in authored  # The reference scene task was not cloned.
     intent = load_authoring(destination)['task_intent']

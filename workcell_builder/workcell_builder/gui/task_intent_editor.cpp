@@ -54,6 +54,23 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   choice_field(place, "taskPlacePolicy", "Placement policy", "place/placement/policy", {"AUTO", "PREFERRED", "EXACT"});
   vector_field(place, "taskLocalXYZ", "Requested local XYZ (m)", "place/placement/requested_local_pose/xyz_m");
   vector_field(place, "taskLocalRPY", "Requested local RPY (rad)", "place/placement/requested_local_pose/rpy_rad");
+  // Explicit consent for the qualified physics simulator; the executor refuses a backend the saved task does not name.
+  auto * run = section("Run");
+  auto * backend = new QComboBox(this); backend->setObjectName("taskExecutionBackend");
+  backend->addItem("MoveIt fake hardware (plan / preview)", "fake");
+  backend->addItem("Qualified physics simulation (Gazebo)", "simulator");
+  run->addRow("Execution backend", backend);
+  readers_["safety/execution_backend"] = [backend](const QJsonValue & v) {
+    const auto value = v.toString("fake");
+    if (backend->findData(value) < 0) backend->addItem(value, value);  // never relabel an unknown authored value
+    backend->setCurrentIndex(backend->findData(value));
+  };
+  connect(backend, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, backend](int) {
+    const auto value = backend->currentData().toString();
+    set_field("safety/execution_backend", value);
+    set_field("safety/require_fake_hardware", value == "fake");
+  });
+  run->addRow(new QLabel("Physics simulation runs only from an explicit cycle action after its safety gates; real robot locked.", this));
   auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. Local poses use the physical target's frame; values are never clamped.", this);
   help->setWordWrap(true); layout->addWidget(help);
   auto * advanced = new QGroupBox("Advanced task settings", this);
@@ -90,7 +107,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   number_field(form, "taskPlaceClearance", "Place clearance", "place/placement/clearance_m", " m");
   text_field(form, "taskPlaceRetreatAxis", "Place retreat axis", "place/placement/retreat/axis");
   number_field(form, "taskPlaceRetreat", "Place retreat", "place/placement/retreat/distance_m", " m");
-  form->addRow(new QLabel("Release: installed tool release. Fake hardware required; real robot locked.", this));
+  form->addRow(new QLabel("Release: installed tool release. Real robot locked.", this));
   status_ = new QLabel(this); status_->setObjectName("taskValidationStatus"); status_->setWordWrap(true); layout->addWidget(status_);
   auto * buttons = new QHBoxLayout;
   auto * save_button = new QPushButton("Save task", this); save_button->setObjectName("taskSave");
