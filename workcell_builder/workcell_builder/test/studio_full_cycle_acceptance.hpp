@@ -61,10 +61,13 @@ public:
           s->evidence["binding"]=window->perception_status_label_->text();
           snapshot("bound"); window->perception_start_button_->click(); s->phase=2; s->ticks=0; break; }
         case 2:{
-          if(s->ticks%20==0){
+          if(s->ticks%4==0){
             QFile f(window->perception_session_dir_+"/status.json");
             if(f.open(QIODevice::ReadOnly)){ const auto st=QJsonDocument::fromJson(f.readAll()).object();
+              const auto camera=st.value("camera").toObject();
               s->samples.append(QJsonObject{{"t",s->ticks/2},{"readiness",st.value("readiness")},{"detections",st.value("detections").toArray().size()},
+                {"camera_state",camera.value("state")},{"camera_reasons",camera.value("reasons")},{"timing",camera.value("timing")},
+                {"epd_result_age_s",st.value("epd").toObject().value("result_age_s")},
                 {"table_rows",window->perception_table_->rowCount()},{"panel",window->perception_status_label_->text()}}); }
             if(s->ticks==40||s->ticks==4*observe_s/2) snapshot(QString("live_%1s").arg(s->ticks/2));
           }
@@ -77,8 +80,18 @@ public:
           const auto st=QJsonDocument::fromJson(f.readAll()).object();
           s->evidence["final"]=QJsonObject{{"state",st.value("state")},{"shutdown",st.value("shutdown")},{"session",window->perception_session_dir_},
             {"panel",window->perception_status_label_->text()}};
-          bool saw_detections=false; for(const auto & v:s->samples) saw_detections|=v.toObject().value("table_rows").toInt()>0;
-          const bool ok=saw_detections && st.value("state").toString()=="STOPPED" && st.value("shutdown").toObject().value("clean").toBool();
+          // A camera outage (stalled/disconnected) must block perception and planning, then recover by itself.
+          bool saw_detections=false, outage=false, outage_blocked=true, recovered=false; int ready=0;
+          for(const auto & v:s->samples){ const auto o=v.toObject(); const auto r=o.value("readiness").toObject();
+            saw_detections|=o.value("table_rows").toInt()>0; ready+=r.value("perception").toString()=="READY";
+            const bool down=o.value("camera_reasons").toVariant().toStringList().join(" ").contains("stalled")||
+                            o.value("camera_reasons").toVariant().toStringList().join(" ").contains("no RGB");
+            if(down){ outage=true; recovered=false; outage_blocked&=r.value("perception").toString()!="READY"&&r.value("robot_planning").toString().startsWith("BLOCKED"); }
+            else if(outage&&o.value("camera_state").toString()!="BLOCKED"&&o.value("table_rows").toInt()>0&&o.value("epd_result_age_s").toDouble()>0) recovered=true; }
+          s->evidence["outage"]=QJsonObject{{"seen",outage},{"blocked_during_outage",outage_blocked},{"recovered_after_outage",recovered}};
+          s->evidence["ready_samples_pct"]=s->samples.isEmpty()?0.0:100.0*ready/s->samples.size();
+          const bool ok=saw_detections && (!outage||(outage_blocked&&recovered)) &&
+            st.value("state").toString()=="STOPPED" && st.value("shutdown").toObject().value("clean").toBool();
           s->evidence["result"]=ok?"PASS":"FAIL"; write(); timer->stop(); window->close(); app->exit(ok?0:1); break; }
       }
     } catch(const std::exception & e){ s->evidence["failure"]=QString::fromUtf8(e.what()); s->evidence["phase"]=s->phase;

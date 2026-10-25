@@ -15377,9 +15377,11 @@ void MainWindow::save_live_camera_binding()
     perception_status_label_->setText("BLOCKED: this camera publishes no aligned depth or no CameraInfo frame; 3D localisation needs both.");
     return;
   }
+  const auto metadata = camera.value("metadata_topic").toString();
   const auto command = live_perception_command(QString("bind --cell %1 --rgb-topic %2 --aligned-depth-topic %3 --camera-info-topic %4 --optical-frame %5")
     .arg(shell_quote(selected_scene_path()), shell_quote(camera.value("rgb_topic").toString()), shell_quote(depth.first().toString()),
-         shell_quote(camera.value("camera_info_topic").toString()), shell_quote(camera.value("optical_frame").toString())));
+         shell_quote(camera.value("camera_info_topic").toString()), shell_quote(camera.value("optical_frame").toString())) +
+    (metadata.isEmpty() ? QString() : " --metadata-topic " + shell_quote(metadata)));
   QProcess process; process.start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
   const bool ok = process.waitForFinished(30000) && process.exitCode() == 0;
   const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
@@ -15421,7 +15423,7 @@ void MainWindow::refresh_live_perception()
   const auto status = QJsonDocument::fromJson(file.readAll()).object();
   const auto readiness = status.value("readiness").toObject();
   const auto camera = status.value("camera").toObject(), epd = status.value("epd").toObject();
-  const auto rgb = camera.value("rgb").toObject();
+  const auto rgb = camera.value("rgb").toObject(), timing = camera.value("timing").toObject();
   auto line = [](const QString & label, const QString & value) { return "<b>" + label + "</b> " + value.toHtmlEscaped() + "<br/>"; };
   QString text = "<b>Live perception: " + status.value("state").toString() + "</b> · camera " +
     status.value("camera_id").toString().toHtmlEscaped() + "<br/>";
@@ -15429,12 +15431,22 @@ void MainWindow::refresh_live_perception()
     .arg(readiness.value("camera").toString()).arg(rgb.value("rate_hz").toDouble(), 0, 'f', 1)
     .arg(camera.value("aligned_depth").toObject().value("rate_hz").toDouble(), 0, 'f', 1)
     .arg(camera.value("synchronized_rgbd_hz").toDouble(), 0, 'f', 1)
-    .arg(rgb.value("receipt_minus_stamp_s").toDouble(), 0, 'f', 2)
+    .arg(timing.value("frame_age_at_receipt_s").toDouble(), 0, 'f', 2)
     .arg(camera.value("depth_valid_pixel_ratio").toDouble() * 100.0, 0, 'f', 0));
+  text += line("Frame timing:", timing.value("transport_verified").toBool() ?
+    QString("transport backlog %1 s (from capture/arrival clocks) · stamp age %2 s · age decided by %3")
+      .arg(timing.value("transport_backlog_s").toDouble(), 0, 'f', 2).arg(timing.value("stamp_age_at_receipt_s").toDouble(), 0, 'f', 2)
+      .arg(timing.value("decided_by").toString()) :
+    timing.value("warning").toString("transport timing not yet verified for this frame"));
   text += line("EPD:", QString("%1 · %2 results/s · result age %3 s · inference %4 ms · %5")
     .arg(readiness.value("epd").toString()).arg(epd.value("results_hz").toDouble(), 0, 'f', 2)
     .arg(epd.value("result_age_s").toDouble(), 0, 'f', 2).arg(epd.value("process_time_ms").toInt())
     .arg(QFileInfo(epd.value("model").toString()).fileName()));
+  const auto host_clock = status.value("host_clock").toObject();
+  text += line("Host clock:", host_clock.value("state").toString() +
+    (host_clock.value("reason").toString().isEmpty() ? QString(" · monotonic %1x hardware rate · %2 wall-clock step(s) in %3 s")
+       .arg(host_clock.value("monotonic_rate_vs_hardware").toDouble(), 0, 'f', 4).arg(host_clock.value("wall_steps_in_window").toInt())
+       .arg(host_clock.value("window_s").toDouble(), 0, 'f', 0) : " — " + host_clock.value("reason").toString()));
   text += line("Perception:", readiness.value("perception").toString());
   text += line("Calibration:", readiness.value("calibration").toString() + " — " +
     status.value("calibration").toObject().value("reason").toString());

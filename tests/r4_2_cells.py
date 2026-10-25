@@ -42,7 +42,8 @@ def bind_camera(scene, camera, camera_id):
     done = subprocess.run([sys.executable, str(SCRIPTS / 'live_perception_session.py'), 'bind', '--cell', str(scene),
                            '--camera-id', camera_id, '--rgb-topic', camera['rgb_topic'],
                            '--aligned-depth-topic', camera['aligned_depth_topics'][0],
-                           '--camera-info-topic', camera['camera_info_topic'], '--optical-frame', camera['optical_frame']],
+                           '--camera-info-topic', camera['camera_info_topic'], '--optical-frame', camera['optical_frame']]
+                          + (['--metadata-topic', camera['metadata_topic']] if camera.get('metadata_topic') else []),
                           capture_output=True, text=True, check=True)
     return json.loads(done.stdout)
 

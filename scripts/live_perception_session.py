@@ -158,7 +158,7 @@ def bind(args):
         raise PerceptionUnavailable('the cell has no authored camera (camera.camera_id) to bind the live camera to')
     binding = dict(camera_id=camera_id, driver=args.driver, rgb_topic=args.rgb_topic,
                    aligned_depth_topic=args.aligned_depth_topic, camera_info_topic=args.camera_info_topic,
-                   optical_frame=args.optical_frame,
+                   optical_frame=args.optical_frame, metadata_topic=args.metadata_topic or None,
                    calibration=previous.get('calibration') or dict(status='uncalibrated', camera_to_world=None))
     doc.setdefault('perception', {})['live_camera'] = binding
     write_preserving(cell / 'environment.yaml', doc)
@@ -168,17 +168,24 @@ def bind(args):
 
 # ---------------------------------------------------------------------------------------------------------
 # observation evaluation (pure; unit-tested)
-def evaluate_observation(item, *, now_ns, snapshot_ns, filters, live_ceiling_s, calibration):
-    """Task eligibility of one camera-frame observation, with every reason it is not eligible."""
+def evaluate_observation(item, *, now_ns, snapshot_ns, filters, live_ceiling_s, calibration, age_s=None, host_clock_reason=None):
+    """Task eligibility of one camera-frame observation, with every reason it is not eligible.
+
+    ``age_s``: the conservative frame age (TransportClock) when known, else the stamp age is used.
+    ``host_clock_reason``: set when the host clock cannot age frames (HostClock FAULT/VERIFYING).
+    """
     reasons = []
     label = item.get('label', '')
-    age_s = (now_ns - snapshot_ns) / 1e9 if snapshot_ns else math.inf
+    if age_s is None:
+        age_s = (now_ns - snapshot_ns) / 1e9 if snapshot_ns else math.inf
     position = (item.get('pose') or {}).get('position') or item.get('centroid')
     confidence = item.get('confidence')
     if position is None:
         reasons.append('no measured 3D position')
     if not item.get('dimensions_xyz'):
         reasons.append('no measured dimensions')
+    if host_clock_reason:
+        reasons.append(host_clock_reason)
     if age_s > live_ceiling_s:
         reasons.append(f'stale: {age_s:.2f} s old (live limit {live_ceiling_s:.1f} s)')
     if age_s < -0.5:
@@ -213,6 +220,105 @@ def evaluate_observation(item, *, now_ns, snapshot_ns, filters, live_ceiling_s, 
 
 
 # ---------------------------------------------------------------------------------------------------------
+class TransportClock:
+    """Frame age that published stamps cannot understate, from the camera's own per-frame metadata.
+
+    librealsense metadata carries the device capture clock (hw_timestamp, a 32-bit microsecond counter) and
+    the host kernel arrival time (backend_timestamp, ms, host wall clock). arrival is the metadata's receipt
+    on CLOCK_MONOTONIC_RAW (hardware clock: no NTP slew or steps), falling back to backend_timestamp. If the
+    link stalls and drains, arrival - capture grows while published stamps can be re-anchored to look fresh;
+    backlog = (arrival - capture) - its minimum is a stamp-independent lower bound on that extra delay, so a
+    frame is at least (now - arrival) + backlog old. A stamp later than its own kernel arrival (same wall
+    clock) is physically impossible and marks a clock-domain error.
+    """
+    WRAP = 2 ** 32
+    MAX_FRAMES = 400
+
+    def __init__(self):
+        self.floor_s, self.last_hw, self.wraps, self.frames = None, None, 0, {}
+        self.backlog_s, self.stamp_after_arrival, self.resets = None, False, 0
+
+    def update(self, stamp_ns, metadata, arrival_s=None):
+        hw, arrival_ms = metadata.get('hw_timestamp'), metadata.get('backend_timestamp')
+        if not isinstance(hw, (int, float)) or not isinstance(arrival_ms, (int, float)):
+            return None
+        self.stamp_after_arrival = stamp_ns / 1e9 > arrival_ms / 1000.0 + 0.05
+        if self.last_hw is not None and hw < self.last_hw - self.WRAP / 2:
+            self.wraps += 1
+        elif self.last_hw is not None and hw < self.last_hw:          # device clock restarted: relearn the floor
+            self.floor_s, self.wraps, self.resets = None, 0, self.resets + 1
+        self.last_hw = hw
+        arrival = arrival_ms / 1000.0 if arrival_s is None else arrival_s
+        delay = arrival - (hw + self.wraps * self.WRAP) / 1e6
+        self.floor_s = delay if self.floor_s is None else min(self.floor_s, delay)
+        self.backlog_s = delay - self.floor_s
+        self.frames[stamp_ns] = (arrival, self.backlog_s)
+        while len(self.frames) > self.MAX_FRAMES:
+            self.frames.pop(next(iter(self.frames)))
+        return self.backlog_s
+
+    def age(self, stamp_ns, now_s, now_arrival_s=None):
+        """(conservative age in s, 'transport' when the transport bound decided it else 'stamp', verified).
+
+        now_s is the wall clock (stamps); now_arrival_s the clock arrivals were recorded on (default now_s)."""
+        stamp_age = now_s - stamp_ns / 1e9
+        frame = self.frames.get(stamp_ns)
+        if frame is None:
+            return stamp_age, 'stamp', False
+        transport_age = ((now_s if now_arrival_s is None else now_arrival_s) - frame[0]) + frame[1]
+        return (transport_age, 'transport', True) if transport_age > stamp_age else (stamp_age, 'stamp', True)
+
+
+def _raw():
+    """CLOCK_MONOTONIC_RAW: the hardware counter, untouched by NTP slewing, kernel tick changes or clock steps."""
+    return time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
+
+
+class HostClock:
+    """Whether the host clock can be trusted to age frames: every freshness check compares stamps to it.
+
+    Samples (raw, monotonic, wall) and checks over a sliding window that CLOCK_MONOTONIC runs at the hardware
+    rate (NTP may slew at most 500 ppm) and that the wall clock was not stepped. On LENLEG (WSL2) the kernel
+    tick was 9010 us instead of 10000: MONOTONIC ran at 0.909x and systemd-timesyncd stepped the wall clock
+    +3.2 s every ~35 s, so stamp ages were wrong by seconds in both directions.
+    """
+    WINDOW_S, MIN_WINDOW_S, MAX_RATE_ERROR, MAX_STEP_S = 90.0, 10.0, 0.002, 0.05
+
+    def __init__(self, clock=None):
+        self.clock = clock or (lambda: (_raw(), time.monotonic(), time.time()))
+        self.samples, self.steps = [], []
+
+    def sample(self):
+        raw, mono, wall = self.clock()
+        if self.samples:
+            last = self.samples[-1]
+            step = (wall - last[2]) - (mono - last[1])           # wall and monotonic share slewing, not steps
+            if abs(step) > self.MAX_STEP_S:
+                self.steps.append((raw, step))
+        self.samples.append((raw, mono, wall))
+        while self.samples and raw - self.samples[0][0] > self.WINDOW_S:
+            self.samples.pop(0)
+        self.steps = [s for s in self.steps if raw - s[0] <= self.WINDOW_S]
+
+    def health(self):
+        if not self.samples or self.samples[-1][0] - self.samples[0][0] < self.MIN_WINDOW_S:
+            span = self.samples[-1][0] - self.samples[0][0] if self.samples else 0.0
+            return dict(state='VERIFYING', reason=f'measuring the host clock ({span:.0f} of {self.MIN_WINDOW_S:.0f} s)')
+        first, last = self.samples[0], self.samples[-1]
+        rate = (last[1] - first[1]) / (last[0] - first[0])
+        report = dict(monotonic_rate_vs_hardware=round(rate, 5), wall_steps_in_window=len(self.steps),
+                      wall_step_total_s=round(sum(s[1] for s in self.steps), 3), window_s=round(last[0] - first[0], 1))
+        problems = []
+        if abs(rate - 1.0) > self.MAX_RATE_ERROR:
+            problems.append(f'CLOCK_MONOTONIC runs at {rate:.3f}x the hardware clock (kernel tick or time sync fault)')
+        if self.steps:
+            problems.append(f'wall clock stepped {len(self.steps)} time(s) by {report["wall_step_total_s"]:+.1f} s '
+                            f'in {report["window_s"]:.0f} s')
+        if problems:
+            return dict(state='FAULT', reason='host clock unreliable, frame ages cannot be verified: ' + '; '.join(problems), **report)
+        return dict(state='OK', reason=None, **report)
+
+
 class Rate:
     def __init__(self):
         self.times = []
@@ -252,10 +358,15 @@ class Session:
         self.rgb_stamps, self.depth_stamps, self.synced = [], [], Rate()
         self.snapshot, self.snapshot_recv, self.connector, self.inference, self.ingress = None, None, None, None, None
         self.latest_rgb, self.latest_epd_image = None, None
+        self.transport, self.host_clock = TransportClock(), HostClock()
         reliable = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(Image, binding['rgb_topic'], lambda m: self.on_image('rgb', m), reliable)
         node.create_subscription(Image, binding['aligned_depth_topic'], lambda m: self.on_image('depth', m), reliable)
         node.create_subscription(CameraInfo, binding['camera_info_topic'], self.on_info, reliable)
+        if binding.get('metadata_topic'):
+            from realsense2_camera_msgs.msg import Metadata
+            node.create_subscription(Metadata, binding['metadata_topic'], self.on_metadata,
+                                     QoSProfile(depth=50, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.RELIABLE))
         node.create_subscription(Image, '/easy_perception_deployment/image_output', lambda m: self.on_image('epd_image', m), reliable)
         node.create_subscription(String, '/workcell_studio/epd_detection_snapshot_json', self.on_snapshot, 10)
         node.create_subscription(String, '/workcell_studio/epd_connector_status', self.on_connector, 10)
@@ -266,9 +377,9 @@ class Session:
 
     # --- callbacks -------------------------------------------------------------------------------------
     def _seen(self, kind, header):
-        now = time.time()
+        now, raw = time.time(), _raw()
         s = self.streams[kind]
-        s['rate'].tick(now); s['last_recv'] = now; s['last_stamp_ns'] = _stamp_ns(header.stamp)
+        s['rate'].tick(raw); s['last_recv'] = raw; s['last_stamp_ns'] = _stamp_ns(header.stamp)
         s['ages'] = (s['ages'] + [now - s['last_stamp_ns'] / 1e9])[-50:]
         return now
 
@@ -283,10 +394,10 @@ class Session:
             if kind == 'rgb':
                 self.latest_rgb = msg
                 self.rgb_stamps = (self.rgb_stamps + [stamp])[-60:]
-                if stamp in self.depth_stamps: self.synced.tick(time.time())
+                if stamp in self.depth_stamps: self.synced.tick(_raw())
             elif kind == 'depth':
                 self.depth_stamps = (self.depth_stamps + [stamp])[-60:]
-                if stamp in self.rgb_stamps: self.synced.tick(time.time())
+                if stamp in self.rgb_stamps: self.synced.tick(_raw())
                 if self.streams['depth']['rate'].times and len(self.streams['depth']['rate'].times) % 5 == 1:
                     self.depth_valid_ratio = self._depth_valid(msg)
             elif kind == 'epd_image':
@@ -310,13 +421,20 @@ class Session:
                 fx=k[0], fy=k[4], cx=k[2], cy=k[5], distortion_model=msg.distortion_model,
                 intrinsics_valid=k[0] > 0 and k[4] > 0 and 0 < k[2] < msg.width and 0 < k[5] < msg.height)
 
+    def on_metadata(self, msg):
+        with self.lock:
+            try:
+                self.transport.update(_stamp_ns(msg.header.stamp), json.loads(msg.json_data), arrival_s=_raw())
+            except ValueError:
+                pass
+
     def on_snapshot(self, msg):
         with self.lock:
             try:
                 snapshot = json.loads(msg.data)
             except ValueError:
                 return
-            self.snapshot, self.snapshot_recv = snapshot, time.time()
+            self.snapshot, self.snapshot_recv = snapshot, _raw()
             self.streams['epd_result']['rate'].tick(self.snapshot_recv)
             self.streams['epd_result']['last_recv'] = self.snapshot_recv
             self.streams['epd_result']['last_stamp_ns'] = snapshot.get('timestamp_ns')
@@ -344,8 +462,9 @@ class Session:
 
     def status(self, state='RUNNING'):
         with self.lock:
-            now = time.time(); now_ns = time.time_ns()
-            rgb, depth, info = self._stream('rgb', now), self._stream('depth', now), self._stream('camera_info', now)
+            now = time.time(); now_ns = time.time_ns(); raw = _raw()
+            self.host_clock.sample(); host_clock = self.host_clock.health()
+            rgb, depth, info = self._stream('rgb', raw), self._stream('depth', raw), self._stream('camera_info', raw)
             camera_reasons = []
             for name, stream in (('RGB', rgb), ('aligned depth', depth), ('CameraInfo', info)):
                 if stream['since_last_s'] is None:
@@ -367,15 +486,27 @@ class Session:
                 camera_reasons.append('depth is not aligned to the colour image size')
             if rgb['receipt_minus_stamp_s'] is not None and rgb['receipt_minus_stamp_s'] < -0.5:
                 camera_reasons.append('frames are stamped ahead of the host clock (clock domain mismatch)')
+            transport = self.transport
+            rgb_stamp = self.streams['rgb']['last_stamp_ns']
+            if self.binding.get('metadata_topic') and transport.stamp_after_arrival:
+                camera_reasons.append('frames are stamped later than their own host arrival (camera clock domain error)')
             camera_state = 'BLOCKED' if camera_reasons else 'STREAMING'
-            frame_age = rgb['receipt_minus_stamp_s']
+            frame_age, age_source, verified = transport.age(rgb_stamp, now, raw) if rgb_stamp else (None, None, False)
+            if frame_age is not None and self.streams['rgb']['last_recv']:
+                frame_age -= raw - self.streams['rgb']['last_recv']          # age at receipt, like receipt_minus_stamp
+            timing = dict(frame_age_at_receipt_s=round(frame_age, 3) if frame_age is not None else None,
+                          decided_by=age_source, transport_verified=verified,
+                          transport_backlog_s=round(transport.backlog_s, 3) if transport.backlog_s is not None else None,
+                          stamp_age_at_receipt_s=rgb['receipt_minus_stamp_s'])
+            if not self.binding.get('metadata_topic'):
+                timing['warning'] = 'no camera metadata bound: frame age relies on the published stamps alone'
             if camera_state == 'STREAMING' and frame_age is not None and frame_age > self.live_ceiling_s:
                 camera_state = 'STALE_FRAMES'
                 camera_reasons.append(f'frames arrive {frame_age:.2f} s after capture (live limit {self.live_ceiling_s:.1f} s)')
             epd_reasons = []
             snapshot_ns = (self.snapshot or {}).get('timestamp_ns')
-            result_age = (now_ns - snapshot_ns) / 1e9 if snapshot_ns else None
-            since_result = now - self.snapshot_recv if self.snapshot_recv else None
+            result_age = transport.age(snapshot_ns, now, raw)[0] if snapshot_ns else None
+            since_result = raw - self.snapshot_recv if self.snapshot_recv else None
             if self.snapshot is None:
                 epd_state = 'WAITING'; epd_reasons.append('no EPD result yet')
             elif since_result > EPD_STALE_S:
@@ -383,32 +514,34 @@ class Session:
             else:
                 epd_state = 'PRODUCING'
             detections = [evaluate_observation(item, now_ns=now_ns, snapshot_ns=snapshot_ns, filters=self.filters,
-                                               live_ceiling_s=self.live_ceiling_s, calibration=self.calibration)
+                                               live_ceiling_s=self.live_ceiling_s, calibration=self.calibration,
+                                               age_s=result_age, host_clock_reason=host_clock['reason'])
                           for item in ((self.snapshot or {}).get('objects') or [])] if epd_state == 'PRODUCING' else []
             rejected = (self.snapshot or {}).get('rejected_objects') or [] if epd_state == 'PRODUCING' else []
             inference = (self.inference or {}).get('values', {})
-            perception_ready = camera_state == 'STREAMING' and epd_state == 'PRODUCING' and \
+            perception_ready = camera_state == 'STREAMING' and epd_state == 'PRODUCING' and host_clock['state'] == 'OK' and \
                 result_age is not None and result_age <= self.live_ceiling_s
+            clock_reasons = [] if host_clock['state'] == 'OK' else [host_clock['reason']]
             readiness = dict(
                 camera=camera_state, epd=epd_state,
                 perception=('READY' if perception_ready else 'BLOCKED: ' + '; '.join(
-                    camera_reasons + epd_reasons + ([f'EPD results are {result_age:.2f} s old (live limit '
+                    clock_reasons + camera_reasons + epd_reasons + ([f'EPD results are {result_age:.2f} s old (live limit '
                                                      f'{self.live_ceiling_s:.1f} s)'] if result_age and result_age > self.live_ceiling_s else []))),
-                calibration=self.calibration['status'],
+                host_clock=host_clock['state'], calibration=self.calibration['status'],
                 task=('NO_SAVED_TASK' if self.filters is None else
                       f"{sum(d['task_eligible'] for d in detections)} eligible of {len(detections)}"),
                 robot_planning='BLOCKED: ' + (self.calibration.get('reason') or 'not eligible'),
                 robot_execution='BLOCKED: real-camera observations never drive robot motion in this milestone')
             status = dict(schema=STATUS_SCHEMA, state=state, updated_wall_ns=now_ns, cell=str(self.cell),
                 camera_id=self.binding['camera_id'], binding=self.binding,
-                camera=dict(state=camera_state, reasons=camera_reasons, rgb=rgb, aligned_depth=depth, camera_info=info,
-                            synchronized_rgbd_hz=self.synced.hz(now), depth_valid_pixel_ratio=self.depth_valid_ratio),
-                epd=dict(state=epd_state, reasons=epd_reasons, results_hz=self.streams['epd_result']['rate'].hz(now),
+                camera=dict(state=camera_state, reasons=camera_reasons, rgb=rgb, aligned_depth=depth, camera_info=info, timing=timing,
+                            synchronized_rgbd_hz=self.synced.hz(raw), depth_valid_pixel_ratio=self.depth_valid_ratio),
+                epd=dict(state=epd_state, reasons=epd_reasons, results_hz=self.streams['epd_result']['rate'].hz(raw),
                          result_age_s=round(result_age, 3) if result_age is not None else None,
                          process_time_ms=((self.snapshot or {}).get('provenance') or {}).get('process_time_ms'),
                          inference=inference, ingress=(self.ingress or {}).get('values'), connector=self.connector,
                          model=self.record['epd']['model'], backend=self.record['epd_execution_backend']),
-                calibration=self.calibration, task_filter=self.filters, live_ceiling_s=self.live_ceiling_s,
+                host_clock=host_clock, calibration=self.calibration, task_filter=self.filters, live_ceiling_s=self.live_ceiling_s,
                 detections=detections, rejected_detections=rejected, readiness=readiness,
                 snapshot_timestamp_ns=snapshot_ns)
             return status
@@ -575,7 +708,9 @@ def discover(args):
         depth = sorted(t for t in images if t.startswith(root + '/') and 'aligned_depth' in t and t.endswith('/image_raw'))
         publishers = node.get_publishers_info_by_topic(rgb)
         frame = _sample_frame_id(node, info_topic, args.timeout)
+        metadata = f'{base}/metadata'
         cameras.append(dict(camera_namespace=root, rgb_topic=rgb, camera_info_topic=info_topic, optical_frame=frame,
+                            metadata_topic=metadata if 'realsense2_camera_msgs/msg/Metadata' in topics.get(metadata, []) else None,
                             aligned_depth_topics=depth, publisher_nodes=sorted({f'{p.node_namespace}/{p.node_name}'.replace('//', '/') for p in publishers})))
     node.destroy_node(); rclpy.shutdown()
     print(json.dumps(dict(status='OK', ros_domain_id=os.environ.get('ROS_DOMAIN_ID'), cameras=cameras)))
@@ -596,6 +731,7 @@ def main(argv=None):
         b.add_argument('--' + key, required=True)
     b.add_argument('--camera-id', help="the cell's camera this binds (default: its authored camera.camera_id)")
     b.add_argument('--driver', default='realsense2_camera')
+    b.add_argument('--metadata-topic', help='per-frame camera metadata (capture and arrival clocks), when published')
     r = sub.add_parser('run'); r.add_argument('--cell', required=True); r.add_argument('--session-dir', required=True)
     r.add_argument('--duration', type=float, default=0.0, help='seconds; 0 runs until stopped')
     for command in sub.choices.values():
