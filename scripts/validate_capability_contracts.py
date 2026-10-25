@@ -356,6 +356,16 @@ def validate_contract(contract: dict[str, Any], strict: bool = False) -> tuple[l
         _validate_enum(ee.get("family"), "end_effector.family", warnings, errors, strict)
         if "max_object_mass_kg" in ee and not _is_numeric(ee.get("max_object_mass_kg")):
             errors.append("Field 'end_effector.max_object_mass_kg' must be numeric.")
+        if "hold" in ee:
+            import sys
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from end_effector_hold import hold_block_errors
+            errors.extend(hold_block_errors(ee))
+        if "simulator_collision" in ee:
+            import sys
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from simulation_collision import block_errors
+            errors.extend(block_errors(ee))
 
     elif kind == "sensor":
         sensor = contract.get("sensor")

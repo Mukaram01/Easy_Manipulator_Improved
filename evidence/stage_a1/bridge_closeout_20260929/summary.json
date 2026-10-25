@@ -1,0 +1,200 @@
+{
+  "schema": "workcell_bridge_closeout_evidence/v1",
+  "qualification_method": "observed-shutdown-order/v1",
+  "historical_evidence": "C: original PID81044 maps and Valgrind81563 log unavailable; no historical SIGABRT reproduction claimed",
+  "current_baseline": "Natural GDB-observed SIGSEGV: main static FastDDS destruction overlaps deferred logging/RMW teardown; independently attributed core PID7638",
+  "executable": {
+    "path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+    "sha256": "156514f96ff73f3109224d711542b6c1f00cf2e5a69e4e8f1b1dea64214cf601"
+  },
+  "library": {
+    "path": "/opt/ros/humble/lib/libros_gz_bridge.so",
+    "sha256": "7806fe789ceba89ba203a3e055dae7e6a7e8e67a65931c2b877d596055200be3"
+  },
+  "native": {
+    "cycles": 20,
+    "passed": 20,
+    "errors": 0,
+    "results_path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/evidence/run-20260929-212818-088111/native/results.json",
+    "results_sha256": "bc842fc1bd26aa82b496ab5583a22ce3b80459cc9b1f17f4cefae4d5ff0707b0"
+  },
+  "memcheck": {
+    "cycles": 5,
+    "passed": 5,
+    "errors": 0,
+    "results_path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/evidence/run-20260929-212818-088111/memcheck/results.json",
+    "results_sha256": "f076c351a5c1d9ec7937221fe8c49a2f3aaea0dd0f2860f8c00d73db6d0e7d50",
+    "scope": "Default Memcheck memory-access error/lifecycle gate; not full leak checking"
+  },
+  "qualification": {
+    "method": "observed-shutdown-order/v1",
+    "evidence": {
+      "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/observed-evidence.json",
+      "sha256": "225007d8f0d290bfee86a11da8b7278db1b96140dd3f71fc85c4ead9f87cdfbf"
+    },
+    "review": {
+      "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/mechanism-review.json",
+      "sha256": "09230950cfa0725fcbfc405f37e9c92424d1eed49c7642b6e20d4930369e02f3"
+    },
+    "runtime_dependencies": [
+      {
+        "path": "/opt/ros/humble/lib/libfastcdr.so.1.0.29",
+        "sha256": "ae755da75d58c90c2db06398beff0b08b382e19c72ac223a9a57cb782d9a5575"
+      },
+      {
+        "path": "/opt/ros/humble/lib/libfastrtps.so.2.6.12",
+        "sha256": "148cd881ab04a1ffeb27c15ebd5f7a08d4e3fe02d203582e812d3464a9c17b09"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcl.so",
+        "sha256": "43f86a53ec1a6c75e7330b216253d8497cdee1fc1674fdd678166c804cf1921c"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcl_logging_interface.so",
+        "sha256": "e671d1f9f84da3abcdce0390f923b08121e5da546980c23b5ef7a49025cc7341"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcl_logging_spdlog.so",
+        "sha256": "ead77d2b8a383d1ce310136f44ef9a8551fe9b966353a900e8ecd88f04d098cb"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librclcpp.so",
+        "sha256": "cd2a15b5df569fd66e7c9d0c336bff58d92b39932a701a670b6e02611b4f4119"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librcutils.so",
+        "sha256": "0ffe97d7ca8b02edb2259a25992f135df6005b0bda4f20e327401a93411b0bed"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw.so",
+        "sha256": "758059e7ab478777dd806b426b01eeaf1e5b77ebffa32a28bf977937aeffa24c"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common.so",
+        "sha256": "d5a8c2f711016a747a08e9ed95fec95d1d6a35e209be840cdc20737b391314b8"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common__rosidl_typesupport_cpp.so",
+        "sha256": "f8758c2a984acc9eed0b2be601759bf71832e470c1d0dba485b188587bc21c45"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common__rosidl_typesupport_fastrtps_cpp.so",
+        "sha256": "616cd956b335f8a3e905e46abaf4597184bb7374ca98590c07202d745c98256b"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_dds_common__rosidl_typesupport_introspection_cpp.so",
+        "sha256": "0441e90db69b4924a5d294dd862e6fa6794e93fe5ed23d942e6e20ce690dd433"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_fastrtps_cpp.so",
+        "sha256": "94edab1842a8421f4fb072878698cdc303f7893dbd53f0a5d79273210faa1cae"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_fastrtps_shared_cpp.so",
+        "sha256": "d514f3473ca3f2c543ae7f3e33eb1fbed00195a040d5cc36b713c45d725505fb"
+      },
+      {
+        "path": "/opt/ros/humble/lib/librmw_implementation.so",
+        "sha256": "10da394c1ba2fea1e16eaaf2193be3cfcc2c266ca77829147fd13fa4ae9a3c91"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "sha256": "b2cf6c33b74d2f22543b7a469a75b538911e690f769d0b238843a49465b83793"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libignition-math6.so.6.16.0",
+        "sha256": "546a5a2f0e985cab9d8ab49ade5dbcd1816dea10faa0209993438db339623d1b"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libignition-msgs8.so.8.7.1",
+        "sha256": "4f12759fe4120e8e3cdbb86634cc6d94dd6a241b011c242e960d27ba18b1c37d"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libignition-transport11.so.11.4.2",
+        "sha256": "514f13b738c3d1a21e52c02a6175622a2e638f987eefee1a8213b409aa06a4b2"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libspdlog.so.1.9.2",
+        "sha256": "1de96ba8296808433bf3ad601f2410c179a3e422a05ad012b49e4ad364f72bc0"
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30",
+        "sha256": "ff0825e113603c3866680d5d52216bc6d8eedf3a59f52a0aef67ff01994db128"
+      }
+    ]
+  },
+  "manifest": {
+    "path": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/provenance.json",
+    "sha256": "a6b7b3208bb48583d1d642ca585a3f9cebf1469690bc7498e33020b516a9fcc1"
+  },
+  "runtime_environment": {
+    "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+    "ROS_LOCALHOST_ONLY": "1",
+    "LD_PRELOAD": "",
+    "LD_AUDIT": "",
+    "VALGRIND_LIB": "",
+    "VALGRIND_OPTS": ""
+  },
+  "review": {
+    "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/mechanism-review.json",
+    "sha256": "09230950cfa0725fcbfc405f37e9c92424d1eed49c7642b6e20d4930369e02f3"
+  },
+  "observed": [
+    {
+      "batch": "baseline",
+      "experiment": {
+        "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/baseline-observed-complete/experiment.json",
+        "sha256": "ee6952321d2e449409d2ddcbf158d8dfe009e8c8fa2baeacf7f2cc84fab46a82"
+      },
+      "results": {
+        "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/baseline-observed-complete/results.json",
+        "sha256": "c89216c757cc8922013d25d7e7b37191422785de09b3892a2c8f8432eaa41fa5"
+      }
+    },
+    {
+      "batch": "patched",
+      "experiment": {
+        "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/patched-observed/experiment.json",
+        "sha256": "c415332cf883c6df2f752f4b298e8c5956c1efc349219bb85c64b3e5f36285f0"
+      },
+      "results": {
+        "path": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/patched-observed/results.json",
+        "sha256": "2b994c29bd70a8d5fd145c1d53ad78af8eb11f3478e8c5b01fada81fc7fdd8f0"
+      }
+    }
+  ],
+  "real_hardware_motion": false,
+  "raw_evidence_root": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929",
+  "source_root": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/sources",
+  "preserved_initial_work": "/tmp/workcell-closeout-k1qs73h7",
+  "copied_artifacts": {
+    "baseline-events.jsonl": "9b96010b3692490f473ed8bc46a960f549ef13433584d8693613706cdf6155ee",
+    "patched-events.jsonl": "4b28f737dad396cb0fc417943bc5fb6ebd6625936d6c0d8c5f8ad86a21009e33",
+    "baseline-core-backtrace.txt": "aad2600c9a7e87550529b7de6dd1fe45dc8205da0c7279290aef20f8b797f814",
+    "memcheck-results.json": "f076c351a5c1d9ec7937221fe8c49a2f3aaea0dd0f2860f8c00d73db6d0e7d50",
+    "mechanism-review.md": "08e8ac5764770f06ba89b842764cb25b928b828e5b92e994ca18f6322766f59e",
+    "native-results.json": "bc842fc1bd26aa82b496ab5583a22ce3b80459cc9b1f17f4cefae4d5ff0707b0",
+    "leak-diagnostic.md": "97d6149d97b265c388fc3d4a463add152291df827ba845eb797b59ca3634a555"
+  },
+  "copy_normalization": {
+    "baseline-core-backtrace.txt": {
+      "change": "Trailing whitespace stripped in repository copy only; raw original preserved in the evidence root.",
+      "original_sha256": "be774eef73ed6705a23a6f0566532edaf68f33f15011c3fbade7c9f649641b01"
+    }
+  },
+  "additional_leak_diagnostic": {
+    "gating": false,
+    "returncode": 99,
+    "error_contexts": 15,
+    "definitely_lost_bytes": 336,
+    "indirectly_lost_bytes": 293,
+    "possibly_lost_bytes": 3834672,
+    "still_reachable_bytes": 7285320,
+    "same_lost_totals_in_september_27_runs": true,
+    "invalid_access_reports": 0,
+    "interpretation": "Unresolved dependency allocations at process exit; loader bookkeeping and static component registration. Possible/reachable allocation ownership not assessed. No leak-free claim.",
+    "raw_root": "/home/user/workcell_ws/diagnostics/bridge-closeout-20260929/leak-diagnostic",
+    "report_sha256": "97d6149d97b265c388fc3d4a463add152291df827ba845eb797b59ca3634a555",
+    "findings_sha256": "361580cd8289d79edceade48d8767bb93db333d9f53e98a61301642cdeb122b9"
+  }
+}

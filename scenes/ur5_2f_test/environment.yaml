@@ -93,6 +93,7 @@ end_effector:
   type: finger
   model: robotiq_85_gripper
   profile: robotiq_85_gripper
+  capability: robotiq_2f_85
   mount_link: tool0
   grasp_frame: ee_palm
   mount_pose_xyz: *id001

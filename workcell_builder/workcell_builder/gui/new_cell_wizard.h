@@ -50,6 +50,8 @@ public:
   static QString default_end_effector_type(const QString &model);
   static QString default_end_effector_family_readiness(const QString &family);
   static QList<NewCellScenarioChoice> load_industrial_scenario_choices(const QString &catalog_path);
+  // Object materials qualified for the physics simulator (catalog/simulation/qualified_physics.yaml).
+  static QStringList load_qualified_physics_materials(const QString &catalog_path);
   QString selected_scenario_id() const;
   bool select_scenario_by_id(const QString &scenario_id);
   QString review_text() const;
@@ -85,6 +87,7 @@ private:
   void refresh_scenario_ui();
   void refresh_object_source_ui();
   QString scenario_catalog_path() const;
+  QString qualified_physics_catalog_path() const;
   QString selected_scenario_category() const;
   QString selected_scenario_label() const;
   QStringList readiness_warnings() const;
@@ -187,6 +190,8 @@ private:
   QGroupBox *manual_object_card_{nullptr};
   QLineEdit *manual_object_id_{nullptr};
   QComboBox *manual_object_shape_{nullptr};
+  QLineEdit *manual_object_class_{nullptr};
+  QComboBox *manual_object_material_{nullptr};
   QDoubleSpinBox *manual_object_x_{nullptr};
   QDoubleSpinBox *manual_object_y_{nullptr};
   QDoubleSpinBox *manual_object_z_{nullptr};

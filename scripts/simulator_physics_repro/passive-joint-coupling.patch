@@ -1,0 +1,593 @@
+--- a/dartsim/src/Base.hh
++++ b/dartsim/src/Base.hh
+@@ -90,12 +90,22 @@
+   std::string canonicalLinkName;
+   std::vector<std::shared_ptr<LinkInfo>> links {};
+   std::vector<std::size_t> nestedModels = {};
++  struct PassiveMimic
++  {
++    std::string follower, driver;
++    double multiplier;
++    bool constructed;
++  };
++  std::vector<PassiveMimic> passiveMimics {};
++  std::vector<dart::constraint::ConstraintBasePtr> passiveConstraints {};
++
+ };
+ 
+ struct JointInfo
+ {
+   dart::dynamics::JointPtr joint;
+   dart::dynamics::SimpleFramePtr frame;
++  bool passiveMimic = false;
+ };
+ 
+ struct ShapeInfo
+@@ -516,6 +526,25 @@
+     return id;
+   }
+ 
++  // Joint rows retain actual DART joint identities. Attach/detach cannot split
++  // their skeletons or replace their joints. Initial SDF construction remains
++  // allowed before registration; public topology mutation also rejects authored
++  // relations waiting for that first physics step.
++  public: void RequireUncoupledTopology(const DartSkeletonPtr &_skeleton,
++                                       bool _includeAuthored = true) const
++  {
++    if (!_skeleton)
++      return;
++    for (const auto &entry : this->models.idToObject)
++    {
++      const auto &model = entry.second;
++      if (model->model == _skeleton &&
++          (!model->passiveConstraints.empty() ||
++           (_includeAuthored && !model->passiveMimics.empty())))
++        throw std::invalid_argument("topology mutation of a passive coupled skeleton unsupported");
++    }
++  }
++
+   public: bool RemoveModelImpl(const std::size_t _worldID,
+                                const std::size_t _modelID)
+   {
+@@ -526,13 +555,25 @@
+     const auto &world = this->worlds.at(_worldID);
+     auto modelInfo = this->models.at(_modelID);
+     auto skel = modelInfo->model;
+-    // Remove the contents of the skeleton from local entity storage containers
+-    for (auto &nestedModel : modelInfo->nestedModels)
++    // Recursive removal erases entries from the parent's nestedModels vector.
++    // Traverse stable identities and keep this parent's rows until its children
++    // have all been removed successfully.
++    const auto nestedModels = modelInfo->nestedModels;
++    for (const auto nestedModel : nestedModels)
+     {
+-      this->RemoveModelImpl(_worldID, nestedModel);
++      if (!this->RemoveModelImpl(_worldID, nestedModel))
++        return false;
+     }
+     modelInfo->nestedModels.clear();
+ 
++    // Unregister rows while their joint pointers are still alive.
++    for (const auto &constraint : modelInfo->passiveConstraints)
++      world->getConstraintSolver()->removeConstraint(constraint);
++    modelInfo->passiveConstraints.clear();
++    modelInfo->passiveMimics.clear();
++
++    // Remove the contents of the skeleton from local entity storage containers
++
+     for (auto &jt : skel->getJoints())
+     {
+       this->joints.RemoveEntity(jt);
+--- a/dartsim/src/JointFeatures.cc
++++ b/dartsim/src/JointFeatures.cc
+@@ -136,6 +136,12 @@
+            << "]. The value will be ignored\n";
+     return;
+   }
++  if (this->ReferenceInterface<JointInfo>(_id)->passiveMimic)
++  {
++    // An authored passive mechanical follower has no independent actuator.
++    joint->setActuatorType(dart::dynamics::Joint::PASSIVE);
++    return;
++  }
+   if (joint->getActuatorType() != dart::dynamics::Joint::FORCE)
+   {
+     joint->setActuatorType(dart::dynamics::Joint::FORCE);
+@@ -147,8 +153,8 @@
+ void JointFeatures::SetJointVelocityCommand(
+     const Identity &_id, const std::size_t _dof, const double _value)
+ {
+-  auto joint = this->ReferenceInterface<JointInfo>(_id)->joint;
+-
++  auto *info = this->ReferenceInterface<JointInfo>(_id);
++  auto joint = info->joint;
+   // Take extra care that the value is finite. A nan can cause the DART
+   // constraint solver to fail, which will in turn either cause a crash or
+   // collisions to fail
+@@ -159,6 +165,15 @@
+            << "]. The command will be ignored\n";
+     return;
+   }
++  if (info->passiveMimic)
++  {
++    // Legacy ros2_control supplies virtual follower velocity servos. An
++    // authored mechanical mimic has no independent motor; its joint remains
++    // dynamic and moves only through physical reaction in the coupling row.
++    joint->setActuatorType(dart::dynamics::Joint::PASSIVE);
++    return;
++  }
++
+   if (joint->getActuatorType() != dart::dynamics::Joint::SERVO)
+   {
+     joint->setActuatorType(dart::dynamics::Joint::SERVO);
+@@ -370,6 +385,7 @@
+     return;
+   }
+ 
++  this->RequireUncoupledTopology(joint->getSkeleton());
+   auto child = joint->getChildBodyNode();
+   auto transform = child->getWorldTransform();
+   auto spatialVelocity =
+@@ -478,6 +494,10 @@
+   auto *const parentBn = _parent ? this->ReferenceInterface<LinkInfo>(
+       _parent->FullIdentity())->link.get() : nullptr;
+ 
++  this->RequireUncoupledTopology(bn->getSkeleton());
++  if (parentBn)
++    this->RequireUncoupledTopology(parentBn->getSkeleton());
++
+   std::string childLinkName = linkInfo->name;
+   if (bn->getParentJoint()->getType() != "FreeJoint")
+   {
+@@ -578,6 +598,10 @@
+   auto *const parentBn = _parent ? this->ReferenceInterface<LinkInfo>(
+       _parent->FullIdentity())->link.get() : nullptr;
+ 
++  this->RequireUncoupledTopology(bn->getSkeleton());
++  if (parentBn)
++    this->RequireUncoupledTopology(parentBn->getSkeleton());
++
+   if (bn->getParentJoint()->getType() != "FreeJoint")
+   {
+     // child already has a parent joint
+@@ -647,6 +671,10 @@
+   auto *const parentBn = _parent ? this->ReferenceInterface<LinkInfo>(
+       _parent->FullIdentity())->link.get() : nullptr;
+ 
++  this->RequireUncoupledTopology(bn->getSkeleton());
++  if (parentBn)
++    this->RequireUncoupledTopology(parentBn->getSkeleton());
++
+   if (bn->getParentJoint()->getType() != "FreeJoint")
+   {
+     // child already has a parent joint
+--- a/dartsim/src/SDFFeatures.cc
++++ b/dartsim/src/SDFFeatures.cc
+@@ -1,3 +1,6 @@
++#include <sstream>
++#include "JointCouplingConstraint.hpp"
++#include <dart/constraint/ConstraintSolver.hpp>
+ /*
+  * Copyright (C) 2018 Open Source Robotics Foundation
+  *
+@@ -584,7 +587,7 @@
+     const Identity &_modelID,
+     const ::sdf::Link &_sdfLink)
+ {
+-  const auto &modelInfo = *this->ReferenceInterface<ModelInfo>(_modelID);
++  auto &modelInfo = *this->ReferenceInterface<ModelInfo>(_modelID);
+   dart::dynamics::BodyNode::Properties bodyProperties;
+   bodyProperties.mName = _sdfLink.Name();
+ 
+@@ -675,7 +678,7 @@
+     const Identity &_modelID,
+     const ::sdf::Joint &_sdfJoint)
+ {
+-  const auto &modelInfo = *this->ReferenceInterface<ModelInfo>(_modelID);
++  auto &modelInfo = *this->ReferenceInterface<ModelInfo>(_modelID);
+ 
+   if (_sdfJoint.ChildLinkName() == "world")
+   {
+@@ -964,11 +967,21 @@
+ 
+ /////////////////////////////////////////////////
+ Identity SDFFeatures::ConstructSdfJoint(
+-    const ModelInfo &_modelInfo,
++    ModelInfo &_modelInfo,
+     const ::sdf::Joint &_sdfJoint,
+     dart::dynamics::BodyNode * const _parent,
+     dart::dynamics::BodyNode * const _child)
+ {
++  if (_child)
++    this->RequireUncoupledTopology(_child->getSkeleton(), false);
++  if (_parent)
++    this->RequireUncoupledTopology(_parent->getSkeleton(), false);
++  for (const auto &relation : _modelInfo.passiveMimics)
++    if (relation.constructed && _child && _child->getParentJoint()
++        && (_child->getParentJoint()->getName() == relation.follower
++            || _child->getParentJoint()->getName() == relation.driver))
++      throw std::invalid_argument("replacing a bound passive mimic joint unsupported");
++
+   // if a specified link is named "world" but cannot be found, we'll assume the
+   // joint is connected to the world
+   bool worldParent = (!_parent && _sdfJoint.ParentLinkName() == "world");
+@@ -1113,6 +1126,46 @@
+   // internally increment the BodyNode's version after Joint::moveTo.
+   _child->incrementVersion();
+ 
++  // Gazebo constructs models, links and joints piecemeal. Its copied JointAxis
++  // retains the original SDF axis element, even when Joint::Element is null.
++  const auto second = _sdfJoint.Axis(1);
++  if (second && second->Element() && second->Element()->HasElement("mimic"))
++    throw std::invalid_argument("passive mimic supports only single axis joints");
++  const auto axis = _sdfJoint.Axis(0);
++  const auto element = axis ? axis->Element() : nullptr;
++  if (element && element->HasElement("mimic"))
++  {
++    const auto mimic = element->FindElement("mimic");
++    const auto driver = mimic->Get<std::string>("joint");
++    const auto number = [&](const char *key, double fallback)
++    {
++      const auto value = mimic->FindElement(key);
++      if (!value) return fallback;
++      std::istringstream input(value->Get<std::string>());
++      double parsed;
++      if (!(input >> parsed)) throw std::invalid_argument("malformed passive mimic number");
++      input >> std::ws;
++      if (!input.eof() || !std::isfinite(parsed))
++        throw std::invalid_argument("nonfinite/trailing passive mimic number");
++      return parsed;
++    };
++    const double multiplier = number("multiplier", 1.);
++    if (driver.empty() || driver == _sdfJoint.Name()
++        || number("offset", 0.) != 0.
++        || number("reference", 0.) != 0.
++        || mimic->Get<std::string>("axis", "axis").first != "axis"
++        || !std::isfinite(multiplier) || std::abs(multiplier) != 1.)
++      throw std::invalid_argument("unsupported passive mimic relation");
++    for (const auto &existing : _modelInfo.passiveMimics)
++      if (existing.follower == _sdfJoint.Name())
++        throw std::invalid_argument("duplicate passive mimic declaration");
++    _modelInfo.passiveMimics.push_back({_sdfJoint.Name(), driver, multiplier, false});
++    this->joints.at(jointID)->passiveMimic = true;
++    // Authored mimics have no independent actuator. Keep dynamic followers and
++    // their limits; the bilateral row transmits reaction to the driven motor.
++    joint->setActuatorType(dart::dynamics::Joint::PASSIVE);
++  }
++
+   return this->GenerateIdentity(jointID, this->joints.at(jointID));
+ }
+ 
+--- a/dartsim/src/SDFFeatures.hh
++++ b/dartsim/src/SDFFeatures.hh
+@@ -92,7 +92,7 @@
+   /// assumed to be world
+   /// \param[in] _child Pointer to child link. If nullptr, the child is assumed
+   /// to be world
+-  private: Identity ConstructSdfJoint(const ModelInfo &_modelInfo,
++  private: Identity ConstructSdfJoint(ModelInfo &_modelInfo,
+       const ::sdf::Joint &_sdfJoint,
+       dart::dynamics::BodyNode * const _parent,
+       dart::dynamics::BodyNode * const _child);
+--- a/dartsim/src/SimulationFeatures.cc
++++ b/dartsim/src/SimulationFeatures.cc
+@@ -1,3 +1,5 @@
++#include "JointCouplingConstraint.hpp"
++#include <dart/constraint/ConstraintSolver.hpp>
+ /*
+  * Copyright (C) 2018 Open Source Robotics Foundation
+  *
+@@ -74,6 +76,28 @@
+   }
+ 
+   // TODO(MXG): Parse input
++  // Resolve after all piecemeal joint creation, before advancing any physics.
++  for (auto &[id, info] : this->models.idToObject)
++  {
++    if (this->worlds.at(this->GetWorldOfModelImpl(id)).get() != world) continue;
++    for (auto &relation : info->passiveMimics)
++    {
++      for (const auto &other : info->passiveMimics)
++        if (relation.driver == other.follower)
++          throw std::invalid_argument("chained passive mimic unsupported");
++      if (relation.constructed) continue;
++      auto *follower = info->model->getJoint(relation.follower);
++      auto *driver = info->model->getJoint(relation.driver);
++      auto constraint = std::make_shared<workcell::JointCouplingConstraint>(
++          follower, driver, relation.multiplier);
++      world->getConstraintSolver()->addConstraint(constraint);
++      info->passiveConstraints.push_back(constraint);
++      relation.constructed = true;
++      ignmsg << "Passive mimic relation " << relation.follower << " = "
++             << relation.multiplier << " * " << relation.driver
++             << " (actuator limits unchanged)" << std::endl;
++    }
++  }
+   world->step();
+   this->Write(_h.Get<ChangedWorldPoses>());
+   // TODO(MXG): Fill in state
+--- a/dartsim/src/WorldFeatures.cc
++++ b/dartsim/src/WorldFeatures.cc
+@@ -1,3 +1,5 @@
++#include "TouchingBulletContacts.hpp"
++#include <dart/constraint/ContactConstraint.hpp>
+ /*
+  * Copyright (C) 2021 Open Source Robotics Foundation
+  *
+@@ -56,7 +58,17 @@
+        world->getConstraintSolver()->getCollisionDetector();
+   if (_collisionDetector == "bullet")
+   {
+-    collisionDetector = dart::collision::BulletCollisionDetector::create();
++    collisionDetector = std::make_shared<workcell::TouchingBulletContacts>();
++    ignmsg << "Bullet separated cached manifold points omitted (depth < 0)" << std::endl;
++    // Contact compliance of the workcell contact model. DART's default (CFM
++    // 1e-5) holds a 20 N pinch on ~2 um of penetration; the 1 ms articulated
++    // arm integration walks a held part 7-33 um/s across the pinch during
++    // transfer, so a unilateral pad separated (LENLEG 2026-10-25). 1e-4 gives
++    // ~20 um at 20 N (~1e6 N/m, a stiff plastic contact); faithful replays of
++    // the recorded transfers bound the cross-pinch asymmetry at ~11 um.
++    // DART 6.12 has one world-wide contact CFM.
++    dart::constraint::ContactConstraint::setConstraintForceMixing(1e-4);
++    ignmsg << "Workcell contact compliance: CFM 1e-4" << std::endl;
+   }
+   else if (_collisionDetector == "fcl")
+   {
+--- /dev/null
++++ b/dartsim/src/JointCouplingConstraint.hpp
+@@ -0,0 +1,87 @@
++#pragma once
++#include <dart/constraint/ConstraintBase.hpp>
++#include <dart/constraint/JointConstraint.hpp>
++#include <dart/dynamics/BodyNode.hpp>
++#include <dart/dynamics/Joint.hpp>
++#include <dart/dynamics/Skeleton.hpp>
++#include <cmath>
++#include <limits>
++#include <stdexcept>
++
++namespace workcell {
++// Passive bilateral relation. Equal and opposite generalized impulses transfer
++// load to the driven joint. Independent actuator force limits stay unchanged.
++class JointCouplingConstraint : public dart::constraint::ConstraintBase {
++ public:
++  JointCouplingConstraint(dart::dynamics::Joint* follower,
++                          dart::dynamics::Joint* driver,double multiplier)
++      : follower_(follower),driver_(driver),multiplier_(multiplier) {
++    if (!follower_ || !driver_ || follower_==driver_
++        || follower_->getNumDofs()!=1 || driver_->getNumDofs()!=1
++        || follower_->getSkeleton()!=driver_->getSkeleton()
++        || follower_->getType()!=driver_->getType()
++        || !std::isfinite(multiplier_) || std::abs(multiplier_)!=1.)
++      throw std::invalid_argument("unsupported passive mimic relation");
++    requireDynamic();
++    mDim=1;
++  }
++  const std::string& getType() const override {
++    static const std::string type="WorkcellPassiveJointCoupling";return type;
++  }
++  bool isActive() const override {return true;}
++  dart::dynamics::SkeletonPtr getRootSkeleton() const override {
++    // Native rows read the immediate representative of the contact union.
++    // Normalize this skeleton to the final root before grouping; separate
++    // groups can otherwise clear each other's solved coupling impulses.
++    auto skeleton=follower_->getSkeleton();
++    auto root=dart::constraint::ConstraintBase::getRootSkeleton(skeleton);
++    skeleton->mUnionRootSkeleton=root;
++    return root;
++  }
++ protected:
++  void update() override {
++    requireDynamic();
++    position_error_=follower_->getPosition(0)-multiplier_*driver_->getPosition(0);
++    velocity_error_=follower_->getVelocity(0)-multiplier_*driver_->getVelocity(0);
++    if (!std::isfinite(position_error_) || !std::isfinite(velocity_error_))
++      throw std::runtime_error("nonfinite passive mimic state");
++  }
++  void getInformation(dart::constraint::ConstraintInfo* info) override {
++    const double correction=dart::constraint::JointConstraint::getErrorReductionParameter()
++        *position_error_*info->invTimeStep;
++    const double bound=dart::constraint::JointConstraint::getMaxErrorReductionVelocity();
++    info->b[0]=-velocity_error_-std::max(-bound,std::min(bound,correction));
++    info->lo[0]=-std::numeric_limits<double>::infinity();
++    info->hi[0]=std::numeric_limits<double>::infinity();
++    info->findex[0]=-1;info->x[0]=0.;
++  }
++  void applyUnitImpulse(std::size_t index) override {
++    if (index!=0)throw std::out_of_range("passive mimic constraint row");
++    auto skeleton=follower_->getSkeleton();skeleton->clearConstraintImpulses();
++    follower_->setConstraintImpulse(0,1.);driver_->setConstraintImpulse(0,-multiplier_);
++    skeleton->updateBiasImpulse(follower_->getChildBodyNode(),Eigen::Vector6d::Zero(),
++                               driver_->getChildBodyNode(),Eigen::Vector6d::Zero());
++    skeleton->updateVelocityChange();
++    follower_->setConstraintImpulse(0,0.);driver_->setConstraintImpulse(0,0.);
++  }
++  void getVelocityChange(double* velocity,bool withCfm) override {
++    velocity[0]=follower_->getSkeleton()->isImpulseApplied()
++        ? follower_->getVelocityChange(0)-multiplier_*driver_->getVelocityChange(0):0.;
++    if (withCfm)velocity[0]*=1.+dart::constraint::JointConstraint::getConstraintForceMixing();
++  }
++  void excite() override {follower_->getSkeleton()->setImpulseApplied(true);}
++  void unexcite() override {follower_->getSkeleton()->setImpulseApplied(false);}
++  void applyImpulse(double* lambda) override {
++    follower_->setConstraintImpulse(0,follower_->getConstraintImpulse(0)+lambda[0]);
++    driver_->setConstraintImpulse(0,driver_->getConstraintImpulse(0)-multiplier_*lambda[0]);
++  }
++ private:
++  void requireDynamic() const {
++    if (!follower_->getSkeleton()->isMobile() || follower_->isKinematic() || driver_->isKinematic())
++      throw std::runtime_error("passive mimic requires mobile skeleton and dynamic actuator modes");
++  }
++  dart::dynamics::Joint* follower_;
++  dart::dynamics::Joint* driver_;
++  double multiplier_,position_error_=0.,velocity_error_=0.;
++};
++}
+--- /dev/null
++++ b/dartsim/src/TouchingBulletContacts.hpp
+@@ -0,0 +1,165 @@
++#pragma once
++#include <algorithm>
++#include <cmath>
++#include <dart/collision/CollisionFilter.hpp>
++#include <dart/collision/CollisionResult.hpp>
++#include <dart/collision/bullet/BulletCollisionDetector.hpp>
++#include <dart/collision/bullet/BulletCollisionGroup.hpp>
++#include <dart/collision/bullet/BulletCollisionObject.hpp>
++#include <dart/collision/ode/OdeCollisionDetector.hpp>
++#include <dart/dynamics/BoxShape.hpp>
++#include <dart/dynamics/ShapeFrame.hpp>
++#include <memory>
++#include <stdexcept>
++#include <vector>
++namespace workcell {
++// Keep the original Bullet collision objects and filter semantics. BOX pairs
++// use double precision geometry; all other pairs retain Bullet manifolds.
++class PhysicalBulletGroup : public dart::collision::BulletCollisionGroup {
++ public:
++  using BulletCollisionGroup::BulletCollisionGroup;
++  std::vector<dart::collision::CollisionObject*> objects() const {
++    std::vector<dart::collision::CollisionObject*> result;
++    const auto& objects = getBulletCollisionWorld()->getCollisionObjectArray();
++    for (int i = 0; i < objects.size(); ++i) {
++      auto* object =
++          static_cast<dart::collision::BulletCollisionObject*>(objects[i]->getUserPointer());
++      if (!object || !hasShapeFrame(object->getShapeFrame()))
++        throw std::runtime_error("invalid physical Bullet group member");
++      result.push_back(object);
++    }
++    return result;
++  }
++};
++class TouchingBulletContacts : public dart::collision::BulletCollisionDetector {
++ public:
++  TouchingBulletContacts() : ode(dart::collision::OdeCollisionDetector::create()) {
++    static_assert(sizeof(dReal) == sizeof(double), "physical BOX contacts require double ODE");
++  }
++  std::shared_ptr<dart::collision::CollisionDetector> cloneWithoutCollisionObjects()
++      const override {
++    return std::make_shared<TouchingBulletContacts>();
++  }
++  using BulletCollisionDetector::createCollisionGroup;
++  std::unique_ptr<dart::collision::CollisionGroup> createCollisionGroup() override {
++    return std::make_unique<PhysicalBulletGroup>(shared_from_this());
++  }
++  bool collide(dart::collision::CollisionGroup* group,
++               const dart::collision::CollisionOption& option,
++               dart::collision::CollisionResult* result) override {
++    dart::collision::CollisionResult raw, physical;
++    if (result) result->clear();
++    if (!option.maxNumContacts) return false;
++    auto* actual = dynamic_cast<PhysicalBulletGroup*>(group);
++    if (!actual || group->getCollisionDetector().get() != this)
++      throw std::logic_error("physical Bullet group ownership mismatch");
++    auto query = option;
++    query.enableContact = true;
++    query.collisionFilter = std::make_shared<MeshFilter>(option.collisionFilter);
++    BulletCollisionDetector::collide(group, query, &raw);
++    touching(raw, option.maxNumContacts, &physical);
++    addBoxes(*actual, option, physical);
++    if (result) *result = physical;
++    return physical.getNumContacts() != 0;
++  }
++  bool collide(dart::collision::CollisionGroup*, dart::collision::CollisionGroup*,
++               const dart::collision::CollisionOption&,
++               dart::collision::CollisionResult*) override {
++    throw std::logic_error("physical Bullet contacts require one complete world group");
++  }
++
++ private:
++  static const dart::dynamics::BoxShape* box(const dart::collision::CollisionObject* object) {
++    return dynamic_cast<const dart::dynamics::BoxShape*>(object->getShape().get());
++  }
++  struct MeshFilter : dart::collision::CollisionFilter {
++    std::shared_ptr<dart::collision::CollisionFilter> original;
++    explicit MeshFilter(std::shared_ptr<dart::collision::CollisionFilter> filter)
++        : original(std::move(filter)) {}
++    bool ignoresCollision(const dart::collision::CollisionObject* a,
++                          const dart::collision::CollisionObject* b) const override {
++      return (box(a) && box(b)) || (original && original->ignoresCollision(a, b));
++    }
++  };
++  struct GeomDestroy {
++    void operator()(dxGeom* geom) const { dGeomDestroy(geom); }
++  };
++  struct BoxObject {
++    dart::collision::CollisionObject* original;
++    std::unique_ptr<dxGeom, GeomDestroy> geom;
++  };
++  void addBoxes(const PhysicalBulletGroup& group, const dart::collision::CollisionOption& option,
++                dart::collision::CollisionResult& result) {
++    if (!dAllocateODEDataForThread(dAllocateMaskAll))
++      throw std::runtime_error("ODE collision thread allocation failed");
++    std::vector<BoxObject> boxes;
++    for (auto* object : group.objects()) {
++      const auto* shape = box(object);
++      if (!shape) continue;
++      const auto& size = shape->getSize();
++      const auto& t = object->getTransform();
++      if (!size.allFinite() || (size.array() <= 0).any() || !t.matrix().allFinite())
++        throw std::runtime_error("invalid physical BOX geometry");
++      std::unique_ptr<dxGeom, GeomDestroy> geom(dCreateBox(nullptr, size.x(), size.y(), size.z()));
++      if (!geom) throw std::runtime_error("ODE BOX geometry allocation failed");
++      dGeomSetPosition(geom.get(), t.translation().x(), t.translation().y(), t.translation().z());
++      dMatrix3 rotation{};
++      for (int r = 0; r < 3; ++r)
++        for (int c = 0; c < 3; ++c) rotation[r * 4 + c] = t.linear()(r, c);
++      dGeomSetRotation(geom.get(), rotation);
++      boxes.push_back({object, std::move(geom)});
++    }
++    for (std::size_t i = 0; i < boxes.size(); ++i)
++      for (std::size_t j = i + 1; j < boxes.size(); ++j) {
++        auto& a = boxes[i];
++        auto& b = boxes[j];
++        if (option.collisionFilter &&
++            option.collisionFilter->ignoresCollision(a.original, b.original))
++          continue;
++        if (result.getNumContacts() >= option.maxNumContacts) return;
++        dContactGeom contacts[MAX_COLLIDE_RETURNS];
++        const int count = dCollide(a.geom.get(), b.geom.get(), MAX_COLLIDE_RETURNS, contacts,
++                                   sizeof(dContactGeom));
++        if (count == MAX_COLLIDE_RETURNS)
++          throw std::runtime_error("physical BOX contact query budget exhausted");
++        const auto retained =
++            std::min(std::size_t(count), option.maxNumContacts - result.getNumContacts());
++        for (std::size_t k = 0; k < retained; ++k) {
++          const auto& c = contacts[k];
++          dart::collision::Contact contact;
++          contact.collisionObject1 = a.original;
++          contact.collisionObject2 = b.original;
++          contact.point = Eigen::Vector3d(c.pos[0], c.pos[1], c.pos[2]);
++          contact.normal = Eigen::Vector3d(c.normal[0], c.normal[1], c.normal[2]);
++          contact.penetrationDepth = c.depth;
++          if (!std::isfinite(c.depth) || c.depth < 0 || !contact.point.allFinite() ||
++              !contact.normal.allFinite())
++            throw std::runtime_error("invalid physical BOX contact");
++          result.addContact(contact);
++        }
++      }
++  }
++  static bool touching(const dart::collision::CollisionResult& raw, std::size_t maximum,
++                       dart::collision::CollisionResult* result) {
++    bool separated = false;
++    for (const auto& c : raw.getContacts()) {
++      if (!std::isfinite(c.penetrationDepth) || !c.point.allFinite() || !c.normal.allFinite())
++        throw std::runtime_error("nonfinite Bullet physical contact");
++      separated = separated || c.penetrationDepth < 0.;
++    }
++    if (separated && raw.getNumContacts() == maximum)
++      throw std::runtime_error(
++          "physical Bullet contact query budget saturated by separated cache points");
++    std::size_t kept = 0;
++    for (const auto& c : raw.getContacts()) {
++      if (c.penetrationDepth < 0.) continue;
++      if (result) result->addContact(c);
++      ++kept;
++    }
++    return kept != 0;
++  }
++  // Use DART's existing ODE initialization lifetime; no secondary groups or
++  // borrowed ODE collision objects. Returned contacts own no temporary geometry.
++  std::shared_ptr<dart::collision::OdeCollisionDetector> ode;
++};
++}  // namespace workcell

@@ -14,7 +14,7 @@ grasp/place constraints remain unsupported.
 import copy
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from perceived_object_grasp_plan import (
@@ -23,9 +23,20 @@ from perceived_object_grasp_plan import (
     oriented_box_surface_distance,
     rotate_vector,
     tool_pose_for_grasp,
+    compose_pose,
+    inverse_pose,
+    quaternion_from_rpy,
 )
 from physical_destination import PLACEMENT_TOLERANCE_M, check_object_containment
 from grasp_strategy_candidates import generate_strategy_candidates
+
+# Position reserve past the refined first opposing contact on the simulator path:
+# one coarse closure step. The finger servo stalls at first contact, so the reserve
+# is a standing position error, not extra closure: 0.0125 rad (LENLEG 2026-10-24,
+# run reserve0125_r1) left the finger 0.0117-0.0125 rad short, did not reduce the
+# in-pinch rotation (0.00915 rad) and made the prevalidated OPEN start 0.0125 rad
+# from the measured finger, beyond MoveIt's 0.01 rad allowed_start_tolerance.
+SIMULATOR_CLOSURE_RESERVE_RAD = 0.804/80
 
 
 @dataclass(frozen=True)
@@ -49,6 +60,9 @@ class PreplanOperations:
     object_pose_after_motion: Callable
     place_detachment_diff: Callable
     stage: Callable
+    extraction_candidates: Callable | None = None
+    qualify_grasp: Callable | None = None
+    screen_closure: Callable | None = None
 
 
 @dataclass
@@ -60,6 +74,19 @@ class PreplanResult:
     checks: list[dict]
     stages: list[dict]
     cycle: dict | None
+    extraction_attempts: list[dict] = field(default_factory=list)
+
+
+class SearchBudgetExhausted(RuntimeError):
+    """The global candidate-search wall-clock budget ended."""
+
+
+class CandidateBudgetExhausted(RuntimeError):
+    """One candidate used its fair-share discovery/retry wall-clock slice."""
+
+
+class PlanningLifecycleFailure(RuntimeError):
+    """An unsettled planning goal forbids further candidate or variant planning."""
 
 
 class MotionFeasibilityFailure(RuntimeError):
@@ -79,6 +106,34 @@ class MotionFeasibilityFailure(RuntimeError):
                                       if p[f'body_type_{i}'] in (1, 2)}))
 
 
+def seated_destination(xyz, orientation, dimensions, floor_z):
+    """Seat a placed object on the bound physical destination floor.
+
+    The authored destination point is the object centre target. When the simulator binds the
+    physical floor (destination_geometry_binding), the centre is moved vertically so the object's
+    lowest point (box in its placed orientation) rests on that floor: raised when it would be
+    below, lowered when it would be above. Below the floor, the descent drove the tool 2.5 mm down
+    over a part already seated (LENLEG 2026-10-25), slipping the grip past the 2 mm retention
+    limit; a gap drops the part at release (10 mm: 0.18 mm impact depth, rejected by the 0.1 mm
+    floor-contact guard), and a measured container floor lies well below a drop region's centre.
+    The seated pose must still lie in the authored region (check_object_containment).
+    Returns (target xyz, seat evidence or None when no floor is bound).
+    """
+    if floor_z is None:
+        return list(xyz), None
+    x, y, z, w = orientation
+    norm = math.sqrt(x*x + y*y + z*z + w*w)
+    if (not math.isfinite(floor_z) or norm < 1e-9 or len(dimensions) != 3 or
+            any(not math.isfinite(v) or v <= 0 for v in dimensions)):
+        raise RuntimeError('invalid destination floor seating inputs')
+    x, y, z, w = (v/norm for v in (x, y, z, w))
+    vertical = (2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y))     # world z row of the object rotation
+    half_height = sum(abs(r) * d / 2 for r, d in zip(vertical, dimensions))
+    target = [xyz[0], xyz[1], floor_z + half_height]
+    return target, dict(floor_z=floor_z, half_height_m=half_height, authored_z=xyz[2],
+                        target_z=target[2], raised_m=target[2]-xyz[2])
+
+
 def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                        destination: dict, contract: dict, operations: PreplanOperations,
                        deadline: float) -> PreplanResult:
@@ -90,10 +145,13 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
     comparison. The deadline is a time.monotonic() absolute search deadline.
     """
     steps, stages, checks = [], [], []
+    extraction_attempts = []
+    active_extraction = None
     view = copy.deepcopy(initial_scene)
     baseline = copy.deepcopy(initial_scene.allowed_collision_matrix)
     current_stage = None
     check_code = 'GENERATE_GRASPS'
+    closure_clearance = None
 
     def stage(name):
         nonlocal current_stage, check_code
@@ -102,12 +160,29 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             current_stage = name
             operations.stage(name)
 
+    def budget_failure():
+        if (contract.get('search_deadline') is not None and
+                time.monotonic() >= contract['search_deadline']):
+            return SearchBudgetExhausted('candidate search budget exhausted')
+        return CandidateBudgetExhausted('candidate wall-clock slice exhausted')
+
     def motion(name, goal, group=None, straight=False):
         nonlocal view
         stage(name)
         if time.monotonic() > deadline:
-            raise RuntimeError('candidate search budget exhausted')
-        step = operations.plan_segment(view, name, goal, group, straight)
+            raise budget_failure()
+        options = {}
+        if name == 'PREPLAN_CLOSE_GRIPPER' and closure_clearance is not None:
+            options['closure_clearance'] = copy.deepcopy(closure_clearance)
+        if name == 'PREPLAN_APPROACH' and contract.get('approach_ik') is not None:
+            options['ik_binding'] = contract['approach_ik']
+        if (name == 'PREPLAN_TRANSFER' and contract.get('transfer_ik_seed') is not None
+                and (operations.extraction_candidates is None
+                     or contract.get('extraction_intent') == active_extraction)):
+            options['ik_seed'] = contract['transfer_ik_seed']
+        if name == 'PREPLAN_LIFT' and operations.extraction_candidates is not None:
+            options['extraction_intent'] = copy.deepcopy(active_extraction)
+        step = operations.plan_segment(view, name, goal, group, straight, **options)
         if (step['metadata'].get('success') is not True or
                 step['metadata'].get('moveit_code') != 1 or
                 not step['metadata'].get('points') or step.get('trajectory') is None):
@@ -134,8 +209,12 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     placement['retreat']['axis'] != 'z_up' or
                     placement['orientation']['mode'] != 'target_default'):
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored axes/orientation differ from supported cycle')
-            if any(abs(v) > 1e-12 for key in ('tcp_offset_xyz_m', 'tcp_offset_rpy_rad')
-                   for v in grasp.get(key, [0., 0., 0.])):
+            # Only the pinch generator honours a (translation-only) TCP offset; it must be
+            # the very offset the candidate was generated with. Everything else still fails.
+            honoured = (candidate.strategy_ref == 'finger_pinch_basic' and
+                        list(grasp.get('tcp_offset_xyz_m', [0., 0., 0.])) == list(candidate.effective.get('tcp_offset_xyz_m', [0., 0., 0.])))
+            if (any(abs(v) > 1e-12 for v in grasp.get('tcp_offset_rpy_rad', [0., 0., 0.])) or
+                    (any(abs(v) > 1e-12 for v in grasp.get('tcp_offset_xyz_m', [0., 0., 0.])) and not honoured)):
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: nonzero authored TCP adjustment')
             if grasp.get('contact', {}).get('min_quality', 0.) != 0.:
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: contact quality measurement unavailable')
@@ -152,8 +231,13 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
             if any(abs(v) > 1e-12 for v in placement['orientation'].get('rpy_rad', [0., 0., 0.])):
                 raise RuntimeError('TASK_CONSTRAINT_UNSUPPORTED: authored placement orientation offset')
         if time.monotonic() > deadline:
-            raise RuntimeError('candidate search budget exhausted')
-        if time.time() - observation['timestamp'] > contract['max_age_seconds']:
+            raise budget_failure()
+        freshness_reference = contract.get('observation_reference_time', time.time())
+        if (not isinstance(freshness_reference, (int, float)) or
+                not math.isfinite(freshness_reference)):
+            raise RuntimeError('invalid observation freshness reference')
+        if (observation['timestamp'] > freshness_reference + .05 or
+                freshness_reference - observation['timestamp'] > contract['max_age_seconds']):
             raise RuntimeError('observation expired before candidate planning')
         if candidate.object_id != observation['id']:
             raise RuntimeError('candidate object differs from observation')
@@ -200,14 +284,25 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if not math.isfinite(contract['retreat_distance_m']) or contract['retreat_distance_m'] <= 0:
             raise RuntimeError('retreat distance must be finite and positive')
         if intent is not None:
-            aperture = intent['pick']['grasp'].get('aperture', {'min_m': 0., 'max_m': 0.085})
-            if not aperture['min_m'] <= aperture_extent <= aperture['max_m']:
+            aperture = intent['pick']['grasp'].get('aperture') or {}
+            authored_max = aperture.get('max_m')
+            if not (aperture.get('min_m') or 0.) <= aperture_extent <= (math.inf if authored_max is None else authored_max):
                 raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: object outside authored aperture')
-        if aperture_extent > 0.085:
-            raise RuntimeError('target exceeds Robotiq aperture')
+        tool_aperture = contract.get('tool_aperture_max_m')
+        if tool_aperture is None or aperture_extent > tool_aperture:
+            raise RuntimeError(f'target extent {aperture_extent:.4f} m exceeds the end effector aperture {tool_aperture} m')
         if any(a > b for a, b in zip(extents, destination['dimensions'])):
             raise RuntimeError('target exceeds destination bounds')
         original = next(o for o in view.world.collision_objects if o.id == observation['id'])
+        if contract.get('simulator_closure_reserve') is True:
+            stage('PREPLAN_CLOSURE_CLEARANCE')
+            if operations.screen_closure is None:
+                raise RuntimeError('missing conservative closure-clearance screening')
+            closure_clearance = operations.screen_closure(scene=view, observation=observation)
+            if closure_clearance.get('accepted') is not True:
+                raise RuntimeError('closure-clearance screen rejected candidate')
+            checks.append(dict(code='PREPLAN_CLOSURE_CLEARANCE',status='PASS',
+                               evidence=copy.deepcopy(closure_clearance)))
         retreat = contract['retreat_distance_m']
         place_approach = contract.get('place_approach_distance_m', retreat)
         place_retreat = contract.get('place_retreat_distance_m', retreat)
@@ -224,19 +319,98 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         motion('PREPLAN_GRASP', contact, straight=True)
         stage('PREPLAN_CLOSE_GRIPPER')
         close = None
-        for i in range(1, 81):
-            trial = operations.updated_state(view.robot_state, {'gripper_finger1_joint': 0.804*i/80})
+        reserve = contract.get('simulator_closure_reserve') is True
+        # The cell's tool command joint, its open position and closing limit (bind_tool_actuation).
+        tool_joint, open_position, closed_limit = (contract['tool_command_joint'], contract['tool_open_rad'],
+                                                    contract['tool_closed_limit_rad'])
+        required_contacts = set(contract['allowed_touch_links'])
+        first_opposing = None
+        if reserve and len(required_contacts) < 2:
+            raise RuntimeError('simulator closure requires opposing fingertip links')
+
+        def closure_contacts(position):
+            if reserve and time.monotonic() >= deadline:
+                raise budget_failure()
+            trial = operations.updated_state(view.robot_state, {tool_joint: position})
             response = operations.state_validity(trial)
             if response.contacts:
                 try:
                     operations.verify_selected_contacts(response.contacts, observation['id'], contract['allowed_touch_links'])
                 except RuntimeError as exc:
                     raise MotionFeasibilityFailure(str(exc), contacts=response.contacts) from exc
-                close = 0.804*i/80
+            if reserve and time.monotonic() >= deadline:
+                raise budget_failure()
+            return response
+
+        def target_contact_links(response):
+            return {
+                c.contact_body_2 if c.contact_body_1 == observation['id'] else c.contact_body_1
+                for c in response.contacts
+                if observation['id'] in (c.contact_body_1, c.contact_body_2)
+            }
+
+        closure_step = (closed_limit-open_position)/80
+        for i in range(1, 81):
+            position = open_position+closure_step*i
+            response = closure_contacts(position)
+            if response.contacts and not reserve:
+                close = position
                 break
+            if reserve:
+                planned_contacts = target_contact_links(response)
+                opposing = required_contacts.issubset(planned_contacts)
+                if opposing:
+                    # Refine the first observed contact bracket before adding
+                    # the unchanged reserve. The coarse sample can already
+                    # overshoot contact by an entire closure step.
+                    lower, upper = position-closure_step, position
+                    refinement_iterations = 0
+                    if i == 1 and required_contacts.issubset(
+                            target_contact_links(closure_contacts(lower))):
+                        upper = lower
+                    while lower < upper and refinement_iterations < 10:
+                        middle = (lower+upper)/2
+                        if required_contacts.issubset(target_contact_links(closure_contacts(middle))):
+                            upper = middle
+                        else:
+                            lower = middle
+                        refinement_iterations += 1
+                    first_opposing = upper
+                    close = first_opposing+SIMULATOR_CLOSURE_RESERVE_RAD
+                    if close > closed_limit:
+                        raise RuntimeError('no closure reserve remains within gripper range')
+                    planned_contacts = target_contact_links(closure_contacts(close))
+                    if not required_contacts.issubset(planned_contacts):
+                        raise RuntimeError('opposing fingertip contact lost at closure reserve endpoint')
+                    break
         if close is None:
             raise RuntimeError('no allowed fingertip contact in closing range')
-        motion('PREPLAN_CLOSE_GRIPPER', {'gripper_finger1_joint': close}, group='gripper')
+        grasp_open_state = copy.deepcopy(view.robot_state)
+        motion('PREPLAN_CLOSE_GRIPPER', {tool_joint: close}, group=contract['tool_group'])
+        if reserve:
+            # A position reserve is not a force measurement. Execution must
+            # still establish and continuously retain actual opposing contact.
+            steps[-1]['metadata'].update(
+                first_opposing_position_rad=first_opposing,
+                first_opposing_bracket_rad=[lower, upper],
+                contact_refinement_iterations=refinement_iterations,
+                commanded_position_rad=close,
+                position_reserve_rad=close-first_opposing,
+                required_contact_links=sorted(required_contacts),
+                planned_contact_links=sorted(planned_contacts))
+        if reserve:
+            stage('GRASP_GEOMETRY')
+            if operations.qualify_grasp is None:
+                raise RuntimeError('missing pre-attachment geometric qualification evidence')
+            qualification = operations.qualify_grasp(
+                scene=view, observation=observation, candidate=candidate,
+                planned_open=grasp_open_state, planned_closed=view.robot_state)
+            checks.append(dict(code='GRASP_GEOMETRY',
+                               status='PASS' if qualification.get('accepted') is True else 'FAIL',
+                               qualification=copy.deepcopy(qualification)))
+            steps[-1]['metadata']['geometric_qualification'] = copy.deepcopy(qualification)
+            if qualification.get('accepted') is not True:
+                raise RuntimeError(qualification.get('reason', 'incomplete geometric qualification'))
         tool_at_grasp = operations.fk(view.robot_state, contract['tool_link'])
         frame_at_grasp = operations.fk(view.robot_state, contract['grasp_frame'])
         stage('ATTACH')
@@ -246,48 +420,150 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         view.allowed_collision_matrix = copy.deepcopy(baseline)
         steps.append(dict(kind='attach', stage='ATTACH', before=before, after=copy.deepcopy(view), original=original))
         checks.append(dict(code='ATTACH', status='PASS'))
-        # A reachable lift endpoint does not prove the required retreat corridor.
-        # Use the same swept tool/robot check as descent before admitting a grasp.
-        motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, dz=retreat), straight=True)
-        delta = [a-b for a, b in zip(destination['pose_xyz'], observation['pose'][:3])]
-        motion('PREPLAN_TRANSFER', operations.translated_pose(tool_at_grasp, delta[0], delta[1], delta[2]+place_approach))
-        motion('PREPLAN_PLACE', operations.translated_pose(tool_at_grasp, *delta))
-        reached = operations.fk(view.robot_state, contract['tool_link'])
-        achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
-        if math.dist(achieved[:3], destination["pose_xyz"]) > PLACEMENT_TOLERANCE_M:
-            raise RuntimeError('planned placement differs from destination by more than 3 mm')
-        check_code = 'DESTINATION_CONTAINMENT'
-        if intent is not None:
-            from perceived_object_grasp_plan import quaternion_from_rpy
-            expected_orientation = quaternion_from_rpy(destination['pose_rpy'])
-            angle = 2 * math.acos(min(1., abs(sum(a*b for a, b in zip(achieved[3:], expected_orientation)))))
-            if angle > 0.01:
-                raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: planned placement orientation differs from physical destination')
-        check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=clearance)
-        checks.append(dict(code=check_code, status='PASS'))
-        motion('PREPLAN_OPEN_GRIPPER', {'gripper_finger1_joint': 0.0}, group='gripper')
-        stage('DETACH')
-        before = copy.deepcopy(view)
-        placed = operations.place_detachment_diff(original, contract['grasp_frame'], achieved[:3], achieved[3:]).world.collision_objects[0]
-        view = copy.deepcopy(view)
-        view.robot_state.attached_collision_objects = []
-        view.world.collision_objects.append(placed)
-        steps.append(dict(kind='detach', stage='DETACH', before=before, after=copy.deepcopy(view),
-                          original=original, tool_at_grasp=tool_at_grasp))
-        checks.append(dict(code='DETACH', status='PASS'))
-        view.allowed_collision_matrix = operations.target_contact_matrix(baseline, observation['id'], contract['allowed_touch_links'])
-        motion('PREPLAN_RETREAT', operations.translated_pose(reached, dz=place_retreat), straight=True)
-        view.allowed_collision_matrix = copy.deepcopy(baseline)
-        motion('PREPLAN_HOME', home)
-        stage('CANDIDATE_READY')
-        cycle = dict(object_id=observation['id'], candidate=copy.deepcopy(candidate), steps=steps,
-                     full_cycle_prevalidated=True)
-        return PreplanResult(True, candidate.candidate_id, None, None, checks, stages, cycle)
+        # Each extraction shares this grasp/close checkpoint and the existing
+        # candidate deadline. A failed later transfer/place also rejects the
+        # extraction variant; only a complete suffix may become selectable.
+        variants = (operations.extraction_candidates(copy.deepcopy(view), observation, candidate, retreat)
+                    if operations.extraction_candidates is not None else [dict(
+                        schema='workcell_extraction_intent/v1', variant_id='vertical',
+                        object_id=observation['id'], candidate_id=candidate.candidate_id,
+                        offset_xyz_m=[0., 0., retreat])])
+        if not isinstance(variants, list) or not variants:
+            exc = RuntimeError('no bounded extraction variants available')
+            exc.reason_code = 'NO_VALID_EXTRACTION'
+            raise exc
+        identifiers = set()
+        for variant in variants:
+            offset = variant.get('offset_xyz_m') if isinstance(variant, dict) else None
+            if (not isinstance(variant, dict)
+                    or variant.get('schema') != 'workcell_extraction_intent/v1'
+                    or variant.get('object_id') != observation['id']
+                    or variant.get('candidate_id') != candidate.candidate_id
+                    or not isinstance(variant.get('variant_id'), str) or not variant['variant_id']
+                    or variant['variant_id'] in identifiers
+                    or not isinstance(offset, (list, tuple)) or len(offset) != 3
+                    or any(not isinstance(v, (int, float)) or isinstance(v, bool)
+                           or not math.isfinite(v) for v in offset)
+                    or offset[2] != retreat or math.hypot(*offset[:2]) > .0025):
+                exc = RuntimeError('invalid or unbound extraction intent')
+                exc.reason_code = 'EXTRACTION_INTENT_INVALID'
+                raise exc
+            identifiers.add(variant['variant_id'])
+        bound = contract.get('extraction_intent')
+        if bound is not None:
+            variants = [variant for variant in variants if variant == bound]
+            if len(variants) != 1:
+                exc = RuntimeError('resolved extraction intent changed; resolve current geometry again')
+                exc.reason_code = 'EXTRACTION_INTENT_CHANGED'
+                raise exc
+        checkpoint = copy.deepcopy(view)
+        prefix_steps, prefix_stages, prefix_checks = len(steps), len(stages), len(checks)
+        last_error = None
+        for active_extraction in variants:
+            view = copy.deepcopy(checkpoint)
+            del steps[prefix_steps:]; del stages[prefix_stages:]; del checks[prefix_checks:]
+            try:
+                motion('PREPLAN_LIFT', operations.translated_pose(tool_at_grasp, *active_extraction['offset_xyz_m']), straight=True)
+                if operations.extraction_candidates is not None:
+                    checks.append(dict(code='INITIAL_PILE_EXTRACTION', status='PASS',
+                                       extraction_intent=copy.deepcopy(active_extraction)))
+                placed_orientation = (quaternion_from_rpy(destination['pose_rpy']) if intent is not None
+                                      else list(observation['pose'][3:]))
+                target_xyz, seat = seated_destination(destination['pose_xyz'], placed_orientation,
+                                                      list(original.primitives[0].dimensions),
+                                                      contract.get('destination_floor_z'))
+                if seat is not None:
+                    checks.append(dict(code='DESTINATION_FLOOR_SEAT', status='PASS', **seat))
+                delta = [a-b for a, b in zip(target_xyz, observation['pose'][:3])]
+                place_goal = operations.translated_pose(tool_at_grasp, *delta)
+                if intent is not None:
+                    # Preserve the actual grasp transform while meeting the authored
+                    # destination orientation. Translation alone cannot reorient a part.
+                    p, q = tool_at_grasp.pose.position, tool_at_grasp.pose.orientation
+                    grasp_tool = [p.x, p.y, p.z, q.x, q.y, q.z, q.w]
+                    object_in_tool = compose_pose(inverse_pose(grasp_tool), observation['pose'])
+                    destination_object = target_xyz + quaternion_from_rpy(destination['pose_rpy'])
+                    place_goal = operations.pose_message(compose_pose(destination_object, inverse_pose(object_in_tool)))
+                motion('PREPLAN_TRANSFER', operations.translated_pose(place_goal, dz=place_approach))
+                # The authored place approach is z_down: descend straight into the
+                # destination like the grasp descent and the retreat. A free OMPL
+                # segment into the bin cavity cut corners through the bound physics
+                # walls between waypoints (LENLEG 2026-10-24, controller-interpolated audit).
+                motion('PREPLAN_PLACE', place_goal, straight=True)
+                reached = operations.fk(view.robot_state, contract['tool_link'])
+                achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
+                if math.dist(achieved[:3], target_xyz) > PLACEMENT_TOLERANCE_M:
+                    raise RuntimeError('planned placement differs from destination by more than 3 mm')
+                check_code = 'DESTINATION_CONTAINMENT'
+                if intent is not None:
+                    expected_orientation = quaternion_from_rpy(destination['pose_rpy'])
+                    angle = 2 * math.acos(min(1., abs(sum(a*b for a, b in zip(achieved[3:], expected_orientation)))))
+                    if angle > 0.01:
+                        raise RuntimeError('TASK_CONSTRAINT_UNSATISFIED: planned placement orientation differs from physical destination')
+                check_object_containment(destination, achieved, list(original.primitives[0].dimensions), clearance=clearance)
+                checks.append(dict(code=check_code, status='PASS'))
+                motion('PREPLAN_OPEN_GRIPPER', {tool_joint: open_position}, group=contract['tool_group'])
+                stage('DETACH')
+                before = copy.deepcopy(view)
+                placed = operations.place_detachment_diff(original, contract['grasp_frame'], achieved[:3], achieved[3:]).world.collision_objects[0]
+                view = copy.deepcopy(view)
+                view.robot_state.attached_collision_objects = []
+                view.world.collision_objects.append(placed)
+                steps.append(dict(kind='detach', stage='DETACH', before=before, after=copy.deepcopy(view),
+                                  original=original, tool_at_grasp=tool_at_grasp))
+                checks.append(dict(code='DETACH', status='PASS'))
+                view.allowed_collision_matrix = operations.target_contact_matrix(baseline, observation['id'], contract['allowed_touch_links'])
+                motion('PREPLAN_RETREAT', operations.translated_pose(reached, dz=place_retreat), straight=True)
+                view.allowed_collision_matrix = copy.deepcopy(baseline)
+                motion('PREPLAN_HOME', home)
+                extraction_attempts.append(dict(
+                    extraction_intent=copy.deepcopy(active_extraction),
+                    variant_id=active_extraction['variant_id'], success=True,
+                    failed_stage=None, reason_code=None, checks=copy.deepcopy(checks[prefix_checks:]),
+                    stages=copy.deepcopy(stages[prefix_stages:])))
+                stage('CANDIDATE_READY')
+                cycle = dict(object_id=observation['id'], candidate=copy.deepcopy(candidate), steps=steps,
+                             full_cycle_prevalidated=True, extraction_intent=copy.deepcopy(active_extraction),
+                             extraction_attempts=copy.deepcopy(extraction_attempts))
+                return PreplanResult(True, candidate.candidate_id, None, None, checks, stages, cycle,
+                                     extraction_attempts)
+            except PlanningLifecycleFailure:
+                raise
+            except Exception as exc:
+                code = (getattr(exc, 'reason_code', None) or
+                        ('SEARCH_BUDGET_EXHAUSTED' if isinstance(exc, SearchBudgetExhausted) else
+                         'CANDIDATE_SLICE_EXHAUSTED' if isinstance(exc, CandidateBudgetExhausted) else
+                         check_code + '_FAILED'))
+                extraction_attempts.append(dict(
+                    extraction_intent=copy.deepcopy(active_extraction),
+                    variant_id=active_extraction['variant_id'], success=False,
+                    failed_stage=current_stage, reason_code=code, reason=str(exc),
+                    checks=copy.deepcopy(checks[prefix_checks:]),
+                    stages=copy.deepcopy(stages[prefix_stages:]),
+                    **getattr(exc, 'details', {})))
+                last_error = exc
+                if isinstance(exc, (SearchBudgetExhausted, CandidateBudgetExhausted)):
+                    raise
+        if operations.extraction_candidates is not None and all(
+                attempt['failed_stage'] in ('PREPLAN_LIFT', 'PREPLAN_EXTRACTION')
+                for attempt in extraction_attempts):
+            last_error.reason_code = 'NO_VALID_EXTRACTION'
+        raise last_error
+    except PlanningLifecycleFailure:
+        raise
     except Exception as exc:
-        reason_code = check_code + '_FAILED'
-        failure = dict(failure_kind='planning' if check_code.startswith('PREPLAN_') else 'constraint')
+        if isinstance(exc, SearchBudgetExhausted):
+            reason_code = 'SEARCH_BUDGET_EXHAUSTED'
+            failure = dict(failure_kind='budget')
+        elif isinstance(exc, CandidateBudgetExhausted):
+            reason_code = 'CANDIDATE_SLICE_EXHAUSTED'
+            failure = dict(failure_kind='budget')
+        else:
+            reason_code = getattr(exc, 'reason_code', None) or check_code + '_FAILED'
+            failure = dict(failure_kind='planning' if check_code.startswith('PREPLAN_') else 'constraint')
         failure.update(getattr(exc, 'details', {}))
         failure.update(candidate_id=candidate.candidate_id, failed_stage=current_stage)
         stages.append(dict(stage=current_stage, success=False, reason=str(exc), reason_code=reason_code, **failure))
         checks.append(dict(code=check_code, status='FAIL', reason_code=reason_code, reason=str(exc), **failure))
-        return PreplanResult(False, candidate.candidate_id, reason_code, str(exc), checks, stages, None)
+        return PreplanResult(False, candidate.candidate_id, reason_code, str(exc), checks, stages, None,
+                             extraction_attempts)

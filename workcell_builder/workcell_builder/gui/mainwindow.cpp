@@ -3546,7 +3546,36 @@ void MainWindow::setup_studio_shell()
   workflow_tab_layout->addWidget(task_diagnostics);
   auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); task_diagnostics_actions->addWidget(open_perception_metadata_button);
   auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); task_diagnostics_actions->addWidget(open_epd_docs_button);
-  auto * refresh_snapshot_button = new QPushButton("Refresh Snapshot", scene_builder); ar_layout->addWidget(refresh_snapshot_button);
+  ar_layout->addWidget(new QLabel("<b>Live Perception</b> · camera → EPD · perception only, robot motion locked"));
+  perception_camera_combo_ = new QComboBox(scene_builder); perception_camera_combo_->setObjectName("livePerceptionCamera");
+  perception_camera_combo_->setToolTip("RGB-D cameras publishing in the registered perception ROS graph.");
+  ar_layout->addWidget(perception_camera_combo_);
+  auto * perception_actions = new QHBoxLayout();
+  perception_discover_button_ = new QPushButton("Discover Cameras", scene_builder); perception_discover_button_->setObjectName("livePerceptionDiscover");
+  perception_bind_button_ = new QPushButton("Save Camera Binding", scene_builder); perception_bind_button_->setObjectName("livePerceptionBind");
+  perception_start_button_ = new QPushButton("Start Live Perception", scene_builder); perception_start_button_->setObjectName("livePerceptionStart");
+  perception_actions->addWidget(perception_discover_button_); perception_actions->addWidget(perception_bind_button_);
+  perception_actions->addWidget(perception_start_button_); ar_layout->addLayout(perception_actions);
+  perception_preview_label_ = new QLabel("No live preview: Start Live Perception.", scene_builder);
+  perception_preview_label_->setObjectName("livePerceptionPreview"); perception_preview_label_->setMinimumHeight(180);
+  perception_preview_label_->setAlignment(Qt::AlignCenter); ar_layout->addWidget(perception_preview_label_);
+  perception_status_label_ = new QLabel(scene_builder); perception_status_label_->setObjectName("livePerceptionStatus");
+  perception_status_label_->setWordWrap(true); perception_status_label_->setTextFormat(Qt::RichText); ar_layout->addWidget(perception_status_label_);
+  perception_table_ = new QTableWidget(0, 7, scene_builder); perception_table_->setObjectName("livePerceptionDetections");
+  perception_table_->setHorizontalHeaderLabels({"Class", "Confidence", "Camera XYZ (m)", "Size (m)", "Age (s)", "Task", "Why"});
+  perception_table_->horizontalHeader()->setStretchLastSection(true); perception_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  perception_table_->setMinimumHeight(120); ar_layout->addWidget(perception_table_);
+  perception_process_ = new QProcess(this);
+  perception_timer_ = new QTimer(this); perception_timer_->setInterval(500);
+  connect(perception_timer_, &QTimer::timeout, this, &MainWindow::refresh_live_perception);
+  connect(perception_discover_button_, &QPushButton::clicked, this, &MainWindow::discover_live_cameras);
+  connect(perception_bind_button_, &QPushButton::clicked, this, &MainWindow::save_live_camera_binding);
+  connect(perception_start_button_, &QPushButton::clicked, this, &MainWindow::toggle_live_perception);
+  connect(perception_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this](int, QProcess::ExitStatus) {
+    perception_timer_->stop(); refresh_live_perception();
+    perception_start_button_->setText("Start Live Perception");
+    append_studio_log("Live perception stopped; EPD processes shut down by the session.");
+  });
   workflow_tab_layout->addWidget(ar_card);
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("", scene_builder); live_coordinate_label_->hide(); selected_item_card_layout->addWidget(live_coordinate_label_);
@@ -3763,6 +3792,8 @@ void MainWindow::setup_studio_shell()
   pl->addWidget(new QLabel("<b>Preview Process</b><br/>Open RViz Truth Preview | Run Fake-Hardware Simulation | Stop Simulation | Copy commands"));
   run_build_button_ = new QPushButton("Build & Run RViz", preview); run_build_button_->setProperty("role","primary"); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Full Cycle", preview); run_preview_button_->setObjectName("runFullCycle"); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
+  run_physics_button_ = new QPushButton("Run Physics Simulation Cycle", preview); run_physics_button_->setObjectName("runPhysicsCycle"); pl->addWidget(run_physics_button_);
+  physics_state_label_ = new QLabel(preview); physics_state_label_->setObjectName("physicsCycleState"); physics_state_label_->setWordWrap(true); pl->addWidget(physics_state_label_);
   stop_preview_button_ = new QPushButton("Stop Simulation", preview); stop_preview_button_->hide(); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
   preview_more_actions_button_ = new QToolButton(preview);
@@ -3932,6 +3963,7 @@ void MainWindow::setup_studio_shell()
   connect_button(go_preview_commands, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
   connect_button(run_build_button_, &MainWindow::run_preview_build);
   connect_button(run_preview_button_, &MainWindow::run_full_cycle);
+  connect_button(run_physics_button_, &MainWindow::run_physics_cycle);
   connect_button(stop_preview_button_, &MainWindow::stop_preview_process);
   connect_button(copy_build_button_, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect_button(copy_source_button_, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
@@ -5858,6 +5890,10 @@ void MainWindow::closeEvent(QCloseEvent * event)
       event->ignore(); return;
     }
   }
+  if (perception_process_ && perception_process_->state() != QProcess::NotRunning) {
+    perception_process_->terminate();                 // the session stops EPD, then exits
+    if (!perception_process_->waitForFinished(20000)) perception_process_->kill();
+  }
   if (preview_process_ && preview_process_->state() != QProcess::NotRunning) {
     close_after_preview_stop_ = true;
     stop_preview_process();
@@ -6195,11 +6231,12 @@ QString MainWindow::selected_scene_build_command() const { if (selected_scene_in
 QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
 QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
 
-MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness() const
+MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness(bool require_task_input) const
 {
   SelectedSceneReadiness result;
   if (environment_task_editor_ && environment_task_editor_->scene() == selected_scene_path() &&
-      !environment_task_editor_->blocker().isEmpty()) result.blockers << environment_task_editor_->blocker();
+      !environment_task_editor_->blocker(require_task_input).isEmpty())
+    result.blockers << environment_task_editor_->blocker(require_task_input);
   if (!has_selected_scene() || selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) { result.blockers << "Select a scene."; return result; }
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const auto content = workcell_builder::scene_content_readiness(scene);
@@ -6280,6 +6317,26 @@ void MainWindow::refresh_preview_launch_ui()
     run_build_button_->setEnabled(active || (has_scene && has_ws && selected_scene_readiness().ready && preview_state_!="BUILD_RUNNING" && preview_state_!="PACKAGE_CHECK_RUNNING" && preview_state_!="PREVIEW_LAUNCHING"));
   }
   const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
+  if (run_physics_button_) {
+    const auto blocker = physics_cycle_blocker();
+    const auto physics = selected_scene_readiness(false);   // simulator-measured objects: preflight owns the input
+    run_physics_button_->setEnabled(has_scene && physics.ready && !busy && blocker.isEmpty());
+    run_physics_button_->setToolTip(blocker.isEmpty() ? "Runs one bounded pick/place cycle of the saved cell in the qualified physics simulation." : blocker);
+    if (!physics_cycle_mode_) {
+      if (!has_scene) set_physics_state(QString(), QString());
+      else if (!blocker.isEmpty()) set_physics_state("BLOCKED", blocker.toHtmlEscaped());
+      else if (!physics.ready) set_physics_state("BLOCKED", (physics.blockers.isEmpty() ? QString("Generate and Validate the saved cell first.")
+                                                          : physics.blockers.join("; ")).toHtmlEscaped());
+      else if (physics_state_ != "COMPLETED" && physics_state_ != "FAILED" && physics_state_ != "CANCELLED") {
+        const auto cell = physics_preflight().value("cell").toObject();
+        QStringList objects; for (const auto & item : cell.value("objects").toArray()) objects << item.toString();
+        set_physics_state("READY", QString("%1<br/>Robot %2 · Tool %3 · Objects: %4 · Destination: %5")
+          .arg(physics_preflight().value("backend").toString().toHtmlEscaped(), cell.value("robot").toString().toHtmlEscaped(),
+               cell.value("end_effector").toString().toHtmlEscaped(), objects.join(", ").toHtmlEscaped(),
+               cell.value("destination").toString().toHtmlEscaped()));
+      }
+    }
+  }
   if (run_preview_button_) {
     run_preview_button_->show();
     run_preview_button_->setText("Plan Saved Task (Fake Hardware)");
@@ -6627,6 +6684,84 @@ void MainWindow::run_full_cycle()
   refresh_preview_launch_ui();
 }
 
+QJsonObject MainWindow::physics_preflight() const
+{
+  if (!has_selected_scene()) return {};
+  QString script;
+  if (!helper_script_exists("physics_cycle_preflight.py", &script))
+    return QJsonObject{{"status", "BLOCKED"}, {"blocker", "physics_cycle_preflight.py is unavailable in this workspace."}};
+  const auto dir = QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir.string());
+  QDir workspace(QFileInfo(script).canonicalPath()); workspace.cdUp(); workspace.cdUp(); workspace.cdUp();
+  QStringList key{dir, script};
+  for (const auto & rel : {"environment.yaml", "config/workcell_builder_task_intent.yaml", "cell_definition.yaml", "config/moveit_collision_objects.yaml"})
+    key << QString::number(QFileInfo(dir + "/" + rel).lastModified().toMSecsSinceEpoch());
+  key << QString::number(QFileInfo(workspace.filePath("workcell_qualified_runtime.json")).lastModified().toMSecsSinceEpoch());
+  if (key.join('|') == physics_preflight_key_) return physics_preflight_;
+  QProcess process;
+  process.start("python3", {script, dir});
+  const bool finished = process.waitForFinished(60000);
+  if (!finished) { process.kill(); process.waitForFinished(1000); }
+  const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  physics_preflight_ = finished && report.contains("status") ? report :
+    QJsonObject{{"status", "BLOCKED"}, {"blocker", "Physics preflight did not complete: " + QString::fromUtf8(process.readAllStandardError()).left(400)}};
+  physics_preflight_key_ = key.join('|');
+  return physics_preflight_;
+}
+
+QString MainWindow::physics_cycle_blocker() const
+{
+  if (!has_selected_scene()) return "Select a saved cell.";
+  if (layout_dirty_ || (environment_task_editor_ && environment_task_editor_->dirty()))
+    return "Save the cell first: it has unsaved changes.";
+  const auto report = physics_preflight();
+  if (report.value("status").toString() != "READY")
+    return report.value("blocker").toString("Physics preflight unavailable.");
+  return {};
+}
+
+void MainWindow::set_physics_state(const QString & state, const QString & detail)
+{
+  physics_state_ = state;
+  if (!physics_state_label_) return;
+  physics_state_label_->setProperty("physicsState", state);
+  physics_state_label_->setText(state.isEmpty() ? QString() :
+    QString("<b>Physics simulation: %1</b><br/>%2").arg(state, detail));
+}
+
+void MainWindow::run_physics_cycle()
+{
+  if (preview_process_->state() != QProcess::NotRunning) return;
+  const auto blocker = physics_cycle_blocker();
+  const auto readiness = selected_scene_readiness(false);
+  if (!blocker.isEmpty() || !readiness.ready) {
+    set_physics_state("BLOCKED", (!blocker.isEmpty() ? blocker : readiness.blockers.isEmpty() ?
+      QString("Generate and Validate the saved cell first.") : readiness.blockers.join("; ")).toHtmlEscaped());
+    return;
+  }
+  const auto preflight = physics_preflight(); const auto cell = preflight.value("cell").toObject();
+  QStringList objects; for (const auto & item : cell.value("objects").toArray()) objects << item.toString();
+  // Nothing starts without this explicit confirmation (no camera, simulator or controller runs on open).
+  if (QMessageBox::question(this, "Run Physics Simulation Cycle",
+        QString("Run one bounded pick-and-place cycle of the saved cell \"%1\" in the %2?\n\nRobot: %3 · Tool: %4\nObjects: %5\n"
+                "Destination: %6\n\nThe real robot stays locked.")
+          .arg(QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name),
+               preflight.value("backend").toString(), cell.value("robot").toString(), cell.value("end_effector").toString(),
+               objects.join(", "), cell.value("destination").toString()),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+  active_preview_scene_ = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  full_cycle_mode_ = true; physics_cycle_mode_ = true; preview_stop_requested_ = false;
+  cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
+  cycle_output_dir_ = detect_workspace_root() + "/log/studio_physics_cycles/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  active_preview_command_ = workcell_builder::build_physics_cycle_command(active_preview_scene_,
+    detect_workspace_root().toStdString(), cycle_output_dir_);
+  if (active_preview_command_.isEmpty()) { physics_cycle_mode_ = false; set_physics_state("FAILED", "No physics cycle command."); set_preview_state("CYCLE_FAILED"); return; }
+  set_physics_state("PLANNING", "Starting the qualified physics simulation · Real robot motion: locked");
+  cycle_status_label_->setText("Starting the qualified physics simulation…<br/>Live physics · Real robot motion: locked");
+  set_preview_state("PREVIEW_LAUNCHING");
+  preview_process_->start("/bin/bash", {"-lc", active_preview_command_});
+  refresh_preview_launch_ui();
+}
+
 void MainWindow::consume_cycle_output(const QString & output)
 {
   cycle_stdout_buffer_ += output;
@@ -6638,8 +6773,15 @@ void MainWindow::consume_cycle_output(const QString & output)
     if (event.contains("stage")) {
       const QString stage = event.value("stage").toString();
       QString friendly = stage.toLower(); friendly.replace('_', ' ');
-      cycle_status_label_->setText("<b>" + friendly.toHtmlEscaped() + "</b><br/>Replay · Fake hardware only · Real robot motion: locked");
+      const bool physics = event.value("source").toString() == "qualified_physics_simulator" && event.value("live").toBool();
+      cycle_status_label_->setText("<b>" + friendly.toHtmlEscaped() + "</b><br/>" +
+        (physics ? QString("Live qualified physics simulation") + (event.value("motion").toBool() ? " · Simulated robot moving" : "")
+                 : QString("Replay · Fake hardware only")) + " · Real robot motion: locked");
       cycle_status_label_->setProperty("backendStage", stage);
+      if (physics_cycle_mode_ && physics && stage != "SIMULATOR_SHUTDOWN")
+        set_physics_state(stage.startsWith("EXECUTE_") ? "RUNNING" : "PLANNING",
+          friendly.toHtmlEscaped() + (event.value("motion").toBool() ? " · simulated robot moving" : " · no motion") +
+          " · Real robot motion: locked");
     }
     if (event.value("event").toString() == "cycle_result") cycle_result_ = event.value("summary").toObject();
   }
@@ -6647,6 +6789,24 @@ void MainWindow::consume_cycle_output(const QString & output)
 
 void MainWindow::show_cycle_result(const QJsonObject & result)
 {
+  if (result.value("mode").toString() == "physics_simulation") {
+    const bool pass = result.value("result").toString() == "PASS";
+    const bool cancelled = result.value("result").toString() == "CANCELLED";
+    QStringList gates; const auto statuses = result.value("gates").toObject();
+    for (auto it = statuses.begin(); it != statuses.end(); ++it) gates << it.key() + " " + it.value().toString();
+    QStringList pose; const auto final_pose = result.value("final_object_pose").toArray();
+    for (int i = 0; i < std::min(3, static_cast<int>(final_pose.size())); ++i) pose << QString::number(final_pose.at(i).toDouble(), 'f', 4);
+    QString text = QString("<b>%1</b> · Live qualified physics simulation<br/>Gates: %2<br/>Target: %3 · Final object position (m): %4<br/>Shutdown: %5 · Real robot motion: locked")
+      .arg(pass ? "COMPLETED" : cancelled ? "CANCELLED" : "FAILED", gates.join(", ").toHtmlEscaped(), result.value("selected_object_id").toString("unknown").toHtmlEscaped(),
+           pose.isEmpty() ? QString("not measured") : pose.join(", "), result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
+    if (cancelled) text += QString("<br/>Cancellation: %1").arg(result.value("cancellation_confirmed").toBool() ?
+      "confirmed (simulator shut down cleanly; nothing to recover)" : "UNCONFIRMED: check for remaining simulator processes");
+    else if (!pass) text += "<br/>Failure: " + result.value("failure").toString("See diagnostics").toHtmlEscaped();
+    text += "<br/>Evidence: " + result.value("evidence").toString(cycle_output_dir_).toHtmlEscaped();
+    cycle_status_label_->setText(text);
+    set_physics_state(pass ? "COMPLETED" : cancelled ? "CANCELLED" : "FAILED", text);
+    return;
+  }
   const bool pass = result.value("result").toString() == "PASS";
   const auto robot = result.value("final_robot_state").toObject();
   const auto intended = robot.value("intended_home").toObject(), actual = robot.value("actual_joints").toObject();
@@ -6695,6 +6855,7 @@ void MainWindow::stop_preview_process()
     // The cycle supervisor stops executor first (cancellation/recovery), then
     // its owned scene. Never kill the supervisor before its bounded cleanup.
     cycle_status_label_->setText("Stopping simulation… Cancellation is unconfirmed until reported by the backend.");
+    if (physics_cycle_mode_) set_physics_state(physics_state_, "Cancel requested: the runner is stopping the executor and shutting the simulator down. Unconfirmed until it reports.");
     return;
   }
   // Supervisor: 5s launch-led SIGINT + .7s TERM + .4s KILL verification.
@@ -6718,6 +6879,10 @@ void MainWindow::handle_preview_error(QProcess::ProcessError error){
     cycle_result_ = QJsonObject{{"result","FAIL"},{"failed_stage",preview_state_},
       {"failure",preview_process_->errorString()},{"shutdown_clean",false}};
     show_cycle_result(cycle_result_);
+    if (physics_cycle_mode_) {
+      physics_cycle_mode_ = false;
+      set_physics_state("FAILED", ("The physics cycle process failed: " + preview_process_->errorString()).toHtmlEscaped());
+    }
   }
   const QString msg=preview_process_?preview_process_->errorString():"unknown error"; append_studio_log(QString("ERROR stage=%1 QProcess error=%2 message=%3 output_tail=%4").arg(preview_state_).arg(static_cast<int>(error)).arg(msg,preview_output_tail_)); if(preview_state_=="BUILD_RUNNING") set_preview_state("BUILD_FAILED"); else set_preview_state("PREVIEW_FAILED"); }
 void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){
@@ -6726,15 +6891,26 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
     handle_preview_stdout();
     const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
       cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_plan_success").toBool() &&
-      cycle_result_.value("shutdown_clean").toBool();
+      cycle_result_.value("shutdown_clean").toBool() &&
+      (!physics_cycle_mode_ || cycle_result_.value("full_cycle_execution_success").toBool());
+    const bool physics_run = physics_cycle_mode_;
+    const bool cancelled = physics_run && (preview_stop_requested_ || cycle_result_.value("result").toString() == "CANCELLED");
     if (!pass) {
-      cycle_result_["result"] = "FAIL";
+      cycle_result_["result"] = cancelled ? "CANCELLED" : "FAIL";
+      if (cancelled && !cycle_result_.contains("cancellation_confirmed")) cycle_result_["cancellation_confirmed"] = false;
       if (!cycle_result_.contains("failure")) cycle_result_["failure"] = "Full-cycle process exited without verified success. See diagnostics.";
     }
     show_cycle_result(cycle_result_);
+    if (physics_run && physics_state_ != "COMPLETED" && physics_state_ != "CANCELLED" && physics_state_ != "FAILED")
+      set_physics_state(cancelled ? "CANCELLED" : "FAILED",            // the runner ended without its result line
+        (cancelled ? QString("Cancellation unconfirmed: no result was reported.") :
+                     "Ended without a reported result: " + cycle_result_.value("failure").toString()).toHtmlEscaped() +
+        "<br/>Evidence: " + cycle_output_dir_.toHtmlEscaped());
+    physics_cycle_mode_ = false;
     set_preview_state(pass ? "CYCLE_PASS" : "CYCLE_FAILED");
     preview_running_scene_key_.clear();
-    if (pass && !close_after_preview_stop_ && has_selected_scene()) {
+    // A physics run copies the saved cell; it never resolves into it, so nothing is regenerated.
+    if (pass && !physics_run && !close_after_preview_stop_ && has_selected_scene()) {
       const auto & selected = scene_browser_result_.scenes[(size_t)selected_scene_index_];
       if (workcell_builder::canonical_scene_identity(selected.scene_dir) ==
           workcell_builder::canonical_scene_identity(active_preview_scene_.scene_dir)) {
@@ -16327,4 +16503,147 @@ void MainWindow::refresh_epd_readiness_panel()
     }
   }
   epd_readiness_table_->resizeColumnsToContents();
+}
+
+QString MainWindow::live_perception_command(const QString & arguments) const
+{
+  QString script;
+  if (!helper_script_exists("live_perception_session.py", &script)) return {};
+  const auto quoted = "'" + QString(script).replace("'", "'\\''") + "'";
+  // The registered perception runtime (EPD install, ROS domain) is re-validated and its environment
+  // printed by the helper; the command fails instead of guessing when it is missing.
+  return QString("eval \"$(python3 %1 env)\" && exec python3 %1 %2").arg(quoted, arguments);
+}
+
+static QString shell_quote(QString value) { return "'" + value.replace("'", "'\\''") + "'"; }
+
+void MainWindow::discover_live_cameras()
+{
+  const auto command = live_perception_command("discover --timeout 3");
+  if (command.isEmpty()) { perception_status_label_->setText("BLOCKED: live_perception_session.py is unavailable."); return; }
+  QProcess process; process.start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
+  if (!process.waitForFinished(30000)) { process.kill(); perception_status_label_->setText("BLOCKED: camera discovery timed out."); return; }
+  const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  perception_camera_combo_->clear();
+  perception_cameras_ = report.value("cameras").toArray();
+  for (const auto & item : perception_cameras_) {
+    const auto camera = item.toObject();
+    QStringList nodes; for (const auto & n : camera.value("publisher_nodes").toArray()) nodes << n.toString();
+    perception_camera_combo_->addItem(QString("%1 · %2").arg(camera.value("camera_namespace").toString(), nodes.join(", ")));
+  }
+  perception_status_label_->setText(perception_cameras_.isEmpty() ?
+    QString("No RGB-D camera is publishing in the perception ROS graph%1. Start the camera driver, then Discover again.")
+      .arg(report.contains("ros_domain_id") ? " (ROS_DOMAIN_ID " + report.value("ros_domain_id").toString() + ")" :
+           ": " + QString::fromUtf8(process.readAllStandardError()).left(300).toHtmlEscaped()) :
+    QString("%1 camera(s) discovered. Select one and Save Camera Binding.").arg(perception_cameras_.size()));
+}
+
+void MainWindow::save_live_camera_binding()
+{
+  if (!has_selected_scene()) { perception_status_label_->setText("Select a saved cell first."); return; }
+  const int index = perception_camera_combo_->currentIndex();
+  if (index < 0 || index >= perception_cameras_.size()) { perception_status_label_->setText("Discover and select a camera first."); return; }
+  const auto camera = perception_cameras_.at(index).toObject();
+  const auto depth = camera.value("aligned_depth_topics").toArray();
+  if (depth.isEmpty() || camera.value("optical_frame").toString().isEmpty()) {
+    perception_status_label_->setText("BLOCKED: this camera publishes no aligned depth or no CameraInfo frame; 3D localisation needs both.");
+    return;
+  }
+  const auto metadata = camera.value("metadata_topic").toString();
+  const auto command = live_perception_command(QString("bind --cell %1 --rgb-topic %2 --aligned-depth-topic %3 --camera-info-topic %4 --optical-frame %5")
+    .arg(shell_quote(selected_scene_path()), shell_quote(camera.value("rgb_topic").toString()), shell_quote(depth.first().toString()),
+         shell_quote(camera.value("camera_info_topic").toString()), shell_quote(camera.value("optical_frame").toString())) +
+    (metadata.isEmpty() ? QString() : " --metadata-topic " + shell_quote(metadata)));
+  QProcess process; process.start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
+  const bool ok = process.waitForFinished(30000) && process.exitCode() == 0;
+  const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  perception_status_label_->setText(ok ? QString("Camera binding saved with the cell (camera %1, calibration %2).")
+      .arg(report.value("live_camera").toObject().value("camera_id").toString().toHtmlEscaped(),
+           report.value("live_camera").toObject().value("calibration").toObject().value("status").toString().toHtmlEscaped()) :
+    "BLOCKED: " + report.value("reason").toString(QString::fromUtf8(process.readAllStandardError()).left(300)).toHtmlEscaped());
+  append_studio_log("Live camera binding: " + perception_status_label_->text());
+}
+
+void MainWindow::toggle_live_perception()
+{
+  if (perception_process_->state() != QProcess::NotRunning) {
+    perception_start_button_->setText("Stopping…"); perception_process_->terminate(); return;
+  }
+  if (!has_selected_scene()) { perception_status_label_->setText("Select a saved cell first."); return; }
+  perception_session_cell_ = selected_scene_path();
+  perception_session_dir_ = detect_workspace_root() + "/log/live_perception/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  const auto command = live_perception_command(QString("run --cell %1 --session-dir %2")
+    .arg(shell_quote(perception_session_cell_), shell_quote(perception_session_dir_)));
+  if (command.isEmpty()) { perception_status_label_->setText("BLOCKED: live_perception_session.py is unavailable."); return; }
+  perception_table_->setRowCount(0); perception_preview_label_->setText("Starting EPD on the bound camera…");
+  perception_process_->start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
+  perception_start_button_->setText("Stop Live Perception"); perception_timer_->start();
+  append_studio_log("Live perception started (explicit operator action): " + perception_session_dir_);
+}
+
+void MainWindow::refresh_live_perception()
+{
+  QFile file(perception_session_dir_ + "/status.json");
+  if (!file.open(QIODevice::ReadOnly)) {
+    if (perception_process_->state() == QProcess::NotRunning) {
+      const auto report = QJsonDocument::fromJson(perception_process_->readAllStandardOutput()).object();
+      perception_status_label_->setText("<b>Live perception: BLOCKED</b><br/>" +
+        report.value("reason").toString(QString::fromUtf8(perception_process_->readAllStandardError()).left(400)).toHtmlEscaped());
+    }
+    return;
+  }
+  const auto status = QJsonDocument::fromJson(file.readAll()).object();
+  const auto readiness = status.value("readiness").toObject();
+  const auto camera = status.value("camera").toObject(), epd = status.value("epd").toObject();
+  const auto rgb = camera.value("rgb").toObject(), timing = camera.value("timing").toObject();
+  auto line = [](const QString & label, const QString & value) { return "<b>" + label + "</b> " + value.toHtmlEscaped() + "<br/>"; };
+  QString text = "<b>Live perception: " + status.value("state").toString() + "</b> · camera " +
+    status.value("camera_id").toString().toHtmlEscaped() + "<br/>";
+  text += line("Camera:", QString("%1 · RGB %2 Hz · depth %3 Hz · RGB-D pairs %4 Hz · frame age %5 s · valid depth %6%")
+    .arg(readiness.value("camera").toString()).arg(rgb.value("rate_hz").toDouble(), 0, 'f', 1)
+    .arg(camera.value("aligned_depth").toObject().value("rate_hz").toDouble(), 0, 'f', 1)
+    .arg(camera.value("synchronized_rgbd_hz").toDouble(), 0, 'f', 1)
+    .arg(timing.value("frame_age_at_receipt_s").toDouble(), 0, 'f', 2)
+    .arg(camera.value("depth_valid_pixel_ratio").toDouble() * 100.0, 0, 'f', 0));
+  text += line("Frame timing:", timing.value("transport_verified").toBool() ?
+    QString("transport backlog %1 s (from capture/arrival clocks) · stamp age %2 s · age decided by %3")
+      .arg(timing.value("transport_backlog_s").toDouble(), 0, 'f', 2).arg(timing.value("stamp_age_at_receipt_s").toDouble(), 0, 'f', 2)
+      .arg(timing.value("decided_by").toString()) :
+    timing.value("warning").toString("transport timing not yet verified for this frame"));
+  text += line("EPD:", QString("%1 · %2 results/s · result age %3 s · inference %4 ms · %5")
+    .arg(readiness.value("epd").toString()).arg(epd.value("results_hz").toDouble(), 0, 'f', 2)
+    .arg(epd.value("result_age_s").toDouble(), 0, 'f', 2).arg(epd.value("process_time_ms").toInt())
+    .arg(QFileInfo(epd.value("model").toString()).fileName()));
+  const auto host_clock = status.value("host_clock").toObject();
+  text += line("Host clock:", host_clock.value("state").toString() +
+    (host_clock.value("reason").toString().isEmpty() ? QString(" · monotonic %1x hardware rate · %2 wall-clock step(s) in %3 s")
+       .arg(host_clock.value("monotonic_rate_vs_hardware").toDouble(), 0, 'f', 4).arg(host_clock.value("wall_steps_in_window").toInt())
+       .arg(host_clock.value("window_s").toDouble(), 0, 'f', 0) : " — " + host_clock.value("reason").toString()));
+  text += line("Perception:", readiness.value("perception").toString());
+  text += line("Calibration:", readiness.value("calibration").toString() + " — " +
+    status.value("calibration").toObject().value("reason").toString());
+  text += line("Task eligibility:", readiness.value("task").toString());
+  text += line("Robot planning:", readiness.value("robot_planning").toString());
+  text += line("Robot execution:", readiness.value("robot_execution").toString());
+  if (status.value("state").toString() == "STOPPED")
+    text += line("Shutdown:", status.value("shutdown").toObject().value("clean").toBool() ? "clean (EPD processes stopped)" : "UNCLEAN: check processes");
+  perception_status_label_->setText(text);
+  const auto detections = status.value("detections").toArray();
+  perception_table_->setRowCount(detections.size());
+  for (int row = 0; row < detections.size(); ++row) {
+    const auto d = detections.at(row).toObject();
+    QStringList xyz, size, reasons;
+    for (const auto & v : d.value("position_camera").toArray()) xyz << QString::number(v.toDouble(), 'f', 3);
+    for (const auto & v : d.value("dimensions_m").toArray()) size << QString::number(v.toDouble(), 'f', 3);
+    for (const auto & v : d.value("reasons").toArray()) reasons << v.toString();
+    const QStringList cells{d.value("label").toString(),
+      d.value("confidence").isDouble() ? QString::number(d.value("confidence").toDouble(), 'f', 2) : QString("n/a"),
+      xyz.join(", "), size.join(" × "), QString::number(d.value("age_s").toDouble(), 'f', 2),
+      d.value("task_eligible").toBool() ? "eligible" : d.value("excluded").toBool() ? "excluded" : "not eligible",
+      reasons.join("; ")};
+    for (int column = 0; column < cells.size(); ++column) perception_table_->setItem(row, column, new QTableWidgetItem(cells[column]));
+  }
+  QPixmap preview(perception_session_dir_ + "/preview.jpg");
+  if (!preview.isNull())
+    perception_preview_label_->setPixmap(preview.scaled(perception_preview_label_->width(), 360, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 }

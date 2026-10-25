@@ -1,0 +1,50 @@
+{
+  "scope": "Measured simulator retry completion budget and truthful phased-search fallback. Fresh six-gate runtime remains required.",
+  "observed": "All three120s retries completed every sent certified request but exhausted their candidate slices:120.907s beforeHOME;124.592s and131.547s beforePLACE. Partial discovery then caused both fallback phases to evaluate zero candidates and exposedSTRATEGY_PHASE_COMPLETE as the public failure.",
+  "changes": [
+    "Simulator candidate retry slice180s within global900; discovery60, planner0.75/3, watchdog120, execute60, fake retries20 and beam3 unchanged. Existing reservation now reserves540s.",
+    "Deferred phase controls bypass feasibility evidence. Earlier-strategy deferred candidates no longer prevent fallback traversal. A failed selected retry returns its own actual reason/checks.",
+    "EXACT never substitutes after a deferred response. Resolved revalidation and actual global expiry keep their existing paths."
+  ],
+  "tests": {
+    "focused": "553 passed in16.02s",
+    "resolver_after_review": "26 passed in0.31s",
+    "agent_scope": "122 passed; RED5 failures before phased-search fix",
+    "timing_regression": "Actual eight-stage120.906752s prefix used as unit timing input; unit5s HOME passes180 and fails120. Not physical runtime evidence."
+  },
+  "review": "Root reviewed production and tests independently, including restoration of the preexisting no-selected-object assertion. Independent timing analysis supports bounded180s headroom; completion still requires real runtime proof.",
+  "artifacts": [
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scripts/perceived_object_grasp_execute.py",
+      "sha256": "3ab68006edc74bc5162dddf1b19486a81d5d1328a1e6296faf809ef39a6a29fa"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/scripts/task_intent_resolver.py",
+      "sha256": "7272e90cdaea8de685da53ab9017380542c9b284e71a13139b4011657406b03c"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/tests/test_full_cycle_preplanner.py",
+      "sha256": "1a6edd743d0bd2bb4c3bb75add1187907b13c48a6edeea3e72a7083d72dbbc6a"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/tests/test_task_intent_resolver.py",
+      "sha256": "b6f70c57e692b45e36ab6b41097829b214bb29aaeab272c1cc1c8f69e5d8f378"
+    },
+    {
+      "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/docs/manuals/EXECUTE_TRAJECTORY_COMMISSIONING.md",
+      "sha256": "333f1ff0765ba0651ba9b0a1331563f3af8c24ac6ba84ac4bd1f201ee541c1d4"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20261001-retry-completion/focused-tests.log",
+      "sha256": "9d08d6b764aa0627f8aa32a99043299ea60d19ea62bd1d77dd13e798f1afbc10"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20261001-retry-completion/resolver-tests.log",
+      "sha256": "3e86313a114d72cf4075d6a98ee818c54cdaf184eaf9795ae881ab884b931c94"
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20261001-plan-watchdog/retry-budget-diagnosis.json",
+      "sha256": "ccda59cbbb0967e8cb6ef461e54ab925dd0a4b9a576f3fba06302efe1a192f17"
+    }
+  ]
+}

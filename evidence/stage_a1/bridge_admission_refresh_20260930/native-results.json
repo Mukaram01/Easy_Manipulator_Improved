@@ -1,0 +1,434 @@
+{
+  "cycles": 20,
+  "completed": 20,
+  "passed": 20,
+  "all_success": true,
+  "expected_abort": false,
+  "binary": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+  "binary_sha256": "156514f96ff73f3109224d711542b6c1f00cf2e5a69e4e8f1b1dea64214cf601",
+  "library": "/opt/ros/humble/lib/libros_gz_bridge.so",
+  "library_sha256": "7806fe789ceba89ba203a3e055dae7e6a7e8e67a65931c2b877d596055200be3",
+  "errors": 0,
+  "results": [
+    {
+      "cycle": 1,
+      "pids": [
+        67874,
+        67875
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 2,
+      "pids": [
+        67899,
+        67900
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 3,
+      "pids": [
+        67929,
+        67930
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 4,
+      "pids": [
+        67955,
+        67956
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 5,
+      "pids": [
+        67980,
+        67981
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 6,
+      "pids": [
+        68005,
+        68006
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 7,
+      "pids": [
+        68030,
+        68031
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 8,
+      "pids": [
+        68055,
+        68056
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 9,
+      "pids": [
+        68091,
+        68092
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 10,
+      "pids": [
+        68120,
+        68121
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 11,
+      "pids": [
+        68149,
+        68150
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 12,
+      "pids": [
+        68176,
+        68177
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 13,
+      "pids": [
+        68207,
+        68210
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 14,
+      "pids": [
+        68262,
+        68263
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 15,
+      "pids": [
+        68287,
+        68288
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 16,
+      "pids": [
+        68313,
+        68314
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 17,
+      "pids": [
+        68354,
+        68355
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 18,
+      "pids": [
+        68379,
+        68380
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 19,
+      "pids": [
+        68404,
+        68405
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 20,
+      "pids": [
+        68442,
+        68443
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 from test_task_intent_resolver import valid_intent, environment
@@ -293,3 +294,94 @@ def test_copied_install_validates_using_installed_strategy_catalog(tmp_path):
     report = json.loads(result.stdout)
     assert result.returncode == 0, report
     assert report['status'] == 'PASS'
+
+
+
+
+def test_explicit_simulator_authoring_keeps_real_lock(tmp_path):
+    root = scene(tmp_path)
+    intent = valid_intent('AUTO', 'AUTO')
+    intent['safety'].update(execution_backend='simulator', require_fake_hardware=False, real_hardware_enabled=False)
+    path = root / 'config/workcell_builder_task_intent.yaml'
+    path.write_text(yaml.safe_dump(intent))
+    assert validate(path, root)['status'] == 'PASS'
+    for change in ({'real_hardware_enabled':True}, {'require_fake_hardware':True}, {'execution_backend':'unknown'}):
+        bad = __import__('copy').deepcopy(intent)
+        bad['safety'].update(change)
+        path.write_text(yaml.safe_dump(bad))
+        assert validate(path, root)['status'] == 'FAIL'
+
+
+def test_wizard_freshness_and_aperture_follow_the_source_policy_and_tool(tmp_path):
+    from scripts.task_intent_authoring import _wizard_intent
+    from scripts.task_intent_v2 import OBSERVATION_FRESHNESS_POLICY, validate_intent
+    env = environment()
+    env['task_zones'].append({'id': 'pick_zone_main', 'type': 'pick_zone'})
+    env['end_effector'] = {'capability': 'robotiq_2f_85'}
+    target = next(z['target_ref'] for z in env['task_zones'] if z.get('target_ref'))
+    def studio(mode):
+        return {'workcell_studio': {'scenario': {'id': 'static_table_pick_place'}, 'task_intent': {'grasp_strategy': 'auto'},
+                'pick_zone': {'pick_object_source': 'pick_zone_main', 'object_source': {'mode': mode, 'source_zone_ref': 'pick_zone_main'}},
+                'place_zone': {'target': target}}}
+    intent = lambda mode: _wizard_intent(tmp_path, {**env, **studio(mode)})
+    assert intent('manual_simulated')['pick']['selection']['object_filter']['max_age_seconds'] == 180.0
+    assert intent('live_epd_realsense')['pick']['selection']['object_filter']['max_age_seconds'] == 2.0
+    assert OBSERVATION_FRESHNESS_POLICY['recorded_perception']['max_age_s'] == 2.0
+    assert intent('manual_simulated')['pick']['grasp']['aperture']['max_m'] == 0.085        # catalog opening_width_mm
+    model = intent('live_epd_realsense')
+    model['pick']['selection']['object_filter']['max_age_seconds'] = 180.0                   # a live sensor may not inherit it
+    assert 'OBSERVATION_FRESHNESS_POLICY' in {e['code'] for e in validate_intent(model)}
+    model['pick']['selection']['source_type'] = 'unknown_sensor'
+    assert 'OBSERVATION_SOURCE_UNKNOWN' in {e['code'] for e in validate_intent(model)}
+    env['end_effector'] = {'capability': None}                                              # draft: tool not bound yet
+    assert intent('manual_simulated')['pick']['grasp']['aperture']['max_m'] is None
+    env['end_effector'] = {'capability': 'ee_vacuum_array_placeholder_unknown'}
+    with pytest.raises(ValueError, match='not in the capability catalog'):
+        intent('manual_simulated')
+
+
+def test_selection_freshness_is_capped_by_the_actual_observation_producer():
+    from scripts.task_intent_v2 import observation_age_cap, validate_intent
+    from scripts.task_intent_resolver import _eligible_observations
+    assert observation_age_cap('perception', 'simulator_measurement') == 180.0     # receipt-bound simulator snapshot
+    assert observation_age_cap('perception', 'live_sensor') == 2.0                 # the same source from a camera stays strict
+    with pytest.raises(ValueError, match='OBSERVATION_PRODUCER_REJECTED'):
+        observation_age_cap('manual_simulated', 'live_sensor')
+    item = dict(id='o', frame_id='world', shape='BOX', confidence=None, timestamp=100.0,
+                pose=[0, 0, 0, 0, 0, 0, 1], dimensions=[.02, .02, .02])
+    filters = dict(max_age_seconds=180.0)
+    assert _eligible_observations([item], filters, now=110.0)                    # within the authored age
+    assert not _eligible_observations([item], filters, now=110.0, max_age_cap=2.0)  # but stale for a live sensor
+    assert not _eligible_observations([item], filters, now=99.0)                  # stamped in the future
+
+
+def test_excluded_classes_never_become_pick_targets():
+    from scripts.task_intent_resolver import _eligible_observations
+    from scripts.task_intent_v2 import validate_intent
+    base = dict(frame_id='world', shape='BOX', confidence=0.9, timestamp=100.0,
+                pose=[0, 0, 0, 0, 0, 0, 1], dimensions=[.05, .05, .1])
+    cup, bottle = dict(base, id='o1', class_id='cup'), dict(base, id='o2', class_id='bottle')
+    filters = dict(max_age_seconds=2.0, exclude_class_ids=['bottle'])
+    assert [o['id'] for o in _eligible_observations([cup, bottle], filters, now=100.5)] == ['o1']
+    assert [o['id'] for o in _eligible_observations([cup, bottle], dict(filters, class_id='cup'), now=100.5)] == ['o1']
+    model = {'schema': 'workcell_builder_task_intent/v2', 'pick': {'selection': {'source_type': 'live_epd_realsense',
+             'object_filter': {'class_id': 'bottle', 'exclude_class_ids': ['bottle'], 'max_age_seconds': 2.0}}}}
+    assert 'CLASS_BOTH_SELECTED_AND_EXCLUDED' in {e['code'] for e in validate_intent(model)}
+    model['pick']['selection']['object_filter'].update(class_id='cup', exclude_class_ids='bottle')
+    assert 'EXCLUDE_CLASSES_INVALID' in {e['code'] for e in validate_intent(model)}
+
+
+def test_perception_freshness_follows_the_saved_camera_binding():
+    """Saved tasks name the generic perception contract; the camera binding decides the producer and ceiling."""
+    from scripts.task_intent_v2 import freshness_source_type, observation_age_cap
+    def intent(**binding):
+        return {'pick': {'selection': {'source_type': 'perception'}}, 'perception': binding}
+    assert freshness_source_type(intent(mode='live_epd', camera_source='realsense_d435i')) == 'live_epd_realsense'
+    assert freshness_source_type(intent(mode='live_epd')) == 'live_epd_realsense'          # unknown camera: live
+    assert freshness_source_type(intent(mode='live_epd', camera_source='simulated_rgbd')) == 'perception'
+    assert freshness_source_type(intent(mode='replayed_snapshot')) == 'recorded_perception'
+    assert observation_age_cap(freshness_source_type(intent(mode='replayed_snapshot')), 'replay') == 2.0
+    with pytest.raises(ValueError, match='OBSERVATION_PRODUCER_REJECTED'):
+        observation_age_cap(freshness_source_type(intent(mode='live_epd', camera_source='realsense_d435i')),
+                            'simulator_measurement')                  # a real-camera task never takes simulator truth
+    assert freshness_source_type({'pick': {'selection': {'source_type': 'manual_simulated'}}}) == 'manual_simulated'

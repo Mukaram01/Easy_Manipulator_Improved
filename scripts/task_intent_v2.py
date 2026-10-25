@@ -176,11 +176,71 @@ def migrate_v1(payload: dict[str, Any], environment: dict[str, Any] | None = Non
              "task": {"id": task.get("id", "migrated_task"), "type": task.get("type", "pick_place"), "template": task.get("template", task.get("type", "pick_place"))},
              "pick": {"selection": selection, "grasp": grasp},
              "place": {"target": {"asset_ref": destination["target_id"] if destination is not None else old_target.get("asset_ref", old_target.get("id", "")), "region_ref": old_target.get("region_ref", old_target.get("id", ""))},
-                       "placement": {"policy": "EXACT" if local_pose is not None else "AUTO", "requested_local_pose": local_pose, "orientation": {"mode": "target_default", "rpy_rad": [0.0, 0.0, 0.0]}, "approach": {"axis": "z_down", "distance_m": 0.1}, "clearance_m": float(old_place.get("place_clearance_m", 0.05)), "retreat": {"axis": old_place.get("retreat_axis", "z_up"), "distance_m": float(old_place.get("retreat_distance_m", 0.1))}},
+                       "placement": {"policy": "EXACT" if local_pose is not None else "AUTO", "requested_local_pose": local_pose, "orientation": {"mode": "target_default", "rpy_rad": [0.0, 0.0, 0.0]}, "approach": {"axis": "z_down", "distance_m": 0.1}, "clearance_m": float(old_place.get("place_clearance_m", 0.01)), "retreat": {"axis": old_place.get("retreat_axis", "z_up"), "distance_m": float(old_place.get("retreat_distance_m", 0.1))}},
                        "release": {"strategy": "tool_release"}},
              "routing": copy.deepcopy(payload.get("routing", {})), "safety": {"execution_mode": "simulation_preview", "require_fake_hardware": True, "real_hardware_enabled": False, "preview_policy": "diagnostic_if_unresolved"},
              "provenance": {"migration": {"from_schema": "workcell_builder_task_intent/v1", "materialized_from_catalog": bool(strategy), "preserved_explicit_strategy": bool(strategy_id), "preserved_place_behavior": True, "materialized_place_from_r19": destination is not None}}}
     return normalize_v2(model)
+
+
+# Observation freshness by producer. Every producer stamps one wall-clock domain (sensor capture,
+# replay capture or simulator measurement time); the resolver rejects observations stamped in the future.
+OBSERVATION_PRODUCER_CEILING_S = {
+    # Live sensing: a moving scene may change within a frame period.
+    "live_sensor": 2.0,
+    "replay": 2.0,
+    # A resting object measured from the physics world. The snapshot is renewed only after a fresh
+    # simulator readback proves the geometry unchanged (before revalidation and before motion) and is
+    # re-measured live at closure, so the ceiling bounds capture-to-selection in the qualified Stage-A
+    # runtime (resolve search included), not object motion.
+    "simulator_measurement": 180.0,
+}
+# The producers each authored source type admits. A detected_objects/v1 perception source is fed by a
+# live sensor, or in the physics simulator by its receipt-bound measurement snapshot.
+SOURCE_PRODUCERS = {
+    "perception": ("live_sensor", "simulator_measurement"),
+    "live_epd_realsense": ("live_sensor",),
+    "recorded_perception": ("replay",),
+    "manual_simulated": ("simulator_measurement",),
+}
+OBSERVATION_FRESHNESS_POLICY = {
+    source: {"max_age_s": max(OBSERVATION_PRODUCER_CEILING_S[p] for p in producers), "producers": producers}
+    for source, producers in SOURCE_PRODUCERS.items()}
+
+
+def freshness_policy(source_type):
+    """The authoring ceiling of a source type; a default for a live source is its live ceiling."""
+    policy = OBSERVATION_FRESHNESS_POLICY.get(source_type)
+    if policy is None:
+        return None
+    return dict(policy, default_s=OBSERVATION_PRODUCER_CEILING_S[policy["producers"][0]])
+
+
+def freshness_source_type(model):
+    """The freshness policy key of an intent's pick source.
+
+    The saved selection names the generic ``perception`` contract (detected_objects/v1); which producer
+    feeds it is the task's perception binding: a live RealSense camera, a replayed snapshot, or a
+    simulated RGB-D camera (live sensor or simulator measurement). An unknown live camera is treated as
+    a live sensor, never as a simulator.
+    """
+    selection = (model.get("pick") or {}).get("selection") or {}
+    source_type = selection.get("source_type")
+    if source_type != "perception":
+        return source_type
+    binding = model.get("perception") or {}
+    if binding.get("mode") == "replayed_snapshot":
+        return "recorded_perception"
+    if binding.get("mode") == "live_epd" and binding.get("camera_source") != "simulated_rgbd":
+        return "live_epd_realsense"
+    return source_type
+
+
+def observation_age_cap(source_type, producer):
+    """Ceiling for observations actually produced by ``producer`` (fails closed when the source does not admit it)."""
+    if producer not in SOURCE_PRODUCERS.get(source_type, ()):
+        raise ValueError(f"OBSERVATION_PRODUCER_REJECTED: {source_type!r} observations may not come from {producer!r}")
+    return OBSERVATION_PRODUCER_CEILING_S[producer]
 
 
 def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
@@ -192,6 +252,26 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
     selection = model.get("pick", {}).get("selection", {})
     if not isinstance(selection, dict) or not isinstance(selection.get("object_filter"), dict):
         errors.append({"code": "PICK_SELECTION_REQUIRED", "message": "pick.selection.object_filter is required"})
+    else:
+        policy = freshness_policy(freshness_source_type(model))
+        object_filter = selection["object_filter"]
+        excluded = object_filter.get("exclude_class_ids", [])
+        if (not isinstance(excluded, list) or any(not isinstance(v, str) or not v.strip() for v in excluded)
+                or len(set(excluded)) != len(excluded)):
+            errors.append({"code": "EXCLUDE_CLASSES_INVALID",
+                           "message": "object_filter.exclude_class_ids must be a list of distinct class names"})
+        elif object_filter.get("class_id") and object_filter["class_id"] in excluded:
+            errors.append({"code": "CLASS_BOTH_SELECTED_AND_EXCLUDED",
+                           "message": f"class {object_filter['class_id']!r} is both the pick class and excluded"})
+        age = object_filter.get("max_age_seconds")
+        if policy is None:
+            errors.append({"code": "OBSERVATION_SOURCE_UNKNOWN",
+                           "message": f"pick.selection.source_type {selection.get('source_type')!r} has no freshness policy"})
+        elif (isinstance(age, bool) or not isinstance(age, (int, float)) or not math.isfinite(age) or age <= 0
+              or age > policy["max_age_s"]):
+            errors.append({"code": "OBSERVATION_FRESHNESS_POLICY",
+                           "message": f"object_filter.max_age_seconds {age!r} must be in (0, {policy['max_age_s']}] s for "
+                                      f"{freshness_source_type(model)} observations (producers {list(policy['producers'])})"})
     grasp = model.get("pick", {}).get("grasp", {})
     placement = model.get("place", {}).get("placement", {})
     for block, label in ((grasp, "grasp"), (placement, "place")):

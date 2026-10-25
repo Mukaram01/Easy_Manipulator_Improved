@@ -15,6 +15,30 @@ from task_intent_v2 import migrate_v1, parse_validate_normalize, normalized_inte
 from validate_builder_task_intent import validate_payload
 
 
+def _default_max_age(source_mode):
+    """The source's validated freshness ceiling (task_intent_v2.OBSERVATION_FRESHNESS_POLICY)."""
+    from task_intent_v2 import freshness_policy
+    policy = freshness_policy(source_mode)
+    if policy is None:
+        raise ValueError(f'Object source {source_mode!r} has no observation freshness policy.')
+    return policy['default_s']
+
+
+def _tool_aperture(env):
+    """Opening of the cell's bound end-effector capability; None while a draft has no capability bound
+    (planning then still enforces the tool's own opening, contract tool_aperture_max_m)."""
+    sys.path.insert(0, str(SCRIPT_DIR))
+    from perceived_object_grasp_plan import capability_aperture_m
+    tool = env.get('end_effector')
+    capability = tool.get('capability') if isinstance(tool, dict) else None
+    if not capability:
+        return None
+    aperture = capability_aperture_m(capability)
+    if aperture is None:
+        raise ValueError(f'End effector capability {capability!r} declares no opening width; select a commissioned tool.')
+    return aperture
+
+
 def _wizard_intent(scene, env):
     """Materialize the existing Create New Cell selections, without editing them."""
     studio = env.get('workcell_studio', {})
@@ -41,7 +65,8 @@ def _wizard_intent(scene, env):
                           'source_type': ('perception' if source.get('mode') in ('recorded_perception', 'live_epd_realsense') else 'manual_simulated'),
                           'zone_ref': pick_zones[0] if len(pick_zones) == 1 else pick.get('pick_object_source', ''),
                           'object_filter': {'class_id': source.get('required_class', ''), 'color': None,
-                                            'min_confidence': source.get('minimum_confidence'), 'max_age_seconds': 2.0}},
+                                            'min_confidence': source.get('minimum_confidence'),
+                                            'max_age_seconds': _default_max_age(source.get('mode', 'manual_simulated'))}},
             'grasp': {'policy': 'AUTO' if authored_strategy == 'auto' else 'EXACT', 'required_capability': 'two_finger_parallel', 'strategy_ref': None if authored_strategy == 'auto' else strategy,
                       'approach': {'axis': task.get('approach_axis', catalog['approach_axis']),
                                    'distance_m': task.get('approach_distance_m', catalog['approach_distance_m'])},
@@ -52,7 +77,7 @@ def _wizard_intent(scene, env):
                       'tcp_offset_xyz_m': catalog.get('tool_frame_offset_xyz', [0.0, 0.0, 0.0]),
                       'tcp_offset_rpy_rad': catalog.get('tool_frame_offset_rpy', [0.0, 0.0, 0.0]),
                       'contact': {'required': True, 'min_quality': 0.0},
-                      'aperture': {'min_m': 0.0, 'max_m': 0.085},
+                      'aperture': {'min_m': 0.0, 'max_m': _tool_aperture(env)},
                       'lift': {'axis': 'z_up', 'distance_m': task.get('retreat_distance_m', catalog['retreat_distance_m'])}}},
         'place': {'target': {'asset_ref': target, 'region_ref': studio.get('place_zone', {}).get('region') or (regions[0] if len(regions) == 1 else target)},
                   'placement': {'policy': 'AUTO', 'requested_local_pose': None,
@@ -139,7 +164,8 @@ def load_authoring(scene, draft=None):
         if payload.get('schema') == 'workcell_builder_task_intent/v1':
             payload = migrate_v1(payload, env)
     else:
-        payload = _wizard_intent(scene, {**env, 'workcell_studio': scene_doc.get('workcell_studio', {})})
+        payload = _wizard_intent(scene, {**env, 'workcell_studio': scene_doc.get('workcell_studio', {}),
+                                         'end_effector': env.get('end_effector', scene_doc.get('end_effector'))})
     parsed = parse_validate_normalize(payload)
     report = validate_payload(payload, scene)
     # A physical blocker does not prevent saving the authored request unchanged.

@@ -1,0 +1,318 @@
+{
+  "cycles": 20,
+  "completed": 20,
+  "passed": true,
+  "expected_crash": false,
+  "library": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10",
+  "executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+  "executable_sha256": "e79a53216e74c270702f12f881226bf07ad879b5fea723afd91e0c57e0fe1fe1",
+  "command": [
+    "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+    "--ros-args",
+    "--params-file",
+    "/home/user/workcell_ws/src/easy_manipulation_deployment/scripts/moveit_teardown_repro/move_group_parameters.yaml"
+  ],
+  "library_sha256": "39807461959d00318d8a4e00db99009b7f269ccbacba620d10b779448f1ff6fc",
+  "results": [
+    {
+      "cycle": 1,
+      "pid": 11386,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 2,
+      "pid": 11410,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 3,
+      "pid": 11434,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 4,
+      "pid": 11458,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 5,
+      "pid": 11482,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 6,
+      "pid": 11506,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 7,
+      "pid": 11530,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 8,
+      "pid": 11574,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 9,
+      "pid": 11601,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 10,
+      "pid": 11625,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 11,
+      "pid": 11649,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 12,
+      "pid": 11673,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 13,
+      "pid": 11697,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 14,
+      "pid": 11721,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 15,
+      "pid": 11745,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 16,
+      "pid": 11769,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 17,
+      "pid": 11793,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 18,
+      "pid": 11817,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 19,
+      "pid": 11841,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    },
+    {
+      "cycle": 20,
+      "pid": 11865,
+      "ready": true,
+      "returncode": 0,
+      "loaded_libraries": [
+        "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_planning/lib/libmoveit_trajectory_execution_manager.so.2.5.10"
+      ],
+      "loaded_executable": "/home/user/workcell_ws/moveit_teardown_overlay_stage_a1_20260927/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group",
+      "correct_library": true,
+      "remaining_processes": [],
+      "core_inventory_changed": false,
+      "timed_out": false,
+      "passed": true
+    }
+  ]
+}

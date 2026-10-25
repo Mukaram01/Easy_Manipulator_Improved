@@ -751,6 +751,11 @@ def _literal_or_name_value(node, constants, launch_config_vars, cli_xacro_args):
         if node.id in cli_xacro_args:
             return str(cli_xacro_args[node.id])
         return ""
+    if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
+            and isinstance(node.slice, ast.Constant) and isinstance(constants.get(node.value.id), dict)):
+        # e.g. cell_runtime["tool_mount_link"]: a module dict literal of the launch (REFERENCE_RUNTIME).
+        value = constants[node.value.id].get(node.slice.value)
+        return "" if value is None else _literal_or_name_value(value, constants, launch_config_vars, cli_xacro_args)
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "perform":
         owner = node.func.value
         if isinstance(owner, ast.Name):
@@ -843,6 +848,20 @@ def _extract_scene_launch_xacro_request(scene_dir, cli_xacro_args):
             elif isinstance(node.value, ast.Call) and getattr(node.value.func, "id", "") == "LaunchConfiguration":
                 if node.value.args and isinstance(node.value.args[0], ast.Constant):
                     launch_config_vars[target] = str(node.value.args[0].value)
+
+    # Static runtime identity: ``NAME = dict(key=<expr>, ...)`` module literals keep their expressions, and a
+    # variable bound from ``_cell_runtime()`` is the reference package's REFERENCE_RUNTIME (the scene directory
+    # previewed here is launched without scene_package_dir).
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Call) and getattr(node.value.func, "id", "") == "dict"
+                and not node.value.args):
+            constants[node.targets[0].id] = {kw.arg: kw.value for kw in node.value.keywords if kw.arg}
+    if isinstance(constants.get("REFERENCE_RUNTIME"), dict):
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                    and isinstance(node.value, ast.Call) and getattr(node.value.func, "id", "") == "_cell_runtime"):
+                constants[node.targets[0].id] = constants["REFERENCE_RUNTIME"]
 
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "load_xacro"):

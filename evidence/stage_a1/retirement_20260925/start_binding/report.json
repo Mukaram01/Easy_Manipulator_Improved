@@ -1,0 +1,198 @@
+{
+  "generated_utc": "2026-09-24T14:03:32.059360+00:00",
+  "repository": "/home/ubuntu/workcell_ws/src/easy_manipulation_deployment",
+  "required_start_head": "076f4e552bbbcd2cb04a8229557e61be7e4f42af",
+  "final_head": "076f4e552bbbcd2cb04a8229557e61be7e4f42af",
+  "branch": "codex/stage-a1-grasp-retention",
+  "working_tree_clean": true,
+  "pr": {
+    "headRefName": "codex/stage-a1-grasp-retention",
+    "isDraft": true,
+    "state": "OPEN",
+    "url": "https://github.com/Mukaram01/Easy_Manipulator_Improved/pull/3174"
+  },
+  "decision": "START_BINDING_UNQUALIFIED",
+  "start_binding_model": "UNQUALIFIED",
+  "runtime_semantics": {
+    "jtc_commanded_arm_joints": [
+      "shoulder_pan_joint",
+      "shoulder_lift_joint",
+      "elbow_joint",
+      "wrist_1_joint",
+      "wrist_2_joint",
+      "wrist_3_joint"
+    ],
+    "jtc_commanded_gripper_joints": [
+      "gripper_finger1_joint"
+    ],
+    "follower_command_interfaces": 0,
+    "follower_count": 5,
+    "position_feedback_command": "v_command(f) = -100 * (q_measured(f) - multiplier * q_measured(leader))",
+    "follower_actuator_type": "DART SERVO (dynamic)",
+    "instantaneous_follower_projection_at_write": false,
+    "controller_period_ns": 10000000,
+    "physics_period_ns": 1000000,
+    "runtime_probe_advances_physics": false
+  },
+  "raw_measurements": {
+    "epoch": {
+      "run_id": "4f31e734e14e4e9391c9bf65d7630245",
+      "pid": 153385,
+      "iteration": 104485,
+      "sim_ns": 104485000000,
+      "wall_ns": 1790176511154222820
+    },
+    "joints": [
+      {
+        "joint": "gripper_finger2_joint",
+        "parent": "gripper_finger1_joint",
+        "multiplier": 1.0,
+        "offset": 0.0,
+        "measured": 0.5526973413681173,
+        "canonical": 0.5526973414196827,
+        "delta": 5.156541860174002e-11,
+        "velocity": 5.406935940643898e-09
+      },
+      {
+        "joint": "gripper_finger1_inner_knuckle_joint",
+        "parent": "gripper_finger1_joint",
+        "multiplier": 1.0,
+        "offset": 0.0,
+        "measured": 0.5526973411730438,
+        "canonical": 0.5526973414196827,
+        "delta": 2.4663893150034255e-10,
+        "velocity": 2.677391667746387e-08
+      },
+      {
+        "joint": "gripper_finger2_inner_knuckle_joint",
+        "parent": "gripper_finger1_joint",
+        "multiplier": 1.0,
+        "offset": 0.0,
+        "measured": 0.5526973413657525,
+        "canonical": 0.5526973414196827,
+        "delta": 5.3930193644191604e-11,
+        "velocity": 5.488025475036684e-09
+      },
+      {
+        "joint": "gripper_finger1_finger_tip_joint",
+        "parent": "gripper_finger1_joint",
+        "multiplier": -1.0,
+        "offset": 0.0,
+        "measured": -0.5526973413743691,
+        "canonical": -0.5526973414196827,
+        "delta": -4.53136417277733e-11,
+        "velocity": -5.388418265403483e-09
+      },
+      {
+        "joint": "gripper_finger2_finger_tip_joint",
+        "parent": "gripper_finger1_joint",
+        "multiplier": -1.0,
+        "offset": 0.0,
+        "measured": -0.5526973413657926,
+        "canonical": -0.5526973414196827,
+        "delta": -5.3890114593002636e-11,
+        "velocity": -5.462119636798213e-09
+      }
+    ],
+    "measured_coverage": 12
+  },
+  "moveit_scene_import_changed_raw_followers": [
+    "gripper_finger1_inner_knuckle_joint",
+    "gripper_finger1_finger_tip_joint"
+  ],
+  "start_geometry": "NOT_CERTIFIED",
+  "first_jtc_interval": "NOT_CERTIFIED",
+  "initial_pair_lifecycle": "ACTIVE_UNCHANGED",
+  "historical_opening": {
+    "start_binding": "FAIL",
+    "detached_separation": "NOT_RERUN_START_BINDING_GATED",
+    "continuous_audit": "NOT_RERUN_START_BINDING_GATED",
+    "pair_expiry": "NOT_RERUN_START_BINDING_GATED",
+    "final_collision_state": "NOT_RERUN_START_BINDING_GATED"
+  },
+  "recovery_authority": "NOT_ISSUED",
+  "physical": "NOT_RUN",
+  "simulation_recovery": "NOT_RUN",
+  "production_code_changed": false,
+  "start_binding_acceptance_implemented": false,
+  "requested_new_binding_acceptance_tests": "NOT_ADDED_UNQUALIFIED_MODEL",
+  "tests": {
+    "installed_runtime": {
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "disabled": 0
+    },
+    "existing_cpp": {
+      "tests": 64,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "disabled": 0
+    },
+    "existing_python": {
+      "tests": 342,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "disabled": 0
+    }
+  },
+  "first_remaining_blocker": "No conservative bound on physical follower evolution, including solver/contact effects and controller/physics timing, from the complete raw measured state through the first JTC interval.",
+  "current_installed_binary_sha256": {
+    "/opt/ros/humble/lib/libign_ros2_control-system.so": "2b4454cbcdd2e815f0a7fecfcfffdfdfccbd1994405401e7fba6e11ffed92913",
+    "/opt/ros/humble/lib/libgz_hardware_plugins.so": "42efd2fec6ab5d00d0018b4052d1ffeb126d99c297a5c944cca96a6d43101617",
+    "/opt/ros/humble/lib/libgz_ros2_control-system.so": "51242737f1c9a52e7248253744ef77a98f75927536d410c16bf10da4883a39bc"
+  },
+  "historical_hardware_library_hash_recorded": false,
+  "historical_wrapper_hash_matches": true,
+  "sources": {
+    "gz_system.cpp": {
+      "url": "https://raw.githubusercontent.com/ros-controls/gz_ros2_control/0.7.21/gz_ros2_control/src/gz_system.cpp",
+      "sha256": "c8fb83140539c8c45ee06c5b99ca40c0dfab3134c39b882f4a26d4da853872cd",
+      "bytes": 37481
+    },
+    "gz_ros2_control_plugin.cpp": {
+      "url": "https://raw.githubusercontent.com/ros-controls/gz_ros2_control/0.7.21/gz_ros2_control/src/gz_ros2_control_plugin.cpp",
+      "sha256": "c537fdfeffe5e0ad6dadf14547de892a4b50c78706b4971724985ef9b9c76a18",
+      "bytes": 21387
+    },
+    "joint_trajectory_controller.cpp": {
+      "url": "https://raw.githubusercontent.com/ros-controls/ros2_controllers/2.54.0/joint_trajectory_controller/src/joint_trajectory_controller.cpp",
+      "sha256": "2e4cd6208b071f478fb4b6fd4eda20a7ef5102bd7a70dc22a56d626f114e010a",
+      "bytes": 61153
+    },
+    "Physics.cc": {
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-sim/ignition-gazebo6_6.18.0/src/systems/physics/Physics.cc",
+      "sha256": "80396c542654490b0eb2aad3890520c720839c01012fb741aa6d3943135f3a26",
+      "bytes": 127073
+    },
+    "JointFeatures.cc": {
+      "url": "https://raw.githubusercontent.com/gazebosim/gz-physics/ignition-physics5_5.4.0/dartsim/src/JointFeatures.cc",
+      "sha256": "bcdb5a913a08cdc267d71e5f7579d7b3f0fe5260ebf8c1cfd046afa2499ef24a",
+      "bytes": 23731
+    }
+  },
+  "artifact_sha256": {
+    "build_probe.py": "780cd20291c0d653102b318e44ecd39ffd0722a181489247b50519c8ba23e737",
+    "REPORT.md": "4b06ff36f3490ad7af094232bc313cbfad8270b91112a35a3993286b8d7d1fc2",
+    "build-command.json": "5c344a007f3d49e5bea6bb7a50a0c187df13467413d3204866010dc2fc8b9681",
+    "runtime_mimic_probe.o": "1aea14f81c015068cd29ea8558bec138deef7b1fe0599c7da9f7b64bf72ee99a",
+    "physical_residuals.json": "6e5512b9e56eaed93eaa824585b293da95860ca61d1ec10172b878e6780a0739",
+    "build.txt": "32369e123ab11c8e6ea567049c3ec30f10fdbc3516e3c04ceeeb30936209341d",
+    "python-regression.txt": "49734833a23e9869ef0b27f5dd537e0d0dc2fc22dcb6ff105ef43f7523c08fdf",
+    "cpp-regression.txt": "4454a11c93b243856a6a604967447e833f33d91bcea921bec2238ac0db95351c",
+    "python-regression.xml": "0bb400de305ce36864988b0f12a61c20943c462acc5755b61e41663fa93ba048",
+    "build-final.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prepare_probe.py": "e9a81d72aca1ae88b1ca5f651b8d55e61d837a99e7a26e60443fd10640a40542",
+    "runtime-tests.xml": "df6fb31fc2a3029b0c6e314f6ddb675e37686380e8366214a7ecfa617b550b7f",
+    "cpp-regression.xml": "9b8cf9c8c8b7cc58276707014392a3283cef456f2228cb792af1accaa8ddea98",
+    "independent-review.md": "92cf3e0c816d7f1bcfeb42bc0cb2e8686a81872e1c5c248441dd837b73888b7e",
+    "runtime_mimic_probe.cpp": "fd61a4089c2addc011496ce6de51c4a8c9446f857e824109581d709605adeef2",
+    "measured.tsv": "26177c155943a79a21d570e24a52cc5e22e4ff8a8f9a5ad1d92a4941582b4581",
+    "recent_measurements.json": "5a5fd200693b78142e164dd8a5187c58f346ae99bd4ac8e0198ce36216af08e5",
+    "runtime_mimic_probe": "4fe14e355919e425ad616b9bedd29f2878bd4ef4ae0be9d685e12f76dea484a7",
+    "runtime-tests.txt": "e43d017288a90b15e3453563ef3b65604c9a5b7deeccd80db48b20c2675b9b4a"
+  }
+}

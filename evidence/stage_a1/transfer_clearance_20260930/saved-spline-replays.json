@@ -1,0 +1,104 @@
+{
+  "scope": "Offline exact saved-spline replay through current production certify API; no new plan or motion execution",
+  "header": {
+    "path": "/home/user/workcell_ws/src/easy_manipulation_deployment/workcell_builder/workcell_builder/controller_interval_certificate.hpp",
+    "sha256": "f60f4d820b975430c8ae4c29f6f0f67d0041d848a1f65c587e443f360cf9cf2a",
+    "archive_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate-surface-cover-header.hpp"
+  },
+  "executable": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate_surface_cover_replay",
+    "sha256": "3ca5f35be8b17ae326de5016fa473f281f1de51fa3c2cace8639aca919acb504"
+  },
+  "compile_command": {
+    "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate-surface-cover-compile-command.json",
+    "sha256": "cfa3060ffb6315166e5f8a5bac0cf429cd3d946a810bdd038612e79bfd728382"
+  },
+  "results": [
+    {
+      "trajectory": "certificate_1790805701270189129_0",
+      "command": [
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate_surface_cover_replay",
+        "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.urdf",
+        "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.srdf",
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805701270189129_0.scene.cdr",
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805701270189129_0.trajectory.cdr",
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/nearest.request.cdr"
+      ],
+      "started_wall_ns": 1790808814269381462,
+      "finished_wall_ns": 1790808843199370162,
+      "returncode": 0,
+      "result_lines": [
+        "RESULT 0 reason=ALL_INTERVALS_CERTIFIED interval=-1,-1 inspected=803 seconds=28.5242"
+      ],
+      "log": {
+        "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate_1790805701270189129_0.surface-cover-replay.log",
+        "sha256": "5a748f96cb19c6c558087f818e3da11d560722145fb1a732a5be8fd6316756d6"
+      },
+      "inputs": [
+        {
+          "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.urdf",
+          "sha256": "748e48f527367219d89f48fb3504674ada46bd9b28f49b7138f545bc9e0840f7"
+        },
+        {
+          "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.srdf",
+          "sha256": "1ab6c7792467f9e43ec9e121eaba1c92ef1f000266f82874e2e96570ed305caf"
+        },
+        {
+          "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805701270189129_0.scene.cdr",
+          "sha256": "86d554c593c2b3ca792cec36401d3de8ccc6f6b5fbd7f08d113a3d9e2d36a34d"
+        },
+        {
+          "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805701270189129_0.trajectory.cdr",
+          "sha256": "91f6d0087b8bf6109ecf037781e67c677dd9d94455f7d37ffa52db927c7cedda"
+        },
+        {
+          "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/nearest.request.cdr",
+          "sha256": "363002a1058c8bb13f7e62eaa7db30eadf5b512dbf26c0b3b70bc59e380025eb"
+        }
+      ]
+    },
+    {
+      "trajectory": "certificate_1790805712135959611_0",
+      "command": [
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate_surface_cover_replay",
+        "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.urdf",
+        "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.srdf",
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805712135959611_0.scene.cdr",
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805712135959611_0.trajectory.cdr",
+        "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/nearest.request.cdr"
+      ],
+      "started_wall_ns": 1790808843251295649,
+      "finished_wall_ns": 1790808869616333622,
+      "returncode": 0,
+      "result_lines": [
+        "RESULT 0 reason=ALL_INTERVALS_CERTIFIED interval=-1,-1 inspected=803 seconds=25.9918"
+      ],
+      "log": {
+        "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/certificate_1790805712135959611_0.surface-cover-replay.log",
+        "sha256": "fa8330b96ebf5425789cc0af15269e94061bf3a529a619bc4c5da5bb4a00f431"
+      },
+      "inputs": [
+        {
+          "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.urdf",
+          "sha256": "748e48f527367219d89f48fb3504674ada46bd9b28f49b7138f545bc9e0840f7"
+        },
+        {
+          "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/resolve/qualification.srdf",
+          "sha256": "1ab6c7792467f9e43ec9e121eaba1c92ef1f000266f82874e2e96570ed305caf"
+        },
+        {
+          "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805712135959611_0.scene.cdr",
+          "sha256": "8c41db7efb3311256b9a94d93d4174cc5ba1dcaedc820375a3cbadc8240af691"
+        },
+        {
+          "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/trace/certificate_1790805712135959611_0.trajectory.cdr",
+          "sha256": "5e1080b81e54b1189bcbad9313841308818e208d78e572a69844c9167d20fdda"
+        },
+        {
+          "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-transfer-winding/nearest.request.cdr",
+          "sha256": "363002a1058c8bb13f7e62eaa7db30eadf5b512dbf26c0b3b70bc59e380025eb"
+        }
+      ]
+    }
+  ]
+}

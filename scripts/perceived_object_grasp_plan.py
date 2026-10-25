@@ -71,18 +71,68 @@ def load_grasp_contract(scene_package):
     links = end_effector.get("allowed_touch_links")
     if not isinstance(links, list) or not links or any(not isinstance(v, str) or not v for v in links):
         raise ValueError(f"{source}: allowed_touch_links must designate contact links")
+    # The tool's single command joint is the saved cell's (runtime binding, else the authored tool).
+    environment = yaml.safe_load((package / "environment.yaml").read_text(encoding="utf-8")) or {} \
+        if (package / "environment.yaml").is_file() else {}
+    command_joints = (cell.get("runtime") or {}).get("tool_command_joints") or [
+        joint for joint in [(environment.get("end_effector") or environment.get("tool") or {}).get("actuated_joint")] if joint]
+    if not isinstance(command_joints, list) or len(command_joints) != 1 or not isinstance(command_joints[0], str):
+        raise ValueError(f"{source}: the end effector needs exactly one tool command joint, got {command_joints!r}")
     return {
         "approach_distance_m": float(distances[0]),
         "retreat_distance_m": float(distances[1]),
         "tcp_offset_z_m": float(tcp_xyz[2]),
         "tcp_pose": list(tcp_xyz) + quaternion_from_rpy(tcp_rpy),
         "allowed_touch_links": list(dict.fromkeys(links)),
+        "end_effector_capability": end_effector.get("capability"),
+        "tool_command_joint": command_joints[0],
+        "tool_aperture_max_m": capability_aperture_m(end_effector.get("capability")),
+        "geometric_qualification": end_effector.get("geometric_qualification"),
         "tool_link": cell["robot"]["tool_link"],
         "grasp_frame": end_effector["grasp_frame"],
         "planning_group": cell["robot"]["planning_group"],
         "home_joint_names": cell["robot"]["joint_names"],
         "home_joint_positions": cell["robot"]["safe_joint_state"],
     }
+
+
+def capability_aperture_m(capability):
+    """Maximum opening of an end-effector capability (catalog opening_width_mm), or None if it declares none."""
+    import yaml
+    if not capability:
+        return None
+    root = Path(__file__).resolve().parents[1] / "catalog/capabilities/end_effectors"
+    for path in sorted(root.glob("*.yaml")):
+        record = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("end_effector") or {}
+        if record.get("id") == capability:
+            width = record.get("opening_width_mm")
+            return float(width) / 1000.0 if isinstance(width, (int, float)) and width > 0 else None
+    raise ValueError(f"end effector capability {capability!r} is not in the capability catalog")
+
+
+def bind_tool_actuation(contract, urdf, srdf):
+    """Bind the tool command joint to the launched model: its URDF limits and the SRDF end-effector group.
+
+    The open position is the joint's lower limit and the closing range ends at its upper limit; the planning
+    group is the SRDF end_effector group whose joints include the command joint. Fails closed otherwise.
+    """
+    import xml.etree.ElementTree as ET
+    name = contract["tool_command_joint"]
+    joints = {j.get("name"): j for j in ET.fromstring(urdf).findall("joint")}
+    joint = joints.get(name)
+    if joint is None or joint.find("mimic") is not None or joint.get("type") not in ("revolute", "prismatic"):
+        raise RuntimeError(f"TOOL_ACTUATION_UNBOUND: {name!r} is not an actuated revolute/prismatic joint of the launched model")
+    limit = joint.find("limit")
+    lower, upper = (float(limit.get(key, "nan")) if limit is not None else math.nan for key in ("lower", "upper"))
+    if not (math.isfinite(lower) and math.isfinite(upper) and upper > lower):
+        raise RuntimeError(f"TOOL_ACTUATION_UNBOUND: {name!r} has no finite closing range")
+    semantic = ET.fromstring(srdf)
+    groups = {g.get("name"): {j.get("name") for j in g.findall("joint")} for g in semantic.findall("group")}
+    owners = [e.get("group") for e in semantic.findall("end_effector") if name in groups.get(e.get("group"), set())]
+    if len(owners) != 1:
+        raise RuntimeError(f"TOOL_ACTUATION_UNBOUND: no unique SRDF end_effector group holds {name!r} (found {owners})")
+    contract.update(tool_group=owners[0], tool_open_rad=lower, tool_closed_limit_rad=upper)
+    return contract
 
 
 def quaternion_from_rpy(rpy):

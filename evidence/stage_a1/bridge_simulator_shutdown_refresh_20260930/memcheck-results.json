@@ -1,0 +1,119 @@
+{
+  "cycles": 5,
+  "completed": 5,
+  "passed": 5,
+  "all_success": true,
+  "expected_abort": false,
+  "binary": "/home/user/workcell_ws/ros_gz_bridge_shutdown_overlay_stage_a1_20260927/install/lib/ros_gz_bridge/parameter_bridge",
+  "binary_sha256": "156514f96ff73f3109224d711542b6c1f00cf2e5a69e4e8f1b1dea64214cf601",
+  "library": "/opt/ros/humble/lib/libros_gz_bridge.so",
+  "library_sha256": "7806fe789ceba89ba203a3e055dae7e6a7e8e67a65931c2b877d596055200be3",
+  "errors": 0,
+  "results": [
+    {
+      "cycle": 1,
+      "pids": [
+        81109,
+        81110
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/usr/libexec/valgrind/memcheck-amd64-linux",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 2,
+      "pids": [
+        81145,
+        81146
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/usr/libexec/valgrind/memcheck-amd64-linux",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 3,
+      "pids": [
+        81189,
+        81190
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/usr/libexec/valgrind/memcheck-amd64-linux",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 4,
+      "pids": [
+        81219,
+        81220
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/usr/libexec/valgrind/memcheck-amd64-linux",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    },
+    {
+      "cycle": 5,
+      "pids": [
+        81244,
+        81245
+      ],
+      "received": 300,
+      "returncodes": [
+        0,
+        0
+      ],
+      "loaded_executable": "/usr/libexec/valgrind/memcheck-amd64-linux",
+      "mapped_executable": true,
+      "loaded_libraries": [
+        "/opt/ros/humble/lib/libros_gz_bridge.so"
+      ],
+      "memcheck_errors": 0,
+      "core_inventory_changed": false,
+      "remaining_processes": [],
+      "passed": true
+    }
+  ]
+}

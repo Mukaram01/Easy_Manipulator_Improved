@@ -1,0 +1,61 @@
+{
+  "scope": "Compact copies and primary-source identities for simulator wrapper shutdown evidence; original diagnostics remain unchanged.",
+  "copied_files": [
+    {
+      "file": "lifecycle-result.json",
+      "source_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/lifecycle-result.json",
+      "sha256": "f7336b08e88a6e861dbce0201900266e1b186e4475a8eafd5cf2dac420a218eb",
+      "bytes": 11635
+    },
+    {
+      "file": "shutdown-timeline.json",
+      "source_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/active-plan/shutdown-timeline.json",
+      "sha256": "eb4167cac2c3078eb89852e55bc7dcadae42d86ea61aa5136e198fdb688e26c8",
+      "bytes": 5441
+    },
+    {
+      "file": "native-results.json",
+      "source_path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/fixed-native-results.json",
+      "sha256": "9768f80979bbc8969d865dcca69144997ca22e61567b543098148050a174bf90",
+      "bytes": 2371
+    }
+  ],
+  "additional_sources": [
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260930-simulator-shutdown/RESULT.md",
+      "sha256": "bbd6df0088809eecf96d4385e8d188f0c588cd24bb0daa7f448e529469710159",
+      "bytes": 1231
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/active-plan/source-freeze.json",
+      "sha256": "a5599bb0bc2987a2d00e8817258575a6952b107fd7dec41c775cc9bad8ccdf6d",
+      "bytes": 35999
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/active-plan/diagnostic-outcome.json",
+      "sha256": "059998e14f246d7d1ad60479991ac51f32f1bba5885d2c7ed4e131dd67f8c8f0",
+      "bytes": 11963
+    },
+    {
+      "path": "/home/user/workcell_ws/diagnostics/stage-a1-closeout-20260929-metrics/active-plan/process-samples.jsonl",
+      "sha256": "5794c05afc20434a415f76400e982250d00fb45fcde835a8b7835ac8f4d26ab9",
+      "bytes": 1635983
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/launch.log",
+      "sha256": "4489fe569b32b21a3f89dba30eb1415aa6259e047e0adac6545ab8211b088741",
+      "bytes": 181446
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/01-resolve/session-report.json",
+      "sha256": "eaedd102b29c93d3cc4d8a2b15c524cabec85d12a1c9e6ca803d117b39ff010c",
+      "bytes": 45225
+    },
+    {
+      "path": "/home/user/workcell_ws/stage-a1-closeout-20260930-active-plan/stage-a1-final-report.json",
+      "sha256": "097c4f5ca542350d3ce2e11fc4eabaa10a166f1b02b669afc7c5d758ab571dea",
+      "bytes": 91175
+    }
+  ],
+  "prior_run_commit": "84ca9a47f1779d8fe0dd56f7b39a8d38f5b0cb05"
+}

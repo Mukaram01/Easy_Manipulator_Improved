@@ -36,7 +36,7 @@ task_zones:
 )");
   write(scene + "/config/workcell_builder_task_intent.yaml", R"(schema: workcell_builder_task_intent/v2
 task: {id: t, type: pick_place, template: pick_place}
-pick: {selection: {source_ref: source, source_type: perception, zone_ref: pick, object_filter: {class_id: bottle, min_confidence: null}}, grasp: {policy: EXACT, required_capability: two_finger_parallel, strategy_ref: top_2f, approach: {axis: z_down, distance_m: 0.123456789123}, orientation: {mode: vertical}, lift: {axis: z_up, distance_m: 0.15}}}
+pick: {selection: {source_ref: source, source_type: perception, zone_ref: pick, object_filter: {class_id: bottle, min_confidence: null, max_age_seconds: 2.0}}, grasp: {policy: EXACT, required_capability: two_finger_parallel, strategy_ref: top_2f, approach: {axis: z_down, distance_m: 0.123456789123}, orientation: {mode: vertical}, lift: {axis: z_up, distance_m: 0.15}}}
 place: {target: {asset_ref: bin, region_ref: drop}, placement: {policy: EXACT, requested_local_pose: {xyz_m: [0.05, 0, 0.1], rpy_rad: [-0.2, 0, 0]}, orientation: {mode: fixed}, approach: {axis: z_down, distance_m: 0.1}, retreat: {axis: z_up, distance_m: 0.1}}, release: {strategy: tool_release}}
 safety: {require_fake_hardware: true, real_hardware_enabled: false}
 provenance: {custom: retain}
@@ -716,4 +716,24 @@ TEST(TaskIntentEditor, DestinationChangeSurvivesReorderToggleSaveUntilPlaceResel
   const auto selected = updated["sequence"].toObject()["items"].toArray()[0].toObject()["placement"].toObject();
   EXPECT_EQ(selected["asset_ref"].toString(), "bin2");
   EXPECT_EQ(selected["region_ref"].toString(), "drop2");
+}
+
+TEST(TaskIntentEditor, ExecutionBackendIsAnExplicitAuthoredChoiceThatSurvivesReopen) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * backend = editor.findChild<QComboBox *>("taskExecutionBackend"); ASSERT_NE(backend, nullptr);
+  EXPECT_EQ(backend->currentData().toString(), "fake");  // absent backend: MoveIt fake hardware, as before
+  backend->setCurrentIndex(backend->findData("simulator"));
+  ASSERT_TRUE(editor.dirty()); ASSERT_TRUE(editor.save());
+  const auto saved = QJsonDocument::fromJson(read(dir.path() + "/config/workcell_builder_task_intent.yaml")).object()["safety"].toObject();
+  EXPECT_EQ(saved["execution_backend"].toString(), "simulator");
+  EXPECT_FALSE(saved["require_fake_hardware"].toBool(true));
+  EXPECT_FALSE(saved["real_hardware_enabled"].toBool(true));
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  EXPECT_EQ(reopened.findChild<QComboBox *>("taskExecutionBackend")->currentData().toString(), "simulator");
+  auto * again = reopened.findChild<QComboBox *>("taskExecutionBackend");
+  again->setCurrentIndex(again->findData("fake")); ASSERT_TRUE(reopened.save());
+  const auto reverted = QJsonDocument::fromJson(read(dir.path() + "/config/workcell_builder_task_intent.yaml")).object()["safety"].toObject();
+  EXPECT_EQ(reverted["execution_backend"].toString(), "fake");
+  EXPECT_TRUE(reverted["require_fake_hardware"].toBool(false));
 }
