@@ -2443,6 +2443,8 @@ def main():
             destination_binding = json.loads(receipt_bytes).get('destination_geometry_binding')
             if destination_binding is not None:
                 apply(walls_scene_diff(destination_binding))
+                # Place seating is planned against the bound physical floor (full_cycle_preplanner.seated_destination).
+                contract['destination_floor_z'] = float(destination_binding['floor_z'])
                 summary['physical_destination_walls'] = dict(object_ids=wall_object_ids(destination_binding),
                     walls=destination_binding['walls'], receipt_sha256=summary['backend_identity']['receipt_sha256'])
         initial = scene_now()

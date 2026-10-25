@@ -1841,3 +1841,13 @@ def test_release_is_planned_only_after_a_measured_stop_and_executed_only_after_a
     assert "summary['release_planning_stop']=" in release
     action=source[source.index("def action(client, goal, timeout):"):source.index("sent = client.send_goal_async(goal)")]
     assert "cross_check_gate.require_clear()" in action                               # premature execution is refused
+
+
+def test_simulator_place_seating_uses_the_receipt_bound_destination_floor():
+    source = (Path(__file__).resolve().parents[1]/'scripts/perceived_object_grasp_execute.py').read_text()
+    block = source[source.index("destination_binding = json.loads(receipt_bytes).get('destination_geometry_binding')"):]
+    block = block[:block.index('initial = scene_now()')]
+    # Bound only from the identity-verified receipt, beside the physics walls; absent binding: unchanged.
+    assert block.index('apply(walls_scene_diff(destination_binding))') < \
+        block.index("contract['destination_floor_z'] = float(destination_binding['floor_z'])")
+    assert source.count("contract['destination_floor_z']") == 1
