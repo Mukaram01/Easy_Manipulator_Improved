@@ -112,6 +112,7 @@ private slots:
   void run_preview_build();
   void run_fake_hardware_preview();
   void run_full_cycle();
+  void run_physics_cycle();
   void stop_preview_process();
   void handle_preview_stdout();
   void handle_preview_stderr();
@@ -802,9 +803,13 @@ private:
   QTextEdit * preview_commands_{ nullptr };
   QPlainTextEdit * preview_log_{ nullptr };
   QPushButton * run_preview_button_{ nullptr };
+  QPushButton * run_physics_button_{ nullptr };
   QLabel * cycle_status_label_{ nullptr };
   QCheckBox * cycle_rviz_box_{ nullptr };
   bool full_cycle_mode_{ false };
+  bool physics_cycle_mode_{ false };
+  QString physics_cycle_blocker() const;
+  QString qualified_physics_runtime() const;
   QString cycle_output_dir_;
   QString cycle_stdout_buffer_;
   QJsonObject cycle_result_;

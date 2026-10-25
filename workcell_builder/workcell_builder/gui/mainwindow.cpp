@@ -3614,6 +3614,7 @@ void MainWindow::setup_studio_shell()
   pl->addWidget(new QLabel("<b>Preview Process</b><br/>Open RViz Truth Preview | Run Fake-Hardware Simulation | Stop Simulation | Copy commands"));
   run_build_button_ = new QPushButton("Build & Run RViz", preview); run_build_button_->setProperty("role","primary"); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Full Cycle", preview); run_preview_button_->setObjectName("runFullCycle"); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
+  run_physics_button_ = new QPushButton("Run Physics Simulation Cycle", preview); run_physics_button_->setObjectName("runPhysicsCycle"); pl->addWidget(run_physics_button_);
   stop_preview_button_ = new QPushButton("Stop Simulation", preview); stop_preview_button_->hide(); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
   preview_more_actions_button_ = new QToolButton(preview);
@@ -3783,6 +3784,7 @@ void MainWindow::setup_studio_shell()
   connect_button(go_preview_commands, [this](){ show_studio_page(StudioPage::PlanSimulatePage); append_studio_log("Go to Preview Commands: use Copy commands on Preview Launch page"); });
   connect_button(run_build_button_, &MainWindow::run_preview_build);
   connect_button(run_preview_button_, &MainWindow::run_full_cycle);
+  connect_button(run_physics_button_, &MainWindow::run_physics_cycle);
   connect_button(stop_preview_button_, &MainWindow::stop_preview_process);
   connect_button(copy_build_button_, [this](){ QApplication::clipboard()->setText(selected_scene_build_command()); });
   connect_button(copy_source_button_, [this](){ QApplication::clipboard()->setText(selected_scene_source_command()); });
@@ -6112,6 +6114,11 @@ void MainWindow::refresh_preview_launch_ui()
     run_build_button_->setEnabled(active || (has_scene && has_ws && selected_scene_readiness().ready && preview_state_!="BUILD_RUNNING" && preview_state_!="PACKAGE_CHECK_RUNNING" && preview_state_!="PREVIEW_LAUNCHING"));
   }
   const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
+  if (run_physics_button_) {
+    const auto blocker = physics_cycle_blocker();
+    run_physics_button_->setEnabled(has_scene && current.ready && !busy && blocker.isEmpty());
+    run_physics_button_->setToolTip(blocker.isEmpty() ? "Runs one bounded pick/place cycle of the saved cell in the qualified physics simulation." : blocker);
+  }
   if (run_preview_button_) {
     run_preview_button_->show();
     run_preview_button_->setText("Plan Saved Task (Fake Hardware)");
@@ -6331,6 +6338,44 @@ void MainWindow::run_full_cycle()
   refresh_preview_launch_ui();
 }
 
+QString MainWindow::qualified_physics_runtime() const
+{
+  // Workstation-local: sources the qualified install, MoveIt and bridge overlays, physics root and
+  // WORKCELL_STAGE_A_PRIOR_EVIDENCE. Never guessed; without it the physics cycle stays blocked.
+  const auto path = detect_workspace_root() + "/workcell_qualified_physics.bash";
+  return QFileInfo(path).isFile() ? path : QString();
+}
+
+QString MainWindow::physics_cycle_blocker() const
+{
+  if (!has_selected_scene()) return "Select a saved cell.";
+  if (qualified_physics_runtime().isEmpty())
+    return "Qualified physics runtime is not configured on this workstation (workcell_qualified_physics.bash).";
+  const auto & scene = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  QFile file(QString::fromStdString((scene.scene_dir / "config/workcell_builder_task_intent.yaml").string()));
+  const auto safety = file.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(file.readAll()).object().value("safety").toObject() : QJsonObject();
+  if (safety.value("execution_backend").toString() != "simulator")
+    return "Select Task Editor > Run > Qualified physics simulation, then Save and Generate.";
+  return {};
+}
+
+void MainWindow::run_physics_cycle()
+{
+  if (!selected_scene_readiness().ready || !physics_cycle_blocker().isEmpty() ||
+      preview_process_->state() != QProcess::NotRunning) return;
+  active_preview_scene_ = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  full_cycle_mode_ = true; physics_cycle_mode_ = true; preview_stop_requested_ = false;
+  cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
+  cycle_output_dir_ = detect_workspace_root() + "/log/studio_physics_cycles/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  active_preview_command_ = workcell_builder::build_physics_cycle_command(active_preview_scene_,
+    detect_workspace_root().toStdString(), cycle_output_dir_, qualified_physics_runtime());
+  if (active_preview_command_.isEmpty()) { set_preview_state("CYCLE_FAILED"); return; }
+  cycle_status_label_->setText("Starting the qualified physics simulation…<br/>Live physics · Real robot motion: locked");
+  set_preview_state("PREVIEW_LAUNCHING");
+  preview_process_->start("/bin/bash", {"-lc", active_preview_command_});
+  refresh_preview_launch_ui();
+}
+
 void MainWindow::consume_cycle_output(const QString & output)
 {
   cycle_stdout_buffer_ += output;
@@ -6342,7 +6387,10 @@ void MainWindow::consume_cycle_output(const QString & output)
     if (event.contains("stage")) {
       const QString stage = event.value("stage").toString();
       QString friendly = stage.toLower(); friendly.replace('_', ' ');
-      cycle_status_label_->setText("<b>" + friendly.toHtmlEscaped() + "</b><br/>Replay · Fake hardware only · Real robot motion: locked");
+      const bool physics = event.value("source").toString() == "qualified_physics_simulator" && event.value("live").toBool();
+      cycle_status_label_->setText("<b>" + friendly.toHtmlEscaped() + "</b><br/>" +
+        (physics ? QString("Live qualified physics simulation") + (event.value("motion").toBool() ? " · Simulated robot moving" : "")
+                 : QString("Replay · Fake hardware only")) + " · Real robot motion: locked");
       cycle_status_label_->setProperty("backendStage", stage);
     }
     if (event.value("event").toString() == "cycle_result") cycle_result_ = event.value("summary").toObject();
@@ -6351,6 +6399,20 @@ void MainWindow::consume_cycle_output(const QString & output)
 
 void MainWindow::show_cycle_result(const QJsonObject & result)
 {
+  if (result.value("mode").toString() == "physics_simulation") {
+    const bool pass = result.value("result").toString() == "PASS";
+    QStringList gates; const auto statuses = result.value("gates").toObject();
+    for (auto it = statuses.begin(); it != statuses.end(); ++it) gates << it.key() + " " + it.value().toString();
+    QStringList pose; const auto final_pose = result.value("final_object_pose").toArray();
+    for (int i = 0; i < std::min(3, static_cast<int>(final_pose.size())); ++i) pose << QString::number(final_pose.at(i).toDouble(), 'f', 4);
+    QString text = QString("<b>%1</b> · Live qualified physics simulation<br/>Gates: %2<br/>Target: %3 · Final object position (m): %4<br/>Shutdown: %5 · Real robot motion: locked")
+      .arg(pass ? "PASS" : "FAIL", gates.join(", ").toHtmlEscaped(), result.value("selected_object_id").toString("unknown").toHtmlEscaped(),
+           pose.isEmpty() ? QString("not measured") : pose.join(", "), result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
+    if (!pass) text += "<br/>Failure: " + result.value("failure").toString("See diagnostics").toHtmlEscaped();
+    text += "<br/>Evidence: " + result.value("evidence").toString(cycle_output_dir_).toHtmlEscaped();
+    cycle_status_label_->setText(text);
+    return;
+  }
   const bool pass = result.value("result").toString() == "PASS";
   const auto robot = result.value("final_robot_state").toObject();
   const auto intended = robot.value("intended_home").toObject(), actual = robot.value("actual_joints").toObject();
@@ -6430,7 +6492,9 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
     handle_preview_stdout();
     const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
       cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_plan_success").toBool() &&
-      cycle_result_.value("shutdown_clean").toBool();
+      cycle_result_.value("shutdown_clean").toBool() &&
+      (!physics_cycle_mode_ || cycle_result_.value("full_cycle_execution_success").toBool());
+    physics_cycle_mode_ = false;
     if (!pass) {
       cycle_result_["result"] = "FAIL";
       if (!cycle_result_.contains("failure")) cycle_result_["failure"] = "Full-cycle process exited without verified success. See diagnostics.";
