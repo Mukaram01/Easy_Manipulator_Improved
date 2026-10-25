@@ -62,15 +62,18 @@ def create_stage_b_cell(root, name, objects=(CUP, BOTTLE)):
     return scene
 
 
-def camera_save(scene, camera_id):
-    """Studio: move and turn the camera in the saved layout, then the Save projection MainWindow runs."""
+def camera_save(scene, camera_id, xyz=None, rpy=None, moves=None):
+    """Studio: move and turn the camera (and move other items) in the saved layout, then the Save projection."""
     from workcell_studio_layout_merge import merge
     path = scene / 'layout/workcell_studio_layout.yaml'
     layout = yaml.safe_load(path.read_text())
     items = [item for item in layout['items'] if item.get('id') == camera_id]
     if len(items) != 1:
         raise ValueError(f'layout has no camera item {camera_id!r}')
-    items[0]['pose'] = dict(items[0].get('pose') or {}, xyz=list(CAMERA_XYZ), rpy=list(CAMERA_RPY))
+    items[0]['pose'] = dict(items[0].get('pose') or {}, xyz=list(xyz or CAMERA_XYZ), rpy=list(rpy or CAMERA_RPY))
+    for item in layout['items']:
+        if item.get('id') in (moves or {}):
+            item['pose'] = dict(item.get('pose') or {}, xyz=list(moves[item['id']]))
     path.write_text(yaml.safe_dump(layout, sort_keys=False))
     report = merge(scene, save_authored=True)
     if report['status'] != 'READY':
@@ -89,10 +92,11 @@ def replay_input_edits(replay_path, max_age_s=180.0):
             (('pick', 'selection', 'object_filter', 'max_age_seconds'), max_age_s)]
 
 
-def author_stage_b_cell(root, name='stage_b_cell', pick='cup', exclude=('bottle',), min_confidence=0.5):
-    scene = create_stage_b_cell(root, name)
+def author_stage_b_cell(root, name='stage_b_cell', pick='cup', exclude=('bottle',), min_confidence=0.5,
+                        objects=(CUP, BOTTLE), camera_xyz=None, camera_rpy=None, moves=None):
+    scene = create_stage_b_cell(root, name, objects)
     camera_id = yaml.safe_load((scene / 'environment.yaml').read_text())['camera']['camera_id']
-    studio = camera_save(scene, camera_id)
+    studio = camera_save(scene, camera_id, camera_xyz, camera_rpy, moves)
     saved = task_editor_save(scene, [*SIMULATE, (('pick', 'selection', 'object_filter', 'class_id'), pick),
                                      (('pick', 'selection', 'object_filter', 'exclude_class_ids'), list(exclude)),
                                      (('pick', 'selection', 'object_filter', 'min_confidence'), min_confidence)])
@@ -119,10 +123,34 @@ def perceive(scene, workspace):
                 validation_rc=rc)
 
 
+def shifted(obj, dx=0.0, dy=0.0, object_id=None):
+    moved = json.loads(json.dumps(obj))
+    moved['pose']['xyz'] = [moved['pose']['xyz'][0] + dx, moved['pose']['xyz'][1] + dy, moved['pose']['xyz'][2]]
+    if object_id:
+        moved['object_id'] = object_id
+    return moved
+
+
+# Negative variants, authored the same way.
+# unreachable: the whole scene 0.5 m farther from the robot (cup 1.03 m from the base; UR5 reach 0.85 m), still on
+# the table and inside the moved pick zone, with the camera moved along so the view is the same.
+# collision: the cup boxed in on both grasp axes by the bottle (-y) and an unclassified box (-x), 4 mm away.
+BLOCKER = {'object_id': 'object_blocker', 'class_id': 'unclassified', 'material': 'qualified_test_polymer', 'shape': 'box',
+           'dimensions': [0.03, 0.08, 0.06], 'pose': {'frame_id': 'world', 'xyz': [0.50 - 0.015 - 0.015 - 0.004, -0.25, 0.03],
+                                                     'rpy': [0, 0, 0]}}
+VARIANTS = {
+    'nominal': {},
+    'unreachable': dict(objects=(shifted(CUP, 0.5), shifted(BOTTLE, 0.5)), camera_xyz=[1.35, -0.25, 0.28],
+                        moves={'pick_zone_main': [0.9, -0.2, 0.3]}),
+    'collision': dict(objects=(CUP, shifted(BOTTLE, 0.18, 0.08 - 0.015 - 0.031 - 0.004 - 0.0), BLOCKER)),
+}
+
+
 if __name__ == '__main__':
     out, workspace = Path(sys.argv[1]), Path(sys.argv[2])
+    variant = sys.argv[3] if len(sys.argv) > 3 else 'nominal'
     out.mkdir(parents=True, exist_ok=False)
-    scene, steps = author_stage_b_cell(out)
+    scene, steps = author_stage_b_cell(out, **VARIANTS[variant])
     record = dict(scene=str(scene), authored_status=steps['saved']['status'], authored_validation_rc=steps['validation_rc'])
     record.update(perception=perceive(scene, workspace))
     (out / 'authoring.json').write_text(json.dumps(record, indent=2, default=str) + '\n')
