@@ -3615,6 +3615,7 @@ void MainWindow::setup_studio_shell()
   run_build_button_ = new QPushButton("Build & Run RViz", preview); run_build_button_->setProperty("role","primary"); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Full Cycle", preview); run_preview_button_->setObjectName("runFullCycle"); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   run_physics_button_ = new QPushButton("Run Physics Simulation Cycle", preview); run_physics_button_->setObjectName("runPhysicsCycle"); pl->addWidget(run_physics_button_);
+  physics_state_label_ = new QLabel(preview); physics_state_label_->setObjectName("physicsCycleState"); physics_state_label_->setWordWrap(true); pl->addWidget(physics_state_label_);
   stop_preview_button_ = new QPushButton("Stop Simulation", preview); stop_preview_button_->hide(); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
   preview_more_actions_button_ = new QToolButton(preview);
@@ -6118,6 +6119,19 @@ void MainWindow::refresh_preview_launch_ui()
     const auto blocker = physics_cycle_blocker();
     run_physics_button_->setEnabled(has_scene && current.ready && !busy && blocker.isEmpty());
     run_physics_button_->setToolTip(blocker.isEmpty() ? "Runs one bounded pick/place cycle of the saved cell in the qualified physics simulation." : blocker);
+    if (!physics_cycle_mode_) {
+      if (!has_scene) set_physics_state(QString(), QString());
+      else if (!blocker.isEmpty()) set_physics_state("BLOCKED", blocker.toHtmlEscaped());
+      else if (!current.ready) set_physics_state("BLOCKED", "Generate and Validate the saved cell first.");
+      else if (physics_state_ != "COMPLETED" && physics_state_ != "FAILED" && physics_state_ != "CANCELLED") {
+        const auto cell = physics_preflight().value("cell").toObject();
+        QStringList objects; for (const auto & item : cell.value("objects").toArray()) objects << item.toString();
+        set_physics_state("READY", QString("%1<br/>Robot %2 · Tool %3 · Objects: %4 · Destination: %5")
+          .arg(physics_preflight().value("backend").toString().toHtmlEscaped(), cell.value("robot").toString().toHtmlEscaped(),
+               cell.value("end_effector").toString().toHtmlEscaped(), objects.join(", ").toHtmlEscaped(),
+               cell.value("destination").toString().toHtmlEscaped()));
+      }
+    }
   }
   if (run_preview_button_) {
     run_preview_button_->show();
@@ -6338,38 +6352,76 @@ void MainWindow::run_full_cycle()
   refresh_preview_launch_ui();
 }
 
-QString MainWindow::qualified_physics_runtime() const
+QJsonObject MainWindow::physics_preflight() const
 {
-  // Workstation-local: sources the qualified install, MoveIt and bridge overlays, physics root and
-  // WORKCELL_STAGE_A_PRIOR_EVIDENCE. Never guessed; without it the physics cycle stays blocked.
-  const auto path = detect_workspace_root() + "/workcell_qualified_physics.bash";
-  return QFileInfo(path).isFile() ? path : QString();
+  if (!has_selected_scene()) return {};
+  QString script;
+  if (!helper_script_exists("physics_cycle_preflight.py", &script))
+    return QJsonObject{{"status", "BLOCKED"}, {"blocker", "physics_cycle_preflight.py is unavailable in this workspace."}};
+  const auto dir = QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir.string());
+  QDir workspace(QFileInfo(script).canonicalPath()); workspace.cdUp(); workspace.cdUp(); workspace.cdUp();
+  QStringList key{dir, script};
+  for (const auto & rel : {"environment.yaml", "config/workcell_builder_task_intent.yaml", "cell_definition.yaml", "config/moveit_collision_objects.yaml"})
+    key << QString::number(QFileInfo(dir + "/" + rel).lastModified().toMSecsSinceEpoch());
+  key << QString::number(QFileInfo(workspace.filePath("workcell_qualified_runtime.json")).lastModified().toMSecsSinceEpoch());
+  if (key.join('|') == physics_preflight_key_) return physics_preflight_;
+  QProcess process;
+  process.start("python3", {script, dir});
+  const bool finished = process.waitForFinished(60000);
+  if (!finished) { process.kill(); process.waitForFinished(1000); }
+  const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  physics_preflight_ = finished && report.contains("status") ? report :
+    QJsonObject{{"status", "BLOCKED"}, {"blocker", "Physics preflight did not complete: " + QString::fromUtf8(process.readAllStandardError()).left(400)}};
+  physics_preflight_key_ = key.join('|');
+  return physics_preflight_;
 }
 
 QString MainWindow::physics_cycle_blocker() const
 {
   if (!has_selected_scene()) return "Select a saved cell.";
-  if (qualified_physics_runtime().isEmpty())
-    return "Qualified physics runtime is not configured on this workstation (workcell_qualified_physics.bash).";
-  const auto & scene = scene_browser_result_.scenes[(size_t)selected_scene_index_];
-  QFile file(QString::fromStdString((scene.scene_dir / "config/workcell_builder_task_intent.yaml").string()));
-  const auto safety = file.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(file.readAll()).object().value("safety").toObject() : QJsonObject();
-  if (safety.value("execution_backend").toString() != "simulator")
-    return "Select Task Editor > Run > Qualified physics simulation, then Save and Generate.";
+  if (layout_dirty_ || (environment_task_editor_ && environment_task_editor_->dirty()))
+    return "Save the cell first: it has unsaved changes.";
+  const auto report = physics_preflight();
+  if (report.value("status").toString() != "READY")
+    return report.value("blocker").toString("Physics preflight unavailable.");
   return {};
+}
+
+void MainWindow::set_physics_state(const QString & state, const QString & detail)
+{
+  physics_state_ = state;
+  if (!physics_state_label_) return;
+  physics_state_label_->setProperty("physicsState", state);
+  physics_state_label_->setText(state.isEmpty() ? QString() :
+    QString("<b>Physics simulation: %1</b><br/>%2").arg(state, detail));
 }
 
 void MainWindow::run_physics_cycle()
 {
-  if (!selected_scene_readiness().ready || !physics_cycle_blocker().isEmpty() ||
-      preview_process_->state() != QProcess::NotRunning) return;
+  if (preview_process_->state() != QProcess::NotRunning) return;
+  const auto blocker = physics_cycle_blocker();
+  if (!blocker.isEmpty() || !selected_scene_readiness().ready) {
+    set_physics_state("BLOCKED", (blocker.isEmpty() ? QString("Generate and Validate the saved cell first.") : blocker).toHtmlEscaped());
+    return;
+  }
+  const auto preflight = physics_preflight(); const auto cell = preflight.value("cell").toObject();
+  QStringList objects; for (const auto & item : cell.value("objects").toArray()) objects << item.toString();
+  // Nothing starts without this explicit confirmation (no camera, simulator or controller runs on open).
+  if (QMessageBox::question(this, "Run Physics Simulation Cycle",
+        QString("Run one bounded pick-and-place cycle of the saved cell \"%1\" in the %2?\n\nRobot: %3 · Tool: %4\nObjects: %5\n"
+                "Destination: %6\n\nThe real robot stays locked.")
+          .arg(QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_name),
+               preflight.value("backend").toString(), cell.value("robot").toString(), cell.value("end_effector").toString(),
+               objects.join(", "), cell.value("destination").toString()),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
   active_preview_scene_ = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   full_cycle_mode_ = true; physics_cycle_mode_ = true; preview_stop_requested_ = false;
   cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
   cycle_output_dir_ = detect_workspace_root() + "/log/studio_physics_cycles/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
   active_preview_command_ = workcell_builder::build_physics_cycle_command(active_preview_scene_,
-    detect_workspace_root().toStdString(), cycle_output_dir_, qualified_physics_runtime());
-  if (active_preview_command_.isEmpty()) { set_preview_state("CYCLE_FAILED"); return; }
+    detect_workspace_root().toStdString(), cycle_output_dir_);
+  if (active_preview_command_.isEmpty()) { physics_cycle_mode_ = false; set_physics_state("FAILED", "No physics cycle command."); set_preview_state("CYCLE_FAILED"); return; }
+  set_physics_state("PLANNING", "Starting the qualified physics simulation · Real robot motion: locked");
   cycle_status_label_->setText("Starting the qualified physics simulation…<br/>Live physics · Real robot motion: locked");
   set_preview_state("PREVIEW_LAUNCHING");
   preview_process_->start("/bin/bash", {"-lc", active_preview_command_});
@@ -6392,6 +6444,10 @@ void MainWindow::consume_cycle_output(const QString & output)
         (physics ? QString("Live qualified physics simulation") + (event.value("motion").toBool() ? " · Simulated robot moving" : "")
                  : QString("Replay · Fake hardware only")) + " · Real robot motion: locked");
       cycle_status_label_->setProperty("backendStage", stage);
+      if (physics_cycle_mode_ && physics && stage != "SIMULATOR_SHUTDOWN")
+        set_physics_state(stage.startsWith("EXECUTE_") ? "RUNNING" : "PLANNING",
+          friendly.toHtmlEscaped() + (event.value("motion").toBool() ? " · simulated robot moving" : " · no motion") +
+          " · Real robot motion: locked");
     }
     if (event.value("event").toString() == "cycle_result") cycle_result_ = event.value("summary").toObject();
   }
@@ -6401,16 +6457,20 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
 {
   if (result.value("mode").toString() == "physics_simulation") {
     const bool pass = result.value("result").toString() == "PASS";
+    const bool cancelled = result.value("result").toString() == "CANCELLED";
     QStringList gates; const auto statuses = result.value("gates").toObject();
     for (auto it = statuses.begin(); it != statuses.end(); ++it) gates << it.key() + " " + it.value().toString();
     QStringList pose; const auto final_pose = result.value("final_object_pose").toArray();
     for (int i = 0; i < std::min(3, static_cast<int>(final_pose.size())); ++i) pose << QString::number(final_pose.at(i).toDouble(), 'f', 4);
     QString text = QString("<b>%1</b> · Live qualified physics simulation<br/>Gates: %2<br/>Target: %3 · Final object position (m): %4<br/>Shutdown: %5 · Real robot motion: locked")
-      .arg(pass ? "PASS" : "FAIL", gates.join(", ").toHtmlEscaped(), result.value("selected_object_id").toString("unknown").toHtmlEscaped(),
+      .arg(pass ? "COMPLETED" : cancelled ? "CANCELLED" : "FAILED", gates.join(", ").toHtmlEscaped(), result.value("selected_object_id").toString("unknown").toHtmlEscaped(),
            pose.isEmpty() ? QString("not measured") : pose.join(", "), result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
-    if (!pass) text += "<br/>Failure: " + result.value("failure").toString("See diagnostics").toHtmlEscaped();
+    if (cancelled) text += QString("<br/>Cancellation: %1").arg(result.value("cancellation_confirmed").toBool() ?
+      "confirmed (simulator shut down cleanly; nothing to recover)" : "UNCONFIRMED: check for remaining simulator processes");
+    else if (!pass) text += "<br/>Failure: " + result.value("failure").toString("See diagnostics").toHtmlEscaped();
     text += "<br/>Evidence: " + result.value("evidence").toString(cycle_output_dir_).toHtmlEscaped();
     cycle_status_label_->setText(text);
+    set_physics_state(pass ? "COMPLETED" : cancelled ? "CANCELLED" : "FAILED", text);
     return;
   }
   const bool pass = result.value("result").toString() == "PASS";
@@ -6461,6 +6521,7 @@ void MainWindow::stop_preview_process()
     // The cycle supervisor stops executor first (cancellation/recovery), then
     // its owned scene. Never kill the supervisor before its bounded cleanup.
     cycle_status_label_->setText("Stopping simulation… Cancellation is unconfirmed until reported by the backend.");
+    if (physics_cycle_mode_) set_physics_state(physics_state_, "Cancel requested: the runner is stopping the executor and shutting the simulator down. Unconfirmed until it reports.");
     return;
   }
   // Supervisor: 5s launch-led SIGINT + .7s TERM + .4s KILL verification.
@@ -6484,6 +6545,10 @@ void MainWindow::handle_preview_error(QProcess::ProcessError error){
     cycle_result_ = QJsonObject{{"result","FAIL"},{"failed_stage",preview_state_},
       {"failure",preview_process_->errorString()},{"shutdown_clean",false}};
     show_cycle_result(cycle_result_);
+    if (physics_cycle_mode_) {
+      physics_cycle_mode_ = false;
+      set_physics_state("FAILED", ("The physics cycle process failed: " + preview_process_->errorString()).toHtmlEscaped());
+    }
   }
   const QString msg=preview_process_?preview_process_->errorString():"unknown error"; append_studio_log(QString("ERROR stage=%1 QProcess error=%2 message=%3 output_tail=%4").arg(preview_state_).arg(static_cast<int>(error)).arg(msg,preview_output_tail_)); if(preview_state_=="BUILD_RUNNING") set_preview_state("BUILD_FAILED"); else set_preview_state("PREVIEW_FAILED"); }
 void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){
@@ -6494,15 +6559,24 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
       cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_plan_success").toBool() &&
       cycle_result_.value("shutdown_clean").toBool() &&
       (!physics_cycle_mode_ || cycle_result_.value("full_cycle_execution_success").toBool());
-    physics_cycle_mode_ = false;
+    const bool physics_run = physics_cycle_mode_;
+    const bool cancelled = physics_run && (preview_stop_requested_ || cycle_result_.value("result").toString() == "CANCELLED");
     if (!pass) {
-      cycle_result_["result"] = "FAIL";
+      cycle_result_["result"] = cancelled ? "CANCELLED" : "FAIL";
+      if (cancelled && !cycle_result_.contains("cancellation_confirmed")) cycle_result_["cancellation_confirmed"] = false;
       if (!cycle_result_.contains("failure")) cycle_result_["failure"] = "Full-cycle process exited without verified success. See diagnostics.";
     }
     show_cycle_result(cycle_result_);
+    if (physics_run && physics_state_ != "COMPLETED" && physics_state_ != "CANCELLED" && physics_state_ != "FAILED")
+      set_physics_state(cancelled ? "CANCELLED" : "FAILED",            // the runner ended without its result line
+        (cancelled ? QString("Cancellation unconfirmed: no result was reported.") :
+                     "Ended without a reported result: " + cycle_result_.value("failure").toString()).toHtmlEscaped() +
+        "<br/>Evidence: " + cycle_output_dir_.toHtmlEscaped());
+    physics_cycle_mode_ = false;
     set_preview_state(pass ? "CYCLE_PASS" : "CYCLE_FAILED");
     preview_running_scene_key_.clear();
-    if (pass && !close_after_preview_stop_ && has_selected_scene()) {
+    // A physics run copies the saved cell; it never resolves into it, so nothing is regenerated.
+    if (pass && !physics_run && !close_after_preview_stop_ && has_selected_scene()) {
       const auto & selected = scene_browser_result_.scenes[(size_t)selected_scene_index_];
       if (workcell_builder::canonical_scene_identity(selected.scene_dir) ==
           workcell_builder::canonical_scene_identity(active_preview_scene_.scene_dir)) {

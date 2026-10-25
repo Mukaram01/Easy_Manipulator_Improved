@@ -809,7 +809,15 @@ private:
   bool full_cycle_mode_{ false };
   bool physics_cycle_mode_{ false };
   QString physics_cycle_blocker() const;
-  QString qualified_physics_runtime() const;
+  // physics_cycle_preflight.py for the selected saved cell, re-run only when its saved or generated
+  // inputs or the workspace's qualified runtime record change.
+  QJsonObject physics_preflight() const;
+  mutable QString physics_preflight_key_;
+  mutable QJsonObject physics_preflight_;
+  // READY, PLANNING, RUNNING, BLOCKED, CANCELLED, FAILED or COMPLETED, shown beside the action.
+  void set_physics_state(const QString & state, const QString & detail);
+  QLabel * physics_state_label_{ nullptr };
+  QString physics_state_;
   QString cycle_output_dir_;
   QString cycle_stdout_buffer_;
   QJsonObject cycle_result_;

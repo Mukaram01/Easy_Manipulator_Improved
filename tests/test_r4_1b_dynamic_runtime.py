@@ -110,3 +110,19 @@ def test_the_shell_environment_comes_only_from_the_record():
     assert "source '/w s/install/setup.bash'" in text and 'source /m/install/setup.bash' in text and 'source /b/setup.bash' in text
     assert 'WORKCELL_SIMULATOR_PHYSICS_ROOT=/p' in text and 'WORKCELL_STAGE_A_PRIOR_EVIDENCE=/e' in text
     assert '/home/' not in (ROOT / 'scripts/qualified_physics_runtime.py').read_text()
+
+
+def test_physics_preflight_reports_the_first_blocker_in_runner_order(cell, tmp_path):
+    from physics_cycle_preflight import preflight
+    from r4_1b_cells import task_editor_save
+    report = preflight(cell, tmp_path)                       # a workspace with no registered runtime
+    assert [c['status'] for c in report['checks']] == ['PASS', 'PASS', 'PASS', 'BLOCKED']
+    assert report['status'] == 'BLOCKED' and 'no qualified physics runtime is registered' in report['blocker']
+    assert report['cell']['objects'] == ['bracket_b (bracket, qualified_test_polymer)']
+    preview = tmp_path / 'preview'; shutil.copytree(cell, preview)
+    task_editor_save(preview, [(('safety', 'execution_backend'), 'fake'), (('safety', 'require_fake_hardware'), True)])
+    report = preflight(preview, tmp_path)
+    assert report['checks'][0]['name'] == 'saved_task' and 'Qualified physics simulation' in report['blocker']
+    stale = tmp_path / 'stale'; shutil.copytree(cell, stale)
+    task_editor_save(stale, [(('place', 'placement', 'clearance_m'), 0.012)])        # saved after Generate
+    assert 'Generate the cell again' in preflight(stale, tmp_path)['blocker']

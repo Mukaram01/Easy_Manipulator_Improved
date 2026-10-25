@@ -185,18 +185,21 @@ QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
 }
 
 QString build_physics_cycle_command(const WorkcellStudioSceneInfo & scene_info,
-  const boost::filesystem::path & workspace_root, const QString & output_dir, const QString & runtime_env)
+  const boost::filesystem::path & workspace_root, const QString & output_dir)
 {
-  if (scene_info.scene_name.empty() || scene_info.scene_dir.empty() || runtime_env.isEmpty() || output_dir.isEmpty()) return {};
+  if (scene_info.scene_name.empty() || scene_info.scene_dir.empty() || output_dir.isEmpty()) return {};
   const auto quote = [](QString value) { return "'" + value.replace("'", "'\\''") + "'"; };
-  const auto runner = boost::filesystem::path(
-    preview_group_supervisor_path(scene_info, workspace_root).toStdString()).parent_path() / "run_stage_a1_finish.py";
-  // The qualified runner owns the simulator, MoveIt and the executor; the saved cell is used unchanged and must
-  // select the qualified physics simulation in its task. Real hardware is never part of this command.
-  return QString("source %1 && export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 && "
+  const auto scripts = boost::filesystem::path(
+    preview_group_supervisor_path(scene_info, workspace_root).toStdString()).parent_path();
+  // The workspace's registered qualified runtime is re-validated and its environment printed by
+  // qualified_physics_runtime.py (it fails the command, never guesses). The qualified runner owns the
+  // simulator, MoveIt and the executor; the saved cell is used unchanged and must select the qualified
+  // physics simulation in its task. Real hardware is never part of this command.
+  return QString("eval \"$(python3 %1 env)\" && export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 && "
     "exec python3 %2 --mode targeted --gate full-cycle --scene-package %3 --prior-evidence \"$WORKCELL_STAGE_A_PRIOR_EVIDENCE\" "
     "--search-timeout 900 --stream-status --output %4")
-    .arg(quote(runtime_env), quote(QString::fromStdString(runner.string())),
+    .arg(quote(QString::fromStdString((scripts / "qualified_physics_runtime.py").string())),
+      quote(QString::fromStdString((scripts / "run_stage_a1_finish.py").string())),
       quote(QString::fromStdString(scene_info.scene_dir.string())), quote(output_dir));
 }
 

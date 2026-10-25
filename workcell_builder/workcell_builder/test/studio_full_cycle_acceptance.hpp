@@ -11,6 +11,10 @@
 #include <QCheckBox>
 #include <QTimer>
 #include <QTextEdit>
+#include <QLabel>
+#include <QMessageBox>
+#include <QSettings>
+#include <QAbstractButton>
 #include <cmath>
 #include <limits>
 #include <yaml-cpp/yaml.h>
@@ -19,6 +23,81 @@
 
 class TestMain {
 public:
+  // R4.1b: the real Builder window runs the saved cell's physics cycle through its own button, the
+  // confirmation dialog it shows, its live state label and (optionally) its Stop button.
+  static void start_physics_cycle_acceptance(MainWindow * window, QApplication * app, const QString & output,
+                                             const QString & scene_path, const QString & cancel_at) {
+    struct Session { int phase=0, ticks=0; bool cancel_sent=false; QString last_state; QJsonArray states; QJsonObject evidence; };
+    auto s=std::make_shared<Session>(); QDir().mkpath(output);
+    s->evidence={{"result","FAIL"},{"scene",scene_path},{"cancel_at",cancel_at},
+      {"studio_session",QJsonObject{{"pid",double(QCoreApplication::applicationPid())},{"started_at",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}}}};
+    auto write=[s,output](){ s->evidence["states"]=s->states; QFile f(output+"/acceptance.json"); if(f.open(QIODevice::WriteOnly)) f.write(QJsonDocument(s->evidence).toJson()); };
+    auto snapshot=[window,output](const QString & name){ window->grab().save(output+"/"+name+".png"); };
+    auto * timer=new QTimer(window); timer->setInterval(500);
+    QObject::connect(timer,&QTimer::timeout,window,[=](){ try {
+      if(++s->ticks>14400) throw std::runtime_error("physics acceptance timed out");
+      if(window->physics_state_!=s->last_state){
+        s->last_state=window->physics_state_;
+        s->states.append(QJsonObject{{"state",s->last_state},{"at",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+                                     {"label",window->physics_state_label_->text()}});
+        if(s->last_state=="PLANNING"||s->last_state=="RUNNING") snapshot("state_"+s->last_state.toLower());
+      }
+      switch(s->phase){
+        case 0:{ if(window->load_watcher_&&window->load_watcher_->isRunning()) return;
+          window->refresh_scene_browser_ui(); int index=-1;
+          const auto wanted=workcell_builder::canonical_scene_identity(scene_path.toStdString());
+          for(size_t i=0;i<window->scene_browser_result_.scenes.size();++i)
+            if(window->scene_browser_result_.scenes[i].canonical_scene_dir==wanted) index=int(i);
+          if(index<0) throw std::runtime_error("saved cell not discovered by the scene browser");
+          if(!window->open_scene_builder_for_scene_index(index,"R4.1b physics acceptance")) throw std::runtime_error("saved cell could not open");
+          s->phase=1; s->ticks=0; break; }
+        case 1:{ if(s->ticks<12) return;
+          window->show_studio_page(MainWindow::StudioPage::PlanSimulatePage); window->refresh_preview_launch_ui();
+          s->evidence["opened"]=QJsonObject{{"physics_state",window->physics_state_},{"label",window->physics_state_label_->text()},
+            {"button_enabled",window->run_physics_button_->isEnabled()},{"tooltip",window->run_physics_button_->toolTip()},
+            {"simulator_running_on_open",window->preview_process_->state()!=QProcess::NotRunning}};
+          snapshot("opened");
+          if(window->preview_process_->state()!=QProcess::NotRunning) throw std::runtime_error("something started on opening the cell");
+          if(window->physics_state_!="READY"||!window->run_physics_button_->isEnabled())
+            throw std::runtime_error(("physics cycle not READY: "+window->run_physics_button_->toolTip()).toStdString());
+          // Unsaved changes block the action (the harness raises the same dirty flag an unsaved Studio edit sets).
+          window->layout_dirty_=true; window->refresh_preview_launch_ui();
+          s->evidence["unsaved_changes"]=QJsonObject{{"button_enabled",window->run_physics_button_->isEnabled()},
+            {"physics_state",window->physics_state_},{"tooltip",window->run_physics_button_->toolTip()}};
+          if(window->run_physics_button_->isEnabled()) throw std::runtime_error("unsaved changes did not block the physics cycle");
+          window->layout_dirty_=false; window->refresh_preview_launch_ui();
+          // The confirmation dialog the button shows is read and accepted like an operator would.
+          QTimer::singleShot(800,window,[s,output](){
+            auto * box=qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            if(!box){ s->evidence["confirmation"]=QJsonObject{{"shown",false}}; return; }
+            box->grab().save(output+"/confirmation.png");
+            s->evidence["confirmation"]=QJsonObject{{"shown",true},{"title",box->windowTitle()},{"text",box->text()}};
+            box->button(QMessageBox::Yes)->click(); });
+          window->run_physics_button_->click();
+          if(!s->evidence["confirmation"].toObject().value("shown").toBool()) throw std::runtime_error("no explicit confirmation before start");
+          s->phase=2; s->ticks=0; break; }
+        case 2:{
+          if(!cancel_at.isEmpty() && !s->cancel_sent && window->physics_state_==cancel_at && s->ticks>20){
+            s->cancel_sent=true; snapshot("before_cancel");
+            s->evidence["cancel_requested"]=QJsonObject{{"state",window->physics_state_},{"at",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
+              {"stage",window->cycle_status_label_->property("backendStage").toString()}};
+            window->stop_preview_button_->click(); }
+          if(window->preview_process_->state()!=QProcess::NotRunning) return;
+          if(s->ticks<4) return;
+          snapshot("final");
+          s->evidence["final"]=QJsonObject{{"physics_state",window->physics_state_},{"preview_state",window->preview_state_},
+            {"label",window->physics_state_label_->text()},{"cycle_result",window->cycle_result_},{"evidence",window->cycle_output_dir_}};
+          const bool ok=cancel_at.isEmpty() ? window->physics_state_=="COMPLETED" :
+            (window->physics_state_=="CANCELLED" && window->cycle_result_.value("cancellation_confirmed").toBool());
+          s->evidence["result"]=ok?"PASS":"FAIL"; write(); timer->stop(); window->close(); app->exit(ok?0:1); break; }
+      }
+    } catch(const std::exception & e){ s->evidence["failure"]=QString::fromUtf8(e.what()); s->evidence["phase"]=s->phase;
+      snapshot("failure"); write(); timer->stop(); window->stop_preview_process();
+      if(window->preview_process_->state()==QProcess::NotRunning) app->exit(1);
+      else QObject::connect(window->preview_process_,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),app,[app](){app->exit(1);}); }});
+    timer->start();
+  }
+
   static void start_persistence_only(MainWindow * window, QApplication * app, const QString & output) {
     struct Session { int phase=0, ticks=0; QString scene; QJsonObject evidence; };
     auto s=std::make_shared<Session>(); QDir().mkpath(output);

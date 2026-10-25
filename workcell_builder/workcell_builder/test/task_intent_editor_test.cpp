@@ -33,7 +33,7 @@ task_zones:
 )");
   write(scene + "/config/workcell_builder_task_intent.yaml", R"(schema: workcell_builder_task_intent/v2
 task: {id: t, type: pick_place, template: pick_place}
-pick: {selection: {source_ref: source, source_type: perception, zone_ref: pick, object_filter: {class_id: bottle, min_confidence: null}}, grasp: {policy: EXACT, required_capability: two_finger_parallel, strategy_ref: top_2f, approach: {axis: z_down, distance_m: 0.123456789123}, orientation: {mode: vertical}, lift: {axis: z_up, distance_m: 0.15}}}
+pick: {selection: {source_ref: source, source_type: perception, zone_ref: pick, object_filter: {class_id: bottle, min_confidence: null, max_age_seconds: 2.0}}, grasp: {policy: EXACT, required_capability: two_finger_parallel, strategy_ref: top_2f, approach: {axis: z_down, distance_m: 0.123456789123}, orientation: {mode: vertical}, lift: {axis: z_up, distance_m: 0.15}}}
 place: {target: {asset_ref: bin, region_ref: drop}, placement: {policy: EXACT, requested_local_pose: {xyz_m: [0.05, 0, 0.1], rpy_rad: [-0.2, 0, 0]}, orientation: {mode: fixed}, approach: {axis: z_down, distance_m: 0.1}, retreat: {axis: z_up, distance_m: 0.1}}, release: {strategy: tool_release}}
 safety: {require_fake_hardware: true, real_hardware_enabled: false}
 provenance: {custom: retain}
