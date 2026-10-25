@@ -2449,10 +2449,10 @@ def main():
         if authored:
             # Freshness follows who produced these observations: the simulator's receipt-bound measurement
             # snapshot (verified against the live receipt below), a replay, or a live sensor.
-            from task_intent_v2 import observation_age_cap
+            from task_intent_v2 import freshness_source_type, observation_age_cap
             producer = ('simulator_measurement' if args.backend == 'simulator' and snapshot.get('simulator_receipt_sha256')
                         else 'replay' if args.replay else 'live_sensor')
-            age_cap = observation_age_cap(intent['pick']['selection']['source_type'], producer)
+            age_cap = observation_age_cap(freshness_source_type(intent), producer)
             summary['observation_freshness'] = dict(producer=producer, ceiling_s=age_cap,
                 authored_max_age_s=intent['pick']['selection']['object_filter']['max_age_seconds'])
             from task_intent_resolver import select_observations, scene_resolution

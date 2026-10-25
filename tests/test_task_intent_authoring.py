@@ -369,3 +369,19 @@ def test_excluded_classes_never_become_pick_targets():
     assert 'CLASS_BOTH_SELECTED_AND_EXCLUDED' in {e['code'] for e in validate_intent(model)}
     model['pick']['selection']['object_filter'].update(class_id='cup', exclude_class_ids='bottle')
     assert 'EXCLUDE_CLASSES_INVALID' in {e['code'] for e in validate_intent(model)}
+
+
+def test_perception_freshness_follows_the_saved_camera_binding():
+    """Saved tasks name the generic perception contract; the camera binding decides the producer and ceiling."""
+    from scripts.task_intent_v2 import freshness_source_type, observation_age_cap
+    def intent(**binding):
+        return {'pick': {'selection': {'source_type': 'perception'}}, 'perception': binding}
+    assert freshness_source_type(intent(mode='live_epd', camera_source='realsense_d435i')) == 'live_epd_realsense'
+    assert freshness_source_type(intent(mode='live_epd')) == 'live_epd_realsense'          # unknown camera: live
+    assert freshness_source_type(intent(mode='live_epd', camera_source='simulated_rgbd')) == 'perception'
+    assert freshness_source_type(intent(mode='replayed_snapshot')) == 'recorded_perception'
+    assert observation_age_cap(freshness_source_type(intent(mode='replayed_snapshot')), 'replay') == 2.0
+    with pytest.raises(ValueError, match='OBSERVATION_PRODUCER_REJECTED'):
+        observation_age_cap(freshness_source_type(intent(mode='live_epd', camera_source='realsense_d435i')),
+                            'simulator_measurement')                  # a real-camera task never takes simulator truth
+    assert freshness_source_type({'pick': {'selection': {'source_type': 'manual_simulated'}}}) == 'manual_simulated'

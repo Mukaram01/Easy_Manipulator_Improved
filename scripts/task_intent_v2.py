@@ -216,6 +216,26 @@ def freshness_policy(source_type):
     return dict(policy, default_s=OBSERVATION_PRODUCER_CEILING_S[policy["producers"][0]])
 
 
+def freshness_source_type(model):
+    """The freshness policy key of an intent's pick source.
+
+    The saved selection names the generic ``perception`` contract (detected_objects/v1); which producer
+    feeds it is the task's perception binding: a live RealSense camera, a replayed snapshot, or a
+    simulated RGB-D camera (live sensor or simulator measurement). An unknown live camera is treated as
+    a live sensor, never as a simulator.
+    """
+    selection = (model.get("pick") or {}).get("selection") or {}
+    source_type = selection.get("source_type")
+    if source_type != "perception":
+        return source_type
+    binding = model.get("perception") or {}
+    if binding.get("mode") == "replayed_snapshot":
+        return "recorded_perception"
+    if binding.get("mode") == "live_epd" and binding.get("camera_source") != "simulated_rgbd":
+        return "live_epd_realsense"
+    return source_type
+
+
 def observation_age_cap(source_type, producer):
     """Ceiling for observations actually produced by ``producer`` (fails closed when the source does not admit it)."""
     if producer not in SOURCE_PRODUCERS.get(source_type, ()):
@@ -233,7 +253,7 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
     if not isinstance(selection, dict) or not isinstance(selection.get("object_filter"), dict):
         errors.append({"code": "PICK_SELECTION_REQUIRED", "message": "pick.selection.object_filter is required"})
     else:
-        policy = freshness_policy(selection.get("source_type"))
+        policy = freshness_policy(freshness_source_type(model))
         object_filter = selection["object_filter"]
         excluded = object_filter.get("exclude_class_ids", [])
         if (not isinstance(excluded, list) or any(not isinstance(v, str) or not v.strip() for v in excluded)
@@ -251,7 +271,7 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
               or age > policy["max_age_s"]):
             errors.append({"code": "OBSERVATION_FRESHNESS_POLICY",
                            "message": f"object_filter.max_age_seconds {age!r} must be in (0, {policy['max_age_s']}] s for "
-                                      f"{selection.get('source_type')} observations (producers {list(policy['producers'])})"})
+                                      f"{freshness_source_type(model)} observations (producers {list(policy['producers'])})"})
     grasp = model.get("pick", {}).get("grasp", {})
     placement = model.get("place", {}).get("placement", {})
     for block, label in ((grasp, "grasp"), (placement, "place")):
