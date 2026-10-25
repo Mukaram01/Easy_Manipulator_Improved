@@ -29,13 +29,6 @@ on the planning geometry. The boxes are a superset of the mesh, so any extra phy
 contact is still caught by the unpermitted-contact guard. The fake-hardware path is
 unchanged.
 
-``contact_surface_layer_m`` gives the pad boxes an authored contact surface layer (SDF
-``<surface><contact><ode><min_depth>``). The physics overlay applies a pair's layer (the smaller of
-its two surfaces') as an uncorrected depth: the rigid pinch otherwise sits on ~2 um of
-penetration per pad, and a few um of in-grip drift during transfer separated a pad (LENLEG
-2026-10-25, faithful replay in simulator_physics_repro/mechanism_replay.cpp). Pairs with a
-surface that authors no layer, e.g. pad and bin wall, stay rigid.
-
 Capability record block (``end_effector.simulator_collision``):
 
     simulator_collision:
@@ -43,7 +36,6 @@ Capability record block (``end_effector.simulator_collision``):
       axis: x                             # slab axis in the collision frame
       cuts_m: [0.0069]                    # strictly increasing cut planes
       links: [gripper_finger1_finger_tip_link, gripper_finger2_finger_tip_link]
-      contact_surface_layer_m: 0.0001     # optional, (0, 0.001] m
       evidence: "..."
 """
 from __future__ import annotations
@@ -61,7 +53,6 @@ import numpy as np
 MODES = ('mesh_bounding_box', 'mesh_slab_bounding_boxes')
 AXES = {'x': 0, 'y': 1, 'z': 2}
 ENCLOSURE_TOLERANCE_M = 1e-9
-MAX_SURFACE_LAYER_M = 1e-3       # the physics overlay rejects larger authored layers
 
 
 class SimulationCollisionError(ValueError):
@@ -92,10 +83,6 @@ def block_errors(end_effector):
             errors.append("Field 'simulator_collision.cuts_m' must be strictly increasing finite meters.")
     elif block.get('mode') == 'mesh_bounding_box' and ('cuts_m' in block or 'axis' in block):
         errors.append("mesh_bounding_box takes no axis or cuts_m.")
-    layer = block.get('contact_surface_layer_m')
-    if layer is not None and (not isinstance(layer, (int, float)) or isinstance(layer, bool) or
-                              not math.isfinite(layer) or not 0 < layer <= MAX_SURFACE_LAYER_M):
-        errors.append(f"Field 'simulator_collision.contact_surface_layer_m' must be in (0, {MAX_SURFACE_LAYER_M}] meters.")
     return errors
 
 
@@ -136,11 +123,6 @@ def slab_boxes(triangles, axis=None, cuts=()):
     return boxes
 
 
-def _child(parent, tag):
-    found = parent.find(tag)
-    return ET.SubElement(parent, tag) if found is None else found
-
-
 def _pose(text):
     values = [float(v) for v in (text or '0 0 0 0 0 0').split()]
     if len(values) != 6 or not all(math.isfinite(v) for v in values):
@@ -172,7 +154,6 @@ def bind_native_model(output, end_effector):
     root = ET.fromstring(original)
     links = {link.get('name'): link for link in root.iter('link')}
     axis, cuts = block.get('axis'), tuple(block.get('cuts_m') or ())
-    layer = block.get('contact_surface_layer_m')
     records = []
     for name in block['links']:
         link = links.get(name)
@@ -213,17 +194,12 @@ def bind_native_model(output, end_effector):
             for old in list(box_geometry):
                 box_geometry.remove(old)
             ET.SubElement(ET.SubElement(box_geometry, 'box'), 'size').text = ' '.join(repr(float(v)) for v in size)
-            if layer is not None:
-                contact = _child(_child(_child(element, 'surface'), 'contact'), 'ode')
-                for old in contact.findall('min_depth'):
-                    contact.remove(old)
-                ET.SubElement(contact, 'min_depth').text = repr(float(layer))
             link.insert(position + index, element)
             shapes.append(dict(box_size_m=size.tolist(), box_centre_m=centre.tolist(), pose=list(shifted) + list(rpy)))
         records.append(dict(link=name, mesh=str(path), mesh_sha256=sha256, triangles=count, scale=scale.tolist(), boxes=shapes))
     model_path.write_text(ET.tostring(root, encoding='unicode'))
     digest = lambda data: hashlib.sha256(data).hexdigest()
-    binding = dict(mode=block['mode'], axis=axis, cuts_m=list(cuts), contact_surface_layer_m=layer, links=records, evidence=block['evidence'],
+    binding = dict(mode=block['mode'], axis=axis, cuts_m=list(cuts), links=records, evidence=block['evidence'],
                    source_native_description_sha256=digest(original),
                    native_description_sha256=digest(model_path.read_bytes()))
     spec_path = output / 'spec.json'

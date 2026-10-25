@@ -11,15 +11,19 @@
 //  - 1 ms step, Dantzig LCP, gravity, 20 g part, pick support; DART contact defaults unless allowance= is given.
 // LENLEG 2026-10-25, session stage_a1_targeted_native_pads_fc1_20261025_000126: with arm= the replay matches the
 // recorded run step for step (pad-1 manifold 3 3 3 2 3 2 2 2 1 4 4 3 2 3 1 4 4 2 3 0 over 183277-183296, rotation
-// steps 0.300/0.596 mrad, pad-1 contact absent at 183296 with tip forces 0.19/0.21 N). Inputs:
-// mechanism_replay_inputs.py.
+// steps 0.300/0.596 mrad, pad-1 contact absent at 183296 with tip forces 0.19/0.21 N). The part walks across the
+// pinch at 7-33 um/s during transfer: the same with arm_actuator=velocity, ~10x less with the wrist replayed
+// as one free body, scaling with substeps, i.e. 1 ms integration of the articulated arm against the free part.
+// Default contact compliance holds the pinch on ~2 um; cfm=1e-4 on ~20 um, and the asymmetry stays bounded.
+// Inputs: mechanism_replay_inputs.py.
 //
 // usage: mechanism_replay <mechanism.txt> <replay.txt> [arm=<arm.txt>] [hold=position|stationary]
-//                         [pad_layer=<m>] [allowance=<m>] [trace=<it0>:<it1>]
+//                         [cfm=<c>] [allowance=<m>] [trace=<it0>:<it1>]
+//   substeps=<n>: n physics steps per recorded millisecond; arm_actuator=velocity: arm joints kinematic.
 //   rebase_hold=<steps>: after that many steps take the settled finger position as the closure and command
 //   closure + 0.002 rad (the 2F-85 hold reserve), as the executor does after its closing search.
-//   pad_layer overrides the pad boxes' authored contact surface layer (min_depth); allowance sets DART's
-//   world-wide contact error allowance (diagnostic only).
+//   cfm sets DART's world-wide contact constraint force mixing (contact compliance; the workcell physics
+//   overlay uses 1e-4, DART's default is 1e-5); allowance sets the contact error allowance (diagnostic).
 #include <dart/dart.hpp>
 #include <dart/constraint/ContactConstraint.hpp>
 #include "JointCouplingConstraint.hpp"
@@ -60,9 +64,11 @@ int main(int argc, char** argv) {
   double kHoldCommand = std::numeric_limits<double>::quiet_NaN();   // summary.json hold_command_rad
   const double kGain = 0.1, kUpdateRate = 100.0;       // launch.log position_proportional_gain; controllers.yaml update_rate
 
-  auto world = simulation::World::create(); world->setTimeStep(0.001); world->setGravity(Vector3d(0, 0, -9.81));
+  const long substeps = opt.count("substeps") ? std::stol(opt["substeps"]) : 1;   // physics steps per recorded 1 ms
+  auto world = simulation::World::create(); world->setTimeStep(0.001 / substeps); world->setGravity(Vector3d(0, 0, -9.81));
   world->getConstraintSolver()->setCollisionDetector(std::make_shared<workcell::TouchingBulletContacts>());
   if (opt.count("allowance")) constraint::ContactConstraint::setErrorAllowance(std::stod(opt["allowance"]));
+  if (opt.count("cfm")) constraint::ContactConstraint::setConstraintForceMixing(std::stod(opt["cfm"]));
 
   auto robot = dynamics::Skeleton::create("workcell_robot");
   std::map<std::string, dynamics::BodyNode*> body;
@@ -94,7 +100,9 @@ int main(int argc, char** argv) {
         body["base_link"]->setMass(4.0);
       } else if (tag == "A") {
         std::string name, d; double m; auto* j = revolute(ss, name, d, m);
-        j->setActuatorType(dynamics::Joint::SERVO); armJoints.push_back(name);
+        j->setActuatorType(opt.count("arm_actuator") && opt["arm_actuator"] == "velocity" ? dynamics::Joint::VELOCITY
+                                                                                     : dynamics::Joint::SERVO);
+        armJoints.push_back(name);
       } else if (tag == "R") {
         long it; ss >> it; armTraj.emplace_back(it, nums(ss));
       }
@@ -109,7 +117,6 @@ int main(int argc, char** argv) {
     body["wrist_3_link"] = palm;
   }
   std::vector<std::tuple<std::string, std::string, double>> mimics;
-  double partLayer = 0;
   std::map<std::string, std::vector<dynamics::ShapeNode*>> pads;
   std::ifstream mf(argv[1]); std::string line;
   while (std::getline(mf, line)) {
@@ -123,10 +130,7 @@ int main(int argc, char** argv) {
           std::make_shared<dynamics::BoxShape>(Vector3d(v[6], v[7], v[8])));
       sn->setRelativeTransform(xyzrpy(v, 0));
       sn->getDynamicsAspect()->setFrictionCoeff(v[9]); sn->getDynamicsAspect()->setSecondaryFrictionCoeff(v[9]);
-      workcell::setSurfaceLayer(sn, opt.count("pad_layer") ? std::stod(opt["pad_layer"]) : v[10]);
       pads[link].push_back(sn);
-    } else if (tag == "P") {
-      ss >> partLayer;
     }
   }
   auto* driver = joint.at("gripper_finger1_joint");
@@ -154,7 +158,6 @@ int main(int argc, char** argv) {
   pb->setMass(0.020); pb->setMomentOfInertia(2.083333333e-6, 2.083333333e-6, 2.083333333e-6);
   auto psn = pb->createShapeNodeWith<dynamics::CollisionAspect, dynamics::DynamicsAspect>(std::make_shared<dynamics::BoxShape>(Vector3d::Constant(0.025)));
   psn->getDynamicsAspect()->setFrictionCoeff(0.65); psn->getDynamicsAspect()->setSecondaryFrictionCoeff(0.65);
-  workcell::setSurfaceLayer(psn, partLayer);
   if (!std::isfinite(kHoldCommand) || traj.size() < 2) { std::cerr << "replay inputs incomplete\n"; return 2; }
   dynamics::FreeJoint::setTransform(part.get(), xyzq(start, 7));
   auto support = dynamics::Skeleton::create("pick_support");
@@ -191,20 +194,21 @@ int main(int argc, char** argv) {
   double peakRot = 0, peakTrans = 0, minF = 1e9; long dropouts = 0, partial = 0, firstDropout = -1, lift = -1;
   for (size_t k = 0; k + 1 < traj.size(); ++k) {
     const long it = traj[k].first; const long gap = traj[k + 1].first - it; const long now0 = it;
-    const Eigen::Vector6d twist = math::logMap(palm->getWorldTransform().inverse() * traj[k + 1].second) / (gap * world->getTimeStep());
-    for (long g = 0; g < gap; ++g) {
+    const Eigen::Vector6d twist = math::logMap(palm->getWorldTransform().inverse() * traj[k + 1].second) / (gap * 0.001);
+    for (long g = 0; g < gap * substeps; ++g) {
       if (armJoints.empty()) palm->getParentJoint()->setCommands(twist);
       else for (size_t i = 0; i < armJoints.size(); ++i) {   // track the measured joint positions (velocity servo)
         auto* aj = joint.at(armJoints[i]);
-        aj->setCommand(0, (armTraj[k + 1].second[2 * i] - aj->getPosition(0)) / ((gap - g) * world->getTimeStep()));
+        aj->setCommand(0, (armTraj[k + 1].second[2 * i] - aj->getPosition(0)) / ((gap * substeps - g) * world->getTimeStep()));
       }
       const double q = driver->getPosition(0);
-      if (rebaseAt >= 0 && now0 + g == rebaseAt) kHoldCommand = q + 0.002;
+      if (rebaseAt >= 0 && g % substeps == 0 && now0 + g / substeps == rebaseAt) kHoldCommand = q + 0.002;
       double v = kGain * kUpdateRate * (kHoldCommand - q);
       if (hold == "stationary") v = kGain * kUpdateRate * (stationaryTarget - q);
       driver->setCommand(0, v);
       world->step();
-      const long now = it + g + 1;
+      if ((g + 1) % substeps) continue;                   // evaluate on recorded 1 ms boundaries
+      const long now = it + (g + 1) / substeps;
       const auto p1 = pad(tip1), p2 = pad(tip2);
       const double f1 = tipForce(tip1), f2 = tipForce(tip2);
       if (lift < 0 && pb->getWorldTransform().translation().z() > 0.0126) lift = now;
@@ -223,7 +227,7 @@ int main(int argc, char** argv) {
                   << " servoF=" << driver->getForce(0) << " rot=" << (haveReference ? Eigen::AngleAxisd((reference.inverse() * relative()).linear()).angle() : 0) << "\n";
     }
   }
-  std::cout << "RESULT hold=" << hold << " pad_layer=" << workcell::surfaceLayer(pads[tip1].front()) << " part_layer=" << partLayer << " allowance=" << constraint::ContactConstraint::getErrorAllowance() << " lift_it=" << lift
+  std::cout << "RESULT hold=" << hold << " allowance=" << constraint::ContactConstraint::getErrorAllowance() << " cfm=" << constraint::ContactConstraint::getConstraintForceMixing() << " lift_it=" << lift
             << " peak_rotation_rad=" << peakRot << " peak_translation_m=" << peakTrans << " min_tip_force_n=" << minF
             << " dropout_samples=" << dropouts << " first_dropout_it=" << firstDropout << " partial_manifold_samples=" << partial << "\n";
   return 0;

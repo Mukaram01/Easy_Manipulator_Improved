@@ -70,32 +70,10 @@ def test_only_the_spawned_physics_model_changes_and_the_spec_hash_follows(tmp_pa
     assert spec['native_description_sha256'] == hashlib.sha256((tmp_path/'robot.sdf').read_bytes()).hexdigest()
     assert spec['native_description_sha256'] == binding['native_description_sha256'] != binding['source_native_description_sha256']
     assert spec['simulator_collision_primitives'] == binding and spec['world'] == 'a0'
-    assert binding['contact_surface_layer_m'] is None and not list(model.iter('min_depth'))   # no layer unless declared
     record, = binding['links']
     assert record['triangles'] == 24 and len(record['boxes']) == 2 and record['mesh_sha256']
     proximal, distal = record['boxes']
     assert proximal['box_size_m'] == pytest.approx([.015, .01, .02]) and distal['box_size_m'] == pytest.approx([.015, .03, .02])
-
-
-@pytest.mark.parametrize('surface', [SURFACE, '', '<surface><contact><ode><kp>1</kp><min_depth>0.5</min_depth></ode></contact></surface>'])
-def test_a_declared_contact_surface_layer_is_authored_on_every_pad_box_only(tmp_path, surface):
-    block = dict(mode='mesh_slab_bounding_boxes', axis='x', cuts_m=[0.02], links=['tip'], evidence='test', contact_surface_layer_m=0.0001)
-    ee = native(tmp_path, stl(tmp_path/'l.stl', L_SHAPE), record=block)
-    sdf = (tmp_path/'robot.sdf').read_text().replace(SURFACE, surface)
-    (tmp_path/'robot.sdf').write_text(sdf)
-    (tmp_path/'spec.json').write_text(json.dumps({'native_description_sha256': hashlib.sha256(sdf.encode()).hexdigest()}))
-    binding = sc.bind_native_model(tmp_path, ee)
-    model = ET.parse(tmp_path/'robot.sdf').getroot()
-    boxes = model.findall(".//link[@name='tip']/collision")
-    assert len(boxes) == 2 and binding['contact_surface_layer_m'] == 0.0001
-    for box in boxes:
-        assert [float(v.text) for v in box.iter('min_depth')] == [0.0001]                    # one layer, replaces any old
-        assert len(box.findall('surface')) == 1 and len(box.findall('surface/contact')) == 1
-        if 'mu' in surface:
-            assert box.find('surface/friction/ode/mu').text == '100000'
-        if '<kp>' in surface:
-            assert box.find('surface/contact/ode/kp').text == '1'
-    assert model.find(".//link[@name='other']/collision").find('.//min_depth') is None      # unlisted links rigid
 
 
 def test_a_spec_that_does_not_match_the_model_is_refused_and_the_model_restored(tmp_path):
@@ -120,8 +98,6 @@ def test_the_2f85_slab_boxes_keep_the_real_pad_face_and_set_the_rest_back(tmp_pa
     assert face(proximal) == pytest.approx(.0060, abs=1e-5)                    # 1.8 mm behind the pad plane
     lo = distal['box_centre_m'][0] - distal['box_size_m'][0]/2
     assert 0.004 < lo < 0.007 and distal['box_size_m'][2] == pytest.approx(.022, abs=1e-6)
-    layers = [float(v.text) for v in ET.parse(tmp_path/'robot.sdf').getroot().iter('min_depth')]
-    assert layers == [0.0001, 0.0001] and binding['contact_surface_layer_m'] == 0.0001    # compliant 2F pads
 
 
 def test_slab_boxes_enclose_every_triangle():
@@ -158,12 +134,7 @@ def test_the_capability_block_is_validated_and_absent_means_unchanged(tmp_path):
     for change, message in ((lambda b: b.update(mode='convex_hull'), 'mode'), (lambda b: b.update(links=[]), 'links'),
                             (lambda b: b.pop('evidence'), 'evidence'), (lambda b: b.update(axis='w'), 'axis'),
                             (lambda b: b.update(cuts_m=[.02, .01]), 'cuts_m'), (lambda b: b.update(cuts_m=[]), 'cuts_m'),
-                            (lambda b: b.update(mode='mesh_bounding_box'), 'no axis or cuts_m'),
-                            (lambda b: b.update(contact_surface_layer_m=0), 'contact_surface_layer_m'),
-                            (lambda b: b.update(contact_surface_layer_m=0.002), 'contact_surface_layer_m'),
-                            (lambda b: b.update(contact_surface_layer_m=float('nan')), 'contact_surface_layer_m'),
-                            (lambda b: b.update(contact_surface_layer_m=True), 'contact_surface_layer_m'),
-                            (lambda b: b.update(contact_surface_layer_m='0.1 mm'), 'contact_surface_layer_m')):
+                            (lambda b: b.update(mode='mesh_bounding_box'), 'no axis or cuts_m')):
         bad = copy.deepcopy(RECORD); change(bad['simulator_collision'])
         assert any(message in e for e in sc.block_errors(bad))
         with pytest.raises(sc.SimulationCollisionError):

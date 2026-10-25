@@ -70,10 +70,4 @@ end_effector:
     axis: x
     cuts_m: [0.0069]
     links: [gripper_finger1_finger_tip_link, gripper_finger2_finger_tip_link]
-    # Compliant pads: a 0.1 mm contact surface layer (authored min_depth) on the pad boxes. It applies
-    # only to pairs whose other surface also authors a layer (the parts do, 0.1 mm); bin, support and
-    # robot contacts stay rigid. Without it the rigid pinch held the part on ~2 um of penetration per
-    # pad and 4 um of in-grip drift during transfer separated pad 1 (stage_a1_targeted_native_pads_fc1
-    # iteration 183296; faithful replay: scripts/simulator_physics_repro/mechanism_replay.cpp).
-    contact_surface_layer_m: 0.0001
     evidence: "LENLEG 2026-10-24 standalone DART replay of stage_a1_release_gate_full1 transfer (scripts/simulator_physics_repro/pinch_replay.cpp): mesh pads 2.6-104 mrad with ~0 N pad force; slab-box pads 0.0016-0.0022 mrad, no collapse (0.25x-2x speed, 20/90 N); whole-tip box rejected by grasp qualification (1.014 mm > 1 mm)"

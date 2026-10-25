@@ -26,11 +26,7 @@ with open(out + '/mechanism.txt', 'w') as f:
             b = c.find('geometry/box')
             if b is None: continue
             mu = c.findtext('surface/friction/ode/mu')
-            f.write(' '.join(['B', child.get('name'), c.findtext('pose'), b.findtext('size'), mu,
-                              c.findtext('surface/contact/ode/min_depth') or '0']) + '\n')
-    world = ET.parse(f'{run}/runtime/world.sdf').getroot()
-    part = world.find(".//model[@name='part_04']/link/collision")
-    f.write(f"P {part.findtext('surface/contact/ode/min_depth') or '0'}\n")
+            f.write(' '.join(['B', child.get('name'), c.findtext('pose'), b.findtext('size'), mu]) + '\n')
 rows = []
 with open(f'{run}/full-cycle/summary.measurements.jsonl') as fh:
     for line in fh:
