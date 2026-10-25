@@ -6231,11 +6231,12 @@ QString MainWindow::selected_scene_build_command() const { if (selected_scene_in
 QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
 QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
 
-MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness() const
+MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness(bool require_task_input) const
 {
   SelectedSceneReadiness result;
   if (environment_task_editor_ && environment_task_editor_->scene() == selected_scene_path() &&
-      !environment_task_editor_->blocker().isEmpty()) result.blockers << environment_task_editor_->blocker();
+      !environment_task_editor_->blocker(require_task_input).isEmpty())
+    result.blockers << environment_task_editor_->blocker(require_task_input);
   if (!has_selected_scene() || selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) { result.blockers << "Select a scene."; return result; }
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   const auto content = workcell_builder::scene_content_readiness(scene);
@@ -6318,13 +6319,14 @@ void MainWindow::refresh_preview_launch_ui()
   const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
   if (run_physics_button_) {
     const auto blocker = physics_cycle_blocker();
-    run_physics_button_->setEnabled(has_scene && current.ready && !busy && blocker.isEmpty());
+    const auto physics = selected_scene_readiness(false);   // simulator-measured objects: preflight owns the input
+    run_physics_button_->setEnabled(has_scene && physics.ready && !busy && blocker.isEmpty());
     run_physics_button_->setToolTip(blocker.isEmpty() ? "Runs one bounded pick/place cycle of the saved cell in the qualified physics simulation." : blocker);
     if (!physics_cycle_mode_) {
       if (!has_scene) set_physics_state(QString(), QString());
       else if (!blocker.isEmpty()) set_physics_state("BLOCKED", blocker.toHtmlEscaped());
-      else if (!current.ready) set_physics_state("BLOCKED", (current.blockers.isEmpty() ? QString("Generate and Validate the saved cell first.")
-                                                          : current.blockers.join("; ")).toHtmlEscaped());
+      else if (!physics.ready) set_physics_state("BLOCKED", (physics.blockers.isEmpty() ? QString("Generate and Validate the saved cell first.")
+                                                          : physics.blockers.join("; ")).toHtmlEscaped());
       else if (physics_state_ != "COMPLETED" && physics_state_ != "FAILED" && physics_state_ != "CANCELLED") {
         const auto cell = physics_preflight().value("cell").toObject();
         QStringList objects; for (const auto & item : cell.value("objects").toArray()) objects << item.toString();
@@ -6730,7 +6732,7 @@ void MainWindow::run_physics_cycle()
 {
   if (preview_process_->state() != QProcess::NotRunning) return;
   const auto blocker = physics_cycle_blocker();
-  const auto readiness = selected_scene_readiness();
+  const auto readiness = selected_scene_readiness(false);
   if (!blocker.isEmpty() || !readiness.ready) {
     set_physics_state("BLOCKED", (!blocker.isEmpty() ? blocker : readiness.blockers.isEmpty() ?
       QString("Generate and Validate the saved cell first.") : readiness.blockers.join("; ")).toHtmlEscaped());
