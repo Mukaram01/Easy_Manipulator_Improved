@@ -1860,7 +1860,7 @@ def test_pinch_tcp_rotation_offset_is_still_refused():
     assert not result.success and 'nonzero authored TCP adjustment' in result.reason and goals == []
 
 
-@pytest.mark.parametrize('floor_z,place_z,raised', [(None, .35, None), (.2, .35, 0.), (.27, .371, .021)])
+@pytest.mark.parametrize('floor_z,place_z,raised', [(None, .35, None), (.2, .35, 0.), (.27, .37, .02)])
 def test_place_target_never_commands_the_part_into_the_bound_physical_floor(floor_z, place_z, raised):
     # A centre target below floor + half height + clearance drove the tool 2.5 mm down over a part
     # already seated on the simulator's bin floor (LENLEG 2026-10-25), slipping the grip.
@@ -1876,7 +1876,7 @@ def test_place_target_never_commands_the_part_into_the_bound_physical_floor(floo
         assert seat == []                                                   # no bound floor: unchanged
     else:
         assert seat[0]['status'] == 'PASS' and seat[0]['raised_m'] == pytest.approx(raised)
-        assert seat[0]['half_height_m'] == pytest.approx(.05) and seat[0]['clearance_m'] == pytest.approx(.001)
+        assert seat[0]['half_height_m'] == pytest.approx(.05)
     assert any(c['code'] == 'DESTINATION_CONTAINMENT' and c['status'] == 'PASS' for c in result.checks)
 
 
@@ -1884,11 +1884,12 @@ def test_seated_destination_uses_the_placed_orientation_and_rejects_invalid_inpu
     import math
     from full_cycle_preplanner import seated_destination
     s = math.sqrt(.5)
-    target, seat = seated_destination([.45, .22, .11], [0., 0., 0., 1.], [.025, .025, .025], .1, .001)
-    assert target == pytest.approx([.45, .22, .1135]) and seat['raised_m'] == pytest.approx(.0035)   # Stage-A bin
-    target, seat = seated_destination([0., 0., 0.], [s, 0., 0., s], [.04, .04, .1], 0., 0.)          # long axis horizontal
+    target, seat = seated_destination([.45, .22, .11], [0., 0., 0., 1.], [.025, .025, .025], .1)
+    assert target == pytest.approx([.45, .22, .1125]) and seat['raised_m'] == pytest.approx(.0025)   # Stage-A bin: seated
+    target, seat = seated_destination([0., 0., 0.], [s, 0., 0., s], [.04, .04, .1], 0.)              # long axis horizontal
     assert seat['half_height_m'] == pytest.approx(.02) and target[2] == pytest.approx(.02)
-    assert seated_destination([0., 0., .5], [0., 0., 0., 1.], [.1, .1, .1], None, .001) == ([0., 0., .5], None)
+    assert seated_destination([0., 0., .5], [0., 0., 0., 1.], [.1, .1, .1], None) == ([0., 0., .5], None)
+    assert seated_destination([0., 0., .5], [0., 0., 0., 1.], [.1, .1, .1], 0.)[0] == [0., 0., .5]     # above: unchanged
     for floor, orientation, dims in ((float('nan'), [0, 0, 0, 1], [.1]*3), (0., [0, 0, 0, 0], [.1]*3), (0., [0, 0, 0, 1], [.1, 0., .1])):
         with pytest.raises(RuntimeError, match='floor seating'):
-            seated_destination([0., 0., 0.], orientation, dims, floor, 0.)
+            seated_destination([0., 0., 0.], orientation, dims, floor)

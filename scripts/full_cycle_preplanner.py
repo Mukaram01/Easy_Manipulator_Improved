@@ -106,15 +106,16 @@ class MotionFeasibilityFailure(RuntimeError):
                                       if p[f'body_type_{i}'] in (1, 2)}))
 
 
-def seated_destination(xyz, orientation, dimensions, floor_z, clearance):
+def seated_destination(xyz, orientation, dimensions, floor_z):
     """Never command a placed object into the bound physical destination floor.
 
     The authored destination point is the object centre target. When the simulator binds the
-    physical floor (destination_geometry_binding), the centre is raised, only if needed, so the
-    object's lowest point (box in its placed orientation) clears that floor by the authored
-    placement clearance. A centre below it drove the tool down over a part already seated on the
-    floor (LENLEG 2026-10-25: 2.5 mm, in-grip slip past the 2 mm retention limit at release).
-    Returns (target xyz, seat evidence or None when no floor is bound).
+    physical floor (destination_geometry_binding), a centre that would put the object's lowest
+    point (box in its placed orientation) below that floor is raised to seat it on the floor;
+    a higher target is unchanged. Below the floor, the descent drove the tool 2.5 mm down over a
+    part already seated (LENLEG 2026-10-25), slipping the grip past the 2 mm retention limit; a
+    gap instead drops the part at release (10 mm: 0.18 mm impact depth, rejected by the 0.1 mm
+    floor-contact guard). Returns (target xyz, seat evidence or None when no floor is bound).
     """
     if floor_z is None:
         return list(xyz), None
@@ -126,10 +127,9 @@ def seated_destination(xyz, orientation, dimensions, floor_z, clearance):
     x, y, z, w = (v/norm for v in (x, y, z, w))
     vertical = (2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y))     # world z row of the object rotation
     half_height = sum(abs(r) * d / 2 for r, d in zip(vertical, dimensions))
-    seated = floor_z + half_height + clearance
-    target = [xyz[0], xyz[1], max(xyz[2], seated)]
-    return target, dict(floor_z=floor_z, half_height_m=half_height, clearance_m=clearance,
-                        authored_z=xyz[2], target_z=target[2], raised_m=target[2]-xyz[2])
+    target = [xyz[0], xyz[1], max(xyz[2], floor_z + half_height)]
+    return target, dict(floor_z=floor_z, half_height_m=half_height, authored_z=xyz[2],
+                        target_z=target[2], raised_m=target[2]-xyz[2])
 
 
 def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
@@ -464,7 +464,7 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                                       else list(observation['pose'][3:]))
                 target_xyz, seat = seated_destination(destination['pose_xyz'], placed_orientation,
                                                       list(original.primitives[0].dimensions),
-                                                      contract.get('destination_floor_z'), clearance)
+                                                      contract.get('destination_floor_z'))
                 if seat is not None:
                     checks.append(dict(code='DESTINATION_FLOOR_SEAT', status='PASS', **seat))
                 delta = [a-b for a, b in zip(target_xyz, observation['pose'][:3])]
