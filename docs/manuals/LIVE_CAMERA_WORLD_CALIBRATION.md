@@ -12,20 +12,43 @@ becomes a world-frame object in a Workcell Studio cell. Robot execution stays lo
 | `scripts/live_perception_session.py` | The existing live session. It re-validates the calibration and the camera serial, then reports world XYZ and planning readiness per detection. |
 | Workcell Builder, Live Perception panel | **Calibrate Camera** runs the capture. The table adds a *World XYZ* column, and the status shows calibration residuals. |
 
-## Calibration procedure
+## Status (2026-10-26)
 
-1. **Bind the camera.** Bind the cell's live camera as before (Discover Cameras → Save Camera Binding).
-   - A camera with only `depth/image_rect_raw` is bound with `depth_alignment: register`, so EPD's ingress registers the depth.
-   - This uses EPD's `camera_source realsense_unaligned`.
-2. **Place and measure the markers.**
-   - Print ArUco markers (`DICT_4X4_50`).
-   - Place at least 4, preferably 6, spread over the work area, not in a line, with at least one raised if possible.
-   - Measure each marker centre in the cell **world** frame, in metres.
-3. **Write the reference points file.** Save the measurements as `<cell>/config/camera_calibration/reference_points.yaml` (`workcell_camera_reference_points/v1`).
-   - Every point needs a world position (`world_xyz`).
-   - Every point names exactly one target: `aruco_id`, or `pixel` for a feature you identify yourself.
-   - `measured_by` and `measurement_method` are required.
-4. **Capture.** Click **Calibrate Camera**, or run:
+| Part | Status | Evidence |
+|---|---|---|
+| Implementation | **PASS** | 60 focused tests (calibration, world handoff, live session, replay) and the `workcell_builder` build |
+| Physical calibration acceptance | **BLOCKED** | No measured reference coordinates exist yet for a tabletop that corresponds to a Gazebo cell |
+
+Until that acceptance passes, every live object stays camera-frame only. The cell binding remains `uncalibrated` and robot planning is BLOCKED; that is the fail-closed default.
+
+## Tabletop calibration setup (simplest repeatable procedure)
+
+The physical table stands in for the cell's authored table. The reference markers' world coordinates come from the cell, not from ad-hoc floor measurements. The one physical measurement is where the printed board sits relative to a table corner that the cell also defines.
+
+**Minimum physical setup**
+
+1. **Camera.** A rigid D435i mount over a flat table, looking down at the work area from about 0.4–0.7 m. Don't move it after calibrating; moving it invalidates the calibration.
+2. **Table corner in the cell.** A table corner that has a counterpart in the Gazebo cell: the cell's table or support-surface box defines that corner's world XY and the table-top height Z. Write that corner's world coordinates down from the cell.
+3. **Board.**
+   - Generate the A4 board and its reference-points file for the board pose you will use:
+
+     ```bash
+     python3 scripts/camera_world_calibration.py board --output <cell>/config/camera_calibration \
+       --origin <X> <Y> <Z_table_top> --yaw-deg <yaw> --measured-by "<name>"
+     ```
+
+   - Print it at 100 %, and check with a ruler that each black square is **50.0 mm**.
+   - Lay it flat with its top-left corner exactly at the authored point, e.g. the table corner offset by a ruler-measured amount; include that offset in `--origin`. Its x edge must lie at the authored yaw.
+   - Markers 0–4 are fitted. Marker **5 is held out** as the independent check.
+4. **Optional raised point.** Put one extra marker on a block of known height to improve the vertical constraint. Add it to `reference_points.yaml` by hand (`aruco_id`, `world_xyz`).
+5. **Visibility.** Lighting good enough that all six markers are visible in the colour image.
+
+**Calibrate**
+
+1. Bind the cell's live camera (Discover Cameras → Save Camera Binding).
+   - Raw `depth/image_rect_raw` binds with `depth_alignment: register`.
+   - EPD's ingress then registers depth to colour (EPD `camera_source realsense_unaligned`).
+2. Click **Calibrate Camera** in the Live Perception panel, or run:
 
    ```bash
    eval "$(python3 scripts/live_perception_session.py env)"
@@ -34,29 +57,32 @@ becomes a world-frame object in a Workcell Studio cell. Robot execution stays lo
    ```
 
    - It reads the camera serial from the driver's `device_info` service and refuses to run without one.
-   - It starts EPD's ingress only and averages each marker over 15 synchronized RGB-D frames.
-   - It reads the depth as a median over a 5×5 window of the colour-registered depth.
-5. **Check the result.** The fit is **qualified** only when all of these hold:
+   - It runs EPD's ingress only and averages every marker centre over 15 synchronized RGB-D frames.
+   - Depth is a 5×5 median of the colour-registered depth.
+3. **Gate:** the fit is **qualified** only when all of these hold:
 
    | Check | Limit |
    |---|---|
-   | Points agreeing within 15 mm | ≥ 4 |
+   | Fitted markers agreeing within 15 mm | ≥ 4 |
    | Outliers | ≤ 25 % |
    | RMS residual | ≤ 10 mm |
    | Max residual | ≤ 20 mm |
    | Leave-one-out prediction error | ≤ 25 mm |
-   | Spread of the points | ≥ 0.10 m |
-   | Each point's variation between frames | ≤ 4 mm |
+   | Spread of the fitted markers | ≥ 0.10 m |
+   | Each marker's variation between frames | ≤ 4 mm |
+   | **Independent check:** held-out marker 5, never used in the fit, predicted within | **15 mm** |
 
-   - If qualified, the record goes to `<cell>/config/camera_calibration/<camera_id>.yaml`, and `perception.live_camera.calibration` references it by SHA-256.
-   - A rejected fit is saved only in the evidence directory; the cell is not touched.
-   - The record contains the camera serial, frames, the transform (matrix, translation, quaternion), every reference point (world and camera positions, pixel, frames measured, spread), residuals, limits and provenance (EMD commit, points-file hash, who measured and how, colour intrinsics, depth source).
-6. **Re-validation on every use.** Each use re-solves from the saved reference points and checks:
-   - the hash, camera ID and frames;
-   - the current limits;
-   - the running camera's serial.
+   - Without a measured, agreeing check point the calibration is REJECTED. No calibrated object can then reach simulated robot planning.
+   - A qualified record is saved as `<cell>/config/camera_calibration/<camera_id>.yaml`, and the live binding references it by SHA-256.
+   - A rejected fit is saved only in the evidence directory; the cell is unchanged.
+4. **Re-validation on every use.** The record is re-solved from its saved evidence and its hash, camera ID, frames and limits are checked. The running camera's serial must match. Anything else is INVALID.
 
-   An edited, mismatched or out-of-limit calibration is `INVALID`. `solve --capture` re-solves a saved capture offline.
+**Before planning use: object-level acceptance**
+
+1. Author a virtual counterpart for the test object in `environment.yaml` (`perception.live_counterparts`).
+2. Place the object at a position you measure independently on the board or table, e.g. centred on a printed cross at a known board offset.
+3. Run live perception with `live_world_objects.py publish`, and compare the transformed position with the measured one in RViz and in the world snapshot.
+4. Record the difference and the camera-frame data in the evidence directory.
 
 ## Live handoff rules (`live_world_objects.world_snapshot`)
 

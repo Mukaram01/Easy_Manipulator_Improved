@@ -16629,7 +16629,11 @@ void MainWindow::calibrate_live_camera()
       .arg(residuals.value("inliers").toInt()).arg(residuals.value("points").toInt())
       .arg(residuals.value("rms_m").toDouble() * 1000.0, 0, 'f', 1).arg(residuals.value("max_residual_m").toDouble() * 1000.0, 0, 'f', 1)
       .arg(residuals.value("max_leave_one_out_m").toDouble() * 1000.0, 0, 'f', 1)
-      .arg(residuals.value("outliers").toArray().isEmpty() ? QString() : " · outliers rejected");
+      .arg(residuals.value("outliers").toArray().isEmpty() ? QString() : " · outliers rejected") +
+      (residuals.value("independent_check").toObject().value("max_error_m").isDouble() ?
+         QString("Independent check (held-out markers): max error %1 mm<br/>")
+           .arg(residuals.value("independent_check").toObject().value("max_error_m").toDouble() * 1000.0, 0, 'f', 1) :
+         QString("Independent check: not measured — planning stays BLOCKED<br/>"));
   if (!reasons.isEmpty()) text += "Why: " + reasons.join("; ").toHtmlEscaped() + "<br/>";
   if (report.contains("reason")) text += report.value("reason").toString().toHtmlEscaped() + "<br/>";
   text += report.value("status").toString() == "QUALIFIED" ? "Saved with the cell: " + report.value("record").toString().toHtmlEscaped() :

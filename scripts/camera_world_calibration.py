@@ -8,7 +8,10 @@ averaged over several frames, and ``solve`` estimates the rigid transform world 
 
 * least-squares rigid fit (Kabsch/SVD, proper rotation, no scale),
 * outlier rejection by exhaustive minimal-subset consensus (deterministic, so a re-solve is repeatable),
-* per-point residuals, RMS, maximum and leave-one-out prediction errors (the honest accuracy estimate).
+* per-point residuals, RMS, maximum and leave-one-out prediction errors,
+* an independent accuracy check: reference points with ``role: check`` never enter the fit; the fitted
+  transform must predict each of them within ``max_check_error_m`` before the calibration can qualify (and
+  therefore before any calibrated object can be used for simulated robot planning).
 
 A calibration is ``qualified`` only when enough well-spread points agree within the limits below; otherwise it
 is ``rejected`` with its reasons and the cell's binding is left unchanged. The record is saved with the cell
@@ -17,6 +20,7 @@ evidence, residuals and provenance, and the live camera binding references it by
 the record, so an edited, mismatched or out-of-limit calibration is refused. Nothing here guesses an extrinsic.
 
 Subcommands
+  board     write a printable A4 marker sheet and its reference-points file for a stated board pose in the cell
   capture   measure the reference points live (starts EPD's ingress only), then solve and save
   solve     re-solve a saved capture (repeatable, offline)
   status    validate the cell's saved calibration against its live camera binding
@@ -55,6 +59,8 @@ LIMITS = dict(
     max_point_std_m=0.004,        # per-point repeatability across the captured frames
     min_frames_per_point=5,
     min_valid_depth_fraction=0.5,  # of the depth window around a reference pixel
+    min_check_points=1,           # independent points held out of the fit
+    max_check_error_m=0.015,      # each held-out point must be predicted this well
 )
 DEPTH_WINDOW_PX = 2               # (2w+1)^2 median window around the reference pixel
 
@@ -126,8 +132,10 @@ def robust_fit(camera_points, world_points, threshold=LIMITS['inlier_threshold_m
 def solve(points, limits=LIMITS):
     """Fit and qualify. ``points``: [{id, camera_xyz, world_xyz, ...}]. Returns the solution dict."""
     reasons = []
+    checks = [p for p in points if p.get('role') == 'check']
+    points = [p for p in points if p.get('role', 'fit') == 'fit']
     usable = [p for p in points if p.get('camera_xyz') is not None]
-    missing = [p['id'] for p in points if p.get('camera_xyz') is None]
+    missing = [p['id'] for p in points + checks if p.get('camera_xyz') is None]
     if missing:
         reasons.append(f'reference points not measured: {missing}')
     if len(usable) < limits['min_points']:
@@ -166,6 +174,18 @@ def solve(points, limits=LIMITS):
         if p.get('std_m') is not None and p['std_m'] > limits['max_point_std_m']:
             reasons.append(f"point {p['id']} varies {p['std_m'] * 1000:.1f} mm between frames "
                            f"(limit {limits['max_point_std_m'] * 1000:.0f} mm)")
+    measured_checks = [p for p in checks if p.get('camera_xyz') is not None]
+    check_rows = [dict(id=p['id'], error_m=float(np.linalg.norm(np.array(apply(transform, p['camera_xyz'])) -
+                                                                 np.array(p['world_xyz'], float))))
+                  for p in measured_checks]
+    summary['independent_check'] = dict(points=check_rows, max_error_m=max((r['error_m'] for r in check_rows), default=None))
+    if len(measured_checks) < limits['min_check_points']:
+        reasons.append(f"{len(measured_checks)} measured independent check points (role: check); at least "
+                       f"{limits['min_check_points']} must verify the fit before planning can use it")
+    for row in check_rows:
+        if row['error_m'] > limits['max_check_error_m']:
+            reasons.append(f"independent check {row['id']} is off by {row['error_m'] * 1000:.1f} mm "
+                           f"(limit {limits['max_check_error_m'] * 1000:.0f} mm)")
     per_point = [dict(id=p['id'], residual_m=float(error[i]), inlier=i in inliers) for i, p in enumerate(usable)]
     for row, value in zip([r for r in per_point if r['inlier']], loo):
         row['leave_one_out_m'] = value
@@ -310,6 +330,11 @@ def load_points(path):
             raise CalibrationError(f"POINTS_INVALID: point {p.get('id')} needs a measured world_xyz [x, y, z] in metres")
         if ('aruco_id' in p) == ('pixel' in p):
             raise CalibrationError(f"POINTS_INVALID: point {p['id']} must name exactly one of aruco_id or pixel")
+        if p.get('role', 'fit') not in ('fit', 'check'):
+            raise CalibrationError(f"POINTS_INVALID: point {p['id']} role must be fit or check")
+    if not any(p.get('role') == 'check' for p in points):
+        raise CalibrationError('POINTS_INVALID: mark at least one reference point role: check; it is held out of the '
+                               'fit as the independent accuracy check')
     if not doc.get('measured_by') or not doc.get('measurement_method'):
         raise CalibrationError('POINTS_INVALID: record who measured the world coordinates and how (measured_by, '
                                'measurement_method)')
@@ -340,6 +365,7 @@ def measure(frames, points_doc):
                    frames_measured=len(s), camera_xyz=s.mean(axis=0).tolist() if enough else None,
                    std_m=float(np.linalg.norm(s.std(axis=0))) if enough else None,
                    pixel_mean=np.array(pixels[p['id']]).mean(axis=0).tolist() if len(s) else None)
+        row['role'] = p.get('role', 'fit')
         if p.get('note'):
             row['note'] = p['note']
         out.append(row)
@@ -474,6 +500,54 @@ def finish(cell, binding, capture_doc, out):
     return 0 if solution['status'] == QUALIFIED else 3
 
 
+# A4 sheet: six 50 mm DICT_4X4_50 markers. Centres in the sheet frame (origin at the sheet's top-left corner,
+# x along the short edge to the right, y down the long edge), metres. Marker 5 is the held-out check.
+BOARD_MARKER_SIDE_M = 0.050
+BOARD_CENTRES = {0: (0.050, 0.050), 1: (0.160, 0.050), 2: (0.050, 0.155), 3: (0.160, 0.155),
+                 4: (0.050, 0.260), 5: (0.160, 0.260)}
+BOARD_CHECK_ID = 5
+
+
+def board_points(origin_xyz, yaw_rad):
+    """World positions of the sheet's marker centres for a sheet lying flat with its top-left corner at
+    ``origin_xyz`` and its x edge at ``yaw_rad`` about world z (sheet y runs 90 deg clockwise from x, i.e.
+    towards -y of a z-up frame rotated by yaw)."""
+    c, s = math.cos(yaw_rad), math.sin(yaw_rad)
+    rows = []
+    for marker, (bx, by) in BOARD_CENTRES.items():
+        dx, dy = bx, -by                      # sheet y points "down" the page = -y in the sheet's z-up frame
+        rows.append(dict(id=f'board_{marker}', aruco_id=marker,
+                         world_xyz=[origin_xyz[0] + c * dx - s * dy, origin_xyz[1] + s * dx + c * dy, origin_xyz[2]],
+                         **({'role': 'check'} if marker == BOARD_CHECK_ID else {})))
+    return rows
+
+
+def board(args):
+    import cv2
+    out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
+    aruco, px_per_m = cv2.aruco, 300 / 0.0254
+    page = np.full((3508, 2480), 255, np.uint8)
+    side = int(round(BOARD_MARKER_SIDE_M * px_per_m))
+    for marker, (bx, by) in BOARD_CENTRES.items():
+        x, y = int(round(bx * px_per_m)) - side // 2, int(round(by * px_per_m)) - side // 2
+        page[y:y + side, x:x + side] = aruco.drawMarker(aruco.Dictionary_get(aruco.DICT_4X4_50), marker, side)
+        cv2.putText(page, f'ID {marker}' + (' (CHECK)' if marker == BOARD_CHECK_ID else ''), (x, y + side + 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, 0, 3)
+    cv2.putText(page, 'Print at 100% (A4, 300 dpi). Verify: each black square is 50.0 mm. Top-left corner = board origin.',
+                (60, 3440), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 0, 3)
+    cv2.imwrite(str(out / 'calibration_board_A4_300dpi.png'), page)
+    doc = dict(schema=POINTS_SCHEMA, world_frame=WORLD_FRAME, aruco_dictionary='DICT_4X4_50',
+               measured_by=args.measured_by, measurement_method=(
+                   f'printed board (50 mm markers, print scale verified) placed flat with its top-left corner at world '
+                   f'{list(args.origin)} and yaw {args.yaw_deg} deg, as authored in the cell; marker {BOARD_CHECK_ID} held out'),
+               board=dict(origin_xyz=list(args.origin), yaw_deg=args.yaw_deg, marker_side_m=BOARD_MARKER_SIDE_M),
+               points=board_points(args.origin, math.radians(args.yaw_deg)))
+    (out / 'reference_points.yaml').write_text(yaml.safe_dump(doc, sort_keys=False))
+    print(json.dumps(dict(status='WRITTEN', board=str(out / 'calibration_board_A4_300dpi.png'),
+                          points=str(out / 'reference_points.yaml'))))
+    return 0
+
+
 def main(argv=None):
     import live_perception_session as lps
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -486,8 +560,16 @@ def main(argv=None):
     s = sub.add_parser('solve')
     s.add_argument('--cell', required=True); s.add_argument('--capture', required=True)
     t = sub.add_parser('status'); t.add_argument('--cell', required=True)
+    b = sub.add_parser('board')
+    b.add_argument('--output', required=True)
+    b.add_argument('--origin', type=float, nargs=3, required=True, metavar=('X', 'Y', 'Z'),
+                   help="world position of the sheet's top-left corner as authored in the cell (table top z)")
+    b.add_argument('--yaw-deg', type=float, default=0.0)
+    b.add_argument('--measured-by', required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'board':
+            return board(args)
         if args.command == 'capture':
             return capture(args)
         binding = lps.camera_binding(args.cell)

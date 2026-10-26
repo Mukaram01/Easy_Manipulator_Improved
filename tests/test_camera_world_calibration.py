@@ -32,10 +32,16 @@ def camera_of(world, transform=TRUE):
     return [(m[:3, :3] @ np.array(w) + m[:3, 3]).tolist() for w in world]
 
 
-def points(noise=0.0, seed=0, world=WORLD, std=0.001):
+CHECK_WORLD = [0.52, -0.28, 0.0]
+
+
+def points(noise=0.0, seed=0, world=WORLD, std=0.001, check=True):
     rng = np.random.default_rng(seed)
-    return [dict(id=f'p{i}', world_xyz=w, camera_xyz=(np.array(c) + rng.normal(0, noise, 3)).tolist(), std_m=std)
+    rows = [dict(id=f'p{i}', world_xyz=w, camera_xyz=(np.array(c) + rng.normal(0, noise, 3)).tolist(), std_m=std)
             for i, (w, c) in enumerate(zip(world, camera_of(world)))]
+    if check:      # an independent point held out of the fit
+        rows.append(dict(id='check', role='check', world_xyz=CHECK_WORLD, camera_xyz=camera_of([CHECK_WORLD])[0], std_m=std))
+    return rows
 
 
 def test_exact_points_recover_the_transform_and_qualify():
@@ -52,6 +58,7 @@ def test_millimetre_noise_qualifies_and_reports_honest_errors():
     assert result['status'] == cwc.QUALIFIED
     assert 0 < r['rms_m'] < 0.005 and r['max_leave_one_out_m'] >= r['max_residual_m'] * 0.5
     assert len(r['per_point']) == 6 and all('leave_one_out_m' in p for p in r['per_point'])
+    assert r['independent_check']['max_error_m'] < 0.005
     centre = cwc.apply(result['camera_to_world'], camera_of([[0.45, -0.2, 0.0]])[0])
     assert np.linalg.norm(np.array(centre) - [0.45, -0.2, 0.0]) < 0.005
 
@@ -84,7 +91,7 @@ def test_degenerate_or_inaccurate_reference_sets_are_rejected(world, noise, mess
 
 def test_too_few_or_unrepeatable_points_are_refused():
     with pytest.raises(cwc.CalibrationError, match='at least 4'):
-        cwc.solve(points()[:3])
+        cwc.solve(points(check=False)[:3])
     unmeasured = points(); unmeasured[0]['camera_xyz'] = None; unmeasured[1]['camera_xyz'] = None; unmeasured[2]['camera_xyz'] = None
     with pytest.raises(cwc.CalibrationError, match='at least 4'):
         cwc.solve(unmeasured)
@@ -126,11 +133,12 @@ def test_aruco_targets_are_located_and_averaged_over_frames():
 def test_reference_point_files_must_be_complete_and_attributed(tmp_path):
     path = tmp_path / 'points.yaml'
     base = dict(schema=cwc.POINTS_SCHEMA, world_frame='world', measured_by='operator', measurement_method='tape from base',
-                points=[dict(id='a', aruco_id=1, world_xyz=[0, 0, 0])])
+                points=[dict(id='a', aruco_id=1, world_xyz=[0, 0, 0]), dict(id='c', aruco_id=2, role='check', world_xyz=[0.1, 0, 0])])
     for change, message in [(dict(world_frame='camera'), 'world_frame'), (dict(measured_by=None), 'measured_by'),
                             (dict(points=[dict(id='a', world_xyz=[0, 0])] ), 'world_xyz'),
                             (dict(points=[dict(id='a', world_xyz=[0, 0, 0])]), 'exactly one'),
-                            (dict(points=[dict(id='a', aruco_id=1, world_xyz=[0, 0, 0])] * 2), 'unique')]:
+                            (dict(points=[dict(id='a', aruco_id=1, world_xyz=[0, 0, 0])] * 2), 'unique'),
+                            (dict(points=[dict(id='a', aruco_id=1, world_xyz=[0, 0, 0])]), 'role: check')]:
         path.write_text(yaml.safe_dump(dict(base, **change)))
         with pytest.raises(cwc.CalibrationError, match=message):
             cwc.load_points(path)
@@ -191,3 +199,29 @@ def test_stricter_limits_on_reload_refuse_an_old_calibration(tmp_path):
     cell, binding = make_cell(tmp_path)
     with pytest.raises(cwc.CalibrationError, match='CALIBRATION_ERROR_EXCESSIVE'):
         cwc.load_qualified(cell, binding, limits=dict(cwc.LIMITS, rms_m=1e-6))
+
+
+def test_planning_needs_an_independent_check_point_that_agrees():
+    unchecked = cwc.solve(points(check=False))
+    assert unchecked['status'] == cwc.REJECTED and any('independent check points' in r for r in unchecked['reasons'])
+    wrong = points()
+    wrong[-1]['world_xyz'] = [0.52, -0.25, 0.0]                         # held-out point measured 30 mm off
+    result = cwc.solve(wrong)
+    assert result['status'] == cwc.REJECTED and any('independent check check is off by' in r for r in result['reasons'])
+    assert np.allclose(result['camera_to_world'], TRUE, atol=1e-9)        # the check never enters the fit
+
+
+def test_the_board_reference_points_follow_the_authored_board_pose(tmp_path):
+    rows = {r['aruco_id']: r for r in cwc.board_points([0.30, -0.10, 0.75], math.radians(90))}
+    assert rows[0]['world_xyz'] == pytest.approx([0.35, -0.05, 0.75])           # 50 mm in, 50 mm down the page
+    assert rows[5]['world_xyz'] == pytest.approx([0.56, 0.06, 0.75]) and rows[5]['role'] == 'check'
+    assert cwc.main(['board', '--output', str(tmp_path), '--origin', '0.3', '-0.1', '0.75', '--yaw-deg', '0',
+                     '--measured-by', 'operator']) == 0
+    doc = cwc.load_points(tmp_path / 'reference_points.yaml')
+    assert len(doc['points']) == 6 and sum(p.get('role') == 'check' for p in doc['points']) == 1
+    import cv2
+    page = cv2.imread(str(tmp_path / 'calibration_board_A4_300dpi.png'))
+    found = cwc.aruco_centres(cv2.cvtColor(page, cv2.COLOR_BGR2RGB), 'DICT_4X4_50')
+    px = 300 / 0.0254
+    assert set(found) == set(range(6))
+    assert found[3] == pytest.approx((0.160 * px, 0.155 * px), abs=2.0)          # printed where the points say
