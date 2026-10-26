@@ -3554,15 +3554,20 @@ void MainWindow::setup_studio_shell()
   perception_discover_button_ = new QPushButton("Discover Cameras", scene_builder); perception_discover_button_->setObjectName("livePerceptionDiscover");
   perception_bind_button_ = new QPushButton("Save Camera Binding", scene_builder); perception_bind_button_->setObjectName("livePerceptionBind");
   perception_start_button_ = new QPushButton("Start Live Perception", scene_builder); perception_start_button_->setObjectName("livePerceptionStart");
+  perception_calibrate_button_ = new QPushButton("Calibrate Camera", scene_builder); perception_calibrate_button_->setObjectName("livePerceptionCalibrate");
+  perception_calibrate_button_->setToolTip("Measure the reference points in config/camera_calibration/reference_points.yaml and save a "
+                                           "qualified camera-to-world calibration with the cell (rejected fits change nothing).");
   perception_actions->addWidget(perception_discover_button_); perception_actions->addWidget(perception_bind_button_);
+  perception_actions->addWidget(perception_calibrate_button_);
   perception_actions->addWidget(perception_start_button_); ar_layout->addLayout(perception_actions);
   perception_preview_label_ = new QLabel("No live preview: Start Live Perception.", scene_builder);
   perception_preview_label_->setObjectName("livePerceptionPreview"); perception_preview_label_->setMinimumHeight(180);
   perception_preview_label_->setAlignment(Qt::AlignCenter); ar_layout->addWidget(perception_preview_label_);
   perception_status_label_ = new QLabel(scene_builder); perception_status_label_->setObjectName("livePerceptionStatus");
   perception_status_label_->setWordWrap(true); perception_status_label_->setTextFormat(Qt::RichText); ar_layout->addWidget(perception_status_label_);
-  perception_table_ = new QTableWidget(0, 7, scene_builder); perception_table_->setObjectName("livePerceptionDetections");
-  perception_table_->setHorizontalHeaderLabels({"Class", "Confidence", "Camera XYZ (m)", "Size (m)", "Age (s)", "Task", "Why"});
+  perception_table_ = new QTableWidget(0, 8, scene_builder); perception_table_->setObjectName("livePerceptionDetections");
+  perception_table_->setHorizontalHeaderLabels({"Class (EPD, unverified)", "Confidence", "Camera XYZ (m)", "World XYZ (m)", "Size (m)",
+                                                "Age (s)", "Task", "Why"});
   perception_table_->horizontalHeader()->setStretchLastSection(true); perception_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
   perception_table_->setMinimumHeight(120); ar_layout->addWidget(perception_table_);
   perception_process_ = new QProcess(this);
@@ -3570,6 +3575,7 @@ void MainWindow::setup_studio_shell()
   connect(perception_timer_, &QTimer::timeout, this, &MainWindow::refresh_live_perception);
   connect(perception_discover_button_, &QPushButton::clicked, this, &MainWindow::discover_live_cameras);
   connect(perception_bind_button_, &QPushButton::clicked, this, &MainWindow::save_live_camera_binding);
+  connect(perception_calibrate_button_, &QPushButton::clicked, this, &MainWindow::calibrate_live_camera);
   connect(perception_start_button_, &QPushButton::clicked, this, &MainWindow::toggle_live_perception);
   connect(perception_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, [this](int, QProcess::ExitStatus) {
     perception_timer_->stop(); refresh_live_perception();
@@ -16565,13 +16571,18 @@ void MainWindow::save_live_camera_binding()
   if (index < 0 || index >= perception_cameras_.size()) { perception_status_label_->setText("Discover and select a camera first."); return; }
   const auto camera = perception_cameras_.at(index).toObject();
   const auto depth = camera.value("aligned_depth_topics").toArray();
-  if (depth.isEmpty() || camera.value("optical_frame").toString().isEmpty()) {
-    perception_status_label_->setText("BLOCKED: this camera publishes no aligned depth or no CameraInfo frame; 3D localisation needs both.");
+  const auto unaligned = camera.value("unaligned_depth").toObject();
+  if ((depth.isEmpty() && unaligned.isEmpty()) || camera.value("optical_frame").toString().isEmpty()) {
+    perception_status_label_->setText("BLOCKED: this camera publishes no depth with CameraInfo or no colour CameraInfo frame; 3D localisation needs both.");
     return;
   }
+  // Driver-aligned depth when published; otherwise EPD's ingress registers the raw depth into the colour frame.
+  const QString depth_args = !depth.isEmpty() ? QString("--aligned-depth-topic %1").arg(shell_quote(depth.first().toString())) :
+    QString("--aligned-depth-topic %1 --depth-alignment register --depth-camera-info-topic %2")
+      .arg(shell_quote(unaligned.value("depth_topic").toString()), shell_quote(unaligned.value("depth_camera_info_topic").toString()));
   const auto metadata = camera.value("metadata_topic").toString();
-  const auto command = live_perception_command(QString("bind --cell %1 --rgb-topic %2 --aligned-depth-topic %3 --camera-info-topic %4 --optical-frame %5")
-    .arg(shell_quote(selected_scene_path()), shell_quote(camera.value("rgb_topic").toString()), shell_quote(depth.first().toString()),
+  const auto command = live_perception_command(QString("bind --cell %1 --rgb-topic %2 %3 --camera-info-topic %4 --optical-frame %5")
+    .arg(shell_quote(selected_scene_path()), shell_quote(camera.value("rgb_topic").toString()), depth_args,
          shell_quote(camera.value("camera_info_topic").toString()), shell_quote(camera.value("optical_frame").toString())) +
     (metadata.isEmpty() ? QString() : " --metadata-topic " + shell_quote(metadata)));
   QProcess process; process.start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
@@ -16582,6 +16593,49 @@ void MainWindow::save_live_camera_binding()
            report.value("live_camera").toObject().value("calibration").toObject().value("status").toString().toHtmlEscaped()) :
     "BLOCKED: " + report.value("reason").toString(QString::fromUtf8(process.readAllStandardError()).left(300)).toHtmlEscaped());
   append_studio_log("Live camera binding: " + perception_status_label_->text());
+}
+
+void MainWindow::calibrate_live_camera()
+{
+  if (!has_selected_scene()) { perception_status_label_->setText("Select a saved cell first."); return; }
+  if (perception_process_->state() != QProcess::NotRunning) {
+    perception_status_label_->setText("Stop Live Perception before calibrating (both use the camera's EPD ingress).");
+    return;
+  }
+  QString calibration_script;
+  const auto base = live_perception_command("env");
+  if (base.isEmpty() || !helper_script_exists("camera_world_calibration.py", &calibration_script)) {
+    perception_status_label_->setText("BLOCKED: the calibration helper is unavailable."); return;
+  }
+  const auto points = selected_scene_path() + "/config/camera_calibration/reference_points.yaml";
+  if (!QFileInfo::exists(points)) {
+    perception_status_label_->setText("BLOCKED: author the measured reference points first: " + points.toHtmlEscaped() +
+      " (schema workcell_camera_reference_points/v1: world_xyz of each ArUco marker or pixel target, measured_by, measurement_method).");
+    return;
+  }
+  const auto output = detect_workspace_root() + "/log/camera_calibration/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  // Same registered perception runtime as the live session; the helper prints its JSON verdict.
+  const auto command = base.section(" && exec ", 0, 0) + " && exec python3 " + shell_quote(calibration_script) +
+    QString(" capture --cell %1 --points %2 --output %3").arg(shell_quote(selected_scene_path()), shell_quote(points), shell_quote(output));
+  perception_status_label_->setText("Calibrating: measuring the reference points through EPD's ingress…");
+  QProcess process; process.start(QStringLiteral("/bin/bash"), QStringList{QStringLiteral("-lc"), command});
+  if (!process.waitForFinished(120000)) { process.kill(); perception_status_label_->setText("BLOCKED: calibration capture timed out."); return; }
+  const auto report = QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+  const auto residuals = report.value("residuals").toObject();
+  QStringList reasons; for (const auto & r : report.value("reasons").toArray()) reasons << r.toString();
+  QString text = "<b>Camera calibration: " + report.value("status").toString("BLOCKED").toHtmlEscaped() + "</b><br/>";
+  if (!residuals.isEmpty())
+    text += QString("%1 of %2 reference points agree · RMS %3 mm · max %4 mm · leave-one-out max %5 mm%6<br/>")
+      .arg(residuals.value("inliers").toInt()).arg(residuals.value("points").toInt())
+      .arg(residuals.value("rms_m").toDouble() * 1000.0, 0, 'f', 1).arg(residuals.value("max_residual_m").toDouble() * 1000.0, 0, 'f', 1)
+      .arg(residuals.value("max_leave_one_out_m").toDouble() * 1000.0, 0, 'f', 1)
+      .arg(residuals.value("outliers").toArray().isEmpty() ? QString() : " · outliers rejected");
+  if (!reasons.isEmpty()) text += "Why: " + reasons.join("; ").toHtmlEscaped() + "<br/>";
+  if (report.contains("reason")) text += report.value("reason").toString().toHtmlEscaped() + "<br/>";
+  text += report.value("status").toString() == "QUALIFIED" ? "Saved with the cell: " + report.value("record").toString().toHtmlEscaped() :
+    "The cell's saved calibration was not changed. Evidence: " + output.toHtmlEscaped();
+  perception_status_label_->setText(text);
+  append_studio_log("Camera calibration: " + report.value("status").toString("BLOCKED") + " (" + output + ")");
 }
 
 void MainWindow::toggle_live_perception()
@@ -16652,13 +16706,16 @@ void MainWindow::refresh_live_perception()
   perception_table_->setRowCount(detections.size());
   for (int row = 0; row < detections.size(); ++row) {
     const auto d = detections.at(row).toObject();
-    QStringList xyz, size, reasons;
+    QStringList xyz, world, size, reasons;
     for (const auto & v : d.value("position_camera").toArray()) xyz << QString::number(v.toDouble(), 'f', 3);
+    for (const auto & v : d.value("position_world").toArray()) world << QString::number(v.toDouble(), 'f', 3);
     for (const auto & v : d.value("dimensions_m").toArray()) size << QString::number(v.toDouble(), 'f', 3);
     for (const auto & v : d.value("reasons").toArray()) reasons << v.toString();
+    if (d.contains("robot_planning")) reasons << "planning " + d.value("robot_planning").toString();
     const QStringList cells{d.value("label").toString(),
       d.value("confidence").isDouble() ? QString::number(d.value("confidence").toDouble(), 'f', 2) : QString("n/a"),
-      xyz.join(", "), size.join(" × "), QString::number(d.value("age_s").toDouble(), 'f', 2),
+      xyz.join(", "), world.isEmpty() ? QString("— (uncalibrated)") : world.join(", "), size.join(" × "),
+      QString::number(d.value("age_s").toDouble(), 'f', 2),
       d.value("task_eligible").toBool() ? "eligible" : d.value("excluded").toBool() ? "excluded" : "not eligible",
       reasons.join("; ")};
     for (int column = 0; column < cells.size(); ++column) perception_table_->setItem(row, column, new QTableWidgetItem(cells[column]));
