@@ -61,6 +61,26 @@ def check_world(scene):
     return None, report
 
 
+def check_perception(scene, world):
+    """Stage-B: a replayed-perception task needs its replayed EPD session to be valid for this cell and world."""
+    import yaml
+    from perception_replay import PerceptionBlocked, validate_replay
+    from task_intent_v2 import freshness_source_type
+    intent = yaml.safe_load((scene / 'config/workcell_builder_task_intent.yaml').read_text())
+    if freshness_source_type(intent) != 'replayed_perception_in_simulation':
+        return None
+    replay = Path(intent['perception'].get('replay_path') or '')
+    replay = replay if replay.is_absolute() else scene / replay
+    if not replay.is_file():
+        return f'PERCEPTION_REPLAY_MISSING: {replay}; record and detect the cell camera session (perception_replay.py).'
+    try:
+        validate_replay(yaml.safe_load(replay.read_text()), scene,
+                        physics_world_sha256=world['world_sha256'] if world else None)
+    except PerceptionBlocked as exc:
+        return str(exc)
+    return None
+
+
 def check_runtime(workspace):
     from qualified_physics_runtime import RuntimeUnavailable, load
     try:
@@ -74,7 +94,8 @@ def preflight(scene, workspace):
     scene = Path(scene).resolve()
     checks, world = [], None
     for name, check in (('saved_task', lambda: check_task(scene)), ('generated_current', lambda: check_generated(scene)),
-                        ('physics_envelope', lambda: check_world(scene)), ('qualified_runtime', lambda: check_runtime(workspace))):
+                        ('physics_envelope', lambda: check_world(scene)), ('perception_replay', lambda: check_perception(scene, world)),
+                        ('qualified_runtime', lambda: check_runtime(workspace))):
         try:
             result = check()
         except (OSError, ValueError, KeyError, TypeError) as exc:

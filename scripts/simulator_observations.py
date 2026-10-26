@@ -3,6 +3,10 @@
 
 World geometry supplies dimensions; only measured poses supply location. This
 never moves objects or supplies a grasp, and is not a perception/EPD loop.
+
+Classes come from the author (``--class-id``/``--class-map``) or, in Stage-B, from a replayed EPD perception
+snapshot (``--perception``): each measured object takes the class and confidence of the one EPD detection
+localized inside it (perception_replay.associate); every other object is ``unperceived``.
 """
 import argparse
 import copy
@@ -154,7 +158,21 @@ def verify_snapshot_binding(snapshot, receipt_sha256):
         raise RuntimeError('simulator observation belongs to an unknown/different simulator run')
 
 
-def capture(receipt, output, class_id, timeout=30, refresh_from=None, class_map=None):
+def perception_classes(perception, models, poses, target_class=None):
+    """({model: class}, {model: confidence}, binding evidence) from a replayed EPD snapshot and measured poses."""
+    import yaml
+    from perception_replay import associate
+    snapshot=yaml.safe_load(Path(perception).read_text())
+    measured={name:(poses[name][:3]+rpy(poses[name]),size) for name,size in models.items()}
+    bindings,unbound=associate(measured,snapshot['objects'],target_class)
+    evidence=dict(perception=str(Path(perception).resolve()),perception_sha256=digest(Path(perception).read_bytes()),
+                  recording_sha256=snapshot['source']['recording_sha256'],provenance=snapshot['source']['provenance'],
+                  bindings=bindings,unbound_detections=unbound,
+                  rejected_detections=snapshot['source'].get('rejected_detections',[]))
+    return ({n:b['class_id'] for n,b in bindings.items()},{n:b['confidence'] for n,b in bindings.items()},evidence)
+
+
+def capture(receipt, output, class_id, timeout=30, refresh_from=None, class_map=None, perception=None, target_class=None):
     import rclpy
     from tf2_msgs.msg import TFMessage
     import yaml
@@ -178,11 +196,17 @@ def capture(receipt, output, class_id, timeout=30, refresh_from=None, class_map=
             samples=samples[-1:]
         else:raise RuntimeError('physical objects did not settle or pose stream unavailable')
         verify_receipt_process(receipt)
+        confidence={}
+        binding=None
+        if perception is not None:
+            class_map,confidence,binding=perception_classes(perception,models,b,target_class)
         snapshot=dict(schema_version='detected_objects/v1',source='Fortress measured model poses',
             simulator_receipt_sha256=digest(Path(receipt).read_bytes()),objects=[
-            dict(object_id=name,class_id=class_map[name] if class_map is not None else class_id,confidence=None,timestamp=samples[-1]['received_at'],
+            dict(object_id=name,class_id=class_map[name] if class_map is not None else class_id,confidence=confidence.get(name),timestamp=samples[-1]['received_at'],
                  pose=dict(frame_id='world',xyz=b[name][:3],rpy=rpy(b[name])),dimensions=size)
             for name,size in sorted(models.items())])
+        if binding is not None:
+            snapshot['perception_binding']=binding
         refresh_evidence=None
         if refresh_from is not None:
             bound=yaml.safe_load(Path(refresh_from).read_text())
@@ -201,7 +225,10 @@ if __name__=='__main__':
     classes=parser.add_mutually_exclusive_group(required=True)
     classes.add_argument('--class-id',help='one class for every simulated model (reference scene)')
     classes.add_argument('--class-map',type=json.loads,help='JSON {model: class}: each authored object keeps its own class')
+    classes.add_argument('--perception',type=Path,help='replayed EPD detected_objects/v1 snapshot (Stage-B): classes from perception')
+    parser.add_argument('--target-class',help='with --perception: a detection of this class with no physical object blocks')
     parser.add_argument('--refresh-from',type=Path,
         help='Renew timestamps only if fresh Fortress geometry still matches this bound snapshot')
     args=parser.parse_args()
-    capture(args.receipt,args.output,args.class_id,refresh_from=args.refresh_from,class_map=args.class_map)
+    capture(args.receipt,args.output,args.class_id,refresh_from=args.refresh_from,class_map=args.class_map,
+            perception=args.perception,target_class=args.target_class)

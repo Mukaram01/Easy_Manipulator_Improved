@@ -2455,6 +2455,22 @@ def main():
             age_cap = observation_age_cap(freshness_source_type(intent), producer)
             summary['observation_freshness'] = dict(producer=producer, ceiling_s=age_cap,
                 authored_max_age_s=intent['pick']['selection']['object_filter']['max_age_seconds'])
+            # Stage-B: classes from replayed EPD detections bound to these measured objects. Only a replayed-
+            # perception task takes them, and each binding keeps the replay ceiling on the recording clock.
+            binding = snapshot.get('perception_binding')
+            if (binding is not None) != (freshness_source_type(intent) == 'replayed_perception_in_simulation'):
+                raise ValueError('PERCEPTION_BINDING_MISMATCH: replayed perception classes require a replayed-perception '
+                                 'task in simulation, and such a task requires them')
+            if binding is not None:
+                from task_intent_v2 import OBSERVATION_PRODUCER_CEILING_S
+                replay_ceiling = OBSERVATION_PRODUCER_CEILING_S['replay']
+                for name, bound in binding['bindings'].items():
+                    age = bound.get('replay_age_s')
+                    if bound['class_id'] != 'unperceived' and not (isinstance(age, (int, float)) and 0 <= age <= replay_ceiling):
+                        raise ValueError(f'PERCEPTION_STALE: {name} was classified from a detection {age!r} s old in the '
+                                         f'recording clock (limit {replay_ceiling} s)')
+                summary['observation_freshness']['perception'] = dict(producer='replay', clock='recording', ceiling_s=replay_ceiling)
+                summary['perception'] = binding
             from task_intent_resolver import select_observations, scene_resolution
             eligible = select_observations(intent, physical, objects, time.time(), age_cap)
             rejected = {o['id']: 'outside_authored_selection' for o in objects if o not in eligible}

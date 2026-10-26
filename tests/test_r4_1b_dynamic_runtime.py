@@ -118,7 +118,9 @@ def test_physics_preflight_reports_the_first_blocker_in_runner_order(cell, tmp_p
     from physics_cycle_preflight import preflight
     from r4_1b_cells import task_editor_save
     report = preflight(cell, tmp_path)                       # a workspace with no registered runtime
-    assert [c['status'] for c in report['checks']] == ['PASS', 'PASS', 'PASS', 'BLOCKED']
+    assert [(c['name'], c['status']) for c in report['checks']] == [
+        ('saved_task', 'PASS'), ('generated_current', 'PASS'), ('physics_envelope', 'PASS'),
+        ('perception_replay', 'PASS'), ('qualified_runtime', 'BLOCKED')]        # no replayed perception: passes
     assert report['status'] == 'BLOCKED' and 'no qualified physics runtime is registered' in report['blocker']
     assert report['cell']['objects'] == ['bracket_b (bracket, qualified_test_polymer)']
     preview = tmp_path / 'preview'; shutil.copytree(cell, preview)

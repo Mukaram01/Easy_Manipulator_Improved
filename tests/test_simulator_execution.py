@@ -1842,3 +1842,17 @@ def test_grasp_load_evidence_reads_pad_loads_and_contacts_of_the_held_part_only(
     assert e['fingertip_joint_force_n']=={'gripper_finger1_finger_tip_joint':90.,'gripper_finger2_finger_tip_joint':89.5}
     assert e['joint_axis_torque_nm']['gripper_finger1_joint']==.01 and 'shoulder_pan_joint' not in e['joint_positions_rad']
     with pytest.raises(RuntimeError,match='MISSING'):grasp_load_evidence(dict(sample,joint_wrenches={}),'gripper_finger1_joint',touch,'part_04')
+
+
+def test_measured_object_poses_are_floats_for_ros_messages():
+    """Telemetry JSON writes an upright resting object's quaternion w as the integer 1 (seen with a second
+    physical object, Stage-B); ROS Pose fields accept only float."""
+    from geometry_msgs.msg import Pose
+    from simulator_execution import Measurements
+    m = Measurements.__new__(Measurements)
+    m.receipt = {'world': 'a0'}
+    values = m.object_pose({'poses': {'a0::object_bottle': [0.3, -0.12, 0.115, 0, 0, 0, 1]}}, 'object_bottle')
+    assert all(type(v) is float for v in values)
+    pose = Pose()
+    (pose.position.x, pose.position.y, pose.position.z, pose.orientation.x, pose.orientation.y,
+     pose.orientation.z, pose.orientation.w) = values
