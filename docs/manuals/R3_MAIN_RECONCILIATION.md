@@ -7,9 +7,9 @@ The 2F closure search and reserve use main's arithmetic bit for bit (`open + ste
 
 ## Result and scope
 
-**PARTIALLY CONFIRMED.** Reconciled the R3 catalog interface, selection, force variants and optional transport
-with the newer Stage-A/Stage-B code. Keep the PR draft. These results do not commission real hardware,
-three-finger or suction engagement, or establish repeated picking reliability.
+**Simulation acceptance PASS** for the 2F-85 on this revision (below). Reconciled the R3 catalog interface,
+selection, force variants and optional transport with the newer Stage-A/Stage-B code. This does not commission
+real hardware, three-finger or suction engagement, keep-level transport execution, or repeated-picking reliability.
 
 Preserved main's model-derived command joint, SRDF tool group, URDF limits and aperture, physical destination
 seating, slab collision geometry, Stage-B replay detection/calibration/recording-clock/class binding,
@@ -20,46 +20,32 @@ range or aperture raises `TOOL_BINDING_MISMATCH`. An interface-free cell keeps i
 The baseline state helper also keeps an authored home/tool goal when no separate release argument is supplied.
 Saved cells own their motion policy; conflicting CLI policy input is rejected before creating a session.
 
-## Fresh verification
+## Verification on LENLEG (26 October 2026, source `66103b58`, clean tree; EPD `9e9b61c`)
 
-- Focused baseline on main: 334 passed, 1 failed in 10.41 s. The failure was the pre-existing test indexing the
-  launch target before accounting for `--noninteractive`. Its command-boundary assertion is now corrected.
-- Final canonical runner `FAST_TEST_FILES`, with ROS Humble and the workstation workspace sourced:
-  **1,246 passed in 131.05 s**. Log: `/home/ros2/workcell_ws/r3_reconcile_ws/canonical-fast-tests.log`.
-- Explicit selection/persistence tests plus saved-policy rejection: **13 passed in 96.89 s**.
-  Both force variants passed the real Studio Save projection, reopen, Generate, Validate, stale-handoff check,
-  actuator-effort derivation and matching hold receipt. This is command-path evidence, not interactive GUI proof.
-- Binding mismatch/no-interface regressions were run red before correction (6 failures), then included in the
-  passing canonical suite. The authored baseline-helper and saved-policy regressions also ran red before green.
-- Isolated `workcell_builder` build: PASS; canonical `ur5_2f_test` symlink build: PASS. No C++ source changed.
-  Logs: `/home/ros2/workcell_ws/r3_reconcile_ws/build-final.log`, `/home/ros2/workcell_ws/r3_reconcile_ws/build-scene.log`.
-- Independent code review found no additional confirmed blocking defect. Its unsourced test invocation reported
-  79 passed / 3 environment failures (xacro metadata and moveit_msgs unavailable); the sourced canonical and
-  persistence results above are the integration validation evidence, not that unsourced invocation.
-- Stage-B acceptance cell copied and regenerated with the reconciled exporter/generator: validation rc 0;
-  retained source hashes unchanged. Record: `/home/ros2/workcell_ws/r3_reconcile_ws/acceptance/authoring.json`.
-- Bounded Stage-B no-motion Resolve: **BLOCKED**. Report: `/home/ros2/workcell_ws/r3_reconcile_ws/acceptance/replay-resolve-retry/stage-a1-targeted-report.json`.
-  Executor failure: `SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted`.
+- Fast suite (runner `FAST_TEST_FILES`): branch **1,246 passed**; main **1,170 passed, 1 failed** (the
+  noninteractive-launch index test, corrected here). Affected source-contract tests: 88 passed / 15 failed on
+  both branch and main, identical failure sets (pre-existing). Strict catalog check: every end-effector record
+  carrying an interface passes; two pre-existing placeholder records fail as on main.
+- `workcell_builder` symlink build: PASS (only the script install list changed; no C++ source changed).
+- Stage-A FULL, all qualified overlays: **resolve, cancel, telemetry, stationary, contact-release, full-cycle
+  PASS**. Tool revalidation VALID (11 checks), interface `robotiq_2f_85`, hold variant `stage_a_20n` bound.
+  Evidence: `~/workcell_ws/r3_integration_evidence/stage_a_full_20261026_174319`.
+- Stage-B replay → class-filtered pick/place → home, two consecutive unattended Builder cycles: **both COMPLETED**.
+  Cup 0.72 bound and picked, bottle 0.78 excluded (`outside_authored_selection`); both fingertips in contact
+  100 % of lift/transfer/place, offset drift ≤ 0.1 mm over 0.726 m; placed within 0.07 mm of the destination
+  centre; zero displacement after release; attachments empty, ACM restored, final scene collision-valid,
+  clean shutdown, no orphans. Evidence: `~/workcell_ws/r3_integration_evidence/branch_stage_b_20261026_180039`.
+- Matched main baseline (same cell recipe, same Builder path): PASS once the host was unloaded; see below.
 
-The replay detector and recording-clock checks passed; tool revalidation was VALID and the fresh simulator
-hold receipt matched. The executor reported `execution_attempted=false`, `shutdown_clean=true` and `recovery_required=false`. The owned launch exited with code 0, no signal escalation and no surviving owned processes. Candidate search exhausted the
-explicit 180 s diagnostic budget before a full plan was certified; this is a runtime blocker, not a passing
-acceptance. It does not establish whether the same budget would pass on main: no matched baseline runtime
-comparison was run. No planning limit or acceptance threshold was relaxed. The run used the uncommitted
-integration tree. Only final evidence documentation changed after this run; the subsequently committed product code is the tested code.
+## Host contention finding
 
-Native preflight: 10 action tests passed; 102 support/contact tests passed and one optional known-clear
-fixture was skipped. An initial preflight stopped before launch because a normal isolated colcon install
-owned a copied telemetry library. That generated artifact was preserved as `.so.colcon-original`; the
-commissioning script then created and verified its required build link on retry. No ownership check was
-bypassed and no qualified native source was edited. Original attempt retained under `acceptance/replay-resolve`.
+Three earlier main-baseline attempts did not complete. Two were stopped by the unchanged 250 ms telemetry
+freshness guard (transfer, home), and one was interrupted externally. The cause was host contention: a VMware
+VM started at 13:11 made every per-sample cost about 2.2× slower, including Gazebo's C++ serialization. With
+the VM stopped, main passed and the branch passed every gate. No threshold was changed. Physics acceptance on
+LENLEG needs other hypervisor guests stopped.
 
-## Remaining acceptance and rollback
+## Rollback
 
-No new interactive Builder acceptance or full executed physics cycle is claimed here. The 24 October R3
-plan-only results and NO-GO history remain historical. Main's later Stage-A/Stage-B evidence remains valid
-only for the revisions and scenarios it measured; it is not relabelled as evidence for this combined revision.
-Optional keep-level execution and repeated-cycle qualification remain separate acceptance work.
-
-Rollback the reconciliation through a reviewed revert relative to its main first parent; do not overwrite
-main's newer files with the old R3 branch. Keep the unsupported-tool refusal and real-hardware lock.
+Revert the single port commit. Do not overwrite main's newer files with the old R3 branch. Keep the
+unsupported-tool refusal and the real-hardware lock.
