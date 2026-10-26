@@ -345,7 +345,10 @@ def run_epd_replay(manifest_path, manifest, workspace, evidence, timeout=240.0):
     """Replay the recording through EPD's production node + contract bridge; returns the normalized snapshots."""
     runtime = _perception_runtime(workspace)
     evidence = Path(evidence)
-    evidence.mkdir(parents=True, exist_ok=True)
+    if evidence.exists():
+        # Snapshots are read back from this directory: an earlier run's results must never mix into this one.
+        raise PerceptionBlocked(f'EPD_EVIDENCE_EXISTS: {evidence} holds an earlier replay; detect into a new output')
+    evidence.mkdir(parents=True)
     fixture = manifest_path.parent / manifest['fixture']
     domain = str(120 + os.getpid() % 40)
     prefix = (f"source {runtime['ros_setup']} && source {runtime['epd_setup']} && export ROS_DOMAIN_ID={domain} "
@@ -408,7 +411,7 @@ def _listen(output):
     from std_msgs.msg import String
     rclpy.init()
     node = rclpy.create_node('workcell_perception_replay_listener')
-    with open(output, 'a') as stream:
+    with open(output, 'x') as stream:              # this run's results only
         def write(msg):
             stream.write(msg.data.replace('\n', ' ') + '\n')
             stream.flush()
@@ -420,7 +423,18 @@ def _listen(output):
             pass
 
 
-def replay_snapshot_from_epd(snapshots, manifest, manifest_path, camera, summary=None):
+def recording_reference(manifest_path, scene):
+    """The recording as the cell references it: cell-relative when it lives inside the cell (portable)."""
+    manifest_path, scene = Path(manifest_path).resolve(), Path(scene).resolve()
+    return str(manifest_path.relative_to(scene)) if scene in manifest_path.parents else str(manifest_path)
+
+
+def resolve_recording(reference, scene):
+    path = Path(reference or '')
+    return path if path.is_absolute() else Path(scene) / path
+
+
+def replay_snapshot_from_epd(snapshots, manifest, manifest_path, camera, summary=None, scene=None):
     """detected_objects/v1 world snapshot (source.mode=replayed_snapshot) from EPD's replay output."""
     if not snapshots:
         raise PerceptionBlocked('OBSERVATION_UNAVAILABLE: EPD produced no normalized snapshot from the recording')
@@ -454,7 +468,8 @@ def replay_snapshot_from_epd(snapshots, manifest, manifest_path, camera, summary
                 for r in latest.get('rejected_objects') or []]
     return dict(schema_version='detected_objects/v1',
                 source=dict(mode='replayed_snapshot', producer=PRODUCER, provenance=PROVENANCE, camera_source='simulated_rgbd',
-                            clock_domain=CLOCK_DOMAIN, recording=str(manifest_path), recording_sha256=_file_sha256(manifest_path),
+                            clock_domain=CLOCK_DOMAIN, recording=recording_reference(manifest_path, scene or manifest['cell']),
+                            recording_sha256=_file_sha256(manifest_path),
                             physics_world_sha256=manifest['physics_world_sha256'], calibration=calibration,
                             epd=dict(runtime_mode=latest['runtime_mode'], snapshot_timestamp_ns=latest['timestamp_ns'],
                                      snapshots=len(snapshots), inference=(summary or {}).get('performance')),
@@ -469,7 +484,7 @@ def detect(recording, output, workspace, scene=None):
     camera = cell_camera(load_cell(scene)[1])
     output = Path(output)
     snapshots, summary = run_epd_replay(manifest_path, manifest, workspace, output.parent / f'{output.stem}_epd')
-    result = replay_snapshot_from_epd(snapshots, manifest, manifest_path, camera, summary)
+    result = replay_snapshot_from_epd(snapshots, manifest, manifest_path, camera, summary, scene)
     output.write_text(yaml.safe_dump(result, sort_keys=False))
     return result
 
@@ -489,7 +504,7 @@ def validate_replay(snapshot, scene, *, physics_world_sha256=None, max_age_s=Non
                                 f"{source.get('provenance')!r}")
     if source.get('clock_domain') != CLOCK_DOMAIN or (source.get('epd') or {}).get('runtime_mode') != 'replay':
         raise PerceptionBlocked('CLOCK_DOMAIN_MISMATCH: replay observations must be stamped in the recording clock')
-    manifest_path, manifest = load_recording(source.get('recording', ''))
+    manifest_path, manifest = load_recording(resolve_recording(source.get('recording'), scene))
     if _file_sha256(manifest_path) != source.get('recording_sha256'):
         raise PerceptionBlocked('RECORDING_INVALID: the recording changed after detection')
     if source.get('epd', {}).get('snapshot_timestamp_ns') not in [row['stamp_ns'] for row in manifest['frames']]:
@@ -513,31 +528,36 @@ def validate_replay(snapshot, scene, *, physics_world_sha256=None, max_age_s=Non
     return manifest
 
 
-def _inside(point, pose, size, margin):
+def _outside_distance(point, pose, size):
+    """Distance from a world point to a yawed box (0 inside)."""
     yaw = pose[5]
     dx, dy, dz = (point[i] - pose[i] for i in range(3))
-    lx, ly = math.cos(yaw) * dx + math.sin(yaw) * dy, -math.sin(yaw) * dx + math.cos(yaw) * dy
-    return all(abs(v) <= s / 2 + margin for v, s in zip((lx, ly, dz), size))
+    local = (math.cos(yaw) * dx + math.sin(yaw) * dy, -math.sin(yaw) * dx + math.cos(yaw) * dy, dz)
+    return math.sqrt(sum(max(abs(v) - s / 2, 0.0) ** 2 for v, s in zip(local, size)))
 
 
 def associate(measured, perceived, target_class=None, margin=ASSOCIATION_MARGIN_M):
     """Bind EPD world observations to measured physical objects.
 
     measured: {model: (pose [x,y,z,r,p,y], size [x,y,z])}; perceived: detected_objects/v1 replay objects.
-    Returns {model: binding} and the unbound detections. A model takes a class only from exactly one detection
-    whose world centroid lies inside its box (plus ``margin``); otherwise it is ``unperceived``.
+    Returns {model: binding} and the unbound detections. A detection binds to the one box that contains its world
+    centroid; failing that, to the one box within ``margin`` of it; anything else is unbound (none or ambiguous).
+    A model takes a class only from exactly one detection; otherwise it is ``unperceived``.
     """
     hits = {name: [] for name in measured}
     unbound = []
     for item in perceived:
         point = item['pose']['xyz']
-        inside = [name for name, (pose, size) in measured.items() if _inside(point, pose, size, margin)]
-        if len(inside) == 1:
-            hits[inside[0]].append(item)
+        distance = {name: _outside_distance(point, pose, size) for name, (pose, size) in measured.items()}
+        inside = [name for name, d in distance.items() if d == 0.0]
+        near = [name for name, d in distance.items() if d <= margin]
+        chosen = inside if len(inside) == 1 else near if not inside and len(near) == 1 else None
+        if chosen:
+            hits[chosen[0]].append(item)
         else:
             unbound.append(dict(object_id=item['object_id'], class_id=item['class_id'], world_xyz=point,
-                                reason='no physical object at the localized position' if not inside else
-                                f'ambiguous: inside {sorted(inside)}'))
+                                reason='no physical object at the localized position' if not near else
+                                f'ambiguous: within {margin} m of {sorted(near)}'))
     bindings = {}
     for name, items in hits.items():
         pose = measured[name][0]

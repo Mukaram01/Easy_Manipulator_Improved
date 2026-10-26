@@ -39,13 +39,13 @@ CUP = {'object_id': 'object_cup', 'class_id': 'unclassified', 'material': 'quali
                   'offset_xyz': [0.0176 * CUP_SCALE[0], 0.0007 * CUP_SCALE[1], -CUP_BODY[2] / 2],
                   'source': 'Google Scanned Objects: ACE_Coffee_Mug_Kristen_16_oz_cup (Gazebo Fuel)', 'license': 'CC-BY-4.0'}}
 BOTTLE = {'object_id': 'object_bottle', 'class_id': 'unclassified', 'material': 'qualified_test_polymer', 'shape': 'box',
-          'dimensions': [0.062, 0.062, 0.23], 'pose': {'frame_id': 'world', 'xyz': [0.32, -0.33, 0.115], 'rpy': [0, 0, 0]},
+          'dimensions': [0.062, 0.062, 0.23], 'pose': {'frame_id': 'world', 'xyz': [0.60, -0.33, 0.115], 'rpy': [0, 0, 0]},
           'visual': {'mesh': 'assets/visuals/beer_bottle_procedural/model.obj', 'scale': [1, 1, 1], 'offset_xyz': [0, 0, -0.115],
                      'source': 'procedurally generated 0.33 l beer bottle (revolved profile)', 'license': 'generated'}}
 # Camera beyond the pick zone looking back low at the cup: EPD's COCO model needs an oblique view, and a 40 mm
 # cup needs ~0.45 m range and a side-on view for a confident detection with an unambiguous principal axis
 # (from 40 deg above, its rim and mouth make the visible cloud axis-degenerate and EPD rejects it).
-CAMERA_XYZ = [0.85, -0.25, 0.28]                   # 0.89 m from the robot base: outside the UR5's 0.85 m reach
+CAMERA_XYZ = [0.92, -0.25, 0.29]                   # 0.95 m from the robot base: outside the UR5's 0.85 m reach
 CAMERA_RPY = [0.0, 0.47, math.pi]                  # 27 deg down: the cup and the whole bottle in view
 
 
@@ -107,6 +107,7 @@ def author_stage_b_cell(root, name='stage_b_cell', pick='cup', exclude=('bottle'
 def perceive(scene, workspace):
     """record -> detect -> Task Editor replay input -> Generate/Validate."""
     recording = scene / 'perception/recording'
+
     def run(*argv):
         done = subprocess.run([sys.executable, str(SCRIPTS / 'perception_replay.py'), *argv], capture_output=True, text=True)
         report = json.loads(done.stdout.strip().splitlines()[-1]) if done.stdout.strip() else {}
@@ -140,9 +141,11 @@ BLOCKER = {'object_id': 'object_blocker', 'class_id': 'unclassified', 'material'
                                                      'rpy': [0, 0, 0]}}
 VARIANTS = {
     'nominal': {},
-    'unreachable': dict(objects=(shifted(CUP, 0.5), shifted(BOTTLE, 0.5)), camera_xyz=[1.35, -0.25, 0.28],
+    'unreachable': dict(objects=(shifted(CUP, 0.5), shifted(BOTTLE, 0.45, -0.03)), camera_xyz=[1.42, -0.25, 0.29],
                         moves={'pick_zone_main': [0.9, -0.2, 0.3]}),
-    'collision': dict(objects=(CUP, shifted(BOTTLE, 0.18, 0.08 - 0.015 - 0.031 - 0.004 - 0.0), BLOCKER)),
+    'collision': dict(objects=(CUP, shifted(BOTTLE, -0.10, 0.08 - 0.015 - 0.031 - 0.004), BLOCKER)),
+    # excluded class: only the bottle is present; the task still picks cups and excludes bottles.
+    'excluded_only': dict(objects=(BOTTLE,)),
 }
 
 

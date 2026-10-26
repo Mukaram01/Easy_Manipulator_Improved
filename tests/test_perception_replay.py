@@ -131,7 +131,7 @@ def test_live_epd_output_is_never_turned_into_a_replay(tmp_path):
 
 def test_a_changed_recording_frame_is_rejected(tmp_path):
     scene, snapshot = replay(tmp_path)
-    (Path(snapshot['source']['recording']).parent / 'rgb_1.png').write_bytes(b'tampered')
+    (pr.resolve_recording(snapshot['source']['recording'], scene).parent / 'rgb_1.png').write_bytes(b'tampered')
     with pytest.raises(pr.PerceptionBlocked, match='RECORDING_INVALID'):
         pr.validate_replay(snapshot, scene)
 
@@ -165,3 +165,23 @@ def test_a_target_detection_with_no_physical_object_blocks():
         pr.associate(MEASURED, [perceived('cup', [0.20, -0.30, 0.05], '9')], 'cup')
     _, unbound = pr.associate(MEASURED, [perceived('chair', [0.20, -0.30, 0.05], '9')], 'cup')
     assert unbound[0]['class_id'] == 'chair'                      # reported, not a target: does not block
+
+
+def test_a_recording_inside_the_cell_is_referenced_relative_to_it(tmp_path):
+    scene = cell(tmp_path)
+    inside = scene / 'perception/recording/recording.json'
+    assert pr.recording_reference(inside, scene) == 'perception/recording/recording.json'
+    assert pr.resolve_recording('perception/recording/recording.json', scene) == scene / 'perception/recording/recording.json'
+    assert pr.recording_reference(tmp_path / 'elsewhere/recording.json', scene) == str((tmp_path / 'elsewhere/recording.json').resolve())
+
+
+def test_a_detection_inside_one_box_binds_to_it_even_with_a_neighbour_within_the_margin():
+    # Collision scene: bottle 4 mm from the cup. The cup's centroid is inside the cup box only.
+    measured = {'object_cup': ([0.50, -0.25, 0.0225, 0, 0, 0], [0.03, 0.03, 0.045]),
+                'object_bottle': ([0.50, -0.30, 0.115, 0, 0, 0], [0.062, 0.062, 0.23])}
+    bindings, unbound = pr.associate(measured, [perceived('cup', [0.5036, -0.2532, 0.0283], '2'),
+                                                perceived('bottle', [0.521, -0.300, 0.112], '1')], 'cup')
+    assert bindings['object_cup']['class_id'] == 'cup' and bindings['object_bottle']['class_id'] == 'bottle' and not unbound
+    # Outside both, within the margin of both: ambiguous, and a target detection blocks.
+    with pytest.raises(pr.PerceptionBlocked, match='ambiguous'):
+        pr.associate(measured, [perceived('cup', [0.50, -0.2675, 0.02], '3')], 'cup')

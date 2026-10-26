@@ -508,7 +508,8 @@ def authored_cell(package:Path)->dict:
         if not replay.is_file():
             raise RuntimeError(f"PERCEPTION_REPLAY_MISSING: {replay}; record and detect the cell camera session first")
         snapshot=yaml.safe_load(replay.read_text()) or {}
-        perception=dict(replay=str(replay),recording=(snapshot.get("source") or {}).get("recording"),
+        from perception_replay import resolve_recording
+        perception=dict(replay=str(replay),recording=str(resolve_recording((snapshot.get("source") or {}).get("recording"),package)),
                         target_class=intent["pick"]["selection"]["object_filter"].get("class_id"))
     return dict(package=str(package),name=package.name,intent_sha256=sha256(package/"config/workcell_builder_task_intent.yaml"),
                 perception=perception)
