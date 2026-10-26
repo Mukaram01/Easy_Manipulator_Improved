@@ -1416,9 +1416,12 @@ def discovered_graph(read_graph, spin, timeout=10.0):
         spin()
 
 
-def wait_for_robot_baseline(read_scene, home, mimics=(), timeout=10.0):
-    """Wait for initial state publication; never command home or relax tolerance."""
-    required = dict(home)   # arm home plus the open tool command joint
+def wait_for_robot_baseline(read_scene, home, mimics=(), timeout=10.0, release=None):
+    """Wait for initial state publication; never command home or relax tolerance.
+
+    ``home`` may already include the cell's open tool; ``release`` adds an explicit tool goal.
+    """
+    required = dict(home, **({} if release is None else release))
     deadline = time.monotonic() + timeout
     while True:
         scene = read_scene()
@@ -2065,10 +2068,14 @@ def main():
 
     def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
                      ik_binding=None, ik_seed=None, cartesian_corridor=None,
-                     initial_separation_object_ids=None, extraction_intent=None, closure_clearance=None):
+                     initial_separation_object_ids=None, extraction_intent=None, closure_clearance=None,
+                     transport_tilt_tolerance_rad=None):
         stage(name)
+        if transport_tilt_tolerance_rad is not None and (
+                name != 'PREPLAN_TRANSFER' or isinstance(goal, dict) or straight or cartesian_corridor is not None):
+            raise RuntimeError('TRANSPORT_POLICY_CONTEXT: a keep-level constraint applies to the free transfer pose only')
         if closure_clearance is not None and (
-                args.backend != 'simulator' or name != 'PREPLAN_CLOSE_GRIPPER' or group != contract['tool_group'] or
+                args.backend != 'simulator' or name != 'PREPLAN_CLOSE_GRIPPER' or group != tool.planning_group or
                 closure_clearance.get('accepted') is not True):
             raise RuntimeError('closure-clearance evidence outside simulator closing context')
         if ik_seed is not None and (name != 'PREPLAN_TRANSFER' or isinstance(goal, dict)
@@ -2327,6 +2334,18 @@ def main():
             request.trajectory_constraints.constraints = [marker]
         elif initial_support is not None:
             request.path_constraints.name = 'workcell_initial_support_contact:' + json.dumps(initial_support, sort_keys=True)
+        if transport_tilt_tolerance_rad is not None:
+            # Keep the carried payload level: valid only when the tool approach axis is vertical,
+            # where yaw is rotation about that axis. MoveIt plans against the constraint and the
+            # controller-interval audit re-checks it on the interpolated spline.
+            from transport_policy import keep_level_constraint
+            orientation = pose_values(goal.pose)[3:]
+            tool_axis = _PLANNER.rotate_vector(orientation, [0.0, 0.0, 1.0])
+            if abs(tool_axis[2]) < math.cos(transport_tilt_tolerance_rad):
+                from full_cycle_preplanner import MotionFeasibilityFailure
+                raise MotionFeasibilityFailure('TRANSPORT_KEEP_LEVEL_UNSUPPORTED: tool approach axis is not vertical')
+            request.path_constraints.orientation_constraints = [keep_level_constraint(
+                contract['tool_link'], goal.header.frame_id or 'world', orientation, transport_tilt_tolerance_rad)]
         goal_msg = MoveGroup.Goal(request=request)
         goal_msg.planning_options.plan_only = True
         goal_msg.planning_options.replan = False
@@ -2397,6 +2416,8 @@ def main():
                            if name == 'PREPLAN_APPROACH' and not isinstance(goal, dict) else {}),
                         **({'transfer_ik_seed': copy.deepcopy(ik_seed) if ik_seed is not None else transfer_ik_seed(goal, contract, values)}
                            if name == 'PREPLAN_TRANSFER' and not isinstance(goal, dict) else {}),
+                        **({'transport_tilt_tolerance_rad': transport_tilt_tolerance_rad}
+                           if transport_tilt_tolerance_rad is not None else {}),
                         attached_ids=[o.object.id for o in view.robot_state.attached_collision_objects],
                         world_ids=[o.id for o in view.world.collision_objects]))
     try:
@@ -2405,6 +2426,8 @@ def main():
         if not package.is_dir():
             package = Path(get_package_share_directory(args.scene_package))
         contract = _PLANNER.load_grasp_contract(package)
+        # Every tool-specific joint, position and group below comes from this interface.
+        from tool_interface import interface_from_contract, revalidate_against_description
         cell = yaml.safe_load((package/'cell_definition.yaml').read_text())
         authored = args.resolve_task or cell.get('builder_task_intent', {}).get('schema') == 'workcell_builder_task_intent/v2'
         if args.backend == 'simulator' and (not authored or args.replay):
@@ -2494,10 +2517,22 @@ def main():
         params = call(params_client, GetParameters.Request(names=['use_fake_hardware','allow_trajectory_execution','robot_description',
                                                                   'robot_description_semantic'])).values
         _PLANNER.bind_tool_actuation(contract, params[2].string_value, params[3].string_value)
+        tool = interface_from_contract(contract)
+        tool.closure_positions()  # unsupported/uncommissioned tools stop before any planning
+        summary['tool_interface'] = tool.evidence()
         summary['tool_actuation'] = {key: contract[key] for key in ('tool_command_joint', 'tool_group', 'tool_open_rad',
                                                                     'tool_closed_limit_rad', 'tool_aperture_max_m')}
         from hashlib import sha256
         contract['robot_model_sha256'] = sha256(params[2].string_value.encode()).hexdigest()
+        # Revalidate the installed tool against the description MoveIt actually loaded:
+        # a replaced tool, TCP or touch link is caught here, before any planning.
+        semantic = call(params_client, GetParameters.Request(names=['robot_description_semantic'])).values[0].string_value
+        summary['tool_revalidation'] = revalidate_against_description(
+            tool, params[2].string_value, touch_links=contract['allowed_touch_links'],
+            tcp_link=contract['grasp_frame'], srdf_xml=semantic or None)
+        if summary['tool_revalidation']['status'] != 'VALID':
+            failed = sorted({c['code']+': '+c['detail'] for c in summary['tool_revalidation']['checks'] if c['status'] != 'PASS'})
+            raise RuntimeError('TOOL_REVALIDATION_FAILED: ' + '; '.join(failed))
         summary['trajectory_execution_enabled'] = params[1].bool_value
         components = call(hardware_client,ListHardwareComponents.Request()).component
         if args.backend == 'fake':
@@ -2530,8 +2565,7 @@ def main():
             for j in ik_joints.values() for m in j.findall('mimic')]
         stage('UPDATE_PLANNING_SCENE')
         home = dict(zip(contract['home_joint_names'],contract['home_joint_positions']))
-        tool_open = {contract['tool_command_joint']: contract['tool_open_rad']}
-        initial = wait_for_robot_baseline(scene_now, dict(home, **tool_open), mimics, min(10.0, args.timeout))
+        initial = wait_for_robot_baseline(scene_now, home, mimics, min(10.0, args.timeout), tool.release_goal())
         if initial.robot_state.attached_collision_objects:
             raise RuntimeError('existing attachment requires explicit recovery')
         existing_ids = {o.id for o in initial.world.collision_objects}
@@ -2569,7 +2603,7 @@ def main():
             if not observation_geometry_matches(obj, actual.get(obj['id'])):
                 raise RuntimeError('normalized scene insertion mismatch')
         # A non-home start is not silently corrected with motion before validation.
-        assert_joint_match(initial.robot_state, updated_state(initial.robot_state, dict(home, **tool_open), mimics),0.001)
+        assert_joint_match(initial.robot_state, updated_state(initial.robot_state, dict(home, **tool.release_goal()), mimics),0.001)
         baseline = copy.deepcopy(initial.allowed_collision_matrix)
         destination = load_canonical_place_target(package, task['destination_zone'])
         retreat = args.retreat_distance if args.retreat_distance is not None else contract['retreat_distance_m']
@@ -2590,7 +2624,8 @@ def main():
             # The tool's hold method and force come from its capability profile; the
             # running simulator must have been derived from this exact profile.
             from end_effector_hold import load_hold_profile, verify_hold_binding
-            hold_profile = load_hold_profile(contract.get('end_effector_capability'))
+            hold_profile = load_hold_profile(contract.get('end_effector_capability'),
+                                             variant=contract.get('end_effector_hold_variant'))
             summary['end_effector_hold'] = verify_hold_binding(hold_profile, measurements.receipt)
             capture_model = CaptureModel(params[2].string_value, contract['allowed_touch_links'])
             srdf = call(params_client,GetParameters.Request(names=['robot_description_semantic'])).values[0].string_value
@@ -3000,7 +3035,7 @@ def main():
                         prevalidated=trajectory.joint_trajectory
                         open_goal=dict(zip(prevalidated.joint_names,prevalidated.points[-1].positions))
                         deadline=time.monotonic()+30
-                        release=plan_segment(scene_now(),label,open_goal,group=contract['tool_group'])
+                        release=plan_segment(scene_now(),label,open_goal,group=tool.planning_group)
                         trajectory=release['trajectory'];live=trajectory.joint_trajectory
                         measured_open=measurements.joints(measurements.fresh())[contact_guard.leader][0]
                         live_start=live.points[0].positions[list(live.joint_names).index(contact_guard.leader)]
@@ -3043,7 +3078,7 @@ def main():
                         if args.simulator_commission=='contact-release':
                             # Plan release in the actual lifted scene with the existing planner.
                             deadline=time.monotonic()+30
-                            release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group=contract['tool_group'])
+                            release=plan_segment(scene_now(),'COMMISSION_RELEASE',{contact_guard.leader:contact_guard.open_position},group=tool.planning_group)
                             action(execute_client,ExecuteTrajectory.Goal(trajectory=release['trajectory']),30)
                             await_release_ready()
                             measured_reconcile()
@@ -3086,7 +3121,7 @@ def main():
                     hold_command=grasp_hold_target(hold_before['leader_position_rad'],hold_profile.hold_reserve_rad,
                                                    certified_close,contact_guard.open_position)
                     deadline=time.monotonic()+30
-                    hold=plan_segment(scene_now(),'COMMISSION_GRASP_HOLD',{leader:hold_command},group=contract['tool_group'])
+                    hold=plan_segment(scene_now(),'COMMISSION_GRASP_HOLD',{leader:hold_command},group=tool.planning_group)
                     hold_points=hold['trajectory'].joint_trajectory
                     action(execute_client,ExecuteTrajectory.Goal(trajectory=hold['trajectory']),30)
                     stage(label)
@@ -3234,7 +3269,7 @@ def main():
             return 0
         final = scene_now()
         assert_scene_match(final, expected, selected_id)
-        intended_home = dict(home, **tool_open)
+        intended_home = dict(home, **tool.release_goal())
         assert_joint_match(final.robot_state, updated_state(final.robot_state, intended_home, mimics), 0.001)
         summary['final_robot_state'] = dict(
             actual_joints=dict(zip(final.robot_state.joint_state.name, final.robot_state.joint_state.position)),

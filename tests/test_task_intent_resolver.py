@@ -559,3 +559,43 @@ def test_exact_never_substitutes_after_deferred_control():
     assert result['readiness']['primary_code']=='NO_FEASIBLE_CYCLE'
     assert result['grasp_resolution']['attempts']==[]
     assert result['grasp_resolution']['selected_object_id'] is None
+
+
+def test_capability_bound_2f_resolves_exactly_like_the_legacy_tool_id():
+    resolver = resolver_module()
+    bound = {"end_effector": {"id": "robotiq_85_gripper", "type": "finger", "capability": "robotiq_2f_85"}}
+    legacy = resolver.resolve_task_intent(valid_intent(), environment(), cell(), observations(), pass_cycle, now=100.0)
+    result = resolver.resolve_task_intent(valid_intent(), environment(), bound, observations(), pass_cycle, now=100.0)
+    for key in ("readiness_status", "grasp_resolution", "capability_profile"):
+        assert result[key] == legacy[key]
+    assert "tool_incompatible_strategies" not in result["grasp_resolution"]
+
+
+def test_capability_bound_tools_take_their_grasp_capabilities_from_the_catalog():
+    resolver = resolver_module()
+    for capability in ("onrobot_airpick_style", "robotiq_3f"):
+        tool = {"end_effector": {"id": capability, "type": "finger", "capability": capability}}
+        result = resolver.resolve_task_intent(valid_intent(), environment(), tool, observations(), pass_cycle, now=100.0)
+        assert result["readiness"]["primary_code"] == "REQUIRED_CAPABILITY_UNAVAILABLE"
+        assert "two_finger_parallel" not in result["capability_profile"]["capabilities"]
+
+
+def test_strategies_the_catalog_excludes_for_the_installed_tool_are_never_tried(tmp_path, monkeypatch):
+    import shutil
+    import sys
+    resolver = resolver_module()
+    v2 = sys.modules[resolver.strategy_supports_tool.__module__]      # the module the resolver actually bound
+    catalog = tmp_path / "grasp_strategies"
+    shutil.copytree(v2.STRATEGY_DIR, catalog)
+    top = yaml.safe_load((catalog / "top_2f.yaml").read_text())
+    top["grasp_strategy"]["compatible_end_effector_capabilities"] = ["some_other_tool"]
+    (catalog / "top_2f.yaml").write_text(yaml.safe_dump(top))
+    monkeypatch.setattr(v2, "STRATEGY_DIR", catalog)
+    bound = {"end_effector": {"id": "robotiq_85_gripper", "type": "finger", "capability": "robotiq_2f_85"}}
+    tried = []
+    def evaluator(request):
+        tried.append(request["strategy_ref"]); return pass_cycle(request)
+    auto = resolver.resolve_task_intent(valid_intent(), environment(), bound, observations(), evaluator, now=100.0)
+    assert "top_2f" not in tried and auto["grasp_resolution"]["tool_incompatible_strategies"] == ["top_2f"]
+    exact = resolver.resolve_task_intent(valid_intent("EXACT"), environment(), bound, observations(), evaluator, now=100.0)
+    assert exact["readiness"]["primary_code"] == "STRATEGY_TOOL_INCOMPATIBLE"

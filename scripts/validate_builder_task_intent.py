@@ -9,7 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
-from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, TOOL_CAPABILITY_MAP, STRATEGY_DIR
+from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, installed_tool_capabilities, STRATEGY_DIR
 try:
     import yaml
 except Exception:
@@ -113,9 +113,9 @@ def validate_payload(payload, scene_package=None, grasp_dir=None):
             required = normalized.get('pick', {}).get('grasp', {}).get('required_capability')
             tool = env.get('end_effector') or env.get('tool') or scene.get('end_effector') or scene.get('tool') or {}
             installed = (tool.get('id') or tool.get('name')) if isinstance(tool, dict) else tool
-            available = TOOL_CAPABILITY_MAP.get(str(installed), set())
+            available = installed_tool_capabilities(tool)
             if required and required not in available:
-                diagnostics.append({'code': 'INSTALLED_TOOL_CAPABILITY_MISMATCH', 'message': f'installed scene tool {installed!r} cannot provide two_finger_parallel'})
+                diagnostics.append({'code': 'INSTALLED_TOOL_CAPABILITY_MISMATCH', 'message': f'installed scene tool {installed!r} cannot provide {required}'})
         errors = [d['code'] + ': ' + d['message'] for d in diagnostics]
         return {
             'status': 'FAIL' if errors else 'PASS', 'errors': errors, 'warnings': warnings,
