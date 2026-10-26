@@ -58,6 +58,11 @@
 #include <QToolButton>
 #include <QTreeWidgetItemIterator>
 #include <QWindow>
+#include <QAbstractScrollArea>
+#include <QTextDocument>
+#include <QGroupBox>
+#include <QTabWidget>
+#include <QThread>
 #include "gui/mate_tool_controller.hpp"
 #include "gui/mate_tool_panel.hpp"
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -2910,4 +2915,5 @@ public:
     });
     timer->start();
   }
+#include "ui_tour_capture.inc"
 };
