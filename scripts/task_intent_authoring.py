@@ -11,7 +11,7 @@ import yaml
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
-from task_intent_v2 import migrate_v1, parse_validate_normalize, normalized_intent_hash, TOOL_CAPABILITY_MAP
+from task_intent_v2 import migrate_v1, parse_validate_normalize, normalized_intent_hash, installed_tool_capabilities
 from validate_builder_task_intent import validate_payload
 
 
@@ -181,9 +181,8 @@ def load_authoring(scene, draft=None):
         report['task_intent'] = parsed['normalized']
         report['normalized_intent_sha256'] = normalized_intent_hash(payload)
     tool = env.get('end_effector') or env.get('tool') or scene_doc.get('end_effector') or scene_doc.get('tool') or {}
-    tool_id = (tool.get('id') or tool.get('name')) if isinstance(tool, dict) else tool
     report['strategies'] = (['top_2f', 'side_grip_basic', 'finger_pinch_basic']
-                            if 'two_finger_parallel' in TOOL_CAPABILITY_MAP.get(tool_id, set()) else [])
+                            if 'two_finger_parallel' in installed_tool_capabilities(tool) else [])
     report['assets'] = [a['id'] for a in env.get('assets', [])]
     report['regions'] = {z['id']: z.get('target_ref') for z in env.get('task_zones', []) if z.get('target_ref')}
     try:

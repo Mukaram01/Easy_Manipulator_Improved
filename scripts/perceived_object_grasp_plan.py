@@ -78,6 +78,15 @@ def load_grasp_contract(scene_package):
         joint for joint in [(environment.get("end_effector") or environment.get("tool") or {}).get("actuated_joint")] if joint]
     if not isinstance(command_joints, list) or len(command_joints) != 1 or not isinstance(command_joints[0], str):
         raise ValueError(f"{source}: the end effector needs exactly one tool command joint, got {command_joints!r}")
+    # A cell that binds an end-effector capability gets that tool's interface; a cell
+    # that binds none keeps the legacy two-finger values (tool_interface.LEGACY_TWO_FINGER).
+    tool_interface = None
+    if end_effector.get("capability"):
+        from tool_interface import load_tool_interface
+        tool_interface = load_tool_interface(end_effector["capability"]).as_contract()
+    # Authored carried-payload transport (transport_policy/v1); absent keeps free transfer.
+    from transport_policy import parse_transport_policy
+    transport = parse_transport_policy((cell.get("motion_policy") or {}).get("transport"))
     return {
         "approach_distance_m": float(distances[0]),
         "retreat_distance_m": float(distances[1]),
@@ -87,6 +96,9 @@ def load_grasp_contract(scene_package):
         "end_effector_capability": end_effector.get("capability"),
         "tool_command_joint": command_joints[0],
         "tool_aperture_max_m": capability_aperture_m(end_effector.get("capability")),
+        "end_effector_hold_variant": end_effector.get("hold_variant"),
+        "tool_interface": tool_interface,
+        "transport_policy": transport.as_contract() if transport is not None else None,
         "geometric_qualification": end_effector.get("geometric_qualification"),
         "tool_link": cell["robot"]["tool_link"],
         "grasp_frame": end_effector["grasp_frame"],

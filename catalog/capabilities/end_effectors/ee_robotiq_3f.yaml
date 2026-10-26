@@ -13,6 +13,8 @@ end_effector:
   supported_grasp_strategies: [pinch, enveloping]
   required_io_signals: [mode_cmd, grip_cmd]
   release_behaviour: adaptive_release
+  asset_package: robotiq_3f_gripper_description
+  moveit_config_package: robotiq_3f_moveit_config
   limitations_warnings:
     - Enveloping grasp speed is slower than pinch mode.
   hold:
@@ -30,3 +32,18 @@ end_effector:
         measured_closure_rad: 0.0
         evidence: unmeasured; commissioning fails closed on the simulator until bound
     release: adaptive_release
+  interface:
+    schema: end_effector_interface/v1
+    kind: joint_position
+    grasp_capabilities: [three_finger]
+    planning_group: gripper
+    command_joints: [finger_1_joint_1, finger_2_joint_1, finger_middle_joint_1]
+    open_positions_rad: {finger_1_joint_1: 0.0, finger_2_joint_1: 0.0, finger_middle_joint_1: 0.0}
+    closure:
+      closed_position_rad: null
+      search_steps: 80
+      commissioning_note: "robotiq_3f_gripper_description declares 0..3.1416 rad per proximal joint; the usable closure range and finger synergy must be commissioned before execution"
+    max_aperture_m: 0.155
+    touch_links: [finger_1_link_3, finger_2_link_3, finger_middle_link_3]
+    tcp_link: palm
+    recovery: {strategy: stop_and_require_operator, release_outside_destination: false}
