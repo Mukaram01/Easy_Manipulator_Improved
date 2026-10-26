@@ -798,7 +798,7 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         launch_log=(session/"launch.log").open("w")
         # An authored cell runs this revision's qualified launch on its own generated files.
         launch_target=[str(repo/"scenes/ur5_2f_test/launch/demo.launch.py")] if authored else ["ur5_2f_test","demo.launch.py"]
-        launch_cmd=["ros2","launch",*launch_target,
+        launch_cmd=["ros2","launch","--noninteractive",*launch_target,
             "execution_backend:=simulator","simulator_commissioning:=true",
             f"simulator_world:={source_world}",f"simulator_output:={runtime}",
             "use_sim_time:=true","launch_rviz:=false","use_fake_hardware:=true",
