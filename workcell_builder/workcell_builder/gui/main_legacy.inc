@@ -1204,6 +1204,11 @@ QJsonObject run_gui_self_test()
 
 int main(int argc, char * argv[])
 {
+  // WSLg exposes a Mesa D3D12 GPU that Chromium blocklists, which leaves the Product View without
+  // WebGL ("Scene could not finish loading"). Opt in to the GPU on WSL only, and never override flags
+  // the user set.
+  if (qEnvironmentVariableIsEmpty("QTWEBENGINE_CHROMIUM_FLAGS") && !qEnvironmentVariableIsEmpty("WSL_DISTRO_NAME"))
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--ignore-gpu-blocklist");
   QApplication a(argc, argv);
   const QStringList args = QApplication::arguments();
   if (has_cli_flag(args, "--self-test-gui") || has_cli_flag(args, "--gui-acceptance-check")) {
@@ -1248,6 +1253,25 @@ int main(int argc, char * argv[])
     if (output.isEmpty() || scene.isEmpty()) return 2;
     MainWindow w(cli_value(args, "--workspace"), "humble"); w.show();
     TestMain::start_operator_preview_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"));
+    return a.exec();
+  }
+  if (has_cli_flag(args, "--ui-tour")) {
+    // Screenshot tour of every page/tab/wizard at --window-size (see test/ui_tour_capture.inc).
+    const QString output = cli_value(args, "--smoke-output");
+    if (output.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    const auto parts = cli_value(args, "--window-size").split('x');
+    w.show();
+    // The shell may maximize the window; the tour measures the requested size (clamped by the minimum
+    // size). Without --window-size the restored/default geometry is kept (persistence checks).
+    if (parts.size() == 2) {
+      const QSize requested(parts[0].toInt(), parts[1].toInt());
+      w.setWindowState(Qt::WindowNoState);
+      w.resize(requested);
+      // The window manager may apply the first-run maximize after this; re-assert once it settles.
+      QTimer::singleShot(1200, &w, [&w, requested]() { w.setWindowState(Qt::WindowNoState); w.resize(requested); });
+    }
+    TestMain::start_ui_tour(&w, &a, output, cli_value(args, "--scene"), cli_value(args, "--tag"));
     return a.exec();
   }
   if (has_cli_flag(args, "--visual-mate-acceptance")) {

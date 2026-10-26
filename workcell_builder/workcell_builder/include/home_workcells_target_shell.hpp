@@ -549,6 +549,8 @@ inline QFrame * metric_card(const QString & icon, const QString & label, int cou
   auto * value = new QLabel(QString::number(count), card); value->setObjectName(QStringLiteral("studioTargetMetricValue"));
   value->setProperty("kind", kind);
   auto * sub = new QLabel(hint, card); sub->setObjectName(QStringLiteral("studioTargetMetricHint"));
+  // Narrow windows (1280 px) give each card ~150 px: captions wrap instead of being cut off.
+  title->setWordWrap(true); sub->setWordWrap(true);
   copy->addWidget(title); copy->addWidget(value); copy->addWidget(sub);
   row->addLayout(copy, 1);
   return card;
@@ -980,7 +982,9 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
       if (QTableWidgetItem * item = table->item(row, column)) item->setFlags(item->flags() & ~Qt::ItemIsEditable);
     }
   }
-  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); table->setColumnWidth(1, 140); table->setColumnWidth(2, 60); table->setColumnWidth(3, 116); table->setColumnWidth(4, 90); table->setColumnWidth(5, 40);  // 446 px fixed ("Needs Attention" needs 140): the name column keeps >= 250 px at 1366 px
+  table->setShowGrid(false); table->setAlternatingRowColors(false); table->setWordWrap(false); table->setSelectionBehavior(QAbstractItemView::SelectRows); table->setSelectionMode(QAbstractItemView::SingleSelection); table->setEditTriggers(QAbstractItemView::NoEditTriggers); table->verticalHeader()->hide(); table->verticalHeader()->setDefaultSectionSize(62); table->horizontalHeader()->setMinimumHeight(38); table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch); table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed); table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed); { QFont bold = table->font(); bold.setBold(true); bold.setPixelSize(studioFontPx());
+    // Status cell = icon + bold label; measured so "Needs Attention" is never cut at any text scale.
+    table->setColumnWidth(1, QFontMetrics(bold).horizontalAdvance(QStringLiteral("Needs Attention")) + 48); } table->setColumnWidth(2, 60); table->setColumnWidth(3, 116); table->setColumnWidth(4, 90); table->setColumnWidth(5, 40);  // 446 px fixed ("Needs Attention" needs 140): the name column keeps >= 250 px at 1366 px
   table_layout->addWidget(table, 1);
   auto * footer = new QLabel(QStringLiteral("Showing %1 of %1 workcells").arg(total), table_card); footer->setObjectName(QStringLiteral("studioTargetTableFooter")); footer->setContentsMargins(12, 6, 12, 6); table_layout->addWidget(footer);
   main->addWidget(table_card, 1);
@@ -1073,6 +1077,46 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
   }
 }
 
+// Saves the main window geometry when it closes (Reset Layout clears it again).
+class WindowGeometryKeeper : public QObject
+{
+public:
+  explicit WindowGeometryKeeper(QWidget * window) : QObject(window), window_(window) {}
+
+protected:
+  bool eventFilter(QObject * watched, QEvent * event) override
+  {
+    if (watched == window_ && event->type() == QEvent::Close && !window_->property("studioLayoutReset").toBool())
+      saveWindowGeometry(window_, QStringLiteral("window"));
+    return QObject::eventFilter(watched, event);
+  }
+
+private:
+  QWidget * window_;
+};
+
+// Narrow home tables (1280 px windows) keep the workcell name readable: Robot and Modified, which the
+// selected-workcell panel also shows, are hidden until there is room again.
+class HomeTableColumnFitter : public QObject
+{
+public:
+  explicit HomeTableColumnFitter(QTableWidget * table) : QObject(table), table_(table) {}
+
+protected:
+  bool eventFilter(QObject *, QEvent * event) override
+  {
+    if (event->type() == QEvent::Resize || event->type() == QEvent::Show) {
+      const bool narrow = table_->viewport()->width() < 720;
+      table_->setColumnHidden(2, narrow);
+      table_->setColumnHidden(4, narrow);
+    }
+    return false;
+  }
+
+private:
+  QTableWidget * table_;
+};
+
 inline void configure_target_shell(QMainWindow * window, const QString & workspace_root)
 {
   if (!window || QApplication::arguments().contains(QStringLiteral("--scene3d-smoke"))) return;
@@ -1082,10 +1126,15 @@ inline void configure_target_shell(QMainWindow * window, const QString & workspa
   auto * pages = dashboard ? qobject_cast<QStackedWidget *>(dashboard->parentWidget()) : nullptr;
   if (!table || !dashboard || !pages) return;
   window->setProperty("studioTargetShellApplied", true);
-  window->setMinimumSize(1180, 760);
-  window->setWindowState(window->windowState() | Qt::WindowMaximized);
+  // 1024 x 640 keeps every page usable down to the 1280 x 720 constrained mode (with OS panels).
+  window->setMinimumSize(1024, 640);
+  // First launch maximizes; afterwards the remembered geometry returns, clamped to a present screen.
+  if (!restoreWindowGeometryClamped(window, QStringLiteral("window")))
+    window->setWindowState(window->windowState() | Qt::WindowMaximized);
+  window->installEventFilter(new WindowGeometryKeeper(window));
   build_application_shell(window, pages);
   build_home_page(window, dashboard, table, workspace_root);
+  table->viewport()->installEventFilter(new HomeTableColumnFitter(table));
 }
 
 }  // namespace home_workcells

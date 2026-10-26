@@ -244,6 +244,17 @@ inline void compact_toolbar_button(QPushButton * button, ToolbarSegment segment 
   button->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(button->text()) + 2 * 8 + 6);
 }
 
+inline void give_toolbar_icon(QAbstractButton * button, const QString & icon, const QString & tooltip = QString())
+{
+  if (!button) return;
+  if (button->property("fullText").toString().isEmpty()) button->setProperty("fullText", button->text());
+  button->setIcon(studioIcon(icon));
+  button->setIconSize(QSize(16, 16));
+  button->setAccessibleName(button->property("fullText").toString());
+  if (!tooltip.isEmpty()) button->setToolTip(tooltip);
+  else if (button->toolTip().isEmpty()) button->setToolTip(button->property("fullText").toString());
+}
+
 inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * preview)
 {
   if (!scene_page) return;
@@ -345,6 +356,26 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   add_existing(operator_preview);
   add_existing(overflow);
 
+  give_toolbar_icon(select, QStringLiteral("select"), QStringLiteral("Select"));
+  give_toolbar_icon(move, QStringLiteral("move"), QStringLiteral("Move"));
+  give_toolbar_icon(rotate, QStringLiteral("rotate"), QStringLiteral("Rotate"));
+  give_toolbar_icon(add_object, QStringLiteral("add"));
+  give_toolbar_icon(fit, QStringLiteral("fit"), QStringLiteral("Fit the view to the workcell"));
+  give_toolbar_icon(mate, QStringLiteral("mate"));
+  give_toolbar_icon(save, QStringLiteral("save"), QStringLiteral("Save Layout (Ctrl+S)"));
+  give_toolbar_icon(operator_preview, QStringLiteral("preview"));
+  if (overflow) {
+    overflow->setIcon(studioIcon(QStringLiteral("view")));
+    overflow->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    give_toolbar_icon(overflow, QStringLiteral("view"), QStringLiteral("View options"));
+  }
+  for (auto * button : {undo, redo}) {
+    if (!button) continue;
+    button->setIcon(studioIcon(button == undo ? QStringLiteral("undo") : QStringLiteral("redo")));
+  }
+  // Labels collapse to icons as the toolbar narrows (shared component, see workcell_builder_ui_utils).
+  installResponsiveToolbar(host, {select, move, rotate}, {add_object, fit, mate, operator_preview, overflow}, save);
+
   if (save) {
     save->setProperty("layoutDirty", false);
   }
@@ -426,7 +457,7 @@ inline void simplify_inspector(QWidget * scene_page)
       if (card && card != selection_page) {
         card->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
         if (card->layout()) card->layout()->setAlignment(Qt::AlignTop);
-        card->setMaximumHeight(520);
+        card->setMaximumHeight(560);
         for (auto * label : card->findChildren<QLabel *>()) {
           if (label) label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
         }
@@ -493,31 +524,38 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   auto * right = scene_page->findChild<QFrame *>(QStringLiteral("sceneBuilderRightPanel"));
   auto * splitter = scene_page->findChild<QSplitter *>(QStringLiteral("sceneBuilderMainSplitter"));
   if (left) {
-    left->setMinimumWidth(200);
-    left->setMaximumWidth(340);
+    left->setMinimumWidth(180);
+    left->setMaximumWidth(360);
   }
-  // 200 + 600 + 470 = 1270 px of panels: measured at 1366 px the page offers
-  // ~1280 px, so neither the toolbar (~600 px) nor the inspector (~466 px for
-  // three unit spin boxes per row) is squeezed or pushed off-screen.
-  if (center) center->setMinimumWidth(600);
+  // 180 + 440 + 476 px of panels fit the 1280 x 720 constrained mode. The toolbar adapts its labels
+  // (installResponsiveToolbar), so the 3D view no longer reserves the full labelled toolbar width.
+  if (center) center->setMinimumWidth(440);
   if (right) {
     // Unit suffixes (m, °) widen the transform spin boxes; keep the inspector
     // wide enough that no field or button is ever clipped.
-    right->setMinimumWidth(470);
-    right->setMaximumWidth(540);
-    right->show();
+    // The Task page needs ~434 px of content (three unit spin boxes per row); 476 keeps it whole.
+    right->setMinimumWidth(476);
+    keepWrappedLabelHeights(right);  // inspector forms: wrapped help text must not overlap the next row
+    for (auto * area : right->findChildren<QScrollArea *>()) keepScrollContentHeight(area);
+    right->setMaximumWidth(560);
   }
+  QSettings settings;
+  seedSceneBuilderLayoutDefaults();
+  if (right) right->setVisible(settings.value(QStringLiteral("scene_builder/right_panel_visible")).toBool());
   if (splitter) {
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 10);
     splitter->setStretchFactor(2, 1);
-    splitter->setSizes({280, 960, 480});
+    // Product defaults only for a first run (or after Reset Layout); a user's own panel widths,
+    // saved by MainWindow::save_scene_builder_panel_state(), are restored instead of overwritten.
+    QList<int> saved;
+    for (const auto & value : settings.value(QStringLiteral("scene_builder/main_splitter_sizes")).toList()) saved.append(value.toInt());
+    if (saved.size() == 3 && saved[1] > 0) {
+      splitter->setSizes({right && left && left->isHidden() ? 0 : saved[0], saved[1], right && right->isHidden() ? 0 : saved[2]});
+    } else {
+      splitter->setSizes({260, 960, 470});
+    }
   }
-
-  QSettings settings;
-  settings.setValue(QStringLiteral("scene_builder/preferred_left_width"), 280);
-  settings.setValue(QStringLiteral("scene_builder/preferred_right_width"), 480);
-  settings.setValue(QStringLiteral("scene_builder/right_panel_visible"), true);
 
   simplify_hierarchy(scene_page);
   simplify_inspector(scene_page);
@@ -540,10 +578,10 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
     QWidget#scene_builder_top_controls_host QPushButton { min-height: 32px; padding: 4px 12px; border: 1px solid @borderStrong; border-radius: @radiusS; background: @surface; color: @text; }
     QWidget#scene_builder_top_controls_host QPushButton:hover { background: @accentSoft; border-color: @accent; }
     QWidget#sceneBuilderEditModeGroup QPushButton { border-radius: 0; border-right-width: 0; }
-    QWidget#scene_builder_top_controls_host QPushButton#sceneBuilderToolbarMate:checked { background: @accent; color: @accentText; border-color: @accent; font-weight: 600; }
+    QWidget#scene_builder_top_controls_host QPushButton#sceneBuilderToolbarMate:checked { background: @accent; color: @accentText; border-color: @accent; }
     QPushButton#sceneBuilderModeSelect { border-top-left-radius: @radiusS; border-bottom-left-radius: @radiusS; }
     QPushButton#sceneBuilderModeRotate { border-top-right-radius: @radiusS; border-bottom-right-radius: @radiusS; border-right-width: 1px; }
-    QWidget#sceneBuilderEditModeGroup QPushButton:checked { background: @accent; color: @accentText; border-color: @accent; font-weight: 600; }
+    QWidget#sceneBuilderEditModeGroup QPushButton:checked { background: @accentSoft; color: @accent; border-color: @accent; }
     QPushButton#sceneBuilderToolbarSave[layoutDirty="true"] { background: @accent; color: @accentText; border-color: @accent; font-weight: 650; }
     QPushButton#sceneBuilderToolbarSave[layoutDirty="true"]:hover { background: @accentHover; border-color: @accentHover; }
     QPushButton#sceneBuilderToolbarSave[layoutDirty="false"] { background: @surfaceSunken; color: @textMuted; border-color: @border; }

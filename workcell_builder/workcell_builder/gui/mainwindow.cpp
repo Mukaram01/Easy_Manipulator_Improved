@@ -1989,6 +1989,7 @@ void MainWindow::apply_studio_theme()
     QLabel#sceneBuilderCompactSceneIdentity { color: @textSecondary; font-size: 12px; }
     QLabel#sceneBuilderInspectorLabel { color: @text; font-size: 15px; font-weight: 650; }
     QLabel#sceneBuilderIssueCount { background: @dangerSoft; color: @danger; border: 1px solid @danger; border-radius: 9px; padding: 2px 7px; }
+    QLabel#studioFieldHint { color: @textMuted; }
   )QSS")));
   const bool dark = workcell_builder::studioAppearance() == workcell_builder::StudioAppearance::Dark;
   append_studio_log(dark ? "Loaded Workcell Studio dark appearance." : "Loaded Workcell Studio light appearance.");
@@ -2468,6 +2469,7 @@ void MainWindow::setup_studio_shell()
   scene_splitter->setStretchFactor(2, 0);
   scene_splitter->setSizes({320, 900, 360});
   {
+    workcell_builder::seedSceneBuilderLayoutDefaults();  // first run / after Reset Layout only
     QSettings settings;
     QList<int> saved_sizes;
     const auto values = settings.value(QStringLiteral("scene_builder/main_splitter_sizes")).toList();
@@ -3546,7 +3548,8 @@ void MainWindow::setup_studio_shell()
   workflow_tab_layout->addWidget(task_diagnostics);
   auto * open_perception_metadata_button = new QPushButton("Open Perception Metadata", scene_builder); task_diagnostics_actions->addWidget(open_perception_metadata_button);
   auto * open_epd_docs_button = new QPushButton("Open EPD Pipeline Docs", scene_builder); task_diagnostics_actions->addWidget(open_epd_docs_button);
-  ar_layout->addWidget(new QLabel("<b>Live Perception</b> · camera → EPD · perception only, robot motion locked"));
+  { auto * heading = new QLabel("<b>Live Perception</b> · camera → EPD · perception only, robot motion locked");
+    heading->setWordWrap(true); ar_layout->addWidget(heading); }
   perception_camera_combo_ = new QComboBox(scene_builder); perception_camera_combo_->setObjectName("livePerceptionCamera");
   perception_camera_combo_->setToolTip("RGB-D cameras publishing in the registered perception ROS graph.");
   ar_layout->addWidget(perception_camera_combo_);
@@ -3554,8 +3557,10 @@ void MainWindow::setup_studio_shell()
   perception_discover_button_ = new QPushButton("Discover Cameras", scene_builder); perception_discover_button_->setObjectName("livePerceptionDiscover");
   perception_bind_button_ = new QPushButton("Save Camera Binding", scene_builder); perception_bind_button_->setObjectName("livePerceptionBind");
   perception_start_button_ = new QPushButton("Start Live Perception", scene_builder); perception_start_button_->setObjectName("livePerceptionStart");
-  perception_actions->addWidget(perception_discover_button_); perception_actions->addWidget(perception_bind_button_);
-  perception_actions->addWidget(perception_start_button_); ar_layout->addLayout(perception_actions);
+  // Wrapping action bar: as a fixed row these three set a ~500 px minimum on every inspector tab.
+  delete perception_actions;
+  ar_layout->addWidget(workcell_builder::makeActionBar(scene_builder,
+    {perception_discover_button_, perception_bind_button_, perception_start_button_}));
   perception_preview_label_ = new QLabel("No live preview: Start Live Perception.", scene_builder);
   perception_preview_label_->setObjectName("livePerceptionPreview"); perception_preview_label_->setMinimumHeight(180);
   perception_preview_label_->setAlignment(Qt::AlignCenter); ar_layout->addWidget(perception_preview_label_);
@@ -3760,6 +3765,68 @@ void MainWindow::setup_studio_shell()
 
   auto * diagnostics = new QWidget(studio_pages_); auto * gl = new QVBoxLayout(diagnostics);
   gl->addWidget(new QLabel("<h2>Diagnostics / First-Run Self-Test</h2><p>Offline checks only. No ROS launch, no MoveIt, no robot motion.</p>"));
+  {
+    // Appearance & Layout (System page): a few deliberate preferences, stored in QSettings.
+    auto * card = new QFrame(diagnostics); card->setObjectName("studioCard");
+    auto * grid = new QGridLayout(card); grid->setContentsMargins(14, 10, 14, 10); grid->setHorizontalSpacing(12); grid->setVerticalSpacing(8);
+    auto * heading = new QLabel("<b>Appearance &amp; Layout</b>", card);
+    grid->addWidget(heading, 0, 0, 1, 6);
+    QSettings settings;
+    auto add_choice = [&](int column, const QString & label, const QString & key, const QStringList & names,
+                          const QStringList & values, const QString & fallback, const QString & tip) {
+      auto * caption = new QLabel(label, card); caption->setObjectName("studioFieldHint");
+      auto * combo = new QComboBox(card); combo->setObjectName("appearance_" + key.section('/', 1));
+      for (int i = 0; i < names.size(); ++i) combo->addItem(names[i], values[i]);
+      combo->setCurrentIndex(std::max(0, combo->findData(settings.value(key, fallback).toString())));
+      combo->setToolTip(tip);
+      grid->addWidget(caption, 1, column); grid->addWidget(combo, 2, column);
+      return combo;
+    };
+    auto * theme = add_choice(0, "Theme", "appearance/mode", {"System", "Light", "Dark"}, {"system", "light", "dark"}, "system",
+                              "Follows the desktop by default. Applies the next time Workcell Studio starts.");
+    auto * density = add_choice(1, "Density", "appearance/density", {"Comfortable", "Compact"}, {"comfortable", "compact"},
+                                "comfortable", "Compact uses shorter controls for small screens. Applies immediately.");
+    auto * text = add_choice(2, "Text size", "appearance/text_scale", {"100 %", "112 %", "125 %"}, {"1", "1.125", "1.25"}, "1",
+                             "Scales interface text. Applies immediately.");
+    auto * reset = new QPushButton(workcell_builder::studioIcon("reset"), "Reset Layout", card);
+    reset->setObjectName("resetLayoutButton");
+    reset->setToolTip("Restore the default window size, panel widths and panel visibility (Ctrl+Shift+0). Appearance is kept.");
+    grid->addWidget(reset, 2, 4);
+    auto * note = new QLabel(card); note->setObjectName("studioFieldHint"); note->setWordWrap(true); note->hide();
+    grid->addWidget(note, 3, 0, 1, 6);
+    grid->setColumnStretch(3, 1);
+    connect(theme, qOverload<int>(&QComboBox::activated), this, [theme, note]() {
+      QSettings().setValue("appearance/mode", theme->currentData().toString());
+      note->setText("Theme saved: it applies the next time Workcell Studio starts."); note->show();
+    });
+    auto apply_live = [this, note](QComboBox * combo, const QString & key) {
+      QSettings().setValue(key, combo->currentData().toString());
+      workcell_builder::applyStudioApplicationAppearance(qApp);
+      note->setText("Applied."); note->show();
+      append_studio_log("Appearance: " + key + " = " + combo->currentData().toString());
+    };
+    connect(density, qOverload<int>(&QComboBox::activated), this, [=]() { apply_live(density, "appearance/density"); });
+    connect(text, qOverload<int>(&QComboBox::activated), this, [=]() { apply_live(text, "appearance/text_scale"); });
+    auto reset_layout = [this, note]() {
+      workcell_builder::resetSavedStudioLayout();
+      workcell_builder::seedSceneBuilderLayoutDefaults();
+      scene_builder_preferred_left_width_ = 260;
+      scene_builder_preferred_right_width_ = 470;
+      if (scene_builder_splitter_) {
+        if (scene_builder_left_panel_) scene_builder_left_panel_->show();
+        if (scene_builder_right_panel_) scene_builder_right_panel_->show();
+        scene_builder_splitter_->setSizes({260, 960, 470});
+      }
+      showMaximized();
+      note->setText("Layout reset to the defaults."); note->show();
+      show_workflow_feedback("success", "Layout reset: default window and panel arrangement restored.");
+      append_studio_log("Reset Layout: window and panel arrangement restored to defaults.");
+    };
+    connect(reset, &QPushButton::clicked, this, reset_layout);
+    auto * reset_shortcut = new QShortcut(QKeySequence("Ctrl+Shift+0"), this);
+    connect(reset_shortcut, &QShortcut::activated, this, reset_layout);
+    gl->addWidget(card);
+  }
   diagnostics_indicator_label_ = new QLabel("Diagnostics: NOT CHECKED", diagnostics); gl->addWidget(diagnostics_indicator_label_);
   diagnostics_status_label_ = new QLabel("Status: NOT CHECKED", diagnostics); gl->addWidget(diagnostics_status_label_);
   diagnostics_summary_label_ = new QLabel("Run Self-Test to populate diagnostics details.", diagnostics); diagnostics_summary_label_->setWordWrap(true); gl->addWidget(diagnostics_summary_label_);
@@ -3773,7 +3840,12 @@ void MainWindow::setup_studio_shell()
   auto * copy_build_cmd = new QPushButton("Copy Build Command", diagnostics); d_actions->addWidget(copy_build_cmd);
   auto * copy_source_cmd = new QPushButton("Copy Source Command", diagnostics); d_actions->addWidget(copy_source_cmd);
   auto * open_logs_cmd = new QPushButton("Open Logs Folder", diagnostics); d_actions->addWidget(open_logs_cmd);
-  gl->addLayout(d_actions);
+  // The eight diagnostics actions wrap (action bar) instead of clipping at 1280 px.
+  while (QLayoutItem * item = d_actions->takeAt(0)) {
+    if (item->widget()) gl->addWidget(item->widget());
+    delete item;
+  }
+  delete d_actions;
   auto * preview = new QWidget(studio_pages_); auto * pl=new QVBoxLayout(preview);
   pl->addWidget(new QLabel("<h2>Plan / Simulate</h2><p>Workcell Studio planning and simulation console. Simulation motion is allowed with fake hardware. Real hardware execution remains guarded and is not launched from this mode.</p>"));
   preview_scene_label_ = new QLabel("<b>Selected Scene</b><br/>scene name: none"); preview_scene_label_->setObjectName("studioCard"); preview_scene_label_->setWordWrap(true); pl->addWidget(preview_scene_label_);
@@ -3790,7 +3862,9 @@ void MainWindow::setup_studio_shell()
   connect(cycle_diagnostics, &QGroupBox::toggled, preview_commands_, &QWidget::setVisible);
   connect(cycle_diagnostics, &QGroupBox::toggled, preview_log_, &QWidget::setVisible); pl->addWidget(cycle_diagnostics);
   pl->addWidget(new QLabel("<b>Preview Process</b><br/>Open RViz Truth Preview | Run Fake-Hardware Simulation | Stop Simulation | Copy commands"));
-  run_build_button_ = new QPushButton("Build & Run RViz", preview); run_build_button_->setProperty("role","primary"); pl->addWidget(run_build_button_);
+  // "&&": a single "&" made Qt treat the following space as a mnemonic ("Build _Run RViz").
+  // One primary action per page: the cycle run; building RViz is a secondary step.
+  run_build_button_ = new QPushButton("Build && Run RViz", preview); pl->addWidget(run_build_button_);
   run_preview_button_ = new QPushButton("Run Full Cycle", preview); run_preview_button_->setObjectName("runFullCycle"); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   run_physics_button_ = new QPushButton("Run Physics Simulation Cycle", preview); run_physics_button_->setObjectName("runPhysicsCycle"); pl->addWidget(run_physics_button_);
   physics_state_label_ = new QLabel(preview); physics_state_label_->setObjectName("physicsCycleState"); physics_state_label_->setWordWrap(true); pl->addWidget(physics_state_label_);
@@ -3853,6 +3927,8 @@ void MainWindow::setup_studio_shell()
   export_more_actions_button_->setMenu(export_more_menu);
   exl->addWidget(export_more_actions_button_);
 
+  for (QWidget * console_page : {existing, demo, diagnostics, preview, validation, export_page})
+    workcell_builder::polishConsolePage(console_page);
   studio_pages_->addWidget(dashboard);  // DashboardPage
   studio_pages_->addWidget(scene_builder);  // SceneBuilderPage
   studio_pages_->addWidget(existing);  // ExistingScenesPage
@@ -6313,7 +6389,7 @@ void MainWindow::refresh_preview_launch_ui()
   if (validation_next_fix_label_) validation_next_fix_label_->setText(QString("<b>Next Fix Suggestions</b><br/>%1").arg(blockers.isEmpty() ? "No blockers. You can run Fake-Hardware Preview." : blockers.join("<br/>")));
   if (run_build_button_) {
     const bool active = preview_state_=="PREVIEW_RUNNING" || preview_state_=="PREVIEW_STOPPING";
-    run_build_button_->setText(active ? "Stop RViz" : "Build & Run RViz");
+    run_build_button_->setText(active ? "Stop RViz" : "Build && Run RViz");
     run_build_button_->setEnabled(active || (has_scene && has_ws && selected_scene_readiness().ready && preview_state_!="BUILD_RUNNING" && preview_state_!="PACKAGE_CHECK_RUNNING" && preview_state_!="PREVIEW_LAUNCHING"));
   }
   const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
@@ -8134,6 +8210,10 @@ void MainWindow::sync_scene_builder_view_actions()
 void MainWindow::save_scene_builder_panel_state()
 {
   if (!scene_builder_splitter_ || scene_builder_focus_3d_active_ || scene_builder_panel_state_syncing_) return;
+  // Before its first layout a splitter reports sizes proportional to Qt's ~100 px default width
+  // (e.g. 33/33/32); persisting those overwrote the user's panel widths on every start. Only a visible,
+  // laid-out splitter (the only kind a user can drag) is saved.
+  if (!scene_builder_splitter_->isVisible() || scene_builder_splitter_->width() < 400) return;
   const QList<int> sizes = scene_builder_splitter_->sizes();
   if (sizes.size() != 3) return;
   // Hidden panes report zero.  Only a visible, non-zero pane may update its

@@ -50,6 +50,8 @@ public:
     workcell_builder::home_workcells::install_contextual_navigation(
       this, [this]() { show_workcells_home(); });
     workcell_builder::scene_builder_product_layout::configure_scene_builder_product_layout(this);
+    const int unplaced = workcell_builder::hideUnplacedChildWidgets(this);
+    if (unplaced > 0) qInfo("Workcell Studio UI: hid %d unplaced state-holder widget(s).", unplaced);
   }
 };
 

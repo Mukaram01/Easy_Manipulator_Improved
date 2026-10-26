@@ -62,7 +62,7 @@ def test_gui_tracks_one_supervisor_and_requests_controlled_stop_without_broad_ki
 
 
 def test_main_action_toggles_without_duplicate_scene_copy():
-    assert 'setText(active ? "Stop RViz" : "Build & Run RViz")' in MAIN_CPP
+    assert 'setText(active ? "Stop RViz" : "Build && Run RViz")' in MAIN_CPP  # "&&": literal "&", not a mnemonic
     assert 'a Workcell Studio-owned process is already active' in MAIN_CPP
     workflow = MAIN_CPP[MAIN_CPP.index("void MainWindow::run_preview_build") : MAIN_CPP.index("void MainWindow::write_preview_launch_transcript")]
     assert "src/scenes" not in workflow

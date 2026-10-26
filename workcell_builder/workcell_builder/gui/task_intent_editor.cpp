@@ -113,7 +113,7 @@ QString json_value(const QJsonValue & value)
 }
 }
 
-TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring — Pick & Place", parent)
+TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring — Pick && Place", parent)  // "&&": literal "&", not a mnemonic
 {
   setObjectName("environmentTaskEditor");
   auto * layout = new QVBoxLayout(this);
@@ -589,7 +589,10 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     set_field("safety/execution_backend", value);
     set_field("safety/require_fake_hardware", value == "fake");
   });
-  run->addRow(new QLabel("Physics simulation runs only from an explicit cycle action after its safety gates; real robot locked.", this));
+  // Wraps: unwrapped, this sentence forced a 633 px minimum on the whole Scene Builder inspector.
+  auto * physics_note = new QLabel("Physics simulation runs only from an explicit cycle action after its safety gates; real robot locked.", this);
+  physics_note->setWordWrap(true);
+  run->addRow(physics_note);
   auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. In a full-sequence check, AUTO and PREFERRED give each object its own free place in the region; EXACT sends every object to the same place. You can also choose a place for each object under Pick sequence. Local poses use the physical target's frame; values are never clamped.", this);
   help->setWordWrap(true); layout->addWidget(help);
   auto * advanced = new QGroupBox("Advanced task settings", this);
@@ -623,7 +626,10 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   text_field(form, "taskPlaceApproachAxis", "Place approach axis", "place/placement/approach/axis");
   text_field(form, "taskPlaceRetreatAxis", "Place retreat axis", "place/placement/retreat/axis");
   form->addRow(new QLabel("Release: installed tool release. Real robot locked.", this));
-  status_ = new QLabel(this); status_->setObjectName("taskValidationStatus"); status_->setWordWrap(true); layout->addWidget(status_);
+  status_ = new QLabel(this); status_->setObjectName("taskValidationStatus"); status_->setWordWrap(true);
+  // Long identifiers in the status cannot wrap; they must not set the whole inspector's minimum width.
+  status_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  layout->addWidget(status_);
   auto * buttons = new QHBoxLayout;
   auto * save_button = new QPushButton("Save task", this); save_button->setObjectName("taskSave");
   auto * validate_button = new QPushButton("Validate task", this); validate_button->setObjectName("taskValidate");
@@ -636,6 +642,12 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   connect(validate_button, &QPushButton::clicked, this, &TaskIntentEditor::validate_now);
   validation_timer_ = new QTimer(this); validation_timer_->setSingleShot(true);
   connect(validation_timer_, &QTimer::timeout, this, &TaskIntentEditor::validate_now);
+  // The editor lives in a ~400 px inspector: choices size to a readable minimum rather than to their
+  // longest entry (the full text stays in the drop-down list).
+  for (auto * combo : findChildren<QComboBox *>()) {
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setMinimumContentsLength(14);
+  }
 }
 
 void TaskIntentEditor::text_field(QFormLayout * form, const QString & name, const QString & label, const QString & path)
