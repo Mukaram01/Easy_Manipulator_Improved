@@ -883,14 +883,18 @@ private:
   QString physics_state_;
   // Live perception of the selected cell's bound camera through EPD (live_perception_session.py):
   // perception preview and task eligibility only; robot planning stays blocked without calibration.
+  // Calibrate Camera measures the cell's reference points (camera_world_calibration.py) and saves a
+  // qualified camera-to-world calibration with the cell, or reports why it was rejected.
   void discover_live_cameras();
   void save_live_camera_binding();
+  void calibrate_live_camera();
   void toggle_live_perception();
   void refresh_live_perception();
   QString live_perception_command(const QString & arguments) const;
   QComboBox * perception_camera_combo_{ nullptr };
   QPushButton * perception_discover_button_{ nullptr };
   QPushButton * perception_bind_button_{ nullptr };
+  QPushButton * perception_calibrate_button_{ nullptr };
   QPushButton * perception_start_button_{ nullptr };
   QLabel * perception_preview_label_{ nullptr };
   QLabel * perception_status_label_{ nullptr };

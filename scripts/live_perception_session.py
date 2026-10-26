@@ -10,8 +10,10 @@ Subcommands
             measure the real streams and EPD results, evaluate every observation against the cell's saved
             TaskIntent and write <session>/status.json + <session>/preview.jpg until stopped (SIGINT/SIGTERM)
 
-Observations stay in the camera optical frame. Robot planning is reported BLOCKED until the cell carries a
-qualified camera-to-world calibration; this tool never invents a transform, an object or a timestamp.
+Observations stay in the camera optical frame until the cell carries a qualified camera-to-world calibration
+(camera_world_calibration.py) for the running camera (serial checked); then each observation is also reported
+in world (live_world_objects.py), with planning readiness only for authored virtual counterparts. This tool never
+invents a transform, an object or a timestamp, and robot execution stays BLOCKED.
 """
 import argparse
 import hashlib
@@ -127,14 +129,27 @@ def camera_binding(cell):
     return binding
 
 
-def calibration_status(cell, binding):
-    """Only a recorded, qualified camera-to-world calibration enables robot-frame use (none exists yet)."""
+def calibration_status(cell, binding, camera_serial=None):
+    """QUALIFIED only for a saved, re-validated calibration of this physical camera (serial checked)."""
+    import camera_world_calibration as cwc
     calibration = binding.get('calibration') or {}
-    if calibration.get('status') == 'qualified' and calibration.get('camera_to_world'):
-        return dict(status='QUALIFIED', frame=binding['optical_frame'], evidence=calibration.get('evidence'))
-    return dict(status='UNCALIBRATED', frame=binding['optical_frame'],
-                reason='no qualified camera-to-world transform is recorded for this camera; observations stay in '
-                       f"{binding['optical_frame']} and cannot be used for robot planning")
+    if calibration.get('status') != 'qualified':
+        return dict(status='UNCALIBRATED', frame=binding['optical_frame'],
+                    reason='no qualified camera-to-world transform is recorded for this camera; observations stay in '
+                           f"{binding['optical_frame']} and cannot be used for robot planning")
+    try:
+        record = cwc.load_qualified(cell, binding)
+    except cwc.CalibrationError as exc:
+        return dict(status='INVALID', frame=binding['optical_frame'], reason=str(exc))
+    if camera_serial != record['camera_serial']:
+        return dict(status='INVALID', frame=binding['optical_frame'],
+                    reason=f"CAMERA_IDENTITY_MISMATCH: running camera serial {camera_serial!r} is not the calibrated "
+                           f"{record['camera_serial']!r}")
+    residuals = record['residuals']
+    return dict(status='QUALIFIED', frame=binding['optical_frame'], evidence=calibration.get('evidence'), record=record,
+                reason=f"camera {record['camera_serial']} calibrated to world: RMS {residuals['rms_m'] * 1000:.1f} mm, "
+                       f"leave-one-out max {residuals['max_leave_one_out_m'] * 1000:.1f} mm over "
+                       f"{residuals['inliers']} reference points")
 
 
 def task_filter(cell):
@@ -156,10 +171,18 @@ def bind(args):
     camera_id = args.camera_id or (doc.get('camera') or {}).get('camera_id')
     if not camera_id:
         raise PerceptionUnavailable('the cell has no authored camera (camera.camera_id) to bind the live camera to')
+    if args.depth_alignment == 'register' and not args.depth_camera_info_topic:
+        raise PerceptionUnavailable('a raw (unaligned) depth binding needs --depth-camera-info-topic for registration')
     binding = dict(camera_id=camera_id, driver=args.driver, rgb_topic=args.rgb_topic,
                    aligned_depth_topic=args.aligned_depth_topic, camera_info_topic=args.camera_info_topic,
                    optical_frame=args.optical_frame, metadata_topic=args.metadata_topic or None,
                    calibration=previous.get('calibration') or dict(status='uncalibrated', camera_to_world=None))
+    if args.depth_alignment == 'register':
+        # EPD's ingress registers this depth into the colour optical frame (EPD camera_source realsense_unaligned).
+        binding.update(depth_alignment='register', depth_camera_info_topic=args.depth_camera_info_topic)
+    keep = previous.get('calibration') or {}
+    if keep.get('status') == 'qualified' and any(previous.get(k) != binding.get(k) for k in ('camera_id', 'optical_frame')):
+        binding['calibration'] = dict(status='uncalibrated', camera_to_world=None)   # a different camera/frame
     doc.setdefault('perception', {})['live_camera'] = binding
     write_preserving(cell / 'environment.yaml', doc)
     print(json.dumps(dict(status='BOUND', cell=str(cell), live_camera=binding)))
@@ -341,7 +364,7 @@ def _stamp_ns(stamp):
 class Session:
     """Measures the bound camera and EPD, evaluates observations, writes status.json and preview.jpg."""
 
-    def __init__(self, node, cell, binding, record, out):
+    def __init__(self, node, cell, binding, record, out, camera_serial=None):
         from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
         from sensor_msgs.msg import CameraInfo, Image
         from std_msgs.msg import String
@@ -350,7 +373,8 @@ class Session:
         self.node, self.cell, self.binding, self.record, self.out = node, Path(cell), binding, record, Path(out)
         self.lock = threading.Lock()
         self.filters = task_filter(cell)
-        self.calibration = calibration_status(cell, binding)
+        self.calibration = calibration_status(cell, binding, camera_serial)
+        self.environment = _environment(cell)
         self.live_ceiling_s = observation_age_cap('live_epd_realsense', 'live_sensor')
         self.streams = {k: dict(rate=Rate(), last_recv=None, last_stamp_ns=None, info=None, ages=[])
                         for k in ('rgb', 'depth', 'camera_info', 'epd_result', 'epd_image')}
@@ -361,7 +385,10 @@ class Session:
         self.transport, self.host_clock = TransportClock(), HostClock()
         reliable = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST, reliability=ReliabilityPolicy.RELIABLE)
         node.create_subscription(Image, binding['rgb_topic'], lambda m: self.on_image('rgb', m), reliable)
-        node.create_subscription(Image, binding['aligned_depth_topic'], lambda m: self.on_image('depth', m), reliable)
+        # The depth EPD localizes with: the driver's aligned depth, or EPD's registered ingress output.
+        depth_topic = ingress_command(binding)[1]['depth'] if binding.get('depth_alignment') == 'register' else \
+            binding['aligned_depth_topic']
+        node.create_subscription(Image, depth_topic, lambda m: self.on_image('depth', m), reliable)
         node.create_subscription(CameraInfo, binding['camera_info_topic'], self.on_info, reliable)
         if binding.get('metadata_topic'):
             from realsense2_camera_msgs.msg import Metadata
@@ -518,6 +545,19 @@ class Session:
                                                age_s=result_age, host_clock_reason=host_clock['reason'])
                           for item in ((self.snapshot or {}).get('objects') or [])] if epd_state == 'PRODUCING' else []
             rejected = (self.snapshot or {}).get('rejected_objects') or [] if epd_state == 'PRODUCING' else []
+            world = None
+            if self.calibration['status'] == 'QUALIFIED' and epd_state == 'PRODUCING':
+                from live_world_objects import world_snapshot
+                world = world_snapshot(self.snapshot, self.calibration['record'], self.binding, self.environment,
+                                       now_ns=now_ns, age_s=result_age)
+                by_id = {o['epd_object_id']: o for o in world['objects'] + world['refused_objects']}
+                for d in detections:
+                    w = by_id.get(d['object_id']) or {}
+                    d['position_world'] = (w.get('pose') or {}).get('xyz') or w.get('world_xyz')
+                    d['world_refusals'] = w.get('reasons', [])
+                    d['planning'] = w.get('planning') or dict(status='BLOCKED', reason='; '.join(w.get('reasons', [])))
+                    d['robot_planning'] = 'READY (virtual counterpart ' + d['planning']['counterpart_id'] + ')' \
+                        if d['planning']['status'] == 'READY' else 'BLOCKED: ' + d['planning']['reason']
             inference = (self.inference or {}).get('values', {})
             perception_ready = camera_state == 'STREAMING' and epd_state == 'PRODUCING' and host_clock['state'] == 'OK' and \
                 result_age is not None and result_age <= self.live_ceiling_s
@@ -530,7 +570,11 @@ class Session:
                 host_clock=host_clock['state'], calibration=self.calibration['status'],
                 task=('NO_SAVED_TASK' if self.filters is None else
                       f"{sum(d['task_eligible'] for d in detections)} eligible of {len(detections)}"),
-                robot_planning='BLOCKED: ' + (self.calibration.get('reason') or 'not eligible'),
+                robot_planning=(f"READY: {sum(o['planning']['status'] == 'READY' for o in world['objects'])} calibrated object(s) "
+                                'with an authored virtual counterpart' if world and
+                                any(o['planning']['status'] == 'READY' for o in world['objects']) else
+                                'BLOCKED: ' + (self.calibration.get('reason') if self.calibration['status'] != 'QUALIFIED'
+                                               else 'no calibrated observation matches an authored virtual counterpart')),
                 robot_execution='BLOCKED: real-camera observations never drive robot motion in this milestone')
             status = dict(schema=STATUS_SCHEMA, state=state, updated_wall_ns=now_ns, cell=str(self.cell),
                 camera_id=self.binding['camera_id'], binding=self.binding,
@@ -541,7 +585,8 @@ class Session:
                          process_time_ms=((self.snapshot or {}).get('provenance') or {}).get('process_time_ms'),
                          inference=inference, ingress=(self.ingress or {}).get('values'), connector=self.connector,
                          model=self.record['epd']['model'], backend=self.record['epd_execution_backend']),
-                host_clock=host_clock, calibration=self.calibration, task_filter=self.filters, live_ceiling_s=self.live_ceiling_s,
+                host_clock=host_clock, calibration={k: v for k, v in self.calibration.items() if k != 'record'},
+                world_snapshot=world, task_filter=self.filters, live_ceiling_s=self.live_ceiling_s,
                 detections=detections, rejected_detections=rejected, readiness=readiness,
                 snapshot_timestamp_ns=snapshot_ns)
             return status
@@ -607,6 +652,24 @@ def _stop(processes):
     return report
 
 
+def ingress_command(binding):
+    """EPD's isolated sensor ingress for the bound camera, and the EPD-internal topics it publishes."""
+    topics = dict(rgb='/easy_perception_deployment/ingress/color/image_raw',
+                  depth='/easy_perception_deployment/ingress/aligned_depth/image_raw',
+                  info='/easy_perception_deployment/ingress/color/camera_info')
+    command = ['ros2', 'run', 'easy_perception_deployment', 'epd_sensor_ingress', '--ros-args',
+               '-p', f"rgb_input_topic:={binding['rgb_topic']}", '-p', f"depth_input_topic:={binding['aligned_depth_topic']}",
+               '-p', f"camera_info_input_topic:={binding['camera_info_topic']}", '-p', f"rgb_output_topic:={topics['rgb']}",
+               '-p', f"depth_output_topic:={topics['depth']}", '-p', f"camera_info_output_topic:={topics['info']}",
+               '-p', 'internal_qos_reliability:=reliable']
+    if binding.get('depth_alignment') == 'register':
+        command += ['-p', 'depth_alignment:=register', '-p', f"depth_camera_info_input_topic:={binding['depth_camera_info_topic']}"]
+        topics['depth_source'] = f"{binding['aligned_depth_topic']} registered to colour by epd_sensor_ingress"
+    else:
+        topics['depth_source'] = f"{binding['aligned_depth_topic']} (aligned by the camera driver)"
+    return command, topics
+
+
 def run(args):
     import rclpy
     record = load_runtime(args.workspace)
@@ -615,15 +678,10 @@ def run(args):
     env_lines = shell_environment(record)
     share = Path(record['epd']['share'])
     # EPD's own isolated ingress re-publishes the bound camera to these EPD-internal topics.
-    in_rgb = '/easy_perception_deployment/ingress/color/image_raw'
-    in_depth = '/easy_perception_deployment/ingress/aligned_depth/image_raw'
-    in_info = '/easy_perception_deployment/ingress/color/camera_info'
+    ingress, topics = ingress_command(binding)
+    in_rgb, in_depth, in_info = topics['rgb'], topics['depth'], topics['info']
     commands = {
-        'ingress': (['ros2', 'run', 'easy_perception_deployment', 'epd_sensor_ingress', '--ros-args',
-                     '-p', f"rgb_input_topic:={binding['rgb_topic']}", '-p', f"depth_input_topic:={binding['aligned_depth_topic']}",
-                     '-p', f"camera_info_input_topic:={binding['camera_info_topic']}", '-p', f'rgb_output_topic:={in_rgb}',
-                     '-p', f'depth_output_topic:={in_depth}', '-p', f'camera_info_output_topic:={in_info}',
-                     '-p', 'internal_qos_reliability:=reliable'], None),
+        'ingress': (ingress, None),
         'epd': (['ros2', 'run', 'easy_perception_deployment', 'easy_perception_deployment', '--ros-args',
                  '-p', 'usecase_mode_override:=3', '-p', 'use_depth:=true', '-p', f'rgb_topic:={in_rgb}',
                  '-p', f'depth_topic:={in_depth}', '-p', f'camera_info_topic:={in_info}', '-p', 'input_qos_reliability:=reliable',
@@ -637,7 +695,8 @@ def run(args):
         signal.signal(sig, lambda *_: stopping.set())
     rclpy.init()
     node = rclpy.create_node('workcell_live_perception_session')
-    session = Session(node, args.cell, binding, record, out)
+    import camera_world_calibration as cwc
+    session = Session(node, args.cell, binding, record, out, camera_serial=cwc._camera_serial(node, binding['rgb_topic']))
     processes = {name: _spawn(cmd, env_lines, out / f'{name}.log', cwd) for name, (cmd, cwd) in commands.items()}
     history = (out / 'history.jsonl').open('a')
     started, last_history = time.time(), 0.0
@@ -706,12 +765,16 @@ def discover(args):
             continue
         root = base.rsplit('/', 1)[0]
         depth = sorted(t for t in images if t.startswith(root + '/') and 'aligned_depth' in t and t.endswith('/image_raw'))
+        raw_depth = f'{root}/depth/image_rect_raw'
+        depth_info = f'{root}/depth/camera_info'
+        unaligned = dict(depth_topic=raw_depth, depth_camera_info_topic=depth_info) \
+            if raw_depth in images and 'sensor_msgs/msg/CameraInfo' in topics.get(depth_info, []) else None
         publishers = node.get_publishers_info_by_topic(rgb)
         frame = _sample_frame_id(node, info_topic, args.timeout)
         metadata = f'{base}/metadata'
         cameras.append(dict(camera_namespace=root, rgb_topic=rgb, camera_info_topic=info_topic, optical_frame=frame,
                             metadata_topic=metadata if 'realsense2_camera_msgs/msg/Metadata' in topics.get(metadata, []) else None,
-                            aligned_depth_topics=depth, publisher_nodes=sorted({f'{p.node_namespace}/{p.node_name}'.replace('//', '/') for p in publishers})))
+                            aligned_depth_topics=depth, unaligned_depth=unaligned, publisher_nodes=sorted({f'{p.node_namespace}/{p.node_name}'.replace('//', '/') for p in publishers})))
     node.destroy_node(); rclpy.shutdown()
     print(json.dumps(dict(status='OK', ros_domain_id=os.environ.get('ROS_DOMAIN_ID'), cameras=cameras)))
     return 0
@@ -732,6 +795,9 @@ def main(argv=None):
     b.add_argument('--camera-id', help="the cell's camera this binds (default: its authored camera.camera_id)")
     b.add_argument('--driver', default='realsense2_camera')
     b.add_argument('--metadata-topic', help='per-frame camera metadata (capture and arrival clocks), when published')
+    b.add_argument('--depth-alignment', choices=('camera', 'register'), default='camera',
+                   help="'register': the depth topic is unaligned and EPD's ingress registers it to colour")
+    b.add_argument('--depth-camera-info-topic', help='CameraInfo of the unaligned depth stream (register mode)')
     r = sub.add_parser('run'); r.add_argument('--cell', required=True); r.add_argument('--session-dir', required=True)
     r.add_argument('--duration', type=float, default=0.0, help='seconds; 0 runs until stopped')
     for command in sub.choices.values():

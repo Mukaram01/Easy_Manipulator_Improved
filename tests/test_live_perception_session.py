@@ -65,7 +65,8 @@ def test_calibration_and_binding_come_only_from_the_saved_cell(tmp_path):
     assert binding['camera_id'] == 'realsense_overhead' and binding['calibration']['status'] == 'uncalibrated'
     assert lps.calibration_status(cell, binding)['status'] == 'UNCALIBRATED'                     # flag alone is not enough
     binding['calibration'] = dict(status='qualified', camera_to_world=None)
-    assert lps.calibration_status(cell, binding)['status'] == 'UNCALIBRATED'                     # no transform recorded
+    status = lps.calibration_status(cell, binding)                                               # no record saved
+    assert status['status'] == 'INVALID' and status['reason'].startswith('CALIBRATION_MISSING')
 
 
 def test_the_perception_runtime_must_be_registered(tmp_path, capsys):
@@ -131,3 +132,19 @@ def test_host_clock_fault_blocks_freshness_until_the_clock_runs_true():
     for _ in range(20):
         healthy.advance(1.0, rate=1.0002); clock.sample()                 # 200 ppm NTP slew is normal
     assert clock.health()['state'] == 'OK'
+
+
+def test_an_unaligned_depth_binding_is_registered_by_the_epd_ingress(tmp_path):
+    cell = tmp_path / 'cell'; (cell / 'config').mkdir(parents=True)
+    (cell / 'environment.yaml').write_text(yaml.safe_dump({'camera': {'camera_id': 'realsense_overhead'}}))
+    common = ['bind', '--cell', str(cell), '--rgb-topic', '/cam/color/image_raw', '--aligned-depth-topic',
+              '/cam/depth/image_rect_raw', '--camera-info-topic', '/cam/color/camera_info', '--optical-frame', 'cam_optical',
+              '--depth-alignment', 'register']
+    assert lps.main(common) == 2                                                                 # depth CameraInfo required
+    assert lps.main(common + ['--depth-camera-info-topic', '/cam/depth/camera_info']) == 0
+    binding = lps.camera_binding(cell)
+    command, topics = lps.ingress_command(binding)
+    assert 'depth_alignment:=register' in command and 'depth_camera_info_input_topic:=/cam/depth/camera_info' in command
+    assert topics['depth'] == '/easy_perception_deployment/ingress/aligned_depth/image_raw'
+    aligned, _ = lps.ingress_command(dict(binding, depth_alignment=None))
+    assert not any(a.startswith('depth_alignment') for a in aligned)                             # camera-aligned default
