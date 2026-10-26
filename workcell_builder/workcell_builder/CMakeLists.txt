@@ -1081,6 +1081,9 @@ install(PROGRAMS
   ../../scripts/capability_registry.py
   ../../scripts/end_effector_hold.py
   ../../scripts/simulation_collision.py
+  ../../scripts/tool_interface.py
+  ../../scripts/transport_policy.py
+  ../../scripts/end_effector_selection.py
   ../../scripts/simulator_observations.py
   ../../scripts/simulator_execution.py
   ../../scripts/run_p8b_replay_planning_scene_smoke.sh

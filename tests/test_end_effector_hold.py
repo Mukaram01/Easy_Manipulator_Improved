@@ -172,3 +172,41 @@ def test_source_description_binding_and_spec_augmentation_stay_outside_the_evide
     assert 'requires the cell to bind an end-effector capability with a hold profile' in simulator
     backend=(REPO/'scripts/simulator_backend.py').read_text()
     assert 'end_effector_hold' not in backend and 'hold_profile' not in backend      # evidence-bound module untouched
+
+
+def test_both_experimental_force_variants_are_kept_and_neither_is_declared_reliable():
+    ee=record('ee_robotiq_2f.yaml');actuation=ee['hold']['actuation']
+    assert set(actuation['force_variants'])=={'stage_a_20n','stage_a_90n'}
+    assert {v['status'] for v in actuation['force_variants'].values()}=={'experimental'}
+    assert actuation['default_force_variant']=='stage_a_20n' and actuation['commanded_grasp_force_n']==20
+    ninety=hold.load_hold_profile('robotiq_2f_85',variant='stage_a_90n')
+    assert ninety.expected_pad_force_n()==90.4 and ninety.simulated_actuator_effort_nm()<=10.114305546450003
+    assert ninety.evidence()['force_variant']=='stage_a_90n' and ninety.evidence()['force_variant_status']=='experimental'
+    with pytest.raises(hold.HoldProfileError,match='HOLD_FORCE_VARIANT_UNKNOWN'):
+        hold.load_hold_profile('robotiq_2f_85',variant='stage_a_200n')
+    with pytest.raises(hold.HoldProfileError,match='HOLD_FORCE_VARIANT_UNKNOWN'):
+        hold.load_hold_profile('robotiq_3f',variant='stage_a_90n')
+
+
+@pytest.mark.parametrize('change,message',[
+    (lambda a:a.update(default_force_variant='missing'),'default_force_variant'),
+    (lambda a:a.update(commanded_grasp_force_n=40),'must equal the default force variant'),
+    (lambda a:a['force_variants']['stage_a_90n'].update(status='reliable'),'status'),
+    (lambda a:a['force_variants']['stage_a_90n'].update(commanded_grasp_force_n=300),'within grasp_force_range_n'),
+    (lambda a:a['force_variants']['stage_a_90n'].pop('evidence'),'evidence'),
+])
+def test_force_variants_are_validated_fail_closed(change,message):
+    ee=copy.deepcopy(record('ee_robotiq_2f.yaml'));change(ee['hold']['actuation'])
+    errors=hold.hold_block_errors(ee)
+    assert errors and any(message in e for e in errors),errors
+
+
+def test_the_selected_variant_is_bound_into_the_receipt_and_verified(tmp_path):
+    ninety=hold.load_hold_profile('robotiq_2f_85',variant='stage_a_90n')
+    binding=hold.bind_actuation(ET.fromstring(ROBOT),['arm','leader'],ninety)
+    assert binding['force_variant']=='stage_a_90n'
+    assert hold.verify_hold_binding(ninety,{'end_effector_hold':binding})['receipt_binding']==binding
+    with pytest.raises(RuntimeError,match='HOLD_PROFILE_BINDING_MISMATCH'):
+        hold.verify_hold_binding(hold.load_hold_profile('robotiq_2f_85'),{'end_effector_hold':binding})
+    (tmp_path/'cell_definition.yaml').write_text('end_effector: {capability: robotiq_2f_85, hold_variant: stage_a_90n}\n')
+    assert hold.load_cell_hold_profile(tmp_path/'cell_definition.yaml').force_variant=='stage_a_90n'

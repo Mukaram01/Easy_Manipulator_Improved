@@ -52,3 +52,11 @@ end_effector:
       effective_area_mm2: 900
       simulator_support: none           # no measured vacuum model: commissioning fails closed
     release: vacuum_off_with_blowoff
+  interface:
+    schema: end_effector_interface/v1
+    kind: io_signal
+    grasp_capabilities: [suction]
+    signals: {engage: vacuum_on, release: blowoff, feedback: vacuum_on, release_mode: pulse}
+    touch_links: [gripper_base_link]
+    tcp_link: gripper_base_link
+    recovery: {strategy: stop_and_require_operator, release_outside_destination: false}

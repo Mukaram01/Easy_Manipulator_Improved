@@ -21,8 +21,9 @@ from physical_destination import (
     resolve_local_destination,
 )
 from task_intent_v2 import (
-    TOOL_CAPABILITY_MAP,
     STRATEGY_DIR,
+    installed_tool_capabilities,
+    strategy_supports_tool,
     canonical_hash,
     normalized_intent_hash,
     parse_validate_normalize,
@@ -264,9 +265,7 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
         "fallback": {"used": False},
     }
     tool = cell.get("end_effector") or {}
-    capabilities = sorted(TOOL_CAPABILITY_MAP.get(tool.get("id"), set()))
-    if tool.get("type") == "suction":
-        capabilities = []
+    capabilities = sorted(installed_tool_capabilities(tool))
     result["capability_profile"] = {
         "installed_tool_id": tool.get("id"),
         "capabilities": capabilities,
@@ -365,6 +364,14 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
         strategies = [requested]
     elif grasp["policy"] == "PREFERRED":
         strategies = [requested] + [item for item in strategies if item != requested]
+    # The strategy catalog states which tools each strategy suits; never try one it excludes.
+    excluded = [item for item in strategies if not strategy_supports_tool(item, tool)]
+    strategies = [item for item in strategies if item not in excluded]
+    if excluded:
+        grasp_resolution["tool_incompatible_strategies"] = excluded
+    if not strategies:
+        return _readiness(result, "BLOCKED", "STRATEGY_TOOL_INCOMPATIBLE",
+                          "No requested grasp strategy is compatible with the installed tool: " + ", ".join(excluded))
 
     preferred_failure = None
     last_failure = {"reason_code": "NO_FEASIBLE_CYCLE", "reason": "No complete cycle succeeded."}

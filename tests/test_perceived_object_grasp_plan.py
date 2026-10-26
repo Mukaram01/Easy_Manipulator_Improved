@@ -82,3 +82,29 @@ def test_invalid_tcp_handoff_is_rejected(tmp_path):
     (tmp_path / "cell_definition.yaml").write_text("end_effector: {tcp_pose_xyz: [0, 0, .nan]}\n")
     with pytest.raises(ValueError, match="tcp_pose_xyz"):
         MODULE.load_grasp_contract(tmp_path)
+
+
+def test_contract_carries_the_bound_tool_interface_and_authored_transport(tmp_path):
+    import yaml
+    contract = MODULE.load_grasp_contract(SCRIPT.parents[1] / "scenes/ur5_2f_test")
+    assert contract["tool_interface"]["capability_id"] == "robotiq_2f_85"
+    assert contract["tool_interface"]["command_joints"] == ["gripper_finger1_joint"]
+    assert contract["transport_policy"] is None and contract["end_effector_hold_variant"] is None
+    cell = yaml.safe_load((SCRIPT.parents[1] / "scenes/ur5_2f_test/cell_definition.yaml").read_text())
+    (tmp_path / "environment.yaml").write_text((SCRIPT.parents[1] / "scenes/ur5_2f_test/environment.yaml").read_text())
+    cell["end_effector"]["hold_variant"] = "stage_a_90n"
+    cell["motion_policy"] = {"transport": {"schema": "transport_policy/v1", "orientation": "keep_level",
+                                           "tilt_tolerances_rad": [0.05]}}
+    (tmp_path / "cell_definition.yaml").write_text(yaml.safe_dump(cell))
+    authored = MODULE.load_grasp_contract(tmp_path)
+    assert authored["end_effector_hold_variant"] == "stage_a_90n"
+    assert authored["transport_policy"]["orientation"] == "keep_level"
+    cell["motion_policy"]["transport"]["tilt_tolerances_rad"] = [2.0]
+    (tmp_path / "cell_definition.yaml").write_text(yaml.safe_dump(cell))
+    from transport_policy import TransportPolicyError
+    with pytest.raises(TransportPolicyError):
+        MODULE.load_grasp_contract(tmp_path)
+    cell["end_effector"]["capability"] = None
+    cell.pop("motion_policy")
+    (tmp_path / "cell_definition.yaml").write_text(yaml.safe_dump(cell))
+    assert MODULE.load_grasp_contract(tmp_path)["tool_interface"] is None          # unbound cell keeps legacy values

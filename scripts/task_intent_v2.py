@@ -36,6 +36,42 @@ TOOL_CAPABILITY_MAP = {
 POLICIES = {"AUTO", "PREFERRED", "EXACT"}
 
 
+def installed_tool_capabilities(tool: Any) -> set[str]:
+    """Grasp capabilities of the installed tool.
+
+    A tool that binds a catalog capability gets its interface's
+    ``grasp_capabilities``; an unbound tool keeps the legacy id map, so existing
+    cells resolve exactly as before.
+    """
+    tool = tool if isinstance(tool, dict) else {"id": tool}
+    if tool.get("capability"):
+        try:
+            from tool_interface import load_tool_interface
+        except ImportError:  # imported as scripts.task_intent_v2
+            from scripts.tool_interface import load_tool_interface
+        return set(load_tool_interface(tool["capability"]).grasp_capabilities)
+    if tool.get("type") == "suction":
+        return set()
+    return set(TOOL_CAPABILITY_MAP.get(tool.get("id") or tool.get("name"), set()))
+
+
+def strategy_supports_tool(strategy_ref: str, tool: Any) -> bool:
+    """Whether a catalog grasp strategy declares the installed tool compatible.
+
+    Only a capability-bound tool is filtered; an unbound tool keeps every
+    strategy (legacy behaviour).
+    """
+    tool = tool if isinstance(tool, dict) else {"id": tool}
+    if not tool.get("capability"):
+        return True
+    path = STRATEGY_DIR / f"{strategy_ref}.yaml"
+    if not path.is_file():
+        return False
+    payload, _ = load_structured_data(path)
+    record = payload.get("grasp_strategy") or {}
+    return tool["capability"] in (record.get("compatible_end_effector_capabilities") or [])
+
+
 @dataclass
 class TaskIntentModel:
     """Typed semantic envelope matching the C++ R2.0a model fields."""

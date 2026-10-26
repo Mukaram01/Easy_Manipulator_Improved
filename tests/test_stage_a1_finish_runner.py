@@ -924,14 +924,14 @@ def test_report_records_argv_and_which_run_settings_fell_back_to_defaults(tmp_pa
     assert MODULE.main(['--output',str(output),'--mode','full','--through','full-cycle'])==1
     report=json.loads((output/'stage-a1-final-report.json').read_text())
     assert report['invocation']['argv']==['--output',str(output),'--mode','full','--through','full-cycle']
-    assert report['invocation']['defaulted']==['search_timeout','segment_planning_time','world_profile']
-    assert report['invocation']['effective']=={'world_profile':'pile','search_timeout':300.,'segment_planning_time':3.}
+    assert report['invocation']['defaulted']==['motion_policy','search_timeout','segment_planning_time','world_profile']
+    assert report['invocation']['effective']=={'world_profile':'pile','search_timeout':300.,'segment_planning_time':3.,'motion_policy':None}
     assert 'world_profile=pile (default)' in capsys.readouterr().err
     explicit=tmp_path/'explicit';record_sessions(monkeypatch)
     argv=['--output',str(explicit),'--world-profile','sparse','--search-timeout=900','--through','resolve']
     assert MODULE.main(argv)==0
     report=json.loads((explicit/'stage-a1-final-report.json').read_text())
-    assert report['invocation']['argv']==argv and report['invocation']['defaulted']==['segment_planning_time']
+    assert report['invocation']['argv']==argv and report['invocation']['defaulted']==['motion_policy','segment_planning_time']
     assert report['invocation']['effective']['world_profile']=='sparse' and report['search_timeout_s']==900.
     assert 'world_profile=sparse,' in capsys.readouterr().err
 
@@ -941,7 +941,7 @@ def test_explicit_value_equal_to_the_default_is_not_reported_as_defaulted(tmp_pa
     output=tmp_path/'evidence'
     assert MODULE.main(['--output',str(output),'--world-profile','pile','--search-time','300',
                         '--segment-planning-time','3','--through','resolve'])==0   # abbreviation accepted by argparse
-    assert json.loads((output/'stage-a1-final-report.json').read_text())['invocation']['defaulted']==[]
+    assert json.loads((output/'stage-a1-final-report.json').read_text())['invocation']['defaulted']==['motion_policy']   # no motion policy is ever implied
 
 
 def test_fast_mode_runs_build_and_focused_tests_without_any_session_or_world(tmp_path,monkeypatch,stubbed_preflight):
@@ -1176,7 +1176,8 @@ def test_authored_cell_session_runs_the_qualified_launch_on_the_saved_cell(tmp_p
     session_scene=args.output/'01-resolve'/'beginner_cell'
     assert (session_scene/'config/workcell_builder_task_intent.yaml').read_text()=='{"saved": true}'
     launch=launched[0]
-    assert launch[2].endswith('scenes/ur5_2f_test/launch/demo.launch.py')              # qualified launch, by path
+    assert launch[:3] == ['ros2', 'launch', '--noninteractive']
+    assert launch[3].endswith('scenes/ur5_2f_test/launch/demo.launch.py')              # qualified launch, by path
     assert f'scene_package_dir:={session_scene}' in launch and 'execution_backend:=simulator' in launch
     assert f'simulator_world:={tmp_path/"world.sdf"}' in launch
     observation=next(c for c in observed if any(x.endswith('simulator_observations.py') for x in c))
@@ -1261,3 +1262,46 @@ def test_the_installed_scene_launch_must_be_this_checkouts(tmp_path,monkeypatch)
     monkeypatch.setattr(packages,'get_package_share_directory',lambda name:str(other.parent))
     with pytest.raises(RuntimeError,match='SCENE_PACKAGE_FROM_OTHER_CHECKOUT'):
         MODULE.launch_checkout_guard(repo)
+def test_motion_policy_is_opt_in_validated_recorded_and_authored_into_the_session_copy(tmp_path,monkeypatch,stubbed_preflight,capsys):
+    import yaml
+    seen=record_sessions(monkeypatch)
+    policy=tmp_path/'policy.yaml'
+    policy.write_text(yaml.safe_dump({'transport':{'schema':'transport_policy/v1','orientation':'keep_level','tilt_tolerances_rad':[0.05]}}))
+    output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','targeted','--gate','resolve','--motion-policy',str(policy)])==0
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['invocation']['effective']['motion_policy']==str(policy)
+    assert 'motion_policy' not in report['invocation']['defaulted']
+    plain=tmp_path/'plain'
+    assert MODULE.main(['--output',str(plain),'--mode','targeted','--gate','resolve'])==0
+    assert json.loads((plain/'stage-a1-targeted-report.json').read_text())['invocation']['effective']['motion_policy'] is None
+    for bad in ({'transport':{'schema':'transport_policy/v1','orientation':'keep_level','tilt_tolerances_rad':[2.0]}},
+                {'transport':{'schema':'transport_policy/v1','orientation':'free'},'home':{}}):
+        policy.write_text(yaml.safe_dump(bad))
+        with pytest.raises(SystemExit):
+            MODULE.main(['--output',str(tmp_path/'bad'),'--mode','targeted','--gate','resolve','--motion-policy',str(policy)])
+        assert 'invalid --motion-policy' in capsys.readouterr().err
+    assert not (tmp_path/'bad').exists()
+
+
+def test_prepared_session_scene_carries_the_policy_while_the_tracked_scene_is_untouched(tmp_path):
+    import yaml
+    repo=SCRIPT.parents[1]
+    tracked=(repo/'scenes/ur5_2f_test/environment.yaml').read_text()
+    policy={'transport':{'schema':'transport_policy/v1','orientation':'keep_level','tilt_tolerances_rad':[0.05]}}
+    scene=MODULE.prepare_scene(repo,tmp_path/'ur5_2f_test','part',policy)
+    assert yaml.safe_load((scene/'environment.yaml').read_text())['motion_policy']==policy
+    assert yaml.safe_load((scene/'cell_definition.yaml').read_text())['motion_policy']==policy
+    assert (repo/'scenes/ur5_2f_test/environment.yaml').read_text()==tracked
+
+
+def test_saved_cell_rejects_a_cli_policy_override_before_creating_a_session(tmp_path, capsys):
+    policy = tmp_path / 'policy.yaml'
+    policy.write_text('transport: {schema: transport_policy/v1, orientation: free}\n')
+    output = tmp_path / 'output'
+    with pytest.raises(SystemExit) as exc:
+        MODULE.main(['--mode', 'targeted', '--gate', 'resolve', '--scene-package', str(tmp_path / 'saved_cell'),
+                     '--motion-policy', str(policy), '--output', str(output)])
+    assert exc.value.code == 2
+    assert 'saved cell' in capsys.readouterr().err
+    assert not output.exists()
