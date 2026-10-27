@@ -389,14 +389,47 @@ def test_source_yaml_write_is_allowlisted_backed_up_and_atomic():
         'FORBIDDEN_TARGET_PARTS = {"generated"}',
         'FORBIDDEN_TARGET_NAMES = {"cell_definition.yaml", "scene_manifest.yaml"}',
         "shutil.copy2(path, path.with_name",
-        "tempfile.mkstemp",
-        "stream.flush()",
-        "os.fsync(stream.fileno())",
-        "os.replace(temporary, path)",
-        "temporary.unlink()",
+        "from authored_yaml import write_preserving",
     ]:
         assert token in source
     assert "path.write_text(yaml.safe_dump" not in source
+
+
+def test_source_yaml_writers_leave_the_file_intact_when_the_replace_fails(tmp_path, monkeypatch):
+    """Both writers the applicator uses are atomic: a failed replace changes nothing and leaves no temp file."""
+    import importlib.util
+    import os
+    import sys
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import authored_yaml
+
+    spec = importlib.util.spec_from_file_location("edit_patch_applicator", APPLICATOR)
+    applicator = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, applicator)  # dataclasses resolve their module
+    spec.loader.exec_module(applicator)
+
+    target = tmp_path / "environment.yaml"
+    target.write_text("scene:\n  id: cell\n", encoding="utf-8")
+    original = target.read_bytes()
+
+    def failing_replace(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    for write in (lambda: authored_yaml.write_preserving(target, {"scene": {"id": "moved"}}),
+                  lambda: applicator._write_bytes_atomic(target, b"scene: {}\n")):
+        try:
+            write()
+        except OSError:
+            pass
+        else:
+            raise AssertionError("a failed replace must propagate")
+        assert target.read_bytes() == original
+        assert [p.name for p in tmp_path.iterdir()] == ["environment.yaml"]
+    monkeypatch.undo()
+    authored_yaml.write_preserving(target, {"scene": {"id": "moved"}})
+    assert "moved" in target.read_text(encoding="utf-8")
 
 
 def test_save_roundtrip_has_no_browser_source_writes_or_robot_motion():
@@ -492,9 +525,12 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
 
     layout_path = scene / "layout/workcell_studio_layout.yaml"
     layout_before = layout_path.read_bytes()
+    # Save projects the layout into environment.yaml, the canonical physical
+    # source (checked below); every other authored input must stay untouched.
+    environment_path = scene / "environment.yaml"
     protected_before = {
         path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in scene.rglob("*") if path.is_file() and path != layout_path
+        for path in scene.rglob("*") if path.is_file() and path not in (layout_path, environment_path)
         and ".bak" not in path.name and "generated" not in path.relative_to(scene).parts
         and path.relative_to(scene) != Path("config/moveit_collision_objects.yaml")
     }
@@ -507,11 +543,16 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
     assert layout_path.read_bytes() != layout_before
     protected_after = {
         path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in scene.rglob("*") if path.is_file() and path != layout_path and ".bak" not in path.name
-        and "generated" not in path.relative_to(scene).parts
+        for path in scene.rglob("*") if path.is_file() and path not in (layout_path, environment_path)
+        and ".bak" not in path.name and "generated" not in path.relative_to(scene).parts
         and path.relative_to(scene) != Path("config/moveit_collision_objects.yaml")
     }
-    assert protected_after == protected_before  # authored non-layout inputs and hardware stay untouched
+    assert protected_after == protected_before  # other authored inputs and hardware stay untouched
+    physical = yaml.safe_load(environment_path.read_text(encoding="utf-8"))["environment"]
+    projected_bin = next(a for a in physical["assets"] if a.get("layout_item_ref", a.get("id")) == "target_bin_default")
+    expected_projection = moved(old_bin)
+    assert projected_bin["pose_xyz"] == list(expected_projection["pose"]["xyz"].values())
+    assert projected_bin["pose_rpy"] == list(expected_projection["pose"]["rpy"].values())
 
     layout = yaml.safe_load(layout_path.read_text(encoding="utf-8"))
     layout_items = {item["id"]: item for item in layout["items"]}
@@ -522,13 +563,28 @@ def test_executable_target_bin_linked_save_and_reload_roundtrip(tmp_path):
     assert layout_items["target_bin_default"]["pose"]["xyz"] == list(expected["pose"]["xyz"].values())
     assert layout_items["target_bin_default"]["pose"]["rpy"] == list(expected["pose"]["rpy"].values())
     assert _transform(reloaded["target_bin_default"])["pose"] == expected["pose"]
-    # The authored overlay pose is not persisted independently. Export derives
-    # both its transform and footprint from the destination asset.
-    assert layout_items["place_zone_default"]["pose"]["xyz"] == list(old_zone["pose"]["xyz"].values())
-    assert layout_items["place_zone_default"]["pose"]["rpy"] == list(old_zone["pose"]["rpy"].values())
-    assert _transform(reloaded["place_zone_default"])["pose"] == expected["pose"]
-    assert reloaded["place_zone_default"]["dimensions"][:2] == reloaded["target_bin_default"]["dimensions"][:2]
-    assert 0 < reloaded["place_zone_default"]["dimensions"][2] <= 0.01
+    # The zone is stored in its target's frame (placement_local, unchanged by a
+    # bin move); Save mirrors the resolved world pose into the layout, which
+    # must equal what Product View derives from the moved bin.
+    layout_before_items = {item["id"]: item for item in yaml.safe_load(layout_before)["items"]}
+    assert layout_items["place_zone_default"]["placement_local"] == layout_before_items["place_zone_default"]["placement_local"]
+    assert layout_items["place_zone_default"]["pose"]["xyz"] != list(old_zone["pose"]["xyz"].values())
+    exported_zone = _transform(reloaded["place_zone_default"])["pose"]
+    assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(layout_items["place_zone_default"]["pose"]["xyz"], exported_zone["xyz"].values()))
+    # Zone world pose = moved bin pose composed with the zone's local offset (797508d8).
+    local = layout_items["place_zone_default"]["placement_local"]
+    roll, pitch, yaw = expected["pose"]["rpy"]["x"], expected["pose"]["rpy"]["y"], expected["pose"]["rpy"]["z"]
+    cr, sr, cp, sp, cy, sy = math.cos(roll), math.sin(roll), math.cos(pitch), math.sin(pitch), math.cos(yaw), math.sin(yaw)
+    rotation = [[cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+                [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+                [-sp, cp * sr, cp * cr]]
+    bin_xyz = list(expected["pose"]["xyz"].values())
+    zone_xyz = [bin_xyz[i] + sum(rotation[i][j] * local["pose_xyz"][j] for j in range(3)) for i in range(3)]
+    assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(exported_zone["xyz"].values(), zone_xyz))
+    assert math.isclose(exported_zone["rpy"]["z"], yaw + local["pose_rpy"][2], abs_tol=1e-9)
+    # The zone is the authored placement region inside the bin; moving the bin never resizes it.
+    assert reloaded["place_zone_default"]["dimensions"] == layout_before_items["place_zone_default"]["dimensions"]
+    assert all(value > 0 for value in reloaded["place_zone_default"]["dimensions"])
 
 
 def test_executable_production_camera_table_save_roundtrips(tmp_path):
@@ -555,7 +611,11 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
             for section in ("sensors", "assets") for item in before[section]
             if item.get("owner_relative_visual_transform")
         }
-        assert set(before_visuals) == {"realsense_overhead", "support_surface_table"}
+        # The camera is drawn through its generated URDF visual bound to the
+        # owner; the table is an authored mesh asset that renders itself once.
+        assert set(before_visuals) == {"realsense_overhead"}
+        tables = [item for item in before["assets"] if item["id"] == "support_surface_table"]
+        assert [(t.get("render_policy"), t.get("active_visual_source")) for t in tables] == [("primary", "declared_mesh")]
         assert all(visual["owner_relative_visual_transform"]["scale"] == [1.0, 1.0, 1.0] for visual in before_visuals.values())
         for owner_id in before_visuals:
             _run_production_owner_binding_assertions(before_path, owner_id, False)
@@ -582,7 +642,7 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
         patch_path.write_text(json.dumps(patch), encoding="utf-8")
         protected_before = {
             path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml"
+            for path in scene.rglob("*") if path.is_file() and path.name not in ("workcell_studio_layout.yaml", "environment.yaml")
             and ".bak" not in path.name and "generated" not in path.relative_to(scene).parts
             and path.relative_to(scene) != Path("config/moveit_collision_objects.yaml")
         }
@@ -625,11 +685,19 @@ def test_executable_production_camera_table_save_roundtrips(tmp_path):
             )
         protected_after = {
             path.relative_to(scene): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in scene.rglob("*") if path.is_file() and path.name != "workcell_studio_layout.yaml" and ".bak" not in path.name
-            and "generated" not in path.relative_to(scene).parts
+            for path in scene.rglob("*") if path.is_file() and path.name not in ("workcell_studio_layout.yaml", "environment.yaml")
+            and ".bak" not in path.name and "generated" not in path.relative_to(scene).parts
             and path.relative_to(scene) != Path("config/moveit_collision_objects.yaml")
         }
         assert protected_after == protected_before
+        # Save projects the owners into environment.yaml, the canonical physical source.
+        physical = yaml.safe_load((scene / "environment.yaml").read_text(encoding="utf-8"))["environment"]
+        records = {r.get("layout_item_ref", r.get("id")): r for key in ("assets", "sensors", "support_surfaces")
+                   for r in physical.get(key, [])}
+        for edit in edits:
+            pose = edit["new_transform"]["pose"]
+            assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(records[edit["item_id"]]["pose_xyz"], pose["xyz"].values()))
+            assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(records[edit["item_id"]]["pose_rpy"], pose["rpy"].values()))
 
 
 def test_exact_workflow_rejects_identity_table_baseline_without_scene_mutation(tmp_path):
