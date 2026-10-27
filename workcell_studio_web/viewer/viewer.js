@@ -617,7 +617,9 @@ function isMissingOrFailedMeshStatus(status) {
     .includes(String(status || '').toLowerCase());
 }
 function statusCountedRenderables() {
-  return (state.objects || []).filter(obj => isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
+  // Synthetic edit roots carry authored metadata and transforms, but no visual
+  // of their own. Their generated child retains the primary mesh requirement.
+  return (state.objects || []).filter(obj => obj.physicalEditRoot !== true && isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
 }
 function isRequiredMeshFailureStatus(obj) {
   return obj?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj?.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback';

@@ -38954,7 +38954,7 @@ function isMissingOrFailedMeshStatus(status) {
   return ["missing_file", "unresolved_package_uri", "unsafe_path", "unsupported_format", "load_error", "url_not_served", "file_access_blocked", "loader_failure"].includes(String(status || "").toLowerCase());
 }
 function statusCountedRenderables() {
-  return (state.objects || []).filter((obj) => isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
+  return (state.objects || []).filter((obj) => obj.physicalEditRoot !== true && isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
 }
 function isRequiredMeshFailureStatus(obj) {
   return obj?.renderInfo?.render_status === "required_mesh_failed_debug_fallback" || obj?.item?.renderInfo?.render_status === "required_mesh_failed_debug_fallback";
