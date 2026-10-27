@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -725,21 +726,36 @@ def test_exact_workflow_rejects_identity_table_baseline_without_scene_mutation(t
 
 def test_executable_linked_edit_undo_redo_preserves_canonical_selection():
     viewer = ROOT / "workcell_studio_web/viewer/viewer.js"
+    three = ROOT / "workcell_studio_web/viewer/node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
+    # The place zone is locked to its bin ("follows_physical_target"), so it
+    # must also move with the bin: on the edit, on undo and on redo, including
+    # a rotated bin, and without becoming an independent patch entry.
     harness = r"""
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
 const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',innerHTML:'',value:'0',classList:{toggle(){},add(){},remove(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
-const context={console,assert,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+const context={console,assert,THREE_IMPL:require(process.argv[2]),window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
 vm.createContext(context); vm.runInContext(source+`
-const object=(x,y,z)=>({position:{x,y,z,set(a,b,c){this.x=a;this.y=b;this.z=c;}},rotation:{x:0,y:0,z:0,set(a,b,c){this.x=a;this.y=b;this.z=c;}},scale:{x:1,y:1,z:1,set(a,b,c){this.x=a;this.y=b;this.z=c;}}});
-const row=(id,z)=>({item:{id,editable:true,locked:false,source_layer:'editable_layout',render_policy:'primary',transform_group:'default_drop_destination',...(id==='place_zone_default'?{role:'place_zone',target_ref:'target_bin_default'}:{role:'target_bin'})},object3d:object(.55,-.28,z),originalTransform:null});
-const bin=row('target_bin_default',.2),zone=row('place_zone_default',.105); for(const item of [bin,zone]) item.originalTransform=transformFromObject(item.object3d);
+THREE=THREE_IMPL;
+const object=(x,y,z,yaw)=>{const o=new THREE.Object3D();o.position.set(x,y,z);applyRosRpy(o,{x:0,y:0,z:yaw});return o;};
+const row=(id,o)=>({item:{id,editable:true,locked:false,source_layer:'editable_layout',render_policy:'primary',transform_group:'default_drop_destination',...(id==='place_zone_default'?{role:'place_zone',target_ref:'target_bin_default'}:{role:'target_bin'})},object3d:o,originalTransform:null});
+const bin=row('target_bin_default',object(.55,-.28,.2,.6)),zone=row('place_zone_default',object(.57,-.27,.105,.6)); for(const item of [bin,zone]) item.originalTransform=transformFromObject(item.object3d);
 state.objects=[bin,zone];state.sceneJson={scene:{id:'ur5_2f_test'}};state.dirtyTransforms=new Map();state.undoStack=[];state.redoStack=[];state.selected='target_bin_default';
 updateLabels=()=>{};updateDirtyState=()=>{};emitDirtyChanged=()=>{};populateObjectList=()=>{};populateInspector=()=>{};
-let savedTransform=cloneTransform(bin.originalTransform);savedTransform.pose.xyz.x+=.08;assert.strictEqual(markDirtyTransform(bin,savedTransform),true);assert.strictEqual(buildEditPatch().edits.length,1);assert.strictEqual(buildEditPatch().edits[0].item_id,'target_bin_default');
+const matrix=t=>{const o=new THREE.Object3D();applyTransformToObject(o,t);o.updateMatrix();return o.matrix.clone();};
+const close=(a,b)=>{const pa=matrix(a).elements,pb=matrix(b).elements;pa.forEach((v,i)=>assert.ok(Math.abs(v-pb[i])<1e-9,JSON.stringify([a,b])));};
+const binBefore=cloneTransform(bin.originalTransform),zoneBefore=cloneTransform(zone.originalTransform);
+const next=cloneTransform(binBefore);next.pose.xyz.x+=.08;next.pose.xyz.y+=.05;next.pose.rpy.z+=.3;
+const zoneExpected=new THREE.Object3D();matrix(next).multiply(matrix(binBefore).invert()).multiply(matrix(zoneBefore)).decompose(zoneExpected.position,zoneExpected.quaternion,zoneExpected.scale);
+assert.strictEqual(markDirtyTransform(bin,next),true);close(transformFromObject(zone.object3d),transformFromObject(zoneExpected));
+assert.deepStrictEqual(buildEditPatch().edits.map(edit=>edit.item_id),['target_bin_default']);
 undoPreviewEdit();assert.strictEqual(state.selected,'target_bin_default');assert.strictEqual(state.dirtyTransforms.size,0);
-redoPreviewEdit();assert.strictEqual(state.selected,'target_bin_default');assert.strictEqual(state.dirtyTransforms.size,1);assert.strictEqual(zone.object3d.position.x,.63);
+close(transformFromObject(bin.object3d),binBefore);close(transformFromObject(zone.object3d),zoneBefore);
+redoPreviewEdit();assert.strictEqual(state.selected,'target_bin_default');assert.deepStrictEqual(buildEditPatch().edits.map(edit=>edit.item_id),['target_bin_default']);
+close(transformFromObject(bin.object3d),next);close(transformFromObject(zone.object3d),transformFromObject(zoneExpected));
 `,context);
 """
-    result = subprocess.run(["node", "-e", harness, str(viewer)], cwd=ROOT, capture_output=True, text=True)
+    result = subprocess.run(["node", "-e", harness, str(viewer), str(three)], cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

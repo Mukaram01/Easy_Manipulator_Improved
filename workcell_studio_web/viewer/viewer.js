@@ -2009,11 +2009,19 @@ function applyTransformToObject(object, transform) {
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   return true;
 }
+// A dependent that edit authority locks to its target must also move with
+// that target, or it is left behind as a stale, uneditable destination.
+function followsTargetTransform(candidate, target) {
+  const targetId = target?.item?.id;
+  if (!targetId || candidate === target) return false;
+  return derivedTransformTargetId(candidate.item) === targetId ||
+    Boolean(candidate.item?.placement_local && candidate.item?.target_ref === targetId);
+}
 function editableTransformGroupMembers(rendered) {
   const group = String(rendered?.item?.transform_group || '').trim();
   if (!rendered || !canEditItem(rendered.item)) return rendered ? [rendered] : [];
   return state.objects.filter(candidate => candidate === rendered ||
-    (candidate.item?.placement_local && candidate.item?.target_ref === rendered.item.id) ||
+    followsTargetTransform(candidate, rendered) ||
     (group && canEditItem(candidate.item) && String(candidate.item.transform_group || '').trim() === group));
 }
 function captureTransformGroup(rendered) {
@@ -2028,7 +2036,7 @@ function linkedTransformChanges(rendered, before, after, memberStarts = null) {
       ? cloneTransform(before)
       : cloneTransform(memberStarts?.get(member.item.id) || state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d));
     if (member === rendered) return { rendered: member, before: memberBefore, after: cloneTransform(after) };
-    if (member.item?.placement_local && member.item?.target_ref === rendered.item.id) {
+    if (followsTargetTransform(member, rendered)) {
       const matrix = transform => {
         const object = new THREE.Object3D();
         applyTransformToObject(object, transform);
