@@ -32,7 +32,6 @@
 #include "studio_page_navigation.hpp"
 #include "gui/layout_item_serializer.hpp"
 #include "gui/environment_task_editor.hpp"
-#include "gui/scene3d_viewport_widget.h"
 #include "gui/scene3d_visual_classification.h"
 #include "gui/preview_item_suppression.h"
 #include "visual_mesh_source_resolver.hpp"
@@ -179,7 +178,6 @@
 #include "workcell_studio_canvas_model.hpp"
 #include "scene_preview_widget.h"
 #include "embedded_web_edit_save_controller.hpp"
-#include "scene3d_viewport_widget.h"
 #include "scene3d_candidate_assembly.h"
 #include "workcell_studio_layout_editor.hpp"
 #include "workcell_studio_id_utils.hpp"
@@ -884,235 +882,6 @@ QJsonObject summarize_generated_urdf_visual_rows(const QVector<ScenePreviewWidge
     {QStringLiteral("visual_number_counts"), visual_number_counts_json},
     {QStringLiteral("dedupe_ids"), dedupe_ids_json},
     {QStringLiteral("ur5_link_names_present"), ur5_links_json}
-  };
-}
-
-QJsonObject audit_ur5_2f_test_committed_viewport_items(
-  const Scene3DViewportWidget * viewport,
-  QStringList * missing_required_visible_links)
-{
-  if (missing_required_visible_links) {
-    missing_required_visible_links->clear();
-  }
-
-  const QSet<QString> required_visible_ur5_links = {
-    // base_link_inertia is inertial-only in some URDF/index variants; do not
-    // require it as a visible mesh unless a real final draw row exists.
-    QStringLiteral("shoulder_link"),
-    QStringLiteral("upper_arm_link"),
-    QStringLiteral("forearm_link"),
-    QStringLiteral("wrist_1_link"),
-    QStringLiteral("wrist_2_link"),
-    QStringLiteral("wrist_3_link")
-  };
-  const QSet<QString> table_link_tokens = {
-    QStringLiteral("table"),
-    QStringLiteral("table_link"),
-    QStringLiteral("workbench"),
-    QStringLiteral("workbench_link"),
-    QStringLiteral("support_surface"),
-    QStringLiteral("support_surface_link")
-  };
-  const QSet<QString> camera_link_tokens = {
-    QStringLiteral("camera"),
-    QStringLiteral("camera_link"),
-    QStringLiteral("sensor"),
-    QStringLiteral("sensor_link")
-  };
-  const QSet<QString> robotiq_link_tokens = {
-    QStringLiteral("robotiq_arg2f_base_link"),
-    QStringLiteral("robotiq_arg2f_85_base_link"),
-    QStringLiteral("robotiq_arg2f_140_base_link"),
-    QStringLiteral("robotiq_85_base_link"),
-    QStringLiteral("robotiq_140_base_link"),
-    QStringLiteral("gripper_base_link"),
-    QStringLiteral("left_outer_knuckle"),
-    QStringLiteral("left_outer_finger"),
-    QStringLiteral("left_inner_finger"),
-    QStringLiteral("left_inner_finger_pad"),
-    QStringLiteral("left_inner_knuckle"),
-    QStringLiteral("right_outer_knuckle"),
-    QStringLiteral("right_outer_finger"),
-    QStringLiteral("right_inner_finger"),
-    QStringLiteral("right_inner_finger_pad"),
-    QStringLiteral("right_inner_knuckle"),
-    QStringLiteral("finger_link"),
-    QStringLiteral("knuckle_link"),
-    QStringLiteral("finger_tip_link")
-  };
-
-  const auto final_draw_proves_visibility = [](const QJsonObject & record) {
-    const QString status = canonical_scene3d_token(record.value(QStringLiteral("final_draw_status")).toString());
-    const auto field_text = [](const QJsonObject & item, const QString & key) {
-      const QJsonValue value = item.value(key);
-      if (value.isString()) return value.toString();
-      if (value.isDouble()) return QString::number(value.toInt());
-      return QString();
-    };
-    const QString link_token = canonical_scene3d_token(
-      !field_text(record, QStringLiteral("canonical_link_name")).trimmed().isEmpty() ? field_text(record, QStringLiteral("canonical_link_name")) :
-      (!field_text(record, QStringLiteral("link_name")).trimmed().isEmpty() ? field_text(record, QStringLiteral("link_name")) :
-       field_text(record, QStringLiteral("link"))));
-    const QHash<QString, QString> expected_ur5_visual_meshes{
-      {QStringLiteral("shoulder_link"), QStringLiteral("shoulder.dae")},
-      {QStringLiteral("upper_arm_link"), QStringLiteral("upperarm.dae")},
-      {QStringLiteral("forearm_link"), QStringLiteral("forearm.dae")},
-      {QStringLiteral("wrist_1_link"), QStringLiteral("wrist1.dae")},
-      {QStringLiteral("wrist_2_link"), QStringLiteral("wrist2.dae")},
-      {QStringLiteral("wrist_3_link"), QStringLiteral("wrist3.dae")}
-    };
-    const QString expected_mesh = expected_ur5_visual_meshes.value(link_token);
-    if (!expected_mesh.isEmpty()) {
-      if (status == QStringLiteral("ur5_emergency_fallback") ||
-          status == QStringLiteral("ur5_emergency_fallback_ok") ||
-          status == QStringLiteral("ur5_emergency_fallback_drawn") ||
-          status == QStringLiteral("ur5_emergency_visible_fallback")) {
-        return true;
-      }
-      const QString expected_uri = QStringLiteral("package://ur_description/meshes/ur5/visual/%1").arg(expected_mesh);
-      const QString mesh_source = field_text(record, QStringLiteral("mesh_source")).trimmed();
-      const QString mesh_uri = field_text(record, QStringLiteral("mesh_uri")).trimmed();
-      const QString canonical_source = field_text(record, QStringLiteral("canonical_mesh_source")).trimmed();
-      const bool uri_matches = mesh_source == expected_uri || mesh_uri == expected_uri;
-      const bool path_resolved = record.value(QStringLiteral("path_resolved")).toBool(false);
-      const bool canonical_matches_repo_asset =
-        canonical_source.endsWith(QStringLiteral("/assets/robots/universal_robot/ur_description/meshes/ur5/visual/%1").arg(expected_mesh)) ||
-        canonical_source.endsWith(QStringLiteral("/ur_description/meshes/ur5/visual/%1").arg(expected_mesh));
-      if (!uri_matches || !path_resolved || !canonical_matches_repo_asset) {
-        return false;
-      }
-    }
-    if (status == QStringLiteral("ok")) return true;
-
-    // Emergency fallback visibility is only accepted when the draw/export path explicitly
-    // reports a UR5 emergency fallback final-draw status.  Metadata-only records,
-    // primitive fallback hints, visual-index rows, or raw committed preview items are not
-    // proof that anything was submitted to OpenGL.
-    return status == QStringLiteral("ur5_emergency_fallback") ||
-           status == QStringLiteral("ur5_emergency_fallback_ok") ||
-           status == QStringLiteral("ur5_emergency_fallback_drawn") ||
-           status == QStringLiteral("ur5_emergency_visible_fallback");
-  };
-
-  const auto field_text = [](const QJsonObject & record, const QString & key) {
-    const QJsonValue value = record.value(key);
-    if (value.isString()) return value.toString();
-    if (value.isDouble()) return QString::number(value.toInt());
-    return QString();
-  };
-
-  int rendered_ur5_link_count = 0;
-  int rendered_robotiq_link_count = 0;
-  int rendered_table_count = 0;
-  int rendered_camera_count = 0;
-  QSet<QString> visible_ur5_link_tokens;
-  QSet<QString> added_required_ur5_link_tokens;
-  QJsonArray rendered_ur5_link_records;
-
-  if (viewport) {
-    const QJsonArray final_draw_records = viewport->final_draw_visual_items_export();
-    for (const QJsonValue & value : final_draw_records) {
-      const QJsonObject item = value.toObject();
-      const QString canonical_link_field = field_text(item, QStringLiteral("canonical_link_name")).trimmed();
-      const QString link_name_field = field_text(item, QStringLiteral("link_name")).trimmed();
-      const QString link_field = field_text(item, QStringLiteral("link")).trimmed();
-      const QString link_token = canonical_scene3d_token(
-        !canonical_link_field.isEmpty() ? canonical_link_field :
-        (!link_name_field.isEmpty() ? link_name_field : link_field));
-      if (required_visible_ur5_links.contains(link_token)) {
-        added_required_ur5_link_tokens.insert(link_token);
-      }
-      const bool renderable = final_draw_proves_visibility(item);
-      const bool visible = renderable;
-      if (!visible) {
-        continue;
-      }
-
-      const QStringList normalized_link_tokens = {
-        link_token,
-        canonical_scene3d_token(canonical_link_field),
-        canonical_scene3d_token(link_name_field),
-        canonical_scene3d_token(link_field)
-      };
-      const QStringList classification_tokens = {
-        link_token,
-        canonical_scene3d_token(canonical_link_field),
-        canonical_scene3d_token(link_name_field),
-        canonical_scene3d_token(link_field),
-        canonical_scene3d_token(field_text(item, QStringLiteral("object_name"))),
-        canonical_scene3d_token(field_text(item, QStringLiteral("visual_name"))),
-        canonical_scene3d_token(field_text(item, QStringLiteral("parent_link")))
-      };
-      const auto has_exact_classification = [&classification_tokens](const QSet<QString> & tokens) {
-        for (const QString & token : classification_tokens) {
-          if (!token.isEmpty() && tokens.contains(token)) return true;
-        }
-        return false;
-      };
-
-      if (has_exact_classification(table_link_tokens)) {
-        ++rendered_table_count;
-      }
-      if (has_exact_classification(camera_link_tokens)) {
-        ++rendered_camera_count;
-      }
-
-      const auto has_exact_normalized_link_classification = [&normalized_link_tokens](const QSet<QString> & tokens) {
-        for (const QString & token : normalized_link_tokens) {
-          if (!token.isEmpty() && tokens.contains(token)) return true;
-        }
-        return false;
-      };
-
-      const bool is_robotiq = has_exact_classification(robotiq_link_tokens);
-      const bool is_required_ur5 = has_exact_normalized_link_classification(required_visible_ur5_links);
-
-      if (is_robotiq) {
-        ++rendered_robotiq_link_count;
-      }
-      if (is_required_ur5) {
-        if (link_token == QStringLiteral("base_link_inertia")) {
-          qInfo().noquote() << QStringLiteral("Scene3D base_link_inertia trace: stage=rendered_ur5_link_count_audit result=counted item_id=%1 final_draw_status=%2 mesh_source=%3 canonical_mesh_source=%4")
-            .arg(field_text(item, QStringLiteral("item_id")),
-                 field_text(item, QStringLiteral("final_draw_status")),
-                 field_text(item, QStringLiteral("mesh_source")),
-                 field_text(item, QStringLiteral("canonical_mesh_source")));
-        }
-        ++rendered_ur5_link_count;
-        visible_ur5_link_tokens.insert(link_token);
-        QJsonObject record = item;
-        record[QStringLiteral("link_name")] = link_token;
-        record[QStringLiteral("visible")] = true;
-        rendered_ur5_link_records.append(record);
-      }
-    }
-  }
-
-  QStringList missing;
-  for (const QString & required_link : required_visible_ur5_links) {
-    if (!visible_ur5_link_tokens.contains(required_link)) {
-      missing << required_link;
-    }
-  }
-  if (missing_required_visible_links) {
-    *missing_required_visible_links = missing;
-  }
-
-  QString blocker;
-  if (!missing.isEmpty() && added_required_ur5_link_tokens.size() >= required_visible_ur5_links.size()) {
-    blocker = QStringLiteral("generated_urdf_visuals_added_but_required_ur5_links_not_rendered");
-  }
-
-  return QJsonObject{
-    {QStringLiteral("rendered_ur5_link_count"), rendered_ur5_link_count},
-    {QStringLiteral("added_required_ur5_link_count"), added_required_ur5_link_tokens.size()},
-    {QStringLiteral("required_ur5_visibility_blocker"), blocker},
-    {QStringLiteral("rendered_ur5_link_records"), rendered_ur5_link_records},
-    {QStringLiteral("missing_required_visible_ur5_links"), QJsonArray::fromStringList(missing)},
-    {QStringLiteral("excluded_non_visual_ur5_links"), QJsonArray{QStringLiteral("base_link_inertia: inertial-only/non-visual unless present as real final draw row")}},
-    {QStringLiteral("rendered_table_count"), rendered_table_count},
-    {QStringLiteral("rendered_camera_count"), rendered_camera_count},
-    {QStringLiteral("rendered_robotiq_link_count"), rendered_robotiq_link_count}
   };
 }
 
@@ -2212,14 +1981,6 @@ bool MainWindow::load_scene_for_scene3d_smoke(const QString & scene_name, const 
     scene_preview_widget_->show();
     scene_preview_widget_->raise();
     scene_preview_widget_->update();
-    if (auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>()) {
-      if (viewport->objectName().trimmed().isEmpty()) viewport->setObjectName("scene3dViewportWidget");
-      viewport->show();
-      viewport->resize(qMax(viewport->width(), 400), qMax(viewport->height(), 300));
-      viewport->fit_product_view();
-      viewport->update();
-      viewport->repaint();
-    }
   }
   QApplication::processEvents(QEventLoop::AllEvents, 250);
   if (diagnostics) {
@@ -2804,10 +2565,9 @@ void MainWindow::setup_studio_shell()
   // ScenePreviewWidget consumes preview items produced from:
   //   1) editable layout metadata (layout/workcell_studio_layout.yaml)
   //   2) locked/generated visual metadata (generated/scene_visual_mesh_index.json)
-  // and forwards them to Scene3DViewportWidget for perspective/depth/orbit-pan-zoom rendering.
+  // and exports them to the embedded Web3D Product View (the only 3D viewport).
   scene_preview_widget_ = new ScenePreviewWidget(scene_builder);
   scene_preview_widget_->setObjectName("scenePreviewWidget");
-  scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
   connect(scene_preview_widget_, &ScenePreviewWidget::studio_log_requested, this, [this](const QString &m){
     append_studio_log(m);
     if (m.startsWith("Locked:", Qt::CaseInsensitive) && inspector_warning_label_) {
@@ -2981,45 +2741,6 @@ void MainWindow::setup_studio_shell()
     clear_armed_asset_placement();
     set_canvas_interaction_mode(CanvasInteractionMode::Select);
   };
-  auto * scene3d_viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
-  if (scene3d_viewport) {
-    scene3d_viewport->setObjectName("scene3dViewportWidget");
-    scene3d_viewport->transform_changed_cb = [this](const QString &id, double x, double y, double z, double r, double p, double yaw){
-      if (!digital_twin_scene_ || mounting_update_guard_) return;
-      bool mounted_graph = false;
-      for (const auto & row : all_scene_preview_items_) mounted_graph = mounted_graph || row.mounting_yaml.contains("parent_object");
-      if (mounted_graph) {
-        if (mounted_pose_unchanged(id, x, y, z, r, p, yaw)) return;
-        commit_mounting_request({{"id", id}, {"world_pose", QJsonObject{
-          {"xyz", QJsonArray{x, y, z}}, {"rpy", QJsonArray{r, p, yaw}}}}});
-        return;
-      }
-      for (auto * item : digital_twin_scene_->items()) {
-        if (item->data(RoleId).toString() != id) continue;
-        const bool locked_item = item->data(RoleLocked).toBool();
-        const QString source_layer = item->data(RoleSourceLayer).toString().trimmed();
-        const bool editable_source_layer =
-          source_layer.compare(QStringLiteral("editable_layout"), Qt::CaseInsensitive) == 0;
-        if (locked_item || !editable_source_layer) {
-          append_studio_log(QStringLiteral("Scene3D transform edit blocked: locked item cannot be edited or source layer is not editable_layout (id=%1, source_layer=%2)")
-              .arg(id, source_layer));
-          return;
-        }
-        item->setPos(x * 100.0, y * 100.0);
-        item->setData(RolePoseZ, z);
-        item->setData(RoleRoll, r);
-        item->setData(RolePitch, p);
-        item->setData(RoleYaw, yaw);
-        refresh_selection_transform_editor_from_item(item);
-        mark_layout_dirty("Scene3D Gizmo Transform");
-        break;
-      }
-    };
-    scene3d_viewport->asset_drop_cb = [this](const QJsonObject & payload, double x, double y, double z, bool shift_drop) {
-        place_catalog_asset_at_world_position(
-          payload.value("asset_id").toString(), x, y, z, shift_drop);
-      };
-  }
   scene_builder_top_controls_host_ = new QWidget(scene_builder);
   scene_builder_top_controls_host_->setObjectName("scene_builder_top_controls_host");
   auto * primary_controls = new QHBoxLayout(scene_builder_top_controls_host_);
@@ -3142,15 +2863,15 @@ void MainWindow::setup_studio_shell()
   toggle_warnings_box_ = new QCheckBox("Toggle Warnings", scene_builder); toggle_warnings_box_->setChecked(false);
   show_minimap_box_ = new QCheckBox("Show Minimap", scene_builder); show_minimap_box_->setChecked(true);
   scene_builder_overlays_button_ = new QToolButton(scene_builder);
-  auto * overlays_button = scene_builder_overlays_button_; overlays_button->setText("Overlays"); overlays_button->setPopupMode(QToolButton::InstantPopup);
+  auto * overlays_button = scene_builder_overlays_button_; overlays_button->setText("2D Layout Overlays");
+  overlays_button->setToolTip(QStringLiteral("Overlays drawn on the 2D Layout. The 3D Product View shows physical content only.")); overlays_button->setPopupMode(QToolButton::InstantPopup);
   auto * overlays_menu = new QMenu(overlays_button);
   show_reach_overlay_box_ = new QCheckBox("Show Reach", scene_builder); show_reach_overlay_box_->setChecked(false);
   show_camera_fov_overlay_box_ = new QCheckBox("Camera FOV", scene_builder); show_camera_fov_overlay_box_->setChecked(false);
   show_pick_place_overlay_box_ = new QCheckBox("Pick Coverage", scene_builder); show_pick_place_overlay_box_->setChecked(false);
   show_trajectory_overlay_box_ = new QCheckBox("EPD Detections", scene_builder); show_trajectory_overlay_box_->setChecked(false);
-  auto * show_approach_retreat_overlay_box = new QCheckBox("Approach/Retreat", scene_builder); show_approach_retreat_overlay_box->setChecked(false);
   auto mk=[&](QCheckBox *b){ auto *a=overlays_menu->addAction(b->text()); a->setCheckable(true); a->setChecked(b ? b->isChecked() : false); connect(a,&QAction::toggled,b,&QCheckBox::setChecked); connect(b,&QCheckBox::toggled,a,&QAction::setChecked); };
-  mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_); mk(show_approach_retreat_overlay_box);
+  mk(show_reach_overlay_box_); mk(show_camera_fov_overlay_box_); mk(show_pick_place_overlay_box_); mk(show_trajectory_overlay_box_);
   auto * show_warnings_action = overlays_menu->addAction("Show Warnings"); show_warnings_action->setCheckable(true); show_warnings_action->setChecked(false);
   auto * show_labels_action = overlays_menu->addAction("Detection Labels"); show_labels_action->setCheckable(true); show_labels_action->setChecked(false);
   overlays_button->setMenu(overlays_menu);
@@ -3158,20 +2879,6 @@ void MainWindow::setup_studio_shell()
   connect(toggle_warnings_box_, &QCheckBox::toggled, show_warnings_action, &QAction::setChecked);
   connect(show_labels_action, &QAction::toggled, toggle_labels_box_, &QCheckBox::setChecked);
   connect(toggle_labels_box_, &QCheckBox::toggled, show_labels_action, &QAction::setChecked);
-  connect(show_approach_retreat_overlay_box, &QCheckBox::toggled, this, [this, show_approach_retreat_overlay_box](bool){
-    if (!scene_preview_widget_) return;
-    scene_preview_widget_->set_task_overlay_visibility(
-      show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
-      show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
-      show_approach_retreat_overlay_box->isChecked(),
-      false);
-    scene_preview_widget_->set_perception_overlay_visibility(
-      show_camera_fov_overlay_box_ ? show_camera_fov_overlay_box_->isChecked() : true,
-      show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
-      show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
-      false);
-    append_studio_log("overlay toggled");
-  });
   scene_builder_canvas_more_button_ = new QToolButton(scene_builder);
   auto * canvas_more_actions = scene_builder_canvas_more_button_;
   canvas_more_actions->setText("Canvas More");
@@ -3196,13 +2903,6 @@ void MainWindow::setup_studio_shell()
   scene_builder_visual_modes_button_->setText("Visual Modes");
   scene_builder_visual_modes_button_->setPopupMode(QToolButton::InstantPopup);
   auto * visual_modes_menu = new QMenu(scene_builder_visual_modes_button_);
-  auto * label_mode_menu = visual_modes_menu->addMenu("Label mode");
-  auto * label_selected = label_mode_menu->addAction("Selected");
-  auto * label_all = label_mode_menu->addAction("All");
-  auto * label_off = label_mode_menu->addAction("Off");
-  auto * mesh_preview_menu = visual_modes_menu->addMenu("Mesh preview mode");
-  auto * mesh_visual = mesh_preview_menu->addAction("Visual Mesh");
-  auto * mesh_collision = mesh_preview_menu->addAction("Collision Mesh");
   auto * snap_mode_menu = visual_modes_menu->addMenu("Snap mode");
   auto * snap_5cm = snap_mode_menu->addAction("Snap: 5 cm");
   auto * snap_1cm = snap_mode_menu->addAction("Snap: 1 cm");
@@ -3361,22 +3061,6 @@ void MainWindow::setup_studio_shell()
   canvas_more_menu->addAction("Open Merge Report", this, &MainWindow::open_layout_merge_report);
   canvas_more_menu->addAction("Copy Merge Summary", this, &MainWindow::copy_layout_merge_summary);
   canvas_more_menu->addAction("Export Canvas Snapshot", this, &MainWindow::export_canvas_snapshot);
-  connect(label_selected, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected); });
-  connect(label_all, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Important); });
-  connect(label_off, &QAction::triggered, this, [this]() { if (scene_preview_widget_) scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Off); });
-  // ScenePreviewWidget::LabelMode::SelectedOnly compatibility token for static navigation contract tests.
-  connect(mesh_visual, &QAction::triggered, this, [this]() {
-    auto * v = scene_preview_widget_ ? scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr;
-    if (!v) return;
-    v->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Meshes;
-    v->update();
-  });
-  connect(mesh_collision, &QAction::triggered, this, [this]() {
-    auto * v = scene_preview_widget_ ? scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr;
-    if (!v) return;
-    v->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Primitives;
-    v->update();
-  });
   connect(snap_5cm, &QAction::triggered, this, [this]() { snap_step_m_ = 0.05; if (snap_step_label_) snap_step_label_->setText("Nudge step: 0.05 m"); if (snap_to_grid_box_) snap_to_grid_box_->setChecked(true); });
   connect(snap_1cm, &QAction::triggered, this, [this]() { snap_step_m_ = 0.01; if (snap_step_label_) snap_step_label_->setText("Nudge step: 0.01 m"); if (snap_to_grid_box_) snap_to_grid_box_->setChecked(true); });
   connect(snap_off, &QAction::triggered, this, [this]() { if (snap_to_grid_box_) snap_to_grid_box_->setChecked(false); });
@@ -4145,10 +3829,7 @@ void MainWindow::setup_studio_shell()
     if (bounds.isValid() && !bounds.isNull()) digital_twin_canvas_->fitInView(bounds.adjusted(-24,-24,24,24), Qt::KeepAspectRatio);
   });
   connect_action(fit_robot_button, [this](){
-    if (!scene_preview_widget_) return;
-    auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>();
-    if (!viewport) return;
-    viewport->fit_robot();
+    if (scene_preview_widget_) scene_preview_widget_->frame_selection();
   });
   connect_action(reset_button, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->resetTransform(); rebuild_digital_twin_canvas(); });
   connect_action(zoom_in, [this](){ if (digital_twin_canvas_) digital_twin_canvas_->scale(1.15,1.15); });
@@ -4163,10 +3844,7 @@ void MainWindow::setup_studio_shell()
   connect(snap_to_grid_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Snap to Grid"); });
   connect(fine_move_mode_box_, &QCheckBox::toggled, this, [this](bool){ mark_layout_dirty("Fine Move Mode"); });
   connect(unlock_robot_base_box_, &QCheckBox::toggled, this, [this](bool checked){ if (checked) { QMessageBox::warning(this, "Unlock Robot Base", "Robot base is locked by default. Moving robot base may invalidate reach and safety assumptions."); }});
-  connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool enabled){
-    if (scene_preview_widget_) scene_preview_widget_->set_label_mode(enabled ? ScenePreviewWidget::LabelMode::Selected : ScenePreviewWidget::LabelMode::Off);
-    rebuild_digital_twin_canvas();
-  });
+  connect(toggle_labels_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   connect(toggle_warnings_box_, &QCheckBox::toggled, this, [this](bool){ rebuild_digital_twin_canvas(); });
   for (auto * box : {
       preview_layer_editable_layout_box_, preview_layer_generated_urdf_visual_box_,
@@ -4411,18 +4089,11 @@ void MainWindow::build_studio_header_actions()
   run_next_menu->addAction(action_export_open_page_);
   run_next_button->setMenu(run_next_menu);
   top_bar->addWidget(run_next_button);
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   auto * product_view_help_label = new QLabel(
     "Web3D Product View",
     this);
   product_view_help_label->setText("Product View");
   product_view_help_label->setToolTip("Embedded Web3D Product View is active; use the viewer surface for product framing and overlay controls.");
-#else
-  auto * product_view_help_label = new QLabel(
-    "Product View",
-    this);
-  product_view_help_label->setToolTip("Native Scene3D compatibility preview: lightweight editable layout preview; not guaranteed RViz-equivalent.");
-#endif
   product_view_help_label->setWordWrap(false);
   product_view_help_label->setObjectName("studioProductViewHelpLabel");
   product_view_help_label->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
@@ -4592,11 +4263,6 @@ void MainWindow::refresh_task_intent_panel()
       model.warnings << snapshot_warning;
     }
     scene_preview_widget_->set_task_overlay_model(model);
-    scene_preview_widget_->set_task_overlay_visibility(
-      show_trajectory_overlay_box_ ? show_trajectory_overlay_box_->isChecked() : true,
-      show_pick_place_overlay_box_ ? show_pick_place_overlay_box_->isChecked() : true,
-      true,
-      toggle_labels_box_ ? toggle_labels_box_->isChecked() : true);
   }
   if (ti.status == "MISSING_TASK_FILE") append_studio_log("task overlay missing");
   else append_studio_log("task overlay loaded");
@@ -5934,8 +5600,7 @@ void MainWindow::append_studio_log(
 
 bool MainWindow::scene3d_debug_logging_enabled() const
 {
-  const auto * viewport = scene_preview_widget_ ? scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr;
-  return (viewport && viewport->debug_overlays_mode) || qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS");
+  return qEnvironmentVariableIsSet("WORKCELL_SCENE3D_DEBUG_LOGS");
 }
 
 bool MainWindow::append_scene_diagnostic_log_once(const QString & event, int payload_revision, int payload_count, const QString & message)
@@ -7444,8 +7109,7 @@ bool MainWindow::has_selected_scene() const
 
 bool MainWindow::ensure_live_authoring_mutation_available(const QString & action)
 {
-  if (!scene_preview_widget_ || scene_preview_widget_->is_native_product_view_backend()) return true;
-  if (scene_preview_widget_->embedded_web_authoring_active()) return true;
+  if (!scene_preview_widget_ || scene_preview_widget_->embedded_web_authoring_active()) return true;
   const QString reason = scene_preview_widget_->embedded_web_authoring_contract_error();
   append_studio_log(QStringLiteral(
     "%1 blocked: Product View live-authoring contract is unavailable (%2). The operation failed closed; no Product View regeneration was requested.")
@@ -7796,8 +7460,8 @@ void MainWindow::open_diagnostics_folder()
 void MainWindow::rebuild_digital_twin_canvas()
 {
   // 2D fallback canvas rebuild only.
-  // The primary runtime 3D canvas is Scene3DViewportWidget hosted by ScenePreviewWidget in this same panel.
-  // This fallback path remains available when 3D is unavailable, and shares selection/inspector state.
+  // The 3D canvas is the embedded Web3D Product View hosted by ScenePreviewWidget in this same panel.
+  // This 2D Layout shares selection/inspector state with it.
   const QString preserved_selected_id = current_selected_scene_item_id_;
   if (!digital_twin_canvas_) return;
   if (!digital_twin_scene_) {
@@ -8055,96 +7719,15 @@ void MainWindow::refresh_scene_builder_left_explorer()
 void MainWindow::refresh_scene_builder_view_chips()
 {
   bool launch_ready = false;
-  QString preview_chip_status = QStringLiteral("Failed");
   if (has_selected_scene()) {
     const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
     launch_ready = s.has_launch_demo && s.has_package_xml;
-    if (scene_preview_widget_) {
-      const QString runtime_preview_status = scene_preview_widget_->runtime_preview_status_text();
-      if (runtime_preview_status == QStringLiteral("Preview failed")) {
-        // A terminal Product View failure is authoritative. Native paint
-        // counters or stale quality evidence must never promote it to Ready.
-        preview_chip_status = QStringLiteral("Failed");
-      } else if (runtime_preview_status == QStringLiteral("Preview available in compatibility mode")) {
-        // Web3D may have failed, but the populated native compatibility
-        // viewport is still a usable Product View and must not be summarized
-        // as a failed or missing 3D preview.
-        preview_chip_status = QStringLiteral("Compatibility Ready");
-      } else {
-      const auto counters = scene_preview_widget_->render_debug_counters();
-      const QString quality = counters.visual_quality_status.trimmed().toUpper();
-      const int mesh_source_count = counters.mesh_source_count > 0 ? counters.mesh_source_count : counters.mesh_backed_count;
-      const int mesh_rendered_count = counters.mesh_rendered_count;
-      const int urdf_primitive_source_count = counters.urdf_primitive_source_count;
-      const int urdf_primitive_rendered_count = counters.urdf_primitive_rendered_count;
-      const bool source_render_ratio_failed =
-        (mesh_source_count > 0 && mesh_rendered_count <= 0) ||
-        (urdf_primitive_source_count > 0 && urdf_primitive_rendered_count <= 0);
-      const bool high_mesh_source_low_render =
-        mesh_source_count >= 4 && mesh_rendered_count > 0 && mesh_rendered_count * 2 < mesh_source_count;
-      const bool has_active_runtime_render_evidence =
-        counters.rendered_count > 0 ||
-        counters.visible_count > 0 ||
-        counters.viewport_received_count > 0 ||
-        counters.render_cache_count > 0 ||
-        counters.last_paint_completed ||
-        counters.smoke_fallback_render_used;
-      const int visible_geometry_count = qMax(
-        counters.unique_visible_item_count,
-        qMax(0, counters.visible_count - counters.overlay_count));
-      const int rendered_geometry_count = qMax(0, counters.rendered_count - counters.overlay_rendered_count);
-      const bool has_visible_or_rendered_geometry =
-        visible_geometry_count > 0 ||
-        rendered_geometry_count > 0 ||
-        counters.mesh_rendered_count > 0 ||
-        counters.urdf_primitive_rendered_count > 0 ||
-        counters.primitive_fallback_rendered_count > 0 ||
-        counters.valid_physical_fallback_count > 0;
-      const bool has_missing_or_fallback_geometry =
-        counters.placeholder_count > 0 ||
-        counters.missing_geometry_count > 0 ||
-        counters.wireframe_fallback_count > 0 ||
-        counters.generated_fallback_count > 0 ||
-        counters.primitive_fallback_count > 0 ||
-        counters.primitive_fallback_rendered_count > 0;
-      const bool has_warning_bucket =
-        quality == QStringLiteral("WARNING") ||
-        quality == QStringLiteral("FAIL") ||
-        has_missing_or_fallback_geometry ||
-        source_render_ratio_failed ||
-        high_mesh_source_low_render;
-
-      if (scene_preview_widget_->runtime_preview_has_usable_content() &&
-          runtime_preview_status != QStringLiteral("Preview failed")) {
-        if (runtime_preview_status == QStringLiteral("Preview ready") && !has_warning_bucket) {
-          preview_chip_status = QStringLiteral("Ready");
-        } else if (!has_active_runtime_render_evidence || !has_visible_or_rendered_geometry) {
-          // Embedded Web3D readiness is runtime-based and does not depend on
-          // native Scene3D paint/render counters.
-          preview_chip_status = QStringLiteral("Ready");
-        } else if (quality == QStringLiteral("PASS") && !has_warning_bucket) {
-          preview_chip_status = QStringLiteral("Ready");
-        } else {
-          preview_chip_status = QStringLiteral("Warnings");
-        }
-      } else if (!has_active_runtime_render_evidence || !has_visible_or_rendered_geometry) {
-        preview_chip_status = QStringLiteral("Failed");
-      } else if (quality == QStringLiteral("PASS") && !has_warning_bucket) {
-        preview_chip_status = QStringLiteral("Ready");
-      } else {
-        preview_chip_status = QStringLiteral("Warnings");
-      }
-      }
-    } else {
-      preview_chip_status = QStringLiteral("Failed");
-    }
   }
-  Q_UNUSED(preview_chip_status);
   if (scene_builder_launch_chip_) scene_builder_launch_chip_->setText(QString("Launch Artifacts: %1").arg(launch_ready ? "Present" : "Missing"));
   if (scene_builder_safety_chip_) scene_builder_safety_chip_->setText("Safety: Fake hardware");
   if (scene_builder_generate_launch_button_) scene_builder_generate_launch_button_->setVisible(has_selected_scene() && !launch_ready);
   if (canvas_mode_label_) {
-    const QString view_label = scene_builder_is_3d_view_ ? "Scene3D Product Preview" : "2D Layout Draft";
+    const QString view_label = scene_builder_is_3d_view_ ? "Product View" : "2D Layout Draft";
     const QString base_mode = canvas_mode_label_->text().section("·", 0, 0).trimmed();
     canvas_mode_label_->setText(base_mode + " · " + view_label);
   }
@@ -11189,8 +10772,7 @@ void MainWindow::redo_layout_edit(){
 bool MainWindow::selected_item_can_be_duplicated() const
 {
   if (!selected_scene_state_.valid || place_asset_armed_) return false;
-  if (scene_preview_widget_ && !scene_preview_widget_->is_native_product_view_backend() &&
-      !scene_preview_widget_->embedded_web_authoring_active()) return false;
+  if (scene_preview_widget_ && !scene_preview_widget_->embedded_web_authoring_active()) return false;
   return resolve_selected_editable_layout_target().ok;
 }
 
@@ -11322,8 +10904,7 @@ void MainWindow::duplicate_selected_item()
 bool MainWindow::selected_item_can_be_deleted() const
 {
   if (!selected_scene_state_.valid || place_asset_armed_) return false;
-  if (scene_preview_widget_ && !scene_preview_widget_->is_native_product_view_backend() &&
-      !scene_preview_widget_->embedded_web_authoring_active()) return false;
+  if (scene_preview_widget_ && !scene_preview_widget_->embedded_web_authoring_active()) return false;
   return resolve_selected_editable_layout_target().ok;
 }
 
@@ -12213,8 +11794,7 @@ void MainWindow::show_scene_hierarchy_context_menu(const QPoint & position)
   else if (chosen == duplicate) duplicate_selected_item();
   else if (chosen == remove) delete_selected_item();
   else if (chosen == focus) {
-    if (auto * viewport = scene_preview_widget_ ?
-      scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr) viewport->focus_selected();
+    if (scene_preview_widget_) scene_preview_widget_->frame_selection();
   } else if (chosen == properties) {
     apply_scene_builder_panel_visibility(true, true);
     if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
@@ -12256,8 +11836,7 @@ void MainWindow::show_canvas_context_menu(const QPoint & global_position)
   else if (chosen == duplicate) duplicate_selected_item();
   else if (chosen == remove) delete_selected_item();
   else if (chosen == focus) {
-    if (auto * viewport = scene_preview_widget_ ?
-      scene_preview_widget_->findChild<Scene3DViewportWidget *>() : nullptr) viewport->focus_selected();
+    if (scene_preview_widget_) scene_preview_widget_->frame_selection();
   } else if (chosen == properties) {
     apply_scene_builder_panel_visibility(true, true);
     if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
@@ -12344,19 +11923,6 @@ void MainWindow::apply_scene3d_product_view_layer_defaults_and_commit()
   if (show_pick_place_overlay_box_) show_pick_place_overlay_box_->setChecked(false);
   if (show_trajectory_overlay_box_) show_trajectory_overlay_box_->setChecked(false);
   if (scene_preview_widget_) {
-    scene_preview_widget_->set_label_mode(ScenePreviewWidget::LabelMode::Selected);
-    scene_preview_widget_->set_task_overlay_visibility(false, false, false, false);
-    scene_preview_widget_->set_perception_overlay_visibility(false, false, false, false);
-    if (auto * viewport = scene_preview_widget_->findChild<Scene3DViewportWidget *>()) {
-      viewport->show_warnings = false;
-      viewport->show_safety = false;
-      viewport->show_reachability_heatmap = false;
-      viewport->show_collision_warnings = false;
-      viewport->show_work_envelope = false;
-      viewport->show_warning_labels = false;
-      viewport->debug_overlays_mode = false;
-      viewport->update();
-    }
   }
 
   apply_scene3d_preview_layer_filters(false);
@@ -12694,37 +12260,6 @@ void MainWindow::refresh_scene3d_product_view_status_and_audit()
   // selected-scene status refresh cannot alter the Embedded Web3D request key.
   if (!scene_preview_widget_) return;
 
-  auto * viewport = scene_preview_widget_->is_native_product_view_backend()
-    ? scene_preview_widget_->findChild<Scene3DViewportWidget *>()
-    : nullptr;
-  QStringList missing_required_visible_links;
-  const QJsonObject viewport_audit =
-    audit_ur5_2f_test_committed_viewport_items(viewport, &missing_required_visible_links);
-  const bool has_required_ur5_final_draw_links = viewport && missing_required_visible_links.isEmpty() &&
-    viewport_audit.value(QStringLiteral("rendered_ur5_link_count")).toInt() >= 7;
-  const bool selected_ur5_2f_test = has_selected_scene() && selected_scene_name() == QStringLiteral("ur5_2f_test");
-  if (viewport && (selected_ur5_2f_test || has_required_ur5_final_draw_links)) {
-    viewport->fit_product_view();
-    viewport->update();
-  }
-  if (viewport) {
-    scene3d_filter_diagnostics_[QStringLiteral("camera_fit_target")] = viewport->last_camera_fit_target();
-    scene3d_filter_diagnostics_[QStringLiteral("camera_fit_includes_robot")] = viewport->last_initial_fit_included_robot_bounds();
-  }
-  if (scene_preview_widget_->is_native_product_view_backend() && selected_ur5_2f_test) {
-    scene3d_filter_diagnostics_[QStringLiteral("ur5_2f_test_final_viewport_audit")] = viewport_audit;
-    append_studio_log(
-      QStringLiteral("Scene3D final viewport audit for ur5_2f_test: %1")
-        .arg(QString::fromUtf8(QJsonDocument(viewport_audit).toJson(QJsonDocument::Compact))));
-    if (!missing_required_visible_links.isEmpty()) {
-      append_studio_log(
-        QStringLiteral("Preview warning: ur5_2f_test retained visual rows missing after loader filtering: final visible viewport/renderable UR5 links missing=[%1]")
-          .arg(missing_required_visible_links.join(QStringLiteral(","))));
-    } else {
-      append_studio_log(QStringLiteral(
-        "Scene3D final viewport audit passed for ur5_2f_test required visible UR5 viewport/renderable links."));
-    }
-  }
   const Scene3DTransformParityReadiness transform_parity =
     has_selected_scene()
       ? scene3d_load_transform_parity_readiness(
@@ -14109,29 +13644,6 @@ void MainWindow::populate_scene_hierarchy()
           row[QStringLiteral("existing_retained_resolved_source_path")] = retained.resolved_source_path;
           row[QStringLiteral("protected_ur5_generated_visual_row")] = protected_ur5_generated_visual_row;
         };
-        auto duplicate_generated_visual_log_message = [&](const YAML::Node & skipped_node,
-                                                         int skipped_row_index,
-                                                         const QString & skipped_id,
-                                                         const QString & duplicate_key,
-                                                         const GeneratedVisualRowMetadata & retained,
-                                                         bool protected_ur5_generated_visual_row) {
-          return QStringLiteral("Scene3D skipped duplicate generated visual index row: skipped_row_index=%1 skipped_id=%2 skipped_link=%3 skipped_link_name=%4 skipped_canonical_link_name=%5 skipped_package_uri=%6 skipped_mesh_uri=%7 skipped_source_path=%8 skipped_mesh_path=%9 skipped_resolved_source_path=%10 generated_duplicate_key=%11 existing_retained_row_index=%12 existing_retained_id=%13 existing_retained_key=%14 protected_ur5_generated_visual_row=%15")
-            .arg(skipped_row_index)
-            .arg(skipped_id)
-            .arg(visual_index_first_scalar_value(skipped_node, {"link"}))
-            .arg(visual_index_first_scalar_value(skipped_node, {"link_name"}))
-            .arg(visual_item_canonical_link(skipped_node))
-            .arg(visual_index_first_scalar_value(skipped_node, {"package_uri"}))
-            .arg(visual_index_first_scalar_value(skipped_node, {"mesh_uri"}))
-            .arg(visual_index_first_scalar_value(skipped_node, {"source_path", "filename"}))
-            .arg(visual_index_first_scalar_value(skipped_node, {"mesh_path"}))
-            .arg(visual_index_first_scalar_value(skipped_node, {"resolved_source_path", "resolved_path"}))
-            .arg(duplicate_key)
-            .arg(retained.source_row_index)
-            .arg(retained.final_id)
-            .arg(retained.generated_duplicate_key)
-            .arg(protected_ur5_generated_visual_row ? QStringLiteral("true") : QStringLiteral("false"));
-        };
         for (const auto &v : ordered_visual_items) {
           const int ordered_source_row_index = ordered_visual_source_row_index++;
           const int source_row_index = workcell_builder::yaml_map_key(v, "source_row_index").as<int>(ordered_source_row_index);
@@ -14205,10 +13717,6 @@ void MainWindow::populate_scene_hierarchy()
                 generated_row_diagnostic, v, source_row_index, id, generated_visual_row_key, retained, true);
               append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("duplicate_generated_visual_index_row"), reason);
               append_visual_ingestion_diagnostic(v, raw_id, id, reason);
-              if (scene_preview_widget_ && scene_preview_widget_->is_native_product_view_backend()) {
-                append_studio_log(duplicate_generated_visual_log_message(
-                  v, source_row_index, id, generated_visual_row_key, retained, true));
-              }
               append_studio_log(QStringLiteral("UR5_VISUAL_RUNTIME_DECISION row=%1 link=%2 mesh=%3 decision=skipped reason=duplicate_same_link_same_mesh")
                 .arg(source_row_index).arg(protected_ur5_link).arg(visual_item_mesh_identity(v)));
               continue;
@@ -14228,10 +13736,6 @@ void MainWindow::populate_scene_hierarchy()
               generated_row_diagnostic, v, source_row_index, id, generated_visual_row_key, retained, false);
             append_generated_visual_row_diagnostic(generated_row_diagnostic, QStringLiteral("duplicate_generated_visual_index_row"), reason);
             append_visual_ingestion_diagnostic(v, raw_id, id, reason);
-            if (scene_preview_widget_ && scene_preview_widget_->is_native_product_view_backend()) {
-              append_studio_log(duplicate_generated_visual_log_message(
-                v, source_row_index, id, generated_visual_row_key, retained, false));
-            }
             continue;
           } else {
             generated_visual_row_metadata_by_key.insert(
@@ -15029,7 +14533,7 @@ void MainWindow::populate_scene_hierarchy()
   // ahead of semantic/editor overlays in the assembled PreviewItem payload so
   // visual_items[0] (for UR5, base_link_inertia/visual_0/base.dae) cannot be
   // displaced by environment.yaml's semantic robot_base or other helper rows
-  // before Scene3DViewportWidget ingest.
+  // before the Product View payload is assembled.
   std::stable_sort(preview_items.begin(), preview_items.end(), [](const auto & a, const auto & b) {
     const auto generated_rank = [](const ScenePreviewWidget::PreviewItem & item) {
       const QString source_layer = canonical_scene3d_token(item.source_layer);
@@ -15143,317 +14647,6 @@ void MainWindow::populate_scene_hierarchy()
   // intentionally after suppress_lower_fidelity_preview_items(); rows appended
   // here are authoritative mesh-backed URDF visuals and must not be routed
   // through the older duplicate-suppression path again.
-  {
-    const QString scene_name_for_final_append = QString::fromStdString(s.scene_name).trimmed();
-    const QString workspace_root_for_final_append = detect_workspace_root();
-    const QStringList required_ur5_final_links = {
-      QStringLiteral("shoulder_link"),
-      QStringLiteral("upper_arm_link"),
-      QStringLiteral("forearm_link"),
-      QStringLiteral("wrist_1_link"),
-      QStringLiteral("wrist_2_link"),
-      QStringLiteral("wrist_3_link")
-    };
-    const QSet<QString> accepted_ur5_base_links = {
-      QStringLiteral("base_link_inertia"),
-      QStringLiteral("base_link")
-    };
-    auto final_append_row_scalar = [](const YAML::Node & node, const char * key) {
-      const YAML::Node value = workcell_builder::yaml_map_key(node, key);
-      if (!value || !value.IsScalar()) return QString();
-      return QString::fromStdString(value.as<std::string>("")).trimmed();
-    };
-    auto final_append_first_scalar = [&](const YAML::Node & node, std::initializer_list<const char *> keys) {
-      for (const char * key : keys) {
-        const QString value = final_append_row_scalar(node, key);
-        if (!value.isEmpty()) return value;
-      }
-      return QString();
-    };
-    auto normalize_ur5_final_link = [&](const QString & raw) {
-      const QString token = canonical_scene3d_token(raw);
-      if (accepted_ur5_base_links.contains(token)) return token;
-      for (const QString & link : required_ur5_final_links) {
-        if (token == link || token.contains(link)) return link;
-      }
-      return QString();
-    };
-    auto final_append_row_link = [&](const YAML::Node & node) {
-      const QString direct = normalize_ur5_final_link(final_append_first_scalar(
-        node, {"link", "link_name", "canonical_link_name", "object_id", "object"}));
-      if (!direct.isEmpty()) return direct;
-      return normalize_ur5_final_link(final_append_first_scalar(node, {"id", "visual", "visual_name"}));
-    };
-    auto final_append_mesh_reference = [&](const YAML::Node & node) {
-      return QStringList{
-        final_append_first_scalar(node, {"package_uri"}),
-        final_append_first_scalar(node, {"mesh_uri", "filename"}),
-        final_append_first_scalar(node, {"source_path"}),
-        final_append_first_scalar(node, {"mesh_path"}),
-        final_append_first_scalar(node, {"resolved_source_path", "resolved_path"})
-      }.join(QStringLiteral("|"));
-    };
-    auto final_append_is_ur5_mesh_row = [&](const YAML::Node & node) {
-      if (!node || !node.IsMap()) return false;
-      const QString link = final_append_row_link(node);
-      if (link.isEmpty()) return false;
-      const QString geometry = canonical_scene3d_token(final_append_first_scalar(node, {"geometry_type", "type"}));
-      if (geometry != QStringLiteral("mesh")) return false;
-      const QString source_token = canonical_scene3d_token(final_append_mesh_reference(node));
-      return source_token.contains(QStringLiteral("ur_description")) &&
-             source_token.contains(QStringLiteral("meshes")) &&
-             source_token.contains(QStringLiteral("ur5")) &&
-             source_token.contains(QStringLiteral("visual"));
-    };
-    auto preview_item_has_ur5_link = [&](const QString & link) {
-      for (const auto & item : preview_items) {
-        const QString existing_link = scene3d_viewport_link_token(item);
-        if (link == QStringLiteral("base_link_inertia") || link == QStringLiteral("base_link")) {
-          if (accepted_ur5_base_links.contains(existing_link)) return true;
-        } else if (existing_link == link) {
-          return true;
-        }
-      }
-      return false;
-    };
-    auto preview_item_mesh_for_ur5_link = [&](const QString & link) {
-      for (const auto & item : preview_items) {
-        const QString existing_link = scene3d_viewport_link_token(item);
-        const bool link_matches =
-          (link == QStringLiteral("base_link_inertia") || link == QStringLiteral("base_link"))
-            ? accepted_ur5_base_links.contains(existing_link)
-            : existing_link == link;
-        if (!link_matches) continue;
-        const QString mesh = item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed();
-        const QFileInfo mesh_info(mesh);
-        if (mesh_info.exists() && mesh_info.isFile()) {
-          const QString canonical = mesh_info.canonicalFilePath();
-          return canonical.isEmpty() ? mesh_info.absoluteFilePath() : canonical;
-        }
-        return mesh;
-      }
-      return QString();
-    };
-    bool visual_index_contains_ur5_mesh_rows = false;
-    if (fs::exists(urdf_visual_index)) {
-      try {
-        const YAML::Node final_index_probe = YAML::LoadFile(urdf_visual_index.string());
-        const YAML::Node visual_items = workcell_builder::yaml_map_key(final_index_probe, "visual_items");
-        if (visual_items && visual_items.IsSequence()) {
-          for (const auto & row : visual_items) {
-            if (final_append_is_ur5_mesh_row(row)) {
-              visual_index_contains_ur5_mesh_rows = true;
-              break;
-            }
-          }
-        }
-      } catch (...) {
-        visual_index_contains_ur5_mesh_rows = false;
-      }
-    }
-    if (scene_preview_widget_ && scene_preview_widget_->is_native_product_view_backend() &&
-        (scene_name_for_final_append == QStringLiteral("ur5_2f_test") || visual_index_contains_ur5_mesh_rows)) {
-      QStringList missing_ur5_links;
-      bool base_present = false;
-      for (const QString & base_link : accepted_ur5_base_links) {
-        if (preview_item_has_ur5_link(base_link)) {
-          base_present = true;
-          break;
-        }
-      }
-      if (!base_present) missing_ur5_links << QStringLiteral("base_link_inertia");
-      for (const QString & link : required_ur5_final_links) {
-        if (!preview_item_has_ur5_link(link)) missing_ur5_links << link;
-      }
-      append_studio_log(QStringLiteral("UR5_FINAL_APPEND_CHECK missing=[%1]")
-        .arg(missing_ur5_links.join(QStringLiteral(","))));
-      for (const QString & link : required_ur5_final_links) {
-        if (!missing_ur5_links.contains(link)) {
-          append_studio_log(QStringLiteral("UR5_FINAL_APPEND already_present link=%1 mesh=%2")
-            .arg(link, preview_item_mesh_for_ur5_link(link)));
-        }
-      }
-
-      if (!missing_ur5_links.isEmpty() && fs::exists(urdf_visual_index)) {
-        try {
-          const YAML::Node final_index = YAML::LoadFile(urdf_visual_index.string());
-          const YAML::Node visual_items = workcell_builder::yaml_map_key(final_index, "visual_items");
-          int row_number = 0;
-          if (visual_items && visual_items.IsSequence()) {
-            for (const auto & row : visual_items) {
-              const int source_row_index = workcell_builder::yaml_map_key(row, "source_row_index").as<int>(row_number);
-              ++row_number;
-              if (!final_append_is_ur5_mesh_row(row)) continue;
-              const QString link = final_append_row_link(row);
-              const bool row_satisfies_missing_base =
-                accepted_ur5_base_links.contains(link) &&
-                missing_ur5_links.contains(QStringLiteral("base_link_inertia"));
-              if (!missing_ur5_links.contains(link) && !row_satisfies_missing_base) continue;
-              const QString package_uri = final_append_first_scalar(row, {"package_uri"});
-              const QString mesh_uri = final_append_first_scalar(row, {"mesh_uri", "filename"});
-              const QString source_path = final_append_first_scalar(row, {"source_path"});
-              const QString mesh_path = final_append_first_scalar(row, {"mesh_path"});
-              const QString resolved_source_path = final_append_first_scalar(row, {"resolved_source_path", "resolved_path"});
-              QStringList tried_candidates;
-              QString resolved_mesh_path = resolve_visual_mesh_source_path(
-                !resolved_source_path.isEmpty() ? resolved_source_path : (!mesh_path.isEmpty() ? mesh_path : source_path),
-                package_uri.isEmpty() ? mesh_uri : package_uri,
-                d,
-                workspace_root_for_final_append,
-                &tried_candidates);
-              if (resolved_mesh_path.isEmpty()) {
-                resolved_mesh_path = resolve_visual_mesh_source_path(
-                  QString(),
-                  package_uri.isEmpty() ? mesh_uri : package_uri,
-                  d,
-                  workspace_root_for_final_append,
-                  &tried_candidates);
-              }
-              if (resolved_mesh_path.isEmpty()) continue;
-              const QFileInfo mesh_info(resolved_mesh_path);
-              const QString canonical_mesh_path = mesh_info.exists() && mesh_info.isFile()
-                ? (mesh_info.canonicalFilePath().isEmpty() ? mesh_info.absoluteFilePath() : mesh_info.canonicalFilePath())
-                : resolved_mesh_path;
-              bool exact_already_present = false;
-              for (const auto & item : preview_items) {
-                const QString existing_link = scene3d_viewport_link_token(item);
-                const QString existing_mesh = QFileInfo(item.mesh_path.trimmed().isEmpty() ? item.source_path : item.mesh_path).canonicalFilePath();
-                const QString normalized_existing_mesh = existing_mesh.isEmpty()
-                  ? (item.mesh_path.trimmed().isEmpty() ? item.source_path.trimmed() : item.mesh_path.trimmed())
-                  : existing_mesh;
-                if (existing_link == link && normalized_existing_mesh == canonical_mesh_path) {
-                  exact_already_present = true;
-                  break;
-                }
-              }
-              if (exact_already_present) {
-                append_studio_log(QStringLiteral("UR5_FINAL_APPEND already_present link=%1 mesh=%2")
-                  .arg(link, canonical_mesh_path));
-                missing_ur5_links.removeAll(link);
-                continue;
-              }
-
-              ScenePreviewWidget::PreviewItem p;
-              const QString visual_name = final_append_first_scalar(row, {"visual_name", "visual", "id"});
-              p.id = QStringLiteral("generated_urdf::%1::%2::%3")
-                .arg(link, visual_name.isEmpty() ? QStringLiteral("visual") : visual_name)
-                .arg(source_row_index);
-              p.display_name = link;
-              p.category = QStringLiteral("robot_arm");
-              p.role = p.category;
-              p.status = QStringLiteral("ready");
-              p.locked = true;
-              p.editable = false;
-              p.selectable = true;
-              p.lock_reason = QStringLiteral("generated URDF visual final append");
-              p.source_layer = QStringLiteral("locked_generated_urdf_visual");
-              p.active_visual_source = QStringLiteral("mesh_preview");
-              p.mesh_path = canonical_mesh_path;
-              p.source_path = canonical_mesh_path;
-              p.mesh_available = true;
-              p.has_mesh_metadata = true;
-              p.primitive_geometry_type = QStringLiteral("mesh");
-              p.package_uri = package_uri.isEmpty() ? mesh_uri : package_uri;
-              p.visual_index_package_uri = p.package_uri;
-              p.visual_index_mesh_uri = mesh_uri;
-              p.visual_index_link = link;
-              p.visual_index_link_name = link;
-              p.frame_id = link;
-              p.visual_index_visual = final_append_first_scalar(row, {"visual"});
-              p.visual_index_visual_name = final_append_first_scalar(row, {"visual_name"});
-              p.visual_index_value = workcell_builder::yaml_map_key(row, "visual_index").as<int>(-1);
-              p.source_row_index = source_row_index;
-              p.visual_index_parent_link = final_append_first_scalar(row, {"parent_link", "base_frame"});
-              p.visual_index_source = final_append_first_scalar(row, {"source"});
-              p.robot_base_frame = p.visual_index_parent_link.isEmpty() ? QStringLiteral("unknown") : p.visual_index_parent_link;
-              const YAML::Node baked_pose = workcell_builder::yaml_map_key(row, "baked_world_visual_pose");
-              const YAML::Node baked_xyz = workcell_builder::yaml_map_key(baked_pose, "xyz");
-              const YAML::Node baked_rpy = workcell_builder::yaml_map_key(baked_pose, "rpy");
-              const YAML::Node matrix = workcell_builder::yaml_map_key(row, "baked_world_visual_matrix");
-              bool matrix_loaded = false;
-              if (matrix && matrix.IsSequence() && (matrix.size() == 16 || matrix.size() == 4)) {
-                if (matrix.size() == 16) {
-                  for (std::size_t i = 0; i < 16; ++i) {
-                    p.baked_world_visual_matrix(i / 4, i % 4) = workcell_builder::yaml_seq_index(matrix, i).as<double>(i % 5 == 0 ? 1.0 : 0.0);
-                  }
-                  matrix_loaded = true;
-                } else {
-                  matrix_loaded = true;
-                  for (std::size_t matrix_row = 0; matrix_row < 4; ++matrix_row) {
-                    const YAML::Node matrix_row_node = workcell_builder::yaml_seq_index(matrix, matrix_row);
-                    if (!matrix_row_node || !matrix_row_node.IsSequence() || matrix_row_node.size() < 4) {
-                      matrix_loaded = false;
-                      break;
-                    }
-                    for (std::size_t matrix_col = 0; matrix_col < 4; ++matrix_col) {
-                      p.baked_world_visual_matrix(matrix_row, matrix_col) = workcell_builder::yaml_seq_index(matrix_row_node, matrix_col).as<double>(matrix_row == matrix_col ? 1.0 : 0.0);
-                    }
-                  }
-                }
-                if (matrix_loaded) {
-                  p.has_baked_world_visual_transform = true;
-                  p.has_baked_world_visual_matrix = true;
-                  p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_matrix:final_append");
-                  append_studio_log(QStringLiteral("UR5_BAKED_MATRIX_HANDOFF link=%1 source=%2")
-                    .arg(link, p.baked_world_visual_transform_source));
-                }
-              }
-              if (!matrix_loaded && baked_xyz && baked_xyz.IsSequence() && baked_xyz.size() >= 3 &&
-                  baked_rpy && baked_rpy.IsSequence() && baked_rpy.size() >= 3) {
-                p.x = workcell_builder::yaml_seq_index(baked_xyz, 0).as<double>(0.0);
-                p.y = workcell_builder::yaml_seq_index(baked_xyz, 1).as<double>(0.0);
-                p.z = workcell_builder::yaml_seq_index(baked_xyz, 2).as<double>(0.0);
-                p.roll = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 0).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[0]"), &p.warnings);
-                p.pitch = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 1).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[1]"), &p.warnings);
-                p.yaw = normalize_angle_radians_with_guard(workcell_builder::yaml_seq_index(baked_rpy, 2).as<double>(0.0), QStringLiteral("UR5_FINAL_APPEND.baked_world_visual_pose.rpy[2]"), &p.warnings);
-                p.has_baked_world_visual_transform = true;
-                QMatrix4x4 baked_pose_matrix;
-                baked_pose_matrix.translate(static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z));
-                baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.yaw)), 0.0f, 0.0f, 1.0f);
-                baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.pitch)), 0.0f, 1.0f, 0.0f);
-                baked_pose_matrix.rotate(static_cast<float>(qRadiansToDegrees(p.roll)), 1.0f, 0.0f, 0.0f);
-                p.baked_world_visual_matrix = baked_pose_matrix;
-                p.has_baked_world_visual_matrix = true;
-                p.baked_world_visual_transform_source = QStringLiteral("generated/scene_visual_mesh_index.json:baked_world_visual_pose_matrix:final_append");
-                append_studio_log(QStringLiteral("UR5_BAKED_MATRIX_HANDOFF link=%1 source=%2")
-                  .arg(link, p.baked_world_visual_transform_source));
-              }
-              const YAML::Node mesh_scale = workcell_builder::yaml_map_key(row, "mesh_scale");
-              const YAML::Node fallback_scale = workcell_builder::yaml_map_key(row, "scale");
-              const YAML::Node scale = (mesh_scale && mesh_scale.IsSequence()) ? mesh_scale : fallback_scale;
-              if (scale && scale.IsSequence() && scale.size() >= 3) {
-                p.mesh_scale_x = workcell_builder::yaml_seq_index(scale, 0).as<double>(1.0);
-                p.mesh_scale_y = workcell_builder::yaml_seq_index(scale, 1).as<double>(1.0);
-                p.mesh_scale_z = workcell_builder::yaml_seq_index(scale, 2).as<double>(1.0);
-              }
-              normalize_generated_urdf_visual_identity(p);
-              classify_generated_urdf_visual(p, canonical_mesh_path);
-              p.category = QStringLiteral("robot_arm");
-              p.role = p.category;
-              p.visual_index_link = link;
-              p.visual_index_link_name = link;
-              p.active_visual_source = QStringLiteral("mesh_preview");
-              p.source_layer = QStringLiteral("locked_generated_urdf_visual");
-              preview_items.push_back(p);
-              missing_ur5_links.removeAll(link);
-              if (row_satisfies_missing_base) {
-                missing_ur5_links.removeAll(QStringLiteral("base_link_inertia"));
-              }
-              append_studio_log(QStringLiteral("UR5_FINAL_APPEND appended link=%1 mesh=%2")
-                .arg(link, canonical_mesh_path));
-            }
-          }
-        } catch (...) {
-          append_studio_log(QStringLiteral("UR5_FINAL_APPEND failed_to_parse index=generated/scene_visual_mesh_index.json"));
-        }
-      }
-      int final_required_count = 0;
-      for (const QString & link : required_ur5_final_links) {
-        if (preview_item_has_ur5_link(link)) ++final_required_count;
-      }
-      append_studio_log(QStringLiteral("UR5_FINAL_APPEND final_required_count=%1").arg(final_required_count));
-    }
-  }
 
   // Preserve authored relationship context for friendly inspection without
   // exposing the source file or schema in the card. A destination area that
@@ -15698,18 +14891,6 @@ void MainWindow::populate_scene_hierarchy()
         transform_parity.warning,
         transform_parity.failed));
     ++scene_diagnostic_payload_revision_;
-    if (scene_preview_widget_->is_native_product_view_backend()) {
-      append_scene_diagnostic_log_once(
-        QStringLiteral("full_payload_commit"),
-        scene_diagnostic_payload_revision_,
-        scene3d_full_payload_counters.viewport_received_count,
-        QString("Scene3D full payload committed: scene=%1 total=%2 visible=%3 mesh=%4 locked=%5")
-          .arg(selected_scene_state_.name)
-          .arg(scene3d_full_payload_counters.viewport_received_count)
-          .arg(scene3d_full_payload_counters.visible_count)
-          .arg(scene3d_full_payload_counters.mesh_backed_count)
-          .arg(scene3d_full_payload_counters.locked_generated_urdf_visual_count));
-    }
     refresh_new_cell_checklist();
   }
 
@@ -16612,12 +15793,10 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
   const QString runtime_preview_status_text = scene_preview_widget_
     ? scene_preview_widget_->runtime_preview_status_text()
     : QString();
-  const bool preview_in_compatibility_mode =
-    runtime_preview_status_text == QStringLiteral("Preview available in compatibility mode");
   const bool preview_has_runtime_content = scene_preview_widget_ ? scene_preview_widget_->runtime_preview_has_usable_content() : (scene3d_counters.viewport_received_count > 0 || scene3d_counters.visible_count > 0 ||
     scene3d_counters.rendered_count > 0 || preview_runtime_ready);
   const QString native_preview_counts = QString(
-    "Scene3D counters: received=%1 visible=%2 rendered=%3; classified layers: editable=%4 generated=%5 fallback=%6 overlays/helpers=%7 warning/missing=%8 diagnostics=%9 other=%10.")
+    "Product View payload: items=%1 visible=%2 drawable=%3; classified layers: editable=%4 generated=%5 fallback=%6 overlays/helpers=%7 warning/missing=%8 diagnostics=%9 other=%10.")
       .arg(preview_received_count)
       .arg(preview_visible_count)
       .arg(preview_rendered_count)
@@ -16634,21 +15813,21 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
       .arg(validation_gate_ready ? "ready" : "blocked")
       .arg(fake_hardware_ready ? "ready" : "blocked");
 
-  QString preview_detail = QString("Native Scene3D preview is waiting for renderable layout, generated preview, or fallback content. %1 %2")
+  QString preview_detail = QString("Product View is waiting for renderable layout, generated preview, or fallback content. %1 %2")
     .arg(native_preview_counts, launch_gate_detail);
   SceneWorkflowStepStatus preview_status = SceneWorkflowStepStatus::NeedsAction;
   if (preview_has_runtime_content) {
     preview_status = SceneWorkflowStepStatus::Done;
     preview_detail = QString("%1. %2 %3")
       .arg(runtime_preview_status_text.isEmpty() ? QStringLiteral("Preview ready") : runtime_preview_status_text, native_preview_counts, launch_gate_detail);
-    if (!preview_in_compatibility_mode && !transform_parity.warning.isEmpty()) {
+    if (!transform_parity.warning.isEmpty()) {
       preview_status = transform_parity.failed
         ? SceneWorkflowStepStatus::Blocked
         : SceneWorkflowStepStatus::Warning;
       preview_detail = QString("%1 Source: %2 %3 %4")
         .arg(transform_parity.warning, transform_parity.source, native_preview_counts, launch_gate_detail);
     }
-    const bool visual_quality_needs_review = !preview_in_compatibility_mode && (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
+    const bool visual_quality_needs_review = (editable_layout_yaml_malformed || classified_fallback_count > 0 ||
       classified_warning_count > 0 || classified_editable_count == 0 ||
       classified_diagnostic_count > 0 || has_warnings || !scene3d_counters.visual_quality_warnings.isEmpty());
     if (visual_quality_needs_review && transform_parity.warning.isEmpty()) {

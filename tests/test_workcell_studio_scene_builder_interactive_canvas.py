@@ -5,7 +5,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_scene_preview_view_buttons_and_clear_selection_present():
     text = (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8')
-    for token in ['Isometric', 'Top', 'Front', 'Side', 'Focus Selected', 'Clear Selection']:
+    # Camera presets live in the Web3D viewer; Qt frames through its API.
+    for token in ['fitSelection()', 'fitScene()', 'clearSelection()', 'void ScenePreviewWidget::on_clear_selection_clicked()']:
         assert token in text
 
 
@@ -35,13 +36,6 @@ def test_save_layout_skips_locked_preview_items_and_logs_paired_summary_counts()
     ]:
         assert token in text
 
-
-def test_focus_selected_centers_on_selected_item():
-    text = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
-    assert 'if (it.id != selected_id) continue;' in text
-    assert 'orbit_offset_' in text
-
-
 def test_info_chip_and_viewport_have_locked_urdf_and_separated_overlay_mesh_counters():
     viewport = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
     preview = (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8')
@@ -50,6 +44,6 @@ def test_info_chip_and_viewport_have_locked_urdf_and_separated_overlay_mesh_coun
     assert 'Items %1 M%2 B%3 Miss%4 Ov%5 L-URDF%6' in preview
 def test_default_label_suppression_and_metadata_tag_storage_tokens_present():
     main_text = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
-    view_text = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
+    viewer = (ROOT / 'workcell_studio_web/viewer/viewer.js').read_text(encoding='utf-8')
     assert 'p.metadata_tags = tag;' in main_text
-    assert 'if (!selected && is_urdf_visual && missing_reason.isEmpty()' in view_text
+    assert 'labelsVisible: false' in viewer

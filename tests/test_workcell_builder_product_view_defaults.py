@@ -4,7 +4,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCENE_PREVIEW_CPP = REPO / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp"
-SCENE3D_VIEWPORT_CPP = REPO / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp"
+
 SCENE3D_ASSEMBLY_CPP = REPO / "workcell_builder/workcell_builder/gui/scene3d_candidate_assembly.cpp"
 MAINWINDOW_CPP = REPO / "workcell_builder/workcell_builder/gui/mainwindow.cpp"
 UR5_SCENE = REPO / "scenes/ur5_2f_test"
@@ -48,30 +48,14 @@ def test_product_view_defaults_are_wired_to_shared_scene3d_layer_helper() -> Non
 
 
 def test_scene_preview_widget_product_defaults_turn_off_viewport_helpers_and_warnings() -> None:
+    # Web3D is the only 3D viewport: helpers, labels and debug overlays start hidden in the viewer.
+    viewer = (REPO / "workcell_studio_web/viewer/viewer.js").read_text()
+    initial_state = viewer[viewer.index("const state = {"):viewer.index("};", viewer.index("const state = {"))]
+    assert "labelsVisible: false" in initial_state
+    assert "debugOverlaysVisible: false" in initial_state
     apply_defaults = SCENE_PREVIEW_CPP.read_text().split("void ScenePreviewWidget::apply_product_view_defaults()", 1)[1]
     apply_defaults = apply_defaults.split("void ScenePreviewWidget::on_reset_view_clicked", 1)[0]
-
-    for expected in (
-        "v->debug_overlays_mode = false;",
-        "v->show_warnings = false;",
-        "v->show_warning_labels = false;",
-        "v->show_safety = false;",
-        "v->show_pick_place = false;",
-        "v->show_reachability_heatmap = false;",
-        "v->show_collision_warnings = false;",
-        "v->show_work_envelope = false;",
-        "v->show_task_route = false;",
-        "v->show_approach_retreat = false;",
-        "v->show_camera_fov = false;",
-        "v->show_pick_coverage = false;",
-        "v->show_epd_detections = false;",
-        "v->show_detection_labels = false;",
-        "v->mesh_preview_mode = ScenePreviewWidget::MeshPreviewMode::Auto;",
-        "v->label_mode = ScenePreviewWidget::LabelMode::Selected;",
-        "v->fit_include_overlays = false;",
-        "v->fit_product_view();",
-    ):
-        assert expected in apply_defaults
+    assert "fit_fallback_scene_to_items(false);" in apply_defaults
 
 
 def test_product_view_destination_selector_is_strict_and_explicitly_applied() -> None:
@@ -152,24 +136,3 @@ def test_inspector_refresh_for_ur5_2f_test_uses_canonical_metadata_and_launch_pa
     assert "metadata.scene_path" in metadata_panel_helper
     assert "metadata.robot" in metadata_panel_helper
     assert "metadata.launch" in metadata_panel_helper
-
-
-def test_warning_chip_suppressed_for_clean_xacro_expanded_preview_payload() -> None:
-    show_warning, chip_text = compact_warning_chip_state(
-        {"extraction_mode": "xacro_expanded", "safe_for_preview": True, "missing": 0, "unresolved": 0, "fallback": 0},
-        {
-            "missing_geometry_count": 0,
-            "mesh_bounds_fallback_rendered_count": 0,
-            "primitive_fallback_rendered_count": 0,
-            "wireframe_fallback_count": 0,
-            "placeholder_count": 0,
-        },
-    )
-    assert show_warning is False
-    assert chip_text == "3D Preview Ready"
-
-    viewport_cpp = SCENE3D_VIEWPORT_CPP.read_text()
-    assert "const bool concise_warning = show_warnings && has_missing_or_fallback_content;" in viewport_cpp
-    assert "3D Preview Warnings · see Diagnostics" in viewport_cpp
-    assert "3D Preview Ready · %1 items" in viewport_cpp
-    assert "show_warning_labels && (debug_overlays_mode || !render_counters_clean)" in viewport_cpp

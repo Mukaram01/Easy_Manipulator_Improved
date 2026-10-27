@@ -8,7 +8,6 @@
 // result is re-checked with an independent resolver plan (distance 0 = done).
 // Fake hardware only: no planning, execution or robot motion.
 
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 static void start_multi_select_acceptance(MainWindow * window, QApplication * app, const QString & output,
     const QString & scene_name, QSize window_size, const QString & airpick_scene = QString())
 {
@@ -177,7 +176,7 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
   auto wait_view = [=](const QString & tag) {
     return [=]() -> bool {
       auto * preview = window->scene_preview_widget_;
-      s->native = preview && preview->is_native_product_view_backend();
+      s->native = false;  // the native renderer was retired; viewer-only steps always run
       s->evidence["backend"] = s->native ? "native_scene3d" : "embedded_web3d";
       if (s->ticks < 10 || !(preview && (s->native || preview->embedded_web_authoring_active()))) return false;
       // An empty window_size means "maximized on --screen": keep what the window manager granted.
@@ -635,4 +634,3 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
   });
   timer->start();
 }
-#endif  // WORKCELL_BUILDER_HAS_WEBENGINE

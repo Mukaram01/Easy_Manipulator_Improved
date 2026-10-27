@@ -1,7 +1,7 @@
 #pragma once
 
-// Incremental extraction target for Scene3D transform and bounds math helpers.
-// Behavior remains owned by scene3d_viewport_widget.cpp until the next small move.
+// URDF visual-origin convention shared by the Web3D viewer and the MoveIt
+// collision manifest (tested by workcell_scene3d_mesh_offset_convention_test).
 
 #include <QMatrix4x4>
 #include <QtMath>

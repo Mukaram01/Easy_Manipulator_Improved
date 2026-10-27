@@ -80,7 +80,6 @@ def test_feature_regression_behavior_successful_drag_writes_once_cancel_and_read
 
 MAIN_CPP = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 PREVIEW_CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
-VIEWPORT_CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
 
 
 def test_feature_regression_static_runtime_scene3d_hierarchy_and_layer_contract_tokens_present():
@@ -98,54 +97,9 @@ def test_feature_regression_static_layer_visibility_toggle_handlers_present():
     for tok in [
         'show_warnings_action',
         'show_labels_action',
-        'set_task_overlay_visibility(',
-        'set_perception_overlay_visibility(',
-        'append_studio_log("overlay toggled")',
-        'v->show_task_route = task_route;',
-        'v->show_pick_place = pick_place_zones;',
-        'v->show_approach_retreat = approach_retreat;',
+        '2D Layout Overlays',
     ]:
         assert tok in MAIN_CPP or tok in PREVIEW_CPP
-
-
-def test_feature_regression_static_selection_sync_stable_id_bidirectional_tokens_present():
-    for tok in [
-        'preview_item_selected',
-        'select_preview_item(id); emit preview_item_selected(id, role);',
-        'it.id == selected_preview_item_id_',
-        'selected_preview_item_id_ = id; static_cast<Scene3DViewportWidget *>(simple_3d_view_)->selected_id = id;',
-        'it.id == selected_id',
-        'find_tree_item_by_id(selected_id)',
-        'find_canvas_item_by_id(selected_id)',
-    ]:
-        assert tok in MAIN_CPP or tok in PREVIEW_CPP or tok in VIEWPORT_CPP
-
-
-def test_feature_regression_static_read_only_enforcement_log_path_present():
-    for tok in [
-        'Locked/generated item edit rejected',
-        'Locked: %1',
-        'generated_robot_visual',
-        'if (generated_robot_visual) return false;',
-    ]:
-        assert tok in MAIN_CPP or tok in VIEWPORT_CPP
-
-
-def test_feature_regression_static_no_generated_artifact_mutation_in_toggle_or_readonly_handlers():
-    relevant_toggle_lines = [line for line in PREVIEW_CPP.splitlines() if 'set_task_overlay_visibility' in line or 'set_perception_overlay_visibility' in line or 'on_clear_selection_clicked' in line]
-    relevant_toggle_lines += [line for line in MAIN_CPP.splitlines() if 'overlay toggled' in line or 'show_warnings_action' in line or 'show_labels_action' in line]
-    relevant_readonly_lines = [line for line in VIEWPORT_CPP.splitlines() if 'generated_robot_visual' in line or 'Locked:' in line or 'item_is_editable_for_gizmo' in line]
-    relevant = '\n'.join(relevant_toggle_lines + relevant_readonly_lines).lower()
-    for forbidden in [
-        'generated_workcell_summary.json',
-        'scene_manifest.yaml',
-        'write',
-        'save_layout',
-        'yaml',
-        'qsavefile',
-        'ofstream',
-    ]:
-        assert forbidden not in relevant
 
 
 def test_feature_regression_static_epd_snapshot_warning_classified_under_overlays_helpers():
@@ -155,15 +109,3 @@ def test_feature_regression_static_epd_snapshot_warning_classified_under_overlay
         'Overlays / Helpers',
     ]:
         assert tok in MAIN_CPP
-
-
-def test_feature_regression_safety_string_guards_keep_real_hardware_and_perception_launch_blocked():
-    safety_text = "\n".join([MAIN_CPP, PREVIEW_CPP, VIEWPORT_CPP]).lower()
-    guarded_tokens = [
-        "use_fake_hardware:=false",
-        "real_hardware:=true",
-        "runtime_execution_enabled:=true",
-        "missing required use_fake_hardware:=true",
-    ]
-    for token in guarded_tokens:
-        assert token in safety_text

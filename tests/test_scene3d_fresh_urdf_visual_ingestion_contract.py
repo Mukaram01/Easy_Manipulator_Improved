@@ -2,7 +2,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
-VIEWPORT = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
 
 
 def _final_draw_rows_from_fresh_visual_index_rows(visual_rows):
@@ -35,15 +34,6 @@ def test_fresh_urdf_visual_preview_items_preserve_visual_index_identity_fields()
     assert "p.source_row_index = source_row_index;" in MAIN
     assert 'p.source_layer = QStringLiteral("locked_generated_urdf_visual");' in MAIN
     assert 'p.active_visual_source = QStringLiteral("mesh_preview");' in MAIN
-
-
-def test_viewport_link_resolution_prefers_visual_index_fields_before_legacy_ids():
-    link_fn_start = VIEWPORT.rindex("QString scene3d_link_name_for_item")
-    link_fn = VIEWPORT[link_fn_start : VIEWPORT.index("QString scene3d_canonical_link_name", link_fn_start)]
-    assert "item.visual_index_link_name" in link_fn
-    assert "item.visual_index_link" in link_fn
-    assert link_fn.index("item.visual_index_link_name") < link_fn.index("const QString id = item.id.trimmed()")
-    assert link_fn.index("item.visual_index_link") < link_fn.index("const QString id = item.id.trimmed()")
 
 
 def test_fresh_ur5_urdf_visual_rows_survive_to_final_draw_visual_items():

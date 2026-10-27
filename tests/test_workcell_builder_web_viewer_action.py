@@ -122,31 +122,17 @@ def test_embedded_web3d_server_is_local_reused_and_controls_are_not_native_noops
 def test_embedded_web3d_header_and_mode_do_not_show_native_banner_text():
     main_cpp = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
     preview_cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
-    product_view_block = main_cpp.split("#ifdef WORKCELL_BUILDER_HAS_WEBENGINE", 1)[1].split("top_bar->addWidget(product_view_help_label);", 1)[0]
-    webengine_block = product_view_block.split("#else", 1)[0]
-    native_fallback_block = product_view_block.split("#else", 1)[1].split("#endif", 1)[0]
-
-    assert "Native Scene3D: lightweight editable layout preview; not guaranteed RViz-equivalent." not in main_cpp
-    assert "Web3D Product View" in webengine_block
-    assert "Native Scene3D" not in webengine_block
-    assert "Native Scene3D compatibility preview" in native_fallback_block
+    assert "Native Scene3D" not in main_cpp
+    assert "Web3D Product View" in main_cpp
     assert 'mode_selector_->addItems({"Web3D Product View", "2D Layout"})' in preview_cpp
 
 
 def test_embedded_web3d_hides_native_only_toolbar_controls():
     cpp = SCENE_PREVIEW_CPP.read_text(encoding="utf-8")
+    # The native-only combos no longer exist; the toolbar shows only Web3D controls.
+    for removed in ["mesh_preview_mode_selector_", "labels_selector_", "view_actions_selector_",
+                    "interaction_mode_selector_", "overlays_selector_", "active_native_viewport"]:
+        assert removed not in cpp
     visibility_body = cpp.split("void ScenePreviewWidget::refresh_toolbar_visibility()", 1)[1].split("void ScenePreviewWidget::refresh_mode_and_state()", 1)[0]
-    assert "const bool embedded_web_active = (active_native_viewport() == nullptr);" in visibility_body
-    for token in [
-        "set_visible(mesh_preview_mode_label_, !embedded_web_active)",
-        "set_visible(mesh_preview_mode_selector_, !embedded_web_active)",
-        "set_visible(gizmo_mode_label_, embedded_web_active)",
-        "set_visible(gizmo_mode_selector_, embedded_web_active)",
-        "set_visible(labels_label_, !embedded_web_active)",
-        "set_visible(labels_selector_, !embedded_web_active)",
-        "set_visible(view_actions_label_, !embedded_web_active)",
-        "set_visible(view_actions_selector_, !embedded_web_active)",
-        "set_visible(interaction_mode_label_, !embedded_web_active)",
-        "set_visible(interaction_mode_selector_, !embedded_web_active)",
-    ]:
-        assert token in visibility_body
+    for control in ["embedded_undo_button_", "embedded_fit_button_", "gizmo_mode_selector_", "snap_mode_selector_"]:
+        assert control in visibility_body

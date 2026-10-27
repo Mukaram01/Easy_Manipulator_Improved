@@ -2,7 +2,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / 'workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
-VIEW3D = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
 
 
 def test_scene_builder_uses_main_splitter_layout():
@@ -105,9 +104,3 @@ def test_selection_sync_invokes_apply_scene_selection_from_preview_signal():
         "apply_scene_selection(id, role, id.trimmed().isEmpty(), false);",
     ]:
         assert token in MAIN
-
-
-def test_selection_callback_path_preserved_without_requiring_log_wording():
-    assert 'if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);' in VIEW3D
-    assert 'connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected' in MAIN
-    assert 'apply_scene_selection(id, role, id.trimmed().isEmpty(), false);' in MAIN

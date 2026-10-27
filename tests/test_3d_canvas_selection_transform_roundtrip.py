@@ -88,18 +88,3 @@ def test_escape_cancel_path_does_not_save_layout_or_commit_transform():
     esc_shortcut_block = MAIN_CPP.split('auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder);', 1)[1].split('; });', 1)[0]
     assert 'save_layout_changes' not in esc_shortcut_block
     assert 'mark_layout_dirty' not in esc_shortcut_block
-
-
-
-def test_gizmo_handle_click_does_not_reselect_item_before_drag_contract_present():
-    viewport_cpp = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
-    body = viewport_cpp.split('void Scene3DViewportWidget::mousePressEvent(QMouseEvent * e) {', 1)[1].split('void Scene3DViewportWidget::mouseMoveEvent', 1)[0]
-    gizmo_block = body.split('if ((gizmo_mode == GizmoMode::Move || gizmo_mode == GizmoMode::Rotate) && !selected_id.isEmpty())', 1)[1].split('QString best_id, best_role;', 1)[0]
-
-    assert 'item_is_editable_for_gizmo(*selected_item)' in gizmo_block
-    assert 'pick_gizmo_axis_at_screen(e->pos(), axis, &score)' in gizmo_block
-    assert 'pick_gizmo_rotation_ring_at_screen(e->pos(), axis, &score)' in gizmo_block
-    assert 'drag_start_pose_.item_id = selected_item->id;' in gizmo_block
-    assert 'drag_in_progress_ = true;' in gizmo_block
-    assert 'return;' in gizmo_block
-    assert 'pick_item_at_screen' not in gizmo_block

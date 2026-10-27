@@ -66,7 +66,7 @@ def test_minimap_collapses_for_embedded_web3d_and_remains_available_for_fallback
     assert "minimap_view_->setFixedSize(150, 90)" not in MAIN
     assert 'minimap->show()' not in LAYOUT
     assert "ProductViewBackend::EmbeddedWeb3D" in presented
-    assert "!native_compatibility_fallback_active_" in presented
+    assert "native_compatibility" not in presented
     assert "stack_->currentWidget() == view3d_container_" in presented
     assert "embedded_editor_contract_ready_" not in presented
 

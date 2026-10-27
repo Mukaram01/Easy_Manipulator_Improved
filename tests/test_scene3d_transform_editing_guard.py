@@ -44,11 +44,9 @@ def test_safety_tokens_absent_in_docs_and_tests_fixture_scope():
 
 def test_scene3d_contract_runtime_files_not_docs_only():
     runtime_symbols = [
-        'set_task_overlay_visibility(',
         'select_preview_item(const QString & id)',
-        'item_is_editable_for_gizmo',
         'Locked/generated item edit rejected',
     ]
-    corpus = '\n'.join([MAIN_CPP, (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8'), (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')])
+    corpus = '\n'.join([MAIN_CPP, (ROOT / 'workcell_builder/workcell_builder/gui/scene_preview_widget.cpp').read_text(encoding='utf-8')])
     for symbol in runtime_symbols:
         assert symbol in corpus

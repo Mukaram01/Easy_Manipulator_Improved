@@ -15,14 +15,10 @@ PRODUCTION_SELECTION_AND_SCENE3D_PAYLOAD_FILES = [
     ROOT / "workcell_builder/workcell_builder/gui/mainwindow.h",
     ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp",
     ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h",
-    ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp",
-    ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.h",
     ROOT / "workcell_builder/workcell_builder/gui/scene3d_candidate_assembly.cpp",
     ROOT / "workcell_builder/workcell_builder/gui/scene3d_candidate_assembly.h",
     ROOT / "workcell_builder/workcell_builder/src_workcell_studio_canvas_model.cpp",
     ROOT / "workcell_builder/workcell_builder/include/workcell_studio_canvas_model.hpp",
-    ROOT / "workcell_builder/workcell_builder/src_scene3d_visual_backend.cpp",
-    ROOT / "workcell_builder/workcell_builder/include/scene3d_visual_backend.hpp",
 ]
 
 SCENE_NAME_IDENTIFIER = r"\b\w*scene_name\w*\b"

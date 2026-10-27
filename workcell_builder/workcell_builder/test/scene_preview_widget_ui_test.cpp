@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QUrlQuery>
 #include <QElapsedTimer>
@@ -16,12 +17,9 @@
 #define private public
 #include "scene_preview_widget.h"
 #undef private
-#include "scene3d_viewport_widget.h"
 
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEnginePage>
 #include <QWebEngineView>
-#endif
 
 #include <functional>
 
@@ -131,7 +129,6 @@ TEST(ScenePreviewWidgetUi, DirtySessionRefreshPreservesImportedCatalogMetadataTh
     rebuilt_disk_model.items[1].catalog_asset_id);
 }
 
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 ScenePreviewWidget::PreviewItem stale_editable_item(const QString & id, double x, double y, double z)
 {
   ScenePreviewWidget::PreviewItem item;
@@ -216,93 +213,22 @@ void select_identity(ScenePreviewWidget & widget, const ScenePreviewWidget::Embe
   widget.embedded_web_has_active_identity_ = true;
   widget.embedded_web_repo_root_ = identity.absolute_repo_root;
 }
-#endif
 }
 
-TEST(ScenePreviewWidgetUi, MeshPreviewControlDefaultsToAuto)
+TEST(ScenePreviewWidgetUi, ToolbarOffersOnlyWeb3DControls)
 {
   ASSERT_NE(ensure_app(), nullptr);
 
+  // The retired native renderer's mesh/label/view/overlay combos must not come back.
   ScenePreviewWidget widget;
-  const auto combos = widget.findChildren<QComboBox *>();
-  QComboBox * mesh_combo = nullptr;
-  for (auto * combo : combos) {
-    if (combo && combo->findText("Auto") >= 0 && combo->findText("Meshes") >= 0 && combo->findText("Primitives") >= 0) {
-      mesh_combo = combo;
-      break;
-    }
+  for (auto * combo : widget.findChildren<QComboBox *>()) {
+    EXPECT_LT(combo->findText(QStringLiteral("Primitives")), 0);
+    EXPECT_LT(combo->findText(QStringLiteral("Important")), 0);
+    EXPECT_LT(combo->findText(QStringLiteral("Isometric")), 0);
+    EXPECT_LT(combo->findText(QStringLiteral("Reachability Heatmap")), 0);
   }
-
-  ASSERT_NE(mesh_combo, nullptr);
-  EXPECT_EQ(mesh_combo->currentText(), QString("Auto"));
-  EXPECT_EQ(widget.mesh_preview_mode(), ScenePreviewWidget::MeshPreviewMode::Auto);
-}
-
-TEST(ScenePreviewWidgetUi, MeshPreviewModeToggles)
-{
-  ASSERT_NE(ensure_app(), nullptr);
-
-  ScenePreviewWidget widget;
-  const auto combos = widget.findChildren<QComboBox *>();
-  QComboBox * mesh_combo = nullptr;
-  for (auto * combo : combos) {
-    if (combo && combo->findText("Auto") >= 0 && combo->findText("Meshes") >= 0 && combo->findText("Primitives") >= 0) {
-      mesh_combo = combo;
-      break;
-    }
-  }
-  ASSERT_NE(mesh_combo, nullptr);
-
-  mesh_combo->setCurrentText("Meshes");
-  EXPECT_EQ(widget.mesh_preview_mode(), ScenePreviewWidget::MeshPreviewMode::Meshes);
-
-  mesh_combo->setCurrentText("Primitives");
-  EXPECT_EQ(widget.mesh_preview_mode(), ScenePreviewWidget::MeshPreviewMode::Primitives);
-
-  mesh_combo->setCurrentText("Auto");
-  EXPECT_EQ(widget.mesh_preview_mode(), ScenePreviewWidget::MeshPreviewMode::Auto);
-}
-
-
-TEST(ScenePreviewWidgetUi, LabelModeDefaultsToSelected)
-{
-  ASSERT_NE(ensure_app(), nullptr);
-
-  ScenePreviewWidget widget;
-  const auto combos = widget.findChildren<QComboBox *>();
-  QComboBox * label_combo = nullptr;
-  for (auto * combo : combos) {
-    if (combo && combo->findText("Important") >= 0 && combo->findText("Selected") >= 0 && combo->findText("All") >= 0) {
-      label_combo = combo;
-      break;
-    }
-  }
-  ASSERT_NE(label_combo, nullptr);
-  EXPECT_EQ(label_combo->currentText(), QString("Selected"));
-}
-
-TEST(ScenePreviewWidgetUi, ProductViewDefaultsToIsometric)
-{
-  ASSERT_NE(ensure_app(), nullptr);
-
-  ScenePreviewWidget widget;
-  const auto combos = widget.findChildren<QComboBox *>();
-  QComboBox * view_combo = nullptr;
-  for (auto * combo : combos) {
-    if (combo && combo->findText("Top") >= 0 && combo->findText("Front") >= 0 &&
-        combo->findText("Side") >= 0 && combo->findText("Isometric") >= 0 &&
-        combo->findText("Fit View") >= 0) {
-      view_combo = combo;
-      break;
-    }
-  }
-
-  ASSERT_NE(view_combo, nullptr);
-  EXPECT_EQ(view_combo->currentText(), QString("Isometric"));
-
-  view_combo->setCurrentText("Top");
-  widget.apply_product_view_defaults();
-  EXPECT_EQ(view_combo->currentText(), QString("Isometric"));
+  EXPECT_NE(widget.findChild<QPushButton *>(QStringLiteral("embeddedFitButton")), nullptr);
+  EXPECT_NE(widget.findChild<QWebEngineView *>(QStringLiteral("embeddedWeb3dProductView")), nullptr);
 }
 
 TEST(ScenePreviewWidgetUi, EquivalentPreviewPayloadsDoNotPrepareProductViewAgain)
@@ -434,7 +360,6 @@ TEST(ScenePreviewWidgetUi, LiveLibraryPartIsHandedItsStagedMesh)
   EXPECT_TRUE(logs.back().contains(QStringLiteral("placeholder")));
 }
 
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 TEST(ScenePreviewWidgetUi, NormalPreparationIncludesAuthoringSessionOverlay)
 {
   ASSERT_NE(ensure_app(), nullptr);
@@ -719,7 +644,7 @@ TEST(ScenePreviewWidgetUi, EmbeddedWebViewerUrlPreservesScenePathAndPayloadRevis
   }
 }
 
-TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
+TEST(ScenePreviewWidgetUi, PreparationFailureStaysAFailureWithRetry)
 {
   ASSERT_NE(ensure_app(), nullptr);
 
@@ -733,28 +658,21 @@ TEST(ScenePreviewWidgetUi, PreparationFailureUsesPopulatedCompatibilityViewport)
   table.sz = 0.75;
 
   ScenePreviewWidget widget;
-  widget.resize(800, 600);
-  widget.show();
   widget.set_preview_items({table});
   widget.select_preview_item(table.id);
-  widget.activate_native_compatibility_preview("test preparation failure");
+  widget.mark_embedded_product_view_failed("test preparation failure");
   QApplication::processEvents();
 
-  auto * web_view = widget.findChild<QWebEngineView *>("embeddedWeb3dProductView");
-  auto * compatibility_viewport = widget.findChild<Scene3DViewportWidget *>("nativeCompatibilityScene3dViewport");
-  ASSERT_NE(web_view, nullptr);
-  ASSERT_NE(compatibility_viewport, nullptr);
-  EXPECT_TRUE(web_view->isHidden());
-  EXPECT_TRUE(compatibility_viewport->isVisible());
-  EXPECT_EQ(compatibility_viewport->items.size(), 1);
-  EXPECT_EQ(compatibility_viewport->selected_id, table.id);
+  // Web3D is the only 3D viewport: no other renderer is created or shown.
+  EXPECT_EQ(widget.findChildren<QWebEngineView *>().size(), 1);
+  EXPECT_EQ(widget.embedded_product_view_state_, ScenePreviewWidget::EmbeddedProductViewState::Failed);
+  EXPECT_EQ(widget.runtime_preview_status_text(), QStringLiteral("Web3D Product View — failed, Retry"));
+  EXPECT_FALSE(widget.runtime_preview_has_usable_content());
+  auto * retry = widget.findChild<QPushButton *>(QStringLiteral("embeddedFitButton"));
+  ASSERT_NE(retry, nullptr);
+  EXPECT_EQ(retry->text(), QStringLiteral("Retry"));
   EXPECT_EQ(widget.selected_preview_item_id(), table.id);
-  EXPECT_GT(compatibility_viewport->render_debug_counters().viewport_received_count, 0);
-  EXPECT_EQ(widget.runtime_preview_status_text(), QStringLiteral("Preview available in compatibility mode"));
-  EXPECT_NE(widget.runtime_preview_status_text(), QStringLiteral("Preview failed"));
 }
-#endif
-
 
 TEST(SceneBuilderWorkspaceSource, ImportedPlacementPropagatesCatalogIdentityAndAuthoredScale)
 {
@@ -1023,7 +941,6 @@ TEST(ScenePreviewPreparationFailure, DestinationBlockersFallBackToReadOnlyDiagno
   EXPECT_FALSE(is_destination_authoring_blocker(QStringLiteral("Traceback (most recent call last): KeyError: 'task'")));
 }
 
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 namespace {
 
 // A minimal checkout that passes resolve_embedded_web_repo_root's markers and
@@ -1217,4 +1134,3 @@ TEST(ScenePreviewWidgetUi, SameNamedSceneInAnotherCheckoutIsAnOwnershipHandoff)
   EXPECT_EQ(widget.embedded_web_active_identity_.payload_fingerprint, fingerprint_a);
   stop_preparation(widget);
 }
-#endif

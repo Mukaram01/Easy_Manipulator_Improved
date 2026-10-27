@@ -4356,7 +4356,13 @@ function disposeViewerLifecycle(reason = 'host_navigation') {
   state.three = {};
   return { disposed: true, already_disposed: false, reason };
 }
-window.__WORKCELL_VIEWER_LIFECYCLE__.registerCleanup(disposeViewerLifecycle);
+// index.html loads viewer_lifecycle_bridge.js first. Without it (headless
+// harnesses) the viewer still loads; the missing disposal hook is recorded.
+if (window.__WORKCELL_VIEWER_LIFECYCLE__?.registerCleanup) {
+  window.__WORKCELL_VIEWER_LIFECYCLE__.registerCleanup(disposeViewerLifecycle);
+} else {
+  window.__WORKCELL_VIEWER_LIFECYCLE_BRIDGE_MISSING__ = true;
+}
 function renderScene(items) {
   clearSceneObjects();
   const selectionIndex = rebuildSelectionIdentityIndex(state.sceneJson || {});

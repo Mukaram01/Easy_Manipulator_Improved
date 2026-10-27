@@ -103,14 +103,14 @@ def test_repo_root_resolution_covers_home_workspace_repo_symlink_env_override_an
 
 
 def test_native_backend_is_suppressed_unless_explicitly_requested_or_webengine_unavailable():
-    assert "WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND" in CPP
-    assert "native_scene3d_explicitly_requested" in CPP
+    # The native renderer was retired: no environment switch, no fallback, one backend.
+    assert "WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND" not in CPP
+    assert "native_scene3d_explicitly_requested" not in CPP
     assert "product_view_backend_ = ProductViewBackend::EmbeddedWeb3D" in CPP
-    assert "product_view_backend_ = ProductViewBackend::NativeScene3D" in CPP
-    assert "WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK" in (ROOT / "workcell_builder/workcell_builder/CMakeLists.txt").read_text(encoding="utf-8")
-    assert "scene_preview_widget_->is_native_product_view_backend()" in MAINWINDOW
-    assert "auto * viewport = active_native_viewport();" in CPP
-    assert "ProductViewBackend { EmbeddedWeb3D, NativeScene3D }" in HDR
+    assert "ProductViewBackend::NativeScene3D" not in CPP
+    assert "is_native_product_view_backend" not in MAINWINDOW
+    assert "active_native_viewport" not in CPP
+    assert "ProductViewBackend { EmbeddedWeb3D }" in HDR
 
 
 def test_embedded_refresh_identity_coalesces_duplicate_context_and_payload_requests():
@@ -122,8 +122,8 @@ def test_embedded_refresh_identity_coalesces_duplicate_context_and_payload_reque
     assert "embedded_web_active_identity_.matches_effective_request(request_key)" in refresh
     assert "pending_embedded_web_identity_.matches_effective_request(request_key)" in refresh
     assert "pending_embedded_web_request_ = true" in refresh
-    labels_handler = _between(CPP, "connect(labels_selector_", "connect(snap_mode_selector_")
-    assert "refresh_embedded_web_product_view" not in labels_handler
+    snap_handler = _between(CPP, "connect(snap_mode_selector_", "connect(gizmo_mode_selector_")
+    assert "refresh_embedded_web_product_view" not in snap_handler
 
 
 def test_manual_refresh_creates_a_new_generation_and_invalidates_old_callbacks():

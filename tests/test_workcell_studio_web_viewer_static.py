@@ -503,7 +503,9 @@ vm.runInContext(source + `
 def test_index_references_static_assets():
     index = (VIEWER / "index.html").read_text(encoding="utf-8")
     assert 'href="style.css"' in index
-    assert "import(`./dist/viewer.bundle.js?v=${viewerBuild}`).catch" in index
+    # The versioned bundle import keeps its failure handler (a guard module may load in between).
+    bundle_import = index.split("import(`./dist/viewer.bundle.js?v=${viewerBuild}`)", 1)[1]
+    assert ".catch(" in bundle_import.split("</script>", 1)[0]
     assert "^[a-f0-9]{64}$" in index
     assert 'id="scene-file"' in index
     assert 'scene-file' in index
@@ -1421,7 +1423,8 @@ def test_viewer_initial_fit_waits_for_terminal_scene_ready_once():
     assert "readinessState === 'scene_ready' || readinessState === 'scene_failed'" in readiness_body
     assert "if (state.web3dReadiness.terminal)" in readiness_body
     assert "terminalEmissionCount" in readiness_body
-    assert "if (readinessState === 'scene_ready') triggerInitialCameraFitAfterSceneReady();" in readiness_body
+    scene_ready_branch = readiness_body.split("if (readinessState === 'scene_ready') {", 1)[1].split("}", 1)[0]
+    assert "triggerInitialCameraFitAfterSceneReady();" in scene_ready_branch
 
     scene_ready_body = js.split("function maybeEmitSceneReady()", 1)[1].split("const el = {", 1)[0]
     assert "if (readiness.pending?.size === 0) emitWeb3dReadinessState('scene_ready'" in scene_ready_body
@@ -2189,7 +2192,8 @@ def test_hierarchy_selection_keeps_single_product_view_command_path():
     selection = cpp.split("void ScenePreviewWidget::select_preview_item", 1)[1].split("void ScenePreviewWidget::", 1)[0]
     for item_id in ["target_bin_default", "realsense_overhead", "support_surface_table", "pick_zone_commissioning", "commissioning_pick_pose", "place_zone_default"]:
         assert item_id not in selection
-    assert selection.count("run_embedded_editor_command") == 2
+    # One select command; clearing goes straight to the (possibly hidden) page.
+    assert selection.count("run_embedded_editor_command") == 1
     assert selection.count(".selectItem(") == 1
     assert selection.count(".clearSelection()") == 1
 

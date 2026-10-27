@@ -10,26 +10,22 @@ INSTALL = (ROOT / "scripts/install_system_deps.sh").read_text()
 
 
 def test_default_cmake_requires_webengine_with_actionable_fallback_message():
-    assert 'option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK' in CMAKE
-    assert 'OFF)' in CMAKE
-    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)' in CMAKE
+    assert 'find_package(Qt5 COMPONENTS Widgets Concurrent Svg Network REQUIRED)' in CMAKE
     assert 'find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)' in CMAKE
     assert 'if(NOT Qt5WebEngineWidgets_FOUND AND NOT WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK)' in CMAKE
     assert 'message(FATAL_ERROR' in CMAKE
-    for token in [
-        'embedded Web3D Product View is required',
-        'Qt5 WebEngineWidgets',
-        'sudo apt install qtwebengine5-dev',
-        '-DWORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK=ON',
-    ]:
+    for token in ['The embedded Web3D Product View is required', 'Qt5 WebEngineWidgets', 'sudo apt install qtwebengine5-dev']:
         assert token in CMAKE
+    # The option survives only for the non-GUI commissioning overlay; it no longer offers a 3D fallback.
+    assert 'Configure without Qt WebEngine for non-GUI targets only' in CMAKE
+    assert 'OpenGL' not in CMAKE
 
 
 def test_webengine_compile_link_contract_and_native_opt_in():
     assert 'target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_HAS_WEBENGINE=1)' in CMAKE
     assert 'target_link_libraries(workcell_builder Qt5::WebEngineWidgets)' in CMAKE
-    assert 'elseif(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK)' in CMAKE
-    assert 'WORKCELL_BUILDER_NATIVE_3D_FALLBACK=1' in CMAKE
+    assert 'WORKCELL_BUILDER_NATIVE_3D_FALLBACK=1' not in CMAKE
+    assert 'scene3d_viewport_widget' not in CMAKE
 
 
 def test_ros_executable_install_path_uses_package_libexec():
@@ -77,24 +73,12 @@ def test_embedded_product_view_owns_keyboard_focus_for_authoring_modes_only():
     assert 'qApp->installEventFilter' not in CPP
     assert 'QApplication::instance()->installEventFilter' not in CPP
 
-
-def test_native_product_view_mode_switch_remains_focus_independent():
-    authoring = CPP.split('void ScenePreviewWidget::set_authoring_mode', 1)[1].split(
-        'void ScenePreviewWidget::undo_authoring_edit', 1
-    )[0]
-    native_path = authoring.split('auto * viewport = active_native_viewport();', 1)[1]
-
-    assert 'focus_embedded_product_view_for_authoring' not in native_path
-    assert 'viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Move' in native_path
-    assert 'viewport->gizmo_mode = Scene3DViewportWidget::GizmoMode::Rotate' in native_path
-
-
 def test_backend_diagnostics_are_deterministic_and_concise():
     assert 'emit_backend_startup_diagnostic_once' in HDR
     assert 'backend_startup_diagnostic_emitted_' in HDR
     assert 'Workcell Product View backend=embedded_web3d webengine_compiled=true' in CPP
-    assert 'Workcell Product View backend=native_compatibility reason=explicit_opt_in' in CPP
-    assert 'Workcell Product View backend=native_compatibility reason=webengine_unavailable_fallback' in CPP
+    # The native compatibility backend was retired.
+    assert 'backend=native_compatibility' not in CPP
 
 
 def test_embedded_backend_skips_native_scene3d_final_append_and_audit_paths():

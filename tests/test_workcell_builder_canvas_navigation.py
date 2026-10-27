@@ -4,8 +4,6 @@ CPP = Path("workcell_builder/workcell_builder/gui/scene_select.cpp").read_text(e
 MAIN = Path("workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
 UI = Path("workcell_builder/workcell_builder/gui/scene_select.ui").read_text(encoding="utf-8")
 PREVIEW = Path("workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
-VIEW3D_CPP = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
-VIEW3D_H = Path("workcell_builder/workcell_builder/gui/scene3d_viewport_widget.h").read_text(encoding="utf-8")
 
 
 def test_navigation_tokens_present():
@@ -48,85 +46,10 @@ def test_fit_scene_and_minimap_viewport_behavior_tokens_present():
     ]:
         assert token in MAIN
 
-
-def test_real_3d_viewport_and_camera_depth_tokens_present():
-    for token in ["class Scene3DViewportWidget : public QOpenGLWidget", "glEnable(GL_DEPTH_TEST)", "out_proj.perspective(50.0f", "set_isometric_view()"]:
-        assert token in VIEW3D_H or token in VIEW3D_CPP
-
-
-def test_orbit_pan_zoom_interaction_tokens_present():
-    for token in [
-        "mouseMoveEvent",
-        "yaw_ += d.x() * 0.01",
-        "pitch_ = qBound",
-        "Qt::MiddleButton",
-        "Qt::ShiftModifier",
-        "orbit_offset_ +=",
-        "wheelEvent",
-        "distance_ = qBound(min_distance_, distance_ * zoom_factor, max_distance_);",
-    ]:
-        assert token in VIEW3D_CPP
-
-
-def test_3d_hover_and_click_share_ray_pick_path_and_tooltip_tokens_present():
-    for token in [
-        "pick_item_at_screen",
-        "ray_intersects_aabb",
-        "QToolTip::showText",
-        "Item: %1\\nRole: %2\\nWarnings: %3",
-        "if (pick_item_at_screen(e->pos(), best_id, best_role) && !best_id.isEmpty() && select_cb) select_cb(best_id, best_role);",
-    ]:
-        assert token in VIEW3D_CPP
-
-
-def test_selected_outline_uses_role_bounds_tokens_present():
-    for token in [
-        "const ItemBounds bounds = item_bounds_for_role(*it);",
-        "draw_box_outline(bounds.x, bounds.y, bounds.z, bounds.sx, bounds.sy, bounds.sz, QColor(\"#f8fafc\"));",
-    ]:
-        assert token in VIEW3D_CPP
-
-
-def test_camera_fit_and_view_matrices_tokens_present():
-    for token in [
-        "out_view.lookAt(eye, orbit_offset_, QVector3D(0.0f, 1.0f, 0.0f));",
-        "scene_radius_ = radius;",
-        "orbit_offset_ = (bmin + bmax) * 0.5f;",
-        "distance_ = qBound(min_distance_, fit_distance, max_distance_);",
-    ]:
-        assert token in VIEW3D_CPP
-
-
-def test_fit_scene_excludes_overlay_only_items_tokens_present():
-    for token in [
-        "FIT_PHYSICAL_ONLY_FILTER",
-        "FIT_EXCLUDE_OVERLAY_ONLY",
-        "FIT_FALLBACK_ISO_IF_NO_PHYSICAL",
-    ]:
-        assert token in VIEW3D_CPP
-
-
 def test_fallback_mode_and_banner_tokens_present():
     for token in ["2D Layout", "2D fallback preview active", "3D Layout Preview unavailable, using 2D Layout", "2D Layout (Fallback)"]:
         assert token in PREVIEW
 
-
-def test_warning_badge_compact_and_long_text_debug_gated_tokens_present():
-    assert 'warning_badge_text(it.warnings)' in VIEW3D_CPP
-    assert 'if (debug_overlays_mode && show_warning_labels && !it.warnings.isEmpty())' in VIEW3D_CPP
-    assert 'warning_debug_text(it.warnings)' in VIEW3D_CPP
-
-def test_default_locked_urdf_visual_labels_suppressed_except_all_mode_tokens_present():
-    for token in [
-        'is_urdf_visual && !selected && label_mode != ScenePreviewWidget::LabelMode::All',
-        'if (!selected && is_urdf_visual && missing_reason.isEmpty()',
-        'label_mode != ScenePreviewWidget::LabelMode::All',
-    ]:
-        assert token in VIEW3D_CPP
-
-
-def test_task_overlay_label_toggle_preserves_selected_only_default_tokens_present():
-    assert 'else if (v->label_mode == LabelMode::All) v->label_mode = LabelMode::SelectedOnly;' in PREVIEW
 def test_debug_overlays_remains_3d_and_fallback_is_unavailable_only():
     for token in [
         'viewport->debug_overlays_mode = (mode == "Debug Overlays")',

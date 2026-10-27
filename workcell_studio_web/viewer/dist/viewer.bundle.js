@@ -42871,7 +42871,11 @@ function disposeViewerLifecycle(reason = "host_navigation") {
   state.three = {};
   return { disposed: true, already_disposed: false, reason };
 }
-window.__WORKCELL_VIEWER_LIFECYCLE__.registerCleanup(disposeViewerLifecycle);
+if (window.__WORKCELL_VIEWER_LIFECYCLE__?.registerCleanup) {
+  window.__WORKCELL_VIEWER_LIFECYCLE__.registerCleanup(disposeViewerLifecycle);
+} else {
+  window.__WORKCELL_VIEWER_LIFECYCLE_BRIDGE_MISSING__ = true;
+}
 function renderScene(items) {
   clearSceneObjects();
   const selectionIndex = rebuildSelectionIdentityIndex(state.sceneJson || {});
