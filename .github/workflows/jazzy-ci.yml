@@ -112,7 +112,8 @@ jobs:
       - name: Build
         working-directory: ${{ runner.temp }}/ws
         run: |
-          set -euo pipefail
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
           mapfile -t emd < <(colcon list --base-paths src/easy_manipulation_deployment --names-only)
           echo "easy_manipulation_deployment packages discovered: ${#emd[@]}"
           if [[ ${#emd[@]} -eq 0 ]]; then echo "::error::colcon discovered no repository packages"; exit 1; fi
@@ -129,14 +130,16 @@ jobs:
       - name: Test
         working-directory: ${{ runner.temp }}/ws
         run: |
-          set -euo pipefail
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
           mapfile -t emd < emd_packages.txt
           colcon test --base-paths src --packages-select "${emd[@]}"
 
       - name: Test results
         working-directory: ${{ runner.temp }}/ws
         run: |
-          set -euo pipefail
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
           colcon test-result --verbose
           summary="$(colcon test-result | tail -n 1)"
           echo "$summary"
