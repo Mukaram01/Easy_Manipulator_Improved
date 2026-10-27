@@ -411,6 +411,34 @@ def _table_mesh_contract_errors(status: Mapping[str, Any]) -> list[str]:
     return errors
 
 
+def _camera_expected_world_bounds(
+    diagnostic: Mapping[str, Any], expected: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    """Project authored dimensions into world AABB axes using the render quaternion.
+
+    A 90-degree camera mounting rotation permutes the long and short dimensions.
+    Comparing the world AABB to unrotated dimensions falsely labels a healthy
+    RealSense visual as oversized. Keep the strict 3x check after projection.
+    """
+    raw = diagnostic.get("world_quaternion") or diagnostic.get("worldQuaternion")
+    if not isinstance(raw, Mapping):
+        return expected
+    try:
+        x, y, z, w = (float(raw[key]) for key in ("x", "y", "z", "w"))
+    except (KeyError, TypeError, ValueError):
+        return expected
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if not math.isfinite(norm) or norm < 1e-9:
+        return expected
+    x, y, z, w = (component / norm for component in (x, y, z, w))
+    matrix = (
+        (1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)),
+        (2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)),
+        (2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)),
+    )
+    return tuple(sum(abs(row[j]) * expected[j] for j in range(3)) for row in matrix)
+
+
 def _camera_bounds_errors(status: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     for diagnostic in _rendered_mesh_diagnostics_from_status(status):
@@ -425,7 +453,8 @@ def _camera_bounds_errors(status: Mapping[str, Any]) -> list[str]:
         excluded = _diagnostic_bool(diagnostic, "exclude_from_fit_bounds", "excludeFromFitBounds", "debug_overlay", "debugOverlay")
         if not size or not expected:
             continue
-        ratios = [size[index] / expected[index] for index in range(3) if expected[index] > 0]
+        expected_world = _camera_expected_world_bounds(diagnostic, expected)
+        ratios = [size[index] / expected_world[index] for index in range(3) if expected_world[index] > 0]
         if ratios and max(ratios) > 3.0 and not excluded:
             name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "camera")
             errors.append(f"browser viewer camera/Realsense {name} loaded mesh bounds are oversized and still included in normal product/fit bounds")
