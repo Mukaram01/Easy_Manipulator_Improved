@@ -209,3 +209,35 @@ TEST(MateToolController, CycleIsRejectedAndSceneChangesDropVanishedPicks)
   EXPECT_FALSE(f.controller->parent().has_value());
   EXPECT_EQ(f.controller->step(), MateToolController::Step::PickParent);
 }
+
+TEST(MateToolController, MissedClickKeepsBothPicksAndNeverCancels)
+{
+  Fixture f;
+  QString error;
+  ASSERT_TRUE(f.controller->begin("bin", &error));
+  ASSERT_TRUE(f.controller->choose_datum(MateToolController::Role::Child, "bin", "rim", &error)) << error.toStdString();
+  // A background click while choosing the second part keeps the first one.
+  MateRawPick miss;
+  miss.backend = "test";
+  miss.geometry_source = "no hit";
+  const auto early = f.controller->pick(miss);
+  EXPECT_EQ(early.reason_code, "NO_ASSET");
+  EXPECT_EQ(f.controller->step(), MateToolController::Step::PickParent);
+  EXPECT_TRUE(f.controller->status().contains("stays picked as the part to move")) << f.controller->status().toStdString();
+  ASSERT_TRUE(f.controller->choose_datum(MateToolController::Role::Parent, "table", "surface", &error));
+  ASSERT_EQ(f.controller->step(), MateToolController::Step::Ready);
+  const QJsonObject previewed = f.controller->preview().request;
+  // The reported case: rim and surface picked, then a click that hits no part.
+  const auto late = f.controller->pick(miss);
+  EXPECT_FALSE(late.valid);
+  EXPECT_TRUE(f.controller->active());
+  EXPECT_EQ(f.controller->step(), MateToolController::Step::Ready);
+  EXPECT_EQ(f.controller->child()->datum, "rim");
+  EXPECT_EQ(f.controller->parent()->datum, "surface");
+  EXPECT_TRUE(f.controller->status().contains("missed every part")) << f.controller->status().toStdString();
+  EXPECT_TRUE(f.controller->preview().ok);
+  EXPECT_TRUE(f.committed.isEmpty());  // a miss is never a mate
+  ASSERT_TRUE(f.controller->apply(&error)) << error.toStdString();
+  ASSERT_EQ(f.committed.size(), 1);
+  EXPECT_EQ(f.committed[0].toObject(), previewed);
+}

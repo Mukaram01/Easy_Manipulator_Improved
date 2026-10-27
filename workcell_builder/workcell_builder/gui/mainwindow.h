@@ -52,6 +52,8 @@ namespace workcell_builder {
 struct WorkcellStudioCanvasModel;
 class MateToolController;
 class MateToolPanel;
+class AlignArrangeController;
+class AlignArrangePanel;
 }
 
 QT_BEGIN_NAMESPACE
@@ -408,6 +410,18 @@ private:
   qint64 mate_overlay_sent_ms_{0};
   QJsonObject mate_last_pick_evidence_;
   bool mate_scene_change_pending_{false};
+  // Align & Arrange (two-part bounding-box alignment) shares the Mate session pattern.
+  void begin_align_arrange();
+  void end_align_arrange(bool applied, const QString & message);
+  void push_align_overlay();
+  bool align_active() const;
+  QString align_reference_blocker(const QString & id, QJsonObject * world) const;
+  QString align_moving_blocker(const QString & id) const;
+  workcell_builder::AlignArrangeController * align_controller_{nullptr};
+  workcell_builder::AlignArrangePanel * align_panel_{nullptr};
+  QPushButton * inspector_align_button_{nullptr};
+  QString align_scene_path_;
+  bool align_scene_change_pending_{false};
   void refresh_mount_relation_context();
   QString mount_relation_text_for(const QString & id) const;
   void apply_selection_transform_from_editor();

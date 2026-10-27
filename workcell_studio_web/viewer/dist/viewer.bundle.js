@@ -44803,6 +44803,10 @@ function attachTransformGizmo(rendered, attachmentReason = "mode_or_selection") 
     }
     gizmo.setSpace(state.transformSpace);
     gizmo.enabled = state.editorMode !== "select";
+    if (state.arrange?.active) {
+      gizmo.enabled = false;
+      gizmo.visible = false;
+    }
     gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
     gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
     if (!usesPhysicalPivot)
@@ -45954,13 +45958,13 @@ function buildMateMarker(marker, overlay) {
   mateState().pickables.push(pickable);
   return group;
 }
-function buildMateGhost(entry) {
+function buildMateGhost(entry, ghostMaterial = null) {
   const rendered = renderedById(String(entry?.id || ""));
   const xyz = entry?.xyz, rpy = entry?.rpy;
   if (!rendered?.object3d || !Array.isArray(xyz) || !Array.isArray(rpy))
     return null;
   const ghost = rendered.object3d.clone(true);
-  const material = mateMaterial(MATE_COLORS.ghost, 0.32, { depthTest: true });
+  const material = ghostMaterial || mateMaterial(MATE_COLORS.ghost, 0.32, { depthTest: true });
   ghost.traverse((node) => {
     node.userData = { mate_ghost: true, selectable: false, exclude_from_physical_bounds: true, exclude_from_fit_bounds: true };
     node.name = `mate_ghost:${node.name || ""}`;
@@ -46294,6 +46298,90 @@ function getMateState() {
     sceneId: sceneId()
   };
 }
+function arrangeState() {
+  state.arrange || (state.arrange = { active: false, group: null, ghosts: [], materials: [], overlay: null });
+  return state.arrange;
+}
+function disposeArrangePreview() {
+  const arrange = arrangeState();
+  for (const ghost of arrange.ghosts)
+    ghost.parent?.remove(ghost);
+  arrange.ghosts = [];
+  if (arrange.group) {
+    arrange.group.parent?.remove(arrange.group);
+    arrange.group = null;
+  }
+  for (const material of arrange.materials)
+    material.dispose?.();
+  arrange.materials = [];
+}
+function setArrangePreview(overlay) {
+  if (!overlay || overlay.active !== true)
+    return clearArrangePreview();
+  const arrange = arrangeState();
+  disposeArrangePreview();
+  arrange.active = true;
+  arrange.overlay = overlay;
+  suppressGizmoForMate();
+  if (!state.three?.scene)
+    return editorState();
+  const group = new THREE.Group();
+  for (const [assetId, color] of [[overlay.moving, MATE_COLORS.child], [overlay.reference, MATE_COLORS.parent]]) {
+    const highlight = mateHighlight(String(assetId || ""), color, false);
+    if (!highlight)
+      continue;
+    arrange.materials.push(highlight.material);
+    group.add(highlight);
+  }
+  markPlacementPreviewHelper(group);
+  group.name = "workcell_arrange_preview";
+  state.three.scene.add(group);
+  arrange.group = group;
+  if (overlay.preview_ok) {
+    const material = new THREE.MeshBasicMaterial({
+      color: MATE_COLORS.ghost,
+      transparent: true,
+      opacity: 0.32,
+      depthTest: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    arrange.materials.push(material);
+    for (const entry of Array.isArray(overlay.ghost) ? overlay.ghost : []) {
+      const ghost = buildMateGhost(entry, material);
+      if (ghost)
+        arrange.ghosts.push(ghost);
+    }
+  }
+  return editorState();
+}
+function clearArrangePreview() {
+  const arrange = arrangeState();
+  const wasActive = arrange.active;
+  arrange.active = false;
+  arrange.overlay = null;
+  disposeArrangePreview();
+  if (wasActive && !state.mate?.active) {
+    const gizmo = state.three?.transformControls;
+    if (gizmo) {
+      gizmo.enabled = true;
+      gizmo.visible = Boolean(gizmo.object);
+    }
+  }
+  return editorState();
+}
+function getArrangeState() {
+  const arrange = arrangeState();
+  return {
+    active: arrange.active,
+    ghostCount: arrange.ghosts.length,
+    highlightCount: arrange.group?.children?.length || 0,
+    moving: arrange.overlay?.moving || "",
+    reference: arrange.overlay?.reference || "",
+    sceneId: sceneId(),
+    gizmoEnabled: Boolean(state.three?.transformControls?.enabled)
+  };
+}
 function onMatePointerDownCapture(event) {
   const mate = state.mate;
   if (!mate?.active || event.target !== el.canvas || event.button !== 0)
@@ -46440,6 +46528,10 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   clearMateMode: () => clearMateMode(),
   setMateHoverResolution: (resolution) => setMateHoverResolution(resolution),
   getMateState: () => getMateState(),
+  // Align & Arrange preview (optional; Builder checks for these before use).
+  setArrangePreview: (overlay) => setArrangePreview(overlay),
+  clearArrangePreview: () => clearArrangePreview(),
+  getArrangeState: () => getArrangeState(),
   // Diagnostics: where a world point appears on the canvas (page coordinates).
   projectWorldPoint: (point) => projectWorldPoint(point)
 };

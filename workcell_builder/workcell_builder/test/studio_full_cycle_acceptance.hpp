@@ -65,6 +65,8 @@
 #include <QThread>
 #include "gui/mate_tool_controller.hpp"
 #include "gui/mate_tool_panel.hpp"
+#include "gui/align_arrange_controller.hpp"
+#include "gui/align_arrange_panel.hpp"
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEngineView>
 #endif
@@ -2916,4 +2918,5 @@ public:
     timer->start();
   }
 #include "ui_tour_capture.inc"
+#include "align_arrange_acceptance.inc"
 };

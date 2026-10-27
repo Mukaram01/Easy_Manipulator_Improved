@@ -180,8 +180,11 @@ def test_cpp_coalesces_before_generation_and_retires_stale_process_before_ui_wor
 
 def test_product_view_retries_diagnostic_only_for_destination_authoring_blockers():
     assert 'args << "--allow-incomplete-preview"' in CPP
-    assert 'diagnostic.stderr_tail.contains("environment.yaml:")' in CPP
-    assert 'diagnostic.stderr_tail.contains("relationship")' in CPP
+    # The blocker test is one named helper (unit-tested in scene_preview_widget_ui_test): an
+    # unresolved environment relationship, or a task destination zone that is missing or ambiguous.
+    assert 'is_destination_authoring_blocker(diagnostic.stderr_tail)' in CPP
+    assert 'stderr_tail.contains("environment.yaml:") && stderr_tail.contains("relationship")' in CPP
+    assert 'stderr_tail.contains("error: task/physical destination: ")' in CPP
     assert "if (!diagnostic.diagnostic_preview && destination_authoring_blocker" in CPP
     assert "Diagnostic preview — scene authoring incomplete" in CPP
     assert 'setProperty("diagnostic_preview_active", diagnostic_preview)' in CPP

@@ -1,0 +1,619 @@
+{
+ "airpick_diagnostic_preview": {
+  "diagnostic_preview_active": true,
+  "save_layout_enabled": false,
+  "viewer_scene": "ur5_airpick4_test"
+ },
+ "apply_preview": {
+  "active": true,
+  "keep_relative": false,
+  "moving": "target_bin_default",
+  "offset_mm": [
+   50,
+   0,
+   0
+  ],
+  "preview": {
+   "error": "",
+   "followers": [],
+   "moved": [
+    {
+     "display_name": "Destination Bin",
+     "id": "target_bin_default",
+     "moved_m": 0.13738395725703387,
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.56,
+      0.30230645,
+      0.1
+     ]
+    }
+   ],
+   "ok": true,
+   "report": {
+    "current_world": {
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.45,
+      0.22,
+      0.1
+     ]
+    },
+    "delta_reference_m": [
+     0.10999999999994424,
+     0.08230644989013669,
+     0
+    ],
+    "delta_world_m": [
+     0.11000000000000004,
+     0.08230645,
+     0
+    ],
+    "distance_m": 0.13738395725703387,
+    "frame": "support_surface_table (reference part frame)",
+    "keep_relative": false,
+    "method": "bounding_box",
+    "moving": "target_bin_default",
+    "moving_box_reference_m": {
+     "max": [
+      -0.08456626093382025,
+      0.5266935501098633,
+      0.20089999949932102
+     ],
+     "min": [
+      -0.43676738774770885,
+      0.3133064498901367,
+      0.0008999994993209839
+     ]
+    },
+    "notes": [],
+    "offset_m": [
+     0.05,
+     0,
+     0
+    ],
+    "reference": "support_surface_table",
+    "reference_box_m": {
+     "max": [
+      0.4035332946777344,
+      0.609,
+      0.0008999994993209839
+     ],
+     "min": [
+      -0.804866943359375,
+      -0.20440008544921875,
+      -0.9053377075195312
+     ]
+    },
+    "rules": {
+     "x": "centre",
+     "y": "max",
+     "z": null
+    },
+    "sources": {
+     "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+     "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)"
+    },
+    "target_world": {
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.56,
+      0.30230645,
+      0.1
+     ]
+    }
+   },
+   "request": {
+    "id": "target_bin_default",
+    "world_pose": {
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.56,
+      0.30230645,
+      0.1
+     ]
+    }
+   },
+   "summary": "Destination Bin moves 137.4 mm (world \u0394X +110.0 \u00b7 \u0394Y +82.3 \u00b7 \u0394Z 0.0 mm) to X 0.5600 \u00b7 Y 0.3023 \u00b7 Z 0.1000 m. Orientation unchanged."
+  },
+  "reference": "support_surface_table",
+  "rules": {
+   "x": "centre",
+   "y": "max",
+   "z": ""
+  },
+  "status": "Check the ghost and the numbers, then Apply."
+ },
+ "arrange_after_cancel": {
+  "active": false,
+  "ghostCount": 0,
+  "gizmoEnabled": false,
+  "highlightCount": 0,
+  "moving": "",
+  "reference": "",
+  "sceneId": "ur5_2f_test"
+ },
+ "arrange_after_reference": {
+  "active": true,
+  "ghostCount": 0,
+  "gizmoEnabled": false,
+  "highlightCount": 2,
+  "moving": "target_bin_default",
+  "reference": "support_surface_table",
+  "sceneId": "ur5_2f_test"
+ },
+ "arrange_preview": {
+  "active": true,
+  "ghostCount": 1,
+  "gizmoEnabled": false,
+  "highlightCount": 2,
+  "moving": "target_bin_default",
+  "reference": "support_surface_table",
+  "sceneId": "ur5_2f_test"
+ },
+ "bin_after_apply": [
+  0.56,
+  0.30230645,
+  0.1,
+  0,
+  0,
+  0
+ ],
+ "bin_after_reopen": [
+  0.56,
+  0.30230645,
+  0.1,
+  0,
+  0,
+  0
+ ],
+ "bin_before": [
+  0.45,
+  0.22,
+  0.1,
+  0,
+  0,
+  0
+ ],
+ "cell_window_size": [
+  1366,
+  768
+ ],
+ "execution_goals_sent": 0,
+ "fake_hardware_only": true,
+ "keep_relative": {
+  "after_table_move": [
+   0.66,
+   0.0022999569999999914,
+   0.1,
+   0,
+   0,
+   0
+  ],
+  "aligned": [
+   0.56,
+   0.0022999569999999914,
+   0.1,
+   0,
+   0,
+   0
+  ]
+ },
+ "mate_missed_click": {
+  "alignment": "flush",
+  "backend_note": "",
+  "child": {
+   "asset_id": "target_bin_default",
+   "datum": "rim",
+   "datum_label": "Rim plane (normal points up)",
+   "datum_type": "plane",
+   "how": "chosen manually",
+   "resolution": null
+  },
+  "offset": [
+   -0.15066682434082024,
+   0.5023064500000001,
+   0,
+   0,
+   0,
+   0
+  ],
+  "parent": {
+   "asset_id": "support_surface_table",
+   "datum": "surface",
+   "datum_label": "surface \u00b7 plane (points up)",
+   "datum_type": "plane",
+   "how": "chosen manually",
+   "resolution": null
+  },
+  "pending_asset": "",
+  "picks": [
+   {
+    "manual": {
+     "asset_id": "target_bin_default",
+     "datum": "rim",
+     "role": "child"
+    },
+    "step": "pick_child"
+   },
+   {
+    "manual": {
+     "asset_id": "support_surface_table",
+     "datum": "surface",
+     "role": "parent"
+    },
+    "step": "pick_parent"
+   },
+   {
+    "resolution": {
+     "asset_id": "",
+     "candidates": [],
+     "datum": "",
+     "datum_label": "",
+     "datum_source": "",
+     "datum_type": "",
+     "normal_angle_deg": -1,
+     "normal_local": [
+      0,
+      0,
+      0
+     ],
+     "normal_world": [
+      0,
+      0,
+      0
+     ],
+     "plane_distance_m": -1,
+     "point_local": [
+      0,
+      0,
+      0
+     ],
+     "point_world": [
+      0,
+      0,
+      0
+     ],
+     "raw": {
+      "asset_id": "",
+      "backend": "embedded_web3d",
+      "geometry": "surface",
+      "geometry_source": "no hit",
+      "normal_world": [
+       0,
+       0,
+       0
+      ],
+      "point_world": [
+       0,
+       0,
+       0
+      ],
+      "ray_direction_world": [
+       -0.8925724966190922,
+       0.4334981414549073,
+       -0.12407134896623759
+      ],
+      "triangle_index": -1
+     },
+     "reason": "The click did not hit an asset. Click a face of a placed asset.",
+     "reason_code": "NO_ASSET",
+     "valid": false
+    },
+    "step": "ready"
+   }
+  ],
+  "preview": {
+   "child_summary": "Destination Bin moves 0.9 mm to X 0.5600 \u00b7 Y 0.3023 \u00b7 Z 0.0991 m, roll 180.0\u00b0 \u00b7 pitch 0.0\u00b0 \u00b7 yaw 0.0\u00b0.",
+   "error": "",
+   "followers": [
+    "Place Free Region (destination zone, keeps its target-local placement)"
+   ],
+   "moved": [
+    {
+     "display_name": "Destination Bin",
+     "id": "target_bin_default",
+     "moved_m": 0.0008999994993209859,
+     "rpy": [
+      3.141592653589793,
+      0,
+      0
+     ],
+     "turned_rad": 3.141592653589793,
+     "xyz": [
+      0.56,
+      0.30230645000000006,
+      0.09910000050067902
+     ]
+    }
+   ],
+   "ok": true,
+   "request": {
+    "alignment": "flush",
+    "child_datum": "rim",
+    "id": "target_bin_default",
+    "parent_link": "surface",
+    "parent_object": "support_surface_table",
+    "relative_pose": {
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      -0.15066682434082024,
+      0.5023064500000001,
+      0
+     ]
+    }
+   }
+  },
+  "status": "That click missed every part, so nothing changed. Still picked: Destination Bin \u00b7 Rim plane (normal points up) on Industrial Workbench \u00b7 surface \u00b7 plane (points up). Apply, or Replace one.",
+  "step": "ready"
+ },
+ "missed_click_attempts": [
+  {
+   "point": [
+    72,
+    89
+   ],
+   "reason_code": "NO_ASSET"
+  }
+ ],
+ "missed_click_point": [
+  72,
+  89
+ ],
+ "panel_audit_preview": {
+  "clipped": [],
+  "inspector_tab_min_widths": {
+   "Checks": 278,
+   "Inspector": 290,
+   "Task": 434
+  },
+  "overflow": [],
+  "squeezed": [
+   "QWidget# '' h=761 need=874",
+   "workcell_builder::AlignArrangePanel#sceneBuilderAlignPanel '' h=749 need=862",
+   "QWidget#studioActionBar '' h=61 need=94",
+   "QWidget#studioActionBar '' h=61 need=94",
+   "QFrame#studioContextTopbar '' h=40 need=47"
+  ],
+  "task_editor_wide": [],
+  "unreachable": []
+ },
+ "panel_audit_start": {
+  "clipped": [],
+  "inspector_tab_min_widths": {
+   "Checks": 278,
+   "Inspector": 290,
+   "Task": 434
+  },
+  "overflow": [],
+  "squeezed": [
+   "QFrame#studioContextTopbar '' h=40 need=47"
+  ],
+  "task_editor_wide": [],
+  "unreachable": []
+ },
+ "preview_centre_on_top": {
+  "active": true,
+  "keep_relative": false,
+  "moving": "target_bin_default",
+  "offset_mm": [
+   0,
+   0,
+   0
+  ],
+  "preview": {
+   "error": "",
+   "followers": [],
+   "moved": [
+    {
+     "display_name": "Destination Bin",
+     "id": "target_bin_default",
+     "moved_m": 0.22581877406540374,
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.51,
+      0.002299957,
+      0.099100001
+     ]
+    }
+   ],
+   "ok": true,
+   "report": {
+    "current_world": {
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.45,
+      0.22,
+      0.1
+     ]
+    },
+    "delta_reference_m": [
+     0.05999999999994424,
+     -0.21770004272460936,
+     -0.0008999994993209839
+    ],
+    "delta_world_m": [
+     0.06,
+     -0.217700043,
+     -0.0008999990000000124
+    ],
+    "distance_m": 0.22581877406540374,
+    "frame": "support_surface_table (reference part frame)",
+    "keep_relative": false,
+    "method": "bounding_box",
+    "moving": "target_bin_default",
+    "moving_box_reference_m": {
+     "max": [
+      -0.08456626093382025,
+      0.5266935501098633,
+      0.20089999949932102
+     ],
+     "min": [
+      -0.43676738774770885,
+      0.3133064498901367,
+      0.0008999994993209839
+     ]
+    },
+    "notes": [],
+    "offset_m": [
+     0,
+     0,
+     0
+    ],
+    "reference": "support_surface_table",
+    "reference_box_m": {
+     "max": [
+      0.4035332946777344,
+      0.609,
+      0.0008999994993209839
+     ],
+     "min": [
+      -0.804866943359375,
+      -0.20440008544921875,
+      -0.9053377075195312
+     ]
+    },
+    "rules": {
+     "x": "centre",
+     "y": "centre",
+     "z": "on_top"
+    },
+    "sources": {
+     "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+     "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)",
+     "top": "verified surface datum 'surface' of the reference"
+    },
+    "target_world": {
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.51,
+      0.002299957,
+      0.099100001
+     ]
+    }
+   },
+   "request": {
+    "id": "target_bin_default",
+    "world_pose": {
+     "rpy": [
+      0,
+      0,
+      0
+     ],
+     "xyz": [
+      0.51,
+      0.002299957,
+      0.099100001
+     ]
+    }
+   },
+   "summary": "Destination Bin moves 225.8 mm (world \u0394X +60.0 \u00b7 \u0394Y -217.7 \u00b7 \u0394Z -0.9 mm) to X 0.5100 \u00b7 Y 0.0023 \u00b7 Z 0.0991 m. Orientation unchanged."
+  },
+  "reference": "support_surface_table",
+  "rules": {
+   "x": "centre",
+   "y": "centre",
+   "z": "on_top"
+  },
+  "status": "Check the ghost and the numbers, then Apply."
+ },
+ "reference_click_widget_point": [
+  834,
+  777
+ ],
+ "refusals": {
+  "generated": "config/workcell_builder_task_intent.yaml is not an authored physical part (source: locked_generated_urdf_visual). Choose the table, a bin or another placed asset as the reference.",
+  "generated_id": "home_pose",
+  "moving_generated": "config/workcell_builder_task_intent.yaml is not an authored physical part (source: locked_generated_urdf_visual). Select a placed asset such as a bin, fixture or table.",
+  "self": "Destination Bin is the part being moved. Choose a different part as the reference.",
+  "zone": "default_drop_zone is a task zone, not a physical part. Choose a physical reference."
+ },
+ "reopen_max_abs_error": 0,
+ "reopen_window_size": [
+  1366,
+  768
+ ],
+ "result": "PASS",
+ "robot_motion_commanded": false,
+ "saved_hashes_changed": {
+  "environment": true,
+  "layout": true
+ },
+ "screenshots": [
+  "01_bin_selected",
+  "02_panel_open",
+  "03_preview_centre_on_top",
+  "04_preview_back_edge_offset",
+  "05_applied",
+  "06_reopened",
+  "07_mate_missed_click_keeps_picks",
+  "08_airpick_diagnostic_preview"
+ ],
+ "steps": [
+  "load cell",
+  "wait for the Product View",
+  "baseline",
+  "start from the Inspector",
+  "reference: click the workbench in the 3D view",
+  "gizmo held off, both parts highlighted",
+  "preview: centre on reference + place on top",
+  "ghost drawn",
+  "Cancel leaves files and pose unchanged",
+  "viewer preview cleared",
+  "refusals: self, zone, generated robot, locked part",
+  "reference from the list; centre X, align back, +50 mm X; Apply",
+  "preview shown before Apply",
+  "Apply",
+  "Applied pose shown",
+  "Undo and Redo",
+  "Save Layout",
+  "close and reopen the cell",
+  "wait for the reopened Product View",
+  "reopened placement is identical",
+  "Keep relative: bin follows a workbench move; undo both",
+  "Mate: rim and surface chosen, then a missed click",
+  "saved files untouched since Save",
+  "AirPick: open the cell",
+  "AirPick: read-only diagnostic Product View"
+ ],
+ "table_pose": [
+  0.7106668243408203,
+  -0.2,
+  -0.0008999994993209839,
+  0,
+  0,
+  0
+ ]
+}

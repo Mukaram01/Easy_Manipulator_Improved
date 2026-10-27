@@ -1637,6 +1637,17 @@ main{max-width:42rem;padding:2rem}h1{font-size:1.3rem}code{color:#93c5fd}</style
 #endif
 }
 
+bool is_destination_authoring_blocker(const QString & stderr_tail)
+{
+  // The exporter raises both forms as destination blockers and, with
+  // --allow-incomplete-preview, exports physical visuals without guessing a
+  // destination: an unresolved environment relationship, or a task intent whose
+  // destination zone is missing or ambiguous ("task/physical destination: ...").
+  const bool relationship = stderr_tail.contains("environment.yaml:") && stderr_tail.contains("relationship") &&
+    (stderr_tail.contains("unresolved ID") || stderr_tail.contains("ambiguous applicable destinations"));
+  return relationship || stderr_tail.contains("error: task/physical destination: ");
+}
+
 QString concise_preparation_error(const QString & detail)
 {
   // The preparation chain reports the real blocker on stderr as "error: ..." lines
@@ -2329,10 +2340,7 @@ void ScenePreviewWidget::on_embedded_web_prepare_finished(const EmbeddedWebReque
   };
 
   if (exit_status != QProcess::NormalExit || exit_code != 0) {
-    const bool destination_authoring_blocker =
-      diagnostic.stderr_tail.contains("environment.yaml:") &&
-      diagnostic.stderr_tail.contains("relationship") &&
-      (diagnostic.stderr_tail.contains("unresolved ID") || diagnostic.stderr_tail.contains("ambiguous applicable destinations"));
+    const bool destination_authoring_blocker = is_destination_authoring_blocker(diagnostic.stderr_tail);
     if (!diagnostic.diagnostic_preview && destination_authoring_blocker && embedded_web_identity_is_current(identity)) {
       record_embedded_web_prepare_terminal(identity, process, QStringLiteral("strict_authoring_blocked"), exit_status, exit_code,
         QStringLiteral("strict preparation rejected an unresolved destination chain; starting diagnostic preview"));
@@ -3438,6 +3446,23 @@ void ScenePreviewWidget::set_mate_hover_resolution(const QJsonObject & resolutio
     "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
     "return a&&typeof a.setMateHoverResolution==='function'?a.setMateHoverResolution(%1):{error:'missing_setMateHoverResolution'};})()")
     .arg(payload));
+}
+
+void ScenePreviewWidget::set_arrange_preview(const QJsonObject & overlay)
+{
+  if (!embedded_web_authoring_active()) return;
+  const QString payload = QString::fromUtf8(QJsonDocument(overlay).toJson(QJsonDocument::Compact));
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setArrangePreview==='function'?a.setArrangePreview(%1):{error:'missing_setArrangePreview'};})()").arg(payload));
+}
+
+void ScenePreviewWidget::clear_arrange_preview()
+{
+  if (!embedded_web_authoring_active()) return;
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.clearArrangePreview==='function'?a.clearArrangePreview():{error:'missing_clearArrangePreview'};})()"));
 }
 
 void ScenePreviewWidget::request_authoring_save()

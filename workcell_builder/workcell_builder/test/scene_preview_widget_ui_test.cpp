@@ -1010,6 +1010,19 @@ TEST(ScenePreviewPreparationFailure, ShowsStderrCauseBeforeCommandDetail)
   EXPECT_EQ(fallback.size(), 320);
 }
 
+TEST(ScenePreviewPreparationFailure, DestinationBlockersFallBackToReadOnlyDiagnosticPreview)
+{
+  // ur5_airpick4_test: the task intent names a destination zone the scene does not define.
+  EXPECT_TRUE(is_destination_authoring_blocker(QStringLiteral(
+    "error: command failed with exit code 3: python3 scripts/export_workcell_studio_web_scene.py\n"
+    "error: task/physical destination: destination zone 'place_zone_main' missing or ambiguous")));
+  EXPECT_TRUE(is_destination_authoring_blocker(QStringLiteral(
+    "error: environment.yaml: task relationship place.target_ref has unresolved ID 'bin_9'")));
+  // Anything else (missing meshes, crashes, other validation) still fails visibly.
+  EXPECT_FALSE(is_destination_authoring_blocker(QStringLiteral("error: mesh package://x/y.stl cannot be resolved")));
+  EXPECT_FALSE(is_destination_authoring_blocker(QStringLiteral("Traceback (most recent call last): KeyError: 'task'")));
+}
+
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 namespace {
 
