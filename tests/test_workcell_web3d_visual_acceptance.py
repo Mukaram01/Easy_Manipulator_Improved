@@ -1086,3 +1086,15 @@ def test_camera_bounds_reject_genuinely_oversized_visual_without_rotation():
     }
     assert module._camera_bounds_errors({"renderedMeshDiagnostics": [camera]})
 
+
+
+def test_visual_acceptance_enables_read_only_diagnostic_scene_export():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert '"--stage-assets", "--allow-incomplete-preview"' in source
+    assert '"visual_only": visual_only' in source
+    exporter = (ROOT / "scripts/export_workcell_studio_web_scene_impl.py").read_text(encoding="utf-8")
+    assert '"save_layout_enabled": False' in exporter
+    assert '"execution_enabled": False' in exporter
+    assert 'item["editable"] = False' in exporter
+    assert 'item["locked"] = True' in exporter
+
