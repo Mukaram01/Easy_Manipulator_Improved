@@ -50,3 +50,15 @@ def write_preserving(path: Path, data):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+if __name__ == '__main__':
+    # python3 authored_yaml.py rewrite TARGET STAGED: write STAGED's document to
+    # TARGET, keeping TARGET's text for every unchanged top-level section.
+    import sys
+    if len(sys.argv) != 4 or sys.argv[1] != 'rewrite':
+        sys.exit('usage: authored_yaml.py rewrite TARGET STAGED')
+    staged = yaml.safe_load(Path(sys.argv[3]).read_text(encoding='utf-8'))
+    if not isinstance(staged, dict):
+        sys.exit('staged document is not a mapping')
+    write_preserving(Path(sys.argv[2]), staged)

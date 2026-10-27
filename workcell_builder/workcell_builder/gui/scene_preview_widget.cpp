@@ -6,6 +6,7 @@
 #include <QRectF>
 #include <QtGlobal>
 #include <QVariantMap>
+#include <QApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -872,7 +873,9 @@ ScenePreviewWidget::ScenePreviewWidget(QWidget * parent) : QWidget(parent)
     refresh_info_chip();
   });
   if (auto * legacy_viewport = active_native_viewport()) {
-  legacy_viewport->select_cb = [this](const QString & id, const QString & role){ select_preview_item(id); emit preview_item_selected(id, role); if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
+  legacy_viewport->select_cb = [this](const QString & id, const QString & role){
+    if (QApplication::keyboardModifiers() & (Qt::ControlModifier | Qt::MetaModifier)) { if (!id.isEmpty()) emit preview_item_toggled(id); return; }
+    select_preview_item(id); emit preview_item_selected(id, role); if (diagnostic_debug_logging_enabled()) emit studio_log_requested(QString("Selected preview item: %1 (%2)").arg(id, role)); };
   legacy_viewport->status_message_cb = [this](const QString & message) {
     emit studio_log_requested(message);
   };
@@ -3009,7 +3012,7 @@ void ScenePreviewWidget::poll_embedded_editor_events()
   if (!embedded_editor_polling_ || !embedded_web_view_ || embedded_product_view_state_ != EmbeddedProductViewState::Ready) return;
   const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
   const quint64 state_request_token = ++embedded_editor_state_request_token_;
-  static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents(),mate:(typeof api.getMateState === 'function' ? api.getMateState() : null)}; })()";
+  static const char kPoll[] = "(() => { const api = window.__WORKCELL_EDITOR_API_V1__; if (!api) return {state:{},events:[]}; return {state:api.getState(),events:api.drainEvents(),mate:(typeof api.getMateState === 'function' ? api.getMateState() : null),multi:(typeof api.getSelectionSetState === 'function' ? api.getSelectionSetState() : null)}; })()";
   embedded_web_view_->page()->runJavaScript(QString::fromUtf8(kPoll), [this, guard = QPointer<ScenePreviewWidget>(this), identity, state_request_token](const QVariant & value){
     if (!guard || embedded_web_destroying_) return;
     if (!embedded_web_identity_is_current(identity)) return;
@@ -3122,6 +3125,18 @@ void ScenePreviewWidget::poll_embedded_editor_events()
       emit embedded_authoring_context_menu_requested(context_menu_global_position);
     }
     if (scene_identity_matches) emit embedded_mate_state_reported(payload.value(QStringLiteral("mate")).toMap());
+    if (scene_identity_matches) {
+      // Ctrl+click toggles in the viewer arrive as a counter; a reloaded viewer counts from zero again.
+      const QVariantMap multi = payload.value(QStringLiteral("multi")).toMap();
+      const qint64 toggle_seq = multi.value(QStringLiteral("toggleSeq")).toLongLong();
+      if (toggle_seq < embedded_multi_toggle_seq_) {
+        embedded_multi_toggle_seq_ = toggle_seq;
+      } else if (toggle_seq > embedded_multi_toggle_seq_) {
+        embedded_multi_toggle_seq_ = toggle_seq;
+        const QString toggled = multi.value(QStringLiteral("toggleId")).toString().trimmed();
+        if (!toggled.isEmpty() && preview_item_by_id(toggled)) emit preview_item_toggled(toggled);
+      }
+    }
     if (embedded_editor_polling_) QTimer::singleShot(200, this, [this, identity]() {
       if (embedded_web_identity_is_current(identity)) poll_embedded_editor_events();
     });
@@ -3457,6 +3472,17 @@ void ScenePreviewWidget::set_arrange_preview(const QJsonObject & overlay)
     "return a&&typeof a.setArrangePreview==='function'?a.setArrangePreview(%1):{error:'missing_setArrangePreview'};})()").arg(payload));
 }
 
+void ScenePreviewWidget::set_selection_set(const QStringList & members, const QString & reference)
+{
+  if (!embedded_web_authoring_active()) return;
+  const QJsonObject selection{{QStringLiteral("members"), QJsonArray::fromStringList(members)},
+    {QStringLiteral("reference"), reference}};
+  run_embedded_editor_command(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return a&&typeof a.setSelectionSet==='function'?a.setSelectionSet(%1):{error:'missing_setSelectionSet'};})()")
+    .arg(QString::fromUtf8(QJsonDocument(selection).toJson(QJsonDocument::Compact))));
+}
+
 void ScenePreviewWidget::clear_arrange_preview()
 {
   if (!embedded_web_authoring_active()) return;
@@ -3578,6 +3604,11 @@ void ScenePreviewWidget::activate_native_compatibility_preview(const QString & r
       layout->insertWidget(web_index < 0 ? 0 : web_index + 1, compatibility_scene3d_viewport_);
     }
     compatibility_scene3d_viewport_->select_cb = [this](const QString & id, const QString & role) {
+      // Ctrl+click adds or removes a part from the Builder's multi-selection.
+      if (QApplication::keyboardModifiers() & (Qt::ControlModifier | Qt::MetaModifier)) {
+        if (!id.isEmpty()) emit preview_item_toggled(id);
+        return;
+      }
       select_preview_item(id);
       emit preview_item_selected(id, role);
     };

@@ -422,6 +422,12 @@ if __name__ == '__main__':
             result = {row['id']: {**catalog_datums(row), **anchors(row)} for row in rows}
         elif request.get('operation') == 'datum_frames':
             result = datum_frames(rows)
+        elif request.get('operation') == 'arrange':
+            # Multi-object arrangement: one atomic transaction (asset_arrangement.py).
+            from asset_arrangement import plan as arrange
+            result = arrange(rows, request, scene_dir)
+            for row in result['rows']:
+                row['mounting_yaml'] = json.dumps({key: row[key] for key in (*RELATION_FIELDS, 'surface_z_m') if key in row})
         elif request.get('operation') == 'align':
             # Two-part Align & Arrange: plans an ordinary edit request (asset_alignment.py).
             from asset_alignment import plan

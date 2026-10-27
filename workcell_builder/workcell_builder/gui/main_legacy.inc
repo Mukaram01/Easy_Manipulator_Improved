@@ -1275,6 +1275,18 @@ int main(int argc, char * argv[])
     return a.exec();
   }
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  if (has_cli_flag(args, "--multi-select-acceptance")) {
+    const QString output = cli_value(args, "--smoke-output");
+    const QString scene = cli_value(args, "--scene");
+    if (output.isEmpty() || scene.isEmpty()) return 2;
+    MainWindow w(cli_value(args, "--workspace"), "humble");
+    const auto parts = cli_value(args, "--window-size").split('x');
+    const QSize window_size = parts.size() == 2 ? QSize(parts[0].toInt(), parts[1].toInt()) : QSize(1366, 768);
+    w.resize(window_size);
+    w.show();
+    TestMain::start_multi_select_acceptance(&w, &a, output, scene, window_size);
+    return a.exec();
+  }
   if (has_cli_flag(args, "--align-arrange-acceptance")) {
     const QString output = cli_value(args, "--smoke-output");
     const QString scene = cli_value(args, "--scene");

@@ -1,0 +1,527 @@
+{
+ "align_front_residual_m": 0,
+ "align_preview": {
+  "active": true,
+  "label": "Align front",
+  "op": "align",
+  "params": {
+   "rules": {
+    "y": "min"
+   }
+  },
+  "preview": {
+   "error": "",
+   "moved": [
+    {
+     "display_name": "Reject Bin",
+     "distance_m": 0.047706534999999994,
+     "follower": false,
+     "id": "reject_bin",
+     "to": [
+      0.8,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Spare Bin",
+     "distance_m": 0.39770653499999997,
+     "follower": false,
+     "id": "spare_bin",
+     "to": [
+      1,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Destination Bin",
+     "distance_m": 0.517706535,
+     "follower": false,
+     "id": "target_bin_default",
+     "to": [
+      0.45,
+      -0.297706535,
+      0.1
+     ]
+    }
+   ],
+   "ok": true,
+   "report": {
+    "members": [
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "members_detail": {
+     "reject_bin": {
+      "delta_reference_m": [
+       0,
+       -0.047706535339355455,
+       0
+      ],
+      "notes": [],
+      "sources": {
+       "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+       "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)"
+      }
+     },
+     "spare_bin": {
+      "delta_reference_m": [
+       0,
+       -0.39770653533935546,
+       0
+      ],
+      "notes": [],
+      "sources": {
+       "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+       "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)"
+      }
+     },
+     "target_bin_default": {
+      "delta_reference_m": [
+       0,
+       -0.5177065353393554,
+       0
+      ],
+      "notes": [],
+      "sources": {
+       "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+       "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)"
+      }
+     }
+    },
+    "moved": [
+     {
+      "distance_m": 0.047706534999999994,
+      "follower": false,
+      "from": [
+       0.8,
+       -0.25,
+       0.1
+      ],
+      "id": "reject_bin",
+      "to": [
+       0.8,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.39770653499999997,
+      "follower": false,
+      "from": [
+       1,
+       0.1,
+       0.1
+      ],
+      "id": "spare_bin",
+      "to": [
+       1,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.517706535,
+      "follower": false,
+      "from": [
+       0.45,
+       0.22,
+       0.1
+      ],
+      "id": "target_bin_default",
+      "to": [
+       0.45,
+       -0.297706535,
+       0.1
+      ]
+     }
+    ],
+    "notes": [],
+    "op": "align",
+    "reference": "support_surface_table",
+    "rules": {
+     "y": "min"
+    }
+   },
+   "request": {
+    "members": [
+     "support_surface_table",
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "names": {
+     "reject_bin": "Reject Bin",
+     "spare_bin": "Spare Bin",
+     "support_surface_table": "Industrial Workbench",
+     "target_bin_default": "Destination Bin"
+    },
+    "op": "align",
+    "operation": "arrange",
+    "params": {
+     "rules": {
+      "y": "min"
+     }
+    },
+    "reference": "support_surface_table"
+   },
+   "summary": "3 part(s) move, the largest by 517.7 mm. The reference Industrial Workbench stays put."
+  },
+  "selection": {
+   "members": [
+    "support_surface_table",
+    "target_bin_default",
+    "reject_bin",
+    "spare_bin"
+   ],
+   "reference": "support_surface_table"
+  },
+  "status": "Check the ghosts, then Apply (Enter) or Cancel (Esc)."
+ },
+ "audit_final": {
+  "clipped": [
+   {
+    "class": "QLabel",
+    "name": "studioContextFeedback",
+    "needed": 615,
+    "text": "\u2713  Saved 7 editable item(s) to workcell_studio_layout.yaml. Generated outputs ar",
+    "width": 590
+   }
+  ],
+  "inspector_tab_min_widths": {
+   "Checks": 278,
+   "Inspector": 290,
+   "Task": 434
+  },
+  "overflow": [],
+  "squeezed": [
+   "QFrame#studioCard '' h=560 need=641",
+   "QFrame#studioContextTopbar '' h=40 need=47"
+  ],
+  "task_editor_wide": [],
+  "unreachable": []
+ },
+ "audit_selection": {
+  "clipped": [],
+  "inspector_tab_min_widths": {
+   "Checks": 278,
+   "Inspector": 290,
+   "Task": 434
+  },
+  "overflow": [],
+  "squeezed": [
+   "QStackedWidget#qt_tabwidget_stackedwidget '' h=4173 need=4215",
+   "QFrame#studioCard '' h=560 need=641",
+   "QFrame#studioContextTopbar '' h=40 need=47"
+  ],
+  "task_editor_wide": [],
+  "unreachable": []
+ },
+ "bin_ctrl_click_widget_point": [
+  314,
+  190
+ ],
+ "cancel_check": {
+  "files_unchanged": true,
+  "layout_dirty": false,
+  "moved": []
+ },
+ "cell_window_size": [
+  1366,
+  768
+ ],
+ "chip": "4 selected \u00b7 ref: Industrial W\u2026",
+ "current_selected_id": "support_surface_table",
+ "execution_goals_sent": 0,
+ "fake_hardware_only": true,
+ "gap_60mm_residual_m": 0,
+ "gap_preview": {
+  "active": true,
+  "label": "Distribute with gap",
+  "op": "distribute",
+  "params": {
+   "axis": "x",
+   "gap_m": 0.06,
+   "mode": "gap"
+  },
+  "preview": {
+   "error": "",
+   "moved": [
+    {
+     "display_name": "Reject Bin",
+     "distance_m": 0.550300682,
+     "follower": false,
+     "id": "reject_bin",
+     "to": [
+      1.350300682,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Spare Bin",
+     "distance_m": 0.762501809,
+     "follower": false,
+     "id": "spare_bin",
+     "to": [
+      1.762501809,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Destination Bin",
+     "distance_m": 0.780300682,
+     "follower": false,
+     "id": "target_bin_default",
+     "to": [
+      -0.330300682,
+      -0.297706535,
+      0.1
+     ]
+    }
+   ],
+   "ok": true,
+   "report": {
+    "axis": "x",
+    "gap_m": 0.06,
+    "members": [
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "mode": "gap",
+    "moved": [
+     {
+      "distance_m": 0.550300682,
+      "follower": false,
+      "from": [
+       0.8,
+       -0.297706535,
+       0.1
+      ],
+      "id": "reject_bin",
+      "to": [
+       1.350300682,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.762501809,
+      "follower": false,
+      "from": [
+       1,
+       -0.297706535,
+       0.1
+      ],
+      "id": "spare_bin",
+      "to": [
+       1.762501809,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.780300682,
+      "follower": false,
+      "from": [
+       0.45,
+       -0.297706535,
+       0.1
+      ],
+      "id": "target_bin_default",
+      "to": [
+       -0.330300682,
+       -0.297706535,
+       0.1
+      ]
+     }
+    ],
+    "notes": [],
+    "op": "distribute",
+    "order": [
+     "target_bin_default",
+     "support_surface_table",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "reference": "support_surface_table",
+    "shift_along_axis_m": {
+     "reject_bin": 0.550300682425443,
+     "spare_bin": 0.7625018092393319,
+     "target_bin_default": -0.7803006824255546
+    },
+    "sources": {
+     "reject_bin": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+     "spare_bin": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+     "support_surface_table": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)",
+     "target_bin_default": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)"
+    }
+   },
+   "request": {
+    "members": [
+     "support_surface_table",
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "names": {
+     "reject_bin": "Reject Bin",
+     "spare_bin": "Spare Bin",
+     "support_surface_table": "Industrial Workbench",
+     "target_bin_default": "Destination Bin"
+    },
+    "op": "distribute",
+    "operation": "arrange",
+    "params": {
+     "axis": "x",
+     "gap_m": 0.06,
+     "mode": "gap"
+    },
+    "reference": "support_surface_table"
+   },
+   "summary": "3 part(s) move, the largest by 780.3 mm. The reference Industrial Workbench stays put. Order along X: Destination Bin \u2192 Industrial Workbench \u2192 Reject Bin \u2192 Spare Bin \u00b7 gap 60.0 mm."
+  },
+  "selection": {
+   "members": [
+    "support_surface_table",
+    "target_bin_default",
+    "reject_bin",
+    "spare_bin"
+   ],
+   "reference": "support_surface_table"
+  },
+  "status": "Check the ghosts, then Apply (Enter) or Cancel (Esc)."
+ },
+ "inspector_summary": "<b>4 parts selected</b> \u2014 reference <b>Industrial Workbench</b> (stays put; shown below).<br/>Also selected: Destination Bin, Reject Bin, Spare Bin<br/><i>Arrange them with the toolbar above the 3D view. Ctrl+click adds or removes parts.</i>",
+ "poses_before": {
+  "reject_bin": [
+   0.8,
+   -0.25,
+   0.1,
+   0,
+   0,
+   0
+  ],
+  "spare_bin": [
+   1,
+   0.1,
+   0.1,
+   0,
+   0,
+   0
+  ],
+  "support_surface_table": [
+   0.7106668243408203,
+   -0.2,
+   -0.0008999994993209839,
+   0,
+   0,
+   0
+  ],
+  "target_bin_default": [
+   0.45,
+   0.22,
+   0.1,
+   0,
+   0,
+   0
+  ]
+ },
+ "reopen_max_abs_error": 0,
+ "reopen_window_size": [
+  1366,
+  768
+ ],
+ "result": "PASS",
+ "robot_motion_commanded": false,
+ "screenshots": [
+  "01_multi_selection_toolbar",
+  "02_align_front_preview",
+  "03_gap_preview",
+  "04_applied"
+ ],
+ "steps": [
+  "load fixture cell",
+  "wait for the Product View",
+  "baseline",
+  "plain 3D click selects the workbench (reference)",
+  "Ctrl+click in 3D adds the destination bin",
+  "Ctrl+click in the hierarchy adds the reject and spare bins",
+  "selection shown everywhere",
+  "toolbar availability explains itself",
+  "Align front: preview ghosts, then Cancel",
+  "Align front: Apply is one exact transaction",
+  "Undo and Redo the whole alignment in one step, keeping the selection",
+  "Distribute along X with an exact 60 mm gap",
+  "Applied arrangement shown",
+  "Save Layout",
+  "close and reopen",
+  "wait for the reopened Product View",
+  "reopened placements are identical",
+  "Fixed mount is atomic and the bins follow the workbench",
+  "narrow view: tools stay reachable through the overflow menu"
+ ],
+ "table_click_widget_point": [
+  236,
+  221
+ ],
+ "toolbar_overflow": {
+  "more_menu_entries": 17,
+  "more_visible": true,
+  "tool_buttons": 24,
+  "tools_width": 345,
+  "visible_tool_buttons": 10
+ },
+ "toolbar_tools": {
+  "align_front": {
+   "enabled": true,
+   "tooltip": "<b>Align front</b> (Alt+Shift+F)<br/>Line up the \u2212Y box faces with the reference's \u2212Y face."
+  },
+  "concentric": {
+   "enabled": false,
+   "tooltip": "<b>Concentric (verified axes)\u2026</b><br/>Line up verified cylindrical axes (Mate tool, coincident axes).<br/><i>Unavailable: Verified-face mating works on exactly two parts: the reference and the part to seat on it.</i>"
+  },
+  "dist_x": {
+   "enabled": true,
+   "tooltip": "<b>Distribute along X</b><br/>Equal gaps along the reference's X axis, in current order. The reference stays put."
+  },
+  "flush": {
+   "enabled": false,
+   "tooltip": "<b>Flush (verified faces)\u2026</b><br/>Mate the part's verified face flush on the reference's verified face (Mate tool).<br/><i>Unavailable: Verified-face mating works on exactly two parts: the reference and the part to seat on it.</i>"
+  },
+  "gap": {
+   "enabled": true,
+   "tooltip": "<b>Distribute with gap\u2026</b><br/>An exact gap in millimetres between neighbours along one reference axis, starting at the reference."
+  },
+  "group": {
+   "enabled": false,
+   "tooltip": "<b>Group</b><br/>Groups are not part of the scene contract yet.<br/><i>Unavailable: Groups are not part of the scene contract yet. Use Fixed mount to keep parts together (they follow the reference), or Detach to separate them.</i>"
+  },
+  "mount": {
+   "enabled": true,
+   "tooltip": "<b>Fixed mount on reference</b><br/>Mount the parts on the reference with a fixed offset: they keep their place and follow it (parent/child)."
+  },
+  "move": {
+   "enabled": true,
+   "tooltip": "<b>Move / rotate\u2026</b> (Alt+Shift+M)<br/>Move and rotate the parts by exact millimetres and degrees in world, reference or local axes."
+  }
+ },
+ "viewer_selection": {
+  "gizmoEnabled": false,
+  "highlightCount": 4,
+  "members": [
+   "support_surface_table",
+   "target_bin_default",
+   "reject_bin",
+   "spare_bin"
+  ],
+  "reference": "support_surface_table",
+  "sceneId": "ur5_2f_test",
+  "toggleId": "target_bin_default",
+  "toggleSeq": 1
+ }
+}

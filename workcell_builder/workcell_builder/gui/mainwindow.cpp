@@ -24,6 +24,8 @@
 #include "teardown_connections.hpp"
 #include "mate_pick.hpp"
 #include "align_arrange_controller.hpp"
+#include "arrange_controller.hpp"
+#include "arrange_toolbar.hpp"
 #include "align_arrange_panel.hpp"
 #include "mate_tool_controller.hpp"
 #include "mate_tool_panel.hpp"
@@ -116,6 +118,7 @@
 #include <QPointer>
 #include <QProgressDialog>
 #include <QProcess>
+#include <QTemporaryFile>
 #include <QScopedValueRollback>
 #include <QProcessEnvironment>
 #include <QRandomGenerator>
@@ -2513,6 +2516,8 @@ void MainWindow::setup_studio_shell()
   hierarchy_layout->addWidget(new QLabel("<b>Scene Hierarchy</b>"));
   scene_hierarchy_tree_ = new QTreeWidget(hierarchy_card);
   scene_hierarchy_tree_->setObjectName("studioSceneHierarchyTree");
+  scene_hierarchy_tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);  // Ctrl+click toggles, Shift+click ranges
+  scene_hierarchy_tree_->viewport()->installEventFilter(this);
   scene_hierarchy_tree_->setContextMenuPolicy(Qt::CustomContextMenu);
   scene_hierarchy_tree_->setHeaderLabels({"Name", "Type", "State"});
   scene_hierarchy_tree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -2820,6 +2825,7 @@ void MainWindow::setup_studio_shell()
   connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_selected, this, [this](const QString &id, const QString &role){
     apply_scene_selection(id, role, id.trimmed().isEmpty(), false);
   });
+  connect(scene_preview_widget_, &ScenePreviewWidget::preview_item_toggled, this, &MainWindow::toggle_scene_selection);
   connect(scene_preview_widget_, &ScenePreviewWidget::authoring_undo_requested,
     this, &MainWindow::undo_layout_edit);
   connect(scene_preview_widget_, &ScenePreviewWidget::authoring_redo_requested,
@@ -3289,9 +3295,41 @@ void MainWindow::setup_studio_shell()
   scene_builder_secondary_overflow_button_->setMenu(scene_builder_secondary_overflow_menu_);
   primary_controls->addWidget(scene_builder_secondary_overflow_button_);
   center_panel_layout->addLayout(controls);
-  digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_"); digital_twin_canvas_->setMinimumHeight(420);
+  digital_twin_canvas_ = new QGraphicsView(scene_builder); digital_twin_canvas_->setObjectName("digital_twin_canvas_");
+  // 360 px: this hidden fallback page sets the 3D stack minimum, and the arrangement toolbar needs room at 720 px.
+  digital_twin_canvas_->setMinimumHeight(360);
   digital_twin_canvas_->viewport()->installEventFilter(this);
   scene_preview_widget_->set_fallback_2d_view(digital_twin_canvas_);
+  {
+    // Multi-object arrangement: planned by scripts/asset_arrangement.py through the
+    // mounting resolver, committed as one undoable edit through Mount To's path.
+    workcell_builder::ArrangeController::Hooks hooks;
+    hooks.run_resolver = [this](const QJsonObject & request) { return run_mounting_request(request); };
+    hooks.commit = [this](const QJsonObject & request) { return commit_mounting_request(request); };
+    hooks.current_items = [this]() { return mounting_items(); };
+    hooks.display_name = [this](const QString & id) {
+      for (const auto & p : all_scene_preview_items_) if (p.id == id) return p.display_name;
+      return QString();
+    };
+    hooks.selection = [this]() {
+      return workcell_builder::ArrangeController::Selection{selection_set_.members(), selection_set_.reference()};
+    };
+    hooks.moving_blocker = [this](const QString & id) { return align_moving_blocker(id); };
+    hooks.reference_blocker = [this](const QString & id) { return align_reference_blocker(id, nullptr); };
+    hooks.reference_world = [this](const QString & id) { QJsonObject world; align_reference_blocker(id, &world); return world; };
+    arrange_controller_ = new workcell_builder::ArrangeController(hooks, this);
+    arrange_toolbar_ = new workcell_builder::ArrangeToolbar(arrange_controller_, scene_builder);
+    arrange_toolbar_->set_extra_availability([this](const QString & tool) { return arrange_extra_availability(tool); });
+    connect(arrange_toolbar_, &workcell_builder::ArrangeToolbar::reference_chosen, this, &MainWindow::set_selection_reference);
+    connect(arrange_toolbar_, &workcell_builder::ArrangeToolbar::mate_requested, this, &MainWindow::arrange_mate_handoff);
+    connect(arrange_controller_, &workcell_builder::ArrangeController::changed, this, &MainWindow::push_arrange_overlay);
+    connect(arrange_controller_, &workcell_builder::ArrangeController::finished, this, [this](bool, const QString & message) {
+      append_studio_log(QStringLiteral("Arrange: %1").arg(message));
+      statusBar()->showMessage(message, 6000);
+      sync_selection_set_views();
+    });
+    center_panel_layout->addWidget(arrange_toolbar_);
+  }
   center_panel_layout->addWidget(scene_preview_widget_, 1);
   minimap_view_ = new QGraphicsView(scene_builder);
   minimap_view_->setObjectName("digital_twin_minimap");
@@ -3395,6 +3433,13 @@ void MainWindow::setup_studio_shell()
   scene_builder_inspector_tabs_->setUsesScrollButtons(true);
   scene_builder_inspector_tabs_->setDocumentMode(true);
   auto * selection_tab = new QWidget(scene_builder_inspector_tabs_); auto * selection_tab_layout = new QVBoxLayout(selection_tab);
+  inspector_multi_selection_label_ = new QLabel(selection_tab);
+  inspector_multi_selection_label_->setObjectName("sceneBuilderMultiSelection");
+  inspector_multi_selection_label_->setWordWrap(true);
+  inspector_multi_selection_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  inspector_multi_selection_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  inspector_multi_selection_label_->hide();
+  selection_tab_layout->addWidget(inspector_multi_selection_label_);
   auto * workflow_tab = new QWidget(scene_builder_inspector_tabs_); auto * workflow_tab_layout = new QVBoxLayout(workflow_tab);
   auto * readiness_tab = new QWidget(scene_builder_inspector_tabs_); auto * readiness_tab_layout = new QVBoxLayout(readiness_tab);
   auto make_card = [&](QVBoxLayout *parent_layout, const QString &title) {
@@ -4218,7 +4263,7 @@ void MainWindow::setup_studio_shell()
     }
   }
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
-  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ if (align_active()) { align_controller_->cancel(); return; } if (mate_active()) { mate_controller_->cancel(); return; } set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
+  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ if (arrange_active()) { arrange_controller_->cancel(); return; } if (align_active()) { align_controller_->cancel(); return; } if (mate_active()) { mate_controller_->cancel(); return; } set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * align_sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+A")), scene_builder);
   connect(align_sc, &QShortcut::activated, this, [this]() { if (align_active()) align_controller_->cancel(); else begin_align_arrange(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
@@ -5841,6 +5886,10 @@ QString MainWindow::scene_builder_activity_summary(
   if (lower.contains(QStringLiteral("scene_ready")) && lower.contains(QStringLiteral("terminal"))) {
     const QRegularExpressionMatch count = QRegularExpression(
       QStringLiteral("rendered_physical_item_count[\\\"=: ]+(\\d+)"), QRegularExpression::CaseInsensitiveOption).match(text);
+    // A diagnostic (read-only) preview is not task readiness: say so in the strip.
+    if (scene_preview_widget_ && scene_preview_widget_->property("diagnostic_preview_active").toBool()) {
+      return QStringLiteral("3D preview only (read-only) · task blocked — open Checks");
+    }
     return count.hasMatch()
       ? QStringLiteral("Product View ready · %1 physical items").arg(count.captured(1))
       : QStringLiteral("Product View ready");
@@ -8133,6 +8182,11 @@ void MainWindow::set_canvas_interaction_mode(CanvasInteractionMode mode)
 
 bool MainWindow::eventFilter(QObject * watched, QEvent * event)
 {
+  // The hierarchy reads Ctrl/Shift from the click itself (global keyboard state can be stale).
+  if (scene_hierarchy_tree_ && watched == scene_hierarchy_tree_->viewport() && event &&
+      (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease)) {
+    hierarchy_click_modifiers_ = static_cast<QMouseEvent *>(event)->modifiers();
+  }
   if (scene_builder_path_label_ && watched == scene_builder_path_label_ && event && event->type() == QEvent::Resize) {
     update_scene_builder_path_header(selected_scene_state_.valid ? selected_scene_state_.name : QString(), selected_scene_path());
   }
@@ -8397,6 +8451,13 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
   sync_selected_scene_state();
   const QString selected_id = id.trimmed();
   const QString selected_role = role.trimmed().isEmpty() ? QStringLiteral("unknown") : role.trimmed();
+  // A plain selection replaces the multi-selection; internal re-selection of the
+  // reference (Ctrl+click, Make Reference) keeps it. Views follow on every exit path.
+  if (!selection_set_passthrough_) {
+    if (!selected_id.isEmpty()) selection_set_.select_only(selected_id);
+    else if (intentional_clear) selection_set_.clear();
+  }
+  struct SyncSelectionOnExit { MainWindow * window; ~SyncSelectionOnExit() { window->sync_selection_set_views(); } } sync_on_exit{this};
 
   if (selected_id.isEmpty()) {
     if (!intentional_clear) return;
@@ -8845,6 +8906,15 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   state.type = gi->data(RoleType).toString().toStdString();
   state.category = gi->data(RoleCategory).toString().toStdString();
   state.role = gi->data(RoleRole).toString().toStdString();
+  if (existing && existing.IsMap() && existing["role"] && existing["role"].IsScalar()) {
+    // Mount, Mate, Align and undo carry the display-normalised role ("place_target_bin");
+    // Save keeps the authored role ("target_bin") unless the user chose another one.
+    const QString authored = QString::fromStdString(existing["role"].Scalar());
+    const QString category = existing["category"] && existing["category"].IsScalar()
+      ? QString::fromStdString(existing["category"].Scalar()) : QString();
+    state.role = workcell_builder::semantic_role_to_persist(QString::fromStdString(state.role), authored,
+      canonical_scene_hierarchy_role(authored, category, QString())).toStdString();
+  }
   state.catalog_asset_id = gi->data(RoleCatalogAssetId).toString().toStdString();
   QString portable_mesh_path = QDir::fromNativeSeparators(gi->data(RoleSource).toString().trimmed());
   const int scenes_marker = portable_mesh_path.indexOf(QStringLiteral("/scenes/"));
@@ -9321,9 +9391,31 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
       QString::fromStdString(effective_layout_path.string()));
     return false;
   }
+  // Write through the formatting-preserving authored writer (scripts/authored_yaml.py):
+  // the document is the yaml-cpp result, but unchanged sections keep their text and
+  // numbers keep their shortest exact spelling (no explicit !!str tags, no 17-digit
+  // rewrites of untouched values). The direct yaml-cpp write remains the fallback.
+  const QString layout_target = QString::fromStdString(effective_layout_path.string());
+  bool preserved_write = false;
+  {
+    const QString repo_root = resolve_workcell_studio_repo_root(fs::path(selected_scene_state_.path.toStdString()));
+    const QString writer = repo_root.isEmpty() ? QString() : QDir(repo_root).filePath("scripts/authored_yaml.py");
+    QTemporaryFile staged(QFileInfo(layout_target).dir().filePath(QStringLiteral(".layout_staged_XXXXXX.yaml")));
+    if (!writer.isEmpty() && QFileInfo::exists(writer) && staged.open() &&
+        staged.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) >= 0 && staged.flush()) {
+      staged.close();
+      QProcess process;
+      process.start(QStringLiteral("python3"), {writer, QStringLiteral("rewrite"), layout_target, staged.fileName()});
+      preserved_write = process.waitForFinished(20000) && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+      if (!preserved_write) {
+        append_studio_log(QStringLiteral("Save Layout: formatting-preserving write unavailable (%1); writing the yaml-cpp document directly.")
+          .arg(QString::fromUtf8(process.readAllStandardError()).trimmed().right(300)));
+      }
+    }
+  }
   QSaveFile out(QString::fromStdString(effective_layout_path.string()));
-  if (!out.open(QIODevice::WriteOnly) ||
-      out.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) < 0 || !out.commit()) {
+  if (!preserved_write && (!out.open(QIODevice::WriteOnly) ||
+      out.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) < 0 || !out.commit())) {
     if (error) *error = QStringLiteral("Could not atomically write canonical editable layout '%1': %2. Dirty state was retained.")
       .arg(QString::fromStdString(effective_layout_path.string()), out.errorString());
     emit_save_layout_failure(error ? *error : QStringLiteral("atomic layout write failed"),
@@ -9393,8 +9485,11 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
             workcell_builder::yaml_map_value_or_empty(item, "display_name")).trimmed();
           const QString persisted_role = QString::fromStdString(
             workcell_builder::yaml_map_value_or_empty(item, "role")).trimmed();
+          const QString persisted_category = QString::fromStdString(
+            workcell_builder::yaml_map_value_or_empty(item, "category")).trimmed();
           if (persisted_name != canvas->data(RoleDisplayName).toString().trimmed() ||
-              persisted_role != canvas->data(RoleRole).toString().trimmed()) {
+              workcell_builder::semantic_role_actually_changed(canvas->data(RoleRole).toString(), persisted_role,
+                canonical_scene_hierarchy_role(persisted_role, persisted_category, QString()))) {
             throw std::runtime_error(QStringLiteral("metadata mismatch after write: %1").arg(id).toStdString());
           }
         }
@@ -10074,7 +10169,10 @@ bool MainWindow::commit_mounting_request(QJsonObject request)
     return false;
   }
   QVector<ScenePreviewWidget::PreviewItem> before, after;
-  for (const auto & value : response.value("result").toArray()) {
+  // A single edit returns the rows; a multi-object arrangement returns {rows, report}.
+  const QJsonValue result = response.value("result");
+  const QJsonArray result_rows = result.isArray() ? result.toArray() : result.toObject().value("rows").toArray();
+  for (const auto & value : result_rows) {
     const auto row = value.toObject();
     for (const auto & existing : all_scene_preview_items_) if (existing.id == row.value("id").toString()) {
       before.push_back(existing);
@@ -10105,7 +10203,10 @@ bool MainWindow::commit_mounting_request(QJsonObject request)
     append_studio_log(QStringLiteral("Asset mounting: %1 already has this relation and pose; nothing changed.").arg(request.value("id").toString()));
     return true;
   }
-  CanvasEditCommand command{"mounting", request.value("id").toString(), {}, {}, false, false, before};
+  // One command for every moved part: an arrangement undoes and redoes as one step.
+  const QString command_target = request.contains("id") ? request.value("id").toString()
+    : QStringLiteral("arrange:%1").arg(request.value("op").toString());
+  CanvasEditCommand command{"mounting", command_target, {}, {}, false, false, before};
   command.after_items = after;
   apply_mounting_snapshot(after);
   undo_stack_.push_back(command); redo_stack_.clear();
@@ -10589,6 +10690,156 @@ void MainWindow::push_align_overlay()
     apply_scene_selection(align_controller_->moving(), QString(), false, false);
   }
   if (scene_preview_widget_) scene_preview_widget_->set_arrange_preview(align_controller_->overlay());
+}
+
+bool MainWindow::arrange_active() const
+{
+  return arrange_controller_ && arrange_controller_->active();
+}
+
+void MainWindow::toggle_scene_selection(const QString & id)
+{
+  const QString part = id.trimmed();
+  if (part.isEmpty() || mate_active() || align_active()) return;
+  const auto * item = align_find_item(all_scene_preview_items_, part);
+  if (!item || deleted_layout_item_ids_.contains(part)) return;
+  if (item->semantic_task_zone_helper || item->source_layer == QStringLiteral("overlay")) {
+    statusBar()->showMessage(QStringLiteral("%1 is a task helper, not a part; it cannot join a multi-selection.")
+      .arg(align_name(*item)), 5000);
+    return;
+  }
+  if (selection_set_.isEmpty()) { apply_scene_selection(part, QString(), false, false); return; }
+  selection_set_.toggle(part);
+  hierarchy_range_anchor_ = part;
+  if (selection_set_.isEmpty()) { apply_scene_selection(QString(), QString(), true, false); return; }
+  // The Inspector shows the reference; the other members stay selected around it.
+  const QScopedValueRollback<bool> keep(selection_set_passthrough_, true);
+  apply_scene_selection(selection_set_.primary(), QString(), false, false);
+}
+
+void MainWindow::extend_scene_selection_to(const QString & id)
+{
+  if (!scene_hierarchy_tree_) return;
+  QStringList ordered;
+  for (QTreeWidgetItemIterator it(scene_hierarchy_tree_); *it; ++it) {
+    const QString row = (*it)->data(0, TreeRoleId).toString().trimmed();
+    if (!row.isEmpty() && !ordered.contains(row)) ordered << row;
+  }
+  const int from = ordered.indexOf(hierarchy_range_anchor_.isEmpty() ? id : hierarchy_range_anchor_);
+  const int to = ordered.indexOf(id);
+  if (from < 0 || to < 0) { apply_scene_selection(id, QString(), false, true); return; }
+  if (selection_set_.isEmpty()) selection_set_.select_only(ordered.at(from));
+  selection_set_.extend(ordered.mid(std::min(from, to), std::abs(to - from) + 1));
+  const QScopedValueRollback<bool> keep(selection_set_passthrough_, true);
+  apply_scene_selection(selection_set_.primary(), QString(), false, false);
+}
+
+void MainWindow::set_selection_reference(const QString & id)
+{
+  if (!selection_set_.set_reference(id)) return;
+  const QScopedValueRollback<bool> keep(selection_set_passthrough_, true);
+  apply_scene_selection(id, QString(), false, false);
+  append_studio_log(QStringLiteral("Selection reference: %1").arg(id));
+}
+
+void MainWindow::sync_selection_set_views()
+{
+  const QStringList members = selection_set_.members();
+  const QString reference = selection_set_.reference();
+  const auto name_of = [this](const QString & id) {
+    const auto * item = align_find_item(all_scene_preview_items_, id);
+    return item ? align_name(*item) : id;
+  };
+  if (scene_hierarchy_tree_ && members.size() >= 2) {
+    const QSignalBlocker blocker(scene_hierarchy_tree_);
+    const QScopedValueRollback<bool> guard(selection_update_guard_, true);
+    for (QTreeWidgetItemIterator it(scene_hierarchy_tree_); *it; ++it) {
+      const QString row = (*it)->data(0, TreeRoleId).toString().trimmed();
+      (*it)->setSelected(!row.isEmpty() && members.contains(row));
+    }
+  }
+  QList<QPair<QString, QString>> named;
+  for (const auto & id : members) named.append({id, name_of(id)});
+  if (arrange_toolbar_) arrange_toolbar_->set_selection(named, reference);
+  if (scene_preview_widget_) scene_preview_widget_->set_selection_set(members.size() >= 2 ? members : QStringList(), reference);
+  if (inspector_multi_selection_label_) {
+    if (members.size() >= 2) {
+      QStringList others;
+      for (const auto & id : selection_set_.others()) {
+        others << (align_moving_blocker(id).isEmpty() ? name_of(id).toHtmlEscaped()
+                                                      : QStringLiteral("%1 (locked)").arg(name_of(id).toHtmlEscaped()));
+      }
+      inspector_multi_selection_label_->setText(QStringLiteral(
+        "<b>%1 parts selected</b> — reference <b>%2</b> (stays put; shown below).<br/>Also selected: %3<br/>"
+        "<i>Arrange them with the toolbar above the 3D view. Ctrl+click adds or removes parts.</i>")
+        .arg(members.size()).arg(name_of(reference).toHtmlEscaped(), others.join(QStringLiteral(", "))));
+    }
+    inspector_multi_selection_label_->setVisible(members.size() >= 2);
+  }
+  if (arrange_active()) arrange_controller_->scene_changed();
+}
+
+void MainWindow::push_arrange_overlay()
+{
+  if (!scene_preview_widget_) return;
+  if (arrange_active()) scene_preview_widget_->set_arrange_preview(arrange_controller_->overlay());
+  else if (!align_active()) scene_preview_widget_->clear_arrange_preview();
+}
+
+QString MainWindow::arrange_extra_availability(const QString & tool) const
+{
+  if (tool == QStringLiteral("group")) {
+    return QStringLiteral("Groups are not part of the scene contract yet. Use Fixed mount to keep parts together "
+      "(they follow the reference), or Detach to separate them.");
+  }
+  if (selection_set_.size() != 2) {
+    return QStringLiteral("Verified-face mating works on exactly two parts: the reference and the part to seat on it.");
+  }
+  const QString moving = selection_set_.others().value(0), reference = selection_set_.reference();
+  if (const QString blocker = align_moving_blocker(moving); !blocker.isEmpty()) return blocker;
+  QJsonObject world;
+  if (const QString blocker = align_reference_blocker(reference, &world); !blocker.isEmpty()) return blocker;
+  if (!world.isEmpty()) return QStringLiteral("The reference is locked; Mate seats a part on an editable part only.");
+  if (tool != QStringLiteral("concentric")) return QString();
+  // Concentric needs verified axis datums on both parts (reviewed datums, never mesh triangles).
+  auto * self = const_cast<MainWindow *>(this);
+  const QString key = QString::fromLatin1(QCryptographicHash::hash(
+    QJsonDocument(self->mounting_items()).toJson(QJsonDocument::Compact) + (moving + "|" + reference).toUtf8(),
+    QCryptographicHash::Sha1).toHex());
+  if (concentric_availability_cache_.contains(key)) return concentric_availability_cache_.value(key);
+  const auto response = self->run_mounting_request({{"operation", "datum_frames"}});
+  QString reason;
+  if (!response.value("ok").toBool()) {
+    reason = QStringLiteral("Datums could not be read: %1").arg(response.value("error").toString());
+  } else {
+    const auto frames = response.value("result").toObject();
+    for (const auto & id : {moving, reference}) {
+      bool has_axis = false;
+      const auto datums = frames.value(id).toObject().value("datums").toObject();
+      for (const auto & datum : datums) has_axis = has_axis || datum.toObject().value("datum_type").toString() == QStringLiteral("axis");
+      if (!has_axis) {
+        reason = QStringLiteral("%1 has no verified cylindrical axis datum; concentric mating needs one on both parts.")
+          .arg(align_name(*align_find_item(all_scene_preview_items_, id)));
+        break;
+      }
+    }
+  }
+  concentric_availability_cache_.insert(key, reason);
+  return reason;
+}
+
+void MainWindow::arrange_mate_handoff(const QString & kind)
+{
+  if (selection_set_.size() != 2) return;
+  const QString moving = selection_set_.others().value(0), reference = selection_set_.reference();
+  if (arrange_active()) arrange_controller_->cancel(QStringLiteral("Switched to Mate; nothing changed."));
+  apply_scene_selection(moving, QString(), false, false);
+  begin_visual_mate();
+  if (!mate_active()) return;
+  if (kind == QStringLiteral("concentric") || kind == QStringLiteral("coincident")) mate_controller_->set_alignment(QStringLiteral("coincident"));
+  append_studio_log(QStringLiteral("Mate (%1) started from the arrangement toolbar: pick the %2 of %3, then of %4.")
+    .arg(kind, kind == QStringLiteral("concentric") ? QStringLiteral("axis datum") : QStringLiteral("face or datum"),
+      moving, reference));
 }
 
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }
@@ -11892,6 +12143,13 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
 {
   if (!item || selection_update_guard_) return;
   const QString selected_id = item->data(0, TreeRoleId).toString().trimmed();
+  const auto modifiers = hierarchy_click_modifiers_ | QApplication::keyboardModifiers();
+  hierarchy_click_modifiers_ = Qt::NoModifier;
+  if (!selected_id.isEmpty() && !mate_active() && !align_active()) {
+    if (modifiers & (Qt::ControlModifier | Qt::MetaModifier)) { toggle_scene_selection(selected_id); return; }
+    if (modifiers & Qt::ShiftModifier) { extend_scene_selection_to(selected_id); return; }
+    hierarchy_range_anchor_ = selected_id;
+  }
   const QString selected_role = item->data(0, TreeRoleRole).toString().trimmed();
   const auto * preview_item = scene_preview_widget_ ? scene_preview_widget_->preview_item_by_id(selected_id) : nullptr;
   // Hidden visuals are absent from the filtered viewport, but their authored
@@ -12566,6 +12824,12 @@ void MainWindow::refresh_scene_hierarchy_tree_from_current_items()
     empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);
   } else if (selected_node) {
     scene_hierarchy_tree_->setCurrentItem(selected_node);
+  }
+  {
+    QSet<QString> existing;
+    for (const auto & p : all_scene_preview_items_) if (!deleted_layout_item_ids_.contains(p.id)) existing.insert(p.id.trimmed());
+    selection_set_.prune(existing);
+    sync_selection_set_views();
   }
   auto * header = scene_hierarchy_tree_->header();
   if (header) {

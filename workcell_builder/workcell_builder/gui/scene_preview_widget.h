@@ -290,6 +290,8 @@ public:
   // the viewer stays in normal selection mode with the move gizmo held off.
   void set_arrange_preview(const QJsonObject & overlay);
   void clear_arrange_preview();
+  // Multi-selection highlights (members outlined, reference in its own colour).
+  void set_selection_set(const QStringList & members, const QString & reference);
   void request_authoring_save();
   void arm_embedded_asset_placement(
     const QString & asset_id, const QString & mesh_uri, double mesh_scale,
@@ -366,6 +368,8 @@ signals:
   void studio_log_requested(const QString & message);
   void studio_issue_requested(const QString & message, const QString & severity, const QString & issue_key);
   void preview_item_selected(const QString & id, const QString & role);
+  // Ctrl+click in a 3D view: add or remove a part from the multi-selection.
+  void preview_item_toggled(const QString & id);
   void preview_item_transform_changed(
     const QString & id,
     double x, double y, double z,
@@ -717,6 +721,7 @@ private:
   QVector<EpdDetectionOverlayModel> epd_detections_;
   QString selected_preview_item_id_;
   QString embedded_browser_selected_item_id_;
+  qint64 embedded_multi_toggle_seq_{0};
   QString preview_status_summary_;
   bool clean_product_view_{ false };
   int clean_product_visual_count_{ 0 };

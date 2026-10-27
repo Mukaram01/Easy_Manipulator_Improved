@@ -23,6 +23,13 @@ def _save_yaml(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding='utf-8')
 
+def _same_pose(a, b, tolerance=1e-9) -> bool:
+    try:
+        return len(a) == len(b) and all(abs(float(x) - float(y)) <= tolerance for x, y in zip(a, b))
+    except (TypeError, ValueError):
+        return False
+
+
 def _index(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     out = {}
     for it in items:
@@ -200,9 +207,20 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
         validate_physical(physical)
         camera = env.get('camera') or {}
         camera_id = camera.get('camera_id', camera.get('id'))
+        before = _index(previous_physical.get('assets', []) + previous_physical.get('sensors', []))
         for asset in physical.get('assets', []) + physical.get('sensors', []):
             if camera_id and asset.get('id') == camera_id:
-                camera['pose'] = asset['pose_xyz'] + asset['pose_rpy']
+                # The camera block mirrors the camera asset's authored extrinsics. It
+                # follows only when this Save moved the camera; an unrelated Save never
+                # rewrites a (possibly calibrated) camera pose.
+                projected = asset['pose_xyz'] + asset['pose_rpy']
+                old = before.get(camera_id, {})
+                moved = not _same_pose(old.get('pose_xyz', []) + old.get('pose_rpy', []), projected)
+                if moved:
+                    camera['pose'] = projected
+                elif not _same_pose(camera.get('pose') or [], projected):
+                    warnings.append(f"camera {camera_id}: camera.pose {camera.get('pose')} differs from its authored asset "
+                                    f"pose {projected}; left unchanged (move the camera, or verify its calibration)")
         write_preserving(scene_dir/'environment.yaml', env)
         write_preserving(scene_dir/'layout'/'workcell_studio_layout.yaml', layout)
     # Generated physical state is a projection of environment.yaml only.

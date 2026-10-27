@@ -16,4 +16,14 @@ inline bool semantic_role_actually_changed(
   if (!normalised_authored_role.trimmed().isEmpty() && chosen == normalised_authored_role.trimmed()) return false;
   return true;
 }
+
+// The role a Save writes: the authored role unless the user really chose another
+// one. A display alias (or a re-applied alias) never replaces authored semantics.
+inline QString semantic_role_to_persist(
+  const QString & editor_role, const QString & authored_role, const QString & normalised_authored_role)
+{
+  if (authored_role.trimmed().isEmpty()) return editor_role.trimmed();
+  return semantic_role_actually_changed(editor_role, authored_role, normalised_authored_role)
+    ? editor_role.trimmed() : authored_role.trimmed();
+}
 }  // namespace workcell_builder

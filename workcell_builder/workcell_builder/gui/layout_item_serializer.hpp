@@ -116,8 +116,11 @@ inline YAML::Node serialize_layout_item(
     }
     item["scale"] = layout_sequence3(state.mesh_scale);
   } else if (metadata_explicitly_edited) {
-    if (!state.display_name.empty()) item["display_name"] = layout_string_scalar(state.display_name);
-    if (!state.role.empty()) item["role"] = state.role;
+    // Unchanged metadata keeps its authored spelling.
+    const std::string authored_name = item["display_name"] && item["display_name"].IsScalar() ? item["display_name"].Scalar() : std::string();
+    const std::string authored_role = item["role"] && item["role"].IsScalar() ? item["role"].Scalar() : std::string();
+    if (!state.display_name.empty() && state.display_name != authored_name) item["display_name"] = layout_string_scalar(state.display_name);
+    if (!state.role.empty() && state.role != authored_role) item["role"] = state.role;
   }
   if (existing_record && !state.catalog_asset_id.empty() && !state.mesh_path.empty() &&
     !is_scene_layer_token(state.mesh_path))

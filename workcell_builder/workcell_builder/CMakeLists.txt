@@ -268,7 +268,14 @@ add_executable(workcell_builder
     gui/align_arrange_controller.cpp
     gui/align_arrange_controller.hpp
     gui/align_arrange_panel.cpp
-    gui/align_arrange_panel.hpp)
+    gui/align_arrange_panel.hpp
+    include/scene_selection_set.hpp
+    gui/arrange_controller.cpp
+    gui/arrange_controller.hpp
+    gui/arrange_icons.cpp
+    gui/arrange_icons.hpp
+    gui/arrange_toolbar.cpp
+    gui/arrange_toolbar.hpp)
 target_sources(workcell_builder PRIVATE src_workcell_yaml_utils.cpp)
 
 ament_target_dependencies(workcell_builder
@@ -614,6 +621,26 @@ if(BUILD_TESTING)
     target_compile_definitions(workcell_mate_tool_controller_test PRIVATE
       WORKCELL_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
     target_link_libraries(workcell_mate_tool_controller_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_scene_selection_set_test test/scene_selection_set_test.cpp)
+  if(TARGET workcell_scene_selection_set_test)
+    target_include_directories(workcell_scene_selection_set_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_scene_selection_set_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_arrange_controller_test test/arrange_controller_test.cpp
+    gui/arrange_controller.cpp gui/arrange_controller.hpp)
+  if(TARGET workcell_arrange_controller_test)
+    set_target_properties(workcell_arrange_controller_test PROPERTIES AUTOMOC ON)
+    target_include_directories(workcell_arrange_controller_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_compile_definitions(workcell_arrange_controller_test PRIVATE
+      WORKCELL_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    target_link_libraries(workcell_arrange_controller_test Qt5::Core)
+  endif()
+  ament_add_gtest(workcell_scene3d_mesh_offset_convention_test test/scene3d_mesh_offset_convention_test.cpp)
+  if(TARGET workcell_scene3d_mesh_offset_convention_test)
+    target_include_directories(workcell_scene3d_mesh_offset_convention_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
+    target_link_libraries(workcell_scene3d_mesh_offset_convention_test Qt5::Gui)
   endif()
   ament_add_gtest(workcell_align_arrange_controller_test test/align_arrange_controller_test.cpp
     gui/align_arrange_controller.cpp gui/align_arrange_controller.hpp)
@@ -999,6 +1026,9 @@ if(BUILD_TESTING)
     live_mesh_staging_test.cpp
     mate_tool_controller_test.cpp
     align_arrange_controller_test.cpp
+    scene3d_mesh_offset_convention_test.cpp
+    scene_selection_set_test.cpp
+    arrange_controller_test.cpp
     support_contact_policy_test.cpp
     execute_trajectory_action_test.cpp
   )
