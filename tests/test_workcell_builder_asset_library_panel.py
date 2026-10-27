@@ -145,11 +145,13 @@ def test_catalog_identity_b_flows_to_one_editable_layout_item_and_refreshes_prod
     assert 'items().size() == item_count_before + 1' in place
 
     assert 'workcell_studio_next_id' in commit
-    assert 'item->setData(RoleSource, source_path);' in commit
+    # A URDF primitive is placed as geometry_type + dimensions, never as a mesh source.
+    assert 'const QString placed_source = primitive ? QString() : source_path;' in commit
+    assert 'item->setData(RoleSource, placed_source);' in commit
     assert 'QStringLiteral("editable_layout")' in commit
     assert 'item->setData(RoleLocked, false);' in commit
     assert commit.count('digital_twin_scene_->addItem(item);') == 1
-    assert 'preview_item.mesh_path = source_path;' in commit
+    assert 'preview_item.mesh_path = placed_source;' in commit
     assert 'preview_item.editable = true;' in commit
     assert 'preview_item.locked = false;' in commit
     assert 'undo_stack_.push_back({"add", new_id' in commit
