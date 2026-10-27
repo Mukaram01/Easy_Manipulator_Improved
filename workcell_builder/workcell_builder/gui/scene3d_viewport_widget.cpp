@@ -1,4 +1,5 @@
 #include "scene3d_viewport_widget.h"
+#include "scene3d_transform_math.h"
 #include "scene3d_visual_classification.h"
 // Static contract token: return !item_has_mesh_uri_or_path(it) && !item_has_valid_urdf_primitive(it);
 // Static contract token: REJECT_RAW_GENERATED_BOUNDS_SUPPRESSED: generated bounds item has no mesh URI/path and no URDF primitive
@@ -360,12 +361,13 @@ void apply_mesh_local_correction_matrix(QMatrix4x4 & transform, const ScenePrevi
     return;
   }
 
-  apply_urdf_rpy_matrix(transform, item.mesh_r, item.mesh_p, item.mesh_y);
-  if (item.has_origin_offset) {
-    transform.translate(static_cast<float>(item.origin_offset_x),
-                        static_cast<float>(item.origin_offset_y),
-                        static_cast<float>(item.origin_offset_z));
-  }
+  // origin_offset is in the item frame and the mesh RPY turns the mesh about it
+  // (URDF visual origin). It used to be applied after the RPY, i.e. in the turned
+  // mesh frame, which drew offset meshes such as the sorting bin elsewhere than
+  // Web3D, the collision manifest and RViz.
+  transform *= workcell_builder::urdf_visual_origin_matrix(
+    item.has_origin_offset ? item.origin_offset_x : 0.0, item.has_origin_offset ? item.origin_offset_y : 0.0,
+    item.has_origin_offset ? item.origin_offset_z : 0.0, item.mesh_r, item.mesh_p, item.mesh_y);
 }
 
 bool is_generated_urdf_visual_item(const ScenePreviewWidget::PreviewItem & it);
@@ -477,10 +479,10 @@ QMatrix4x4 final_mesh_transform_matrix(const ScenePreviewWidget::PreviewItem & i
   // renderer uses final_mesh_transform_matrix() so CPU bounds and GL draw paths
   // share the same baked-matrix transform.
   if (item.has_baked_world_visual_transform) return;
-  apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
   if (item.has_origin_offset) {
     glTranslated(item.origin_offset_x, item.origin_offset_y, item.origin_offset_z);
   }
+  apply_urdf_rpy_gl(item.mesh_r, item.mesh_p, item.mesh_y);
 }
 
 bool item_has_credible_mesh_handoff(const ScenePreviewWidget::PreviewItem & item)

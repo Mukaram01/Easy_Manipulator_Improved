@@ -116,6 +116,7 @@
 #include <QPointer>
 #include <QProgressDialog>
 #include <QProcess>
+#include <QTemporaryFile>
 #include <QScopedValueRollback>
 #include <QProcessEnvironment>
 #include <QRandomGenerator>
@@ -8845,6 +8846,15 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   state.type = gi->data(RoleType).toString().toStdString();
   state.category = gi->data(RoleCategory).toString().toStdString();
   state.role = gi->data(RoleRole).toString().toStdString();
+  if (existing && existing.IsMap() && existing["role"] && existing["role"].IsScalar()) {
+    // Mount, Mate, Align and undo carry the display-normalised role ("place_target_bin");
+    // Save keeps the authored role ("target_bin") unless the user chose another one.
+    const QString authored = QString::fromStdString(existing["role"].Scalar());
+    const QString category = existing["category"] && existing["category"].IsScalar()
+      ? QString::fromStdString(existing["category"].Scalar()) : QString();
+    state.role = workcell_builder::semantic_role_to_persist(QString::fromStdString(state.role), authored,
+      canonical_scene_hierarchy_role(authored, category, QString())).toStdString();
+  }
   state.catalog_asset_id = gi->data(RoleCatalogAssetId).toString().toStdString();
   QString portable_mesh_path = QDir::fromNativeSeparators(gi->data(RoleSource).toString().trimmed());
   const int scenes_marker = portable_mesh_path.indexOf(QStringLiteral("/scenes/"));
@@ -9321,9 +9331,31 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
       QString::fromStdString(effective_layout_path.string()));
     return false;
   }
-  QSaveFile out(QString::fromStdString(effective_layout_path.string()));
-  if (!out.open(QIODevice::WriteOnly) ||
-      out.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) < 0 || !out.commit()) {
+  // Write through the formatting-preserving authored writer (scripts/authored_yaml.py):
+  // the document is the yaml-cpp result, but unchanged sections keep their text and
+  // numbers keep their shortest exact spelling (no explicit !!str tags, no 17-digit
+  // rewrites of untouched values). The direct yaml-cpp write remains the fallback.
+  const QString layout_target = QString::fromStdString(effective_layout_path.string());
+  bool preserved_write = false;
+  {
+    const QString repo_root = resolve_workcell_studio_repo_root(fs::path(selected_scene_state_.path.toStdString()));
+    const QString writer = repo_root.isEmpty() ? QString() : QDir(repo_root).filePath("scripts/authored_yaml.py");
+    QTemporaryFile staged(QFileInfo(layout_target).dir().filePath(QStringLiteral(".layout_staged_XXXXXX.yaml")));
+    if (!writer.isEmpty() && QFileInfo::exists(writer) && staged.open() &&
+        staged.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) >= 0 && staged.flush()) {
+      staged.close();
+      QProcess process;
+      process.start(QStringLiteral("python3"), {writer, QStringLiteral("rewrite"), layout_target, staged.fileName()});
+      preserved_write = process.waitForFinished(20000) && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+      if (!preserved_write) {
+        append_studio_log(QStringLiteral("Save Layout: formatting-preserving write unavailable (%1); writing the yaml-cpp document directly.")
+          .arg(QString::fromUtf8(process.readAllStandardError()).trimmed().right(300)));
+      }
+    }
+  }
+  QSaveFile out(layout_target);
+  if (!preserved_write && (!out.open(QIODevice::WriteOnly) ||
+      out.write(QByteArray(emitter.c_str(), static_cast<int>(emitter.size()))) < 0 || !out.commit())) {
     if (error) *error = QStringLiteral("Could not atomically write canonical editable layout '%1': %2. Dirty state was retained.")
       .arg(QString::fromStdString(effective_layout_path.string()), out.errorString());
     emit_save_layout_failure(error ? *error : QStringLiteral("atomic layout write failed"),
@@ -9393,8 +9425,11 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
             workcell_builder::yaml_map_value_or_empty(item, "display_name")).trimmed();
           const QString persisted_role = QString::fromStdString(
             workcell_builder::yaml_map_value_or_empty(item, "role")).trimmed();
+          const QString persisted_category = QString::fromStdString(
+            workcell_builder::yaml_map_value_or_empty(item, "category")).trimmed();
           if (persisted_name != canvas->data(RoleDisplayName).toString().trimmed() ||
-              persisted_role != canvas->data(RoleRole).toString().trimmed()) {
+              workcell_builder::semantic_role_actually_changed(canvas->data(RoleRole).toString(), persisted_role,
+                canonical_scene_hierarchy_role(persisted_role, persisted_category, QString()))) {
             throw std::runtime_error(QStringLiteral("metadata mismatch after write: %1").arg(id).toStdString());
           }
         }
