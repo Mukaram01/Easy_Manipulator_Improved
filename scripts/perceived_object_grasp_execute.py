@@ -2364,14 +2364,14 @@ def main():
         # start state, scene or execution action. All collision checks remain active.
         for attempt in range(planning_attempts):
             try:
-                # The simulator adapter certifies the complete controller path
-                # after OMPL returns. A measured revalidation certificate took
-                # 76.4 s under simulator load, after subsecond OMPL planning.
-                # Allow a bounded 120 s for that owned plan-only result;
-                # execution keeps its separate motion limit.
+                # The workcell/StraightCartesianPath adapter certifies the
+                # complete controller path after OMPL returns, on every
+                # backend. A measured revalidation certificate took 76.4 s
+                # under simulator load, after subsecond OMPL planning. Allow
+                # the adapter's own bounded 120 s for that owned plan-only
+                # result; execution keeps its separate motion limit.
                 # Candidate/global budgets are checked between planning calls.
-                result = action(plan_client, goal_msg,
-                    120. if getattr(args,'backend','fake')=='simulator' else 12.)
+                result = action(plan_client, goal_msg, 120.)
                 break
             except MoveItActionFailure as exc:
                 if time.monotonic() >= wall_deadline:
@@ -2457,6 +2457,10 @@ def main():
             if not args.task_request:
                 raise ValueError('Legacy task request missing; Save and Generate a TaskIntent v2 task')
             task = inputs.task_request(yaml.safe_load(Path(args.task_request).read_text()), cell)
+        # Controllers may still be starting after launch. Let the arm's state settle (read-only)
+        # before observations are stamped, so freshness measures the task, not start-up.
+        wait_for_robot_baseline(scene_now, dict(zip(contract['home_joint_names'], contract['home_joint_positions'])),
+                                (), min(10.0, args.timeout))
         stage('ACQUIRE_OBJECTS')
         from hashlib import sha256
         observation_text=Path(args.detections).read_text()

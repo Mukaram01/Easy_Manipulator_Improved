@@ -758,8 +758,9 @@ def test_transfer_seed_rechecks_fresh_target_without_replacing_current_start_or_
     assert view==original and seed['joint_positions']=={'arm':-2.4}
 
 
-@pytest.mark.parametrize('backend,wait', [('simulator',120.),('fake',12.)])
-def test_plan_only_wait_includes_simulator_continuous_certificate(backend,wait):
+# workcell/StraightCartesianPath certifies the controller path on every backend.
+@pytest.mark.parametrize('backend,wait', [('simulator',120.),('fake',120.)])
+def test_plan_only_wait_includes_the_continuous_certificate(backend,wait):
     context,view,target,seed,requests,goals=transfer_segment_fixture()
     context['args'].backend=backend
     original=context['action'];seen=[]
