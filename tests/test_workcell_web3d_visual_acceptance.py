@@ -1016,3 +1016,45 @@ def test_visual_acceptance_versions_the_exact_viewer_bundle() -> None:
     assert 'viewer_bundle = REPO_ROOT / "workcell_studio_web" / "viewer" / "dist" / "viewer.bundle.js"' in source
     assert "hashlib.sha256(viewer_bundle.read_bytes()).hexdigest()" in source
     assert 'f"&viewerBuild={viewer_build}"' in source
+
+
+def test_supported_scene_matrix_reports_export_failure_not_browser_unavailable():
+    report = {
+        "scene_id": "ur5_airpick4_test",
+        "steps": [{
+            "command": ["/usr/bin/python3", "scripts/export_workcell_studio_web_scene.py"],
+            "returncode": 3,
+            "stdout": "",
+            "stderr": "task/physical destination: place_zone_main missing or ambiguous",
+        }],
+        "browser": {"available": False, "method": "not_run", "status": None},
+    }
+    row = module._matrix_row_from_report(
+        report, {"robot": "ur5", "tool": "airpick4"}, require_browser=True
+    )
+    assert row["status"] == "BLOCKED"
+    assert row["browser_attempted"] is False
+    assert "export_workcell_studio_web_scene.py exited 3" in row["staging_failures"][0]
+    assert "place_zone_main" in row["errors"][0]
+    assert all("browser unavailable" not in error for error in row["errors"])
+
+
+def test_supported_scene_matrix_distinguishes_runtime_browser_failure():
+    report = {
+        "scene_id": "ur5_3f_test",
+        "steps": [{"command": ["python3", "export.py"], "returncode": 0}],
+        "browser": {
+            "available": False,
+            "method": "failed",
+            "status": None,
+            "error": "Chromium launch failed",
+        },
+    }
+    row = module._matrix_row_from_report(
+        report, {"robot": "ur5", "tool": "robotiq_3f"}, require_browser=True
+    )
+    assert row["status"] == "BLOCKED"
+    assert row["browser_attempted"] is True
+    assert row["staging_failures"] == []
+    assert any("Chromium launch failed" in error for error in row["errors"])
+
