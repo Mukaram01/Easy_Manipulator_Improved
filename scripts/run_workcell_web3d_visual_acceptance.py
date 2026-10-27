@@ -1351,6 +1351,26 @@ def _missing_required_link_lists(status: Mapping[str, Any]) -> tuple[list[Any], 
     return robot_missing, tool_missing
 
 
+def _failed_staging_steps(report: Mapping[str, Any]) -> list[str]:
+    """Expose the failed exporter/validator instead of misreporting a browser failure."""
+    failures: list[str] = []
+    for step in report.get("steps", []):
+        if not isinstance(step, Mapping):
+            continue
+        code = step.get("returncode", 0)
+        if code == 0:
+            continue
+        command = step.get("command")
+        if isinstance(command, (list, tuple)) and command:
+            label = Path(str(command[1] if len(command) > 1 else command[0])).name
+        else:
+            label = "unknown staging command"
+        output = str(step.get("stderr") or step.get("stdout") or "").strip()
+        tail = " | ".join(output.splitlines()[-5:])[-600:] if output else "no diagnostics"
+        failures.append(f"{label} exited {code}: {tail}")
+    return failures
+
+
 def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, str], require_browser: bool) -> dict[str, Any]:
     browser = report.get("browser") if isinstance(report.get("browser"), Mapping) else {}
     status = browser.get("status") if isinstance(browser.get("status"), Mapping) else {}
@@ -1361,12 +1381,17 @@ def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, st
     failed_mesh_urls = _status_list(status, "failed_mesh_urls", "failedMeshUrls", "robot_failed_mesh_urls", "robotFailedMeshUrls") if isinstance(status, Mapping) else []
     terminal_stage = str(_status_value(status, "web3d_readiness_state", "web3dReadinessState", "viewer_boot_state", "viewerBootState") or "not_run") if isinstance(status, Mapping) else "not_run"
     errors: list[str] = []
-    if require_browser and browser.get("available") is not True:
-        errors.append("browser unavailable; acceptance is BLOCKED")
-    if browser.get("method") != "playwright":
-        errors.append(f"real Playwright browser required, got {browser.get('method')!r}")
-    if terminal_stage != "scene_ready":
-        errors.append(f"terminal stage must be scene_ready, got {terminal_stage!r}")
+    staging_failures = _failed_staging_steps(report)
+    if staging_failures:
+        errors.extend(f"staging failed: {detail}" for detail in staging_failures)
+        errors.append("browser not attempted because scene staging failed")
+    else:
+        if require_browser and browser.get("available") is not True:
+            errors.append("browser unavailable; acceptance is BLOCKED: " + str(browser.get("error") or "no browser diagnostics"))
+        if browser.get("method") != "playwright":
+            errors.append(f"real Playwright browser required, got {browser.get('method')!r}")
+        if terminal_stage != "scene_ready":
+            errors.append(f"terminal stage must be scene_ready, got {terminal_stage!r}")
     if _status_bool(status, "robot_preview_loaded", "robotPreviewLoaded") is False:
         errors.append("robot_preview_loaded is false")
     if _status_int_any(status, "robot_failed_visual_count", "robotFailedVisualCount") != 0:
@@ -1383,12 +1408,13 @@ def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, st
         errors.append("JavaScript errors: " + "; ".join(map(str, browser.get("javascript_errors")[:5])))
     if browser.get("failed_network_requests"):
         errors.append("failed network requests: " + "; ".join(map(str, browser.get("failed_network_requests")[:5])))
-    if any(step.get("returncode", 0) != 0 for step in report.get("steps", []) if isinstance(step, Mapping)):
-        errors.append("one or more staging/static checks failed")
+
     errors.extend(str(error) for error in report.get("strict_status_errors", []) if error)
     return {
         "scene_id": report.get("scene_id", ""),
-        "status": "BLOCKED" if errors and browser.get("available") is not True else ("FAIL" if errors else "PASS"),
+        "status": "BLOCKED" if staging_failures or (errors and browser.get("available") is not True) else ("FAIL" if errors else "PASS"),
+        "staging_failures": staging_failures,
+        "browser_attempted": not bool(staging_failures) and browser.get("method") not in ("not_run", None),
         "terminal_stage": terminal_stage,
         "expected_robot": expected.get("robot", "unknown"),
         "expected_tool": expected.get("tool", "unknown"),
