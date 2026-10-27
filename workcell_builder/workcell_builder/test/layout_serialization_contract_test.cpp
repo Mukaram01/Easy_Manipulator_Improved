@@ -211,16 +211,17 @@ TEST(LayoutSerializationContractTest, SelectionTransformEditorSupportsStateWitho
 }
 
 
-TEST(LayoutSerializationContractTest, Scene3DGizmoEditsOnlyEditableLayoutItems)
+TEST(LayoutSerializationContractTest, ProductViewTransformsEditOnlyEditableLayoutItems)
 {
+  // Web3D is the only 3D editor: its transform event is the single path, and
+  // only an unlocked editable_layout item becomes an undoable layout edit.
   const std::string src = load_file("gui/mainwindow.cpp");
-  EXPECT_NE(src.find("scene3d_viewport->transform_changed_cb"), std::string::npos);
-  EXPECT_NE(src.find("const bool locked_item = item->data(RoleLocked).toBool()"), std::string::npos);
-  EXPECT_NE(src.find("item->data(RoleSourceLayer).toString().trimmed()"), std::string::npos);
-  EXPECT_NE(src.find("source_layer.compare(QStringLiteral(\"editable_layout\"), Qt::CaseInsensitive) == 0"), std::string::npos);
-  EXPECT_NE(src.find("if (locked_item || !editable_source_layer)"), std::string::npos);
-  EXPECT_NE(src.find("Scene3D transform edit blocked: locked item cannot be edited"), std::string::npos);
-  EXPECT_NE(src.find("mark_layout_dirty(\"Scene3D Gizmo Transform\")"), std::string::npos);
+  EXPECT_EQ(src.find("transform_changed_cb"), std::string::npos);
+  EXPECT_NE(src.find("&ScenePreviewWidget::preview_item_transform_changed"), std::string::npos);
+  EXPECT_NE(src.find("found_authored_item = item.editable && !item.locked &&"), std::string::npos);
+  EXPECT_NE(src.find("item.source_layer.trimmed() == QStringLiteral(\"editable_layout\")"), std::string::npos);
+  EXPECT_NE(src.find("!canvas_item->data(RoleLocked).toBool() &&"), std::string::npos);
+  EXPECT_NE(src.find("mark_layout_dirty(QStringLiteral(\"Product View Transform\"))"), std::string::npos);
 }
 
 TEST(LayoutSerializationContractTest, SaveLayoutForSceneWithOnlyLegacyEnvironmentLayoutWritesCanonical)

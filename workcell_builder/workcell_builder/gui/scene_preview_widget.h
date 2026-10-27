@@ -30,10 +30,7 @@ class QGraphicsView;
 class QGraphicsScene;
 class QGraphicsItem;
 class QGraphicsProxyWidget;
-class Scene3DViewportWidget;
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 class QWebEngineView;
-#endif
 
 // The user-facing cause of a failed Product View preparation (stderr "error:" lines first).
 QString concise_preparation_error(const QString & detail);
@@ -165,9 +162,7 @@ public:
     bool selectable{true};
   };
   enum class ReachStatus { Reachable, NearLimit, OutOfReach, Unknown };
-  enum class LabelMode { Off, Important, Selected, All };
-  enum class MeshPreviewMode { Auto, Meshes, Primitives };
-  enum class ProductViewBackend { EmbeddedWeb3D, NativeScene3D };
+  enum class ProductViewBackend { EmbeddedWeb3D };
   struct ReachabilityOverlayModel
   {
     QString robot_base_id{"unknown"};
@@ -252,15 +247,10 @@ public:
   void set_collision_overlay_model(const CollisionOverlayModel & model);
   void set_camera_overlay_model(const CameraOverlayModel & model);
   void set_epd_detection_overlays(const QVector<EpdDetectionOverlayModel> & detections);
-  void set_perception_overlay_visibility(bool camera_fov, bool pick_coverage, bool epd_detections, bool detection_labels);
-  void set_task_overlay_visibility(bool task_route, bool pick_place_zones, bool approach_retreat, bool labels);
-  void set_label_mode(LabelMode mode);
   void select_preview_item(const QString & id);
   QString selected_preview_item_id() const;
   const PreviewItem * preview_item_by_id(const QString & id) const;
-  MeshPreviewMode mesh_preview_mode() const;
   ProductViewBackend active_product_view_backend() const;
-  bool is_native_product_view_backend() const;
   bool embedded_web_product_view_presented() const;
   bool embedded_web_authoring_active() const;
   QString embedded_web_authoring_contract_error() const;
@@ -268,6 +258,8 @@ public:
   void undo_authoring_edit();
   void redo_authoring_edit();
   void set_native_authoring_history_available(bool can_undo, bool can_redo);
+  // Frames the selected part in the Web3D Product View (Fit Selection / Focus).
+  void frame_selection();
   void set_authoring_item_pose(
     const QString & id,
     double x, double y, double z,
@@ -400,9 +392,7 @@ private slots:
   void on_mode_changed(int index);
   void on_reset_view_clicked();
   void on_fit_scene_clicked();
-  void on_fit_robot_clicked();
   void on_focus_selected_clicked();
-  void on_fit_overlays_clicked();
   void on_clear_selection_clicked();
 
 private:
@@ -430,7 +420,6 @@ private:
     Loading,
     WaitingForBrowserReadiness,
     Ready,
-    CompatibilityReady,
     Failed
   };
   enum class EmbeddedWebServerLifecycle {
@@ -553,9 +542,7 @@ private:
   void poll_embedded_web_readiness(const EmbeddedWebRequestIdentity & identity, quint64 navigation_token,
     quint64 readiness_token, const QString & expected_json_path, const QString & viewer_url);
   void set_embedded_product_view_state(EmbeddedProductViewState state, const QString & detail = QString());
-  void activate_native_compatibility_preview(const QString & reason);
-  bool native_compatibility_viewport_has_usable_content() const;
-  Scene3DViewportWidget * active_native_viewport() const;
+  void mark_embedded_product_view_failed(const QString & reason);
   void show_embedded_web_product_view();
   void run_embedded_editor_command(const QString & script);
   void verify_embedded_editor_contract(const EmbeddedWebRequestIdentity & identity);
@@ -572,9 +559,7 @@ private:
   bool emit_scene_diagnostic_once(const QString & event, int payload_count, const QString & message);
   void emit_visual_quality_assessment_once();
   bool task_is_ready() const;
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
   void focus_embedded_product_view_for_authoring();
-#endif
 
   QComboBox * mode_selector_{ nullptr };
   QWidget * product_view_destination_row_{ nullptr };
@@ -603,15 +588,9 @@ private:
   workcell_builder::RobotHomeConfig loaded_product_view_robot_home_;
   bool product_view_robot_home_loaded_{ false };
   bool product_view_robot_home_save_in_progress_{ false };
-  QComboBox * interaction_mode_selector_{ nullptr };
-  QComboBox * view_actions_selector_{ nullptr };
   QLabel * view_mode_label_{ nullptr };
-  QLabel * mesh_preview_mode_label_{ nullptr };
   QLabel * gizmo_mode_label_{ nullptr };
   QLabel * snap_mode_label_{ nullptr };
-  QLabel * labels_label_{ nullptr };
-  QLabel * interaction_mode_label_{ nullptr };
-  QLabel * view_actions_label_{ nullptr };
   QLabel * toolbar_status_chip_{ nullptr };
   QWidget * toolbar_feedback_row_{ nullptr };
   QLabel * toolbar_feedback_label_{ nullptr };
@@ -622,9 +601,6 @@ private:
   bool embedded_authoring_can_undo_{ false };
   bool embedded_authoring_can_redo_{ false };
   QPushButton * embedded_fit_button_{ nullptr };
-  QComboBox * overlays_selector_{ nullptr };
-  QComboBox * labels_selector_{ nullptr };
-  QComboBox * mesh_preview_mode_selector_{ nullptr };
   QComboBox * gizmo_mode_selector_{ nullptr };
   QComboBox * snap_mode_selector_{ nullptr };
   QStackedWidget * stack_{ nullptr };
@@ -634,13 +610,10 @@ private:
   QLabel * error_state_label_{ nullptr };
   QLabel * fallback_banner_label_{ nullptr };
   QWidget * simple_3d_view_{ nullptr };
-  // The WebEngine view remains the primary Product View.  Keep one owned native
-  // viewport alongside it for failures instead of replacing the primary widget.
-  Scene3DViewportWidget * compatibility_scene3d_viewport_{ nullptr };
-  ProductViewBackend product_view_backend_{ ProductViewBackend::NativeScene3D };
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  // The WebEngine view is the only 3D Product View; a failure is shown as a
+  // failure with Retry, never replaced by another renderer.
+  ProductViewBackend product_view_backend_{ ProductViewBackend::EmbeddedWeb3D };
   QWebEngineView * embedded_web_view_{ nullptr };
-#endif
   OwnedProductViewServer * embedded_web_server_{ nullptr };
   QNetworkAccessManager * embedded_web_network_manager_{ nullptr };
   QProcess * embedded_web_prepare_process_{ nullptr };
@@ -702,7 +675,6 @@ private:
   bool backend_startup_diagnostic_emitted_{ false };
   PreviewContext preview_context_;
   QString embedded_web_last_error_;
-  bool native_compatibility_fallback_active_{ false };
   mutable QSet<QString> root_resolution_summary_keys_;
   QDateTime embedded_web_prepare_started_at_;
   QGraphicsView * fallback_2d_view_{ nullptr };
@@ -725,7 +697,6 @@ private:
   QString preview_status_summary_;
   bool clean_product_view_{ false };
   int clean_product_visual_count_{ 0 };
-  MeshPreviewMode mesh_preview_mode_{ MeshPreviewMode::Auto };
   int preview_payload_revision_{ 0 };
   quint64 preview_payload_generation_{ 0 };
   quint64 embedded_web_preparation_request_count_{ 0 };

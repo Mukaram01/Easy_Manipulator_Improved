@@ -52,6 +52,9 @@ struct AssetCatalogModel
 {
   std::vector<std::string> discovered_roots;
   std::vector<AssetCatalogEntry> assets;
+  // Packages kept on disk but withheld from the library, as "package: reason"
+  // (package.xml <workcell_asset_library status="replace|remove" reason="..."/>).
+  std::vector<std::string> withheld_packages;
 };
 
 AssetCatalogModel discover_asset_catalog(

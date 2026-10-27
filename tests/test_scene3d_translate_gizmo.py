@@ -1,7 +1,6 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VIEW_CPP = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
 
 
 class Scene3DDragSimulator:
@@ -44,10 +43,6 @@ class Scene3DDragSimulator:
             return False
         self.save_calls.append((self.selected_id, self.pose["x"], self.pose["y"], self.pose["z"]))
         return True
-
-
-def test_translate_gizmo_static_sentinel_function_exists():
-    assert 'bool item_is_editable_for_gizmo(const ScenePreviewWidget::PreviewItem & it)' in VIEW_CPP
 
 
 def test_translate_gizmo_editable_item_press_move_release_behaves_like_single_commit_flow():

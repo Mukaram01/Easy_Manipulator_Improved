@@ -26,7 +26,6 @@
 #include <QSizePolicy>
 
 #include "gui/mainwindow.h"
-#include "gui/scene3d_viewport_widget.h"
 #include "gui/scene_select.h"
 #include "gui/startup_dialog.h"
 #include "workcell_builder_ui_utils.hpp"

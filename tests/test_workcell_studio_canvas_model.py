@@ -11,7 +11,7 @@ def test_canvas_model_files_and_tokens():
               'deterministic_fallback_layout', 'Using deterministic 3D fallback layout because all editable layout sources are missing or invalid.']:
         assert t in text
     cm_text = cm.read_text()
-    for token in ['src_workcell_studio_canvas_model.cpp', 'find_package(OpenGL REQUIRED)', 'OpenGL::GL', 'Qt5::Widgets']:
+    for token in ['src_workcell_studio_canvas_model.cpp', 'Qt5::Widgets']:
         assert token in cm_text
 
 

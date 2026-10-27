@@ -27,20 +27,10 @@ from scripts import scene3d_smoke_payload as _payload_helpers
 
 _IMPL_PATH = Path(__file__).with_name("run_workcell_builder_scene3d_gui_smoke_impl.py")
 _IMPL_MODULE_NAME = "scripts.run_workcell_builder_scene3d_gui_smoke_impl"
-_NATIVE_PRODUCT_VIEW_BACKEND_ENV = "WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND"
-_NATIVE_PRODUCT_VIEW_BACKEND = "native_scene3d"
 _LEGACY_TOPOLOGY_DIAGNOSTIC_BLOCKERS = {
     "scene3d_rendered_mesh_adjacency_failed",
     "ur5_final_draw_bbox_regression_failed",
 }
-
-
-def _configure_scene3d_smoke_environment() -> None:
-    """Force the native viewport whose counters and paint evidence this CLI validates."""
-    # Normal Workcell Studio remains free to use its default embedded Web3D Product
-    # View.  This diagnostic CLI specifically searches for Scene3DViewportWidget,
-    # so an inherited Web3D backend selection must not make the smoke self-invalid.
-    os.environ[_NATIVE_PRODUCT_VIEW_BACKEND_ENV] = _NATIVE_PRODUCT_VIEW_BACKEND
 
 
 def _wire_payload_helpers(module: ModuleType) -> None:
@@ -161,7 +151,8 @@ for _name in __all__:
 
 
 if __name__ == "__main__":
-    _configure_scene3d_smoke_environment()
+    # The native Scene3D renderer this smoke measured was retired: workcell_builder
+    # now answers --scene3d-smoke with status RETIRED (blocker native_scene3d_renderer_retired).
     _result = _IMPL.main()
     _output_path = _output_path_from_argv(sys.argv[1:])
     if _downgrade_legacy_topology_only_failure(_output_path):

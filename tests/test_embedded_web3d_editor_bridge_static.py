@@ -8,7 +8,6 @@ INDEX = (ROOT / "workcell_studio_web/viewer/index.html").read_text(encoding="utf
 STYLE = (ROOT / "workcell_studio_web/viewer/style.css").read_text(encoding="utf-8")
 CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8")
 HDR = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h").read_text(encoding="utf-8")
-VIEWPORT_CPP = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
 
 
 def test_terminal_scene_ready_performs_one_final_viewport_refresh_without_selection_or_camera_reset():
@@ -129,7 +128,7 @@ assert.strictEqual(state.editorEvents.filter(event=>event.type==='placement_requ
 
 
 def test_webengine_asset_drop_uses_browser_placement_contract_and_typed_xyz_path():
-    drop_handler = CPP.split("class AssetDropWebEngineView", 1)[1].split("#endif", 1)[0]
+    drop_handler = CPP.split("class AssetDropWebEngineView", 1)[1].split("}  // namespace", 1)[0]
 
     assert "window.__WORKCELL_EDITOR_API_V1__" in drop_handler
     assert "updatePlacementPointer?.(%1,%2)" in drop_handler
@@ -175,7 +174,7 @@ def test_qt_loads_embedded_view_and_routes_controls_without_reload():
     for command in ["setMode", "setSnap", "fitScene", "undo()", "redo()", "selectItem"]:
         assert command in CPP
     assert "QTimer::singleShot(200, this, [this, identity]()" in CPP
-    assert "refresh_embedded_web_product_view();" not in CPP.split('connect(gizmo_mode_selector_', 1)[1].split('connect(mesh_preview_mode_selector_', 1)[0]
+    assert "refresh_embedded_web_product_view();" not in CPP.split('connect(gizmo_mode_selector_', 1)[1].split('connect(embedded_undo_button_', 1)[0]
 
 
 def test_outer_qt_authoring_controls_use_typed_web3d_bridge():
@@ -356,7 +355,6 @@ for(const mode of ['select','move','rotate']){setEditorMode(mode);state.three.co
 def test_browser_mode_state_synchronizes_all_qt_controls_without_stale_callbacks():
     apply_body = CPP.split("void ScenePreviewWidget::apply_embedded_editor_state", 1)[1].split("void ScenePreviewWidget::poll_embedded_editor_events", 1)[0]
     assert "QSignalBlocker blocker(gizmo_mode_selector_)" in apply_body
-    assert "QSignalBlocker blocker(interaction_mode_selector_)" in apply_body
     assert "emit authoring_mode_changed(mode)" in apply_body
     assert "state_request_token != embedded_editor_state_request_token_" in CPP
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
@@ -514,18 +512,12 @@ assert(Math.abs(rotationSnapRadians()-5*Math.PI/180)<1e-12);el.rotationSnap.valu
 def test_qt_compact_toolbar_for_embedded_web3d():
     for member in ["embedded_undo_button_", "embedded_redo_button_", "embedded_fit_button_"]:
         assert member in CPP and member in HDR
-    assert "set_visible(view_actions_label_, !embedded_web_active)" in CPP
-    assert "set_visible(view_actions_selector_, !embedded_web_active)" in CPP
-    assert "set_visible(labels_label_, !embedded_web_active)" in CPP
-    assert "set_visible(labels_selector_, !embedded_web_active)" in CPP
-    assert "set_visible(mesh_preview_mode_label_, !embedded_web_active)" in CPP
-    assert "set_visible(mesh_preview_mode_selector_, !embedded_web_active)" in CPP
-    assert "set_visible(interaction_mode_label_, !embedded_web_active)" in CPP
-    assert "set_visible(interaction_mode_selector_, !embedded_web_active)" in CPP
-    assert "set_visible(overlays_selector_, !embedded_web_active)" in CPP
-    assert "set_visible(gizmo_mode_label_, embedded_web_active)" in CPP
-    assert "set_visible(gizmo_mode_selector_, embedded_web_active)" in CPP
-    assert "set_visible(snap_mode_selector_, embedded_web_active)" in CPP
+    # Only Web3D controls exist; the retired native combos are gone, not just hidden.
+    for removed in ["view_actions_selector_", "labels_selector_", "mesh_preview_mode_selector_",
+                    "interaction_mode_selector_", "overlays_selector_"]:
+        assert removed not in CPP and removed not in HDR
+    for control in ["gizmo_mode_label_", "gizmo_mode_selector_", "snap_mode_label_", "snap_mode_selector_"]:
+        assert control in CPP.split("void ScenePreviewWidget::refresh_toolbar_visibility()", 1)[1].split("void ScenePreviewWidget::", 1)[0]
     assert 'state.value(QStringLiteral("canUndo")).toBool()' in CPP
     assert 'state.value(QStringLiteral("canRedo")).toBool()' in CPP
 
@@ -859,7 +851,7 @@ def test_qt_mate_rebases_viewer_counters_and_cancels_on_cell_switch():
     assert "auto offset = controller_->preview().offset;" in panel and "offset[k] = " in panel
 
 def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear():
-    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("void ScenePreviewWidget::arm_embedded_asset_placement(", 1)[0]
     for token in [
         'editor_state.value(QStringLiteral("selectedItemId"))',
         'editor_state.value(QStringLiteral("uiSelectionItemId"))',
@@ -878,12 +870,11 @@ def test_qt_poll_accepts_only_final_valid_browser_selection_and_explicit_clear()
     assert "selected_preview_item_id_.clear();" in poll
     assert "explicit_blank_selection_event" in poll
     assert "browser_transitioned_to_empty" in poll
-    assert "viewport->selected_id.clear();" in poll
     assert "emit preview_item_selected(QString(), QString());" in poll
 
 
 def test_qt_poll_treats_current_browser_state_as_authoritative_without_same_cycle_event():
-    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("void ScenePreviewWidget::arm_embedded_asset_placement(", 1)[0]
     assert "matching_selection_event" not in poll
     assert "const bool valid_browser_selection = scene_identity_matches && !browser_ui_selected_id.isEmpty()" in poll
     assert 'editor_state.value(QStringLiteral("selectedItemType"))' in poll
@@ -954,17 +945,13 @@ def test_selection_owner_registry_is_forwarded_for_lookup_but_not_geometry():
     assert "filtered_items.push_back(p)" in registry_branch
     assert "continue;" in registry_branch
     assert "preview_item_by_id(browser_ui_selected_id) != nullptr" in CPP
-    ingest = VIEWPORT_CPP.split("void Scene3DViewportWidget::ingest_preview_items", 1)[1]
-    ingest = ingest.split("void Scene3DViewportWidget::", 1)[0]
-    assert 'item.source_layer == QStringLiteral("selection_owner_registry")' in ingest
-    assert "continue;" in ingest
 
 
 def test_qt_exact_ur5_and_robotiq_owner_ids_remain_selectable_in_preview_inventory():
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
     environment = (ROOT / "scenes/ur5_2f_test/environment.yaml").read_text(encoding="utf-8")
     owner_body = main.split("auto preserve_explicit_inspection_owner", 1)[1].split("// Compatibility fallback", 1)[0]
-    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("void ScenePreviewWidget::arm_embedded_asset_placement(", 1)[0]
     assert "all_scene_preview_items_.cbegin()" in owner_body
     assert "item.id.trimmed() == owner_id" in owner_body
     assert "filtered_items.push_back(*owner)" in owner_body
@@ -1053,7 +1040,7 @@ def test_qt_web3d_selected_transform_inspector_round_trip_contract():
 
 def test_embedded_asset_drop_is_identity_only_and_uses_typed_shared_request():
     header = (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.h").read_text(encoding="utf-8")
-    drop_view = CPP.split("class AssetDropWebEngineView", 1)[1].split("#endif", 1)[0]
+    drop_view = CPP.split("class AssetDropWebEngineView", 1)[1].split("}  // namespace", 1)[0]
     assert 'application/x-workcell-studio-catalog-asset' in drop_view
     assert 'mime->formats() != QStringList{kMimeType}' in drop_view
     assert 'QString::fromUtf8(mime->data(kMimeType)).trimmed()' in drop_view
@@ -1091,10 +1078,10 @@ def test_qt_arms_and_cancels_existing_browser_placement_api():
 
 def test_polled_browser_placement_is_typed_finite_and_identity_free():
     main = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
-    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("#else", 1)[0]
+    poll = CPP.split("void ScenePreviewWidget::poll_embedded_editor_events()", 1)[1].split("void ScenePreviewWidget::arm_embedded_asset_placement(", 1)[0]
     connection = main.split(
         "ScenePreviewWidget::embedded_asset_placement_requested", 1
-    )[1].split("auto * scene3d_viewport", 1)[0]
+    )[1].split("scene_preview_widget_->catalog_asset_drag_enter_cb", 1)[0]
     assert 'event_type == QStringLiteral("placement_requested")' in poll
     assert "std::isfinite(x) && std::isfinite(y)" in poll
     assert "std::isfinite(roll) && std::isfinite(pitch) && std::isfinite(yaw)" in poll
@@ -1126,7 +1113,8 @@ def test_qt_cancellation_does_not_commit_and_native_placement_remains_wired():
     assert "scene_preview_widget_->cancel_embedded_asset_placement();" in clear
     assert "commit_armed_asset_placement" not in mode
     assert "place_asset_armed_ = false;" in clear
-    assert "scene3d_viewport->asset_drop_cb" in main
+    # The retired native viewport has no drop path; Web3D drops arm the same placement.
+    assert "asset_drop_cb" not in main
     assert "digital_twin_canvas_" in main and "commit_armed_asset_placement(scene_pos);" in main
 
 

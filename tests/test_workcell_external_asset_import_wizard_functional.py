@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -16,9 +17,14 @@ def test_importer_logic_markers_and_catalog_relative_path():
     cpp=Path('workcell_builder/workcell_builder/src_external_asset_importer.cpp').read_text(encoding='utf-8')
     for s in ['sanitize_imported_asset_name','unsupported extension','path traversal rejected','symlink not allowed','copy_file','while (fs::exists(dest)','imported_environment_assets.json']:
         assert s in cpp
-    cat=Path('workcell_builder/workcell_builder/config/asset_profiles/imported_environment_assets.json').read_text(encoding='utf-8')
-    assert '"category": "Custom / Imported"' in cat
-    assert '"mesh_path": "workcell_builder/workcell_builder/assets/imported/' in cat
+    assert '"Custom / Imported"' in cpp or 'Custom / Imported' in cpp
+    # Every managed import is a relative path to a real, non-empty mesh (an empty catalog is valid).
+    cat=json.loads(Path('workcell_builder/workcell_builder/config/asset_profiles/imported_environment_assets.json').read_text(encoding='utf-8'))
+    assert isinstance(cat, list)
+    for entry in cat:
+        assert entry['category'] == 'Custom / Imported'
+        assert entry['mesh_path'].startswith('workcell_builder/workcell_builder/assets/imported/')
+        assert Path(entry['mesh_path']).is_file() and Path(entry['mesh_path']).stat().st_size > 84
 
 
 def test_cli_and_validation_and_forbidden_guards_present():

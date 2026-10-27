@@ -19,7 +19,7 @@ def test_lifecycle_cancellation_is_declared_and_used_for_destructor_scene_change
     assert destructor.index("embedded_web_destroying_ = true") < destructor.index("cancel_embedded_web_lifecycle(true)")
     assert destructor.index("disconnect(this, nullptr, nullptr, nullptr)") < destructor.index("cancel_embedded_web_lifecycle(true)")
 
-    context = _between("void ScenePreviewWidget::set_preview_context", "void ScenePreviewWidget::activate_native_compatibility_preview")
+    context = _between("void ScenePreviewWidget::set_preview_context", "ScenePreviewWidget::PreviewContext ScenePreviewWidget::preview_context() const")
     scene_name = _between("void ScenePreviewWidget::set_preview_scene_name", "bool ScenePreviewWidget::diagnostic_debug_logging_enabled")
     refresh = _between("void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
     assert "if (scene_identity_changed)" in context
@@ -52,7 +52,7 @@ def test_cancellation_retires_callbacks_and_owns_process_shutdown():
 def test_async_web_callbacks_guard_their_captured_request_identity():
     prepare = _between("void ScenePreviewWidget::on_embedded_web_prepare_finished", "void ScenePreviewWidget::start_embedded_web_readiness_polling")
     editor = _between("void ScenePreviewWidget::run_embedded_editor_command", "QString ScenePreviewWidget::embedded_snap_command")
-    editor_poll = _between("void ScenePreviewWidget::poll_embedded_editor_events", "#else\nvoid ScenePreviewWidget::run_embedded_editor_command")
+    editor_poll = _between("void ScenePreviewWidget::poll_embedded_editor_events", "void ScenePreviewWidget::arm_embedded_asset_placement(")
     assert "!embedded_web_identity_is_current(identity)" in prepare
     assert "guard = QPointer<ScenePreviewWidget>(this)" in editor
     assert "if (!guard || embedded_web_destroying_) return;" in editor
@@ -80,7 +80,7 @@ def test_web_request_identity_binds_root_and_selected_port_for_every_async_gate(
     assert "embedded_web_active_identity_ = bound_identity" in server
     assert "start_embedded_web_server_probes(bound_identity, port" in server
 
-    browser = _between("void ScenePreviewWidget::load_prepared_embedded_web_scene", "#ifdef WORKCELL_BUILDER_HAS_WEBENGINE")
+    browser = _between("void ScenePreviewWidget::load_prepared_embedded_web_scene", "void ScenePreviewWidget::verify_embedded_editor_contract")
     assert "identity.selected_server_port <= 0" in browser
     assert "viewer_url.setPort(identity.selected_server_port);" in browser
 
@@ -121,7 +121,7 @@ def test_server_probe_initialization_preserves_marker_and_eight_second_deadline(
 
 def test_serialized_browser_navigation_handoff_queues_only_current_scene_load():
     request = _between("void ScenePreviewWidget::request_embedded_web_product_view_refresh", "ScenePreviewWidget::EmbeddedWebRequestIdentity")
-    browser = _between("void ScenePreviewWidget::load_prepared_embedded_web_scene", "#ifdef WORKCELL_BUILDER_HAS_WEBENGINE")
+    browser = _between("void ScenePreviewWidget::load_prepared_embedded_web_scene", "void ScenePreviewWidget::verify_embedded_editor_contract")
     mode = _between("void ScenePreviewWidget::refresh_mode_and_state", "QRectF ScenePreviewWidget::rendered_items_bounds_2d")
 
     assert "!embedded_web_active_identity_.matches_effective_request(identity)" in request

@@ -6,13 +6,11 @@ import os
 from scripts import run_workcell_builder_scene3d_gui_smoke as smoke
 
 
-def test_scene3d_gui_smoke_forces_native_product_view_backend(monkeypatch):
-    """The native Scene3D smoke must not inherit the normal Web3D default/override."""
-    monkeypatch.setenv("WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND", "embedded_web3d")
-
-    smoke._configure_scene3d_smoke_environment()
-
-    assert os.environ["WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND"] == "native_scene3d"
+def test_scene3d_gui_smoke_no_longer_selects_a_native_backend():
+    """The native renderer was retired; the wrapper must not request it."""
+    assert not hasattr(smoke, "_configure_scene3d_smoke_environment")
+    source = open(smoke.__file__, encoding="utf-8").read()
+    assert "WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND" not in source
 
 
 def _healthy_failed_payload(blockers: list[str]) -> dict[str, object]:

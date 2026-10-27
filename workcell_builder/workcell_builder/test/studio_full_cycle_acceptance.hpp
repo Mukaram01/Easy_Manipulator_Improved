@@ -71,9 +71,7 @@
 #include "gui/mate_tool_panel.hpp"
 #include "gui/arrange_controller.hpp"
 #include "gui/arrange_toolbar.hpp"
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEngineView>
-#endif
 
 class TestMain {
 public:
@@ -160,12 +158,9 @@ public:
         }
         case 1: {
           if (s->ticks < 16) return;
-          const bool native = window->scene_preview_widget_->is_native_product_view_backend();
-          require(native == (qEnvironmentVariable("WORKCELL_BUILDER_PRODUCT_VIEW_BACKEND") == "native_scene3d"),
-            "Product View backend differs from requested acceptance backend");
-          s->evidence["backend"] = native ? "native_scene3d" : "embedded_web3d";
-          if (!window->scene_preview_widget_->is_native_product_view_backend() &&
-              !window->scene_preview_widget_->embedded_web_authoring_active()) return;
+          // Web3D is the only Product View backend (the native renderer was retired).
+          s->evidence["backend"] = "embedded_web3d";
+          if (!window->scene_preview_widget_->embedded_web_authoring_active()) return;
           if (reopen) {
             verify(2, true); s->evidence["reopen_consistent"] = true; s->phase=5; break;
           }
@@ -301,7 +296,7 @@ public:
         case 1: {
           if (s->ticks < 10) return;
           require(window->has_selected_scene(), "new cell not selected in Studio");
-          if (window->scene_preview_widget_ && !window->scene_preview_widget_->is_native_product_view_backend() &&
+          if (window->scene_preview_widget_ &&
               !window->scene_preview_widget_->embedded_web_authoring_active()) return;
           if (task_mode) {
             timer->stop(); mount("target_bin_default", "support_surface_table", "surface"); timer->start();
@@ -873,9 +868,9 @@ public:
         case 1: {
           if (s->ticks < 10) return;
           require(window->has_selected_scene(), "new cell not selected in Studio");
-          if (window->scene_preview_widget_ && !window->scene_preview_widget_->is_native_product_view_backend() &&
+          if (window->scene_preview_widget_ &&
               !window->scene_preview_widget_->embedded_web_authoring_active()) return;
-          s->evidence["backend"] = window->scene_preview_widget_->is_native_product_view_backend() ? "native_scene3d" : "embedded_web3d";
+          s->evidence["backend"] = "embedded_web3d";
           const auto created = environment();
           s->zone_local["default_drop_zone"] = QString::fromStdString(YAML::Dump(record(created, "default_drop_zone")["placement_local"]));
           // Add a camera stand from the Asset Library; its base sits on the floor.
@@ -987,7 +982,7 @@ public:
         }
         case 10: {  // separate Builder process: compare relations, IDs and transforms with disk
           if (s->ticks < 14) return;
-          if (window->scene_preview_widget_ && !window->scene_preview_widget_->is_native_product_view_backend() &&
+          if (window->scene_preview_widget_ &&
               !window->scene_preview_widget_->embedded_web_authoring_active()) return;
           require(QFileInfo(window->selected_scene_state_.path).canonicalFilePath() == QFileInfo(s->scene).canonicalFilePath(), "reopen selected a different scene");
           QFile previous(output + "/authoring.json"); require(previous.open(QIODevice::ReadOnly), "authoring evidence missing");
@@ -1684,7 +1679,6 @@ public:
       for (int i = 0; tree && i < tree->topLevelItemCount(); ++i) if (auto * hit = find(tree->topLevelItem(i))) return hit;
       return nullptr;
     };
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
     auto web = [=]() -> QWebEngineView * {
       for (auto * view : window->scene_preview_widget_->findChildren<QWebEngineView *>()) if (view->isVisible()) return view;
       return nullptr;
@@ -1797,7 +1791,6 @@ public:
         return false;
       };
     };
-#endif
     auto panel = [=]() { return window->mate_panel_; };
     auto panel_button = [=](const char * name) { auto * b = panel()->findChild<QPushButton *>(name); require(b, QString("Mate panel control missing: ") + name); return b; };
     auto inspector = [=](const QString & id, double dx, double dy, double dyaw_deg) {
@@ -1839,7 +1832,6 @@ public:
 
     // ---- Step script --------------------------------------------------------
     auto add = [=](const QString & name, Step step) { steps->push_back({name, step}); };
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
     // Hover (never click) a world point in Mate mode and check what a click would hit.
     auto hover_probe = [=](const QString & tag, std::function<std::array<double, 3>()> point_fn,
                            std::function<void(const QJsonObject & hover, const QJsonObject & state)> check) {
@@ -2012,7 +2004,6 @@ public:
         return true;
       });
     };
-#endif
     add("load cell", [=]() {
       if (s->ticks < 5) return false;
       const QString root = window->detect_workspace_root() + "/src/easy_manipulation_deployment";
@@ -2026,7 +2017,7 @@ public:
     add("wait for the 3D view", [=]() {
       if (s->ticks < 10) return false;
       auto * preview = window->scene_preview_widget_;
-      s->native = preview && preview->is_native_product_view_backend();
+      s->native = false;  // the native renderer was retired; its steps no longer run
       if (!s->native && !(preview && preview->embedded_web_authoring_active() && window->mate_web_supported_)) return false;
       s->evidence["backend"] = s->native ? "native_scene3d" : "embedded_web3d";
       // Only a request larger than the free desktop area may be clamped by the window manager.
@@ -2087,7 +2078,6 @@ public:
         require(window->mate_active(), "Mate did not start after reopen");
         return true;
       });
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
       add("reopened overlay shows datum markers; Esc cancels", [=]() {
         if (s->native) return true;
         if (s->js_pending) return false;
@@ -2287,7 +2277,6 @@ public:
           return true;
         });
       }
-#endif
       add("finish reopen", [=]() {
         s->evidence["result"] = "PASS";
         write();
@@ -2347,7 +2336,6 @@ public:
       // before Save and without a Product View refresh: Builder stages the catalog
       // mesh into the exporter's cache and hands the viewer that URI. A page
       // marker proves Save keeps the same live page (no reload, no regeneration).
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
       const QString library_stand_mesh = "workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl";
       auto stand_status_script = [=]() {
         const QString id = QString::fromUtf8(QJsonDocument(QJsonArray{s->stand}).toJson(QJsonDocument::Compact)).mid(1).chopped(1);
@@ -2362,11 +2350,9 @@ public:
         require(!object.value("fallback_visible").toBool(), "the live stand still shows its placeholder");
         return object;
       };
-#endif
       add("stand drawn live with its staged mesh before Save", [=]() {
         require(window->layout_dirty_, "placing the stand did not mark the layout dirty");
         if (s->native) return true;
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
         if (s->js_pending) return false;
         if (s->sub == 0) {
           s->stand_mesh_uri = "build/workcell_studio_web_scene/assets/" + window->scene_preview_widget_->preview_context().scene_id + "/" + library_stand_mesh;
@@ -2387,7 +2373,6 @@ public:
         s->evidence["stand_staged_mesh"] = QJsonObject{{"uri", s->stand_mesh_uri}, {"library_mesh", library_stand_mesh}, {"sha256", QString(staged)}};
         js("window.__wcsLivePageMarker='stand-placed'");
         shot("08p_stand_placed_live_mesh");
-#endif
         return true;
       });
       const QString retained = "live authored session retained without Product View regeneration";
@@ -2400,7 +2385,6 @@ public:
         if (s->ticks < 20 || window->layout_dirty_) return false;
         require(window->studio_log_->toPlainText().count(retained) > *retained_saves, "Save did not keep the live authored session");
         if (s->native) return true;
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
         if (s->js_pending) return false;
         if (s->sub == 1) { js(stand_status_script()); s->sub = 2; return false; }
         const auto status = QJsonObject::fromVariantMap(s->js_result.toMap());
@@ -2408,7 +2392,6 @@ public:
         const auto object = stand_live_mesh(status);
         require(!object.isEmpty(), "the stand mesh was lost after Save");
         s->evidence["stand_after_save_render"] = object;
-#endif
         return true;
       });
       add("stand drawn", [=]() {
@@ -2469,7 +2452,6 @@ public:
         s->step = int(steps->size()) - 1;  // the remaining steps need face picking
         return true;
       });
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
       add("Scenario A: datum markers drawn", [=]() {
         if (s->native) return true;
         if (s->js_pending) return false;
@@ -2567,7 +2549,6 @@ public:
         require(mate()->preview().ok && window->mounting_items() == s->items_before, "editing the offset mutated the scene");
         return true;
       });
-#endif
       add("Scenario A: Apply", [=]() {
         if (s->native) return true;
         const int undo_before = int(window->undo_stack_.size());
@@ -2599,7 +2580,6 @@ public:
         return true;
       });
       add("Scenario A: moved view", [=]() { if (s->ticks < 8) return false; shot("07_table_moved_bin_follows"); return true; });
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
       add("Scenario B: start Mate from the Inspector", [=]() {
         if (s->native) return true;
         window->apply_scene_selection(camera, "", false, false);
@@ -2662,7 +2642,6 @@ public:
           require(pick.value("valid").toBool() && pick.value("datum").toString() == "top" && pick.value("asset_id").toString() == s->stand,
             "stand top: " + pick.value("reason").toString());
         }));
-#endif
       add("Scenario B: coincident with offset and orientation", [=]() {
         if (s->native) return true;
         if (s->sub == 0) {
@@ -2701,7 +2680,6 @@ public:
         return true;
       });
       add("Scenario B: moved view", [=]() { if (s->ticks < 8) return false; shot("09_stand_moved_camera_follows"); return true; });
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
       add_isolated_camera_checks("Compound pose", "09", false);
       // The table owner, isolated: its top still resolves to the support surface.
       add("Isolated table: start Mate on the table and isolate it", [=]() {
@@ -2774,7 +2752,6 @@ public:
         [=](const QJsonObject & pick) {
           require(pick.value("valid").toBool() && pick.value("datum").toString() == "rim", "bin rim marker");
         }));
-#endif
       add("Scenario C: invalid cycle is shown, Apply disabled, nothing changed", [=]() {
         if (s->native) return true;
         if (s->ticks < 6) return false;
@@ -2788,22 +2765,18 @@ public:
         panel_button("mateChildReplace")->click();
         return true;
       });
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
       add("Scenario C: correct the child (stand base marker)", click_world("C_stand_base", [=]() { return Points{v3(datum(frames(), s->stand, "base").value("xyz"))}; }, QString(), "base",
         [=](const QJsonObject & pick) {
           require(pick.value("valid").toBool() && pick.value("asset_id").toString() == s->stand && pick.value("datum").toString() == "base", "stand base marker");
         }));
-#endif
       add("Scenario C: correct the parent (table top)", [=]() {
         if (s->native) return true;
         panel_button("mateParentReplace")->click();
         require(mate()->step() == workcell_builder::MateToolController::Step::PickParent, "Replace did not reopen step 2");
         return true;
       });
-#ifdef WORKCELL_BUILDER_HAS_WEBENGINE
       add("Scenario C: table top as the parent", click_world("C_table_parent", fixed({{0.95, -0.25, 0.0}, {1.0, 0.25, 0.0}, {0.8, -0.05, 0.0}, {0.6, -0.3, 0.0}}), table, "surface",
         [=](const QJsonObject & pick) { require(pick.value("valid").toBool(), "table parent pick"); }));
-#endif
       add("Scenario C: corrected mate applies; undo, redo", [=]() {
         if (s->native) return true;
         if (s->ticks < 6) return false;

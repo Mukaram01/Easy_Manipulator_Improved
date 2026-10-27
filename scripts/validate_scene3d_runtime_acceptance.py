@@ -265,19 +265,23 @@ def evaluate_scene(repo_root: Path, scenes_root: Path, main_path: Path, preview_
             default_filter_pass_mode = "failed"
             blockers.append("scene3d_default_filter_hid_all_renderable_candidates")
 
+    # The native Scene3D renderer was retired; its source no longer exists.
+    viewport_text = viewport_path.read_text(encoding="utf-8") if viewport_path.is_file() else ""
+    if not viewport_text:
+        blockers.append("native_scene3d_renderer_retired")
     secondary_checks = {
-        "grid_axes_enabled": ("draw_ground_grid_pass" in viewport_path.read_text(encoding="utf-8") and "draw_world_axes_pass" in viewport_path.read_text(encoding="utf-8")),
-        "orbit_pan_zoom_handlers_exist": all(t in viewport_path.read_text(encoding="utf-8") for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
+        "grid_axes_enabled": ("draw_ground_grid_pass" in viewport_text and "draw_world_axes_pass" in viewport_text),
+        "orbit_pan_zoom_handlers_exist": all(t in viewport_text for t in ["mouseMoveEvent", "wheelEvent", "pan_mode"]),
         "selection_callback_wired": "select_cb" in preview_path.read_text(encoding="utf-8"),
         "inspector_callback_wired": (
             "update_scene_builder_inspector_for_selected_item" in main_path.read_text(encoding="utf-8")
             or "apply_scene_selection(" in main_path.read_text(encoding="utf-8")
         ),
-        "drag_commit_callback_wired": "transform_changed_cb" in viewport_path.read_text(encoding="utf-8"),
+        "drag_commit_callback_wired": "transform_changed_cb" in viewport_text,
         "hierarchy_selection_sync_wired": "apply_scene_selection(" in main_path.read_text(encoding="utf-8"),
         "layer_toggles_not_default_hide_all": default_filter_pass_mode in {"default_pass", "fallback_pass", "not_required"},
         "layer_toggles_default_filter_pass_mode": default_filter_pass_mode,
-        "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in viewport_path.read_text(encoding="utf-8"),
+        "viewport_diagnostics_summary_present": "Scene3D runtime render: received=" in viewport_text,
     }
 
     runtime_counts = runtime_payload if isinstance(runtime_payload, dict) else {}

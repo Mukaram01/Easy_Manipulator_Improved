@@ -15,7 +15,12 @@ def test_reachability_and_collision_overlay_models_exist():
 
 
 def test_overlay_menu_tokens_exist():
-    for token in ['Reachability Heatmap', 'Collision Warnings', 'Safety Zones', 'Work Envelope', 'Warning Labels']:
+    # The native overlay combo was retired with the native renderer; the overlay
+    # models remain and the 2D Layout overlays are labelled as such.
+    assert 'Reachability Heatmap' not in CPP_PREVIEW
+    main_cpp = Path('workcell_builder/workcell_builder/gui/mainwindow.cpp').read_text(encoding='utf-8')
+    assert '2D Layout Overlays' in main_cpp
+    for token in ['set_reachability_overlay_model', 'set_collision_overlay_model']:
         assert token in CPP_PREVIEW
 
 

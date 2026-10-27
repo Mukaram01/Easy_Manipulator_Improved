@@ -45,7 +45,11 @@ find_package(yaml-cpp REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Allow the legacy native Scene3DViewportWidget Product View when Qt WebEngine is unavailable" OFF)
+
+# Kept for scripts/build_commissioning_capability.sh, which configures this
+# directory to build non-GUI commissioning targets only. There is no native 3D
+# fallback any more: without WebEngine the workcell_builder GUI cannot be built.
+option(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK "Configure without Qt WebEngine for non-GUI targets only (the native renderer was retired)" OFF)
 
 option(WORKCELL_BUILD_COMMISSIONING_CAPABILITY "Build simulator-only reviewed MoveIt 2.5.9/2.5.10 cancellation correction" OFF)
 if(WORKCELL_BUILD_COMMISSIONING_CAPABILITY)
@@ -88,16 +92,15 @@ if(ignition-gazebo6_FOUND)
   install(TARGETS workcell_simulator_measurements LIBRARY DESTINATION lib)
 endif()
 
-find_package(Qt5 COMPONENTS Widgets Concurrent Svg OpenGL Network REQUIRED)
+find_package(Qt5 COMPONENTS Widgets Concurrent Svg Network REQUIRED)
 find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
 if(NOT Qt5WebEngineWidgets_FOUND AND NOT WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK)
+  # Web3D is the only engineering viewport; the native Scene3D renderer was retired.
   message(FATAL_ERROR
-    "embedded Web3D Product View is required by default for workcell_builder.\n"
+    "The embedded Web3D Product View is required by workcell_builder.\n"
     "Missing Qt component: Qt5 WebEngineWidgets.\n"
-    "Ubuntu 22.04 / ROS 2 Humble install guidance: sudo apt install qtwebengine5-dev\n"
-    "If you intentionally need the legacy compatibility path, configure with -DWORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK=ON.")
+    "Ubuntu 22.04 / ROS 2 Humble install guidance: sudo apt install qtwebengine5-dev")
 endif()
-find_package(OpenGL REQUIRED)
 find_package(assimp QUIET)
 
 include_directories(include)
@@ -118,16 +121,12 @@ add_executable(workcell_builder
     gui/scene_load_diagnostic_context.cpp
     gui/robot_home_yaml_io.cpp
     gui/robot_home_yaml_io.hpp
-    gui/scene3d_viewport_widget.cpp
-    gui/scene3d_viewport_widget.h
     gui/scene3d_candidate_assembly.cpp
     gui/scene3d_candidate_assembly.h
     gui/scene3d_visual_classification.cpp
     gui/scene3d_visual_classification.h
     gui/preview_item_suppression.cpp
     gui/preview_item_suppression.h
-    src_scene3d_visual_backend.cpp
-    include/scene3d_visual_backend.hpp
 
     gui/replacewarning.cpp
     gui/replacewarning.h
@@ -295,19 +294,19 @@ target_link_libraries(workcell_builder
   Qt5::Widgets
   Qt5::Concurrent
   Qt5::Svg
-  Qt5::OpenGL
   Qt5::Network
-  OpenGL::GL
   yaml-cpp
   OpenSSL::Crypto
   ${Boost_LIBRARIES}
 )
 
+# Marks translation units linked with WebEngine; shared headers fall back to
+# no-op stubs in small targets that do not link it (operator HMI, unit tests).
 if(Qt5WebEngineWidgets_FOUND)
   target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_HAS_WEBENGINE=1)
   target_link_libraries(workcell_builder Qt5::WebEngineWidgets)
-elseif(WORKCELL_BUILDER_ALLOW_NATIVE_3D_FALLBACK)
-  target_compile_definitions(workcell_builder PRIVATE WORKCELL_BUILDER_NATIVE_3D_FALLBACK=1)
+else()
+  message(WARNING "Qt5 WebEngineWidgets not found: only non-GUI targets can be built in this configuration.")
 endif()
 
 if(assimp_FOUND)
@@ -431,15 +430,6 @@ if(BUILD_TESTING)
   ament_add_gtest(workcell_conveyor_pick_preview_test
     test/conveyor_pick_preview_test.cpp
     src_conveyor_pick_preview.cpp)
-  # Source-text-only regression test: intentionally does not compile
-  # Scene3DViewportWidget. Real widget compilation coverage remains in
-  # workcell_scene3d_stl_parser_test and the main workcell_builder target.
-  ament_add_gtest(workcell_scene3d_mesh_preview_regression_test
-    test/scene3d_mesh_preview_regression_test.cpp)
-  if(TARGET workcell_scene3d_mesh_preview_regression_test)
-    target_compile_definitions(workcell_scene3d_mesh_preview_regression_test PRIVATE
-      WORKCELL_BUILDER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-  endif()
   ament_add_gtest(workcell_task_intent_readiness_test
     test/task_intent_readiness_test.cpp
     src_task_intent_readiness.cpp)
@@ -499,24 +489,6 @@ if(BUILD_TESTING)
     src_placed_object_urdf_render.cpp
     src_object_placement_model.cpp)
 
-  ament_add_gtest(workcell_scene3d_stl_parser_test
-    test/scene3d_stl_parser_test.cpp
-    gui/scene_load_diagnostic_context.cpp
-    gui/scene3d_viewport_widget.cpp
-    gui/scene3d_visual_classification.cpp)
-  ament_add_gtest(workcell_scene3d_render_role_classifier_test
-    test/scene3d_render_role_classifier_test.cpp
-    gui/scene_load_diagnostic_context.cpp
-    gui/scene3d_viewport_widget.cpp
-    gui/scene3d_visual_classification.cpp
-    gui/object_placement_yaml_io.cpp
-    src_object_placement_model.cpp)
-  ament_add_gtest(workcell_scene3d_ur5_baked_transform_test
-    test/scene3d_ur5_baked_transform_test.cpp
-    gui/scene_load_diagnostic_context.cpp
-    gui/scene3d_viewport_widget.cpp
-    gui/scene3d_visual_classification.cpp)
-
   ament_add_gtest(workcell_command_builders_test
     test/command_builders_test.cpp
     src_workcell_builder_command_builders.cpp)
@@ -535,7 +507,6 @@ if(BUILD_TESTING)
     gui/scene_preview_widget.cpp
     src_live_mesh_staging.cpp
     gui/robot_home_yaml_io.cpp
-    gui/scene3d_viewport_widget.cpp
     gui/scene3d_visual_classification.cpp
     gui/object_placement_yaml_io.cpp
     src_object_placement_model.cpp
@@ -688,7 +659,7 @@ if(BUILD_TESTING)
       WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
   endif()
   if(TARGET workcell_scene_preview_widget_ui_test)
-    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::OpenGL Qt5::Network OpenGL::GL yaml-cpp ${Boost_LIBRARIES})
+    target_link_libraries(workcell_scene_preview_widget_ui_test Qt5::Core Qt5::Widgets Qt5::Network yaml-cpp ${Boost_LIBRARIES})
     target_compile_definitions(workcell_scene_preview_widget_ui_test PRIVATE
       WORKCELL_BUILDER_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
     if(Qt5WebEngineWidgets_FOUND)
@@ -703,34 +674,6 @@ if(BUILD_TESTING)
 
   if(TARGET workcell_rviz_preview_metadata_command_test)
     target_link_libraries(workcell_rviz_preview_metadata_command_test Qt5::Core yaml-cpp ${Boost_LIBRARIES})
-  endif()
-
-  if(TARGET workcell_scene3d_stl_parser_test)
-    target_link_libraries(workcell_scene3d_stl_parser_test
-      Qt5::Widgets
-      Qt5::OpenGL
-      OpenGL::GL
-    )
-    target_include_directories(workcell_scene3d_stl_parser_test PRIVATE gui)
-  endif()
-
-  if(TARGET workcell_scene3d_render_role_classifier_test)
-    target_link_libraries(workcell_scene3d_render_role_classifier_test
-      Qt5::Widgets
-      Qt5::OpenGL
-      OpenGL::GL
-      yaml-cpp
-    )
-    target_include_directories(workcell_scene3d_render_role_classifier_test PRIVATE gui)
-  endif()
-
-  if(TARGET workcell_scene3d_ur5_baked_transform_test)
-    target_link_libraries(workcell_scene3d_ur5_baked_transform_test
-      Qt5::Widgets
-      Qt5::OpenGL
-      OpenGL::GL
-    )
-    target_include_directories(workcell_scene3d_ur5_baked_transform_test PRIVATE gui)
   endif()
 
   if(TARGET workcell_command_builders_test)
@@ -967,7 +910,6 @@ if(BUILD_TESTING)
     workcell_scene_status_test.cpp
     workcell_yaml_utils_test.cpp
     conveyor_pick_preview_test.cpp
-    scene3d_mesh_preview_regression_test.cpp
     task_intent_readiness_test.cpp
     task_intent_editor_test.cpp
     task_intent_model_test.cpp
@@ -978,9 +920,6 @@ if(BUILD_TESTING)
     new_cell_wizard_test.cpp
     workspace_validation_test.cpp
     placed_object_preview_writer_test.cpp
-    scene3d_stl_parser_test.cpp
-    scene3d_render_role_classifier_test.cpp
-    scene3d_ur5_baked_transform_test.cpp
     scene3d_product_view_layer_defaults_test.cpp
     scene3d_actionable_warning_test.cpp
     canvas_package_mesh_health_test.cpp

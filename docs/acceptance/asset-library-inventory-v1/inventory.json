@@ -1,0 +1,5851 @@
+{
+ "files": [
+  {
+   "class": "KEEP",
+   "extent_m": [
+    214.44487,
+    122.225002,
+    136.255798
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description/meshes/airpick4.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "visual",
+   "triangles": 210146,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "FIX",
+   "extent_m": [
+    0.135195,
+    0.130175,
+    0.173333
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/collision/GRIPPER_CLOSED.stl",
+   "problems_after": [],
+   "problems_before": [
+    "closed mesh with negative volume (inside-out winding)"
+   ],
+   "reason": "rewound: closed mesh was inside-out (negative volume)",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 1930,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.218067,
+    0.130175,
+    0.222765
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/collision/GRIPPER_OPEN.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 1586,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.081466,
+    0.030973,
+    0.141073
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/collision/GRIPPER_OPEN_FINGER_1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 4,
+   "role": "collision",
+   "triangles": 422,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "FIX",
+   "extent_m": [
+    0.081466,
+    0.030734,
+    0.137876
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/collision/GRIPPER_OPEN_FINGER_2.stl",
+   "problems_after": [],
+   "problems_before": [
+    "closed mesh with negative volume (inside-out winding)"
+   ],
+   "reason": "rewound: closed mesh was inside-out (negative volume)",
+   "referenced_by": 4,
+   "role": "collision",
+   "triangles": 354,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.081466,
+    0.030871,
+    0.141101
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/collision/GRIPPER_OPEN_FINGER_3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 4,
+   "role": "collision",
+   "triangles": 434,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.134433,
+    0.130175,
+    0.111125
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/collision/GRIPPER_OPEN_PALM.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 1832,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "FIX",
+   "extent_m": [
+    0.135195,
+    0.130175,
+    0.173333
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/visual/GRIPPER_CLOSED.stl",
+   "problems_after": [],
+   "problems_before": [
+    "closed mesh with negative volume (inside-out winding)"
+   ],
+   "reason": "rewound: closed mesh was inside-out (negative volume)",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1930,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.218067,
+    0.130175,
+    0.222765
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/visual/GRIPPER_OPEN.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1586,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.081466,
+    0.030973,
+    0.141073
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/visual/GRIPPER_OPEN_FINGER_1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 4,
+   "role": "visual",
+   "triangles": 422,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "FIX",
+   "extent_m": [
+    0.081466,
+    0.030734,
+    0.137876
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/visual/GRIPPER_OPEN_FINGER_2.stl",
+   "problems_after": [],
+   "problems_before": [
+    "closed mesh with negative volume (inside-out winding)"
+   ],
+   "reason": "rewound: closed mesh was inside-out (negative volume)",
+   "referenced_by": 4,
+   "role": "visual",
+   "triangles": 354,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.081466,
+    0.030871,
+    0.141101
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/visual/GRIPPER_OPEN_FINGER_3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 4,
+   "role": "visual",
+   "triangles": 434,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.134433,
+    0.130175,
+    0.111125
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper/visual/GRIPPER_OPEN_PALM.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 4,
+   "role": "visual",
+   "triangles": 1832,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.043105,
+    0.04445,
+    0.030734
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/collision/link_0.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "collision",
+   "triangles": 216,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.105099,
+    0.045175,
+    0.030734
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/collision/link_1.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "collision",
+   "triangles": 220,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.071822,
+    0.035409,
+    0.030734
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/collision/link_2.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "collision",
+   "triangles": 212,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.055837,
+    0.025669,
+    0.030734
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/collision/link_3.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "collision",
+   "triangles": 302,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.133242,
+    0.104775,
+    0.130175
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/collision/palm.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 2660,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.043105,
+    0.04445,
+    0.030734
+   ],
+   "format": "DAE",
+   "in_library_after": true,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/link_0.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "visual",
+   "triangles": 500,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.105099,
+    0.045175,
+    0.030734
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/link_1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "visual",
+   "triangles": 930,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.071822,
+    0.035409,
+    0.030734
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/link_2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "visual",
+   "triangles": 880,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.055837,
+    0.025669,
+    0.030734
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/link_3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 6,
+   "role": "visual",
+   "triangles": 729,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.133242,
+    0.104775,
+    0.130175
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description/meshes/robotiq-3f-gripper_articulated/visual/palm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 7,
+   "role": "visual",
+   "triangles": 13558,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.074987,
+    0.074973,
+    0.05405
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/kinova_robotiq_coupler.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 3,
+   "role": "collision",
+   "triangles": 3768,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.094,
+    0.084887,
+    0.075
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_base_link.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 7,
+   "role": "collision",
+   "triangles": 37258,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.059112,
+    0.018105,
+    0.027
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_finger_link.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 7,
+   "role": "collision",
+   "triangles": 1916,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.057015,
+    0.031703,
+    0.022
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_finger_tip_link.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 7,
+   "role": "collision",
+   "triangles": 2436,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.055037,
+    0.049597,
+    0.039
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_inner_knuckle_link.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 7,
+   "role": "collision",
+   "triangles": 2096,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.022935,
+    0.046241,
+    0.024
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/collision/robotiq_85_knuckle_link.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 7,
+   "role": "collision",
+   "triangles": 1276,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.074986,
+    0.074973,
+    0.05405
+   ],
+   "format": "DAE",
+   "in_library_after": true,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/kinova_robotiq_coupler.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 3,
+   "role": "visual",
+   "triangles": 3768,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.094,
+    0.084887,
+    0.075
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_base_link.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 15,
+   "role": "visual",
+   "triangles": 37258,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.059112,
+    0.018103,
+    0.027
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_link.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 9,
+   "role": "visual",
+   "triangles": 1916,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.057015,
+    0.031701,
+    0.022
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_finger_tip_link.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 10,
+   "role": "visual",
+   "triangles": 2436,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.055037,
+    0.049597,
+    0.039
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_inner_knuckle_link.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 10,
+   "role": "visual",
+   "triangles": 2096,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.022935,
+    0.046241,
+    0.024
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/end_effectors/robotiq_85_gripper/robotiq_85_description/meshes/visual/robotiq_85_knuckle_link.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 8,
+   "role": "visual",
+   "triangles": 1276,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.258857,
+    0.085387,
+    0.074948
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "assets/end_effectors/single_suction_gripper/single_suction_description/meshes/multiple_gripper_link.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 13888,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.03488,
+    0.019,
+    0.035
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/single_suction_gripper/single_suction_description/meshes/suction_cup_link.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 4,
+   "role": "visual",
+   "triangles": 2186,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.265857,
+    0.086217,
+    0.074948
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/end_effectors/single_suction_gripper/single_suction_description/meshes/wrist_fixture.STL",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 3,
+   "role": "visual",
+   "triangles": 13960,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/blue_sorting_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/fail_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/green_sorting_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/large_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/medium_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/pass_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/red_sorting_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/reject_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/bins/meshes/small_bin.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/cameras/meshes/area_scan_camera_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/cameras/meshes/barcode_scanner_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/cameras/meshes/overhead_camera_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/cameras/meshes/safety_scanner_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/conveyors/meshes/belt_conveyor.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/conveyors/meshes/conveyor_1m.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 3,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/conveyors/meshes/conveyor_2m.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/conveyors/meshes/infeed_conveyor.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/conveyors/meshes/outfeed_conveyor.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/conveyors/meshes/roller_conveyor.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/fixtures/meshes/locating_pins_fixture.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/fixtures/meshes/nest_fixture.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/fixtures/meshes/peg_fixture.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/fixtures/meshes/simple_fixture_plate.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/fixtures/meshes/tray_fixture.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.85,
+    0.65,
+    1.65
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/flat_plate_camera_bracket_description/meshes/collision/flat_plate_camera_bracket.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "collision",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.8,
+    0.6,
+    1.6
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/flat_plate_camera_bracket_description/meshes/visual/flat_plate_camera_bracket.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/machines/meshes/cnc_machine_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/machines/meshes/inspection_station_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/machines/meshes/lathe_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/machines/meshes/packaging_machine_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/machines/meshes/press_machine_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.85,
+    0.65,
+    1.65
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/overhead_camera_gantry_description/meshes/collision/overhead_camera_gantry.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "collision",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.8,
+    0.6,
+    1.6
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/overhead_camera_gantry_description/meshes/visual/overhead_camera_gantry.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.85,
+    0.65,
+    1.65
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/pipe_camera_stand_description/meshes/collision/pipe_camera_stand.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "collision",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.8,
+    0.6,
+    1.6
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/pipe_camera_stand_description/meshes/visual/pipe_camera_stand.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.098871,
+    0.023,
+    0.02005
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/realsense2_description/meshes/d415.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 4,
+   "role": "visual",
+   "triangles": 425160,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.089914,
+    0.025,
+    0.025055
+   ],
+   "format": "DAE",
+   "in_library_after": true,
+   "path": "assets/environment/realsense2_description/meshes/d435.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 61,
+   "role": "visual",
+   "triangles": 231186,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/safety/meshes/emergency_stop_pedestal.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/safety/meshes/light_curtain.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/safety/meshes/operator_zone.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/safety/meshes/robot_keepout_zone.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/safety/meshes/safety_fence_panel.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/safety/meshes/safety_gate.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": null,
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/simple_conveyor_description/meshes/simple_conveyor.stl",
+   "problems_after": [
+    "no triangles"
+   ],
+   "problems_before": [
+    "no triangles"
+   ],
+   "reason": "withheld from the library: meshes/simple_conveyor.stl holds no geometry (19-byte stub). Hidden from the Asset Library until a real conveyor model is supplied; the package name is still used by the conveyor-sorting wizard.",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 0,
+   "unit_guess": null
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    213.3871,
+    200.0,
+    352.201127
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "assets/environment/sorting_bin_description/meshes/sorting_bin.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 48,
+   "role": "visual",
+   "triangles": 316,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.85,
+    0.65,
+    1.65
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/table_clamp_camera_mount_description/meshes/collision/table_clamp_camera_mount.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "collision",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.8,
+    0.6,
+    1.6
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/table_clamp_camera_mount_description/meshes/visual/table_clamp_camera_mount.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1208.400238,
+    813.400085,
+    906.237707
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/table_description/meshes/collision/table.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 8,
+   "role": "collision",
+   "triangles": 102734,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1208.400238,
+    813.400085,
+    906.237707
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "assets/environment/table_description/meshes/visual/table.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 26,
+   "role": "visual",
+   "triangles": 102734,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.85,
+    0.65,
+    1.65
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/tslot_camera_frame_description/meshes/collision/tslot_camera_frame.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "collision",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.8,
+    0.6,
+    1.6
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/tslot_camera_frame_description/meshes/visual/tslot_camera_frame.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.85,
+    0.65,
+    1.65
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/vslot_camera_frame_description/meshes/collision/vslot_camera_frame.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "collision",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    0.8,
+    0.6,
+    1.6
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/vslot_camera_frame_description/meshes/visual/vslot_camera_frame.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "withheld from the library: Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1208.400238,
+    813.400085,
+    906.237707
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/environment/workbench_description/meshes/collision/table.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 41,
+   "role": "collision",
+   "triangles": 102734,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1208.400238,
+    813.400085,
+    906.237707
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "assets/environment/workbench_description/meshes/visual/table.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 58,
+   "role": "visual",
+   "triangles": 102734,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/bolt_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/bottle_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/box_large.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/box_small.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/bracket_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/can_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/cube_large.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/cube_small.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/cylinder_large.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/cylinder_small.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/gear_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/parcel_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/objects/primitives/meshes/washer_placeholder.stl",
+   "problems_after": null,
+   "problems_before": [
+    "not a solid model (1 triangle: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "stub: 1 triangle(s), [1.0, 1.0, 0.0] m; no real model",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.285264,
+    0.283,
+    0.278
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/collision/base_link.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 412,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.371,
+    0.3157,
+    0.2717
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/collision/link_1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 902,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.164,
+    0.186824,
+    0.751
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/collision/link_2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 1464,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.2497,
+    0.249599,
+    0.3518
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/collision/link_3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 1060,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.511001,
+    0.158,
+    0.100003
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/collision/link_4.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 1554,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.143,
+    0.102,
+    0.1
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/collision/link_5.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 1166,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.0125,
+    0.06192,
+    0.062
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/collision/link_6.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 376,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.285264,
+    0.283,
+    0.278
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/visual/base_link.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 412,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.371,
+    0.3157,
+    0.2717
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/visual/link_1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 902,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.164,
+    0.186824,
+    0.751
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/visual/link_2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1464,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.2497,
+    0.249599,
+    0.3518
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/visual/link_3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1060,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.511001,
+    0.158,
+    0.100003
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/visual/link_4.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1554,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.143,
+    0.102,
+    0.1
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/visual/link_5.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 1166,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.0125,
+    0.06192,
+    0.062
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/fanuc/fanuc_description/meshes/visual/link_6.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 376,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.020974,
+    0.026536,
+    0.053717
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/finger.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 32,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.063252,
+    0.204416,
+    0.091887
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/hand.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 200,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.225646,
+    0.189284,
+    0.140035
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link0.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 200,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.110148,
+    0.184565,
+    0.246977
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 300,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.110138,
+    0.24923,
+    0.184586
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 300,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.192207,
+    0.16612,
+    0.176174
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 300,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.192746,
+    0.179159,
+    0.166259
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link4.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 300,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.1101,
+    0.185032,
+    0.316723
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link5.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 300,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.180213,
+    0.133069,
+    0.100294
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link6.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 200,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.125341,
+    0.125217,
+    0.054847
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/collision/link7.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "collision",
+   "triangles": 200,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.021002,
+    0.026429,
+    0.053767
+   ],
+   "format": "DAE",
+   "in_library_after": true,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/finger.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 624,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.063045,
+    0.204516,
+    0.091946
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/hand.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 7078,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.22563,
+    0.189169,
+    0.14
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link0.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 20483,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.110016,
+    0.184406,
+    0.247002
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 12516,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.110033,
+    0.249024,
+    0.184393
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 12716,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.192511,
+    0.166063,
+    0.176002
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 14233,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.192507,
+    0.179,
+    0.166053
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link4.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 14621,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.109996,
+    0.18493,
+    0.311199
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link5.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 18327,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.179926,
+    0.132863,
+    0.112053
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link6.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 21620,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.088011,
+    0.141674,
+    0.0548
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/panda_robot/panda_description/meshes/visual/link7.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 12082,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.149961,
+    0.167101,
+    0.038
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 366,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120203,
+    0.136339,
+    0.678156
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1074,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150952,
+    0.161366,
+    0.177109
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/collision/shoulder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 986,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.15068,
+    0.177256,
+    0.748842
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1224,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.091024,
+    0.100074,
+    0.118824
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/collision/wrist1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 886,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.091258,
+    0.118869,
+    0.100086
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 840,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.089933,
+    0.0305,
+    0.09007
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 486,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.149961,
+    0.167101,
+    0.038
+   ],
+   "format": "DAE",
+   "in_library_after": true,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2000,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.119999,
+    0.136195,
+    0.67755
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 26321,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150324,
+    0.1612,
+    0.177201
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 14746,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.176735,
+    0.177208,
+    0.7479
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 20994,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090987,
+    0.099898,
+    0.11878
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 13443,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090987,
+    0.118769,
+    0.0999
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 37368,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.089933,
+    0.0305,
+    0.09007
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1200,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.189952,
+    0.189871,
+    0.099299
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 458,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.115994,
+    0.124883,
+    0.676409
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1344,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.152731,
+    0.17098,
+    0.175612
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/collision/shoulder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1704,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.152744,
+    0.174595,
+    0.749076
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1874,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.093982,
+    0.115414,
+    0.124084
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/collision/wrist1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1338,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.094005,
+    0.124936,
+    0.09991
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1782,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.088837,
+    0.048792,
+    0.097411
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 138,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    189.96754,
+    99.30001,
+    189.92384
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 5002,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    115.99537,
+    676.40966,
+    124.90889
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 17929,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    152.74769,
+    175.59951,
+    170.97884
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 30093,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    152.73234,
+    749.07923,
+    174.59913
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 41143,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    93.97289,
+    124.07393,
+    115.40435
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 16053,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    93.98593,
+    99.90276,
+    124.92808
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 18423,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    89.68107,
+    96.59828,
+    48.8383
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur10e/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 978,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.202456,
+    0.202456,
+    0.106397
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 296,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120485,
+    0.150679,
+    0.626045
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1218,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.147936,
+    0.183896,
+    0.192719
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/collision/shoulder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 172,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150002,
+    0.190705,
+    0.787086
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 871,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090227,
+    0.097654,
+    0.119838
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/collision/wrist1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 522,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.089999,
+    0.120168,
+    0.109121
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 262,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090003,
+    0.071396,
+    0.095438
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 280,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.204,
+    0.204,
+    0.106397
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1840,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120505,
+    0.210656,
+    0.621724
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3208,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150394,
+    0.183896,
+    0.192719
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 892,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150005,
+    0.225086,
+    0.782772
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3144,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090227,
+    0.128154,
+    0.17945
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1188,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090225,
+    0.120168,
+    0.109121
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 872,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090003,
+    0.071396,
+    0.095438
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur15/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1390,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.115994,
+    0.124907,
+    0.464851
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur16e/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1990,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.15273,
+    0.174597,
+    0.614769
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur16e/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 2738,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    115.99537,
+    676.40966,
+    124.90889
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur16e/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 17929,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    152.73234,
+    749.07923,
+    174.59913
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur16e/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 41142,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120483,
+    0.150748,
+    0.448575
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur18/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1830,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.15,
+    0.190705,
+    0.614366
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur18/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1856,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120503,
+    0.210656,
+    0.444254
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur18/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3144,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.15,
+    0.225081,
+    0.609895
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur18/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3144,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.245077,
+    0.245021,
+    0.108451
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 436,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150508,
+    0.183443,
+    0.858313
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 2486,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.180966,
+    0.223994,
+    0.224795
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/collision/shoulder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 540,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.180317,
+    0.223059,
+    1.032757
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 2428,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.100144,
+    0.129166,
+    0.137081
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/collision/wrist1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 728,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.100576,
+    0.138222,
+    0.124713
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 560,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.100018,
+    0.0699,
+    0.10566
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 314,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.245076,
+    0.245021,
+    0.107456
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2122,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150508,
+    0.183405,
+    0.858343
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 4292,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.180966,
+    0.223994,
+    0.224795
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1112,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.180317,
+    0.222997,
+    1.0328
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3900,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.100144,
+    0.129166,
+    0.137081
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2099,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.100576,
+    0.138222,
+    0.131363
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1442,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.100018,
+    0.0699,
+    0.10566
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur20/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2020,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.128024,
+    0.163492,
+    0.086765
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 7992,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.075059,
+    0.09711,
+    0.282756
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 4934,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090864,
+    0.099905,
+    0.122923
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/collision/shoulder.stl",
+   "problems_after": [
+    "693 degenerate (zero-area) triangles (9%)"
+   ],
+   "problems_before": [
+    "693 degenerate (zero-area) triangles (9%)"
+   ],
+   "reason": "upstream ur_description collision mesh; zero-area triangles are harmless for collision",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 7865,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.091231,
+    0.123051,
+    0.328254
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 10263,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.064477,
+    0.07677,
+    0.088754
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/collision/wrist1.stl",
+   "problems_after": [
+    "185 degenerate (zero-area) triangles (5%)"
+   ],
+   "problems_before": [
+    "185 degenerate (zero-area) triangles (5%)"
+   ],
+   "reason": "upstream ur_description collision mesh; zero-area triangles are harmless for collision",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 3672,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.064325,
+    0.088743,
+    0.076814
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 3671,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.063467,
+    0.039833,
+    0.069633
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 528,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.128024,
+    0.163492,
+    0.086765
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 7992,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.075028,
+    0.097109,
+    0.282759
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 9655,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.090962,
+    0.099901,
+    0.122933
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 16206,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.091231,
+    0.123051,
+    0.328272
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 19735,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.064472,
+    0.076781,
+    0.088752
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 7236,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.064361,
+    0.088743,
+    0.076819
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 7236,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.063467,
+    0.039833,
+    0.069633
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 528,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150508,
+    0.183405,
+    0.633168
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur30/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 3558,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.180341,
+    0.222997,
+    0.807894
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur30/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 2812,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150508,
+    0.301577,
+    1.360393
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur30/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 4420,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.180317,
+    0.3538,
+    0.857885
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur30/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3964,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.128027,
+    0.128012,
+    0.094952
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 434,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.075111,
+    0.096949,
+    0.282836
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1026,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.093976,
+    0.109952,
+    0.115102
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/collision/shoulder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1812,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.093984,
+    0.115098,
+    0.329864
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 2020,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.064451,
+    0.086012,
+    0.096909
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/collision/wrist1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1270,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.064438,
+    0.097006,
+    0.067311
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1454,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.063173,
+    0.041711,
+    0.06925
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 160,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    127.99813,
+    94.95,
+    127.9796
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3306,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    75.11198,
+    282.84012,
+    96.95237
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 16871,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    93.96796,
+    115.10041,
+    109.94835
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 26245,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    93.96797,
+    329.85768,
+    115.10378
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 46744,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    64.44478,
+    96.92615,
+    86.00503
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 18309,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    64.42296,
+    67.30704,
+    97.00238
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 19215,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    63.07104,
+    69.44208,
+    41.76328
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur3e/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 1127,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.147213,
+    0.183552,
+    0.024003
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 235,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.116446,
+    0.111687,
+    0.489265
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 1050,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.118904,
+    0.130248,
+    0.13366
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/collision/shoulder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 674,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.119372,
+    0.133797,
+    0.544645
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 1176,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.07749,
+    0.085001,
+    0.104676
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/collision/wrist1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 702,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.077584,
+    0.104688,
+    0.084233
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 702,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.075031,
+    0.0345,
+    0.080516
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 5,
+   "role": "collision",
+   "triangles": 446,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.146732,
+    0.183366,
+    0.024
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 15,
+   "role": "visual",
+   "triangles": 1932,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.116,
+    0.1117,
+    0.48918
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 10,
+   "role": "visual",
+   "triangles": 21028,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.119,
+    0.13,
+    0.133711
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 15,
+   "role": "visual",
+   "triangles": 13492,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.119,
+    0.133711,
+    0.544
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 9,
+   "role": "visual",
+   "triangles": 29436,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.0775,
+    0.084854,
+    0.1047
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 9,
+   "role": "visual",
+   "triangles": 14074,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.0775,
+    0.1047,
+    0.08425
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 9,
+   "role": "visual",
+   "triangles": 14074,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.075,
+    0.0345,
+    0.0805
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 11,
+   "role": "visual",
+   "triangles": 1658,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150978,
+    0.150988,
+    0.099099
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/collision/base.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 420,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.115828,
+    0.109907,
+    0.489424
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1064,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120186,
+    0.134503,
+    0.135449
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/collision/shoulder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1400,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120187,
+    0.149672,
+    0.545193
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1992,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.078701,
+    0.112169,
+    0.109882
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/collision/wrist1.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1190,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.078698,
+    0.109885,
+    0.085217
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/collision/wrist2.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1350,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.075106,
+    0.045814,
+    0.081554
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/collision/wrist3.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 142,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    151.0,
+    99.1,
+    151.0264
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/visual/base.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 4838,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    115.82925,
+    489.43054,
+    109.90212
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 15058,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    120.18208,
+    135.42686,
+    134.50454
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/visual/shoulder.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 23290,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    120.19471,
+    545.2,
+    149.63001
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 40124,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    78.69953,
+    109.88143,
+    112.17603
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/visual/wrist1.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 17288,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    78.69743,
+    85.19636,
+    109.88066
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/visual/wrist2.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 20280,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    75.10214,
+    81.57208,
+    45.78877
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur5e/visual/wrist3.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 911,
+   "unit_guess": "millimetres (extent > 20 m as metres)"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120496,
+    0.150763,
+    0.824575
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur8long/collision/forearm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1540,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150021,
+    0.190705,
+    1.038613
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur8long/collision/upperarm.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "collision",
+   "triangles": 1646,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.120496,
+    0.210656,
+    0.820254
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur8long/visual/forearm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3208,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.150021,
+    0.225069,
+    1.034142
+   ],
+   "format": "DAE",
+   "in_library_after": false,
+   "path": "assets/robots/universal_robot/ur_description/meshes/ur8long/visual/upperarm.dae",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 3144,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.7,
+    0.5,
+    0.35
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/bin_large_description/meshes/bin_large.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.4,
+    0.3,
+    0.2
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/bin_small_description/meshes/bin_small.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.08,
+    0.08,
+    1.2
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/camera_stand_description/meshes/camera_stand.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 9,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1.2,
+    0.4,
+    0.25
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/conveyor_placeholder_description/meshes/conveyor_placeholder.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1.0,
+    0.8,
+    0.14
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_builder/workcell_builder/assets/environment/pallet_description/meshes/pallet.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "FIX",
+   "extent_m": [
+    1.0,
+    0.15,
+    1.0
+   ],
+   "format": "OBJ",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/pallet_description/meshes/visual/pallet.obj",
+   "problems_after": [],
+   "problems_before": [
+    "closed mesh with negative volume (inside-out winding)"
+   ],
+   "reason": "rewound: closed mesh was inside-out (negative volume)",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 84,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.4,
+    0.4,
+    0.7
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/pedestal_description/meshes/pedestal.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1.2,
+    0.05,
+    1.8
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/safety_fence_panel_description/meshes/safety_fence_panel.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1.8,
+    0.9,
+    0.75
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/table_large_description/meshes/table_large.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1.2,
+    0.8,
+    0.75
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/table_small_description/meshes/table_small.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.6,
+    0.4,
+    0.28
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/tote_box_description/meshes/tote_box.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    0.5,
+    0.35,
+    0.06
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/tray_description/meshes/tray.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "KEEP",
+   "extent_m": [
+    1.5,
+    0.75,
+    0.9
+   ],
+   "format": "STL",
+   "in_library_after": true,
+   "path": "workcell_builder/workcell_builder/assets/environment/workbench_description/meshes/workbench.stl",
+   "problems_after": [],
+   "problems_before": [],
+   "reason": "",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 12,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REMOVE",
+   "extent_m": null,
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_builder/workcell_builder/assets/imported/imported_demo_asset.stl",
+   "problems_after": null,
+   "problems_before": [
+    "no triangles"
+   ],
+   "reason": "empty file (no triangles)",
+   "referenced_by": 1,
+   "role": "visual",
+   "triangles": 0,
+   "unit_guess": null
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/conveyors/conveyor_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/environment/env_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/fixtures/fixture_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/grippers/gripper_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/machines/machine_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/objects/object_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/robots/robot_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 2,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  },
+  {
+   "class": "REPLACE",
+   "extent_m": [
+    1.0,
+    1.0,
+    0.0
+   ],
+   "format": "STL",
+   "in_library_after": false,
+   "path": "workcell_studio_catalog/meshes/safety/safety_placeholder.stl",
+   "problems_after": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "problems_before": [
+    "not a solid model (2 triangles: stub geometry)",
+    "flat mesh (zero extent on an axis)"
+   ],
+   "reason": "legacy catalog.yaml placeholder (2-triangle square shared by 155 items); not drawn by the Builder",
+   "referenced_by": 0,
+   "role": "visual",
+   "triangles": 2,
+   "unit_guess": "metres"
+  }
+ ],
+ "library_after": [
+  "realsense2_description",
+  "robotiq_3f_gripper_description",
+  "robotiq_85_description",
+  "panda_description",
+  "ur_description",
+  "table_description",
+  "workbench_description",
+  "fanuc_description",
+  "onrobot_airpick4_description",
+  "single_suction_description",
+  "sorting_bin_description",
+  "pallet",
+  "bin_large",
+  "bin_small",
+  "camera_stand",
+  "conveyor_placeholder",
+  "pedestal",
+  "safety_fence_panel",
+  "table_large",
+  "table_small",
+  "tote_box",
+  "tray",
+  "workbench",
+  "calibration_cube.urdf",
+  "cylinder_object.urdf",
+  "fixture_plate.urdf",
+  "pick_box.urdf",
+  "robot_base_plate.urdf",
+  "table.urdf"
+ ],
+ "library_before": {
+  "entries": 103,
+  "ids": [
+   "realsense2_description",
+   "robotiq_3f_gripper_description",
+   "robotiq_85_description",
+   "panda_description",
+   "ur_description",
+   "flat_plate_camera_bracket_description",
+   "overhead_camera_gantry_description",
+   "pipe_camera_stand_description",
+   "table_clamp_camera_mount_description",
+   "table_description",
+   "tslot_camera_frame_description",
+   "vslot_camera_frame_description",
+   "workbench_description",
+   "fanuc_description",
+   "onrobot_airpick4_description",
+   "single_suction_description",
+   "blue_sorting_bin",
+   "fail_bin",
+   "green_sorting_bin",
+   "large_bin",
+   "medium_bin",
+   "pass_bin",
+   "red_sorting_bin",
+   "reject_bin",
+   "small_bin",
+   "belt_conveyor",
+   "conveyor_1m",
+   "conveyor_2m",
+   "infeed_conveyor",
+   "outfeed_conveyor",
+   "roller_conveyor",
+   "locating_pins_fixture",
+   "nest_fixture",
+   "peg_fixture",
+   "simple_fixture_plate",
+   "tray_fixture",
+   "emergency_stop_pedestal",
+   "light_curtain",
+   "operator_zone",
+   "robot_keepout_zone",
+   "safety_fence_panel",
+   "safety_gate",
+   "simple_conveyor_description",
+   "sorting_bin_description",
+   "box_large",
+   "box_small",
+   "cube_large",
+   "cube_small",
+   "cylinder_large",
+   "cylinder_small",
+   "imported_demo_asset",
+   "onrobot_airpick4_description",
+   "robotiq_3f_gripper_description",
+   "robotiq_85_description",
+   "single_suction_description",
+   "single_suction_gripper.srdf",
+   "area_scan_camera_placeholder",
+   "barcode_scanner_placeholder",
+   "overhead_camera_placeholder",
+   "safety_scanner_placeholder",
+   "cnc_machine_placeholder",
+   "inspection_station_placeholder",
+   "lathe_placeholder",
+   "packaging_machine_placeholder",
+   "press_machine_placeholder",
+   "bolt_placeholder",
+   "bottle_placeholder",
+   "bracket_placeholder",
+   "can_placeholder",
+   "gear_placeholder",
+   "parcel_placeholder",
+   "washer_placeholder",
+   "pallet",
+   "bin_large",
+   "bin_small",
+   "camera_stand",
+   "conveyor_placeholder",
+   "pallet",
+   "pedestal",
+   "safety_fence_panel",
+   "table_large",
+   "table_small",
+   "tote_box",
+   "tray",
+   "workbench",
+   "bin_large.urdf",
+   "bin_small.urdf",
+   "calibration_cube.urdf",
+   "camera_stand.urdf",
+   "conveyor_placeholder.urdf",
+   "cylinder_object.urdf",
+   "fixture_plate.urdf",
+   "pallet.urdf",
+   "pedestal.urdf",
+   "pick_box.urdf",
+   "robot_base_plate.urdf",
+   "safety_fence_panel.urdf",
+   "table.urdf",
+   "table_large.urdf",
+   "table_small.urdf",
+   "tote_box.urdf",
+   "tray.urdf",
+   "workbench.urdf"
+  ],
+  "measured_on": "main 3679a4f5 (original discovery rules)"
+ },
+ "packages": {
+  "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description": {
+   "description": "Stanley Innovation Robotiq 85 Visual Models",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/end_effectors/onrobot_airpick4/onrobot_airpick4_moveit_config": {
+   "description": "An automatically generated package with all the configuration and launch files for using the robotiq_85_gripper with the MoveIt Motion Planning Framework",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description": {
+   "description": "Stanley Innovation Robotiq 85 Visual Models",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config": {
+   "description": "An automatically generated package with all the configuration and launch files for using the robotiq_85_gripper with the MoveIt Motion Planning Framework",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/end_effectors/robotiq_85_gripper/robotiq_85_description": {
+   "description": "Stanley Innovation Robotiq 85 Visual Models",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config": {
+   "description": "An automatically generated package with all the configuration and launch files for using the robotiq_85_gripper with the MoveIt Motion Planning Framework",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/end_effectors/single_suction_gripper/single_suction_description": {
+   "description": "Resources used for MoveIt! testing",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/end_effectors/single_suction_gripper/single_suction_moveit_config": {
+   "description": "Resources used for MoveIt! testing",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/flat_plate_camera_bracket_description": {
+   "description": "Camera support description package for flat plate camera bracket.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/overhead_camera_gantry_description": {
+   "description": "Camera support description package for overhead camera gantry.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/pipe_camera_stand_description": {
+   "description": "Camera support description package for pipe camera stand.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/realsense2_description": {
+   "description": "RealSense Camera description package for Intel 3D D400 cameras",
+   "license": "Apache 2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/simple_conveyor_description": {
+   "description": "simple_conveyor_description",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/sorting_bin_description": {
+   "description": "sorting_bin_description",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/table_clamp_camera_mount_description": {
+   "description": "Camera support description package for table clamp camera mount.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/table_description": {
+   "description": "table_description description",
+   "license": "Apache License 2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/tslot_camera_frame_description": {
+   "description": "Camera support description package for tslot camera frame.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/vslot_camera_frame_description": {
+   "description": "Camera support description package for vslot camera frame.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/environment/workbench_description": {
+   "description": "Workbench model and related launch assets for Easy Manipulation Deployment scenes",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/robots/fanuc/fanuc_description": {
+   "description": "Fanuc Resources used for MoveIt testing",
+   "license": "BSD",
+   "license_file": true,
+   "package_xml": true,
+   "readme": true
+  },
+  "assets/robots/fanuc/fanuc_moveit_config": {
+   "description": "<p> MoveIt Resources for testing: Fanuc M-10iA. </p> <p> A project-internal configuration for testing in MoveIt. </p>",
+   "license": "BSD",
+   "license_file": true,
+   "package_xml": true,
+   "readme": true
+  },
+  "assets/robots/panda_robot/panda_description": {
+   "description": "panda Resources used for MoveIt testing",
+   "license": "BSD",
+   "license_file": true,
+   "package_xml": true,
+   "readme": true
+  },
+  "assets/robots/panda_robot/panda_moveit_config": {
+   "description": "<p> MoveIt Resources for testing: Franka Emika Panda </p> <p> A project-internal configuration for testing in MoveIt. </p>",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": true
+  },
+  "assets/robots/universal_robot/ur10_moveit_config": {
+   "description": "An automatically generated package with all the configuration and launch files for using the ur10 with the MoveIt Motion Planning Framework",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/robots/universal_robot/ur3_moveit_config": {
+   "description": "An automatically generated package with all the configuration and launch files for using the ur3 with the MoveIt Motion Planning Framework",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/robots/universal_robot/ur5_moveit_config": {
+   "description": "An automatically generated package with all the configuration and launch files for using the ur5 with the MoveIt Motion Planning Framework",
+   "license": "BSD",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "assets/robots/universal_robot/ur_description": {
+   "description": "URDF description for Universal Robots",
+   "license": "",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/end_effectors/onrobot_airpick4/onrobot_airpick4_description": {
+   "description": "Minimal description package for the OnRobot AirPick4 gripper.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_gripper_description": {
+   "description": "Minimal description package for the Robotiq 3F gripper.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/end_effectors/robotiq_3f_gripper/robotiq_3f_moveit_config": {
+   "description": "MoveIt configuration package for the Robotiq 3F gripper.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/end_effectors/robotiq_85_gripper/robotiq_85_description": {
+   "description": "Minimal description package for the Robotiq 85 gripper.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/end_effectors/robotiq_85_gripper/robotiq_85_moveit_config": {
+   "description": "MoveIt configuration package for the Robotiq 85 gripper.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/end_effectors/single_suction_gripper/single_suction_description": {
+   "description": "Minimal description package for the single suction gripper.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/robots/fanuc/fanuc_moveit_config": {
+   "description": "MoveIt configuration package for the Fanuc manipulator.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/robots/panda_robot/panda_moveit_config": {
+   "description": "MoveIt configuration package for the Panda manipulator.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/robots/universal_robot/ur10_moveit_config": {
+   "description": "MoveIt configuration package for the UR10 manipulator.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/robots/universal_robot/ur3_moveit_config": {
+   "description": "MoveIt configuration package for the UR3 manipulator.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  },
+  "workcell_builder/workcell_builder/assets/robots/universal_robot/ur5_moveit_config": {
+   "description": "MoveIt configuration package for the UR5 manipulator.",
+   "license": "Apache-2.0",
+   "license_file": false,
+   "package_xml": true,
+   "readme": false
+  }
+ },
+ "schema": "workcell_asset_inventory/v1",
+ "tool": "scripts/audit_asset_library.py",
+ "withheld_packages": {
+  "flat_plate_camera_bracket_description": "Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+  "overhead_camera_gantry_description": "Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+  "pipe_camera_stand_description": "Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+  "simple_conveyor_description": "meshes/simple_conveyor.stl holds no geometry (19-byte stub). Hidden from the Asset Library until a real conveyor model is supplied; the package name is still used by the conveyor-sorting wizard.",
+  "table_clamp_camera_mount_description": "Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+  "tslot_camera_frame_description": "Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept.",
+  "vslot_camera_frame_description": "Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept."
+ }
+}

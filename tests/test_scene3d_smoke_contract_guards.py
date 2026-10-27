@@ -52,7 +52,6 @@ def test_runtime_cpp_touch_guard_prevents_docs_tests_only_smoke_false_positives(
         [
             MAIN_CPP,
             (ROOT / "workcell_builder/workcell_builder/gui/scene_preview_widget.cpp").read_text(encoding="utf-8"),
-            (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8"),
         ]
     )
     assert "scene3d" in corpus.lower()

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VIEW_CPP = (ROOT / 'workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp').read_text(encoding='utf-8')
 
 
 class DragCommitFlow:
@@ -36,10 +35,6 @@ class DragCommitFlow:
             return False
         self.callbacks.append((self.pose["x"], self.pose["y"], self.pose["z"]))
         return True
-
-
-def test_drag_commit_static_sentinel_mouse_release_event_exists():
-    assert 'void Scene3DViewportWidget::mouseReleaseEvent(QMouseEvent * e)' in VIEW_CPP
 
 
 def test_drag_move_mutates_preview_but_release_is_the_only_save_boundary():

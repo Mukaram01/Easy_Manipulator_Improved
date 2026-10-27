@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <set>
 #include <string>
 #include <tuple>
@@ -99,6 +100,41 @@ fs::path package_directory_for(const fs::path & file, const fs::path & root)
   return fs::path();
 }
 
+// Groups files of one asset when its directory has no package.xml (the
+// builder-internal "<name>_description/{meshes,urdf}" assets), so the mesh and
+// its xacro are one library entry instead of two.
+fs::path description_directory_for(const fs::path & file, const fs::path & root)
+{
+  for (fs::path current = file.parent_path(); !current.empty() && current != root; current = current.parent_path()) {
+    const std::string name = current.filename().string();
+    if (name.size() > 12 && name.compare(name.size() - 12, 12, "_description") == 0) return current;
+    if (current.parent_path() == current) break;
+  }
+  return fs::path();
+}
+
+// A package can withhold itself from the Asset Library while staying on disk
+// (placeholder or broken geometry awaiting real CAD):
+//   <export><workcell_asset_library status="replace" reason="..."/></export>
+bool package_withheld_from_library(const fs::path & package_dir, std::string * reason)
+{
+  std::ifstream in((package_dir / "package.xml").string());
+  if (!in) return false;
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const auto tag = text.find("<workcell_asset_library");
+  if (tag == std::string::npos) return false;
+  const auto end = text.find('>', tag);
+  const std::string element = text.substr(tag, end == std::string::npos ? std::string::npos : end - tag);
+  if (element.find("status=\"replace\"") == std::string::npos &&
+      element.find("status=\"remove\"") == std::string::npos) return false;
+  if (reason) {
+    const auto r = element.find("reason=\"");
+    *reason = r == std::string::npos ? std::string() :
+      element.substr(r + 8, element.find('"', r + 8) - (r + 8));
+  }
+  return true;
+}
+
 std::string humanize_asset_identifier(std::string value)
 {
   value = fs::path(value).filename().string();
@@ -176,7 +212,10 @@ std::vector<fs::path> candidate_roots(const std::string & workspace_root, const 
   roots.emplace_back(workspace_root + "/src/easy_manipulation_deployment/assets");
   roots.emplace_back(repo_root + "/assets");
   roots.emplace_back(workspace_root + "/src/assets");
-  roots.emplace_back(repo_root + "/workcell_builder/workcell_builder/assets");
+  // Builder-internal assets contribute only the curated generic environment
+  // primitives. Its robots/end_effectors trees are stale package copies kept for
+  // the template instantiator, not library items.
+  roots.emplace_back(repo_root + "/workcell_builder/workcell_builder/assets/environment");
 
   std::vector<fs::path> deduped;
   std::set<std::string> seen;
@@ -461,9 +500,18 @@ AssetCatalogModel discover_asset_catalog(
       const fs::path package_dir = package_directory_for(path, root);
       const std::string package_name = package_dir.empty() ? std::string() : package_dir.filename().string();
       if (lower_copy(package_name).find("_moveit_config") != std::string::npos) continue;
+      std::string withheld_reason;
+      if (!package_dir.empty() && package_withheld_from_library(package_dir, &withheld_reason)) {
+        const std::string note = package_name + ": " + withheld_reason;
+        if (std::find(model.withheld_packages.begin(), model.withheld_packages.end(), note) == model.withheld_packages.end()) {
+          model.withheld_packages.push_back(note);
+        }
+        continue;
+      }
 
       RankedAsset candidate;
-      candidate.package_key = package_dir.empty() ? std::string() : package_dir.generic_string();
+      const fs::path group_dir = package_dir.empty() ? description_directory_for(path, root) : package_dir;
+      candidate.package_key = group_dir.empty() ? std::string() : group_dir.generic_string();
       candidate.rank = file_rank(path, root, workspace_root, repo_root);
       candidate.entry.id = package_name.empty() ? path.stem().string() : package_name;
       candidate.entry.path = path.string();

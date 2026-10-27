@@ -28,7 +28,7 @@ def test_product_view_prepare_uses_qprocess_with_split_arguments_and_environment
 def test_process_failures_report_executable_arguments_cwd_status_stderr_and_timeout():
     helper = _between(
         "QString summarize_prepare_process_failure",
-        "void maybe_warn_overlay_fit_dominance",
+        "#include <algorithm>",
     )
     for token in [
         "executable=%1",

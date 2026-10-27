@@ -840,17 +840,6 @@ def test_viewport_required_robot_link_detection_uses_generic_profile_table() -> 
     assert "generated_robot_profile_for_required_link_item(item)" in viewport
     assert "expected_ur5_visual_meshes" not in viewport
 
-
-def test_viewport_required_robot_profiles_include_non_ur5_supported_scenes() -> None:
-    viewport = (ROOT / "workcell_builder/workcell_builder/gui/scene3d_viewport_widget.cpp").read_text(encoding="utf-8")
-
-    assert 'QStringLiteral("ur5")' in viewport
-    assert 'QStringLiteral("ur10")' in viewport
-    assert 'QStringLiteral("ur3")' in viewport
-    assert 'QStringLiteral("ur_description/meshes/ur10")' in viewport
-    assert 'QStringLiteral("ur_description/meshes/ur3")' in viewport
-
-
 def test_successful_package_fallback_is_canonical_and_not_user_facing_warning():
     src = MAINWINDOW.read_text(encoding="utf-8")
     assert 'p.source_path_resolution_outcome = QStringLiteral("resolved_via_package_uri");' in src

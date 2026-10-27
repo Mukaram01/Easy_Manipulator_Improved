@@ -165,7 +165,8 @@ def test_fake_hardware_and_smoke_safety_contract_remains_intact():
     assert '--scene3d-smoke' in TARGET
     assert 'FAKE HARDWARE' in TARGET
     assert 'LOCKED' in TARGET
-    assert "Scene3DSmokeRunner" in LEGACY_MAIN
+    assert "Web3DSceneSequenceRunner" in LEGACY_MAIN
+    assert "native_scene3d_renderer_retired" in LEGACY_MAIN
     assert "--scene3d-smoke" in LEGACY_MAIN
     assert "StartupDialog startup" in LEGACY_MAIN
     assert '#include "main_legacy.inc"' in MAIN

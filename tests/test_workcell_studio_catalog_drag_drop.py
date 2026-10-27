@@ -7,6 +7,11 @@ VIEWER = (ROOT / "workcell_studio_web/viewer/viewer.js").read_text(encoding="utf
 MIME = "application/x-workcell-studio-catalog-asset"
 
 
+def drop_view_code() -> str:
+    start = PREVIEW.index("class AssetDropWebEngineView")
+    return PREVIEW[start:PREVIEW.index("}  // namespace", start)]
+
+
 def function_body(source: str, signature: str, next_signature: str) -> str:
     return source[source.index(signature):source.index(next_signature, source.index(signature))]
 
@@ -40,7 +45,7 @@ def test_drag_coordinates_are_view_local_browser_client_coordinates():
     assert "const QPoint point = event->pos(); // QWebEngineView-local == browser client coordinates." in PREVIEW
     assert "updatePlacementPointer?.(%1,%2)" in PREVIEW
     assert "commitPlacementPointer?.(%1,%2)" in PREVIEW
-    assert "mapToGlobal" not in PREVIEW[PREVIEW.index("class AssetDropWebEngineView"):PREVIEW.index("#endif\n}  // namespace")]
+    assert "mapToGlobal" not in drop_view_code()
 
 
 def test_drag_preview_reuses_the_single_viewer_geometry_pipeline():
@@ -60,7 +65,7 @@ def test_drop_emits_once_only_when_existing_viewer_state_is_valid():
     assert commit.count("pushEditorEvent('placement_requested'") == 1
     assert "repeat: false" in commit
     assert "cancelPlacement();" in commit
-    assert "commit_armed_asset_placement" not in PREVIEW[PREVIEW.index("class AssetDropWebEngineView"):PREVIEW.index("#endif\n}  // namespace")]
+    assert "commit_armed_asset_placement" not in drop_view_code()
 
 
 def test_invalid_collision_leave_and_cancel_clean_the_same_session():
@@ -74,7 +79,7 @@ def test_invalid_collision_leave_and_cancel_clean_the_same_session():
 
 def test_recent_and_instance_creation_remain_canonical_commit_only():
     drag_code = MAIN[MAIN.index("bool MainWindow::eventFilter"):MAIN.index("void MainWindow::update_scene_builder_top_controls_overflow")]
-    preview_code = PREVIEW[PREVIEW.index("class AssetDropWebEngineView"):PREVIEW.index("#endif\n}  // namespace")]
+    preview_code = drop_view_code()
     assert "record_recent_asset" not in drag_code + preview_code
     assert "workcell_studio_next_id" not in drag_code + preview_code
     commit = function_body(MAIN, "void MainWindow::commit_armed_asset_placement", "void MainWindow::place_last_asset_again")
