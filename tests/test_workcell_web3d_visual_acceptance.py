@@ -1058,3 +1058,31 @@ def test_supported_scene_matrix_distinguishes_runtime_browser_failure():
     assert row["staging_failures"] == []
     assert any("Chromium launch failed" in error for error in row["errors"])
 
+
+
+def test_camera_bounds_use_rotation_aware_world_extents_not_unrotated_axes():
+    from math import sqrt
+    camera = {
+        "id": "generated_urdf::camera_link::visual_17::17",
+        "category": "camera", "link_name": "camera_link",
+        "render_status": "mesh_loaded", "exclude_from_fit_bounds": False,
+        "expected_dimensions_m": {"x": 0.09, "y": 0.025, "z": 0.025},
+        "bounding_box_size": {"x": 0.025, "y": 0.025, "z": 0.09},
+        "world_quaternion": {"x": 0, "y": sqrt(0.5), "z": 0, "w": sqrt(0.5)},
+    }
+    assert module._camera_bounds_errors({"renderedMeshDiagnostics": [camera]}) == []
+    camera["bounding_box_size"] = {"x": 0.025, "y": 0.025, "z": 0.4}
+    errors = module._camera_bounds_errors({"renderedMeshDiagnostics": [camera]})
+    assert any("camera_link loaded mesh bounds are oversized" in error for error in errors)
+
+
+def test_camera_bounds_reject_genuinely_oversized_visual_without_rotation():
+    camera = {
+        "id": "realsense_overhead", "category": "camera",
+        "render_status": "mesh_loaded", "exclude_from_fit_bounds": False,
+        "expected_dimensions_m": {"x": 0.09, "y": 0.025, "z": 0.025},
+        "bounding_box_size": {"x": 0.4, "y": 0.2, "z": 0.12},
+        "world_quaternion": {"x": 0, "y": 0, "z": 0, "w": 1},
+    }
+    assert module._camera_bounds_errors({"renderedMeshDiagnostics": [camera]})
+
