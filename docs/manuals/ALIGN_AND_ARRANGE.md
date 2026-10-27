@@ -8,58 +8,24 @@ Align & Arrange is a positioning aid on the existing placement contract, not a n
 - Apply goes through the same undoable commit as **Mount To** and **Mate**.
 - Save, reopen, Generate, Validate, undo and redo behave as they do for any other placement edit.
 
-## Starting it
+## Where it lives now
 
-1. Select the part to move: a bin, fixture, table or other placed asset.
-2. Start Align & Arrange in either of these ways:
-   - Inspector → **Align & Arrange…**, under Mate by Picking Faces;
-   - **Ctrl+Shift+A** in Scene Builder.
-3. Choose the **Reference** in one of these ways:
-   - click it in the 3D view;
-   - click it in the Scene Hierarchy;
-   - pick it from the list.
+The separate Inspector panel (Inspector → Align & Arrange…, Ctrl+Shift+A) was retired. The
+[arrangement toolbar](MULTI_SELECT_ARRANGE.md) above the 3D view is the one place for alignment, and it uses the
+same engine (`scripts/asset_alignment.py`):
 
-   While the panel is open, a click chooses the reference; the part to move stays selected. The 3D move gizmo is held off, so choosing a reference cannot move anything.
+1. Click the **reference** part, then Ctrl+click the part (or parts) to move.
+2. Choose an Align tool: edges, Centre X/Y/Z, Centre in XY plane, Centre on reference or Place on top.
+3. In the preview bar, set exact **ΔX/ΔY/ΔZ** offsets in millimetres (reference axes) and, if wanted,
+   **Keep relative (mount on reference)**.
+4. Check the ghosts and the numbers, then **Apply** (one undoable step) or **Cancel**.
 
-The Inspector shows the Align & Arrange panel. Nothing changes until **Apply**. **Cancel** or Esc leaves without changes.
+Every rule works in the reference part's own axes, so a rotated reference keeps its own sides:
+left/right −X/+X, front/back −Y/+Y, bottom/top −Z/+Z. The orientation of the moved parts never changes.
 
-## Operations
-
-Every operation works in the **reference part's own axes**, so a rotated reference keeps its own sides:
-
-| Button | Meaning (reference axes) |
-|---|---|
-| Centre X / Y / Z | Box centres match along that axis |
-| Centre in XY plane | Centre X and Centre Y together (height kept) |
-| Left / Right | The −X / +X box faces line up |
-| Front / Back | The −Y / +Y box faces line up |
-| Bottom / Top | The −Z / +Z box faces line up |
-| Place on top | The part's box bottom rests on the reference: on its verified upward surface datum (for example a workbench `surface`) when it has one, otherwise on its box top |
-| Mate faces… | Leaves for the Mate tool: flush on verified faces (datums), not boxes |
-
-How operations combine:
-- One operation per axis. Clicking an active operation clears it, and Clear removes all.
-- Operations on different axes combine; for example, Centre in XY plane with Place on top.
-- **Offset (mm)** adds an exact distance along each axis that has an operation. For example, Left with X +50 leaves a 50 mm margin. Offsets on axes without an operation are disabled.
-
-## Preview
-
-- The panel shows the planned move in numbers:
-  - the distance;
-  - the world ΔX/ΔY/ΔZ;
-  - the target position.
-- It states how each box was measured, for example "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)" or "authored box dimensions".
-- It lists any parts mounted on the moving part, because they follow it.
-- The 3D Product View shows a translucent ghost at the planned pose and highlights both parts. The native fallback view shows the numbers only.
-- The orientation never changes.
-- The preview is a dry run of exactly the request Apply sends.
-
-## Align once versus Keep relative
-
-- **Align once** (default) changes the pose only. The part does not follow the reference later. A part already mounted on another part stays mounted; only its offset changes.
-- **Keep relative** also mounts the part on the reference with a fixed offset: the existing Mount To relation, with `parent_object` set to the reference and parent datum `origin`. The part then follows when the reference moves. Detach it later in Mount To. This option is unavailable when the reference is locked.
-
-Neither option creates a CAD face constraint.
+**Align once** (default) changes poses only. **Keep relative** also mounts each part on the reference with a
+fixed offset (the existing Mount To relation), so it follows the reference; Detach removes it. Neither creates a
+CAD face constraint: for verified faces use Flush / Coincident / Concentric (the Mate tool).
 
 ## What is measured, and what is rejected
 

@@ -31,7 +31,11 @@ TEST(LayoutSerializationContractTest, EmbeddedStructuralSaveUsesNativeSessionAut
   const std::string src = load_file("gui/mainwindow.cpp");
   const std::string controller = load_file("gui/embedded_web_edit_save_controller.hpp");
   EXPECT_NE(src.find("save_native_layout_changes(const QJsonObject & web_patch"), std::string::npos);
-  EXPECT_NE(src.find("if (save_layout_button_) save_layout_button_->setEnabled(true)"), std::string::npos);
+  // Edits enable Save Layout, except in a read-only diagnostic preview, which never saves.
+  EXPECT_NE(src.find("if (save_layout_button_) save_layout_button_->setEnabled(!read_only_preview_active())"), std::string::npos);
+  EXPECT_EQ(src.find("if (save_layout_button_) save_layout_button_->setEnabled(true)"), std::string::npos);
+  EXPECT_NE(src.find("Save Layout refused: read-only diagnostic preview."), std::string::npos);
+  EXPECT_NE(controller.find("&& !read_only"), std::string::npos);
   EXPECT_NE(controller.find("host_dirty_ && host_dirty_()"), std::string::npos);
   EXPECT_NE(controller.find("native structural changes"), std::string::npos);
   EXPECT_NE(controller.find("native_label"), std::string::npos);

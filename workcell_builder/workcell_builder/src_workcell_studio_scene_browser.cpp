@@ -295,6 +295,9 @@ SceneContentReadiness scene_content_readiness(const WorkcellStudioSceneInfo & sc
   current.acceptance_report_passed = false;
   inspect_acceptance_report(&current);
   SceneContentReadiness result;
+  result.validation_report_present = current.has_acceptance_report_json;
+  result.validation_report_matches_inputs = current.acceptance_report_current;
+  result.validation_status = current.acceptance_status;
   result.validation_current = current.acceptance_report_current && current.acceptance_report_passed;
   result.generation_current = result.validation_current;
   try {

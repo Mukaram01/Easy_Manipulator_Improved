@@ -23,10 +23,8 @@
 #include "datum_mating_text.hpp"
 #include "teardown_connections.hpp"
 #include "mate_pick.hpp"
-#include "align_arrange_controller.hpp"
 #include "arrange_controller.hpp"
 #include "arrange_toolbar.hpp"
-#include "align_arrange_panel.hpp"
 #include "mate_tool_controller.hpp"
 #include "mate_tool_panel.hpp"
 #include "gui/web_edit_policy.hpp"
@@ -2072,6 +2070,7 @@ bool MainWindow::open_scene_builder_for_scene_index(
 
   if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(
       QString::fromStdString(scene_browser_result_.scenes[scene_index].scene_dir.string()))) return false;
+  if (!leave_cell_session_for(scene_index)) return false;
 
   // Navigation happens before editor ownership changes. Home callbacks are
   // therefore inactive before the canonical editor refresh begins.
@@ -3037,7 +3036,17 @@ void MainWindow::setup_studio_shell()
     register_scene_builder_action(key, action);
     return action;
   };
-  register_scene_action("layout.save", "Save Layout", [this]() { if (save_layout_button_) save_layout_button_->click(); });
+  register_scene_action("layout.save", "Save Layout", [this]() {
+    if (!save_layout_button_) return;
+    // The menu entry is the same command as the button; when it is unavailable, say why.
+    if (!save_layout_button_->isEnabled()) {
+      statusBar()->showMessage(read_only_preview_active()
+        ? QStringLiteral("Save Layout is disabled: this cell is a read-only diagnostic preview (fix the scene blocker in Checks).")
+        : QStringLiteral("Nothing to save: the layout has no unsaved edits."), 6000);
+      return;
+    }
+    save_layout_button_->click();
+  });
   register_scene_action("layout.undo", "Undo Layout Edit", [this]() { undo_layout_edit(); });
   register_scene_action("layout.redo", "Redo Layout Edit", [this]() { redo_layout_edit(); });
   register_scene_action("layout.duplicate", "Duplicate Selected", [this]() { duplicate_selected_item(); });
@@ -3406,7 +3415,8 @@ void MainWindow::setup_studio_shell()
   scene_workflow_rail_label_ = new QLabel("Select a scene to view workflow steps.", workflow_card);
   scene_workflow_rail_label_->setWordWrap(true);
   scene_workflow_rail_label_->setTextFormat(Qt::RichText);
-  scene_workflow_rail_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+  scene_workflow_rail_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+  scene_workflow_rail_label_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
   workflow_card_layout->addWidget(scene_workflow_rail_label_);
   scene_workflow_recommendation_label_ = new QLabel("Recommended next action updates as you progress.", workflow_card);
   scene_workflow_recommendation_label_->setWordWrap(true);
@@ -3479,7 +3489,7 @@ void MainWindow::setup_studio_shell()
   environment_task_editor_ = new TaskIntentEditor(right_panel);
   connect(environment_task_editor_, &TaskIntentEditor::edited, this, [this] {
     validation_stale_ = true; launch_artifacts_ready_ = false;
-    if (save_layout_button_) save_layout_button_->setEnabled(true);
+    if (save_layout_button_) save_layout_button_->setEnabled(!read_only_preview_active());
     if (layout_state_label_) layout_state_label_->setText("Unsaved task edits — Save task before planning.");
     refresh_preview_launch_ui();
     schedule_operator_preview_update();
@@ -3664,18 +3674,6 @@ void MainWindow::setup_studio_shell()
   mounting_button->setToolTip("Mount this asset to another asset: align one of its datums (origin, point, axis or plane) "
     "with a parent datum, coincident or flush, with an offset. Reparent and detach preserve its world pose.");
   selected_item_card_layout->addWidget(mounting_button);
-  inspector_mate_button_ = new QPushButton("Mate by Picking Faces…", scene_builder);
-  inspector_mate_button_->setObjectName("sceneBuilderMateTool");
-  inspector_mate_button_->setToolTip("Place this asset by its faces: click its mounting face, then the face it should sit on, "
-    "check the preview and Apply. Uses the same relation as Mount To.");
-  selected_item_card_layout->addWidget(inspector_mate_button_);
-  connect(inspector_mate_button_, &QPushButton::clicked, this, &MainWindow::begin_visual_mate);
-  inspector_align_button_ = new QPushButton("Align && Arrange…", scene_builder);
-  inspector_align_button_->setObjectName("sceneBuilderAlignArrange");
-  inspector_align_button_->setToolTip("Line this part up with another part: centre, align edges, place on top or set an "
-    "exact offset, with a ghost preview before Apply (Ctrl+Shift+A). Uses bounding boxes, not CAD faces.");
-  selected_item_card_layout->addWidget(inspector_align_button_);
-  connect(inspector_align_button_, &QPushButton::clicked, this, &MainWindow::begin_align_arrange);
   inspector_mount_relation_label_ = new QLabel(scene_builder);
   inspector_mount_relation_label_->setObjectName("sceneBuilderMountRelation");
   inspector_mount_relation_label_->setWordWrap(true);
@@ -3683,6 +3681,7 @@ void MainWindow::setup_studio_shell()
   selected_item_card_layout->addWidget(inspector_mount_relation_label_);
   connect(mounting_button, &QPushButton::clicked, this, &MainWindow::edit_selected_mounting);
   auto * transform_title = new QLabel("<b>Transform</b><br/>Position in metres; rotation in degrees.", scene_builder);
+  inspector_transform_title_ = transform_title;
   transform_title->setWordWrap(true);
   selected_item_card_layout->addWidget(transform_title);
   auto * pose_grid = new QGridLayout();
@@ -3767,6 +3766,21 @@ void MainWindow::setup_studio_shell()
   scene_builder_inspector_tabs_->addTab(selection_tab, "Inspector");
   scene_builder_inspector_tabs_->addTab(workflow_tab, "Task");
   scene_builder_inspector_tabs_->addTab(readiness_tab, "Checks");
+  readiness_tab_layout->addStretch(1);
+  {
+    auto * tabs = scene_builder_inspector_tabs_;
+    const auto fit_to_current = [tabs](int current) {
+      for (int i = 0; i < tabs->count(); ++i) {
+        if (auto * page = tabs->widget(i)) {
+          page->setSizePolicy(QSizePolicy::Preferred, i == current ? QSizePolicy::Preferred : QSizePolicy::Ignored);
+        }
+      }
+      tabs->updateGeometry();
+      if (auto * contents = tabs->parentWidget()) contents->adjustSize();
+    };
+    connect(tabs, &QTabWidget::currentChanged, this, fit_to_current);
+    fit_to_current(tabs->currentIndex());
+  }
   inspector_scroll_layout->addWidget(scene_builder_inspector_tabs_);
   {
     // Visual Mate tool: the resolver hooks are the same ones Mount To uses.
@@ -3795,40 +3809,6 @@ void MainWindow::setup_studio_shell()
       mate_controller_->cancel(QStringLiteral("Mate tool closed; choose the datums in the Mount To dialog. Nothing was applied."));
       if (!asset.isEmpty()) apply_scene_selection(asset, QString(), false, false);
       edit_selected_mounting();
-    });
-  }
-  {
-    // Align & Arrange: bounding-box alignment planned by the same resolver, committed through Mount To's path.
-    workcell_builder::AlignArrangeController::Hooks hooks;
-    hooks.run_resolver = [this](const QJsonObject & request) { return run_mounting_request(request); };
-    hooks.commit = [this](const QJsonObject & request) { return commit_mounting_request(request); };
-    hooks.current_items = [this]() { return mounting_items(); };
-    hooks.display_name = [this](const QString & id) {
-      for (const auto & p : all_scene_preview_items_) if (p.id == id) return p.display_name;
-      return QString();
-    };
-    hooks.moving_blocker = [this](const QString & id) { return align_moving_blocker(id); };
-    hooks.reference_blocker = [this](const QString & id, QJsonObject * world) { return align_reference_blocker(id, world); };
-    hooks.live_dimensions = [this]() {
-      QJsonObject sizes;
-      for (const auto & p : all_scene_preview_items_) {
-        if (p.primitive_geometry_type == QStringLiteral("box") && p.source_layer == QStringLiteral("editable_layout")) {
-          sizes.insert(p.id, QJsonArray{p.sx, p.sy, p.sz});
-        }
-      }
-      return sizes;
-    };
-    align_controller_ = new workcell_builder::AlignArrangeController(hooks, this);
-    align_panel_ = new workcell_builder::AlignArrangePanel(align_controller_, inspector_scroll_contents);
-    align_panel_->hide();
-    inspector_scroll_layout->insertWidget(0, align_panel_);
-    connect(align_controller_, &workcell_builder::AlignArrangeController::changed, this, &MainWindow::push_align_overlay);
-    connect(align_controller_, &workcell_builder::AlignArrangeController::finished, this, &MainWindow::end_align_arrange);
-    connect(align_panel_, &workcell_builder::AlignArrangePanel::mate_requested, this, [this]() {
-      const QString part = align_controller_->moving();
-      align_controller_->cancel(QStringLiteral("Align & Arrange closed for Mate faces. Nothing was applied."));
-      if (!part.isEmpty()) apply_scene_selection(part, QString(), false, false);
-      begin_visual_mate();
     });
   }
   inspector_scroll->setWidget(inspector_scroll_contents);
@@ -4263,9 +4243,7 @@ void MainWindow::setup_studio_shell()
     }
   }
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
-  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ if (arrange_active()) { arrange_controller_->cancel(); return; } if (align_active()) { align_controller_->cancel(); return; } if (mate_active()) { mate_controller_->cancel(); return; } set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
-  auto * align_sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+A")), scene_builder);
-  connect(align_sc, &QShortcut::activated, this, [this]() { if (align_active()) align_controller_->cancel(); else begin_align_arrange(); });
+  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ if (arrange_active()) { arrange_controller_->cancel(); return; } if (mate_active()) { mate_controller_->cancel(); return; } set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
   auto * rename_sc = new QShortcut(QKeySequence(Qt::Key_F2), scene_builder);
   rename_sc->setContext(Qt::ApplicationShortcut);
@@ -5733,6 +5711,7 @@ void MainWindow::select_scene_by_row(int row)
   if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
   if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(
       QString::fromStdString(scene_browser_result_.scenes[row].scene_dir.string()))) return;
+  if (!leave_cell_session_for(row)) return;
   const QString previous_scene_path = selected_scene_path();
   if (place_asset_armed_) set_canvas_interaction_mode(CanvasInteractionMode::Select);
   cancel_mate_for_other_cell(row);
@@ -5891,8 +5870,8 @@ QString MainWindow::scene_builder_activity_summary(
       return QStringLiteral("3D preview only (read-only) · task blocked — open Checks");
     }
     return count.hasMatch()
-      ? QStringLiteral("Product View ready · %1 physical items").arg(count.captured(1))
-      : QStringLiteral("Product View ready");
+      ? QStringLiteral("Product View: %1 physical items drawn").arg(count.captured(1))
+      : QStringLiteral("Product View: scene drawn");
   }
   if (lower.startsWith(QStringLiteral("saved scene layout metadata")) ||
       lower.startsWith(QStringLiteral("save layout: serialized")) ||
@@ -7543,6 +7522,8 @@ void MainWindow::sync_selected_scene_state()
   selected_scene_state_.tool_mount_summary = metadata.tool_mount;
   selected_scene_state_.grasp_frame_summary = metadata.grasp_frame;
   selected_scene_state_.launchable = s.has_launch_demo;
+  // The context header names the open cell from this, not from the Home table selection.
+  setProperty("studioOpenedSceneId", selected_scene_state_.name);
 }
 
 void MainWindow::sync_selected_item_state()
@@ -7734,9 +7715,15 @@ void MainWindow::populate_scene_files_tab()
     auto * item = new QTreeWidgetItem(scene_files_tree_);
     item->setText(0, artifact.first);
     item->setText(1, artifact.second);
-    for (int column = 0; column < 3; ++column) item->setToolTip(column, QStringLiteral("%1 — %2 — %3").arg(artifact.first, artifact.second, exists ? QStringLiteral("present") : QStringLiteral("missing")));
-    item->setText(2, exists ? "present" : "missing");
-    item->setForeground(2, exists ? QBrush(QColor("#15803D")) : QBrush(QColor("#B91C1C")));
+    // Fallback recipes and readiness/preview reports are optional outputs of other actions:
+    // their absence is not an error, so it is not shown as one.
+    const bool optional = artifact.first.contains(QStringLiteral("fallback")) || artifact.second.startsWith(QStringLiteral("readiness/")) ||
+      artifact.second.startsWith(QStringLiteral("preview/"));
+    const QString state = exists ? QStringLiteral("present") : (optional ? QStringLiteral("not generated") : QStringLiteral("missing"));
+    for (int column = 0; column < 3; ++column) item->setToolTip(column, QStringLiteral("%1 — %2 — %3%4").arg(artifact.first, artifact.second, state,
+      optional ? QStringLiteral(" (optional output)") : QString()));
+    item->setText(2, state);
+    item->setForeground(2, exists ? QBrush(QColor("#15803D")) : (optional ? QBrush(QColor("#6B7280")) : QBrush(QColor("#B91C1C"))));
   }
 }
 
@@ -8437,11 +8424,6 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
 
 void MainWindow::apply_scene_selection(const QString & id, const QString & role, bool intentional_clear, bool center_canvas)
 {
-  if (align_active() && !mate_selection_passthrough_) {
-    // While aligning, a hierarchy or viewport click chooses the reference part; the part to move stays selected.
-    if (!id.trimmed().isEmpty()) align_controller_->set_reference(id.trimmed());
-    return;
-  }
   if (mate_active() && !mate_selection_passthrough_) {
     // While mating, a hierarchy click or an asset-level viewport click chooses
     // the part for the current step; it never changes the mate behind its back.
@@ -8616,7 +8598,7 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   launch_artifacts_ready_ = false;
   // Structural edits are native-session authority even when Web3D owns the
   // visible editor. Do not wait for (or let) browser polling hide this state.
-  if (save_layout_button_) save_layout_button_->setEnabled(true);
+  if (save_layout_button_) save_layout_button_->setEnabled(!read_only_preview_active());
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", true);
     setWindowModified(true);
@@ -8939,7 +8921,18 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   return result;
 }
 
+bool MainWindow::read_only_preview_active() const
+{
+  return scene_preview_widget_ && scene_preview_widget_->property("diagnostic_preview_active").toBool();
+}
+
 void MainWindow::save_layout_changes(){
+  if (read_only_preview_active()) {
+    // Ctrl+S included: a diagnostic preview never writes authored files.
+    statusBar()->showMessage(QStringLiteral("Save Layout is disabled: this cell is a read-only diagnostic preview."), 6000);
+    append_studio_log(QStringLiteral("Save Layout refused: read-only diagnostic preview."));
+    return;
+  }
   if (environment_task_editor_ && environment_task_editor_->scene() == selected_scene_path() && environment_task_editor_->dirty()) {
     QString error;
     if (!environment_task_editor_->save(&error)) { append_studio_log("Save blocked: " + error); show_workflow_feedback("error", "Save blocked: " + error); return; }
@@ -10422,7 +10415,6 @@ void MainWindow::begin_visual_mate()
 {
   if (!mate_controller_ || !mate_panel_) return;
   if (mate_active()) return;
-  if (align_active()) align_controller_->cancel(QStringLiteral("Align & Arrange closed for Mate. Nothing was applied."));
   const auto stop = [this](const QString & message) {
     if (scene_builder_mate_button_) { const QSignalBlocker blocker(scene_builder_mate_button_); scene_builder_mate_button_->setChecked(false); }
     append_studio_log(message);
@@ -10455,11 +10447,48 @@ void MainWindow::end_visual_mate(bool applied, const QString & message)
   refresh_selected_item_card();
 }
 
+bool MainWindow::leave_cell_session_for(int scene_index)
+{
+  if (scene_index == selected_scene_index_) return true;
+  if (layout_dirty_) {
+    QMessageBox box(QMessageBox::Warning, QStringLiteral("Unsaved layout edits"),
+      QStringLiteral("%1 has unsaved layout edits. Opening another cell discards them; Undo cannot bring them back.")
+        .arg(selected_scene_state_.name.isEmpty() ? QStringLiteral("This cell") : selected_scene_state_.name),
+      QMessageBox::NoButton, this);
+    box.setObjectName(QStringLiteral("unsavedLayoutSwitchDialog"));
+    box.setInformativeText(QStringLiteral("To keep them, choose Stay and use Save Layout (Ctrl+S) first."));
+    auto * discard = box.addButton(QStringLiteral("Discard edits and open"), QMessageBox::DestructiveRole);
+    box.addButton(QStringLiteral("Stay"), QMessageBox::RejectRole);
+    box.exec();
+    if (box.clickedButton() != discard) return false;
+    append_studio_log(QStringLiteral("Unsaved layout edits in %1 were discarded on opening another cell.").arg(selected_scene_state_.name));
+  }
+  // Undo/redo, deletions and the selection belong to the cell they were made in. Many
+  // cells share IDs (target_bin_default ...): replaying them in another cell would
+  // move the wrong parts there.
+  if (arrange_active()) arrange_controller_->cancel(QStringLiteral("Arrangement cancelled: another cell was opened. Nothing was applied."));
+  undo_stack_.clear();
+  redo_stack_.clear();
+  deleted_layout_item_ids_.clear();
+  selection_set_.clear();
+  layout_dirty_ = false;
+  validation_stale_ = false;  // in-session edits since the last validation belong to the old cell
+  setWindowModified(false);
+  if (save_layout_button_) {
+    save_layout_button_->setProperty("layoutDirty", false);
+    save_layout_button_->setEnabled(false);
+    save_layout_button_->style()->unpolish(save_layout_button_);
+    save_layout_button_->style()->polish(save_layout_button_);
+  }
+  if (scene_preview_widget_) scene_preview_widget_->set_native_authoring_history_available(false, false);
+  return true;
+}
+
 void MainWindow::cancel_mate_for_other_cell(int scene_index)
 {
   // Mate belongs to the cell it started in; Apply must never commit into another one.
-  if (align_active() && scene_index != selected_scene_index_) {
-    align_controller_->cancel(QStringLiteral("Align & Arrange cancelled: another cell was opened. Nothing was applied."));
+  if (arrange_active() && scene_index != selected_scene_index_) {
+    arrange_controller_->cancel(QStringLiteral("Arrangement cancelled: another cell was opened. Nothing was applied."));
   }
   if (mate_active() && scene_index != selected_scene_index_) {
     mate_controller_->cancel(QStringLiteral("Mate cancelled: another cell was opened. Nothing was applied."));
@@ -10545,24 +10574,12 @@ void MainWindow::handle_embedded_mate_state(const QVariantMap & mate)
 
 void MainWindow::notify_mate_scene_changed()
 {
-  if (align_active() && !align_scene_change_pending_) {
-    align_scene_change_pending_ = true;
-    QTimer::singleShot(0, this, [this]() {
-      align_scene_change_pending_ = false;
-      if (align_active()) align_controller_->scene_changed();
-    });
-  }
   if (!mate_active() || mate_scene_change_pending_) return;
   mate_scene_change_pending_ = true;
   QTimer::singleShot(0, this, [this]() {
     mate_scene_change_pending_ = false;
     if (mate_active()) mate_controller_->scene_changed();
   });
-}
-
-bool MainWindow::align_active() const
-{
-  return align_controller_ && align_controller_->active();
 }
 
 namespace
@@ -10631,67 +10648,6 @@ QString MainWindow::align_reference_blocker(const QString & id, QJsonObject * wo
   return QString();
 }
 
-void MainWindow::begin_align_arrange()
-{
-  if (!align_controller_ || !align_panel_ || align_active()) return;
-  const auto stop = [this](const QString & message) {
-    append_studio_log(QStringLiteral("Align & Arrange: %1").arg(message));
-    QMessageBox::information(this, QStringLiteral("Align & Arrange"), message);
-  };
-  if (!has_selected_scene()) { stop(QStringLiteral("Open a cell before using Align & Arrange.")); return; }
-  if (mate_active()) mate_controller_->cancel(QStringLiteral("Mate closed for Align & Arrange. Nothing was applied."));
-  align_scene_path_ = selected_scene_state_.path;  // before begin(): its first update checks the cell
-  QString error;
-  if (!align_controller_->begin(current_selected_scene_item_id_, &error)) { stop(error); return; }
-  QList<QPair<QString, QString>> candidates;
-  QSet<QString> seen;
-  for (const auto & p : all_scene_preview_items_) {
-    if (p.id.isEmpty() || p.id == align_controller_->moving() || seen.contains(p.id)) continue;
-    seen.insert(p.id);
-    if (align_reference_blocker(p.id, nullptr).isEmpty()) candidates.append({p.id, align_name(p)});
-  }
-  std::sort(candidates.begin(), candidates.end(), [](const auto & a, const auto & b) {
-    return QString::localeAwareCompare(a.second, b.second) < 0;
-  });
-  align_panel_->set_reference_candidates(candidates);
-  align_panel_->set_view_note(scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()
-    ? QString()
-    : QStringLiteral("The ghost is drawn in the 3D Product View; this fallback view shows the numbers only."));
-  apply_scene_builder_panel_visibility(true, true);
-  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->hide();
-  align_panel_->show();
-  append_studio_log(QStringLiteral("Align & Arrange started for %1 in %2.").arg(align_controller_->moving(), selected_scene_state_.name));
-  push_align_overlay();
-}
-
-void MainWindow::end_align_arrange(bool applied, const QString & message)
-{
-  if (align_panel_) align_panel_->hide();
-  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->show();
-  if (scene_preview_widget_) scene_preview_widget_->clear_arrange_preview();
-  append_studio_log(QStringLiteral("Align & Arrange: %1").arg(message));
-  // A reference click selected the reference in the 3D view: hand the selection back to the part.
-  if (align_controller_ && !align_controller_->moving().isEmpty() && align_find_item(all_scene_preview_items_, align_controller_->moving())) {
-    apply_scene_selection(align_controller_->moving(), QString(), false, false);
-  }
-  refresh_selected_item_card();
-}
-
-void MainWindow::push_align_overlay()
-{
-  if (!align_active()) return;
-  if (align_scene_path_ != selected_scene_state_.path) {
-    align_controller_->cancel(QStringLiteral("Align & Arrange cancelled: another cell was opened. Nothing was applied."));
-    return;
-  }
-  // The part being moved stays the selection; the reference is highlighted by the overlay.
-  if (align_controller_->moving() != current_selected_scene_item_id_) {
-    const QScopedValueRollback<bool> passthrough(mate_selection_passthrough_, true);
-    apply_scene_selection(align_controller_->moving(), QString(), false, false);
-  }
-  if (scene_preview_widget_) scene_preview_widget_->set_arrange_preview(align_controller_->overlay());
-}
-
 bool MainWindow::arrange_active() const
 {
   return arrange_controller_ && arrange_controller_->active();
@@ -10700,7 +10656,7 @@ bool MainWindow::arrange_active() const
 void MainWindow::toggle_scene_selection(const QString & id)
 {
   const QString part = id.trimmed();
-  if (part.isEmpty() || mate_active() || align_active()) return;
+  if (part.isEmpty() || mate_active()) return;
   const auto * item = align_find_item(all_scene_preview_items_, part);
   if (!item || deleted_layout_item_ids_.contains(part)) return;
   if (item->semantic_task_zone_helper || item->source_layer == QStringLiteral("overlay")) {
@@ -10776,6 +10732,14 @@ void MainWindow::sync_selection_set_views()
     }
     inspector_multi_selection_label_->setVisible(members.size() >= 2);
   }
+  if (inspector_transform_title_) {
+    inspector_transform_title_->setText(members.size() >= 2
+      ? QStringLiteral("<b>Transform — %1 only</b><br/>Edits the reference; move all selected parts with Move / rotate… "
+          "on the arrangement toolbar. Metres and degrees.").arg(name_of(reference).toHtmlEscaped())
+      : QStringLiteral("<b>Transform</b><br/>Position in metres; rotation in degrees."));
+  }
+  refresh_delete_selected_action();
+  refresh_duplicate_selected_action();
   if (arrange_active()) arrange_controller_->scene_changed();
 }
 
@@ -10783,7 +10747,7 @@ void MainWindow::push_arrange_overlay()
 {
   if (!scene_preview_widget_) return;
   if (arrange_active()) scene_preview_widget_->set_arrange_preview(arrange_controller_->overlay());
-  else if (!align_active()) scene_preview_widget_->clear_arrange_preview();
+  else scene_preview_widget_->clear_arrange_preview();
 }
 
 QString MainWindow::arrange_extra_availability(const QString & tool) const
@@ -11232,7 +11196,7 @@ bool MainWindow::selected_item_can_be_duplicated() const
 
 void MainWindow::refresh_duplicate_selected_action()
 {
-  const bool can_duplicate = selected_item_can_be_duplicated();
+  const bool can_duplicate = selection_set_.size() < 2 && selected_item_can_be_duplicated();
   if (auto * action = scene_builder_action(QStringLiteral("layout.duplicate"))) action->setEnabled(can_duplicate);
   if (scene_duplicate_context_button_) {
     scene_duplicate_context_button_->setVisible(true);
@@ -11242,6 +11206,13 @@ void MainWindow::refresh_duplicate_selected_action()
 
 void MainWindow::duplicate_selected_item()
 {
+  if (selection_set_.size() >= 2) {
+    const QString message = QStringLiteral("%1 parts are selected. Duplicate copies one part at a time: select only the "
+      "part to copy.").arg(selection_set_.size());
+    append_studio_log(QStringLiteral("Duplicate refused: %1").arg(message));
+    statusBar()->showMessage(message, 6000);
+    return;
+  }
   const auto target = resolve_selected_editable_layout_target();
   if (!target.ok || place_asset_armed_) {
     append_studio_log("Selected item cannot be duplicated");
@@ -11358,10 +11329,22 @@ bool MainWindow::selected_item_can_be_deleted() const
 
 void MainWindow::refresh_delete_selected_action()
 {
-  if (auto * action = scene_builder_action(QStringLiteral("layout.remove"))) action->setEnabled(selected_item_can_be_deleted());
+  if (auto * action = scene_builder_action(QStringLiteral("layout.remove"))) {
+    const bool multi = selection_set_.size() >= 2;
+    action->setEnabled(!multi && selected_item_can_be_deleted());
+    action->setToolTip(multi ? QStringLiteral("Delete removes one part at a time; %1 parts are selected.").arg(selection_set_.size())
+                             : QStringLiteral("Delete the selected part (undoable)."));
+  }
 }
 
 void MainWindow::delete_selected_item(){
+  if (selection_set_.size() >= 2) {
+    const QString message = QStringLiteral("%1 parts are selected. Delete removes one part at a time: click the part to "
+      "delete (or Ctrl+click to leave only it selected), then Delete.").arg(selection_set_.size());
+    append_studio_log(QStringLiteral("Delete refused: %1").arg(message));
+    statusBar()->showMessage(message, 6000);
+    return;
+  }
   const auto target = resolve_selected_editable_layout_target();
   if(!target.ok || place_asset_armed_) {
     append_studio_log("Selected item cannot be deleted");
@@ -11438,6 +11421,12 @@ void MainWindow::rebuild_canvas_inspector()
 void MainWindow::keyPressEvent(QKeyEvent * event)
 {
   if (!digital_twin_scene_ || digital_twin_scene_->selectedItems().isEmpty()) { QMainWindow::keyPressEvent(event); return; }
+  if (selection_set_.size() >= 2) {
+    // Arrow keys would move only the reference: multi-part moves use the arrangement toolbar (Move / rotate…).
+    statusBar()->showMessage(QStringLiteral("Several parts are selected: use Move / rotate… on the arrangement toolbar."), 4000);
+    QMainWindow::keyPressEvent(event);
+    return;
+  }
   auto * item = digital_twin_scene_->selectedItems().front();
   if (!item || item->data(RoleLocked).toBool()) { QMainWindow::keyPressEvent(event); return; }
   const double step_m = current_nudge_step_m(event->modifiers());
@@ -12145,7 +12134,7 @@ void MainWindow::on_hierarchy_item_selected(QTreeWidgetItem * item)
   const QString selected_id = item->data(0, TreeRoleId).toString().trimmed();
   const auto modifiers = hierarchy_click_modifiers_ | QApplication::keyboardModifiers();
   hierarchy_click_modifiers_ = Qt::NoModifier;
-  if (!selected_id.isEmpty() && !mate_active() && !align_active()) {
+  if (!selected_id.isEmpty() && !mate_active()) {
     if (modifiers & (Qt::ControlModifier | Qt::MetaModifier)) { toggle_scene_selection(selected_id); return; }
     if (modifiers & Qt::ShiftModifier) { extend_scene_selection_to(selected_id); return; }
     hierarchy_range_anchor_ = selected_id;
@@ -16575,11 +16564,18 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     layout_ready_detail,
     layout_missing_detail,
     {}, gates, layout_status));
+  // Present files are not current files: after a layout or task change the generated
+  // handoff is Stale until Generate runs again.
+  const bool yaml_present = yaml_ready && scene_manifest_ready;
   steps.push_back(compute_scene_workflow_step(
     "Generate YAML",
-    yaml_ready && scene_manifest_ready, "Ready: cell_definition.yaml and scene_manifest.yaml are present.",
-    "Missing/Blocked: Generate YAML to create cell_definition.yaml and scene_manifest.yaml (task/workcell_builder_task_intent.yaml is optional).",
+    yaml_present && readiness.generation_current, "Current: cell_definition.yaml and scene_manifest.yaml match the authored cell.",
+    yaml_present ? "Stale: the authored cell changed after cell_definition.yaml was generated; run Generate."
+                 : "Missing: Generate YAML to create cell_definition.yaml and scene_manifest.yaml (task/workcell_builder_task_intent.yaml is optional).",
     {}, gates));
+  if (yaml_present && !readiness.generation_current && steps.back().status == SceneWorkflowStepStatus::NeedsAction) {
+    steps.back().status = SceneWorkflowStepStatus::Stale;
+  }
   steps.push_back(compute_scene_workflow_step(
     "Generate Scene Package",
     scene_package_gate_ready, "Ready: package.xml, CMakeLists.txt, launch/demo.launch.py, and urdf/scene.urdf.xacro are present.",
@@ -16592,7 +16588,25 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     validation_gate_ready, has_warnings ? "Validation completed with warnings." : "Validation checks passed.",
     validation_stale_ ? "Validation results are stale; rerun validation." : "Run offline validation.",
     {"yaml_definition"}, gates,
-    validation_gate_ready ? (has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done) : SceneWorkflowStepStatus::Current));
+    has_warnings ? SceneWorkflowStepStatus::Warning : SceneWorkflowStepStatus::Done));
+  // Not ready (and not blocked): either never run for this state, or run before the last change.
+  if (steps.back().status == SceneWorkflowStepStatus::NeedsAction) {
+    // From the on-disk evidence: none = Not run; inputs changed since = Stale; current but not
+    // passing = Failed. In-session edits since the last run also make it Stale.
+    const auto evidence = workcell_builder::scene_content_readiness(s);
+    if (evidence.validation_report_present && evidence.validation_report_matches_inputs && !layout_dirty_ && !validation_stale_ &&
+        evidence.validation_status != "PASS") {
+      steps.back().status = SceneWorkflowStepStatus::Failed;
+      steps.back().detail = QStringLiteral("Failed: the last validation of this exact cell reported %1; open the validation report.")
+        .arg(QString::fromStdString(evidence.validation_status.empty() ? std::string("no status") : evidence.validation_status));
+    } else if ((evidence.validation_report_present && !evidence.validation_report_matches_inputs) || validation_stale_ || layout_dirty_) {
+      steps.back().status = evidence.validation_report_present || validation_stale_ ? SceneWorkflowStepStatus::Stale : SceneWorkflowStepStatus::NotRun;
+      steps.back().detail = QStringLiteral("Stale: the cell changed after the last validation; Generate, then Validate again.");
+    } else {
+      steps.back().status = SceneWorkflowStepStatus::NotRun;
+      steps.back().detail = QStringLiteral("Not run: no validation report exists for this cell yet.");
+    }
+  }
   const ScenePreviewWidget::RenderDebugCounters scene3d_counters =
     scene_preview_widget_ ? scene_preview_widget_->render_debug_counters() : ScenePreviewWidget::RenderDebugCounters{};
   const QString runtime_preview_status_text = scene_preview_widget_
@@ -16666,9 +16680,16 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     }
   }
   SceneWorkflowStep preview_step;
-  preview_step.label = "3D Scene Preview";
+  // Drawing the cell is not task readiness: label it as the visual preview it is.
+  preview_step.label = read_only_preview_active() ? "3D preview (read-only, task blocked)" : "3D preview (visual only)";
   preview_step.status = preview_status;
   preview_step.detail = preview_detail;
+  if (read_only_preview_active()) {
+    // Shown read-only because scene authoring is incomplete: a warning, never "Done".
+    preview_step.status = SceneWorkflowStepStatus::Warning;
+    preview_step.detail = QStringLiteral("Read-only diagnostic preview: the physical cell is drawn, but the task is blocked; "
+      "Save and execution are disabled until the blocker reported by the Product View is fixed.");
+  }
   steps.push_back(preview_step);
 
   QString fake_launch_missing_detail = "Blocked: complete scene package generation and current validation before launching RViz/MoveIt fake hardware.";
@@ -16735,6 +16756,9 @@ QString MainWindow::scene_workflow_status_text(SceneWorkflowStepStatus status) c
     case SceneWorkflowStepStatus::NeedsAction: return "Needed";
     case SceneWorkflowStepStatus::Blocked: return "Blocked";
     case SceneWorkflowStepStatus::Warning: return "Warnings";
+    case SceneWorkflowStepStatus::Stale: return "Stale";
+    case SceneWorkflowStepStatus::NotRun: return "Not run";
+    case SceneWorkflowStepStatus::Failed: return "Failed";
   }
   return "Needed";
 }
@@ -16747,6 +16771,9 @@ QString MainWindow::scene_workflow_status_chip(SceneWorkflowStepStatus status) c
   else if (status == SceneWorkflowStepStatus::NeedsAction) bg = "#b45309";
   else if (status == SceneWorkflowStepStatus::Blocked) bg = "#991b1b";
   else if (status == SceneWorkflowStepStatus::Warning) bg = "#c2410c";
+  else if (status == SceneWorkflowStepStatus::Stale) bg = "#7c3aed";
+  else if (status == SceneWorkflowStepStatus::NotRun) bg = "#6b7280";
+  else if (status == SceneWorkflowStepStatus::Failed) bg = "#b91c1c";
   return QString("<span style='color:#fff;background:%1;border-radius:10px;padding:2px 8px;font-size:11px;'>%2</span>")
     .arg(bg, scene_workflow_status_text(status));
 }
@@ -16758,7 +16785,11 @@ QString MainWindow::scene_workflow_compact_summary(const SceneWorkflowStep & ste
   if (detail.isEmpty() || step.status == SceneWorkflowStepStatus::Done) return QString();
 
   const QString lower = detail.toLower();
+  // The hint names the action for *this* step: a stale generated handoff needs Generate, not validation.
+  if (step.label.startsWith(QStringLiteral("Generate")) && lower.contains("stale")) return "Run Generate again";
   if (lower.contains("stale")) return "Rerun validation";
+  if (lower.contains("not run:")) return "Run validation";
+  if (lower.contains("failed:")) return "Open the validation report";
   if (lower.contains("validate") || lower.contains("offline validation")) return "Run scene validation";
   if (lower.contains("save layout")) return "Save layout";
   if (lower.contains("generate yaml") || lower.contains("cell_definition.yaml")) return "Generate YAML";

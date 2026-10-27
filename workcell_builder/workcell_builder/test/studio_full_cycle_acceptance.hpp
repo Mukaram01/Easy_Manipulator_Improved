@@ -17,11 +17,15 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
+#include <QColor>
+#include <QImage>
+#include <QSpinBox>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QStatusBar>
 #include <QTimer>
 #include <QSet>
 #include <QTableWidget>
@@ -65,8 +69,6 @@
 #include <QThread>
 #include "gui/mate_tool_controller.hpp"
 #include "gui/mate_tool_panel.hpp"
-#include "gui/align_arrange_controller.hpp"
-#include "gui/align_arrange_panel.hpp"
 #include "gui/arrange_controller.hpp"
 #include "gui/arrange_toolbar.hpp"
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
@@ -1906,7 +1908,7 @@ public:
             "the camera is not pitched 90 degrees on the stand turned 15 degrees");
           require(xyz_error > M_PI / 180., "the turned camera is not a compound rotation, so this check would prove nothing");
           window->apply_scene_selection(camera, "", false, false);
-          window->inspector_mate_button_->click();
+          window->begin_visual_mate();  // the toolbar Mate command
           require(window->mate_active() && mate()->pending_asset() == camera, "Inspector Mate did not start on the camera");
           s->env_hash = file_hash(s->scene + "/environment.yaml");
           s->items_before = window->mounting_items();
@@ -2137,7 +2139,7 @@ public:
         if (s->native || s->js_pending) return s->native;
         if (s->sub == 0) {
           window->apply_scene_selection(camera, "", false, false);
-          window->inspector_mate_button_->click();
+          window->begin_visual_mate();  // the toolbar Mate command
           s->sub = 1; return false;
         }
         if (s->sub == 1) {
@@ -2150,7 +2152,7 @@ public:
         s->evidence["reload_previous_counters"] = QJsonObject{{"pick", window->mate_seen_pick_seq_},
           {"hover", window->mate_seen_hover_seq_}, {"cancel", window->mate_seen_cancel_seq_}};
         window->apply_scene_selection(camera, "", false, false);
-        window->inspector_mate_button_->click();
+        window->begin_visual_mate();  // the toolbar Mate command
         auto * isolate = panel()->findChild<QCheckBox *>("mateIsolate");
         if (!isolate->isChecked()) isolate->click();
         s->sub = 0; return true;
@@ -2238,7 +2240,7 @@ public:
             for (const auto & file : {QString("environment.yaml"), QString("layout/workcell_studio_layout.yaml")})
               switching->hashes.insert(path + "/" + file, file_hash(path + "/" + file));
           window->apply_scene_selection(bin, "", false, false);
-          window->inspector_mate_button_->click();
+          window->begin_visual_mate();  // the toolbar Mate command
           auto choose = [=](const char * name, const QString & value) {
             auto * combo = panel()->findChild<QComboBox *>(name);
             const int index = combo ? combo->findData(value) : -1;
@@ -2315,7 +2317,9 @@ public:
           require(button->width() >= needs, "toolbar control clipped: " + (button->text().isEmpty() ? button->objectName() : button->text()));
         }
         s->evidence["toolbar"] = toolbar;
-        require(window->inspector_mate_button_ != nullptr, "Mate is not in the Inspector");
+        // Mate entry points: the Scene Builder toolbar and the hierarchy/3D context menus (the
+        // former duplicate Inspector button was removed; it invoked the same command).
+        require(window->scene_builder_mate_button_ != nullptr, "Mate is not on the toolbar");
         // Context menu entry: open the real hierarchy menu and read it.
         auto * tree = window->scene_hierarchy_tree_;
         QTreeWidgetItem * row = hierarchy_row(bin);
@@ -2599,7 +2603,7 @@ public:
       add("Scenario B: start Mate from the Inspector", [=]() {
         if (s->native) return true;
         window->apply_scene_selection(camera, "", false, false);
-        window->inspector_mate_button_->click();
+        window->begin_visual_mate();  // the toolbar Mate command
         require(window->mate_active() && mate()->pending_asset() == camera, "Inspector Mate did not start on the camera");
         return s->ticks > 4;
       });
@@ -2705,7 +2709,7 @@ public:
         if (s->js_pending) return false;
         if (s->sub == 0) {
           window->apply_scene_selection(table, "", false, false);
-          window->inspector_mate_button_->click();
+          window->begin_visual_mate();  // the toolbar Mate command
           require(window->mate_active() && mate()->pending_asset() == table, "Inspector Mate did not start on the table");
           s->env_hash = file_hash(s->scene + "/environment.yaml");
           s->items_before = window->mounting_items();
@@ -2920,6 +2924,5 @@ public:
     timer->start();
   }
 #include "ui_tour_capture.inc"
-#include "align_arrange_acceptance.inc"
 #include "multi_select_acceptance.inc"
 };

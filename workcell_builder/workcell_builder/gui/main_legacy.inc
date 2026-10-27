@@ -1255,12 +1255,35 @@ int main(int argc, char * argv[])
     TestMain::start_operator_preview_acceptance(&w, &a, output, scene, has_cli_flag(args, "--reopen"));
     return a.exec();
   }
+  // --screen NAME (an xrandr/QScreen name such as rdp-1): open on that real monitor and
+  // maximize there. Only a size the window manager grants is used; nothing is forced.
+  const auto maximize_on_screen = [&args](QWidget & window) {
+    const QString name = cli_value(args, "--screen");
+    if (name.isEmpty()) return;
+    QScreen * target = nullptr;
+    for (auto * screen : QGuiApplication::screens()) if (screen->name() == name) target = screen;
+    if (!target) { qWarning().noquote() << "--screen" << name << "not found"; return; }
+    // Called before the first show(): the compositor honours a window's position only
+    // when it is mapped, so place it on the monitor first, then maximize there.
+    // The shell sets the maximized state at construction; mapped like that, the window
+    // would open maximized on the primary monitor.
+    window.setWindowState(Qt::WindowNoState);
+    window.resize(1280, 800);
+    window.move(target->availableGeometry().topLeft() + QPoint(40, 40));
+    for (const int delay : {300, 2500}) {
+      QTimer::singleShot(delay, &window, [&window, target]() {
+        window.showMaximized();
+        qInfo().noquote() << "--screen: maximized on" << target->name() << window.geometry();
+      });
+    }
+  };
   if (has_cli_flag(args, "--ui-tour")) {
     // Screenshot tour of every page/tab/wizard at --window-size (see test/ui_tour_capture.inc).
     const QString output = cli_value(args, "--smoke-output");
     if (output.isEmpty()) return 2;
     MainWindow w(cli_value(args, "--workspace"), "humble");
     const auto parts = cli_value(args, "--window-size").split('x');
+    maximize_on_screen(w);
     w.show();
     // The shell may maximize the window; the tour measures the requested size (clamped by the minimum
     // size). Without --window-size the restored/default geometry is kept (persistence checks).
@@ -1282,21 +1305,11 @@ int main(int argc, char * argv[])
     MainWindow w(cli_value(args, "--workspace"), "humble");
     const auto parts = cli_value(args, "--window-size").split('x');
     const QSize window_size = parts.size() == 2 ? QSize(parts[0].toInt(), parts[1].toInt()) : QSize(1366, 768);
-    w.resize(window_size);
+    if (cli_value(args, "--screen").isEmpty()) w.resize(window_size);
+    maximize_on_screen(w);
     w.show();
-    TestMain::start_multi_select_acceptance(&w, &a, output, scene, window_size);
-    return a.exec();
-  }
-  if (has_cli_flag(args, "--align-arrange-acceptance")) {
-    const QString output = cli_value(args, "--smoke-output");
-    const QString scene = cli_value(args, "--scene");
-    if (output.isEmpty() || scene.isEmpty()) return 2;
-    MainWindow w(cli_value(args, "--workspace"), "humble");
-    const auto parts = cli_value(args, "--window-size").split('x');
-    const QSize window_size = parts.size() == 2 ? QSize(parts[0].toInt(), parts[1].toInt()) : QSize(1366, 768);
-    w.resize(window_size);
-    w.show();
-    TestMain::start_align_arrange_acceptance(&w, &a, output, scene, window_size, cli_value(args, "--airpick-scene"));
+    TestMain::start_multi_select_acceptance(&w, &a, output, scene,
+      cli_value(args, "--screen").isEmpty() ? window_size : QSize(), cli_value(args, "--airpick-scene"));
     return a.exec();
   }
 #endif

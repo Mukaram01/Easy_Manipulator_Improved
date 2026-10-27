@@ -18,6 +18,7 @@
 #include <functional>
 
 class QAction;
+class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
@@ -86,6 +87,9 @@ private:
   QComboBox * pivot_{nullptr};
   QDoubleSpinBox * move_[6]{};
   QWidget * grid_box_{nullptr};
+  QWidget * align_box_{nullptr};
+  QDoubleSpinBox * align_offset_[3]{};
+  QCheckBox * keep_relative_{nullptr};
   QDoubleSpinBox * grid_{nullptr};
   QPushButton * apply_{nullptr};
   QPushButton * cancel_{nullptr};

@@ -50,8 +50,20 @@ namespace
 {
 QScreen * screenForWidget(QWidget * widget)
 {
-  if (widget && widget->windowHandle() && widget->windowHandle()->screen()) {
-    return widget->windowHandle()->screen();
+  // The monitor the window actually overlaps most. The QWindow's associated screen lags
+  // behind a move (and is the primary monitor until the window is first mapped), so
+  // clamping into it dragged windows on a second or third monitor back to the primary.
+  if (widget) {
+    const QRect frame = widget->frameGeometry();
+    QScreen * best = nullptr;
+    qint64 best_area = 0;
+    for (QScreen * screen : QGuiApplication::screens()) {
+      const QRect overlap = screen->geometry().intersected(frame);
+      const qint64 area = qint64(overlap.width()) * overlap.height();
+      if (area > best_area) { best_area = area; best = screen; }
+    }
+    if (best) return best;
+    if (widget->windowHandle() && widget->windowHandle()->screen()) return widget->windowHandle()->screen();
   }
   return QGuiApplication::primaryScreen();
 }

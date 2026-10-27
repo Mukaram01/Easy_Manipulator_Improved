@@ -1,0 +1,1850 @@
+{
+ "airpick": {
+  "checks": {
+   "3D preview (read-only, task blocked)": "Warnings",
+   "Export": "Blocked",
+   "Generate Scene Package": "Needed",
+   "Generate YAML": "Stale",
+   "RViz/MoveIt Fake-Hardware Launch": "Blocked",
+   "Save Layout": "Done",
+   "Scene": "Done",
+   "Validate": "Not run"
+  },
+  "read_only": true,
+  "save_enabled": false,
+  "status_message": "Embedded Web 3D Product View server verified: all required resources returned HTTP 200 on port 32991."
+ },
+ "airpick_settled": {
+  "header_labels": [
+   "UR5 AirPick4 Test",
+   "/",
+   "Scene Builder",
+   "Needs Attention",
+   "\u25cf  FAKE HARDWARE",
+   "\u25a3  REAL LOCKED"
+  ],
+  "layout_dirty": false,
+  "save_enabled": false,
+  "save_layout_dirty_property": false,
+  "save_mean_rgb": [
+   232.87785714285715,
+   237.10285714285715,
+   241.37928571428571
+  ],
+  "viewer": {
+   "dirty": false,
+   "dirtyCount": 0,
+   "lifecycle": "scene_ready",
+   "pending": [],
+   "pill": "3D preview only\n            Read-only \u00b7 task blocked: task/physical destination: destination zone 'place_zone_main' missing or ambiguous\n          \n          0\n",
+   "ready": true,
+   "sceneId": "ur5_airpick4_test",
+   "statusSceneId": "ur5_airpick4_test",
+   "statusSequence": 2,
+   "terminal": true
+  }
+ },
+ "airpick_settled_within_limit": true,
+ "align_front_residual_m": 0,
+ "align_left_offset_residual_m": 0,
+ "align_preview": {
+  "active": true,
+  "label": "Align front",
+  "op": "align",
+  "params": {
+   "keep_relative": false,
+   "offset_m": [
+    0,
+    0,
+    0
+   ],
+   "rules": {
+    "y": "min"
+   }
+  },
+  "preview": {
+   "error": "",
+   "moved": [
+    {
+     "display_name": "Reject Bin",
+     "distance_m": 0.047706534999999994,
+     "follower": false,
+     "id": "reject_bin",
+     "to": [
+      0.8,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Spare Bin",
+     "distance_m": 0.39770653499999997,
+     "follower": false,
+     "id": "spare_bin",
+     "to": [
+      1,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Destination Bin",
+     "distance_m": 0.517706535,
+     "follower": false,
+     "id": "target_bin_default",
+     "to": [
+      0.45,
+      -0.297706535,
+      0.1
+     ]
+    }
+   ],
+   "ok": true,
+   "report": {
+    "keep_relative": false,
+    "members": [
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "members_detail": {
+     "reject_bin": {
+      "delta_reference_m": [
+       0,
+       -0.047706535339355455,
+       0
+      ],
+      "notes": [],
+      "sources": {
+       "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+       "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)"
+      }
+     },
+     "spare_bin": {
+      "delta_reference_m": [
+       0,
+       -0.39770653533935546,
+       0
+      ],
+      "notes": [],
+      "sources": {
+       "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+       "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)"
+      }
+     },
+     "target_bin_default": {
+      "delta_reference_m": [
+       0,
+       -0.5177065353393554,
+       0
+      ],
+      "notes": [],
+      "sources": {
+       "moving": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+       "reference": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)"
+      }
+     }
+    },
+    "moved": [
+     {
+      "distance_m": 0.047706534999999994,
+      "follower": false,
+      "from": [
+       0.8,
+       -0.25,
+       0.1
+      ],
+      "id": "reject_bin",
+      "to": [
+       0.8,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.39770653499999997,
+      "follower": false,
+      "from": [
+       1,
+       0.1,
+       0.1
+      ],
+      "id": "spare_bin",
+      "to": [
+       1,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.517706535,
+      "follower": false,
+      "from": [
+       0.45,
+       0.22,
+       0.1
+      ],
+      "id": "target_bin_default",
+      "to": [
+       0.45,
+       -0.297706535,
+       0.1
+      ]
+     }
+    ],
+    "notes": [],
+    "offset_m": [
+     0,
+     0,
+     0
+    ],
+    "op": "align",
+    "reference": "support_surface_table",
+    "rules": {
+     "y": "min"
+    }
+   },
+   "request": {
+    "members": [
+     "support_surface_table",
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "names": {
+     "reject_bin": "Reject Bin",
+     "spare_bin": "Spare Bin",
+     "support_surface_table": "Industrial Workbench",
+     "target_bin_default": "Destination Bin"
+    },
+    "op": "align",
+    "operation": "arrange",
+    "params": {
+     "keep_relative": false,
+     "offset_m": [
+      0,
+      0,
+      0
+     ],
+     "rules": {
+      "y": "min"
+     }
+    },
+    "reference": "support_surface_table"
+   },
+   "summary": "3 part(s) move, the largest by 517.7 mm. The reference Industrial Workbench stays put."
+  },
+  "selection": {
+   "members": [
+    "support_surface_table",
+    "target_bin_default",
+    "reject_bin",
+    "spare_bin"
+   ],
+   "reference": "support_surface_table"
+  },
+  "status": "Check the ghosts, then Apply (Enter) or Cancel (Esc)."
+ },
+ "audit_final": {
+  "clipped": [],
+  "controls": [
+   {
+    "class": "QLineEdit",
+    "connections": 0,
+    "display_only": false,
+    "enabled": true,
+    "kind": "line_edit",
+    "menu": false,
+    "name": "",
+    "text": "Industrial Workbench",
+    "tooltip": ""
+   },
+   {
+    "class": "QComboBox",
+    "connections": 0,
+    "display_only": false,
+    "enabled": true,
+    "kind": "combo",
+    "menu": false,
+    "name": "sceneBuilderSemanticRoleCombo",
+    "text": "Existing role: support_surface_table",
+    "tooltip": "Assign an intentional role to this scene instance. Filenames never infer pick/task semantics."
+   },
+   {
+    "class": "QLineEdit",
+    "connections": 0,
+    "display_only": true,
+    "enabled": true,
+    "kind": "line_edit",
+    "menu": false,
+    "name": "",
+    "text": "table",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderMounting",
+    "text": "Mount To / Relative Pose\u2026",
+    "tooltip": "Mount this asset to another asset: align one of its datums (origin, point, axis or plane) with a parent datum, coincident or flush, with an offset. Reparent and"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "X 0.711 m",
+    "tooltip": "X position in metres"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Y -0.200 m",
+    "tooltip": "Y position in metres"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Z -0.001 m",
+    "tooltip": "Z position in metres"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Roll 0.00\u00b0",
+    "tooltip": "Roll in degrees"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Pitch 0.00\u00b0",
+    "tooltip": "Pitch in degrees"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Yaw 0.00\u00b0",
+    "tooltip": "Yaw in degrees"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorApply",
+    "text": "Apply",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorRevert",
+    "text": "Revert",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorCopyTransform",
+    "text": "Copy Transform",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorPasteTransform",
+    "text": "Paste Transform",
+    "tooltip": ""
+   },
+   {
+    "class": "QCheckBox",
+    "connections": 0,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "",
+    "text": "Live update",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "",
+    "text": "Duplicate",
+    "tooltip": "Duplicate selected editable item  Ctrl+D"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarSave",
+    "text": "Save Layout",
+    "tooltip": "Persist the live authored session with a backup and atomic YAML write. Product View remains live; no robot motion is started."
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarOperatorPreview",
+    "text": "Operator Preview",
+    "tooltip": "Open the operator HMI for this cell in a separate window (read-only, no robot motion)."
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarMate",
+    "text": "Mate",
+    "tooltip": "Mate (CAD-style): click a face of the part to move, then the face it should sit on; preview, choose Flush or Coincident, Apply. Esc cancels. Nothing changes unt"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 2,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": true,
+    "name": "scene_builder_secondary_overflow_button",
+    "text": "View",
+    "tooltip": "View options"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 0,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarAddObject",
+    "text": "Add Object",
+    "tooltip": "Add Object"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarFit",
+    "text": "Fit",
+    "tooltip": "Fit the view to the workcell"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarUndo",
+    "text": "",
+    "tooltip": "Undo (Ctrl+Z)"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarRedo",
+    "text": "",
+    "tooltip": "Redo (Ctrl+Shift+Z)"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderModeSelect",
+    "text": "Select",
+    "tooltip": "Select"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderModeMove",
+    "text": "Move",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderModeRotate",
+    "text": "Rotate",
+    "tooltip": ""
+   },
+   {
+    "class": "QToolButton",
+    "connections": 2,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": true,
+    "name": "arrangeSelectionChip",
+    "text": "3 selected \u00b7 ref: Industrial W\u2026",
+    "tooltip": "3 parts selected. The reference Industrial Workbench never moves; choose another from this menu."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_left",
+    "text": "Align left",
+    "tooltip": "<b>Align left</b> (Alt+Shift+L)<br/>Line up the \u2212X box faces with the reference's \u2212X face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_right",
+    "text": "Align right",
+    "tooltip": "<b>Align right</b> (Alt+Shift+R)<br/>Line up the +X box faces with the reference's +X face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_front",
+    "text": "Align front",
+    "tooltip": "<b>Align front</b> (Alt+Shift+F)<br/>Line up the \u2212Y box faces with the reference's \u2212Y face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_back",
+    "text": "Align back",
+    "tooltip": "<b>Align back</b> (Alt+Shift+B)<br/>Line up the +Y box faces with the reference's +Y face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_bottom",
+    "text": "Align bottom",
+    "tooltip": "<b>Align bottom</b> (Alt+Shift+G)<br/>Line up the box bottoms (\u2212Z) with the reference's bottom."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_top",
+    "text": "Align top",
+    "tooltip": "<b>Align top</b> (Alt+Shift+T)<br/>Line up the box tops (+Z) with the reference's top."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_x",
+    "text": "Centre X",
+    "tooltip": "<b>Centre X</b> (Alt+Shift+X)<br/>Match box centres along the reference's X axis."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_y",
+    "text": "Centre Y",
+    "tooltip": "<b>Centre Y</b> (Alt+Shift+Y)<br/>Match box centres along the reference's Y axis."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_z",
+    "text": "Centre Z",
+    "tooltip": "<b>Centre Z</b> (Alt+Shift+Z)<br/>Match box centres along the reference's Z axis."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_xy",
+    "text": "Centre in XY plane",
+    "tooltip": "<b>Centre in XY plane</b> (Alt+Shift+C)<br/>Centre X and Y on the reference; heights are kept."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_ref",
+    "text": "Centre on reference",
+    "tooltip": "<b>Centre on reference</b> (Alt+Shift+O)<br/>Box centres coincide with the reference's box centre (X, Y and Z)."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_place_top",
+    "text": "Place on top",
+    "tooltip": "<b>Place on top</b> (Alt+Shift+P)<br/>Rest each part on the reference: on its verified upward surface datum when it has one, otherwise on its box top."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_dist_x",
+    "text": "Distribute along X",
+    "tooltip": "<b>Distribute along X</b><br/>Equal gaps along the reference's X axis, in current order. The reference stays put."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_dist_y",
+    "text": "Distribute along Y",
+    "tooltip": "<b>Distribute along Y</b><br/>Equal gaps along the reference's Y axis, in current order. The reference stays put."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_dist_z",
+    "text": "Distribute along Z",
+    "tooltip": "<b>Distribute along Z</b><br/>Equal gaps along the reference's Z axis, in current order. The reference stays put."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_gap",
+    "text": "Distribute with gap\u2026",
+    "tooltip": "<b>Distribute with gap\u2026</b><br/>An exact gap in millimetres between neighbours along one reference axis, starting at the reference."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_move",
+    "text": "Move / rotate\u2026",
+    "tooltip": "<b>Move / rotate\u2026</b> (Alt+Shift+M)<br/>Move and rotate the parts by exact millimetres and degrees in world, reference or local axes."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_snap_grid",
+    "text": "Snap to grid\u2026",
+    "tooltip": "<b>Snap to grid\u2026</b><br/>Snap each part's origin to a horizontal world grid (X and Y; height kept)."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_flush",
+    "text": "Flush (verified faces)\u2026",
+    "tooltip": "<b>Flush (verified faces)\u2026</b><br/>Mate the part's verified face flush on the reference's verified face (Mate tool).<br/><i>Unavailable: Verified-face mating wo"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_coincident",
+    "text": "Coincident (verified datums)\u2026",
+    "tooltip": "<b>Coincident (verified datums)\u2026</b><br/>Make verified datums coincide: points, axes or frames (Mate tool). Also snaps to a datum.<br/><i>Unavailable: Verified-"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_concentric",
+    "text": "Concentric (verified axes)\u2026",
+    "tooltip": "<b>Concentric (verified axes)\u2026</b><br/>Line up verified cylindrical axes (Mate tool, coincident axes).<br/><i>Unavailable: Verified-face mating works on exactly"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_mount",
+    "text": "Fixed mount on reference",
+    "tooltip": "<b>Fixed mount on reference</b><br/>Mount the parts on the reference with a fixed offset: they keep their place and follow it (parent/child)."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_detach",
+    "text": "Detach",
+    "tooltip": "<b>Detach</b><br/>Remove the selected parts' mounts; world positions are kept."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_group",
+    "text": "Group",
+    "tooltip": "<b>Group</b><br/>Groups are not part of the scene contract yet.<br/><i>Unavailable: Groups are not part of the scene contract yet. Use Fixed mount to keep parts"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderActivityStrip",
+    "text": "Selected Industrial Workbench",
+    "tooltip": "Selected Industrial Workbench"
+   },
+   {
+    "class": "QLineEdit",
+    "connections": 2,
+    "display_only": false,
+    "enabled": true,
+    "kind": "line_edit",
+    "menu": false,
+    "name": "sceneBuilderHierarchySearch",
+    "text": "Search hierarchy\u2026",
+    "tooltip": ""
+   },
+   {
+    "class": "QToolButton",
+    "connections": 3,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "studioContextHome",
+    "text": "\u2190 Workcells",
+    "tooltip": "Back to Your workcells"
+   }
+  ],
+  "inspector_tab_min_widths": {
+   "Checks": 278,
+   "Inspector": 290,
+   "Task": 434
+  },
+  "overflow": [],
+  "squeezed": [
+   "QFrame#studioContextTopbar '' h=40 need=47"
+  ],
+  "task_editor_wide": [],
+  "unreachable": []
+ },
+ "audit_selection": {
+  "clipped": [],
+  "controls": [
+   {
+    "class": "QLineEdit",
+    "connections": 0,
+    "display_only": false,
+    "enabled": true,
+    "kind": "line_edit",
+    "menu": false,
+    "name": "",
+    "text": "Industrial Workbench",
+    "tooltip": ""
+   },
+   {
+    "class": "QComboBox",
+    "connections": 0,
+    "display_only": false,
+    "enabled": true,
+    "kind": "combo",
+    "menu": false,
+    "name": "sceneBuilderSemanticRoleCombo",
+    "text": "Existing role: support_surface_table",
+    "tooltip": "Assign an intentional role to this scene instance. Filenames never infer pick/task semantics."
+   },
+   {
+    "class": "QLineEdit",
+    "connections": 0,
+    "display_only": true,
+    "enabled": true,
+    "kind": "line_edit",
+    "menu": false,
+    "name": "",
+    "text": "environment",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderMounting",
+    "text": "Mount To / Relative Pose\u2026",
+    "tooltip": "Mount this asset to another asset: align one of its datums (origin, point, axis or plane) with a parent datum, coincident or flush, with an offset. Reparent and"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "X 0.711 m",
+    "tooltip": "X position in metres"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Y -0.200 m",
+    "tooltip": "Y position in metres"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Z -0.001 m",
+    "tooltip": "Z position in metres"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Roll 0.00\u00b0",
+    "tooltip": "Roll in degrees"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Pitch 0.00\u00b0",
+    "tooltip": "Pitch in degrees"
+   },
+   {
+    "class": "QDoubleSpinBox",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "spin",
+    "menu": false,
+    "name": "",
+    "text": "Yaw 0.00\u00b0",
+    "tooltip": "Yaw in degrees"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorApply",
+    "text": "Apply",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorRevert",
+    "text": "Revert",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorCopyTransform",
+    "text": "Copy Transform",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderInspectorPasteTransform",
+    "text": "Paste Transform",
+    "tooltip": ""
+   },
+   {
+    "class": "QCheckBox",
+    "connections": 0,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "",
+    "text": "Live update",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "",
+    "text": "Duplicate",
+    "tooltip": "Duplicate selected editable item  Ctrl+D"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarSave",
+    "text": "Save Layout",
+    "tooltip": "Persist the live authored session with a backup and atomic YAML write. Product View remains live; no robot motion is started."
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarOperatorPreview",
+    "text": "Operator Preview",
+    "tooltip": "Open the operator HMI for this cell in a separate window (read-only, no robot motion)."
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarMate",
+    "text": "Mate",
+    "tooltip": "Mate (CAD-style): click a face of the part to move, then the face it should sit on; preview, choose Flush or Coincident, Apply. Esc cancels. Nothing changes unt"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 2,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": true,
+    "name": "scene_builder_secondary_overflow_button",
+    "text": "View",
+    "tooltip": "View options"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 0,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarAddObject",
+    "text": "Add Object",
+    "tooltip": "Add Object"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarFit",
+    "text": "Fit",
+    "tooltip": "Fit the view to the workcell"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarUndo",
+    "text": "",
+    "tooltip": "Undo (Ctrl+Z)"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderToolbarRedo",
+    "text": "",
+    "tooltip": "Redo (Ctrl+Shift+Z)"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderModeSelect",
+    "text": "Select",
+    "tooltip": "Select"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderModeMove",
+    "text": "Move",
+    "tooltip": ""
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderModeRotate",
+    "text": "Rotate",
+    "tooltip": ""
+   },
+   {
+    "class": "QToolButton",
+    "connections": 2,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": true,
+    "name": "arrangeSelectionChip",
+    "text": "4 selected \u00b7 ref: Industrial W\u2026",
+    "tooltip": "4 parts selected. The reference Industrial Workbench never moves; choose another from this menu."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_left",
+    "text": "Align left",
+    "tooltip": "<b>Align left</b> (Alt+Shift+L)<br/>Line up the \u2212X box faces with the reference's \u2212X face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_right",
+    "text": "Align right",
+    "tooltip": "<b>Align right</b> (Alt+Shift+R)<br/>Line up the +X box faces with the reference's +X face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_front",
+    "text": "Align front",
+    "tooltip": "<b>Align front</b> (Alt+Shift+F)<br/>Line up the \u2212Y box faces with the reference's \u2212Y face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_back",
+    "text": "Align back",
+    "tooltip": "<b>Align back</b> (Alt+Shift+B)<br/>Line up the +Y box faces with the reference's +Y face."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_bottom",
+    "text": "Align bottom",
+    "tooltip": "<b>Align bottom</b> (Alt+Shift+G)<br/>Line up the box bottoms (\u2212Z) with the reference's bottom."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_align_top",
+    "text": "Align top",
+    "tooltip": "<b>Align top</b> (Alt+Shift+T)<br/>Line up the box tops (+Z) with the reference's top."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_x",
+    "text": "Centre X",
+    "tooltip": "<b>Centre X</b> (Alt+Shift+X)<br/>Match box centres along the reference's X axis."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_y",
+    "text": "Centre Y",
+    "tooltip": "<b>Centre Y</b> (Alt+Shift+Y)<br/>Match box centres along the reference's Y axis."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_z",
+    "text": "Centre Z",
+    "tooltip": "<b>Centre Z</b> (Alt+Shift+Z)<br/>Match box centres along the reference's Z axis."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_xy",
+    "text": "Centre in XY plane",
+    "tooltip": "<b>Centre in XY plane</b> (Alt+Shift+C)<br/>Centre X and Y on the reference; heights are kept."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_centre_ref",
+    "text": "Centre on reference",
+    "tooltip": "<b>Centre on reference</b> (Alt+Shift+O)<br/>Box centres coincide with the reference's box centre (X, Y and Z)."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_place_top",
+    "text": "Place on top",
+    "tooltip": "<b>Place on top</b> (Alt+Shift+P)<br/>Rest each part on the reference: on its verified upward surface datum when it has one, otherwise on its box top."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_dist_x",
+    "text": "Distribute along X",
+    "tooltip": "<b>Distribute along X</b><br/>Equal gaps along the reference's X axis, in current order. The reference stays put."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_dist_y",
+    "text": "Distribute along Y",
+    "tooltip": "<b>Distribute along Y</b><br/>Equal gaps along the reference's Y axis, in current order. The reference stays put."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_dist_z",
+    "text": "Distribute along Z",
+    "tooltip": "<b>Distribute along Z</b><br/>Equal gaps along the reference's Z axis, in current order. The reference stays put."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_gap",
+    "text": "Distribute with gap\u2026",
+    "tooltip": "<b>Distribute with gap\u2026</b><br/>An exact gap in millimetres between neighbours along one reference axis, starting at the reference."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_move",
+    "text": "Move / rotate\u2026",
+    "tooltip": "<b>Move / rotate\u2026</b> (Alt+Shift+M)<br/>Move and rotate the parts by exact millimetres and degrees in world, reference or local axes."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_snap_grid",
+    "text": "Snap to grid\u2026",
+    "tooltip": "<b>Snap to grid\u2026</b><br/>Snap each part's origin to a horizontal world grid (X and Y; height kept)."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_flush",
+    "text": "Flush (verified faces)\u2026",
+    "tooltip": "<b>Flush (verified faces)\u2026</b><br/>Mate the part's verified face flush on the reference's verified face (Mate tool).<br/><i>Unavailable: Verified-face mating wo"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_coincident",
+    "text": "Coincident (verified datums)\u2026",
+    "tooltip": "<b>Coincident (verified datums)\u2026</b><br/>Make verified datums coincide: points, axes or frames (Mate tool). Also snaps to a datum.<br/><i>Unavailable: Verified-"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_concentric",
+    "text": "Concentric (verified axes)\u2026",
+    "tooltip": "<b>Concentric (verified axes)\u2026</b><br/>Line up verified cylindrical axes (Mate tool, coincident axes).<br/><i>Unavailable: Verified-face mating works on exactly"
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_mount",
+    "text": "Fixed mount on reference",
+    "tooltip": "<b>Fixed mount on reference</b><br/>Mount the parts on the reference with a fixed offset: they keep their place and follow it (parent/child)."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_detach",
+    "text": "Detach",
+    "tooltip": "<b>Detach</b><br/>Remove the selected parts' mounts; world positions are kept."
+   },
+   {
+    "class": "QToolButton",
+    "connections": 4,
+    "display_only": false,
+    "enabled": false,
+    "kind": "button",
+    "menu": false,
+    "name": "arrangeButton_group",
+    "text": "Group",
+    "tooltip": "<b>Group</b><br/>Groups are not part of the scene contract yet.<br/><i>Unavailable: Groups are not part of the scene contract yet. Use Fixed mount to keep parts"
+   },
+   {
+    "class": "QPushButton",
+    "connections": 1,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "sceneBuilderActivityStrip",
+    "text": "Selected Industrial Workbench",
+    "tooltip": "Selected Industrial Workbench"
+   },
+   {
+    "class": "QLineEdit",
+    "connections": 2,
+    "display_only": false,
+    "enabled": true,
+    "kind": "line_edit",
+    "menu": false,
+    "name": "sceneBuilderHierarchySearch",
+    "text": "Search hierarchy\u2026",
+    "tooltip": ""
+   },
+   {
+    "class": "QToolButton",
+    "connections": 3,
+    "display_only": false,
+    "enabled": true,
+    "kind": "button",
+    "menu": false,
+    "name": "studioContextHome",
+    "text": "\u2190 Workcells",
+    "tooltip": "Back to Your workcells"
+   }
+  ],
+  "inspector_tab_min_widths": {
+   "Checks": 278,
+   "Inspector": 290,
+   "Task": 434
+  },
+  "overflow": [],
+  "squeezed": [
+   "QFrame#studioContextTopbar '' h=40 need=47"
+  ],
+  "task_editor_wide": [],
+  "unreachable": []
+ },
+ "backend": "embedded_web3d",
+ "bin_ctrl_click_widget_point": [
+  1566,
+  742
+ ],
+ "cancel_check": {
+  "files_unchanged": true,
+  "layout_dirty": false,
+  "moved": []
+ },
+ "cell_maximized": true,
+ "cell_screen": {
+  "device_pixel_ratio": 1,
+  "height": 2160,
+  "name": "rdp-1",
+  "width": 3840
+ },
+ "cell_window_size": [
+  3828,
+  2055
+ ],
+ "checks_after_edit": {
+  "3D preview (visual only)": "Done",
+  "Export": "Blocked",
+  "Generate Scene Package": "Needed",
+  "Generate YAML": "Stale",
+  "RViz/MoveIt Fake-Hardware Launch": "Blocked",
+  "Save Layout": "Needed",
+  "Scene": "Done",
+  "Validate": "Stale"
+ },
+ "chip": "4 selected \u00b7 ref: Industrial W\u2026",
+ "current_selected_id": "support_surface_table",
+ "execution_goals_sent": 0,
+ "fake_hardware_only": true,
+ "gap_60mm_residual_m": 0,
+ "gap_preview": {
+  "active": true,
+  "label": "Distribute with gap",
+  "op": "distribute",
+  "params": {
+   "axis": "x",
+   "gap_m": 0.06,
+   "mode": "gap"
+  },
+  "preview": {
+   "error": "",
+   "moved": [
+    {
+     "display_name": "Reject Bin",
+     "distance_m": 0.550300682,
+     "follower": false,
+     "id": "reject_bin",
+     "to": [
+      1.350300682,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Spare Bin",
+     "distance_m": 0.762501809,
+     "follower": false,
+     "id": "spare_bin",
+     "to": [
+      1.762501809,
+      -0.297706535,
+      0.1
+     ]
+    },
+    {
+     "display_name": "Destination Bin",
+     "distance_m": 0.780300682,
+     "follower": false,
+     "id": "target_bin_default",
+     "to": [
+      -0.330300682,
+      -0.297706535,
+      0.1
+     ]
+    }
+   ],
+   "ok": true,
+   "report": {
+    "axis": "x",
+    "gap_m": 0.06,
+    "members": [
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "mode": "gap",
+    "moved": [
+     {
+      "distance_m": 0.550300682,
+      "follower": false,
+      "from": [
+       0.8,
+       -0.297706535,
+       0.1
+      ],
+      "id": "reject_bin",
+      "to": [
+       1.350300682,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.762501809,
+      "follower": false,
+      "from": [
+       1,
+       -0.297706535,
+       0.1
+      ],
+      "id": "spare_bin",
+      "to": [
+       1.762501809,
+       -0.297706535,
+       0.1
+      ]
+     },
+     {
+      "distance_m": 0.780300682,
+      "follower": false,
+      "from": [
+       0.45,
+       -0.297706535,
+       0.1
+      ],
+      "id": "target_bin_default",
+      "to": [
+       -0.330300682,
+       -0.297706535,
+       0.1
+      ]
+     }
+    ],
+    "notes": [],
+    "op": "distribute",
+    "order": [
+     "target_bin_default",
+     "support_surface_table",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "reference": "support_surface_table",
+    "shift_along_axis_m": {
+     "reject_bin": 0.550300682425443,
+     "spare_bin": 0.7625018092393319,
+     "target_bin_default": -0.7803006824255546
+    },
+    "sources": {
+     "reject_bin": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+     "spare_bin": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)",
+     "support_surface_table": "mesh vertices (table.stl, 102734 triangles, authored scale/RPY/offset)",
+     "target_bin_default": "mesh vertices (sorting_bin.stl, 316 triangles, authored scale/RPY/offset)"
+    }
+   },
+   "request": {
+    "members": [
+     "support_surface_table",
+     "target_bin_default",
+     "reject_bin",
+     "spare_bin"
+    ],
+    "names": {
+     "reject_bin": "Reject Bin",
+     "spare_bin": "Spare Bin",
+     "support_surface_table": "Industrial Workbench",
+     "target_bin_default": "Destination Bin"
+    },
+    "op": "distribute",
+    "operation": "arrange",
+    "params": {
+     "axis": "x",
+     "gap_m": 0.06,
+     "mode": "gap"
+    },
+    "reference": "support_surface_table"
+   },
+   "summary": "3 part(s) move, the largest by 780.3 mm. The reference Industrial Workbench stays put. Order along X: Destination Bin \u2192 Industrial Workbench \u2192 Reject Bin \u2192 Spare Bin \u00b7 gap 60.0 mm."
+  },
+  "selection": {
+   "members": [
+    "support_surface_table",
+    "target_bin_default",
+    "reject_bin",
+    "spare_bin"
+   ],
+   "reference": "support_surface_table"
+  },
+  "status": "Check the ghosts, then Apply (Enter) or Cancel (Esc)."
+ },
+ "inspector_summary": "<b>4 parts selected</b> \u2014 reference <b>Industrial Workbench</b> (stays put; shown below).<br/>Also selected: Destination Bin, Reject Bin, Spare Bin<br/><i>Arrange them with the toolbar above the 3D view. Ctrl+click adds or removes parts.</i>",
+ "mate_missed_click": "That click missed every part, so nothing changed. Still picked: Destination Bin \u00b7 Rim plane (normal points up) on Industrial Workbench \u00b7 surface \u00b7 plane (points up). Apply, or Replace one.",
+ "multi_delete": {
+  "refused": true,
+  "tooltip": "Delete removes one part at a time; 4 parts are selected."
+ },
+ "open_wrote_authored_files": {
+  "environment": false,
+  "layout": false
+ },
+ "poses_before": {
+  "reject_bin": [
+   0.8,
+   -0.25,
+   0.1,
+   0,
+   0,
+   0
+  ],
+  "spare_bin": [
+   1,
+   0.1,
+   0.1,
+   0,
+   0,
+   0
+  ],
+  "support_surface_table": [
+   0.7106668243408203,
+   -0.2,
+   -0.0008999994993209839,
+   0,
+   0,
+   0
+  ],
+  "target_bin_default": [
+   0.45,
+   0.22,
+   0.1,
+   0,
+   0,
+   0
+  ]
+ },
+ "reopen_max_abs_error": 0,
+ "reopen_maximized": true,
+ "reopen_screen": {
+  "device_pixel_ratio": 1,
+  "height": 2160,
+  "name": "rdp-1",
+  "width": 3840
+ },
+ "reopen_window_size": [
+  3828,
+  2055
+ ],
+ "result": "PASS",
+ "robot_motion_commanded": false,
+ "screenshots": [
+  "01_multi_selection_toolbar",
+  "02_align_front_preview",
+  "03_gap_preview",
+  "04_applied",
+  "05_airpick_read_only",
+  "06_airpick_settled",
+  "07_airpick_settled_plus5s"
+ ],
+ "steps": [
+  "load fixture cell",
+  "wait for the Product View",
+  "baseline",
+  "native: select the workbench from the hierarchy",
+  "plain 3D click selects the workbench (reference)",
+  "Ctrl+click in 3D adds the destination bin",
+  "Ctrl+click in the hierarchy adds the reject and spare bins",
+  "selection shown everywhere",
+  "selection shown in the hierarchy, Inspector and chip",
+  "toolbar availability explains itself",
+  "Delete with four parts selected is refused, not applied to the reference",
+  "Viewer keyboard nudge with four parts selected moves nothing",
+  "Align front: preview ghosts, then Cancel",
+  "Align front: Apply is one exact transaction",
+  "Undo and Redo the whole alignment in one step, keeping the selection",
+  "Checks reports the generated handoff and validation as Stale after an edit",
+  "Align left with \u0394X +30 mm and Keep relative mounts every member exactly",
+  "Distribute along X with an exact 60 mm gap",
+  "Applied arrangement shown",
+  "Save Layout",
+  "close and reopen",
+  "wait for the reopened Product View",
+  "reopened placements are identical",
+  "Fixed mount is atomic and the bins follow the workbench",
+  "narrow view: tools stay reachable through the overflow menu",
+  "Mate: rim and surface chosen, then a missed click keeps both picks",
+  "Switching cells with unsaved edits asks first; Stay keeps everything",
+  "Discard opens AirPick with a clean session (no undo, no selection, not dirty)",
+  "AirPick: read-only preview, Save disabled everywhere",
+  "AirPick settled: viewer shows AirPick, Save still disabled, no leaked viewer edits"
+ ],
+ "switch_dialog_Discard edits and open": "ur5_2f_test has unsaved layout edits. Opening another cell discards them; Undo cannot bring them back.",
+ "switch_dialog_Stay": "ur5_2f_test has unsaved layout edits. Opening another cell discards them; Undo cannot bring them back.",
+ "switch_stay": {
+  "kept_cell": true,
+  "undo_steps": 3
+ },
+ "table_click_widget_point": [
+  1010,
+  865
+ ],
+ "toolbar_overflow": {
+  "more_menu_entries": 0,
+  "more_visible": false,
+  "tool_buttons": 24,
+  "tools_width": 2779,
+  "visible_tool_buttons": 24
+ },
+ "toolbar_tools": {
+  "align_front": {
+   "enabled": true,
+   "tooltip": "<b>Align front</b> (Alt+Shift+F)<br/>Line up the \u2212Y box faces with the reference's \u2212Y face."
+  },
+  "concentric": {
+   "enabled": false,
+   "tooltip": "<b>Concentric (verified axes)\u2026</b><br/>Line up verified cylindrical axes (Mate tool, coincident axes).<br/><i>Unavailable: Verified-face mating works on exactly two parts: the reference and the part to seat on it.</i>"
+  },
+  "dist_x": {
+   "enabled": true,
+   "tooltip": "<b>Distribute along X</b><br/>Equal gaps along the reference's X axis, in current order. The reference stays put."
+  },
+  "flush": {
+   "enabled": false,
+   "tooltip": "<b>Flush (verified faces)\u2026</b><br/>Mate the part's verified face flush on the reference's verified face (Mate tool).<br/><i>Unavailable: Verified-face mating works on exactly two parts: the reference and the part to seat on it.</i>"
+  },
+  "gap": {
+   "enabled": true,
+   "tooltip": "<b>Distribute with gap\u2026</b><br/>An exact gap in millimetres between neighbours along one reference axis, starting at the reference."
+  },
+  "group": {
+   "enabled": false,
+   "tooltip": "<b>Group</b><br/>Groups are not part of the scene contract yet.<br/><i>Unavailable: Groups are not part of the scene contract yet. Use Fixed mount to keep parts together (they follow the reference), or Detach to separate them.</i>"
+  },
+  "mount": {
+   "enabled": true,
+   "tooltip": "<b>Fixed mount on reference</b><br/>Mount the parts on the reference with a fixed offset: they keep their place and follow it (parent/child)."
+  },
+  "move": {
+   "enabled": true,
+   "tooltip": "<b>Move / rotate\u2026</b> (Alt+Shift+M)<br/>Move and rotate the parts by exact millimetres and degrees in world, reference or local axes."
+  }
+ },
+ "viewer_nudge_blocked": true,
+ "viewer_selection": {
+  "gizmoEnabled": false,
+  "highlightCount": 4,
+  "members": [
+   "support_surface_table",
+   "target_bin_default",
+   "reject_bin",
+   "spare_bin"
+  ],
+  "reference": "support_surface_table",
+  "sceneId": "ur5_2f_test",
+  "toggleId": "target_bin_default",
+  "toggleSeq": 1
+ }
+}

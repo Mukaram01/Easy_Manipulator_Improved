@@ -57,6 +57,11 @@ struct SceneContentReadiness
 {
   bool generation_current{false};
   bool validation_current{false};
+  // The on-disk validation evidence (acceptance/generated_scene_acceptance.json), so a
+  // missing, stale and failed validation can be told apart.
+  bool validation_report_present{false};
+  bool validation_report_matches_inputs{false};
+  std::string validation_status;
   std::string blocker;
 };
 SceneContentReadiness scene_content_readiness(const WorkcellStudioSceneInfo & scene);

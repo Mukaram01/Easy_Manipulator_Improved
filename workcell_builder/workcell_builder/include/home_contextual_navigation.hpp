@@ -2,6 +2,8 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QDynamicPropertyChangeEvent>
+#include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -15,6 +17,7 @@
 #include <QVBoxLayout>
 
 #include <functional>
+#include <utility>
 
 #include "home_workcells_target_shell.hpp"
 #include "workcell_builder_ui_utils.hpp"
@@ -105,7 +108,14 @@ inline void refresh_context_header(QMainWindow * window, QStackedWidget * pages,
     return;
   }
 
-  const int row = table ? table->currentRow() : -1;
+  // The open cell (published by MainWindow) wins over the Home table selection:
+  // a cell can be opened without touching that table, and the header must name it.
+  int row = table ? table->currentRow() : -1;
+  const QString opened_scene_id = window->property("studioOpenedSceneId").toString();
+  if (table && !opened_scene_id.isEmpty() && scene_id_at(table, row) != opened_scene_id) {
+    row = -1;
+    for (int r = 0; r < table->rowCount(); ++r) if (scene_id_at(table, r) == opened_scene_id) { row = r; break; }
+  }
   const bool selected = table && row >= 0 && row < table->rowCount() && table->item(row, 0);
   const QString scene_id = selected ? scene_id_at(table, row) : QString();
   const QString scene_title = selected ? friendly_workcell_name(scene_id) : QStringLiteral("Workcell Studio");
@@ -121,6 +131,26 @@ inline void refresh_context_header(QMainWindow * window, QStackedWidget * pages,
     set_context_status_kind(label, status);
   }
 }
+
+// Refreshes the header when MainWindow publishes a newly opened cell.
+class OpenedSceneWatcher : public QObject
+{
+public:
+  OpenedSceneWatcher(QObject * parent, std::function<void()> refresh)
+  : QObject(parent), refresh_(std::move(refresh)) {}
+
+  bool eventFilter(QObject * watched, QEvent * event) override
+  {
+    if (event->type() == QEvent::DynamicPropertyChange &&
+      static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName() == "studioOpenedSceneId" && refresh_) {
+      refresh_();
+    }
+    return QObject::eventFilter(watched, event);
+  }
+
+private:
+  std::function<void()> refresh_;
+};
 
 inline void install_contextual_navigation(
   QMainWindow * window, const std::function<void()> & navigate_home)
@@ -209,6 +239,8 @@ inline void install_contextual_navigation(
     [window, pages, table]() { refresh_context_header(window, pages, table); });
   QObject::connect(table, &QTableWidget::cellClicked, context,
     [window, pages, table](int, int) { refresh_context_header(window, pages, table); });
+  window->installEventFilter(new OpenedSceneWatcher(context,
+    [window, pages, table]() { refresh_context_header(window, pages, table); }));
 
   right_shell->setStyleSheet(right_shell->styleSheet() + studioQss(QStringLiteral(R"QSS(
     QFrame#studioContextTopbar { background: @glass; border: 0; border-bottom: 1px solid @glassBorder; }

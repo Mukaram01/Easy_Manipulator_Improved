@@ -53,8 +53,6 @@ namespace workcell_builder {
 struct WorkcellStudioCanvasModel;
 class MateToolController;
 class MateToolPanel;
-class AlignArrangeController;
-class AlignArrangePanel;
 class ArrangeController;
 class ArrangeToolbar;
 }
@@ -214,7 +212,7 @@ private:
   bool save_authored_environment_from_layout(QString * error);
   void refresh_new_cell_checklist();
   QString scene_workflow_checklist_html() const;
-  enum class SceneWorkflowStepStatus { Done, Current, NeedsAction, Blocked, Warning };
+  enum class SceneWorkflowStepStatus { Done, Current, NeedsAction, Blocked, Warning, Stale, NotRun, Failed };
   struct SceneWorkflowStep { QString label; SceneWorkflowStepStatus status{ SceneWorkflowStepStatus::NeedsAction }; QString detail; };
   std::vector<SceneWorkflowStep> scene_workflow_steps() const;
   SceneWorkflowStep compute_scene_workflow_step(
@@ -403,7 +401,6 @@ private:
   workcell_builder::MateToolController * mate_controller_{nullptr};
   workcell_builder::MateToolPanel * mate_panel_{nullptr};
   QPushButton * scene_builder_mate_button_{nullptr};
-  QPushButton * inspector_mate_button_{nullptr};
   bool mate_selection_passthrough_{false};
   bool mate_web_supported_{false};
   QString mate_scene_path_;
@@ -413,18 +410,9 @@ private:
   qint64 mate_overlay_sent_ms_{0};
   QJsonObject mate_last_pick_evidence_;
   bool mate_scene_change_pending_{false};
-  // Align & Arrange (two-part bounding-box alignment) shares the Mate session pattern.
-  void begin_align_arrange();
-  void end_align_arrange(bool applied, const QString & message);
-  void push_align_overlay();
-  bool align_active() const;
+  // Part eligibility for the arrangement toolbar (why a part cannot move / be the reference).
   QString align_reference_blocker(const QString & id, QJsonObject * world) const;
   QString align_moving_blocker(const QString & id) const;
-  workcell_builder::AlignArrangeController * align_controller_{nullptr};
-  workcell_builder::AlignArrangePanel * align_panel_{nullptr};
-  QPushButton * inspector_align_button_{nullptr};
-  QString align_scene_path_;
-  bool align_scene_change_pending_{false};
   // Multi-selection (one model for hierarchy, 3D views, Inspector) and the arrangement toolbar.
   void toggle_scene_selection(const QString & id);
   void extend_scene_selection_to(const QString & id);
@@ -441,6 +429,9 @@ private:
   workcell_builder::ArrangeController * arrange_controller_{nullptr};
   workcell_builder::ArrangeToolbar * arrange_toolbar_{nullptr};
   QLabel * inspector_multi_selection_label_{nullptr};
+  QLabel * inspector_transform_title_{nullptr};
+  bool read_only_preview_active() const;
+  bool leave_cell_session_for(int scene_index);
   mutable QHash<QString, QString> concentric_availability_cache_;
   void refresh_mount_relation_context();
   QString mount_relation_text_for(const QString & id) const;

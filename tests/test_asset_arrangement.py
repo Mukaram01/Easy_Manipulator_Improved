@@ -158,3 +158,15 @@ def test_cli_plan_equals_commit_and_never_writes(tmp_path):
     assert first == second and first['ok']  # deterministic: preview == apply
     assert all('mounting_yaml' in row for row in first['result']['rows'])
     assert layout.read_bytes() == before
+
+
+def test_align_with_offsets_and_keep_relative_mounts_every_member(tmp_path):
+    result = run(tmp_path, three_bins(), 'align', ['a', 'b'], rules={'x': 'min'}, offset_m=[0.05, 0., 0.],
+                 keep_relative=True)
+    for identifier in ('a', 'b'):
+        row = next(row for row in result['rows'] if row['id'] == identifier)
+        assert row['pose_xyz'][0] == pytest.approx(0.4 + 0.05 + 0.05)
+        assert row['parent_object'] == 'table'
+    assert result['report']['keep_relative'] is True
+    once = run(tmp_path / 'once', three_bins(), 'align', ['a'], rules={'x': 'min'})
+    assert 'parent_object' not in next(row for row in once['rows'] if row['id'] == 'a')

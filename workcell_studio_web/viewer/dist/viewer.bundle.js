@@ -44570,6 +44570,8 @@ function keyboardTransformCommand(event) {
 function applyKeyboardTransformStep(event, command) {
   if (!command || event.repeat || state.directMoveDrag || state.directRotateDrag || state.gizmoDragStart || state.gizmoDragGroupStart || state.gizmoPivotDragStart)
     return false;
+  if (selectionSetHoldsGizmo())
+    return false;
   const owner = canonicalTransformOwner(state.selected);
   if (!selectionIsEditable(owner))
     return false;

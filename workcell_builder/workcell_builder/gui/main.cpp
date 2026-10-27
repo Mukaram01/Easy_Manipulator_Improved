@@ -21,6 +21,8 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QRegularExpression>
+#include <QScreen>
+#include <QWindow>
 #include <QSizePolicy>
 
 #include "gui/mainwindow.h"

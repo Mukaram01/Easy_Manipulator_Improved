@@ -1,6 +1,7 @@
 #include "arrange_toolbar.hpp"
 
 #include <QAction>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>
@@ -114,6 +115,8 @@ ArrangeToolbar::ArrangeToolbar(ArrangeController * controller, QWidget * parent)
   add_tool("mount", "mount", "Fixed mount on reference", "Mount the parts on the reference with a fixed offset: they keep their place and follow it (parent/child).", "mount", {});
   add_tool("detach", "detach", "Detach", "Remove the selected parts' mounts; world positions are kept.", "detach", {});
   add_tool("group", "group", "Group", "Groups are not part of the scene contract yet.", QString(), {});
+  // Tools keep their natural spacing; spare width stays at the end, not between icons.
+  static_cast<QHBoxLayout *>(tools_host_->layout())->addStretch(1);
 
   // Inline preview bar: what will happen, its parameters, Apply / Cancel.
   preview_bar_ = new QFrame(this);
@@ -175,6 +178,27 @@ ArrangeToolbar::ArrangeToolbar(ArrangeController * controller, QWidget * parent)
   move_grid->addLayout(move_column, 1);
   bar->addWidget(move_box_);
 
+  // Align: exact offsets along the reference axes, and optionally keep the parts relative
+  // to the reference afterwards (a fixed mount: they then follow it).
+  align_box_ = new QWidget(preview_bar_);
+  auto * align_row = new QHBoxLayout(align_box_);
+  align_row->setContentsMargins(0, 0, 0, 0);
+  const char * offset_labels[3] = {"ΔX ", "ΔY ", "ΔZ "};
+  for (int k = 0; k < 3; ++k) {
+    align_offset_[k] = spin(align_box_, QStringLiteral("arrangeAlignOffset%1").arg(QLatin1Char("XYZ"[k])),
+      QString::fromUtf8(offset_labels[k]), QStringLiteral(" mm"), -10000., 10000., 0.);
+    align_offset_[k]->setToolTip(QStringLiteral("Extra distance along the reference %1 axis, applied on axes the tool aligns.")
+      .arg(QLatin1Char("XYZ"[k])));
+    align_row->addWidget(align_offset_[k]);
+  }
+  keep_relative_ = new QCheckBox(QStringLiteral("Keep relative (mount on reference)"), align_box_);
+  keep_relative_->setObjectName(QStringLiteral("arrangeKeepRelative"));
+  keep_relative_->setToolTip(QStringLiteral("Also mount the parts on the reference with a fixed offset, so they follow it "
+    "later. Off: the alignment changes their pose only."));
+  align_row->addWidget(keep_relative_);
+  align_row->addStretch(1);
+  bar->addWidget(align_box_);
+
   grid_box_ = new QWidget(preview_bar_);
   auto * grid_row = new QHBoxLayout(grid_box_);
   grid_row->setContentsMargins(0, 0, 0, 0);
@@ -207,6 +231,8 @@ ArrangeToolbar::ArrangeToolbar(ArrangeController * controller, QWidget * parent)
   connect(pivot_, qOverload<int>(&QComboBox::currentIndexChanged), this, params_changed);
   for (auto * box : move_) connect(box, qOverload<double>(&QDoubleSpinBox::valueChanged), this, params_changed);
   connect(grid_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, params_changed);
+  for (auto * box : align_offset_) connect(box, qOverload<double>(&QDoubleSpinBox::valueChanged), this, params_changed);
+  connect(keep_relative_, &QCheckBox::toggled, this, params_changed);
   connect(apply_, &QPushButton::clicked, this, [this]() {
     QString error;
     if (controller_ && !controller_->apply(&error)) summary_->setText(error.toHtmlEscaped());
@@ -337,6 +363,10 @@ QJsonObject ArrangeToolbar::current_params() const
     params.insert("rotate_deg", QJsonArray{move_[3]->value(), move_[4]->value(), move_[5]->value()});
   } else if (plan.first == QStringLiteral("snap_grid")) {
     params.insert("step_m", grid_->value() / 1000.);
+  } else if (plan.first == QStringLiteral("align")) {
+    params.insert("offset_m", QJsonArray{align_offset_[0]->value() / 1000., align_offset_[1]->value() / 1000.,
+      align_offset_[2]->value() / 1000.});
+    params.insert("keep_relative", keep_relative_->isChecked());
   }
   return params;
 }
@@ -367,6 +397,13 @@ void ArrangeToolbar::update_parameter_visibility()
   gap_box_->setVisible(plan.first == QStringLiteral("distribute") && plan.second.value("mode").toString() == QStringLiteral("gap"));
   move_box_->setVisible(plan.first == QStringLiteral("move"));
   grid_box_->setVisible(plan.first == QStringLiteral("snap_grid"));
+  align_box_->setVisible(plan.first == QStringLiteral("align"));
+  if (plan.first == QStringLiteral("align")) {
+    // Offsets are per operation: a new tool starts from zero, never from a previous tool's values.
+    for (auto * box : align_offset_) { const QSignalBlocker blocker(box); box->setValue(0.); }
+    const QSignalBlocker blocker(keep_relative_);
+    keep_relative_->setChecked(false);
+  }
 }
 
 void ArrangeToolbar::refresh()

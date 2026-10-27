@@ -265,10 +265,6 @@ add_executable(workcell_builder
     gui/mate_tool_controller.hpp
     gui/mate_tool_panel.cpp
     gui/mate_tool_panel.hpp
-    gui/align_arrange_controller.cpp
-    gui/align_arrange_controller.hpp
-    gui/align_arrange_panel.cpp
-    gui/align_arrange_panel.hpp
     include/scene_selection_set.hpp
     gui/arrange_controller.cpp
     gui/arrange_controller.hpp
@@ -641,16 +637,6 @@ if(BUILD_TESTING)
   if(TARGET workcell_scene3d_mesh_offset_convention_test)
     target_include_directories(workcell_scene3d_mesh_offset_convention_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/gui)
     target_link_libraries(workcell_scene3d_mesh_offset_convention_test Qt5::Gui)
-  endif()
-  ament_add_gtest(workcell_align_arrange_controller_test test/align_arrange_controller_test.cpp
-    gui/align_arrange_controller.cpp gui/align_arrange_controller.hpp)
-  if(TARGET workcell_align_arrange_controller_test)
-    set_target_properties(workcell_align_arrange_controller_test PROPERTIES AUTOMOC ON)
-    target_include_directories(workcell_align_arrange_controller_test PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/gui)
-    target_compile_definitions(workcell_align_arrange_controller_test PRIVATE
-      WORKCELL_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
-    target_link_libraries(workcell_align_arrange_controller_test Qt5::Core)
   endif()
   ament_add_gtest(workcell_inspector_spin_config_test test/inspector_spin_config_test.cpp)
   if(TARGET workcell_inspector_spin_config_test)
@@ -1025,7 +1011,6 @@ if(BUILD_TESTING)
     mate_pick_test.cpp
     live_mesh_staging_test.cpp
     mate_tool_controller_test.cpp
-    align_arrange_controller_test.cpp
     scene3d_mesh_offset_convention_test.cpp
     scene_selection_set_test.cpp
     arrange_controller_test.cpp
