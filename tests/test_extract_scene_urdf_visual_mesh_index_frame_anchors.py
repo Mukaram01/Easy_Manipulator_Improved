@@ -52,3 +52,23 @@ def test_ur5_2f_generated_mesh_index_includes_tool0_frame_anchor() -> None:
     assert anchor["mesh_available"] is False
     assert anchor["resolved"] is True
     assert "mesh_uri" not in anchor
+
+
+def test_source_package_ament_prefix_is_hidden_from_colcon(tmp_path) -> None:
+    # The prefix links source packages under the repo's build/ tree; colcon
+    # must not discover those package.xml files as duplicate packages.
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import extract_scene_urdf_visual_mesh_index as index
+
+    scene = tmp_path / "zz_prefix_cell"
+    scene.mkdir()
+    (scene / "package.xml").write_text(
+        '<?xml version="1.0"?><package format="3"><name>zz_prefix_cell</name>'
+        '<version>0.0.0</version><description>t</description>'
+        '<maintainer email="a@b.c">a</maintainer><license>Apache-2.0</license></package>',
+        encoding="utf-8",
+    )
+    prefix = index._source_package_ament_prefix(scene)
+    assert prefix is not None
+    assert (prefix / "share" / "zz_prefix_cell" / "package.xml").is_file()
+    assert (prefix.parent / "COLCON_IGNORE").is_file()

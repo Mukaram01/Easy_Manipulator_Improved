@@ -972,6 +972,9 @@ def _source_package_ament_prefix(scene_dir, workspace_root=None):
     prefix = ROOT / 'build' / 'xacro_source_ament_prefix' / digest
     index = prefix / 'share' / 'ament_index' / 'resource_index' / 'packages'
     index.mkdir(parents=True, exist_ok=True)
+    # share/<name> links expose package.xml files inside the source tree;
+    # without this marker a workspace colcon build finds them as duplicates.
+    (prefix.parent / 'COLCON_IGNORE').touch()
     for name, path in rows:
         link = prefix / 'share' / name
         try:
