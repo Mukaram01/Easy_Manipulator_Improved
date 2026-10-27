@@ -5566,6 +5566,9 @@ void MainWindow::append_studio_log(
   if (studio_log_) {
     studio_log_->append(message);
   }
+  // Opt-in terminal copy of the Studio log for diagnosing a live GUI session.
+  static const bool mirror_to_stderr = qEnvironmentVariableIntValue("WORKCELL_STUDIO_LOG_STDERR") == 1;
+  if (mirror_to_stderr) std::cerr << "[studio] " << message.toStdString() << std::endl;
   const QString stable_key = issue_key.isEmpty() ? message : issue_key;
   studio_log_issue_tracker_.report(severity, stable_key.toStdString());
   const int scene_builder_error_count = studio_log_issue_tracker_.error_count();
@@ -5702,6 +5705,20 @@ void MainWindow::closeEvent(QCloseEvent * event)
     if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !environment_task_editor_->save())) {
       event->ignore(); return;
     }
+  }
+  if (layout_dirty_) {
+    // Same choice as opening another cell: closing discards them for good.
+    QMessageBox box(QMessageBox::Warning, QStringLiteral("Unsaved layout edits"),
+      QStringLiteral("%1 has unsaved layout edits. Closing Workcell Studio discards them; Undo cannot bring them back.")
+        .arg(selected_scene_state_.name.isEmpty() ? QStringLiteral("This cell") : selected_scene_state_.name),
+      QMessageBox::NoButton, this);
+    box.setObjectName(QStringLiteral("unsavedLayoutCloseDialog"));
+    box.setInformativeText(QStringLiteral("To keep them, choose Stay and use Save Layout (Ctrl+S) first."));
+    auto * discard = box.addButton(QStringLiteral("Discard edits and close"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(box.addButton(QStringLiteral("Stay"), QMessageBox::RejectRole));
+    box.exec();
+    if (box.clickedButton() != discard) { event->ignore(); return; }
+    append_studio_log(QStringLiteral("Unsaved layout edits in %1 were discarded on closing.").arg(selected_scene_state_.name));
   }
   if (perception_process_ && perception_process_->state() != QProcess::NotRunning) {
     perception_process_->terminate();                 // the session stops EPD, then exits
@@ -8609,6 +8626,14 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
     update.canvas->setData(RoleRoll, update.roll);
     update.canvas->setData(RolePitch, update.pitch);
     update.canvas->setData(RoleYaw, update.yaw);
+    // A dirty session is written back onto the canvas before serializing. The
+    // browser pose already includes any Inspector edit pushed to it, so it is
+    // the newer pending value: a gizmo edit after Inspector Apply must survive.
+    for (auto & session_item : editable_layout_session_items_) {
+      if (session_item.id != update.id) continue;
+      session_item.x = update.x; session_item.y = update.y; session_item.z = update.z;
+      session_item.roll = update.roll; session_item.pitch = update.pitch; session_item.yaw = update.yaw;
+    }
   }
   // Keep the pending Inspector snapshot intact while saving dirty edits.
   if (!layout_dirty_) capture_active_editable_layout_session();
@@ -10041,7 +10066,7 @@ bool MainWindow::leave_cell_session_for(int scene_index)
     box.setObjectName(QStringLiteral("unsavedLayoutSwitchDialog"));
     box.setInformativeText(QStringLiteral("To keep them, choose Stay and use Save Layout (Ctrl+S) first."));
     auto * discard = box.addButton(QStringLiteral("Discard edits and open"), QMessageBox::DestructiveRole);
-    box.addButton(QStringLiteral("Stay"), QMessageBox::RejectRole);
+    box.setDefaultButton(box.addButton(QStringLiteral("Stay"), QMessageBox::RejectRole));
     box.exec();
     if (box.clickedButton() != discard) return false;
     append_studio_log(QStringLiteral("Unsaved layout edits in %1 were discarded on opening another cell.").arg(selected_scene_state_.name));
@@ -15211,7 +15236,13 @@ void MainWindow::populate_asset_catalog()
   if (!asset_catalog_tree_) return;
   asset_catalog_tree_->clear();
   asset_catalog_entries_.clear();
-  const fs::path repo_root = fs::current_path();
+  // The library lives in the repository, never in the launch directory: from a
+  // workspace launch the current path holds no assets at all.
+  const QString workspace_root = QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT"));
+  const QString resolved_root = resolve_workcell_studio_repo_root(has_selected_scene()
+    ? fs::path(selected_scene_path().toStdString())
+    : fs::path((workspace_root + QStringLiteral("/src/easy_manipulation_deployment/scenes")).toStdString()));
+  const fs::path repo_root = resolved_root.isEmpty() ? fs::current_path() : fs::path(resolved_root.toStdString());
   const std::string scene_catalog_root = has_selected_scene()
     ? (fs::path(selected_scene_path().toStdString()) / "assets" / "imported").string()
     : std::string();

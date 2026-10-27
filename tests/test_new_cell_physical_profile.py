@@ -73,6 +73,9 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
         pytest.skip('Real Humble xacro required for production profile acceptance')
     scene, destination = tmp_path / 'staging' / 'independent_cell', tmp_path / 'independent_cell'
     wizard_input(scene)
+    typed = yaml.safe_load((scene / 'environment.yaml').read_text())
+    typed['scene'] = {'id': scene.name, 'display_name': 'Independent Cell', 'description': 'Typed in the wizard'}
+    (scene / 'environment.yaml').write_text(yaml.safe_dump(typed))
     materialize(scene, 'ur5_2f_workbench', destination)
     for required in ('scene_manifest.yaml', 'launch/demo.launch.py', 'package.xml', 'config/task_recipe.yaml'):
         assert (scene / required).is_file(), required
@@ -116,6 +119,9 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     # The selected tool keeps its reviewed catalog capability (the qualified simulator binds its hold profile).
     assert authored['end_effector']['capability'] == reviewed['end_effector']['capability'] == 'robotiq_2f_85'
     assert authored['scene']['id'] == destination.name
+    # The wizard's display name and description survive creation (Home lists the display name).
+    assert authored['scene']['display_name'] == authored['scene']['name'] == 'Independent Cell'
+    assert authored['scene']['description'] == 'Typed in the wizard'
     assert 'task' not in authored  # The reference scene task was not cloned.
     assert authored['perception']['epd_input']['topic']  # Keep reviewed input metadata when switching modes later.
     assert authored['perception']['enabled'] is False

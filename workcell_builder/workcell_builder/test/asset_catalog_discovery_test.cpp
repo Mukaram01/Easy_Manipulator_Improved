@@ -332,3 +332,34 @@ TEST(AssetLibraryModel, UnpackagedDescriptionMeshAndXacroAreOneEntry)
   }
   EXPECT_EQ(tray_entries, 1);
 }
+
+TEST(AssetCatalogDiscovery, PackagesAreNamedAsProductsAndMultiPartToolsAreNotLooseObjects)
+{
+  const fs::path repo = make_tmp_dir("product_names");
+  const fs::path ws = make_tmp_dir("product_names_ws");
+  const fs::path three_finger = repo / "assets" / "end_effectors" / "robotiq_3f_gripper_description";
+  write_text(three_finger / "package.xml", "<package><name>robotiq_3f_gripper_description</name></package>");
+  write_text(three_finger / "meshes" / "visual" / "link_0.stl", "solid a\nendsolid\n");
+  write_text(three_finger / "meshes" / "visual" / "finger.stl", "solid b\nendsolid\n");
+  const fs::path cup = repo / "assets" / "end_effectors" / "airpick_description";
+  write_text(cup / "package.xml", "<package><name>airpick_description</name></package>");
+  write_text(cup / "meshes" / "airpick.stl", "solid c\nendsolid\n");
+
+  const auto model = discover_asset_catalog(ws.string(), repo.string());
+  const auto find = [&model](const std::string & id) {
+    return std::find_if(model.assets.begin(), model.assets.end(), [&id](const auto & e) { return e.id == id; });
+  };
+  const auto gripper = find("robotiq_3f_gripper_description");
+  ASSERT_NE(gripper, model.assets.end());
+  EXPECT_EQ(gripper->display_name, "Robotiq 3f Gripper");
+  EXPECT_EQ(gripper->display_name.find("Link"), std::string::npos);
+  EXPECT_EQ(gripper->display_name.find("Finger"), std::string::npos);
+  EXPECT_FALSE(gripper->can_add_to_scene);
+  EXPECT_EQ(gripper->readiness, "ASSIGN_AS_END_EFFECTOR");
+  ASSERT_FALSE(gripper->blockers.empty());
+  EXPECT_NE(gripper->blockers.front().find("End Effector"), std::string::npos);
+
+  const auto single = find("airpick_description");
+  ASSERT_NE(single, model.assets.end());
+  EXPECT_TRUE(single->can_add_to_scene);
+}

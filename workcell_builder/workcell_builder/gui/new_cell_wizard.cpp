@@ -561,6 +561,11 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  std::ostringstream out;
  out<<std::setprecision(17);
  out<<"scene_name: "<<scene_name_->text().trimmed().toStdString()<<"\n";
+ // The scene browser and header read scene.display_name; Description is kept beside it.
+ out<<"scene:\n";
+ out<<"  id: "<<yaml_scalar(scene_name_->text().trimmed())<<"\n";
+ if(!display_name_->text().trimmed().isEmpty()) out<<"  display_name: "<<yaml_scalar(display_name_->text().trimmed())<<"\n";
+ if(!description_->toPlainText().trimmed().isEmpty()) out<<"  description: "<<yaml_scalar(description_->toPlainText().trimmed())<<"\n";
  out<<"robot: "<<robot_->currentText().toStdString()<<"\n";
  out<<"end_effector: "<<ee_->currentText().toStdString()<<"\n";
 out<<"workcell_studio:\n";
