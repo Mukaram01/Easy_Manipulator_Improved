@@ -106,7 +106,7 @@ AlignArrangePanel::AlignArrangePanel(AlignArrangeController * controller, QWidge
 
   layout->addWidget(section(QStringLiteral("Centre"), this));
   centre_both_ = new QToolButton(this);
-  centre_both_->setText(QStringLiteral("Centre on reference"));
+  centre_both_->setText(QStringLiteral("Centre in XY plane"));
   centre_both_->setObjectName(QStringLiteral("alignCentreBoth"));
   centre_both_->setCheckable(true);
   centre_both_->setToolTip(QStringLiteral("Centre horizontally: the box centres match along the reference X and Y. "

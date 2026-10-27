@@ -22,7 +22,9 @@ static QJsonObject ui_tour_audit(QWidget * root)
       wraps = label->wordWrap() || label->textFormat() == Qt::RichText || Qt::mightBeRichText(text) ||
               !label->pixmap(Qt::ReturnByValue).isNull();
     } else if (auto * button = qobject_cast<QAbstractButton *>(widget)) {
-      text = button->text();
+      // An icon-only tool button never draws its text (it is the tooltip/accessible name).
+      auto * tool = qobject_cast<QToolButton *>(widget);
+      if (!(tool && tool->toolButtonStyle() == Qt::ToolButtonIconOnly && !tool->icon().isNull())) text = button->text();
     }
     if (!text.isEmpty() && !wraps && !text.contains('\n') &&
         widget->fontMetrics().horizontalAdvance(text) > widget->contentsRect().width() + 2 &&

@@ -30,7 +30,7 @@ Every operation works in the **reference part's own axes**, so a rotated referen
 | Button | Meaning (reference axes) |
 |---|---|
 | Centre X / Y / Z | Box centres match along that axis |
-| Centre on reference | Centre X and Centre Y together (height kept) |
+| Centre in XY plane | Centre X and Centre Y together (height kept) |
 | Left / Right | The −X / +X box faces line up |
 | Front / Back | The −Y / +Y box faces line up |
 | Bottom / Top | The −Z / +Z box faces line up |
@@ -39,7 +39,7 @@ Every operation works in the **reference part's own axes**, so a rotated referen
 
 How operations combine:
 - One operation per axis. Clicking an active operation clears it, and Clear removes all.
-- Operations on different axes combine; for example, Centre on reference with Place on top.
+- Operations on different axes combine; for example, Centre in XY plane with Place on top.
 - **Offset (mm)** adds an exact distance along each axis that has an operation. For example, Left with X +50 leaves a 50 mm margin. Offsets on axes without an operation are disabled.
 
 ## Preview

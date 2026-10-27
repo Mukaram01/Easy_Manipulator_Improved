@@ -851,6 +851,13 @@ function sceneHealthModel() {
     return { state: 'loading', title: state.sceneJsonLoaded ? 'Loading physical scene' : 'Opening scene', summary: waiting, diagnostics, errorCount, warningCount };
   }
   if (warningCount) return { state: 'warning', title: 'Scene ready with warnings', summary: `${warningCount} item${warningCount === 1 ? '' : 's'} to review`, diagnostics, errorCount, warningCount };
+  // A diagnostic export shows the physical cell read-only while scene authoring is
+  // incomplete: visual preview availability is not task execution readiness.
+  const authoringBlockers = asArray(state.sceneJson?.authoring_blockers);
+  if (state.sceneJson?.preview_mode === 'diagnostic' || authoringBlockers.length) {
+    const blocker = authoringBlockers[0]?.message || 'scene authoring is incomplete';
+    return { state: 'warning', title: '3D preview only', summary: `Read-only · task blocked: ${blocker}`, diagnostics, errorCount, warningCount };
+  }
   const physicalCount = renderedPhysicalItemCount();
   return { state: 'ready', title: 'Scene ready', summary: `${physicalCount} physical item${physicalCount === 1 ? '' : 's'} loaded · safe to edit`, diagnostics, errorCount, warningCount };
 }
@@ -5770,6 +5777,7 @@ function cancelPlacement() {
   return getPlacementState();
 }
 function pickObject(event) {
+  const toggle = event?.button === 0 && (event.ctrlKey === true || event.metaKey === true) && event.type !== 'contextmenu';
   const rect = el.canvas.getBoundingClientRect();
   state.three.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   state.three.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -5800,6 +5808,7 @@ function pickObject(event) {
         console.warn?.(`Product View canvas pick rejected: ${JSON.stringify(diagnostic)}`);
       }
     }
+    if (toggle) return '';  // a Ctrl+click on empty space keeps the selection
     clearSelection();
     return '';
   }
@@ -5813,6 +5822,11 @@ function pickObject(event) {
     }
   }
   const canonicalId = selectedCandidate.selectionOwner?.item?.id || explicitUiSelectionItemId(selectedCandidate.rendered);
+  if (toggle) {
+    // The Builder owns the multi-selection; report the toggle and keep the current selection.
+    state.multiToggle = { seq: (state.multiToggle?.seq || 0) + 1, id: canonicalId };
+    return canonicalId;
+  }
   selectObjectFromRender(canonicalId, selectedCandidate.rendered);
   state.lastCanvasSelectedItemId = canonicalId;
   state.lastCanvasPickReason = 'eligible_candidate';
@@ -6153,7 +6167,7 @@ function attachTransformGizmo(rendered, attachmentReason = 'mode_or_selection') 
     gizmo.setSpace(state.transformSpace);
     gizmo.enabled = state.editorMode !== 'select';
     // An open Align & Arrange preview holds the gizmo off: choosing its reference must not move anything.
-    if (state.arrange?.active) { gizmo.enabled = false; gizmo.visible = false; }
+    if (state.arrange?.active || selectionSetHoldsGizmo()) { gizmo.enabled = false; gizmo.visible = false; }
     gizmo.setTranslationSnap(el.snapToggle?.checked ? translationSnapValue() : null);
     gizmo.setRotationSnap(el.snapToggle?.checked ? rotationSnapRadians() : null);
     if (!usesPhysicalPivot) state.gizmoAttachmentDiagnostic = { targetId: rendered.item.id, reason: 'attached_to_canonical_edit_owner' };
@@ -7382,6 +7396,55 @@ function getMateState() {
     markerCount: mate.pickables.length, ghostCount: mate.ghosts.length, isolatedAsset: mate.isolatedAsset || '', viewSeq: mate.viewSeq || 0,
     hoverResolution: strip(mate.hoverResolution), labelText: mate.label?.style?.display === 'block' ? mate.label.textContent : '', sceneId: sceneId() };
 }
+// Multi-selection (owned by the Builder): every member is outlined, the reference
+// in its own colour. With two or more parts selected the single-part move gizmo is
+// held off, so a drag can never move one member of a selection on its own.
+const SELECTION_SET_COLORS = Object.freeze({ member: 0x2563eb, reference: 0xf97316 });
+function selectionSetState() {
+  state.selectionSet ||= { members: [], reference: '', group: null, materials: [] };
+  return state.selectionSet;
+}
+function disposeSelectionSetHighlight() {
+  const set = selectionSetState();
+  if (set.group) { set.group.parent?.remove(set.group); set.group = null; }
+  for (const material of set.materials) material.dispose?.();
+  set.materials = [];
+}
+function selectionSetHoldsGizmo() {
+  return (state.selectionSet?.members?.length || 0) >= 2;
+}
+function rebuildSelectionSetHighlight() {
+  const set = selectionSetState();
+  disposeSelectionSetHighlight();
+  if (!state.three?.scene || set.members.length < 2) return;
+  const group = new THREE.Group();
+  for (const id of set.members) {
+    const highlight = mateHighlight(id, id === set.reference ? SELECTION_SET_COLORS.reference : SELECTION_SET_COLORS.member, false);
+    if (!highlight) continue;
+    set.materials.push(highlight.material);
+    group.add(highlight);
+  }
+  markPlacementPreviewHelper(group);
+  group.name = 'workcell_selection_set';
+  state.three.scene.add(group);
+  set.group = group;
+}
+function setSelectionSet(selection) {
+  const set = selectionSetState();
+  set.members = Array.isArray(selection?.members) ? selection.members.map(String).filter(Boolean) : [];
+  set.reference = String(selection?.reference || '');
+  rebuildSelectionSetHighlight();
+  const gizmo = state.three?.transformControls;
+  if (gizmo && selectionSetHoldsGizmo()) { gizmo.enabled = false; gizmo.visible = false; }
+  else if (gizmo && !state.mate?.active && !state.arrange?.active && gizmo.object) { gizmo.enabled = state.editorMode !== 'select'; gizmo.visible = true; }
+  return getSelectionSetState();
+}
+function getSelectionSetState() {
+  const set = selectionSetState();
+  return { members: set.members.slice(), reference: set.reference, highlightCount: set.group?.children?.length || 0,
+    toggleSeq: state.multiToggle?.seq || 0, toggleId: state.multiToggle?.id || '',
+    gizmoEnabled: Boolean(state.three?.transformControls?.enabled), sceneId: sceneId() };
+}
 // Align & Arrange preview: a ghost at the planned pose plus moving/reference
 // highlights. Unlike Mate it does not capture clicks (a click still selects the
 // reference through the normal path), but the move gizmo is held off so nothing
@@ -7410,7 +7473,8 @@ function setArrangePreview(overlay) {
   suppressGizmoForMate();
   if (!state.three?.scene) return editorState();
   const group = new THREE.Group();
-  for (const [assetId, color] of [[overlay.moving, MATE_COLORS.child], [overlay.reference, MATE_COLORS.parent]]) {
+  const highlighted = Array.isArray(overlay.members) ? [] : [[overlay.moving, MATE_COLORS.child], [overlay.reference, MATE_COLORS.parent]];
+  for (const [assetId, color] of highlighted) {
     const highlight = mateHighlight(String(assetId || ''), color, false);
     if (!highlight) continue;
     arrange.materials.push(highlight.material);
@@ -7559,6 +7623,9 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   setArrangePreview: overlay => setArrangePreview(overlay),
   clearArrangePreview: () => clearArrangePreview(),
   getArrangeState: () => getArrangeState(),
+  // Multi-selection highlights and Ctrl+click toggles (optional; Builder checks before use).
+  setSelectionSet: selection => setSelectionSet(selection),
+  getSelectionSetState: () => getSelectionSetState(),
   // Diagnostics: where a world point appears on the canvas (page coordinates).
   projectWorldPoint: point => projectWorldPoint(point),
 };

@@ -16,6 +16,7 @@
 #ifndef EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 
+#include "scene_selection_set.hpp"
 #include <QFutureWatcher>
 #include <QStackedWidget>
 #include <QMainWindow>
@@ -54,6 +55,8 @@ class MateToolController;
 class MateToolPanel;
 class AlignArrangeController;
 class AlignArrangePanel;
+class ArrangeController;
+class ArrangeToolbar;
 }
 
 QT_BEGIN_NAMESPACE
@@ -422,6 +425,23 @@ private:
   QPushButton * inspector_align_button_{nullptr};
   QString align_scene_path_;
   bool align_scene_change_pending_{false};
+  // Multi-selection (one model for hierarchy, 3D views, Inspector) and the arrangement toolbar.
+  void toggle_scene_selection(const QString & id);
+  void extend_scene_selection_to(const QString & id);
+  void set_selection_reference(const QString & id);
+  void sync_selection_set_views();
+  bool arrange_active() const;
+  void push_arrange_overlay();
+  QString arrange_extra_availability(const QString & tool) const;
+  void arrange_mate_handoff(const QString & kind);
+  workcell_builder::SceneSelectionSet selection_set_;
+  bool selection_set_passthrough_{false};
+  QString hierarchy_range_anchor_;
+  Qt::KeyboardModifiers hierarchy_click_modifiers_{Qt::NoModifier};
+  workcell_builder::ArrangeController * arrange_controller_{nullptr};
+  workcell_builder::ArrangeToolbar * arrange_toolbar_{nullptr};
+  QLabel * inspector_multi_selection_label_{nullptr};
+  mutable QHash<QString, QString> concentric_availability_cache_;
   void refresh_mount_relation_context();
   QString mount_relation_text_for(const QString & id) const;
   void apply_selection_transform_from_editor();

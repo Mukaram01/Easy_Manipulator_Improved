@@ -67,6 +67,8 @@
 #include "gui/mate_tool_panel.hpp"
 #include "gui/align_arrange_controller.hpp"
 #include "gui/align_arrange_panel.hpp"
+#include "gui/arrange_controller.hpp"
+#include "gui/arrange_toolbar.hpp"
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 #include <QWebEngineView>
 #endif
@@ -2919,4 +2921,5 @@ public:
   }
 #include "ui_tour_capture.inc"
 #include "align_arrange_acceptance.inc"
+#include "multi_select_acceptance.inc"
 };
