@@ -23,6 +23,8 @@
 #include "datum_mating_text.hpp"
 #include "teardown_connections.hpp"
 #include "mate_pick.hpp"
+#include "align_arrange_controller.hpp"
+#include "align_arrange_panel.hpp"
 #include "mate_tool_controller.hpp"
 #include "mate_tool_panel.hpp"
 #include "gui/web_edit_policy.hpp"
@@ -3623,6 +3625,12 @@ void MainWindow::setup_studio_shell()
     "check the preview and Apply. Uses the same relation as Mount To.");
   selected_item_card_layout->addWidget(inspector_mate_button_);
   connect(inspector_mate_button_, &QPushButton::clicked, this, &MainWindow::begin_visual_mate);
+  inspector_align_button_ = new QPushButton("Align && Arrange…", scene_builder);
+  inspector_align_button_->setObjectName("sceneBuilderAlignArrange");
+  inspector_align_button_->setToolTip("Line this part up with another part: centre, align edges, place on top or set an "
+    "exact offset, with a ghost preview before Apply (Ctrl+Shift+A). Uses bounding boxes, not CAD faces.");
+  selected_item_card_layout->addWidget(inspector_align_button_);
+  connect(inspector_align_button_, &QPushButton::clicked, this, &MainWindow::begin_align_arrange);
   inspector_mount_relation_label_ = new QLabel(scene_builder);
   inspector_mount_relation_label_->setObjectName("sceneBuilderMountRelation");
   inspector_mount_relation_label_->setWordWrap(true);
@@ -3742,6 +3750,40 @@ void MainWindow::setup_studio_shell()
       mate_controller_->cancel(QStringLiteral("Mate tool closed; choose the datums in the Mount To dialog. Nothing was applied."));
       if (!asset.isEmpty()) apply_scene_selection(asset, QString(), false, false);
       edit_selected_mounting();
+    });
+  }
+  {
+    // Align & Arrange: bounding-box alignment planned by the same resolver, committed through Mount To's path.
+    workcell_builder::AlignArrangeController::Hooks hooks;
+    hooks.run_resolver = [this](const QJsonObject & request) { return run_mounting_request(request); };
+    hooks.commit = [this](const QJsonObject & request) { return commit_mounting_request(request); };
+    hooks.current_items = [this]() { return mounting_items(); };
+    hooks.display_name = [this](const QString & id) {
+      for (const auto & p : all_scene_preview_items_) if (p.id == id) return p.display_name;
+      return QString();
+    };
+    hooks.moving_blocker = [this](const QString & id) { return align_moving_blocker(id); };
+    hooks.reference_blocker = [this](const QString & id, QJsonObject * world) { return align_reference_blocker(id, world); };
+    hooks.live_dimensions = [this]() {
+      QJsonObject sizes;
+      for (const auto & p : all_scene_preview_items_) {
+        if (p.primitive_geometry_type == QStringLiteral("box") && p.source_layer == QStringLiteral("editable_layout")) {
+          sizes.insert(p.id, QJsonArray{p.sx, p.sy, p.sz});
+        }
+      }
+      return sizes;
+    };
+    align_controller_ = new workcell_builder::AlignArrangeController(hooks, this);
+    align_panel_ = new workcell_builder::AlignArrangePanel(align_controller_, inspector_scroll_contents);
+    align_panel_->hide();
+    inspector_scroll_layout->insertWidget(0, align_panel_);
+    connect(align_controller_, &workcell_builder::AlignArrangeController::changed, this, &MainWindow::push_align_overlay);
+    connect(align_controller_, &workcell_builder::AlignArrangeController::finished, this, &MainWindow::end_align_arrange);
+    connect(align_panel_, &workcell_builder::AlignArrangePanel::mate_requested, this, [this]() {
+      const QString part = align_controller_->moving();
+      align_controller_->cancel(QStringLiteral("Align & Arrange closed for Mate faces. Nothing was applied."));
+      if (!part.isEmpty()) apply_scene_selection(part, QString(), false, false);
+      begin_visual_mate();
     });
   }
   inspector_scroll->setWidget(inspector_scroll_contents);
@@ -4176,7 +4218,9 @@ void MainWindow::setup_studio_shell()
     }
   }
   auto * save_sc = new QShortcut(QKeySequence::Save, scene_builder); connect(save_sc,&QShortcut::activated,this,&MainWindow::save_layout_changes);
-  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ if (mate_active()) { mate_controller_->cancel(); return; } set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
+  auto * esc_sc = new QShortcut(QKeySequence(Qt::Key_Escape), scene_builder); connect(esc_sc,&QShortcut::activated,this,[this](){ if (align_active()) { align_controller_->cancel(); return; } if (mate_active()) { mate_controller_->cancel(); return; } set_canvas_interaction_mode(CanvasInteractionMode::Select); if(digital_twin_scene_) digital_twin_scene_->clearSelection(); ghost_preview_item_=nullptr; rebuild_digital_twin_canvas(); });
+  auto * align_sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+A")), scene_builder);
+  connect(align_sc, &QShortcut::activated, this, [this]() { if (align_active()) align_controller_->cancel(); else begin_align_arrange(); });
   auto * fit_sc = new QShortcut(QKeySequence(Qt::Key_F), scene_builder); connect(fit_sc,&QShortcut::activated,fit_button,&QAction::trigger);
   auto * rename_sc = new QShortcut(QKeySequence(Qt::Key_F2), scene_builder);
   rename_sc->setContext(Qt::ApplicationShortcut);
@@ -8339,6 +8383,11 @@ void MainWindow::select_canvas_item(QGraphicsItem * item)
 
 void MainWindow::apply_scene_selection(const QString & id, const QString & role, bool intentional_clear, bool center_canvas)
 {
+  if (align_active() && !mate_selection_passthrough_) {
+    // While aligning, a hierarchy or viewport click chooses the reference part; the part to move stays selected.
+    if (!id.trimmed().isEmpty()) align_controller_->set_reference(id.trimmed());
+    return;
+  }
   if (mate_active() && !mate_selection_passthrough_) {
     // While mating, a hierarchy click or an asset-level viewport click chooses
     // the part for the current step; it never changes the mate behind its back.
@@ -10272,6 +10321,7 @@ void MainWindow::begin_visual_mate()
 {
   if (!mate_controller_ || !mate_panel_) return;
   if (mate_active()) return;
+  if (align_active()) align_controller_->cancel(QStringLiteral("Align & Arrange closed for Mate. Nothing was applied."));
   const auto stop = [this](const QString & message) {
     if (scene_builder_mate_button_) { const QSignalBlocker blocker(scene_builder_mate_button_); scene_builder_mate_button_->setChecked(false); }
     append_studio_log(message);
@@ -10307,6 +10357,9 @@ void MainWindow::end_visual_mate(bool applied, const QString & message)
 void MainWindow::cancel_mate_for_other_cell(int scene_index)
 {
   // Mate belongs to the cell it started in; Apply must never commit into another one.
+  if (align_active() && scene_index != selected_scene_index_) {
+    align_controller_->cancel(QStringLiteral("Align & Arrange cancelled: another cell was opened. Nothing was applied."));
+  }
   if (mate_active() && scene_index != selected_scene_index_) {
     mate_controller_->cancel(QStringLiteral("Mate cancelled: another cell was opened. Nothing was applied."));
   }
@@ -10391,12 +10444,151 @@ void MainWindow::handle_embedded_mate_state(const QVariantMap & mate)
 
 void MainWindow::notify_mate_scene_changed()
 {
+  if (align_active() && !align_scene_change_pending_) {
+    align_scene_change_pending_ = true;
+    QTimer::singleShot(0, this, [this]() {
+      align_scene_change_pending_ = false;
+      if (align_active()) align_controller_->scene_changed();
+    });
+  }
   if (!mate_active() || mate_scene_change_pending_) return;
   mate_scene_change_pending_ = true;
   QTimer::singleShot(0, this, [this]() {
     mate_scene_change_pending_ = false;
     if (mate_active()) mate_controller_->scene_changed();
   });
+}
+
+bool MainWindow::align_active() const
+{
+  return align_controller_ && align_controller_->active();
+}
+
+namespace
+{
+
+const ScenePreviewWidget::PreviewItem * align_find_item(const QVector<ScenePreviewWidget::PreviewItem> & items, const QString & id)
+{
+  for (const auto & p : items) if (p.id == id) return &p;
+  return nullptr;
+}
+
+bool align_is_zone(const ScenePreviewWidget::PreviewItem & p)
+{
+  return p.semantic_task_zone_helper || p.category.toLower() == QStringLiteral("zone") || p.role.toLower().contains(QStringLiteral("zone"));
+}
+
+QString align_name(const ScenePreviewWidget::PreviewItem & p)
+{
+  return p.display_name.trimmed().isEmpty() ? p.id : p.display_name.trimmed();
+}
+
+}  // namespace
+
+QString MainWindow::align_moving_blocker(const QString & id) const
+{
+  const auto * item = align_find_item(all_scene_preview_items_, id);
+  if (!item || deleted_layout_item_ids_.contains(id)) return QStringLiteral("%1 is no longer in this cell.").arg(id);
+  const QString name = align_name(*item);
+  if (align_is_zone(*item)) {
+    return QStringLiteral("%1 is a task zone: zones are task semantics and follow their target. Select the physical part "
+      "instead.").arg(name);
+  }
+  if (item->robot_candidate) {
+    return QStringLiteral("%1 belongs to the generated robot or tool model and is locked here. Select a placed asset "
+      "such as a bin, fixture or table.").arg(name);
+  }
+  if (item->source_layer != QStringLiteral("editable_layout")) {
+    return QStringLiteral("%1 is not an authored physical part (source: %2). Select a placed asset such as a bin, fixture "
+      "or table.").arg(name, item->source_layer.isEmpty() ? QStringLiteral("unknown") : item->source_layer);
+  }
+  if (item->locked || !item->editable) {
+    return QStringLiteral("%1 is locked%2. Unlock it before moving it.")
+      .arg(name, item->lock_reason.trimmed().isEmpty() ? QString() : QStringLiteral(" (%1)").arg(item->lock_reason.trimmed()));
+  }
+  return QString();
+}
+
+QString MainWindow::align_reference_blocker(const QString & id, QJsonObject * world) const
+{
+  const auto * item = align_find_item(all_scene_preview_items_, id);
+  if (!item || deleted_layout_item_ids_.contains(id)) return QStringLiteral("%1 is no longer in this cell.").arg(id);
+  const QString name = align_name(*item);
+  if (align_is_zone(*item)) return QStringLiteral("%1 is a task zone, not a physical part. Choose a physical reference.").arg(name);
+  if (item->robot_candidate) {
+    return QStringLiteral("%1 belongs to the generated robot or tool model; its geometry is not an authored part. "
+      "Choose the table, a bin or another placed asset as the reference.").arg(name);
+  }
+  if (item->source_layer != QStringLiteral("editable_layout")) {
+    return QStringLiteral("%1 is not an authored physical part (source: %2). Choose the table, a bin or another placed "
+      "asset as the reference.").arg(name, item->source_layer.isEmpty() ? QStringLiteral("unknown") : item->source_layer);
+  }
+  // A locked reference is not an editable resolver row: report its authored world pose.
+  if (world && (item->locked || !item->editable)) {
+    *world = QJsonObject{{"xyz", QJsonArray{item->x, item->y, item->z}}, {"rpy", QJsonArray{item->roll, item->pitch, item->yaw}}};
+  }
+  return QString();
+}
+
+void MainWindow::begin_align_arrange()
+{
+  if (!align_controller_ || !align_panel_ || align_active()) return;
+  const auto stop = [this](const QString & message) {
+    append_studio_log(QStringLiteral("Align & Arrange: %1").arg(message));
+    QMessageBox::information(this, QStringLiteral("Align & Arrange"), message);
+  };
+  if (!has_selected_scene()) { stop(QStringLiteral("Open a cell before using Align & Arrange.")); return; }
+  if (mate_active()) mate_controller_->cancel(QStringLiteral("Mate closed for Align & Arrange. Nothing was applied."));
+  align_scene_path_ = selected_scene_state_.path;  // before begin(): its first update checks the cell
+  QString error;
+  if (!align_controller_->begin(current_selected_scene_item_id_, &error)) { stop(error); return; }
+  QList<QPair<QString, QString>> candidates;
+  QSet<QString> seen;
+  for (const auto & p : all_scene_preview_items_) {
+    if (p.id.isEmpty() || p.id == align_controller_->moving() || seen.contains(p.id)) continue;
+    seen.insert(p.id);
+    if (align_reference_blocker(p.id, nullptr).isEmpty()) candidates.append({p.id, align_name(p)});
+  }
+  std::sort(candidates.begin(), candidates.end(), [](const auto & a, const auto & b) {
+    return QString::localeAwareCompare(a.second, b.second) < 0;
+  });
+  align_panel_->set_reference_candidates(candidates);
+  align_panel_->set_view_note(scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active()
+    ? QString()
+    : QStringLiteral("The ghost is drawn in the 3D Product View; this fallback view shows the numbers only."));
+  apply_scene_builder_panel_visibility(true, true);
+  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->hide();
+  align_panel_->show();
+  append_studio_log(QStringLiteral("Align & Arrange started for %1 in %2.").arg(align_controller_->moving(), selected_scene_state_.name));
+  push_align_overlay();
+}
+
+void MainWindow::end_align_arrange(bool applied, const QString & message)
+{
+  if (align_panel_) align_panel_->hide();
+  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->show();
+  if (scene_preview_widget_) scene_preview_widget_->clear_arrange_preview();
+  append_studio_log(QStringLiteral("Align & Arrange: %1").arg(message));
+  // A reference click selected the reference in the 3D view: hand the selection back to the part.
+  if (align_controller_ && !align_controller_->moving().isEmpty() && align_find_item(all_scene_preview_items_, align_controller_->moving())) {
+    apply_scene_selection(align_controller_->moving(), QString(), false, false);
+  }
+  refresh_selected_item_card();
+}
+
+void MainWindow::push_align_overlay()
+{
+  if (!align_active()) return;
+  if (align_scene_path_ != selected_scene_state_.path) {
+    align_controller_->cancel(QStringLiteral("Align & Arrange cancelled: another cell was opened. Nothing was applied."));
+    return;
+  }
+  // The part being moved stays the selection; the reference is highlighted by the overlay.
+  if (align_controller_->moving() != current_selected_scene_item_id_) {
+    const QScopedValueRollback<bool> passthrough(mate_selection_passthrough_, true);
+    apply_scene_selection(align_controller_->moving(), QString(), false, false);
+  }
+  if (scene_preview_widget_) scene_preview_widget_->set_arrange_preview(align_controller_->overlay());
 }
 
 void MainWindow::apply_selection_transform_from_editor() { apply_inspector_pose_to_item(); }

@@ -408,7 +408,8 @@ if __name__ == '__main__':
     try:
         request = json.load(sys.stdin)
         rows = request['items']
-        saved = saved_mesh_calibration(request.pop('scene_dir', ''))
+        scene_dir = request.pop('scene_dir', '')
+        saved = saved_mesh_calibration(scene_dir)
         for row in rows:
             metadata = row.pop('mounting_yaml', '')
             if metadata:
@@ -421,6 +422,12 @@ if __name__ == '__main__':
             result = {row['id']: {**catalog_datums(row), **anchors(row)} for row in rows}
         elif request.get('operation') == 'datum_frames':
             result = datum_frames(rows)
+        elif request.get('operation') == 'align':
+            # Two-part Align & Arrange: plans an ordinary edit request (asset_alignment.py).
+            from asset_alignment import plan
+            result = plan(rows, request, scene_dir)
+            for row in result['rows']:
+                row['mounting_yaml'] = json.dumps({key: row[key] for key in (*RELATION_FIELDS, 'surface_z_m') if key in row})
         else:
             result = edit(rows, request.pop('id'), **{
                 key: value for key, value in request.items()

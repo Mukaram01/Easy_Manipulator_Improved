@@ -37,6 +37,9 @@ class QWebEngineView;
 
 // The user-facing cause of a failed Product View preparation (stderr "error:" lines first).
 QString concise_preparation_error(const QString & detail);
+// True when a strict Product View preparation failed only because the scene's
+// destination chain is unresolved: physical visuals can still be shown read-only.
+bool is_destination_authoring_blocker(const QString & stderr_tail);
 
 class ScenePreviewWidget : public QWidget
 {
@@ -283,6 +286,10 @@ public:
   void set_mate_overlay(const QJsonObject & overlay);
   void clear_mate_overlay();
   void set_mate_hover_resolution(const QJsonObject & resolution);
+  // Align & Arrange preview: ghost of the planned pose and reference highlight;
+  // the viewer stays in normal selection mode with the move gizmo held off.
+  void set_arrange_preview(const QJsonObject & overlay);
+  void clear_arrange_preview();
   void request_authoring_save();
   void arm_embedded_asset_placement(
     const QString & asset_id, const QString & mesh_uri, double mesh_scale,

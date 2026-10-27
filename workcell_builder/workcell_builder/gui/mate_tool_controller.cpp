@@ -159,15 +159,26 @@ MatePickResolution MateToolController::pick(const MateRawPick & raw)
   const auto resolution = resolve_mate_pick(raw, frames_);
   if (step_ == Step::Inactive) return resolution;
   picks_log_.append(QJsonObject{{"step", step_name(step_)}, {"resolution", mate_pick_to_json(resolution)}});
+  // A click that hits no part (background, floor, a hidden part) is a miss: it never
+  // changes, replaces or cancels a pick. Say so, and say what is still picked.
+  const bool missed = resolution.reason_code == QStringLiteral("NO_ASSET");
+  const auto kept = [this](const std::optional<Pick> & pick) {
+    return QStringLiteral("%1 · %2").arg(display_name(pick->asset_id), pick->datum_label.isEmpty() ? pick->datum : pick->datum_label);
+  };
   if (step_ == Step::Ready) {
-    set_status(QStringLiteral("Both faces are picked. Use Replace to change one, or Apply."));
+    set_status(missed
+      ? QStringLiteral("That click missed every part, so nothing changed. Still picked: %1 on %2. Apply, or Replace one.")
+          .arg(kept(child_), kept(parent_))
+      : QStringLiteral("Both faces are picked. Use Replace to change one, or Apply."));
     emit changed();
     return resolution;
   }
   const Role role = step_ == Step::PickChild ? Role::Child : Role::Parent;
   if (!resolution.valid) {
     pending_asset_ = frames_.contains(resolution.asset_id) ? resolution.asset_id : pending_asset_;
-    set_status(friendly_reason(resolution));
+    QString status = friendly_reason(resolution);
+    if (missed && child_) status += QStringLiteral(" %1 stays picked as the part to move.").arg(kept(child_));
+    set_status(status);
     emit changed();
     return resolution;
   }
