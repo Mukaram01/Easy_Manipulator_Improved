@@ -10,7 +10,7 @@
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
 static void start_multi_select_acceptance(MainWindow * window, QApplication * app, const QString & output,
-    const QString & scene_name, QSize window_size)
+    const QString & scene_name, QSize window_size, const QString & airpick_scene = QString())
 {
   struct Session {
     int step = 0, ticks = 0, sub = 0;
@@ -19,6 +19,12 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     bool js_pending = false; QVariant js_result;
     QByteArray env_hash, layout_hash;
     QHash<QString, std::array<double, 6>> before, aligned, distributed;
+    QByteArray env_before_open, layout_before_open;
+    bool expect_switch_dialog = false;
+    bool native = false;  // native Scene3D fallback: selection through the hierarchy, no viewer JS
+    QString switch_choice;
+    int corner = 0;
+    qint64 pick_seq_before = 0;
   };
   using Step = std::function<bool()>;
   auto s = std::make_shared<Session>();
@@ -141,11 +147,27 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
   QObject::connect(modal_watch, &QTimer::timeout, window, [=]() {
     for (auto * widget : QApplication::topLevelWidgets()) if (auto * message = qobject_cast<QMessageBox *>(widget)) {
       if (!message->isVisible()) continue;
+      if (s->expect_switch_dialog && message->objectName() == QStringLiteral("unsavedLayoutSwitchDialog")) {
+        s->evidence["switch_dialog_" + s->switch_choice] = message->text();
+        for (auto * button : message->buttons()) if (button->text() == s->switch_choice) { button->click(); break; }
+        s->expect_switch_dialog = false;
+        continue;
+      }
       s->evidence["failure"] = "unexpected message: " + message->text();
       shot("failure"); write(); message->reject(); app->exit(1);
     }
   }); modal_watch->start();
   auto add = [=](const QString & name, Step step) { steps->push_back({name, step}); };
+  // Steps that need the Web3D viewer (JS state, canvas clicks). In native mode they are skipped
+  // and listed in the evidence, so a native run never reports a viewer check it did not make.
+  auto add_web = [=](const QString & name, Step step) {
+    steps->push_back({name, [=]() -> bool {
+      if (!s->native) return step();
+      QJsonArray skipped = s->evidence.value("skipped_in_native").toArray(); skipped.append(name);
+      s->evidence["skipped_in_native"] = skipped;
+      return true;
+    }});
+  };
   auto open_cell = [=]() {
     s->scene = window->detect_workspace_root() + "/src/easy_manipulation_deployment/scenes/" + scene_name;
     QStringList blockers; QJsonObject diagnostics;
@@ -155,9 +177,20 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
   auto wait_view = [=](const QString & tag) {
     return [=]() -> bool {
       auto * preview = window->scene_preview_widget_;
-      if (s->ticks < 10 || !(preview && preview->embedded_web_authoring_active())) return false;
-      if (window->size() != window_size && s->ticks < 200) { window->setWindowState(Qt::WindowNoState); window->resize(window_size); return false; }
+      s->native = preview && preview->is_native_product_view_backend();
+      s->evidence["backend"] = s->native ? "native_scene3d" : "embedded_web3d";
+      if (s->ticks < 10 || !(preview && (s->native || preview->embedded_web_authoring_active()))) return false;
+      // An empty window_size means "maximized on --screen": keep what the window manager granted.
+      if (window_size.isValid() && window->size() != window_size && s->ticks < 200) {
+        window->setWindowState(Qt::WindowNoState); window->resize(window_size); return false;
+      }
+      if (!window_size.isValid() && !window->isMaximized() && s->ticks < 200) return false;
       s->evidence[tag + "_window_size"] = QJsonArray{window->width(), window->height()};
+      s->evidence[tag + "_maximized"] = window->isMaximized();
+      if (auto * screen = window->windowHandle() ? window->windowHandle()->screen() : nullptr) {
+        s->evidence[tag + "_screen"] = QJsonObject{{"name", screen->name()}, {"width", screen->geometry().width()},
+          {"height", screen->geometry().height()}, {"device_pixel_ratio", screen->devicePixelRatio()}};
+      }
       return s->ticks > 60;
     };
   };
@@ -172,21 +205,39 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     };
   };
 
-  add("load fixture cell", [=]() { if (s->ticks < 5) return false; open_cell(); return true; });
+  add("load fixture cell", [=]() {
+    if (s->ticks < 5) return false;
+    const QString dir = window->detect_workspace_root() + "/src/easy_manipulation_deployment/scenes/" + scene_name;
+    s->env_before_open = file_hash(dir + "/environment.yaml");
+    s->layout_before_open = file_hash(dir + "/layout/workcell_studio_layout.yaml");
+    open_cell();
+    return true;
+  });
   add("wait for the Product View", wait_view("cell"));
   add("baseline", [=]() {
     s->env_hash = file_hash(s->scene + "/environment.yaml");
     s->layout_hash = file_hash(s->scene + "/layout/workcell_studio_layout.yaml");
     s->before = poses(QStringList{table} + bins);
+    // Opening a cell must never write its authored files (one candidate for the earlier Cancel flake).
+    s->evidence["open_wrote_authored_files"] = QJsonObject{{"environment", s->env_hash != s->env_before_open},
+      {"layout", s->layout_hash != s->layout_before_open}};
+    require(s->env_hash == s->env_before_open && s->layout_hash == s->layout_before_open, "opening the cell rewrote authored files");
     QJsonObject b; for (auto it = s->before.constBegin(); it != s->before.constEnd(); ++it) b[it.key()] = json6(it.value());
     s->evidence["poses_before"] = b;
     require(!action("align_front")->isEnabled(), "Align is enabled without a selection");
     return true;
   });
-  add("plain 3D click selects the workbench (reference)", click_world("table_click", {0.2, -0.3, 0.0}, Qt::NoModifier, [=]() {
+  add("native: select the workbench from the hierarchy", [=]() {
+    if (!s->native) return true;
+    window->apply_scene_selection(table, QString(), false, false);
+    tree_ctrl_click(bin);
+    require(window->selection_set_.members() == (QStringList{table, bin}), "native: hierarchy selection failed");
+    return true;
+  });
+  add_web("plain 3D click selects the workbench (reference)", click_world("table_click", {0.2, -0.3, 0.0}, Qt::NoModifier, [=]() {
     return window->selection_set_.members() == QStringList{table};
   }));
-  add("Ctrl+click in 3D adds the destination bin", click_world("bin_ctrl_click", {0.45, 0.22, 0.12}, Qt::ControlModifier, [=]() {
+  add_web("Ctrl+click in 3D adds the destination bin", click_world("bin_ctrl_click", {0.45, 0.22, 0.12}, Qt::ControlModifier, [=]() {
     return window->selection_set_.members() == (QStringList{table, bin});
   }));
   add("Ctrl+click in the hierarchy adds the reject and spare bins", [=]() {
@@ -197,10 +248,15 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     require(window->selection_set_.reference() == table, "the first selected part is not the reference");
     return true;
   });
-  add("selection shown everywhere", viewer_selection("viewer_selection", [=](const QJsonObject & state) {
-    require(state.value("highlightCount").toInt() == 4, "the 3D view does not outline all four parts");
-    require(state.value("reference").toString() == table, "the 3D view shows another reference");
-    require(!state.value("gizmoEnabled").toBool(), "the single-part move gizmo is active with four parts selected");
+  add("selection shown everywhere", [=]() -> bool {
+    if (!s->native) return viewer_selection("viewer_selection", [=](const QJsonObject & state) {
+      require(state.value("highlightCount").toInt() == 4, "the 3D view does not outline all four parts");
+      require(state.value("reference").toString() == table, "the 3D view shows another reference");
+      require(!state.value("gizmoEnabled").toBool(), "the single-part move gizmo is active with four parts selected");
+    })();
+    return true;
+  });
+  add("selection shown in the hierarchy, Inspector and chip", [=]() -> bool {
     int selected_rows = 0;
     for (QTreeWidgetItemIterator it(window->scene_hierarchy_tree_); *it; ++it) if ((*it)->isSelected()) ++selected_rows;
     require(selected_rows == 4, QString("the hierarchy shows %1 selected rows").arg(selected_rows));
@@ -211,7 +267,8 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     s->evidence["chip"] = chip->text();
     s->evidence["inspector_summary"] = window->inspector_multi_selection_label_->text();
     s->evidence["current_selected_id"] = window->current_selected_scene_item_id_;
-  }));
+    return true;
+  });
   add("toolbar availability explains itself", [=]() {
     QJsonObject tools;
     for (const auto & tool : {"align_front", "dist_x", "gap", "move", "mount", "flush", "concentric", "group"}) {
@@ -223,6 +280,32 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     require(!action("group")->isEnabled() && action("group")->toolTip().contains("not part of the scene contract"), "Group is not explained");
     s->evidence["audit_selection"] = TestMain::ui_tour_audit(window);
     shot("01_multi_selection_toolbar");
+    return true;
+  });
+  add("Delete with four parts selected is refused, not applied to the reference", [=]() {
+    auto * remove = window->scene_builder_action(QStringLiteral("layout.remove"));
+    require(remove && !remove->isEnabled() && remove->toolTip().contains("one part at a time"), "Delete is not disabled with an explanation");
+    window->delete_selected_item();  // the Delete key's command
+    for (const auto & id : QStringList{table} + bins) {
+      bool present = false;
+      for (const auto & p : window->all_scene_preview_items_) present = present || p.id == id;
+      require(present && !window->deleted_layout_item_ids_.contains(id), id + " was deleted");
+    }
+    require(window->selection_set_.size() == 4 && !window->layout_dirty_, "the refused Delete changed the scene or selection");
+    s->evidence["multi_delete"] = QJsonObject{{"refused", true}, {"tooltip", remove->toolTip()}};
+    return true;
+  });
+  add_web("Viewer keyboard nudge with four parts selected moves nothing", [=]() {
+    if (s->js_pending) return false;
+    if (s->sub == 0) {
+      js("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyA',key:'a',bubbles:true}));"
+         "document.querySelector('canvas')?.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyA',key:'a',bubbles:true}));"
+         "window.__WORKCELL_EDITOR_API_V1__.getState().dirty");
+      s->sub = 1; s->ticks = 0; return false;
+    }
+    if (s->ticks < 15) return false;
+    require(same(s->before, 0.) && !window->layout_dirty_, "a keyboard nudge moved a part of the multi-selection");
+    s->evidence["viewer_nudge_blocked"] = true;
     return true;
   });
   add("Align front: preview ghosts, then Cancel", [=]() {
@@ -276,6 +359,37 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     window->redo_layout_edit();
     require(same(s->aligned, 1e-12), "Redo did not reapply every part");
     require(window->selection_set_.size() == 4, "Redo lost the selection");
+    return true;
+  });
+  add("Checks reports the generated handoff and validation as Stale after an edit", [=]() {
+    QJsonObject statuses;
+    for (const auto & step : window->scene_workflow_steps()) statuses[step.label] = window->scene_workflow_status_text(step.status);
+    s->evidence["checks_after_edit"] = statuses;
+    require(window->layout_dirty_, "the alignment did not mark the layout dirty");
+    require(statuses.value("Generate YAML").toString() == "Stale", "Generate YAML is not Stale after an edit: " + statuses.value("Generate YAML").toString());
+    require(statuses.value("Save Layout").toString() != "Done", "Save Layout shows Done with unsaved edits");
+    return true;
+  });
+  add("Align left with ΔX +30 mm and Keep relative mounts every member exactly", [=]() {
+    action("align_left")->trigger();
+    auto * offset = window->arrange_toolbar_->findChild<QDoubleSpinBox *>("arrangeAlignOffsetX");
+    auto * keep = window->arrange_toolbar_->findChild<QCheckBox *>("arrangeKeepRelative");
+    require(offset && offset->isVisible() && keep && keep->isVisible(), "align offset / keep relative are not shown");
+    offset->setValue(30.);
+    keep->setChecked(true);
+    require(arrange()->preview().ok, "align+offset preview failed: " + arrange()->preview().error);
+    const auto request = arrange()->preview().request;
+    window->arrange_toolbar_->findChild<QPushButton *>("arrangeApply")->click();
+    replan_moves_nothing(QJsonObject{{"operation", "arrange"}, {"op", "align"}, {"reference", table},
+      {"members", request.value("members")}, {"params", QJsonObject{{"rules", QJsonObject{{"x", "min"}}},
+      {"offset_m", QJsonArray{0.03, 0., 0.}}}}}, "align_left_offset");
+    for (const auto & id : bins) {
+      QString relation;
+      for (const auto & p : window->all_scene_preview_items_) if (p.id == id) relation = p.mounting_yaml;
+      require(YAML::Load(relation.toStdString())["parent_object"].as<std::string>("") == table.toStdString(), id + " is not kept relative");
+    }
+    window->undo_layout_edit();
+    require(same(s->aligned, 1e-12), "Undo did not revert align+keep relative in one step");
     return true;
   });
   add("Distribute along X with an exact 60 mm gap", [=]() {
@@ -337,8 +451,18 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     require(window->commit_mounting_request({{"id", table}, {"world_pose", QJsonObject{{"xyz", QJsonArray{t[0] + 0.1, t[1], t[2]}},
       {"rpy", QJsonArray{t[3], t[4], t[5]}}}}}), "moving the workbench failed");
     for (const auto & id : {bin, reject}) require(std::abs(pose(id)[0] - mounted.value(id)[0] - 0.1) < 1e-9, id + " did not follow");
-    window->undo_layout_edit();
-    window->undo_layout_edit();
+    window->undo_layout_edit();  // the workbench move
+    action("detach")->trigger();
+    require(arrange()->preview().ok, "detach preview failed: " + arrange()->preview().error);
+    window->arrange_toolbar_->findChild<QPushButton *>("arrangeApply")->click();
+    for (const auto & id : {bin, reject}) {
+      QString relation;
+      for (const auto & p : window->all_scene_preview_items_) if (p.id == id) relation = p.mounting_yaml;
+      require(YAML::Load(relation.toStdString())["parent_object"].as<std::string>("world") == "world", id + " is still mounted");
+      require(std::abs(pose(id)[0] - mounted.value(id)[0]) < 1e-9, id + " moved on detach");
+    }
+    window->undo_layout_edit();  // detach
+    window->undo_layout_edit();  // mount
     require(same(s->distributed, 1e-9), "two undos did not restore the saved arrangement");
     return true;
   });
@@ -354,6 +478,139 @@ static void start_multi_select_acceptance(MainWindow * window, QApplication * ap
     s->evidence["audit_final"] = TestMain::ui_tour_audit(window);
     return true;
   });
+  add_web("Mate: rim and surface chosen, then a missed click keeps both picks", [=]() {
+    if (s->js_pending) return false;
+    if (s->sub == 0) {
+      window->apply_scene_selection(bin, QString(), false, false);
+      window->begin_visual_mate();
+      QString error;
+      require(window->mate_active(), "Mate did not start");
+      require(window->mate_controller_->choose_datum(workcell_builder::MateToolController::Role::Child, bin, "rim", &error), error);
+      require(window->mate_controller_->choose_datum(workcell_builder::MateToolController::Role::Parent, table, "surface", &error), error);
+      s->sub = 1; s->ticks = 0; return false;
+    }
+    if (s->sub == 1) { if (s->ticks < 10) return false; js("window.__WORKCELL_EDITOR_API_V1__.projectWorldPoint([0,0,0])"); s->sub = 2; return false; }
+    if (s->sub == 2) {
+      const auto canvas = s->js_result.toMap().value("canvas").toMap();
+      require(!canvas.isEmpty() && s->corner < 4, "no background point produced a missed click");
+      const double fractions[4][2] = {{0.12, 0.18}, {0.88, 0.18}, {0.5, 0.14}, {0.12, 0.85}};
+      const QPoint point(qRound(canvas.value("left").toDouble() + canvas.value("width").toDouble() * fractions[s->corner][0]),
+        qRound(canvas.value("top").toDouble() + canvas.value("height").toDouble() * fractions[s->corner][1]));
+      s->pick_seq_before = window->mate_seen_pick_seq_;
+      mouse_click(point, Qt::NoModifier);
+      s->sub = 3; s->ticks = 0; return false;
+    }
+    if (window->mate_seen_pick_seq_ <= s->pick_seq_before) {
+      if (s->ticks < 30) return false;
+      ++s->corner; s->sub = 1; s->ticks = 10; return false;
+    }
+    const auto picks = window->mate_controller_->evidence().value("picks").toArray();
+    const auto last = picks.last().toObject().value("resolution").toObject();
+    if (last.value("reason_code").toString() != "NO_ASSET") { ++s->corner; s->sub = 1; s->ticks = 10; return false; }
+    require(window->mate_active() && window->mate_controller_->step() == workcell_builder::MateToolController::Step::Ready,
+      "a missed click cancelled Mate or dropped a pick");
+    require(window->mate_controller_->status().contains("missed every part"), "the missed click is not explained");
+    s->evidence["mate_missed_click"] = window->mate_controller_->status();
+    window->mate_controller_->cancel();
+    return true;
+  });
+  if (!airpick_scene.isEmpty()) {
+    add("Switching cells with unsaved edits asks first; Stay keeps everything", [=]() {
+      if (s->sub == 0) {
+        const auto b = pose(bin);
+        require(window->commit_mounting_request({{"id", bin}, {"world_pose", QJsonObject{{"xyz", QJsonArray{b[0] + 0.01, b[1], b[2]}},
+          {"rpy", QJsonArray{b[3], b[4], b[5]}}}}}), "the edit before switching failed");
+        require(window->layout_dirty_, "the edit did not mark the layout dirty");
+        s->expect_switch_dialog = true; s->switch_choice = QStringLiteral("Stay");
+        QStringList blockers; QJsonObject diagnostics;
+        const bool opened = window->load_scene_for_scene3d_smoke(airpick_scene,
+          window->detect_workspace_root() + "/src/easy_manipulation_deployment/scenes/" + airpick_scene, &blockers, &diagnostics);
+        require(!opened && window->layout_dirty_ && !window->undo_stack_.empty(), "Stay did not keep the cell and its edits");
+        require(window->selected_scene_state_.path == s->scene, "Stay opened the other cell");
+        s->evidence["switch_stay"] = QJsonObject{{"kept_cell", true}, {"undo_steps", static_cast<int>(window->undo_stack_.size())}};
+        return true;
+      }
+      return true;
+    });
+    add("Discard opens AirPick with a clean session (no undo, no selection, not dirty)", [=]() {
+      s->expect_switch_dialog = true; s->switch_choice = QStringLiteral("Discard edits and open");
+      QStringList blockers; QJsonObject diagnostics;
+      s->scene = window->detect_workspace_root() + "/src/easy_manipulation_deployment/scenes/" + airpick_scene;
+      s->env_hash = file_hash(s->scene + "/environment.yaml");
+      s->layout_hash = file_hash(s->scene + "/layout/workcell_studio_layout.yaml");
+      require(window->load_scene_for_scene3d_smoke(airpick_scene, s->scene, &blockers, &diagnostics), "AirPick did not open: " + blockers.join("; "));
+      require(window->undo_stack_.empty() && window->redo_stack_.empty() && window->selection_set_.isEmpty() && !window->layout_dirty_,
+        "the previous cell's undo history, selection or dirty state leaked into AirPick");
+      return true;
+    });
+    add_web("AirPick: read-only preview, Save disabled everywhere", [=]() {
+      auto * preview = window->scene_preview_widget_;
+      if (!preview->property("diagnostic_preview_active").toBool()) { require(s->ticks < 800, "AirPick did not reach the read-only preview"); return false; }
+      if (s->ticks < 60) return false;
+      require(!window->save_layout_button_->isEnabled(), "Save Layout is enabled in the read-only preview");
+      window->save_layout_changes();  // Ctrl+S
+      window->scene_builder_action(QStringLiteral("layout.save"))->trigger();  // menu entry
+      QCoreApplication::processEvents();
+      require(file_hash(s->scene + "/environment.yaml") == s->env_hash &&
+        file_hash(s->scene + "/layout/workcell_studio_layout.yaml") == s->layout_hash, "a save path wrote AirPick's files");
+      QJsonObject statuses;
+      for (const auto & step : window->scene_workflow_steps()) statuses[step.label] = window->scene_workflow_status_text(step.status);
+      s->evidence["airpick"] = QJsonObject{{"read_only", true}, {"save_enabled", window->save_layout_button_->isEnabled()},
+        {"status_message", window->statusBar()->currentMessage()}, {"checks", statuses}};
+      shot("05_airpick_read_only");
+      return true;
+    });
+    add_web("AirPick settled: viewer shows AirPick, Save still disabled, no leaked viewer edits", [=]() {
+      if (s->sub == 2) {
+        // Same view 5 s later: screen pixels (X11) and the web view's own frame, to measure display lag.
+        if (s->ticks < 50) return false;
+        shot("07_airpick_settled_plus5s");
+        if (auto * view = web()) view->grab().save(output + "/07_airpick_settled_plus5s_webview.png");
+        return true;
+      }
+      if (s->js_pending) return false;
+      if (s->sub == 0) {
+        js("(() => { const st = window.__WORKCELL_EDITOR_API_V1__ ? window.__WORKCELL_EDITOR_API_V1__.getState() : {};"
+           " const vs = window.__WORKCELL_VIEWER_STATUS__ || {};"
+           " return {ready: Boolean(st.ready), sceneId: String(st.sceneId || ''), dirty: Boolean(st.dirty), dirtyCount: Number(st.dirtyCount || 0),"
+           " terminal: Boolean(vs.terminal), lifecycle: String(vs.lifecycle_state || ''), statusSceneId: String(vs.scene_id || ''),"
+           " statusSequence: Number(vs.status_sequence || 0), pending: (vs.pending_required_loads || []).map(String),"
+           " pill: String((document.querySelector('.scene-health') || {}).textContent || '').trim().slice(0, 160)}; })()");
+        s->sub = 1; return false;
+      }
+      const auto state = QJsonObject::fromVariantMap(s->js_result.toMap());
+      s->sub = 0;
+      // "ready" only means the scene JSON is parsed; wait for the viewer's terminal lifecycle state (drawn or failed).
+      const bool settled = state.value("ready").toBool() && state.value("terminal").toBool() &&
+        state.value("sceneId").toString() == airpick_scene && state.value("pending").toArray().isEmpty();
+      if (!settled && s->ticks < 1500) return false;  // bounded: record the state either way
+      s->evidence["airpick_settled_within_limit"] = settled;
+      QJsonArray header;
+      for (auto * label : window->findChildren<QLabel *>()) {
+        if (!label->isVisible()) continue;
+        const QPoint top = label->mapTo(window, QPoint(0, 0));
+        if (top.y() < 40 && !label->text().trimmed().isEmpty()) header.append(label->text().left(80));
+      }
+      // What the user sees, not just isEnabled(): a disabled Save must not be painted as the active (accent) button.
+      const QImage save_pixels = window->save_layout_button_->grab().toImage();
+      double r = 0, g = 0, b = 0; int n = 0;
+      for (int y = 2; y < save_pixels.height() - 2; y += 2) for (int x = 2; x < save_pixels.width() - 2; x += 2) {
+        const QColor c = save_pixels.pixelColor(x, y); r += c.red(); g += c.green(); b += c.blue(); ++n;
+      }
+      if (n) { r /= n; g /= n; b /= n; }
+      s->evidence["airpick_settled"] = QJsonObject{{"viewer", state}, {"save_enabled", window->save_layout_button_->isEnabled()},
+        {"save_layout_dirty_property", window->save_layout_button_->property("layoutDirty").toBool()},
+        {"save_mean_rgb", QJsonArray{r, g, b}}, {"layout_dirty", window->layout_dirty_}, {"header_labels", header}};
+      shot("06_airpick_settled");
+      require(!window->save_layout_button_->isEnabled(), "Save Layout became enabled after the AirPick view loaded");
+      require(b - r < 60.0, "Save Layout is disabled but painted as the active accent button");
+      const auto title = window->findChild<QLabel *>(QStringLiteral("studioContextSceneTitle"));
+      require(!title || title->toolTip() == airpick_scene, "the header still names the previous cell: " + (title ? title->text() : QString()));
+      require(state.value("dirtyCount").toInt() == 0, "the Product View carried edits from the previous cell into AirPick");
+      s->sub = 2; s->ticks = 0;
+      return false;
+    });
+  }
   add("finish", [=]() { s->evidence["result"] = "PASS"; write(); return true; });
 
   auto * timer = new QTimer(window); timer->setInterval(100);

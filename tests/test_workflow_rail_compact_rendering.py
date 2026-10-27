@@ -44,6 +44,8 @@ def test_workflow_card_has_sensible_min_width_and_long_details_not_inline():
     header = MAINWINDOW_H.read_text(encoding="utf-8")
 
     assert "workflow_card->setMinimumWidth(260);" in text
-    assert "scene_workflow_rail_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);" in text
+    # The rail sits at the top of the Checks page instead of floating mid-panel.
+    assert "scene_workflow_rail_label_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);" in text
+    assert "scene_workflow_rail_label_->setAlignment(Qt::AlignTop | Qt::AlignLeft);" in text
     assert "QString scene_workflow_compact_summary" in header
     assert "QString scene_workflow_details_tooltip" in header

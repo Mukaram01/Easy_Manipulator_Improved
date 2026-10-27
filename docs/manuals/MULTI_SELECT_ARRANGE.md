@@ -28,6 +28,12 @@ The toolbar is an interaction pattern familiar from PLC/HMI and CAD layout edito
 - Locked parts may be the reference, but cannot be moved: tools that would move them are disabled and say why.
 - Task zones and helper overlays never join a multi-selection.
 - The selection survives previews, Cancel, Apply, Undo, Redo and Save. Parts that disappear (delete, reload) drop out, and the reference passes to the earliest remaining member.
+- With two or more parts selected, single-part commands never act on the reference alone:
+  - **Delete** and **Duplicate** are disabled and say why (they work on one part at a time);
+  - arrow-key and viewer keyboard nudges and direct drags are blocked;
+  - the Inspector's Transform section is titled "Transform — *reference* only".
+- **Opening another cell** with unsaved layout edits asks first (**Stay** or **Discard edits and open**). The new
+  cell starts with an empty undo history, no selection and no unsaved edits: undo never reaches into another cell.
 
 ## Tools
 
@@ -47,6 +53,9 @@ Every tool works in the **reference part's own axes** (left/right −X/+X, front
 | Centre in XY plane | Alt+Shift+C | centred in X and Y; heights kept |
 | Centre on reference | Alt+Shift+O | box centres coincide in X, Y and Z |
 | Place on top | Alt+Shift+P | resting on the reference's verified upward surface datum, or its box top |
+
+Align tools add **ΔX/ΔY/ΔZ** offsets (mm, reference axes) and **Keep relative (mount on reference)** in the
+preview bar. This replaces the former Inspector *Align & Arrange…* panel.
 
 ### Distribute (one-time placement)
 

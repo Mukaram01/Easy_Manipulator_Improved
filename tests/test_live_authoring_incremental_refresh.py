@@ -125,7 +125,9 @@ def test_collapsed_activity_uses_product_summaries_without_changing_raw_drawer_l
     assert "message.simplified()" not in body
     for product_text in (
         "Selected %1",
-        "Product View ready · %1 physical items",
+        # What was drawn, never "ready": drawing the cell is not task readiness.
+        "Product View: %1 physical items drawn",
+        "3D preview only (read-only) · task blocked — open Checks",
         "Layout saved",
         "Asset placed · %1",
         "Warning · click for logs",
@@ -144,7 +146,7 @@ def test_collapsed_activity_uses_product_summaries_without_changing_raw_drawer_l
 
 def test_embedded_scene_health_remains_visible_but_compact():
     assert "body.embedded-mode .scene-health" in CSS
-    assert "max-width: min(19rem, calc(100% - 1rem));" in CSS
+    assert "max-width: min(36rem, calc(100% - 1rem));" in CSS
     assert "border-radius: 999px;" in CSS
     assert ".scene-health.health-ready .health-review { display: none; }" in CSS
     assert "body.embedded-mode #scene-health" not in CSS

@@ -248,11 +248,14 @@ def plan(rows, request, scene_dir):
         for identifier in sorted(members):
             single = alignment.plan(updated, {'id': identifier, 'reference': reference, 'rules': params.get('rules'),
                                               'offset_m': params.get('offset_m', [0., 0., 0.]), 'names': names,
+                                              'keep_relative': bool(params.get('keep_relative')),
                                               'reference_world': request.get('reference_world')}, scene_dir)
             updated = single['rows']
             per_member[identifier] = {key: single['report'][key] for key in ('sources', 'notes', 'delta_reference_m')}
             report['notes'] += single['report']['notes']
         report['rules'] = params.get('rules')
+        report['keep_relative'] = bool(params.get('keep_relative'))
+        report['offset_m'] = params.get('offset_m', [0., 0., 0.])
         report['members_detail'] = per_member
     elif op == 'distribute':
         updated, detail = _distribute(rows, request, reference, members, name, scene_dir)

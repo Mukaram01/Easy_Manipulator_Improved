@@ -3,6 +3,67 @@
 // included). Each shot also records a layout audit: visible buttons/labels whose text does not fit
 // (clipped), and enabled controls that lie outside the window (unreachable). Read-only: nothing is saved.
 // Included inside class TestMain (studio_full_cycle_acceptance.hpp).
+// Control truth inventory: every visible control, its text/tooltip/state, and whether
+// anything is connected to the signals a user would trigger. An enabled, visible
+// control with no connection (and no menu or default action) is a candidate dead
+// control; read-only fields are reported as display-only.
+struct UiReceiverProbe : QObject { using QObject::receivers; };
+static int ui_receivers(QObject * object, const char * signal)
+{
+  return static_cast<UiReceiverProbe *>(object)->receivers(signal);
+}
+static QJsonArray ui_control_inventory(QWidget * root)
+{
+  QJsonArray controls;
+  for (auto * widget : root->findChildren<QWidget *>()) {
+    if (!widget->isVisible()) continue;
+    QString kind, text;
+    int connections = 0;
+    bool display_only = false, has_menu = false;
+    if (auto * button = qobject_cast<QAbstractButton *>(widget)) {
+      kind = QStringLiteral("button");
+      text = button->text();
+      connections = ui_receivers(button, SIGNAL(clicked(bool))) + ui_receivers(button, SIGNAL(pressed())) +
+        ui_receivers(button, SIGNAL(released())) + ui_receivers(button, SIGNAL(toggled(bool)));
+      if (auto * tool = qobject_cast<QToolButton *>(widget)) {
+        has_menu = tool->menu() != nullptr;
+        if (QAction * action = tool->defaultAction()) {
+          connections += ui_receivers(action, SIGNAL(triggered(bool))) + ui_receivers(action, SIGNAL(toggled(bool)));
+          if (text.isEmpty()) text = action->text();
+        }
+      }
+      if (auto * push = qobject_cast<QPushButton *>(widget)) has_menu = has_menu || push->menu() != nullptr;
+      // Tab bar scroll arrows, spin box arrows and similar internals are Qt-owned.
+      if (widget->objectName().startsWith(QStringLiteral("qt_"))) continue;
+    } else if (auto * combo = qobject_cast<QComboBox *>(widget)) {
+      kind = QStringLiteral("combo");
+      text = combo->currentText();
+      connections = ui_receivers(combo, SIGNAL(currentIndexChanged(int))) + ui_receivers(combo, SIGNAL(activated(int))) +
+        ui_receivers(combo, SIGNAL(currentTextChanged(QString)));
+    } else if (auto * edit = qobject_cast<QLineEdit *>(widget)) {
+      if (qobject_cast<QAbstractSpinBox *>(widget->parentWidget()) || qobject_cast<QComboBox *>(widget->parentWidget())) continue;
+      kind = QStringLiteral("line_edit");
+      text = edit->text().isEmpty() ? edit->placeholderText() : edit->text();
+      display_only = edit->isReadOnly();
+      connections = ui_receivers(edit, SIGNAL(textChanged(QString))) + ui_receivers(edit, SIGNAL(textEdited(QString))) +
+        ui_receivers(edit, SIGNAL(editingFinished())) + ui_receivers(edit, SIGNAL(returnPressed()));
+    } else if (auto * spin = qobject_cast<QAbstractSpinBox *>(widget)) {
+      kind = QStringLiteral("spin");
+      text = spin->text();
+      display_only = spin->isReadOnly();
+      connections = ui_receivers(spin, SIGNAL(editingFinished()));
+      if (qobject_cast<QDoubleSpinBox *>(widget)) connections += ui_receivers(spin, SIGNAL(valueChanged(double)));
+      if (qobject_cast<QSpinBox *>(widget)) connections += ui_receivers(spin, SIGNAL(valueChanged(int)));
+    } else {
+      continue;
+    }
+    controls.append(QJsonObject{{"kind", kind}, {"class", widget->metaObject()->className()}, {"name", widget->objectName()},
+      {"text", text.left(80)}, {"tooltip", widget->toolTip().left(160)}, {"enabled", widget->isEnabled()},
+      {"connections", connections}, {"menu", has_menu}, {"display_only", display_only}});
+  }
+  return controls;
+}
+
 static QJsonObject ui_tour_audit(QWidget * root)
 {
   QJsonArray clipped, unreachable;
@@ -105,7 +166,7 @@ static QJsonObject ui_tour_audit(QWidget * root)
     for (int i = 0; i < tabs->count(); ++i)
       tab_pages[tabs->tabText(i)] = tabs->widget(i)->minimumSizeHint().width();
   return QJsonObject{{"clipped", clipped}, {"unreachable", unreachable}, {"overflow", overflow}, {"task_editor_wide", wide},
-                     {"squeezed", squeezed}, {"inspector_tab_min_widths", tab_pages}};
+                     {"squeezed", squeezed}, {"inspector_tab_min_widths", tab_pages}, {"controls", ui_control_inventory(root)}};
 }
 
 static QPixmap ui_tour_grab(QWidget * widget)

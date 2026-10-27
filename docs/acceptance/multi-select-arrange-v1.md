@@ -55,7 +55,7 @@ The #3220 Align & Arrange acceptance re-run on this branch also passes (25/25). 
 
 ## AirPick
 
-`ur5_airpick4_test` still opens as a **read-only diagnostic** Product View: the robot, tool and table are drawn. Save Layout reported disabled when checked, but the later screenshot shows it enabled; that is pre-existing behaviour and was not investigated here.
+`ur5_airpick4_test` still opens as a **read-only diagnostic** Product View: the robot, tool and table are drawn. Save Layout reported disabled when checked, but the later screenshot shows it enabled. **Resolved in [ui-truth-audit-v1](ui-truth-audit-v1.md):** the button was disabled but still painted with the previous cell's unsaved-edits highlight.
 
 - The viewer pill reads "3D preview only · Read-only · task blocked: …".
 - The status strip reads "3D preview only (read-only) · task blocked — open Checks".

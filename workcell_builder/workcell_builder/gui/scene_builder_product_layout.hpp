@@ -525,7 +525,9 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
   auto * splitter = scene_page->findChild<QSplitter *>(QStringLiteral("sceneBuilderMainSplitter"));
   if (left) {
     left->setMinimumWidth(180);
-    left->setMaximumWidth(360);
+    // Desktop-first: on a 2560- or 3840-px workspace the hierarchy may grow so names are not cut
+    // (the 3D view keeps the 10:1 stretch share, so it stays dominant).
+    left->setMaximumWidth(480);
   }
   // 180 + 440 + 476 px of panels fit the 1280 x 720 constrained mode. The toolbar adapts its labels
   // (installResponsiveToolbar), so the 3D view no longer reserves the full labelled toolbar width.
@@ -537,7 +539,7 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
     right->setMinimumWidth(476);
     keepWrappedLabelHeights(right);  // inspector forms: wrapped help text must not overlap the next row
     for (auto * area : right->findChildren<QScrollArea *>()) keepScrollContentHeight(area);
-    right->setMaximumWidth(560);
+    right->setMaximumWidth(720);
   }
   QSettings settings;
   seedSceneBuilderLayoutDefaults();
@@ -585,6 +587,7 @@ inline void configure_scene_builder_product_layout(MainWindow * window)
     QPushButton#sceneBuilderToolbarSave[layoutDirty="true"] { background: @accent; color: @accentText; border-color: @accent; font-weight: 650; }
     QPushButton#sceneBuilderToolbarSave[layoutDirty="true"]:hover { background: @accentHover; border-color: @accentHover; }
     QPushButton#sceneBuilderToolbarSave[layoutDirty="false"] { background: @surfaceSunken; color: @textMuted; border-color: @border; }
+    QPushButton#sceneBuilderToolbarSave:disabled { background: @surfaceSunken; color: @textMuted; border-color: @border; font-weight: normal; }
     QTreeWidget#studioSceneHierarchyTree { background: @surface; border: 0px; outline: 0px; }
     QTreeWidget#studioSceneHierarchyTree::item { min-height: 28px; padding: 2px 4px; border-radius: 4px; }
     QTreeWidget#studioSceneHierarchyTree::item:hover { background: @surfaceSunken; }

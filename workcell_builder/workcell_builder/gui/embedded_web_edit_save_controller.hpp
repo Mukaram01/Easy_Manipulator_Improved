@@ -704,7 +704,9 @@ private:
     const QUrl poll_url = view_->url();
     if (sceneIdFromViewerUrl(poll_url).isEmpty()) {
       const bool native_dirty = host_dirty_ && host_dirty_();
-      if (save_button_) save_button_->setEnabled(native_dirty && !reload_required_after_save_);
+      // A read-only diagnostic preview never saves (the same rule as the scene-reported branch below).
+      const bool read_only = preview_ && preview_->property("diagnostic_preview_active").toBool();
+      if (save_button_) save_button_->setEnabled(native_dirty && !reload_required_after_save_ && !read_only);
       if (dirty_label_ && native_dirty) {
         const QString native_label = host_dirty_label_ ? host_dirty_label_() : QString();
         dirty_label_->setText(native_label.isEmpty() ?

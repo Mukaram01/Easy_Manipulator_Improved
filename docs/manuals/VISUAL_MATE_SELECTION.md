@@ -15,7 +15,7 @@ Visual Mate is another way to author the existing fixed mounting relation; it is
 
 Any of these starts it:
 - **Mate** on the Scene Builder toolbar;
-- **Mate by Picking Faces…** in the Inspector, under Mount To;
+- **Flush / Coincident / Concentric** on the arrangement toolbar, with exactly two parts selected (reference first);
 - **Mate by Picking Faces…** in the Scene Hierarchy or 3D view context menu.
 
 A selected asset becomes the first part. The Inspector shows the Mate panel; nothing changes until **Apply**. **Cancel** (or Esc) leaves without changes.

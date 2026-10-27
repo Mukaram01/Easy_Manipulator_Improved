@@ -1010,7 +1010,8 @@ body.embedded-mode .scene-health {
   top: 0.5rem;
   left: 0.5rem;
   width: fit-content;
-  max-width: min(19rem, calc(100% - 1rem));
+  /* Compact, but never truncated on desktop-sized views (19rem cut "Scene ready … safe to edit"). */
+  max-width: min(36rem, calc(100% - 1rem));
   font-size: 0.72rem;
 }
 
