@@ -11,5 +11,6 @@
 
   <export>
     <build_type>ament_cmake</build_type>
+    <workcell_asset_library status="replace" reason="Placeholder geometry: the visual is a generic 0.8 x 0.6 x 1.6 m box shared by all six camera-mount packages, not this product. Hidden from the Asset Library until vendor CAD replaces it; the camera_mount_link frame is kept."/>
   </export>
 </package>

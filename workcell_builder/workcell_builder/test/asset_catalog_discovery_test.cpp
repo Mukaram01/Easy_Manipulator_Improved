@@ -289,3 +289,46 @@ TEST(AssetLibraryModel, CameraStandsAreFixturesNotSecondCameras)
   EXPECT_TRUE(stand);
   EXPECT_TRUE(camera);
 }
+
+TEST(AssetLibraryModel, PackageMarkedReplaceIsWithheldWithItsReason)
+{
+  const fs::path repo = make_tmp_dir("repo_withheld");
+  const fs::path ws = make_tmp_dir("ws_withheld");
+  const fs::path stand = repo / "assets" / "environment" / "pipe_camera_stand_description";
+  write_text(stand / "package.xml",
+    "<package format=\"2\"><name>pipe_camera_stand_description</name><export>"
+    "<workcell_asset_library status=\"replace\" reason=\"generic box, not this product\"/></export></package>\n");
+  write_text(stand / "meshes" / "visual" / "pipe_camera_stand.stl", "solid s\nendsolid s\n");
+  const fs::path bin = repo / "assets" / "environment" / "sorting_bin_description";
+  write_text(bin / "package.xml", "<package format=\"2\"><name>sorting_bin_description</name></package>\n");
+  write_text(bin / "meshes" / "sorting_bin.stl", "solid s\nendsolid s\n");
+
+  const AssetCatalogModel model = discover_asset_catalog(ws.string(), repo.string(), std::string());
+  bool bin_listed = false;
+  for (const auto & entry : model.assets) {
+    EXPECT_EQ(entry.path.find("pipe_camera_stand"), std::string::npos) << entry.path;
+    bin_listed = bin_listed || entry.id == "sorting_bin_description";
+  }
+  EXPECT_TRUE(bin_listed);
+  ASSERT_EQ(model.withheld_packages.size(), 1u);
+  EXPECT_EQ(model.withheld_packages.front(), "pipe_camera_stand_description: generic box, not this product");
+}
+
+TEST(AssetLibraryModel, UnpackagedDescriptionMeshAndXacroAreOneEntry)
+{
+  const fs::path repo = make_tmp_dir("repo_unpackaged");
+  const fs::path ws = make_tmp_dir("ws_unpackaged");
+  const fs::path tray = repo / "workcell_builder" / "workcell_builder" / "assets" / "environment" / "tray_description";
+  write_text(tray / "meshes" / "tray.stl", "solid s\nendsolid s\n");
+  write_text(tray / "urdf" / "tray.urdf.xacro", "<robot name=\"tray\"/>\n");
+
+  const AssetCatalogModel model = discover_asset_catalog(ws.string(), repo.string(), std::string());
+  int tray_entries = 0;
+  for (const auto & entry : model.assets) {
+    if (entry.path.find("tray_description") != std::string::npos) {
+      ++tray_entries;
+      EXPECT_EQ(entry.id, "tray");  // stable identity used by placed items is unchanged
+    }
+  }
+  EXPECT_EQ(tray_entries, 1);
+}

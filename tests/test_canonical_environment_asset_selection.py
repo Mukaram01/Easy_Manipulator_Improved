@@ -70,8 +70,10 @@ def test_builder_catalog_prefers_package_visuals_and_demotes_placeholders():
         assert token in source
 
     assert source.index('roots.emplace_back(repo_root + "/assets")') < source.index(
-        'roots.emplace_back(repo_root + "/workcell_builder/workcell_builder/assets")'
+        'roots.emplace_back(repo_root + "/workcell_builder/workcell_builder/assets/environment")'
     )
+    # The builder-internal robots/end_effectors trees are stale package copies, not library items.
+    assert 'roots.emplace_back(repo_root + "/workcell_builder/workcell_builder/assets");' not in source
 
 
 def test_canonical_table_and_camera_stage_as_mesh_backed_web_assets(tmp_path):

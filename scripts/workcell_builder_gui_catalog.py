@@ -21,7 +21,8 @@ def _map_group(category:str, aid:str)->str:
     if c=='objects': return 'Objects'
     return 'Preview-only Assets' if 'preview' in i else 'Custom STL'
 
-PLACEHOLDERS=[('small_bin','Small Bin','Bins & Totes','assets/environment/bins/meshes/small_bin.stl'),('medium_bin','Medium Bin','Bins & Totes','assets/environment/bins/meshes/medium_bin.stl'),('large_bin','Large Bin','Bins & Totes','assets/environment/bins/meshes/large_bin.stl'),('conveyor_1m','Conveyor 1m','Conveyors','assets/environment/conveyors/meshes/conveyor_1m.stl'),('conveyor_2m','Conveyor 2m','Conveyors','assets/environment/conveyors/meshes/conveyor_2m.stl'),('simple_fixture_plate','Simple Fixture Plate','Fixtures & Jigs','assets/environment/fixtures/meshes/simple_fixture_plate.stl'),('cnc_machine_placeholder','CNC Machine Placeholder','Machines','assets/environment/machines/meshes/cnc_machine_placeholder.stl'),('safety_fence_panel','Safety Fence Panel','Safety','assets/environment/safety/meshes/safety_fence_panel.stl'),('cube_small','Cube Small','Objects','assets/objects/primitives/meshes/cube_small.stl'),('box_large','Box Large','Objects','assets/objects/primitives/meshes/box_large.stl'),('cylinder_small','Cylinder Small','Objects','assets/objects/primitives/meshes/cylinder_small.stl'),('overhead_camera_placeholder','Overhead Camera Placeholder','Cameras & Sensors','assets/environment/cameras/meshes/overhead_camera_placeholder.stl')]
+# Single-triangle stub meshes are not assets; the catalog lists only real geometry.
+PLACEHOLDERS: list[tuple[str, str, str, str]] = []
 
 def generate(root:Path|None=None)->dict[str,Any]:
     root=root or _root(); items=[]
