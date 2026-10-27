@@ -363,3 +363,31 @@ TEST(AssetCatalogDiscovery, PackagesAreNamedAsProductsAndMultiPartToolsAreNotLoo
   ASSERT_NE(single, model.assets.end());
   EXPECT_TRUE(single->can_add_to_scene);
 }
+
+TEST(AssetCatalogDiscovery, IdenticalGeometryFromTwoPackagesIsListedOnce)
+{
+  const fs::path repo = make_tmp_dir("same_geometry");
+  const fs::path ws = make_tmp_dir("same_geometry_ws");
+  const std::string table_mesh = "solid table\nfacet normal 0 0 1\nendsolid table\n";
+  for (const std::string name : {"table_description", "workbench_description"}) {
+    const fs::path package = repo / "assets" / "environment" / name;
+    write_text(package / "package.xml", "<package><name>" + name + "</name></package>");
+    write_text(package / "meshes" / "visual" / "table.stl", table_mesh);
+  }
+  // A description that only references the same mesh is that product again.
+  write_text(repo / "workcell_builder" / "workcell_builder" / "assets" / "environment" / "table_description" /
+    "urdf" / "table.urdf.xacro", "<robot><mesh filename=\"package://table_description/meshes/visual/table.stl\"/></robot>\n");
+  // A different product with its own geometry stays listed.
+  const fs::path block = repo / "workcell_builder" / "workcell_builder" / "assets" / "environment" / "workbench_description";
+  write_text(block / "meshes" / "workbench.stl", "solid block\nendsolid block\n");
+
+  const auto model = discover_asset_catalog(ws.string(), repo.string());
+  int tables = 0;
+  bool block_listed = false;
+  for (const auto & entry : model.assets) {
+    tables += entry.path.find("table.stl") != std::string::npos || entry.path.find("table.urdf") != std::string::npos;
+    block_listed = block_listed || entry.path.find("workbench.stl") != std::string::npos;
+  }
+  EXPECT_EQ(tables, 1);
+  EXPECT_TRUE(block_listed);
+}

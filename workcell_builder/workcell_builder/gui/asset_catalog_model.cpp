@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <set>
@@ -24,6 +25,34 @@ struct RankedAsset
   int rank{0};
   std::string package_key;
 };
+
+// Identity of the geometry a library entry shows: the bytes of its visual mesh,
+// or, for a description file without a mesh of its own, of the first
+// package:// mesh it references. Empty when that geometry cannot be read.
+std::string geometry_content_key(
+  const fs::path & path, const std::map<std::string, fs::path> & package_dirs)
+{
+  const auto read = [](const fs::path & file) {
+    std::ifstream in(file.string(), std::ios::binary);
+    return in ? std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()) : std::string();
+  };
+  fs::path mesh = path;
+  const std::string extension = fs::extension(path);
+  if (extension == ".xacro" || extension == ".urdf") {
+    const std::string text = read(path);
+    const std::string scheme = "package://";
+    const auto start = text.find("filename=\"" + scheme);
+    if (start == std::string::npos) return {};
+    const auto uri_start = start + 10 + scheme.size();
+    const auto uri = text.substr(uri_start, text.find('"', uri_start) - uri_start);
+    const auto slash = uri.find('/');
+    const auto owner = package_dirs.find(uri.substr(0, slash));
+    if (slash == std::string::npos || owner == package_dirs.end()) return {};
+    mesh = owner->second / uri.substr(slash + 1);
+  }
+  const std::string bytes = read(mesh);
+  return bytes.empty() ? std::string() : std::to_string(bytes.size()) + ":" + std::to_string(std::hash<std::string>{}(bytes));
+}
 
 std::string lower_copy(std::string value)
 {
@@ -581,8 +610,14 @@ AssetCatalogModel discover_asset_catalog(
              std::tie(rhs.rank, rhs.entry.category, rhs.entry.display_name, rhs.entry.path);
     });
 
+  std::map<std::string, fs::path> package_dirs;
+  for (const auto & candidate : candidates) {
+    if (!candidate.package_key.empty())
+      package_dirs.emplace(fs::path(candidate.package_key).filename().string(), fs::path(candidate.package_key));
+  }
   std::set<std::string> emitted_packages;
   std::set<std::string> emitted_id_paths;
+  std::set<std::string> emitted_geometry;
   for (const auto & candidate : candidates) {
     if (!candidate.package_key.empty() && !emitted_packages.insert(candidate.package_key).second) continue;
     boost::system::error_code ec;
@@ -590,6 +625,10 @@ AssetCatalogModel discover_asset_catalog(
     const fs::path canonical = fs::exists(path, ec) && !ec ? fs::canonical(path, ec) : path.lexically_normal();
     const std::string identity = candidate.entry.id + "|" + canonical.generic_string();
     if (!emitted_id_paths.insert(identity).second) continue;
+    // Two packages that ship byte-identical geometry are one product; list it once
+    // (both stay on disk for the cells that reference them).
+    const std::string geometry = geometry_content_key(path, package_dirs);
+    if (!geometry.empty() && !emitted_geometry.insert(geometry).second) continue;
     model.assets.push_back(candidate.entry);
     // Placing a multi-part tool adds one loose link mesh, not the assembled
     // gripper. It is configured as the cell's end effector instead.
