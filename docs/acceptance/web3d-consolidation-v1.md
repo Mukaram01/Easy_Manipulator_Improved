@@ -149,9 +149,23 @@ The check failed on `main` and on every PR. The main cause:
 
 Three source-text tests were updated to the current viewer (bundle import chain, the scene_ready fit block, the select/clear command path).
 
-Three remaining failures are pre-existing semantic drift that needs an owner decision, so they were not changed:
-- **Two selection-ownership tests** expect a place zone's edit owner to be its bin. Commit `797508d8` (target-local destinations) deliberately removed that redirection.
-- **One rotation test** asserts that `canonicalRotatePreviewTransform` is absent. A later commit deliberately reintroduced it.
+All three remaining failures are now resolved (CI static step: 199 passed, 0 failed).
+
+**Target-local destination ownership (defect fixed).**
+
+| | |
+|---|---|
+| Exported fields | `ur5_2f_test`'s place zones are `editable: true`, `source_layer: editable_authored_physical`, with `target_ref` and `placement_local` |
+| Defect | `canEditItem(zone)` was true, and `markDirtyTransform(zone, …)` moved the zone 0.5 m on its own while the bin stayed put. Only the incidental overlay classification kept the UI paths away from it. |
+| Fix | A target-local destination now has no edit authority of its own (`editAuthorityForItem` → `follows_physical_target`). It moves only as a linked member of its target. Undo and redo replay it with the target. The selection reports the target as `editOwnerItemId`. |
+| Not restored | The old zone→bin edit *routing* stays removed (`797508d8`): routing an absolute pose (Qt bridge `setItemPose`) through the zone would move the bin to the zone's pose. |
+| Proof | New headless test `test_target_local_destination_moves_only_with_its_physical_target`: independent move refused, bridge refused, bin move keeps the local offset (0.01, 0, 0.03) through undo and redo, only the bin is persisted. The stale routing assertion was replaced. |
+
+**Rotation (`canonicalRotatePreviewTransform` is required).**
+
+- **History:** `0cc458f4` removed it and added the "absent" assertion. `390473da` deliberately reintroduced it for pivot (physical-centre) rotation, with its own positive contract test (one ROS RPY component per ring).
+- **Proof:** new test `test_pivot_rotation_preview_apply_undo_and_persisted_rpy_agree`. Preview, displayed pose, committed edit and saved patch are one orientation, the position is kept and undo is exact, including yaw past π and pitch past π/2.
+- **Remaining interaction gap:** the direct-attach path (parts without a physical centre) applies a true rotation about the ring axis, while the pivot path adds to one RPY component. These differ only for the X/Y rings of parts that already have other non-zero angles in world space. Choosing one is a visible interaction decision and is listed below as pending GUI acceptance; behaviour was not changed blind.
 
 ## 5. Tests run (headless only)
 
@@ -160,7 +174,7 @@ Three remaining failures are pre-existing semantic drift that needs an owner dec
 | Build `workcell_builder` (2 jobs) | PASS. No warnings in changed files. |
 | gtests (53 binaries, `QT_QPA_PLATFORM=offscreen`, run from the package directory) | 42 pass outright. The new contract and library-rule tests pass: `ToolbarOffersOnlyWeb3DControls`, `PreparationFailureStaysAFailureWithRetry`, `ProductViewTransformsEditOnlyEditableLayoutItems`, `PackageMarkedReplaceIsWithheldWithItsReason`, `UnpackagedDescriptionMeshAndXacroAreOneEntry`. The other failures are pre-existing (identical on the #3221 base, or in targets that compile no changed source and use temp fixtures): `scene_preview_widget_ui` (8, previously 9), `preview_item_suppression`, `directory_inspection`, `scene_identity`, `scene_select_paths`, `scene_xacro_tool_attachment`, `canvas_model_mesh`, `visual_mesh_source_resolver`; `generated_environment_asset_writer`, `support_contact` and `task_intent_editor` need ctest's environment. |
 | Python, 493 test files compared with main (per-file 60 s cap, Node 20) | Failing test IDs: main 664 → branch 611. The two "new" IDs depend on generated scene artifacts that another test creates during the run; both pass with those artifacts present. |
-| `tests/test_workcell_studio_web_viewer_static.py` (Node 20) | main 57 failed → branch 3 (pre-existing semantic drift, see section 4) |
+| `tests/test_workcell_studio_web_viewer_static.py` (Node 20) | main 57 failed → branch 0 (138 passed, including 2 new) |
 | Web3D bundle | Rebuilt; `check_stale_bundle.mjs` current |
 | Inventory tool | `tests/test_audit_asset_library.py` 3/3 |
 
@@ -169,6 +183,16 @@ Test-suite changes:
 - Tests that pinned the old fallback were inverted to guard the retirement.
 - Tests that sliced source by removed `#ifdef` markers were re-pointed.
 - Several test modules read the deleted widget at module level, which made the whole module fail to collect and hid its valid tests. They were pruned so the valid tests run again.
+
+### Asset integrity checks (headless)
+
+- **Removed files:** none of the 49 is referenced by any scene, cell definition, scenario pack, catalog, description, script, test, or qualified evidence directory (`r4_1_evidence`, `r4_1b_evidence`, `r4_2_evidence`, `stage_b_evidence`, `integration_evidence`, `r3_integration_evidence`). Two basename matches point at different, surviving paths.
+- **Rewound meshes:** identical vertices per triangle, identical triangle counts and bounding boxes, negated normals, positive volume. No origin changed.
+- **Robotiq 3F:** `ur5_3f_test` and the 3F MoveIt config load the unchanged `robotiq-3f-gripper_articulated.urdf.xacro`, whose 10 mesh URIs resolve. The edited legacy variants now resolve to the same meshes.
+- **Marked packages:** the 7 marked `package.xml` files parse with `catkin_pkg`.
+- **Withheld assets:** no authored scene uses a withheld or removed asset, and scene loading does not consult the library list.
+- **Curated profiles:** all 17 curated Add Object profiles resolve.
+- **Not changed:** the legacy `catalog.yaml` and the stale builder-internal package copies stay documented for later cleanup.
 
 ## 6. PENDING USER-AUTHORIZED GUI ACCEPTANCE
 
@@ -179,3 +203,5 @@ Not visually verified:
 4. **View menu under 1280 px:** no Label mode / Mesh preview mode; "2D Layout Overlays" affects the 2D Layout only.
 5. **Asset Library:** 29 entries, none drawn as a triangle; Robotiq 3F gripper meshes and the pallet are no longer inside-out.
 6. **`--web3d-scene-sequence`** still reaches scene_ready per scene.
+7. **Destination zones:** selecting a place zone shows it and its target; no gizmo or keyboard move applies to the zone. Moving the bin carries the zone.
+8. **Rotation rings:** decide one interpretation for X/Y rings on parts with non-zero other angles in world space (pivot path: RPY component; direct path: true axis rotation).

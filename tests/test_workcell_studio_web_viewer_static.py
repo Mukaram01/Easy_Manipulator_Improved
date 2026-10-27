@@ -1,5 +1,7 @@
 import json
 import subprocess
+
+import pytest
 from pathlib import Path
 
 from scripts import export_workcell_studio_web_scene as exporter
@@ -2142,7 +2144,10 @@ assert.strictEqual(editorState().selectedEditable,false);
 assert.strictEqual(editorState().editOwnerItemId,'target_bin_default');
 assert.strictEqual(editorState().selectionDiagnostics.uiSelectionItemId,'place_zone_default');
 assert.strictEqual(editorState().selectionDiagnostics.editOwnerItemId,'target_bin_default');
-assert.strictEqual(canonicalEditOwnerRendered(zone).item.id,'target_bin_default');
+// Ownership is reported, not routed: an absolute edit aimed at the zone must never be applied to the bin.
+assert.strictEqual(canonicalEditOwnerRendered(zone).item.id,'place_zone_default');
+assert.strictEqual(canEditItem(zone.item),false);
+assert.strictEqual(editAuthorityForItem(zone.item).reason,'follows_physical_target');
 assert.strictEqual(inspectionSelectionRendered(zone).item.id,'place_zone_default');
 assert.strictEqual(rankedPickingCandidates([{object:zone.object3d,distance:1}])[0].rendered.item.id,'place_zone_default');
 selectObject('target_bin_default'); assert.strictEqual(editorState().selectedItemId,'target_bin_default'); assert.strictEqual(editorState().selectedEditable,true);
@@ -2156,8 +2161,58 @@ assert.strictEqual(editorState().uiSelectionItemId,'');
 
     select_body = _viewer_function_body(js_path.read_text(encoding="utf-8"), "function selectObject(id)", "function clearSelection()")
     dirty_body = _viewer_function_body(js_path.read_text(encoding="utf-8"), "function markDirtyTransform(rendered", "function editPatchEntryFor")
-    assert "inspectionSelectionRendered(renderIdentity || rawRequested)" in select_body
+    # Inspection selection prefers the render identity, then the raw request (473aab14
+    # appended physical/selection-owner fallbacks after them).
+    assert "inspectionSelectionRendered( renderIdentity || rawRequested ||" in " ".join(select_body.split())
     assert "canonicalEditOwnerRendered(rendered)" in dirty_body
+
+
+def test_target_local_destination_moves_only_with_its_physical_target():
+    """A destination stored in its target's frame (797508d8) is never moved on its own.
+
+    Field values match the exported ur5_2f_test place zone (editable, overlay,
+    target_ref + placement_local). Moving the bin carries the zone at its exact
+    local offset through undo/redo, and only the bin is persisted."""
+    js_path = VIEWER / "viewer.js"
+    three = VIEWER / "node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const THREE_MOD=require(process.argv[2]);
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_MOD,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+THREE=THREE_MOD;
+updateLabels=()=>{}; populateInspector=()=>{}; attachTransformGizmo=()=>{}; detachTransformGizmo=()=>{}; refreshSelectionHighlight=()=>{}; removeSelectionHighlight=()=>{}; updateDirtyState=()=>{}; emitDirtyChanged=()=>{}; populateObjectList=()=>{}; syncInspectorTransformFields=()=>{};
+const obj=(x,y,z)=>{const o=new THREE.Object3D(); o.position.set(x,y,z); return o;};
+const bin={item:{id:'target_bin_default',role:'target_bin',editable:true,locked:false,source_layer:'editable_layout',render_policy:'primary'},object3d:obj(0.6,-0.3,0.8)};
+const zone={item:{id:'place_zone_default',role:'place_zone',category:'zone',editable:true,locked:false,source_layer:'editable_authored_physical',render_policy:'overlay',target_ref:'target_bin_default',placement_local:{pose_xyz:[0.01,0,0.03],pose_rpy:[0,0,0]}},object3d:obj(0.61,-0.3,0.83)};
+for (const r of [bin,zone]) { r.object3d.userData={item:r.item}; r.originalTransform=transformFromObject(r.object3d); }
+state.objects=[bin,zone]; state.sceneJson={scene:{id:'ur5_2f_test'}}; state.dirtyTransforms=new Map(); state.undoStack=[]; state.redoStack=[]; state.debugOverlaysVisible=true;
+const local=()=>{const b=new THREE.Matrix4().compose(bin.object3d.position,bin.object3d.quaternion,bin.object3d.scale); const z=new THREE.Matrix4().compose(zone.object3d.position,zone.object3d.quaternion,zone.object3d.scale); return new THREE.Vector3().setFromMatrixPosition(b.invert().multiply(z)).toArray();};
+const near=(a,b)=>a.every((v,i)=>Math.abs(v-b[i])<1e-9);
+assert.strictEqual(canEditItem(zone.item),false);
+let zn=cloneTransform(zone.originalTransform); zn.pose.xyz.x+=0.5;
+assert.strictEqual(markDirtyTransform(zone,zn),false);
+assert.strictEqual(zone.object3d.position.x,0.61); assert.strictEqual(state.dirtyTransforms.size,0);
+setItemPoseFromBridge('place_zone_default',2,2,2,0,0,0);
+assert.strictEqual(zone.object3d.position.x,0.61); assert.strictEqual(bin.object3d.position.x,0.6);
+selectObject('place_zone_default');
+assert.strictEqual(editorState().uiSelectionItemId,'place_zone_default');
+assert.strictEqual(editorState().selectedEditable,false);
+assert.strictEqual(editorState().editOwnerItemId,'target_bin_default');
+clearSelection();
+let bn=cloneTransform(bin.originalTransform); bn.pose.xyz.x+=0.4; bn.pose.rpy.z=Math.PI/2;
+assert.strictEqual(markDirtyTransform(bin,bn),true);
+assert.ok(near(local(),[0.01,0,0.03]));
+assert.deepStrictEqual(buildEditPatch().edits.map(e=>e.item_id),['target_bin_default']);
+undoPreviewEdit(); assert.ok(Math.abs(bin.object3d.position.x-0.6)<1e-12); assert.ok(Math.abs(zone.object3d.position.x-0.61)<1e-12); assert.ok(near(local(),[0.01,0,0.03]));
+redoPreviewEdit(); assert.ok(Math.abs(bin.object3d.position.x-1.0)<1e-12); assert.ok(near(local(),[0.01,0,0.03]));
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
 def test_explicit_ui_selection_identity_preserves_render_and_edit_identities():
@@ -3189,7 +3244,59 @@ def test_viewer_transform_controls_rotation_transaction_contract():
     assert "gizmo.showX = true; gizmo.showY = true; gizmo.showZ = true" in js
     assert "const preview = transformFromObject(rendered.object3d)" in js
     assert "snapOptions: null" in js
-    assert "canonicalRotatePreviewTransform" not in js
+    # Pivot (physical-centre) rotation edits one canonical ROS RPY component per
+    # ring (390473da; contract tested in test_embedded_web3d_editor_bridge_static).
+    pivot = _viewer_function_body(js, "function previewTransientPivotDrag(owner)", "function finishTransientPivotDrag(owner)")
+    assert "canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis" in pivot
+    finish = _viewer_function_body(js, "function finishTransientPivotDrag(owner)", "function attachTransformGizmo(")
+    assert "previewTransientPivotDrag(owner);" in finish
+    assert "const finalTransform = transformFromObject(owner.object3d);" in finish
+
+
+def test_pivot_rotation_preview_apply_undo_and_persisted_rpy_agree():
+    """One interpretation from the dragged preview to the saved ROS RPY, including wrap past pi."""
+    js_path = VIEWER / "viewer.js"
+    three = VIEWER / "node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const THREE_MOD=require(process.argv[2]);
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_MOD,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+THREE=THREE_MOD;
+updateLabels=()=>{}; populateInspector=()=>{}; updateDirtyState=()=>{}; emitDirtyChanged=()=>{}; populateObjectList=()=>{}; syncInspectorTransformFields=()=>{}; emitTransformCommitted=()=>{}; refreshTransientGizmoPivot=()=>true;
+const quatOf=t=>{const o=new THREE.Object3D(); applyTransformToObject(o,t); return o.quaternion.clone();};
+const same=(a,b)=>Math.abs(Math.abs(quatOf(a).dot(quatOf(b)))-1)<1e-12;
+for (const [rpy,axis,angle] of [[[0.1,-0.2,0.3],'X',0.37],[[0.1,-0.2,0.3],'Y',-0.41],[[0.1,-0.2,0.3],'Z',0.5],[[0,0,3.0],'Z',0.5],[[0,1.4,0],'Y',0.3]]) {
+  const o=new THREE.Object3D();
+  const item={id:'part',editable:true,locked:false,source_layer:'editable_layout',render_policy:'primary'};
+  const owner={item,object3d:o}; o.userData={item};
+  applyTransformToObject(o,{pose:{xyz:{x:.4,y:-.2,z:.8},rpy:{x:rpy[0],y:rpy[1],z:rpy[2]}},scale:{x:1,y:1,z:1}});
+  owner.originalTransform=transformFromObject(o);
+  state.objects=[owner]; state.dirtyTransforms=new Map(); state.undoStack=[]; state.redoStack=[]; state.editorMode='rotate';
+  const pivot={owner,group:new THREE.Object3D()}; state.gizmoPivot=pivot;
+  state.three={transformControls:{axis,rotationAngle:0,object:pivot.group,attach(){},detach(){}}};
+  assert.ok(beginTransientPivotDrag(owner));
+  const start=cloneTransform(state.gizmoDragStart);
+  state.three.transformControls.rotationAngle=angle;
+  previewTransientPivotDrag(owner);
+  const shown=transformFromObject(o);
+  assert.ok(same(canonicalRotatePreviewTransform(start,axis,angle),shown));
+  assert.ok(finishTransientPivotDrag(owner));
+  const committed=state.dirtyTransforms.get('part').newTransform;
+  assert.ok(same(shown,committed));
+  const persisted=buildEditPatch().edits[0].new_transform;
+  assert.deepStrictEqual(persisted.pose.rpy,committed.pose.rpy);
+  assert.deepStrictEqual(committed.pose.xyz,start.pose.xyz);
+  undoPreviewEdit();
+  assert.ok(same(transformFromObject(o),start)); assert.deepStrictEqual(transformFromObject(o).pose.xyz,start.pose.xyz);
+}
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
 def test_linked_transform_group_moves_rotates_and_records_atomic_two_edit_patch():

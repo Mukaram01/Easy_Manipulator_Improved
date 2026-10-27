@@ -39923,10 +39923,14 @@ function expandedUrdfPhysicalOwnerId(rendered) {
     return ownerFromContract(["selection_robot_owner_id", "selectionRobotOwnerId"]);
   return "";
 }
+function governingEditOwner(rendered) {
+  const target = renderedById(derivedTransformTargetId(rendered?.item));
+  return target && canEditItem(target.item) ? target : canonicalTransformOwner(rendered);
+}
 function currentSelectionDiagnostics() {
   const id = String(state.selected || "");
   const rendered = selectedRenderIdentity();
-  const editOwner = canonicalTransformOwner(rendered);
+  const editOwner = governingEditOwner(rendered);
   const hasExplicitTransformOwner = explicitUiSelectionItemId(rendered) !== rendered?.item?.id;
   const binding = resolveCanonicalPhysicalEditBinding(rendered || id);
   const item = rendered?.item || null;
@@ -39984,7 +39988,7 @@ function currentSelectionDiagnostics() {
 }
 function editorState() {
   const rendered = selectedRenderIdentity();
-  const editOwner = canonicalTransformOwner(rendered);
+  const editOwner = governingEditOwner(rendered);
   const hasExplicitTransformOwner = explicitUiSelectionItemId(rendered) !== rendered?.item?.id;
   return { ready: Boolean(state.sceneJson && state.three?.scene), sceneId: sceneId(), selectedItemId: state.selected || "", uiSelectionItemId: state.selected || "", editOwnerItemId: editOwner?.item?.id || "", selectedItemType: rendered ? itemType(rendered.item) : "", selectedEditable: selectionIsEditable(rendered) || (hasExplicitTransformOwner || rendered?.authoritativePhysicalPick === true) && selectionIsEditable(editOwner), selectionDiagnostics: currentSelectionDiagnostics(), lastRaycastHitCount: state.lastRaycastHitCount, lastRaycastCandidateIds: [...state.lastRaycastCandidateIds], lastCanvasSelectedItemId: state.lastCanvasSelectedItemId, lastCanvasPickReason: state.lastCanvasPickReason, lastCanvasPickDiagnostic: state.lastCanvasPickDiagnostic, lastFailedCanvasPickDiagnostic: state.lastFailedCanvasPickDiagnostic, dirty: state.dirtyTransforms.size > 0, dirtyCount: state.dirtyTransforms.size, canUndo: state.undoStack.length > 0, canRedo: state.redoStack.length > 0, mode: state.editorMode, transformSpace: state.transformSpace, error: state.editorError || "" };
 }
@@ -44866,6 +44870,8 @@ function editAuthorityForItem(item) {
     return { eligible: false, source: editAuthoritySource(item), reason: "owner_not_editable" };
   if (isDiagnosticOnlyItem(item))
     return { eligible: false, source: editAuthoritySource(item), reason: "diagnostic_record" };
+  if (isDerivedTransformDependent(item))
+    return { eligible: false, source: editAuthoritySource(item), reason: "follows_physical_target" };
   const source = editAuthoritySource(item);
   const normalizedSource = source.toLowerCase();
   const authoredSource = /(?:^|[_\s-])(?:editable|authored|authoring|layout)(?:$|[_\s-])/.test(normalizedSource);
@@ -45169,7 +45175,7 @@ function clearPreviewEdits() {
 }
 function applyHistoryEntry(entry, direction) {
   const records = entry.changes || [entry];
-  const changes = records.map((record) => ({ rendered: renderedById(record.itemId), after: cloneTransform(direction === "undo" ? record.before : record.after) })).filter((change) => change.rendered && canEditItem(change.rendered.item));
+  const changes = records.map((record) => ({ rendered: renderedById(record.itemId), after: cloneTransform(direction === "undo" ? record.before : record.after) })).filter((change) => change.rendered && (canEditItem(change.rendered.item) || isDerivedTransformDependent(change.rendered.item)));
   applyTransformChanges(changes, { updateDirty: true });
   const selected = renderedById(state.selected);
   if (selected)
