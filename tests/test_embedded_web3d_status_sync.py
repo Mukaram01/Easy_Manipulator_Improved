@@ -76,7 +76,20 @@ def test_embedded_product_view_ready_requires_browser_scene_ready_not_shell_http
     assert 'environment_status' in status_script
     assert 'camera_status' in status_script
     assert 'final_lifecycle_state' in status_script
-    assert 'boot_state == QStringLiteral("scene_ready") && expected_json_loaded && failed_required_count == 0' in readiness_handler
+    # Since 7667bc12 each readiness condition rejects separately with a reason
+    # (lifecycle, terminal, scene, source JSON, builder revision, loaded JSON,
+    # failed required items, component statuses); only then is the view Ready.
+    for condition in [
+        'else if (lifecycle_state != QStringLiteral("scene_ready"))',
+        'else if (!terminal)',
+        'else if (reported_scene_id != identity.scene_id)',
+        'else if (source_json != expected_json_path)',
+        'else if (builder_revision != expected_builder_revision)',
+        'else if (!scene_json_loaded)',
+        'else if (failed_required_count != 0)',
+        'else if (!component_ready(robot_status) || !component_ready(tool_status) || !component_ready(environment_status) || !component_ready(camera_status))',
+    ]:
+        assert condition in readiness_handler, condition
+    assert readiness_handler.index('if (contract_reason.isEmpty()) {') > readiness_handler.index('else if (failed_required_count != 0)')
     assert 'boot_state == QStringLiteral("ready")' not in readiness_handler
-    assert 'scene_json_loaded && source_json == expected_json_path' in readiness_handler
     assert 'failed_required=%7' in readiness_handler

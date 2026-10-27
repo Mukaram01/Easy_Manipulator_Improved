@@ -1011,6 +1011,11 @@ def xacro_env(scene_dir, workspace_root=None):
     ros_humble=Path('/opt/ros/humble')
     if ros_humble.exists():
         ament_prefix_entries.append(str(ros_humble))
+        # /opt/ros/humble/bin/xacro imports its own module: an unsourced caller
+        # (release gate, desktop launch) needs the distro's Python paths too.
+        python_dirs=[str(d) for d in sorted(ros_humble.glob('lib/python3*/site-packages')) +
+                     sorted(ros_humble.glob('local/lib/python3*/dist-packages'))]
+        env['PYTHONPATH']=os.pathsep.join(_dedupe_path_entries([*env.get('PYTHONPATH','').split(os.pathsep), *python_dirs]))
     source_prefix=_source_package_ament_prefix(scene_dir, workspace_root)
     if source_prefix:
         ament_prefix_entries.append(str(source_prefix))
