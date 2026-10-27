@@ -1441,6 +1441,7 @@ def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, st
     errors.extend(str(error) for error in report.get("strict_status_errors", []) if error)
     return {
         "scene_id": report.get("scene_id", ""),
+        "visual_only": report.get("visual_only", {}),
         "status": "BLOCKED" if staging_failures or (errors and browser.get("available") is not True) else ("FAIL" if errors else "PASS"),
         "staging_failures": staging_failures,
         "browser_attempted": not bool(staging_failures) and browser.get("method") not in ("not_run", None),
@@ -1472,7 +1473,10 @@ def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | 
     screenshot_path = BUILD_ROOT / (f"{scene_id}.rviz_parity.png" if scene_id == "ur5_2f_test" else f"{scene_id}.visual_acceptance.png")
     BUILD_ROOT.mkdir(parents=True, exist_ok=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    steps = [run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path), "--stage-assets"])]
+    # Visual acceptance must still inspect a physical scene with invalid task
+    # authoring. This exporter mode is explicitly read-only: Save and execution
+    # remain disabled and the destination validator is never bypassed.
+    steps = [run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path), "--stage-assets", "--allow-incomplete-preview"])]
     if steps[-1]["returncode"] == 0:
         steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_mesh_contract.py", repo_relative(output_path)]))
     if steps[-1]["returncode"] == 0:
@@ -1504,7 +1508,21 @@ def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | 
     status = browser.get("status") if isinstance(browser, Mapping) else None
     legacy_strict_scene = not expected or (expected.get("robot") == "ur5" and expected.get("tool") == "robotiq_2f")
     strict_status_errors = validate_browser_status(status) if legacy_strict_scene and isinstance(status, Mapping) else []
-    report = {"scene_id": scene_id, "scene_dir": repo_relative(scene_dir), "expected": dict(expected or {}), "web_scene_json": repo_relative(output_path), "viewer_url": viewer_url, "server_status": server_status, "browser": browser, "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {}, "strict_status_errors": strict_status_errors, "steps": steps, "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "", "report": repo_relative(report_path), "screenshot": repo_relative(screenshot_path), "screenshot_dimensions": png_dimensions(screenshot_path), "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0}
+    visual_only = {}
+    if output_path.is_file() and steps[0]["returncode"] == 0:
+        try:
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            if payload.get("preview_mode") == "diagnostic" or payload.get("authoring_status") == "blocked":
+                visual_only = {
+                    "preview_mode": "diagnostic",
+                    "authoring_status": "blocked",
+                    "authoring_blockers": payload.get("authoring_blockers", []),
+                    "save_layout_enabled": payload.get("authoring_actions", {}).get("save_layout_enabled"),
+                    "execution_enabled": payload.get("authoring_actions", {}).get("execution_enabled"),
+                }
+        except (OSError, ValueError, TypeError):
+            pass
+    report = {"scene_id": scene_id, "scene_dir": repo_relative(scene_dir), "expected": dict(expected or {}), "visual_only": visual_only, "web_scene_json": repo_relative(output_path), "viewer_url": viewer_url, "server_status": server_status, "browser": browser, "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {}, "strict_status_errors": strict_status_errors, "steps": steps, "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "", "report": repo_relative(report_path), "screenshot": repo_relative(screenshot_path), "screenshot_dimensions": png_dimensions(screenshot_path), "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0}
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if server is not None:
         server.shutdown()
