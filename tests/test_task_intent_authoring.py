@@ -385,3 +385,10 @@ def test_perception_freshness_follows_the_saved_camera_binding():
         observation_age_cap(freshness_source_type(intent(mode='live_epd', camera_source='realsense_d435i')),
                             'simulator_measurement')                  # a real-camera task never takes simulator truth
     assert freshness_source_type({'pick': {'selection': {'source_type': 'manual_simulated'}}}) == 'manual_simulated'
+    # No binding: planning_input feeds the reviewed commissioning replay, so replay is the admitted producer;
+    # the simulator backend still measures its own objects.
+    unbound = {'pick': {'selection': {'source_type': 'perception'}}}
+    assert observation_age_cap(freshness_source_type(unbound), 'replay') == 2.0
+    with pytest.raises(ValueError, match='OBSERVATION_PRODUCER_REJECTED'):
+        observation_age_cap(freshness_source_type(unbound), 'live_sensor')
+    assert freshness_source_type(dict(unbound, safety={'execution_backend': 'simulator'})) == 'perception'
