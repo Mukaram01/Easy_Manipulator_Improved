@@ -33,6 +33,9 @@ const REQUIRED_LOAD_DEADLINE_MS = 40000;
 const VALID_SCENE_LIFECYCLE_STATES = Object.freeze(['booting', 'scene_loading', 'scene_ready', 'scene_failed']);
 const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/environment instead.';
 const MIN_FRAME_RADIUS = 1.2;
+// Fit Selection frames one part; the cell-sized floor above would leave a
+// 9 cm camera as a speck. This floor only keeps the camera outside the part.
+const MIN_SELECTION_FRAME_RADIUS = 0.08;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.35;
 const CAMERA_PRESET_DIRECTIONS = Object.freeze({
@@ -2057,6 +2060,9 @@ function applyTransformChanges(changes, { updateDirty = false } = {}) {
     else state.dirtyTransforms.set(change.rendered.item.id, { oldTransform: cloneTransform(change.rendered.originalTransform), newTransform: cloneTransform(change.after) });
     syncInspectorTransformFields(change.rendered);
   }
+  // The selection box is computed from world bounds; recompute it whenever a
+  // transform lands so it never stays at the pre-edit pose.
+  if (state.three.selectionHighlight) refreshSelectionHighlight(state.three.selectionHighlightTarget);
   updateLabels();
   return true;
 }
@@ -4126,7 +4132,7 @@ function applyCameraClipping(camera, radius, distance) {
   camera.far = Math.max(camera.near + 1, safeDistance + safeRadius * 8, safeRadius * 20, 100);
   camera.updateProjectionMatrix();
 }
-function frameScene(bounds, { preset = 'isometric' } = {}) {
+function frameScene(bounds, { preset = 'isometric', minRadius = MIN_FRAME_RADIUS } = {}) {
   const { camera, controls } = state.three;
   const finiteBounds = finiteBox3(bounds);
   if (!camera || !controls || !finiteBounds) return false;
@@ -4135,10 +4141,10 @@ function frameScene(bounds, { preset = 'isometric' } = {}) {
   finiteBounds.getCenter(center);
   finiteBounds.getBoundingSphere(sphere);
   if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite)) return false;
-  const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
+  const radius = Math.max(sphere.radius, minRadius);
   const direction = cameraDirectionForPreset(preset);
   const multiplier = preset === 'top' ? 2.15 : (preset === 'robot' ? 2.05 : FRAME_DISTANCE_MULTIPLIER);
-  const distance = Math.max(radius * multiplier, MIN_FRAME_RADIUS * multiplier);
+  const distance = Math.max(radius * multiplier, minRadius * multiplier);
   camera.position.copy(center).addScaledVector(direction, distance);
   applyCameraClipping(camera, radius, distance);
   if (![camera.position.x, camera.position.y, camera.position.z, camera.near, camera.far].every(Number.isFinite)) return false;
@@ -4201,7 +4207,7 @@ function fitSelection() {
   if (!selectedId) return fallback('No physical item selected; fitting the workcell');
   if (!rendered?.object3d) return fallback('Selected item has no visible physical geometry; fitting the workcell');
   const physical = collectPhysicalVisibleBounds(rendered.object3d);
-  if (!physical.bounds || !frameScene(physical.bounds)) return fallback('Selected item has no visible physical geometry; fitting the workcell');
+  if (!physical.bounds || !frameScene(physical.bounds, { minRadius: MIN_SELECTION_FRAME_RADIUS })) return fallback('Selected item has no visible physical geometry; fitting the workcell');
   if (state.editorError === 'No physical item selected; fitting the workcell' || state.editorError === 'Selected item has no visible physical geometry; fitting the workcell') clearError();
   pushEditorEvent('fit_selection', { itemId: selectedId, physicalRenderableCount: physical.count, bounds: physical.bounds_json });
   return true;
@@ -5095,6 +5101,7 @@ function refreshSelectionHighlight(rendered) {
   helper.material.depthTest = false;
   helper.renderOrder = 10;
   state.three.selectionHighlight = helper;
+  state.three.selectionHighlightTarget = rendered;
   state.three.scene.add(helper);
 }
 
@@ -6116,14 +6123,44 @@ function beginTransientPivotDrag(owner) {
   pivot.group.updateWorldMatrix(true, false);
   state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d));
   state.gizmoDragGroupStart = captureTransformGroup(owner);
-  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis };
+  const parent = owner.object3d.parent;
+  const parentQuaternion = parent && parent !== state.three.scene ? parent.getWorldQuaternion(new THREE.Quaternion()) : null;
+  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis, space: state.transformSpace, parentQuaternion };
   return true;
 }
-function canonicalRotatePreviewTransform(start, axis, angle) {
+// Of the ROS RPY triples naming one orientation, the one closest to `reference`,
+// so a ring drag stays continuous past yaw +/-180 and pitch +/-90 degrees.
+function nearestRosRpy(rpy, reference) {
+  const wrapNear = (value, target) => value + 2 * Math.PI * Math.round((target - value) / (2 * Math.PI));
+  let best = null;
+  for (const [x, y, z] of [[rpy.x, rpy.y, rpy.z], [rpy.x + Math.PI, Math.PI - rpy.y, rpy.z + Math.PI]]) {
+    const candidate = { x: wrapNear(x, reference.x), y: wrapNear(y, reference.y), z: wrapNear(z, reference.z) };
+    const distance = Math.abs(candidate.x - reference.x) + Math.abs(candidate.y - reference.y) + Math.abs(candidate.z - reference.z);
+    if (!best || distance < best.distance) best = { rpy: candidate, distance };
+  }
+  return best.rpy;
+}
+// A ring turns the part about the axis it shows: a world axis in world space,
+// the part's own axis in local space. Adding the angle to one RPY component is
+// that rotation only for world Z (yaw) and local X (roll), and is kept exact
+// there; every other ring composes the true rotation and returns to ROS RPY.
+// parentQuaternion expresses world axes in the frame the pose is stored in.
+function canonicalRotatePreviewTransform(start, axis, angle, space = 'world', parentQuaternion = null) {
   if (!start || !['X', 'Y', 'Z'].includes(axis) || !Number.isFinite(angle)) return null;
   const next = cloneTransform(start);
-  const component = axis.toLowerCase();
-  next.pose.rpy[component] = start.pose.rpy[component] + angle;
+  const local = space === 'local';
+  if (angle === 0) return next;
+  if ((!local && axis === 'Z' && !parentQuaternion) || (local && axis === 'X')) {
+    const component = axis.toLowerCase();
+    next.pose.rpy[component] = start.pose.rpy[component] + angle;
+    return next;
+  }
+  const unit = new THREE.Vector3(axis === 'X' ? 1 : 0, axis === 'Y' ? 1 : 0, axis === 'Z' ? 1 : 0);
+  if (!local && parentQuaternion) unit.applyQuaternion(parentQuaternion.clone().invert());
+  const turn = new THREE.Quaternion().setFromAxisAngle(unit, angle);
+  const orientation = new THREE.Quaternion().setFromEuler(rosRpyEuler(start.pose.rpy));
+  if (local) orientation.multiply(turn); else orientation.premultiply(turn);
+  next.pose.rpy = nearestRosRpy(rosRpyFromQuaternion(orientation), start.pose.rpy);
   return next;
 }
 function previewTransientPivotDrag(owner) {
@@ -6132,7 +6169,7 @@ function previewTransientPivotDrag(owner) {
   if (!start || !pivot || pivot.owner !== owner) return false;
   let next = null;
   if (state.editorMode === 'rotate') {
-    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle);
+    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle, start.space, start.parentQuaternion);
   } else {
     pivot.group.updateWorldMatrix(true, false);
     const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());

@@ -222,7 +222,10 @@ def test_transform_space_control_and_authority_contract():
     assert "gizmo.setSpace(state.transformSpace)" in viewer
     assert "const preview = transformFromObject(rendered.object3d)" in viewer
     assert "const finalTransform = transformFromObject(owner.object3d)" in viewer
-    assert "canonicalRotatePreviewTransform" not in viewer
+    # Ring previews rotate about the axis shown in the chosen space (true
+    # rotation; behaviour covered in test_embedded_web3d_editor_bridge_static).
+    assert "rotationAngle, start.space, start.parentQuaternion)" in viewer
+    assert "space: state.transformSpace" in viewer
     assert "setSpace('world')" not in viewer
 
 
