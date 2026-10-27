@@ -341,3 +341,24 @@ TEST(LayoutSerializationContractTest, DuplicateSelectedCopiesAuthoredRecordWithS
   EXPECT_NE(src.find("apply_scene_selection(new_id, copy.role, false, false)"), std::string::npos);
   EXPECT_NE(src.find("Duplicated %1 as %2"), std::string::npos);
 }
+
+TEST(LayoutSerializationContractTest, PrimitiveAssetIsSavedAsGeometryNotMesh)
+{
+  // A library primitive (URDF box/cylinder) has no mesh: the environment
+  // projection accepts geometry_type + dimensions, but rejects a mesh path
+  // that is not an STL.
+  workcell_builder::LayoutItemSaveState state;
+  state.id = "object_01";
+  state.type = "object";
+  state.category = "environment_object";
+  state.catalog_asset_id = "cylinder_object.urdf";
+  state.geometry_type = "cylinder";
+  state.dimensions = {{0.06, 0.06, 0.12}};
+  const YAML::Node item = workcell_builder::serialize_layout_item(state, YAML::Node());
+  EXPECT_FALSE(item["mesh"]);
+  EXPECT_FALSE(item["mesh_path"]);
+  ASSERT_TRUE(item["geometry_type"]);
+  EXPECT_EQ(item["geometry_type"].as<std::string>(), "cylinder");
+  ASSERT_TRUE(item["dimensions"] && item["dimensions"].IsSequence());
+  EXPECT_DOUBLE_EQ(item["dimensions"][2].as<double>(), 0.12);
+}

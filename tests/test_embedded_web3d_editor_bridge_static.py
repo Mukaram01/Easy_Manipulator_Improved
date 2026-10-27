@@ -947,7 +947,9 @@ def test_qt_reconciles_exported_selection_owner_registry_as_identity_only_rows()
     assert 'source_layer == QStringLiteral("selection_owner_registry")' in body
     assert "all_scene_preview_items_.removeAt(i)" in body
     assert "item.id.trimmed() == declaration.id" in body
-    assert "if (id_already_owned) continue;" in body
+    # 473aab14: only a user-facing hierarchy row already owning the ID suppresses the registry row.
+    assert "return item.id.trimmed() == declaration.id && is_user_facing_scene_hierarchy_item(item);" in body
+    assert "if (id_already_owned_by_hierarchy_item) continue;" in body
     assert 'owner.source_layer = QStringLiteral("selection_owner_registry")' in body
     assert "owner.locked = true" in body
     assert "owner.editable = false" in body

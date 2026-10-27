@@ -41154,9 +41154,13 @@ function makePrimitiveMesh(item) {
   let geometry;
   if (kind.includes("sphere"))
     geometry = new THREE.SphereGeometry(Number(primitive?.radius || 0.12), 24, 16);
-  else if (kind.includes("cylinder"))
-    geometry = new THREE.CylinderGeometry(Number(primitive?.radius || 0.08), Number(primitive?.radius || 0.08), Number(primitive?.height || 0.25), 24);
-  else {
+  else if (kind.includes("cylinder")) {
+    const dims = dimensionsFromPrimitive(primitive);
+    const fields = Array.isArray(primitive) ? {} : primitive || {};
+    const radius = Number(fields.radius || (dims ? dims[0] / 2 : 0.08));
+    const length = Number(fields.length || fields.height || (dims ? dims[2] : 0.25));
+    geometry = new THREE.CylinderGeometry(radius, radius, length, 24).rotateX(Math.PI / 2);
+  } else {
     const dims = dimensionsFromPrimitive(primitive);
     if (!dims)
       return null;
@@ -41534,13 +41538,21 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       requiredReadinessCompleteForItem(item);
   }
 }
+var RENDER_POLICY_PRECEDENCE = { primary: 3, legacy_primary: 3, overlay: 2, diagnostic_only: 1 };
 function collectItems(sceneJson) {
   const buckets = ["robots", "tools", "assets", "sensors", "zones", "items", "objects", "frames"];
   const byId = /* @__PURE__ */ new Map();
+  const rank = (item) => RENDER_POLICY_PRECEDENCE[itemRenderPolicy(item)] || 0;
   for (const bucket of buckets)
-    for (const item of asArray(sceneJson[bucket]))
-      if (item && typeof item === "object")
-        byId.set(item.id || `${bucket}_${byId.size}`, { ...item, id: item.id || `${bucket}_${byId.size}` });
+    for (const item of asArray(sceneJson[bucket])) {
+      if (!item || typeof item !== "object")
+        continue;
+      const id = item.id || `${bucket}_${byId.size}`;
+      const candidate = { ...item, id };
+      const existing = byId.get(id);
+      if (!existing || rank(candidate) >= rank(existing))
+        byId.set(id, candidate);
+    }
   return Array.from(byId.values());
 }
 function frameNameOf(frame, fallback = "") {
@@ -42086,7 +42098,8 @@ function physicalBoundsHelperReasons(object, item, identity2, options = {}) {
     add("debug_helper");
   const renderStatus = String(data.render_status || data.renderInfo?.render_status || "").toLowerCase();
   const localFallbackIdentity = `${renderStatus} ${localIdentity}`;
-  if (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity))
+  const meshlessPrimitive = Boolean(item) && !displayMeshUri(item) && Boolean(dimensionsFromPrimitive(primitiveOf(item)));
+  if (!meshlessPrimitive && (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity)))
     add("fallback_geometry");
   return reasons;
 }

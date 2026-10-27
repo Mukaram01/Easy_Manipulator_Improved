@@ -4807,3 +4807,28 @@ onEditorKeyDown({key:'Escape',code:'Escape',target:null,preventDefault(){}});arm
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_primitive_cylinder_stands_on_z_with_urdf_radius_and_length():
+    """A URDF cylinder (radius/length, Z axis) is drawn upright at its own size, not as a Y-axis 0.25 m rod."""
+    js_path = VIEWER / "viewer.js"
+    three = VIEWER / "node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const THREE_MOD=require(process.argv[2]);
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_MOD,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+THREE=THREE_MOD;
+const size=item=>new THREE.Box3().setFromObject(makePrimitiveMesh(item)).getSize(new THREE.Vector3());
+const near=(a,b)=>Math.abs(a-b)<1e-6;
+let s=size({id:'c',primitive:{type:'cylinder',radius:0.03,length:0.12}});
+assert.ok(near(s.x,0.06)&&near(s.y,0.06)&&near(s.z,0.12),JSON.stringify(s));
+s=size({id:'d',geometry_type:'cylinder',dimensions:[0.2,0.2,0.5],primitive:{dimensions:[0.2,0.2,0.5]}});
+assert.ok(near(s.x,0.2)&&near(s.y,0.2)&&near(s.z,0.5),JSON.stringify(s));
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)
