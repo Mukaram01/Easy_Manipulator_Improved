@@ -48,6 +48,14 @@ The before-tour on 4K inventoried **161 distinct visible controls** and found **
 | `livePerceptionCamera` | filled from the discovered RGB-D streams and read by the live-capture actions |
 | `newCellDisplayName` | read when the wizard finishes |
 
+With a part selected, three more Inspector controls have no change handler, and all three are read on demand:
+
+| Control | Read by |
+|---|---|
+| Inspector **Name** field | read on Apply (`display_name`) |
+| `sceneBuilderSemanticRoleCombo` | read on Apply (`role`) |
+| **Live update** checkbox | checked by every pose and size spin-box handler before applying |
+
 No two visible controls in one view share a label. The duplicates found were semantic: different labels for the same command (below).
 
 ## Duplicate and competing controls
