@@ -23,6 +23,9 @@ fcl:
 jsoncpp:
   ubuntu: [libjsoncpp-dev]
 
+libqt5svg5-dev:
+  ubuntu: [libqt5svg5-dev]
+
 libqt5concurrent5:
   ubuntu:
     jammy: [libqt5concurrent5]

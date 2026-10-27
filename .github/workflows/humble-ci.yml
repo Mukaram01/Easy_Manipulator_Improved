@@ -77,6 +77,11 @@ jobs:
         with:
           required-ros-distributions: humble
 
+      - name: Set up Node.js 20 (Web3D bundle freshness target)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       # The workspace lives outside the checkout so the source symlink cannot
       # recurse into it. Never put COLCON_IGNORE/AMENT_IGNORE in the workspace
       # root: colcon then discovers nothing and every later step passes empty.
@@ -144,6 +149,9 @@ jobs:
         continue-on-error: true
         run: python3 scripts/run_workcell_studio_release_gate.py --profile static --workspace-root "${{ runner.temp }}/ws"
 
+      # The supported Humble build path: it installs the pinned OSQP v1 /
+      # OsqpEigen stack into /usr/local and hides those sources from colcon,
+      # exactly as on a workstation, then builds the full profile.
       - name: Build
         working-directory: ${{ runner.temp }}/ws
         run: |
@@ -153,12 +161,7 @@ jobs:
           echo "easy_manipulation_deployment packages discovered: ${#emd[@]}"
           if [[ ${#emd[@]} -eq 0 ]]; then echo "::error::colcon discovered no repository packages"; exit 1; fi
           printf '%s\n' "${emd[@]}" > emd_packages.txt
-          # Imported dependencies first, without their own test targets.
-          colcon build --base-paths src --symlink-install \
-            --packages-skip "${emd[@]}" tesseract_qt qtadvanceddocking QtADS tesseract_rviz \
-              tesseract_ros_examples tesseract_planning_server \
-            --cmake-args -DBUILD_TESTING=OFF
-          colcon build --base-paths src --symlink-install --packages-select "${emd[@]}"
+          ./src/easy_manipulation_deployment/fix_and_build_humble.sh --workspace "$PWD" --build --profile full --parallel-workers 2
           for pkg in "${emd[@]}"; do
             [[ -d "install/$pkg" ]] || { echo "::error::$pkg was not built"; exit 1; }
           done
