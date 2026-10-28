@@ -180,18 +180,26 @@ def test_the_executor_reconciles_a_sorting_world_and_refuses_any_disagreement():
         observations_to_insert([new], live, "fake", reconcile=True)
 
 
-def test_physics_stays_blocked_until_a_qualified_scope_covers_the_task():
+def test_physics_stays_blocked_and_no_catalog_edit_can_widen_it(tmp_path, monkeypatch):
+    import yaml
+    from scripts import simulator_world
     from scripts.simulator_world import load_catalog, physics_task_qualification
     from tests.test_class_routing import valid_intent
-    catalog = load_catalog()
-    assert "task_scope" not in catalog                                         # the Stage-A world declares no more
     routed = routed_intent(RULES)
-    verdict = physics_task_qualification(routed, catalog, sorting_session=True)
+    verdict = physics_task_qualification(routed, sorting_session=True)
     assert not verdict["qualified"] and verdict["code"] == "SORTING_PHYSICS_UNQUALIFIED"
     assert len(verdict["problems"]) == 3 and verdict["required"]["destinations"] == ["drop_a", "drop_b"]
-    assert physics_task_qualification(valid_intent(), catalog)["qualified"]    # the qualified single cycle
-    future = dict(catalog, task_scope={"class_routing": True, "max_destinations": 3, "continuous_sorting": True})
-    assert physics_task_qualification(routed, future, sorting_session=True)["qualified"]   # no engine change
+    assert physics_task_qualification(valid_intent())["qualified"]             # the qualified single cycle
+    # BLOCKER guard: a task_scope written into the (editable, unbound) catalog changes nothing.
+    edited = dict(load_catalog(), task_scope={"class_routing": True, "max_destinations": 9, "continuous_sorting": True})
+    path = tmp_path / "qualified_physics.yaml"
+    path.write_text(yaml.safe_dump(edited))
+    monkeypatch.setattr(simulator_world, "_cell", lambda scene: ({}, {}, {}, routed, {}))
+    with pytest.raises(simulator_world.SimulatorWorldError, match="TASK_ROUTING_PHYSICS_UNQUALIFIED"):
+        simulator_world.derive_world(tmp_path, catalog_path=path)
+    # Only an explicitly verified scope (no verifier exists yet) could widen it, without engine changes.
+    assert physics_task_qualification(routed, {"class_routing": True, "max_destinations": 3,
+                                               "continuous_sorting": True}, sorting_session=True)["qualified"]
 
 
 def test_fake_world_refresh_renews_only_a_reproduced_world():

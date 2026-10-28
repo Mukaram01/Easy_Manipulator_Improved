@@ -102,7 +102,7 @@ A sorting session or a routed task is refused in Gazebo:
 - `TASK_ROUTING_PHYSICS_UNQUALIFIED` or `SORTING_PHYSICS_UNQUALIFIED`;
 - the reason comes from `simulator_world.physics_task_qualification`.
 
-The qualified Stage-A world covers one object, one destination and one cycle. A future multi-destination or continuous-sorting qualification declares a wider `task_scope` in the qualified catalog, with its own contact, retention and placement evidence. The sorting engine needs no change.
+The qualified Stage-A world covers one object, one destination and one cycle. That scope is fixed in code: no catalog or other editable file can widen it, because the catalog is not bound to qualification evidence. A future multi-destination or continuous-sorting qualification must provide a scope verified against its own bound contact, retention and placement evidence; no such verifier exists yet, so routed and multi-destination physics fail closed. The sorting engine needs no change when one is added.
 
 ### Limits
 - **Fake hardware only:** planning and kinematic execution on mock controllers. There is no contact, retention or settling evidence.

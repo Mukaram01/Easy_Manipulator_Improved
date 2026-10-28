@@ -356,8 +356,8 @@ def main():
             if class_routing_rules(saved_intent) is None:
                 parser.error('SORTING_REQUIRES_CLASS_ROUTING: the saved task has no class routing table')
             if saved_intent.get('safety', {}).get('execution_backend', 'fake') != 'fake':
-                from simulator_world import CATALOG, load_catalog, physics_task_qualification
-                verdict = physics_task_qualification(saved_intent, load_catalog(CATALOG), sorting_session=True)
+                from simulator_world import physics_task_qualification
+                verdict = physics_task_qualification(saved_intent, sorting_session=True)
                 parser.error(f"{verdict['code'] or 'SORTING_BACKEND_UNSUPPORTED'}: "
                              + '; '.join(verdict['problems'] or ['this runner sorts on MoveIt fake hardware only']))
     else:
