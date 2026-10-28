@@ -5,6 +5,8 @@
             physics world (static models at their authored rest poses, each object with its authored visual
             mesh). Writes an EPD replay fixture plus ``recording.json``. Provenance is always
             SIMULATOR_RENDERED_SYNTHETIC: never a real-camera recording. The qualified physics world is untouched.
+``session-frame`` (R2.5A) renders a fake-hardware sorting session's current world with the cell camera, runs EPD
+            on it and binds the detections to the world's objects: one new observation per sorting cycle.
 ``detect``  replays a recording deterministically through EPD's production node (tracking use case, hybrid
             RGB-D refinement) and its Workcell contract bridge in replay mode, and writes the result as a
             standard ``detected_objects/v1`` world snapshot (source.mode=replayed_snapshot) for Task settings.
@@ -112,6 +114,19 @@ def authored_objects(document):
     return {row['object_id']: row for row in rows if isinstance(row, dict) and row.get('object_id')}
 
 
+def authored_world(document):
+    """The cell's authored test objects at rest, as a sorting session's initial world (R2.5A session_frame input)."""
+    world = []
+    for oid, row in sorted(authored_objects(document).items()):
+        pose = row.get('pose') or {}
+        if pose.get('frame_id', 'world') != 'world':
+            raise PerceptionBlocked(f'OBJECT_FRAME_UNSUPPORTED: {oid} must be authored in the world frame')
+        world.append(dict(object_id=oid, pose=dict(frame_id='world', xyz=[float(v) for v in pose['xyz']],
+                                                   rpy=[float(v) for v in pose.get('rpy', [0, 0, 0])]),
+                          dimensions=[float(v) for v in row['dimensions']]))
+    return world
+
+
 def calibration_check(calibration, camera):
     """Validate a recording's camera-to-world record against the cell's current camera; return it or raise."""
     if not isinstance(calibration, dict) or not calibration:
@@ -148,9 +163,10 @@ def _visual_mesh(row, scene):
                 sha256=_file_sha256(path), license=visual.get('license'), source=visual.get('source'))
 
 
-def render_world(scene, world_text, world_report, camera, hfov, rate_hz):
-    """The render-only world: the derived physics world's models made static at authored rest poses,
-    authored visual meshes, a Sensors system and the cell camera. Returns (sdf text, visuals)."""
+def render_world(scene, world_text, world_report, camera, hfov, rate_hz, poses=None):
+    """The render-only world: the derived world's models made static at authored rest poses (or at ``poses``,
+    {object_id: [x, y, z, roll, pitch, yaw]}, which must name every object), authored visual meshes, a Sensors
+    system and the cell camera. Returns (sdf text, visuals)."""
     document = load_cell(scene)[1]
     rows = authored_objects(document)
     root = ET.fromstring(world_text)
@@ -168,7 +184,10 @@ def render_world(scene, world_text, world_report, camera, hfov, rate_hz):
         obj = by_name.get(model.get('name'))
         if obj is None:
             continue
-        model.find('pose').text = ' '.join(repr(float(v)) for v in obj['authored_pose'])
+        if poses is not None and obj['object_id'] not in poses:
+            raise PerceptionBlocked(f"RENDER_POSE_MISSING: no current pose for {obj['object_id']}")
+        pose = obj['authored_pose'] if poses is None else poses[obj['object_id']]
+        model.find('pose').text = ' '.join(repr(float(v)) for v in pose)
         mesh = _visual_mesh(rows.get(obj['object_id'], {}), scene)
         if mesh is None:
             continue
@@ -222,10 +241,14 @@ def _capture_frames(count, warmup, timeout):
     from sensor_msgs.msg import CameraInfo, Image
     rclpy.init()
     node = rclpy.create_node('workcell_render_recorder')
-    bridge, rgb, depth, info = CvBridge(), {}, {}, {}
+    bridge, rgb, depth, info, arrival = CvBridge(), {}, {}, {}, {}
     stamp = lambda h: h.stamp.sec * 1_000_000_000 + h.stamp.nanosec
+
+    def colour(m):
+        rgb.setdefault(stamp(m.header), m)
+        arrival.setdefault(stamp(m.header), time.time_ns())      # host wall time this frame was received
     qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
-    node.create_subscription(Image, '/workcell_render/rgbd/image', lambda m: rgb.setdefault(stamp(m.header), m), qos)
+    node.create_subscription(Image, '/workcell_render/rgbd/image', colour, qos)
     node.create_subscription(Image, '/workcell_render/rgbd/depth_image', lambda m: depth.setdefault(stamp(m.header), m), qos)
     node.create_subscription(CameraInfo, '/workcell_render/rgbd/camera_info', lambda m: info.setdefault(stamp(m.header), m), qos)
     try:
@@ -240,24 +263,27 @@ def _capture_frames(count, warmup, timeout):
                                f'rendered in {timeout:.0f} s (need {count + warmup}); is headless rendering available?')
         frames = []
         for key in paired[warmup:warmup + count]:
-            colour = bridge.imgmsg_to_cv2(rgb[key], 'bgr8')
+            image = bridge.imgmsg_to_cv2(rgb[key], 'bgr8')
             metres = bridge.imgmsg_to_cv2(depth[key])
             millimetres = np.where(np.isfinite(metres) & (metres > 0), metres * 1000.0, 0).round().clip(0, 65535).astype(np.uint16)
-            frames.append((colour, millimetres, info[key], key))
+            frames.append((image, millimetres, info[key], key, arrival[key]))
         return frames
     finally:
         node.destroy_node()
         rclpy.shutdown()
 
 
-def record(scene, output, frames=6, warmup=3, hfov=D435_COLOR_HFOV_RAD, rate_hz=5.0, timeout=90.0):
+def record(scene, output, frames=6, warmup=3, hfov=D435_COLOR_HFOV_RAD, rate_hz=5.0, timeout=90.0, *,
+           world=None, poses=None, world_revision=None):
+    """Render the cell camera. Default: the physics world at authored rest poses (Stage-B). A sorting session
+    passes its render-only world (simulator_world.derive_render_world), its current poses and their revision."""
     import cv2
     from simulator_world import derive_world
     scene, document = load_cell(scene)
     output = Path(output)
     camera = cell_camera(document)
-    world_text, world_report = derive_world(scene)          # SimulatorWorldError (a ValueError) blocks first
-    text, visuals = render_world(scene, world_text, world_report, camera, hfov, rate_hz)
+    world_text, world_report = world or derive_world(scene)  # SimulatorWorldError (a ValueError) blocks first
+    text, visuals = render_world(scene, world_text, world_report, camera, hfov, rate_hz, poses)
     output.mkdir(parents=True, exist_ok=False)
     (output / 'render_world.sdf').write_text(text)
     env = dict(os.environ, IGN_PARTITION=f'workcell_render_{os.getpid()}', ROS_LOCALHOST_ONLY='1',
@@ -278,14 +304,14 @@ def record(scene, output, frames=6, warmup=3, hfov=D435_COLOR_HFOV_RAD, rate_hz=
         log.close()
     observations, rows = [], []
     first_info = captured[0][2]
-    for index, (colour, millimetres, info, stamp_ns) in enumerate(captured):
+    for index, (colour, millimetres, info, stamp_ns, received_wall_ns) in enumerate(captured):
         rgb_name, depth_name = f'rgb_{index:02d}.png', f'depth_{index:02d}.png'
         cv2.imwrite(str(output / rgb_name), colour)
         cv2.imwrite(str(output / depth_name), millimetres)
         observations.append(dict(stamp_ns=int(stamp_ns), rgb=rgb_name, depth=depth_name))
         rows.append(dict(stamp_ns=int(stamp_ns), rgb_sha256=_file_sha256(output / rgb_name),
                          depth_sha256=_file_sha256(output / depth_name),
-                         valid_depth_ratio=float((millimetres > 0).mean())))
+                         valid_depth_ratio=float((millimetres > 0).mean()), received_wall_ns=int(received_wall_ns)))
     k = [float(v) for v in first_info.k]
     fixture = dict(schema_version=1, name=f'{scene.name}-{PROVENANCE.lower()}',
                    camera=dict(width=int(first_info.width), height=int(first_info.height), frame_id=camera['frame_id'],
@@ -297,16 +323,22 @@ def record(scene, output, frames=6, warmup=3, hfov=D435_COLOR_HFOV_RAD, rate_hz=
     manifest = dict(schema=RECORDING_SCHEMA, provenance=PROVENANCE, clock_domain=CLOCK_DOMAIN,
                     note='Rendered from the simulated cell; not a real-camera recording. The robot is not rendered.',
                     cell=str(scene), environment_sha256=_file_sha256(scene / 'environment.yaml'),
-                    physics_world_sha256=world_report['world_sha256'], render_world_sha256=_sha256(text),
+                    physics_world_sha256=None if world_report.get('render_only') else world_report['world_sha256'],
+                    render_world_sha256=_sha256(text),
                     camera=dict(camera, horizontal_fov_rad=hfov, k=k, distortion=[float(v) for v in first_info.d]),
                     calibration=dict(status=SIMULATION_EXACT, camera_id=camera['camera_id'],
                                      camera_link_pose_world=camera['link_pose'],
                                      optical_in_link=[list(row) for row in OPTICAL_IN_LINK],
                                      source='the pose this session was rendered at (the cell camera)'),
                     objects={o['object_id']: dict(dimensions_m=o['dimensions_m'], authored_pose=o['authored_pose'],
+                                                  rendered_pose=(poses or {}).get(o['object_id'], o['authored_pose']),
                                                   visual=visuals.get(o['object_id'])) for o in world_report['objects']},
                     fixture='fixture.json', fixture_sha256=_file_sha256(output / 'fixture.json'), frames=rows,
                     recorded_wall_ns=time.time_ns())
+    if poses is not None:
+        manifest['world_state'] = dict(revision=world_revision, render_world=world_report.get('schema'),
+                                       pose_source='the sorting session\'s world: authored rest poses, then each '
+                                                   'completed cycle\'s state-verified final object pose')
     (output / 'recording.json').write_text(json.dumps(manifest, indent=1) + '\n')
     return manifest
 
@@ -578,6 +610,79 @@ def associate(measured, perceived, target_class=None, margin=ASSOCIATION_MARGIN_
     return bindings, unbound
 
 
+# --- R2.5A: one sorting-session observation -------------------------------------------------------------
+def session_frame(scene, output, workspace, world, world_revision):
+    """Render the session's current fake-hardware world with the cell camera and classify it with EPD.
+
+    ``world``: [{object_id, pose: {frame_id: world, xyz, rpy}, dimensions}], the sorting session's verified world (the
+    cell's authored test objects at rest, then each completed cycle's state-verified final pose); ``world_revision``
+    its runtime_pick_inputs.world_revision. The render-only world (simulator_world.derive_render_world: static models,
+    every destination container, no robot) is drawn at exactly those poses; EPD's production node classifies the
+    rendered frames in replay mode; each EPD world centroid binds to the one object box that contains it (associate).
+    An object takes EPD's class and confidence only from exactly one detection, else it is ``unperceived`` and never a
+    pick target; detections binding to no object or to several are reported, never used. Identity, pose and size are
+    the world's; class and confidence are EPD's; nothing is invented. The frame keeps its real capture time (host wall
+    time the classified frame was received), its world revision and its synthetic provenance.
+    """
+    from runtime_pick_inputs import RENDER_PRODUCER, RENDER_PROVENANCE, RENDER_SOURCE_MODE
+    from runtime_pick_inputs import world_revision as revision_of
+    from simulator_world import derive_render_world
+    from task_intent_v2 import OBSERVATION_PRODUCER_CEILING_S
+    if revision_of(world) != world_revision:
+        raise PerceptionBlocked('WORLD_REVISION_MISMATCH: the poses to render are not the named world revision')
+    scene, document = load_cell(scene)
+    camera = cell_camera(document)
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=False)
+    rendered = derive_render_world(scene)
+    authored = {o['object_id']: o for o in rendered[1]['objects']}
+    poses = {o['object_id']: [float(v) for v in o['pose']['xyz']] + [float(v) for v in o['pose']['rpy']] for o in world}
+    if len(poses) != len(world) or set(poses) != set(authored):
+        raise PerceptionBlocked(f"WORLD_OBJECTS_MISMATCH: the session world {sorted(poses)} is not the cell's test "
+                                f'objects {sorted(authored)}')
+    for o in world:
+        if [float(v) for v in o['dimensions']] != authored[o['object_id']]['dimensions_m']:
+            raise PerceptionBlocked(f"WORLD_OBJECTS_MISMATCH: {o['object_id']} size differs from the authored test object")
+    manifest = record(scene, output / 'recording', world=rendered, poses=poses, world_revision=world_revision)
+    manifest_path = output / 'recording' / 'recording.json'
+    snapshots, summary = run_epd_replay(manifest_path, manifest, workspace, output / 'epd')
+    detections = replay_snapshot_from_epd(snapshots, manifest, manifest_path, camera, summary, scene)
+    stamp = detections['source']['epd']['snapshot_timestamp_ns']
+    frame = next(row for row in manifest['frames'] if row['stamp_ns'] == stamp)
+    age = (max(row['stamp_ns'] for row in manifest['frames']) - stamp) / 1e9
+    if age > OBSERVATION_PRODUCER_CEILING_S['replay']:
+        raise PerceptionBlocked(f'PERCEPTION_STALE: the EPD result is {age:.2f} s older than the rendered frame '
+                                '(recording clock)')
+    bindings, unbound = associate({oid: (poses[oid], authored[oid]['dimensions_m']) for oid in poses},
+                                  detections['objects'])
+    capture = frame['received_wall_ns']
+    objects = []
+    for o in sorted(world, key=lambda item: item['object_id']):
+        bound = bindings[o['object_id']]
+        objects.append(dict(object_id=o['object_id'], class_id=bound['class_id'], confidence=bound.get('confidence'),
+                            timestamp=capture / 1e9,
+                            pose=dict(frame_id='world', xyz=list(o['pose']['xyz']), rpy=list(o['pose']['rpy'])),
+                            dimensions=list(o['dimensions']),
+                            perception=dict(producer=RENDER_PRODUCER, detection=bound.get('detection'),
+                                            reason=bound.get('reason'), epd_world_xyz=bound.get('world_xyz'),
+                                            association_distance_m=bound.get('association_distance_m'),
+                                            replay_age_s=age)))
+    snapshot = dict(schema_version='detected_objects/v1', source=dict(
+        mode=RENDER_SOURCE_MODE, producer=RENDER_PRODUCER, provenance=RENDER_PROVENANCE, camera_source='simulated_rgbd',
+        camera_id=camera['camera_id'], frame_id=camera['frame_id'], capture_wall_ns=int(capture),
+        frame_stamp_ns=int(stamp), frame_clock=CLOCK_DOMAIN, world_revision=world_revision,
+        recording=str(manifest_path), recording_sha256=_file_sha256(manifest_path),
+        render_world_sha256=manifest['render_world_sha256'], render_world=rendered[1]['schema'],
+        calibration=detections['source']['calibration'], epd=detections['source']['epd'],
+        classes='EPD production node (replay mode) on the rendered frames, bound to the world objects by position',
+        geometry="the sorting session's world (fake-hardware PlanningScene state), never EPD's visible extent",
+        unbound_detections=unbound, rejected_detections=detections['source']['rejected_detections'],
+        note='SYNTHETIC: rendered from the simulated cell by its camera; not a real-camera observation; the robot '
+             'is not rendered'), objects=objects)
+    (output / 'frame.yaml').write_text(yaml.safe_dump(snapshot, sort_keys=False))
+    return snapshot
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest='command', required=True)
@@ -593,11 +698,26 @@ def main(argv=None):
     v = sub.add_parser('validate', help='may this replay snapshot drive selection in the cell?')
     v.add_argument('--cell', required=True)
     v.add_argument('snapshot')
+    f = sub.add_parser('session-frame', help='R2.5A: render a sorting session\'s world and classify it with EPD')
+    f.add_argument('--cell', required=True)
+    f.add_argument('--world', required=True, help='JSON {"revision": ..., "objects": [...]} of the session world')
+    f.add_argument('--output', required=True)
+    f.add_argument('--workspace', default=str(SCRIPT_DIR.parents[2]))
     sub.add_parser('_listen').add_argument('output')
     args = parser.parse_args(argv)
     try:
         if args.command == '_listen':
             _listen(args.output)
+            return 0
+        if args.command == 'session-frame':
+            # The sorting runner stops an observer with SIGINT, a hard cancel with SIGTERM: both unwind through the
+            # render and EPD cleanups (their own process groups) instead of leaving them running.
+            signal.signal(signal.SIGTERM, signal.default_int_handler)
+            world = json.loads(Path(args.world).read_text())
+            result = session_frame(args.cell, args.output, args.workspace, world['objects'], world['revision'])
+            print(json.dumps(dict(status='OBSERVED', frame=str(Path(args.output) / 'frame.yaml'),
+                                  objects=[(o['object_id'], o['class_id'], o['confidence']) for o in result['objects']],
+                                  unbound=len(result['source']['unbound_detections']))))
             return 0
         if args.command == 'record':
             result = record(args.cell, args.output, args.frames)

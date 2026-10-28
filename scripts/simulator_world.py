@@ -175,10 +175,9 @@ def _support(world, manifest, support_ref, catalog):
                 surface_z_m=xyz[2] + size[2] / 2)
 
 
-def _destination(world, environment, manifest, intent, catalog):
+def _destination(world, environment, manifest, target_ref, region_ref, catalog, model_name=DESTINATION_MODEL):
     from container_geometry import ContainerGeometryError, measure_container
     from physical_destination import resolve_destination
-    target_ref, region_ref = intent['place']['target'].get('asset_ref'), intent['place']['target'].get('region_ref')
     try:
         destination = resolve_destination(environment, region_ref)
     except ValueError as exc:
@@ -211,7 +210,7 @@ def _destination(world, environment, manifest, intent, catalog):
     (x0, x1), (y0, y1) = measured['interior_x'], measured['interior_y']
     ox, oy, oz = origin
     top = oz + floor
-    model = ET.SubElement(world, 'model', name=DESTINATION_MODEL)
+    model = ET.SubElement(world, 'model', name=model_name)
     ET.SubElement(model, 'static').text = 'true'
     link = ET.SubElement(model, 'link', name='bin_link')
     mu = catalog['surfaces']['destination']['friction_mu']
@@ -245,9 +244,9 @@ def _manual_objects(doc):
     return rows
 
 
-def _objects(world, doc, support, catalog):
+def _objects(world, doc, support, catalog, reserved=()):
     clearance = catalog['construction']['object_spawn_clearance_m']
-    reserved = {SUPPORT_MODEL, DESTINATION_MODEL}
+    reserved = {SUPPORT_MODEL, DESTINATION_MODEL, *reserved}
     objects = []
     for row in _manual_objects(doc):
         name = str(row.get('object_id') or '')
@@ -352,7 +351,7 @@ def derive_world(scene, catalog_path=CATALOG):
     if len(targets) != 1 or not targets[0].get('support_surface_ref'):
         raise SimulatorWorldError(f'destination {target_ref!r} missing or not on an authored support surface')
     support = _support(world, manifest, targets[0]['support_surface_ref'], catalog)
-    destination = _destination(world, environment, manifest, intent, catalog)
+    destination = _destination(world, environment, manifest, target_ref, intent['place']['target'].get('region_ref'), catalog)
     objects = _objects(world, doc, support, catalog)
     text = ET.tostring(root, encoding='unicode')
     template_bytes = TEMPLATE.read_bytes()
@@ -362,6 +361,49 @@ def derive_world(scene, catalog_path=CATALOG):
                   world_name=world.get('name'), world_sha256=_sha256(text.encode()),
                   support=support, destination=destination, objects=objects,
                   planning_only_objects=planning_only_objects(manifest, {support['source_item_id'], destination['asset_ref']}))
+    return text, report
+
+
+RENDER_WORLD_NAME = 'workcell_render_only'     # never the qualified world name the physics bridge is bound to
+
+
+def derive_render_world(scene, catalog_path=CATALOG):
+    """(world SDF text, report) of the cell for the render camera only (R2.5A): never a physics world.
+
+    The same composition from the cell's own data as derive_world (support, measured destination containers,
+    authored test objects with their materials), with every destination container a class-routed task places into.
+    The physics task qualification is not consulted because nothing in this world is executed: it holds no robot
+    and no controller, perception_replay makes every model static and adds only the camera, and only one-way image
+    topics leave it. The world is renamed so that no qualified physics entry point (whose bridge is bound to the
+    qualified world name) can run it. Physics execution goes through derive_world, which keeps the qualified scope.
+    """
+    from physical_destination import resolve_destination
+    from task_intent_v2 import class_routing_rules
+    catalog = load_catalog(catalog_path)
+    doc, environment, manifest, intent, provenance = _cell(scene)
+    root, world = _engine(catalog)
+    world.set('name', RENDER_WORLD_NAME)
+    primary = intent['place']['target']
+    targets = [a for a in environment.get('assets', []) if a.get('id') == primary.get('asset_ref')]
+    if len(targets) != 1 or not targets[0].get('support_surface_ref'):
+        raise SimulatorWorldError(f"destination {primary.get('asset_ref')!r} missing or not on an authored support surface")
+    support = _support(world, manifest, targets[0]['support_surface_ref'], catalog)
+    regions = {primary.get('asset_ref'): primary.get('region_ref')}
+    for rule in class_routing_rules(intent) or []:
+        try:
+            regions.setdefault(resolve_destination(environment, rule['destination'])['target_id'], rule['destination'])
+        except (ValueError, KeyError) as exc:
+            raise SimulatorWorldError(f"routed destination {rule.get('destination')!r}: {exc}") from exc
+    names = {asset: DESTINATION_MODEL if index == 0 else f'{DESTINATION_MODEL}_{index + 1}'
+             for index, asset in enumerate(regions)}
+    destinations = [_destination(world, environment, manifest, asset, region, catalog, names[asset])
+                    for asset, region in regions.items()]
+    objects = _objects(world, doc, support, catalog, reserved=names.values())
+    text = ET.tostring(root, encoding='unicode')
+    report = dict(schema='workcell_render_world/v1', render_only=True, physics_execution=False,
+                  scene=str(Path(scene).resolve()), **provenance, catalog=str(Path(catalog_path)),
+                  catalog_sha256=_sha256(Path(catalog_path).read_bytes()), world_name=RENDER_WORLD_NAME,
+                  world_sha256=_sha256(text.encode()), support=support, destinations=destinations, objects=objects)
     return text, report
 
 
