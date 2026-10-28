@@ -2868,29 +2868,36 @@ void ScenePreviewWidget::poll_embedded_editor_events()
 }
 
 void ScenePreviewWidget::arm_embedded_asset_placement(
-  const QString & asset_id, const QString & mesh_uri, double mesh_scale, bool persistent)
+  const QString & asset_id, const QString & mesh_uri, double mesh_scale, bool persistent,
+  const QJsonObject & primitive)
 {
   if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
-  // The ghost needs loaded geometry before a click can commit, so a library
-  // mesh is staged exactly as for the placed live item.
-  const auto staging = workcell_builder::stage_live_authoring_mesh(
-    preview_context_.absolute_repo_root, preview_context_.absolute_scene_dir, preview_context_.scene_id, mesh_uri);
-  const QString browser_mesh_uri = staging.uri;
-  if (!staging.ok() && !mesh_uri.trimmed().isEmpty()) {
-    emit studio_log_requested(QStringLiteral("Product View: placement preview of %1 is a placeholder (%2): %3")
-      .arg(asset_id, staging.status, staging.reason));
+  QJsonObject asset{
+    {QStringLiteral("id"), asset_id},
+    {QStringLiteral("display_name"), asset_id},
+    {QStringLiteral("category"), QStringLiteral("authored_asset_object")},
+    {QStringLiteral("source_kind"), QStringLiteral("user_authored")},
+    {QStringLiteral("source_layer"), QStringLiteral("placement_preview")},
+    {QStringLiteral("mesh_scale"), QJsonArray{mesh_scale, mesh_scale, mesh_scale}},
+  };
+  if (!primitive.isEmpty()) {
+    // A primitive's ghost is its real-size solid (geometry_type + size), not a mesh.
+    for (auto it = primitive.begin(); it != primitive.end(); ++it) asset.insert(it.key(), it.value());
+    asset.insert(QStringLiteral("mesh_uri"), QString());
+  } else {
+    // The ghost needs loaded geometry before a click can commit, so a library
+    // mesh is staged exactly as for the placed live item.
+    const auto staging = workcell_builder::stage_live_authoring_mesh(
+      preview_context_.absolute_repo_root, preview_context_.absolute_scene_dir, preview_context_.scene_id, mesh_uri);
+    if (!staging.ok() && !mesh_uri.trimmed().isEmpty()) {
+      emit studio_log_requested(QStringLiteral("Product View: placement preview of %1 is a placeholder (%2): %3")
+        .arg(asset_id, staging.status, staging.reason));
+    }
+    asset.insert(QStringLiteral("mesh_uri"), staging.uri);
   }
   const QJsonObject options{
     {QStringLiteral("persistent"), persistent},
-    {QStringLiteral("asset"), QJsonObject{
-      {QStringLiteral("id"), asset_id},
-      {QStringLiteral("display_name"), asset_id},
-      {QStringLiteral("category"), QStringLiteral("authored_asset_object")},
-      {QStringLiteral("source_kind"), QStringLiteral("user_authored")},
-      {QStringLiteral("source_layer"), QStringLiteral("placement_preview")},
-      {QStringLiteral("mesh_uri"), browser_mesh_uri},
-      {QStringLiteral("mesh_scale"), QJsonArray{mesh_scale, mesh_scale, mesh_scale}},
-    }},
+    {QStringLiteral("asset"), asset},
   };
   run_embedded_editor_command(QStringLiteral("window.__WORKCELL_EDITOR_API_V1__.armPlacement(%1)")
     .arg(QString::fromUtf8(QJsonDocument(options).toJson(QJsonDocument::Compact))));

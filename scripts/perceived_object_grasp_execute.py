@@ -1010,7 +1010,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             lambda request: evaluate_once(request, search_pass='revalidate',
                                           planning_attempts=3, segment_time=float(planning_time),
                                           candidate_budget=None),
-            now=resolution_reference_time, resolved=resolved)
+            now=resolution_reference_time, resolved=resolved,
+            destination_floor_z=contract.get('destination_floor_z'))
         summary['candidate_search'] = {
             'mode': 'resolved_revalidation',
             'retry_pass_used': False,
@@ -1120,7 +1121,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
             resolution = resolve_task_intent(
                 intent, environment, cell, targets, discover,
-                now=resolution_reference_time, resolved=None)
+                now=resolution_reference_time, resolved=None,
+                destination_floor_z=contract.get('destination_floor_z'))
 
             phase_record = {
                 'strategy_ref': strategy,
@@ -1199,7 +1201,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, retry,
-                    now=resolution_reference_time, resolved=None)
+                    now=resolution_reference_time, resolved=None,
+                    destination_floor_z=contract.get('destination_floor_z'))
                 current = evaluation_cache.get(selected_key, {})
                 attempt = {
                     'strategy_ref': selected_key[0],
@@ -1230,7 +1233,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 before_resume = len(phase_discovered)
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
-                    now=resolution_reference_time, resolved=None)
+                    now=resolution_reference_time, resolved=None,
+                    destination_floor_z=contract.get('destination_floor_z'))
                 phase_record.update(
                     resumed_discovered_candidates=len(phase_discovered) - before_resume,
                     discovered_candidates=len(phase_discovered),
@@ -1252,7 +1256,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 before_aliases = len(phase_discovered)
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
-                    now=resolution_reference_time, resolved=None)
+                    now=resolution_reference_time, resolved=None,
+                    destination_floor_z=contract.get('destination_floor_z'))
                 phase_record.update(
                     equivalent_candidates_evaluated=len(phase_discovered) - before_aliases,
                     discovered_candidates=len(phase_discovered),
@@ -2364,14 +2369,14 @@ def main():
         # start state, scene or execution action. All collision checks remain active.
         for attempt in range(planning_attempts):
             try:
-                # The simulator adapter certifies the complete controller path
-                # after OMPL returns. A measured revalidation certificate took
-                # 76.4 s under simulator load, after subsecond OMPL planning.
-                # Allow a bounded 120 s for that owned plan-only result;
-                # execution keeps its separate motion limit.
+                # The workcell/StraightCartesianPath adapter certifies the
+                # complete controller path after OMPL returns, on every
+                # backend. A measured revalidation certificate took 76.4 s
+                # under simulator load, after subsecond OMPL planning. Allow
+                # the adapter's own bounded 120 s for that owned plan-only
+                # result; execution keeps its separate motion limit.
                 # Candidate/global budgets are checked between planning calls.
-                result = action(plan_client, goal_msg,
-                    120. if getattr(args,'backend','fake')=='simulator' else 12.)
+                result = action(plan_client, goal_msg, 120.)
                 break
             except MoveItActionFailure as exc:
                 if time.monotonic() >= wall_deadline:
@@ -2457,6 +2462,10 @@ def main():
             if not args.task_request:
                 raise ValueError('Legacy task request missing; Save and Generate a TaskIntent v2 task')
             task = inputs.task_request(yaml.safe_load(Path(args.task_request).read_text()), cell)
+        # Controllers may still be starting after launch. Let the arm's state settle (read-only)
+        # before observations are stamped, so freshness measures the task, not start-up.
+        wait_for_robot_baseline(scene_now, dict(zip(contract['home_joint_names'], contract['home_joint_positions'])),
+                                (), min(10.0, args.timeout))
         stage('ACQUIRE_OBJECTS')
         from hashlib import sha256
         observation_text=Path(args.detections).read_text()
@@ -2872,9 +2881,14 @@ def main():
                 cell=document, targets=eligible, contract=contract, operations=operations,
                 deadline=deadline, summary=summary, resolved=expected_resolution,
                 planning_time=args.segment_planning_time,
-                retry_candidate_budget=180. if args.backend=='simulator' else 20.,
-                discovery_candidate_budget=60. if args.backend=='simulator' else .75,
-                reserve_retry_budget=args.backend=='simulator')
+                # move_group certifies every emitted controller spline on both
+                # backends, so fake hardware needs the same certificate-aware
+                # slices. Measured on ur5_2f_test (LENLEG, 2026-10-28): approach
+                # ~3 s and transfer 4-35 s of certificate per candidate; the
+                # former 0.75 s fake discovery slice exhausted every candidate.
+                retry_candidate_budget=180.,
+                discovery_candidate_budget=60.,
+                reserve_retry_budget=True)
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')

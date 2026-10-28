@@ -20,6 +20,7 @@ struct ControllerAuditOptions {
   unsigned max_depth=32;
   std::size_t max_intervals=120001;
   std::size_t max_contact_timestamps=120001;
+  std::size_t max_limit_timestamps=120001;
   int64_t min_interval_ns=1;
   bool stationary_world=true;
   // Optional owner interruption check; exceptions fail certification closed.
@@ -28,7 +29,7 @@ struct ControllerAuditOptions {
 struct ControllerAuditReport {
   ControllerCertificate result=ControllerCertificate::UNCERTIFIED;
   std::size_t inspected=0, certified=0, subdivided=0;
-  std::size_t contact_timestamps=0, initial_contacts_expired=0;
+  std::size_t contact_timestamps=0, initial_contacts_expired=0, limit_timestamps=0;
   unsigned deepest=0;
   int64_t failure_begin_ns=-1, failure_end_ns=-1;
   double wall_seconds=0.;
@@ -1045,9 +1046,21 @@ inline ControllerAuditReport certify(const robot_trajectory::RobotTrajectory& tr
           if(d.distance<=0.||lower<=(relative+distance_guard).upper()) clear=false;
         }
         // Bernstein hull also excludes unsampled position-limit violations.
+        bool enumerate_limits=false;
         for(const auto& item:controls) {
           const auto range=hull(item.second)+Interval(-errors.at(item.first),errors.at(item.first));const auto& bounds=scene.getRobotModel()->getVariableBounds(item.first);
-          if(bounds.position_bounded_&&(range.lower()<bounds.min_position_||range.upper()>bounds.max_position_)) clear=false;
+          if(!bounds.position_bounded_||(range.lower()>=bounds.min_position_&&range.upper()<=bounds.max_position_)) continue;
+          // A spline that starts or stops exactly on a limit (a gripper at its
+          // open stop) keeps the evaluation-roundoff band across that limit at
+          // every depth. Decide such a short leaf exactly instead: the controller
+          // samples integer nanoseconds only, and every one is evaluated below
+          // with the installed interpolation. No limit margin is introduced.
+          if(hi-lo<=4096) enumerate_limits=true;
+          else clear=false;
+        }
+        if(clear&&enumerate_limits) for(int64_t t=lo;t<=hi;++t) {
+          if(++report.limit_timestamps>options.max_limit_timestamps) {report.reason="LIMIT_TIMESTAMP_LIMIT";return false;}
+          if(!evaluate(t).satisfiesBounds()) {report.reason="JOINT_LIMIT";return false;}
         }
         if(clear) {
           if(detached) detached->pairs=std::move(proposed);

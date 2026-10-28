@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import hashlib
 import re
 import struct
 import sys
@@ -136,13 +137,37 @@ def gui_catalog(repo_root: Path, withheld: dict | None = None) -> list[dict]:
                     "placeholder": _placeholder(path),
                 })
     candidates.sort(key=lambda c: (c["rank"], c["path"]))
-    emitted, out = set(), []
+    package_dirs = {}
+    for c in candidates:  # best-ranked directory of each package name, as the Builder keeps
+        if c["package"]:
+            package_dirs.setdefault(Path(c["package"]).name, Path(c["package"]))
+    emitted, geometry, out = set(), set(), []
     for c in candidates:
         if c["package"] and c["package"] in emitted:
             continue
         emitted.add(c["package"])
+        # Byte-identical geometry from two packages is one product (as the Builder lists it).
+        key = geometry_content_key(Path(c["path"]), package_dirs)
+        if key is not None and key in geometry:
+            continue
+        if key is not None:
+            geometry.add(key)
         out.append(c)
     return out
+
+
+def geometry_content_key(path: Path, package_dirs: dict):
+    """Hash of an entry's visual mesh, or of the first package:// mesh its description references."""
+    mesh = path
+    if path.suffix.lower() in (".xacro", ".urdf"):
+        m = re.search(r'filename="package://([^/"]+)/([^"]+)"', path.read_text(errors="replace"))
+        if not m or m.group(1) not in package_dirs:
+            return None
+        mesh = package_dirs[m.group(1)] / m.group(2)
+    try:
+        return hashlib.sha256(mesh.read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 # --------------------------------------------------------------------------- mesh parsing

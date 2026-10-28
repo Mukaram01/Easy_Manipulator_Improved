@@ -37,6 +37,60 @@ def process_failures(log_text):
             and int(match[1]) not in (0, -signal.SIGINT, -signal.SIGTERM)]
 
 
+# Visualization may abort in upstream teardown; it is reported, never judged as the planning stack.
+VISUALIZATION_PROCESSES = ('rviz2',)
+
+
+def process_exits(log_text):
+    """Each owned launch child's actual terminal status, as ros2 launch recorded it."""
+    exits = []
+    for line in log_text.splitlines():
+        match = re.search(r'\[([^\]\s]+?)-\d+\]: process has (finished cleanly|died) \[pid (\d+)(?:, exit code (-?\d+))?', line)
+        if match:
+            exits.append(dict(process=match[1], pid=int(match[3]),
+                              exit_code=0 if match[2] == 'finished cleanly' else int(match[4])))
+    return exits
+
+
+def shutdown_failures(exits):
+    """Owned planning-stack processes that crashed instead of exiting after the owned stop."""
+    return [e for e in exits if e['exit_code'] not in (0, -signal.SIGINT, -signal.SIGTERM)
+            and e['process'] not in VISUALIZATION_PROCESSES]
+
+
+def moveit_teardown_dependency():
+    """Installed Humble MoveIt 2.5.10 unloads its controller plugin before the controller node and
+    exits -11 on every owned shutdown (docs/manuals/MOVEIT_HUMBLE_TEARDOWN_OVERLAY.md). An environment
+    that selects any other MoveIt must select exactly the qualified teardown overlay."""
+    from ament_index_python.packages import get_package_prefix
+    if get_package_prefix('moveit_ros_planning').startswith('/opt/'):
+        return dict(status='INSTALLED_UNPATCHED'), None
+    from simulator_backend import active_moveit_overlay, moveit_overlay_identity
+    overlay = active_moveit_overlay()
+    return dict(status='QUALIFIED_OVERLAY', manifest=overlay['manifest_path'],
+                identity=list(moveit_overlay_identity(overlay))), overlay
+
+
+def owned_move_group_overlay(pgid, overlay):
+    """Bind the qualified dependency to the owned MoveGroup's actual mappings, not to the environment."""
+    from simulator_backend import process_info, verify_moveit_overlay_maps
+    matches = []
+    for entry in Path('/proc').iterdir():
+        try:
+            if (not entry.name.isdigit() or
+                    int((entry/'stat').read_text().rsplit(')', 1)[1].split()[2]) != pgid):
+                continue
+            info = process_info(int(entry.name))
+        except (OSError, ValueError, IndexError):
+            continue
+        if '/moveit_ros_move_group/move_group ' in info['command']:
+            loaded = verify_moveit_overlay_maps(overlay, info['libraries'])
+            matches.append({k: v for k, v in loaded.items() if k.startswith('loaded_')})
+    if len(matches) != 1:
+        raise RuntimeError('MOVEIT_OVERLAY_REJECTED: exactly one owned MoveGroup process required')
+    return matches[0]
+
+
 def check_sequence_result(result, execution_goals):
     if (result.get('result') != 'PLAN_ONLY' or result.get('sequence_planning_completed') is not True or
             result.get('execution_attempted') is not False or not isinstance(result.get('sequence'), list)):
@@ -254,6 +308,7 @@ def main():
             if installed != (scene_dir/relative).read_bytes():
                 raise RuntimeError(f'installed scene differs from this checkout: {relative}')
             audit['scene_hashes'][relative] = hashlib.sha256(installed).hexdigest()
+        audit['moveit_teardown'], overlay = moveit_teardown_dependency()
         with (out/'launch.log').open('w') as log, (out/'executor.log').open('w') as elog:
             if args.stream_status:
                 print(json.dumps(dict(stage='LAUNCHING_FAKE_HARDWARE')), flush=True)
@@ -262,6 +317,8 @@ def main():
                 'launch_rviz:='+str(args.launch_rviz).lower()],
                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             spin_until(lambda: 'authored collision objects; MoveIt is planning truth' in (out/'launch.log').read_text())
+            if overlay is not None:
+                audit['moveit_teardown'].update(owned_move_group_overlay(launch.pid, overlay))
             executor = subprocess.Popen([sys.executable, str(executor_path),
                 '--scene-package', str(scene_dir),
                 '--detections', str(input_path),
@@ -311,12 +368,18 @@ def main():
         launch_clean = stop(launch)
         log_text = (out/'launch.log').read_text() if (out/'launch.log').exists() else ''
         crashes = process_failures(log_text)
+        exits = process_exits(log_text)
+        stack_failures = shutdown_failures(exits)
         remaining_groups = [p.pid for p in (executor, launch) if p and group_alive(p.pid)]
-        # RViz can abort during ROS teardown after the owned launch and executor
-        # groups have exited cleanly. Preserve that diagnostic, but judge
-        # lifecycle success by owned process cleanup and the two authoritative
-        # supervisors' exit status.
-        audit.update(shutdown_clean=executor_clean and launch_clean and not remaining_groups,
+        # Every owned launch child's exit status is reported. A planning-stack crash
+        # (e.g. MoveGroup -11 in unpatched MoveIt teardown) is an unclean shutdown even
+        # when both supervisors exit 0; an RViz abort is reported separately.
+        audit.update(shutdown_clean=(executor_clean and launch_clean and not remaining_groups
+                                     and not stack_failures),
+                     process_exits=exits,
+                     visualization_shutdown_clean=not [
+                         e for e in exits if e['process'] in VISUALIZATION_PROCESSES
+                         and e['exit_code'] not in (0, -signal.SIGINT, -signal.SIGTERM)],
                      shutdown_crashes=crashes, execution_action_goals=sorted(goals),
                      action_terminal_statuses=[dict(topic=t, goal_id=g, status=s) for (t,g),s in sorted(statuses.items())],
                      remaining_owned_process_groups=remaining_groups)
@@ -324,6 +387,12 @@ def main():
         audit['owned_processes'] = {name: dict(pid=p.pid, returncode=p.returncode)
                                    for name,p in [('executor',executor),('launch',launch)] if p}
         if not audit['shutdown_clean'] or (goals and not args.execute):
+            if audit['result'] == 'PASS' and stack_failures:
+                crashed = ', '.join(f"{e['process']} exit {e['exit_code']}" for e in stack_failures)
+                hint = (' (installed MoveIt teardown defect; source the qualified MoveIt teardown overlay)'
+                        if audit.get('moveit_teardown', {}).get('status') == 'INSTALLED_UNPATCHED'
+                        and any(e['process'] == 'move_group' for e in stack_failures) else '')
+                audit['failure'] = f'SHUTDOWN_UNCLEAN: {crashed} after the owned stop{hint}'
             audit['result'] = 'FAIL'
         node.destroy_node()
         rclpy.try_shutdown()

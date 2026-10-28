@@ -63,15 +63,22 @@ def dimensions(block):
     return result
 
 
-def contains(outer, center, orient, dims, clearance=0.):
+def margins(outer, center, orient, dims, clearance=0.):
+    """Room (m) left on each axis of `outer` after a box keeps `clearance` from its walls."""
     origin, rot = pose(outer)
     bound = dimensions(outer)
     inv = transpose(rot)
+    room = [math.inf]*3
     for signs in itertools.product((-1, 1), repeat=3):
         offset = apply(orient, [s*d/2 for s, d in zip(signs, dims)])
         local = apply(inv, [c+o-b for c, o, b in zip(center, offset, origin)])
-        if any(abs(v)+clearance > d/2+1e-8 for v, d in zip(local, bound)):
-            raise ValueError('placement/object outside target usable placement geometry')
+        room = [min(r, d/2-abs(v)-clearance) for r, v, d in zip(room, local, bound)]
+    return room
+
+
+def contains(outer, center, orient, dims, clearance=0.):
+    if any(r < -1e-8 for r in margins(outer, center, orient, dims, clearance)):
+        raise ValueError('placement/object outside target usable placement geometry')
 
 
 def relative_placement(target, world_zone):
@@ -163,7 +170,8 @@ def resolve_local_destination(environment, asset_ref, region_ref, local_pose):
     return result
 
 
-def check_object_containment(destination, object_pose, object_dimensions, clearance=0.):
+def containment_margins(destination, object_pose, object_dimensions, clearance=0.):
+    """Per-axis room of every box check_object_containment enforces, in the same frames."""
     values = vector(object_pose, 'object pose', 7)
     x, y, z, w = values[3:]
     norm = math.sqrt(x*x+y*y+z*z+w*w)
@@ -178,10 +186,44 @@ def check_object_containment(destination, object_pose, object_dimensions, cleara
         inv = transpose(rotation(destination['target_pose_rpy']))
         center = apply(inv, [a-b for a, b in zip(values[:3], destination['target_pose_xyz'])])
         orient = multiply(inv, rot)
-        contains(destination['region_local'], center, orient, dims, clearance)
-        contains(destination['usable_placement'], center, orient, dims, clearance)
-    else:
-        contains(destination, values[:3], rot, dims, clearance)
+        return {'placement region': margins(destination['region_local'], center, orient, dims, clearance),
+                'usable placement': margins(destination['usable_placement'], center, orient, dims, clearance)}
+    return {'placement region': margins(destination, values[:3], rot, dims, clearance)}
+
+
+def check_object_containment(destination, object_pose, object_dimensions, clearance=0.):
+    if any(r < -1e-8 for room in containment_margins(destination, object_pose, object_dimensions,
+                                                     clearance).values() for r in room):
+        raise ValueError('placement/object outside target usable placement geometry')
+
+
+def placement_fit_problems(destination, object_dimensions, clearance, floor_z=None,
+                           tolerance=PLACEMENT_TOLERANCE_M):
+    """Why an object cannot be placed at this destination, before any motion is planned.
+
+    The object is put where the full-cycle planner targets it (seated on a bound floor, in the
+    destination orientation). The planner accepts a placement up to `tolerance` from that target
+    in any direction and then enforces check_object_containment on the achieved pose; on each
+    region axis that deviation can fall entirely along the axis, so each axis needs `tolerance`
+    of room. Returns readable problems, empty when the placement fits.
+    """
+    from full_cycle_preplanner import seated_destination
+    from perceived_object_grasp_plan import quaternion_from_rpy
+    orientation = quaternion_from_rpy(destination['pose_rpy'])
+    dims = vector(object_dimensions, 'object dimensions')
+    target, _ = seated_destination(destination['pose_xyz'], orientation, dims, floor_z)
+    problems = []
+    for box, room in containment_margins(destination, target + list(orientation), dims, clearance).items():
+        for axis, r in zip('xyz', room):
+            if r < tolerance-1e-8:
+                limit = clearance+r-tolerance
+                fix = (f'reduce the placement clearance to at most {limit:.4f} m, or choose another place'
+                       if limit >= -1e-12 else 'no clearance fits: choose another place or a larger region')
+                problems.append(
+                    f'{axis} of the {box}: the {dims[0]:g} x {dims[1]:g} x {dims[2]:g} m object with '
+                    f'{clearance:g} m clearance leaves {round(r*1000, 1)+0.:.1f} mm, but planning needs '
+                    f'{tolerance*1000:g} mm for its placement tolerance; {fix}')
+    return problems
 
 
 def _region_frame(destination):

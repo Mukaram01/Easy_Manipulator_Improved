@@ -263,13 +263,16 @@ def freshness_source_type(model):
     The saved selection names the generic ``perception`` contract (detected_objects/v1); which producer
     feeds it is the task's perception binding: a live RealSense camera, a replayed snapshot, or a
     simulated RGB-D camera (live sensor or simulator measurement). An unknown live camera is treated as
-    a live sensor, never as a simulator.
+    a live sensor, never as a simulator. A task with no binding is fed its reviewed commissioning replay
+    (task_intent_authoring.planning_input), except in the simulator, which measures its own objects.
     """
     selection = (model.get("pick") or {}).get("selection") or {}
     source_type = selection.get("source_type")
     if source_type != "perception":
         return source_type
     binding = model.get("perception") or {}
+    if "mode" not in binding and (model.get("safety") or {}).get("execution_backend", "fake") != "simulator":
+        return "recorded_perception"
     if binding.get("mode") == "replayed_snapshot":
         simulated = (model.get("safety") or {}).get("execution_backend") == "simulator"
         return "replayed_perception_in_simulation" if simulated else "recorded_perception"

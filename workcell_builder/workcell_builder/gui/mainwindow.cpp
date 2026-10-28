@@ -3246,6 +3246,13 @@ void MainWindow::setup_studio_shell()
     if (layout_state_label_ && !layout_dirty_) layout_state_label_->setText("Task saved and reopened; Generate and Validate before planning.");
     refresh_preview_launch_ui();
     schedule_operator_preview_update();
+    // The saved task is an authored input: the summary must show it and Checks must
+    // mark Generate/Validate stale, not keep the previous task's state.
+    QTimer::singleShot(0, this, [this] {
+      refresh_task_intent_summary();
+      refresh_new_cell_checklist();
+      refresh_scene_workflow_rail();
+    });
   });
   workflow_tab_layout->addWidget(environment_task_editor_);
 
@@ -4256,6 +4263,11 @@ bool MainWindow::save_authored_environment_from_layout(QString * error)
 void MainWindow::refresh_task_intent_panel()
 {
   refresh_environment_task_editor();
+  refresh_task_intent_summary();
+}
+
+void MainWindow::refresh_task_intent_summary()
+{
   if (selected_scene_index_ < 0 || selected_scene_index_ >= (int)scene_browser_result_.scenes.size()) return;
   const auto & sc = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const auto ti = load_scene_task_intent_summary(sc.scene_dir);
@@ -4370,7 +4382,9 @@ bool MainWindow::generate_yaml_draft_for_selected_scene()
   const QString path = QString::fromStdString(scene_dir.string());
   process.start("python3", {script, path, "--output-dir", path, "--validate"});
   if (!process.waitForFinished(120000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-    append_studio_log("Generate blocked: " + QString::fromUtf8(process.readAllStandardError()).trimmed());
+    const QString reason = QString::fromUtf8(process.readAllStandardError()).trimmed();
+    append_studio_log("Generate blocked: " + reason);
+    show_workflow_feedback("error", "Generate blocked: " + reason.section('\n', -1));
     return false;
   }
   append_studio_log("Generated YAML from the saved task and current physical resolution.");
@@ -6726,21 +6740,26 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
   double home_error = 0;
   for (auto it = intended.begin(); it != intended.end(); ++it) home_error = std::max(home_error, std::abs(it.value().toDouble() - actual.value(it.key()).toDouble()));
   const auto guard = result.value("fake_hardware_guard").toObject();
-  QString text = QString("<b>%1</b><br/>Target: %2 · Grasp: %3<br/>Home: %4 · Detached: %5 · Final scene valid: %6<br/>Fake hardware: %7 · Shutdown: %8")
+  // The first line names what failed and why: it must stay readable on its own.
+  const QString failure_reason = pass ? QString() : QString(" · %1: %2").arg(
+    result.value("failed_stage").toString("launch / build"),
+    result.value("failure").toString(result.value("orchestration_failure").toString("See diagnostics"))).toHtmlEscaped();
+  QString text = QString("<b>%1</b>%9<br/>Target: %2 · Grasp: %3<br/>Home: %4 · Detached: %5 · Final scene valid: %6<br/>Fake hardware: %7 · Shutdown: %8")
     .arg(pass ? "PASS" : "FAIL", result.value("selected_object_id").toString("unknown").toHtmlEscaped())
     .arg(result.value("selected_grasp_index").toInt(-1))
     .arg(result.value("home_verified").toBool() ? "verified" : "unverified",
       result.value("detach_verified").toBool() ? "verified" : "unverified",
       result.value("final_collision_valid").toBool() ? "yes" : "unverified",
       guard.value("move_group_use_fake_hardware").toBool() && guard.value("real_hardware").isBool() && !guard.value("real_hardware").toBool() ? "verified" : "unverified",
-      result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
+      result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed")
+    .arg(failure_reason);
   if (result.value("execution_attempted").isBool() && !result.value("execution_attempted").toBool()) {
     const auto resolution = result.value("task_intent_resolution").toObject();
     const auto place = resolution.value("place_resolution").toObject().value("destination").toObject();
-    text = QString("<b>%1</b><br/>Task: %2 · Source object: %3<br/>Destination: %4<br/>Resolution: %5<br/>Plan only · No execution goals · Real robot locked")
+    text = QString("<b>%1</b>%6<br/>Task: %2 · Source object: %3<br/>Destination: %4<br/>Resolution: %5<br/>Plan only · No execution goals · Real robot locked")
       .arg(pass ? "Plan ready" : "Plan blocked", resolution.value("readiness_status").toString().toHtmlEscaped(),
            result.value("selected_object_id").toString().toHtmlEscaped(), place.value("id").toString().toHtmlEscaped(),
-           result.value("resolution_sha256").toString().toHtmlEscaped());
+           result.value("resolution_sha256").toString().toHtmlEscaped(), failure_reason);
   }
   if (result.contains("placement_error_m")) text += QString("<br/>Placement error: %1 mm").arg(result.value("placement_error_m").toDouble()*1000, 0, 'f', 3);
   if (!intended.isEmpty()) text += QString(" · Home error: %1 rad").arg(home_error, 0, 'f', 6);
@@ -6755,6 +6774,8 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
   }
   text += QString("<br/>Runtime: %1 s<br/>Evidence: %2").arg(result.value("runtime_seconds").toDouble(),0,'f',1).arg(cycle_output_dir_.toHtmlEscaped());
   cycle_status_label_->setText(text);
+  // The log keeps the outcome and its reason after the page has moved on.
+  append_studio_log("Cycle result: " + QString(text).replace("<br/>", " | ").remove(QRegularExpression("<[^>]*>")));
 }
 void MainWindow::stop_preview_process()
 {
@@ -8226,8 +8247,11 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     refresh_selection_transform_editor_from_state(selected_item_state_);
   }
   if (scene_builder_right_panel_) {
-    apply_scene_builder_panel_visibility(
-      scene_builder_left_panel_ && !scene_builder_left_panel_->isHidden(), true);
+    // Selecting reveals a hidden Inspector; it must not re-apply remembered widths to
+    // panels that are already shown, or every selection makes the panels jump.
+    if (scene_builder_right_panel_->isHidden())
+      apply_scene_builder_panel_visibility(
+        scene_builder_left_panel_ && !scene_builder_left_panel_->isHidden(), true);
     if (scene_builder_inspector_tabs_) {
       const int selection_tab = 0;
       scene_builder_inspector_tabs_->setCurrentIndex(selection_tab);
@@ -11369,9 +11393,21 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   if (scene_preview_widget_ &&
       scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
+    // A URDF primitive is drawn as its real-size solid, so a click places it on a surface.
+    QJsonObject primitive_geometry;
+    if (const auto primitive = first_urdf_visual_primitive(match->source_path)) {
+      primitive_geometry.insert(QStringLiteral("geometry_type"), primitive->type);
+      const QJsonArray size{primitive->sx, primitive->sy, primitive->sz};
+      if (primitive->type == QStringLiteral("box"))
+        primitive_geometry.insert(QStringLiteral("dimensions"), size);
+      else
+        primitive_geometry.insert(QStringLiteral("primitive"), QJsonObject{
+          {QStringLiteral("radius"), primitive->radius}, {QStringLiteral("length"), primitive->length},
+          {QStringLiteral("dimensions"), size}});
+    }
     scene_preview_widget_->arm_embedded_asset_placement(
       match->asset_id, match->source_path, match->scale,
-      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
+      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked(), primitive_geometry);
   }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
     .arg(match->display_name, match->category, armed_asset_id_)

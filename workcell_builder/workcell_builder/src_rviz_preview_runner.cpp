@@ -177,9 +177,14 @@ QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
     "run_r14_plan_only_acceptance.py";
   // This supervisor owns the ONE scene launch and invokes the installed R1.5
   // executor. Never launch the separate RViz preview alongside this mode.
-  return QString("source %1 && export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 && "
-    "exec python3 %2 --resolve-if-needed --stream-status --timeout 900 --domain-id %3 --output-dir %4%5 --scene-dir %6")
-    .arg(quote(QString::fromStdString((workspace_root / "install/local_setup.bash").string())),
+  // Installed Humble MoveIt crashes (-11) in its own teardown; the workspace's
+  // registered teardown overlay (if any) is sourced, and the supervisor verifies
+  // and reports what MoveGroup actually loaded and how every process exited.
+  return QString("eval \"$(python3 %1 moveit-env)\" && source %2 && "
+    "export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 && "
+    "exec python3 %3 --resolve-if-needed --stream-status --timeout 900 --domain-id %4 --output-dir %5%6 --scene-dir %7")
+    .arg(quote(QString::fromStdString((supervisor.parent_path() / "qualified_physics_runtime.py").string())),
+      quote(QString::fromStdString((workspace_root / "install/local_setup.bash").string())),
       quote(QString::fromStdString(supervisor.string())))
     .arg(domain_id).arg(quote(output_dir), launch_rviz ? " --launch-rviz" : "", quote(QString::fromStdString(scene_info.scene_dir.string())));
 }

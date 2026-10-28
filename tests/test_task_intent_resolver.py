@@ -88,10 +88,12 @@ def environment():
                 "pose_xyz": [1.0, 2.0, 3.0],
                 "pose_rpy": [0.0, 0.0, 0.0],
                 "collision": {"enabled": True},
+                # Tall enough for the 0.18 m bottle, its clearance and the planner's
+                # placement tolerance (placement_fit_problems).
                 "usable_placement": {
                     "pose_xyz": [0.0, 0.0, 0.10],
                     "pose_rpy": [0.0, 0.0, 0.0],
-                    "dimensions": [0.40, 0.30, 0.20],
+                    "dimensions": [0.40, 0.30, 0.30],
                 },
             }
         ],
@@ -105,11 +107,11 @@ def environment():
                 "placement_local": {
                     "pose_xyz": [0.05, 0.0, 0.10],
                     "pose_rpy": [0.0, 0.0, 0.0],
-                    "dimensions": [0.20, 0.10, 0.10],
+                    "dimensions": [0.20, 0.10, 0.24],
                 },
                 "pose_xyz": [1.05, 2.0, 3.10],
                 "pose_rpy": [0.0, 0.0, 0.0],
-                "dimensions": [0.20, 0.10, 0.10],
+                "dimensions": [0.20, 0.10, 0.24],
             }
         ],
     }
@@ -257,6 +259,35 @@ def test_exact_place_outside_region_blocks_without_clamp_or_fallback():
     assert place["selected_local_pose"] is None
     assert place["fallback"]["used"] is False
     assert result["readiness"]["primary_code"] == "PLACE_LOCAL_POSE_OUTSIDE_REGION"
+
+
+def test_object_that_cannot_be_contained_blocks_before_any_cycle_evaluation():
+    resolver = resolver_module()
+    tall = observations()
+    tall[0]["dimensions"] = [0.06, 0.05, 0.23]   # 0.23 + 2 x 0.01 clearance > 0.24 m region
+    calls = []
+    result = resolver.resolve_task_intent(valid_intent(), environment(), cell(), tall,
+                                          lambda request: calls.append(request) or pass_cycle(request), now=100.0)
+    assert calls == []
+    assert result["readiness_status"] == "BLOCKED"
+    assert result["readiness"]["primary_code"] == "PLACE_OBJECT_DOES_NOT_FIT"
+    assert "epd::bottle-1 cannot be placed at drop: z of the placement region" in result["readiness"]["reason"]
+    assert list(result["place_resolution"]["placement_fit"]) == ["epd::bottle-1"]
+
+
+def test_preferred_place_that_fits_no_object_plans_only_the_region_default():
+    resolver = resolver_module()
+    intent = valid_intent("AUTO", "PREFERRED")
+    # Inside the region, but 0.18 m tall bottle at local z 0.16 leaves no room below the region top.
+    intent["place"]["placement"]["requested_local_pose"] = {"xyz_m": [0.05, 0.0, 0.16], "rpy_rad": [0.0, 0.0, 0.0]}
+    destinations = []
+    result = resolver.resolve_task_intent(intent, environment(), cell(), observations(),
+                                          lambda request: destinations.append(request["destination"]["pose_xyz"])
+                                          or pass_cycle(request), now=100.0)
+    assert result["readiness_status"] == "WARNING"   # an explicit, recorded fallback
+    assert destinations and all(xyz == [1.05, 2.0, 3.10] for xyz in destinations)   # default only
+    place = result["place_resolution"]
+    assert place["fallback"]["used"] is True and place["fallback"]["reason_code"] == "PLACE_OBJECT_DOES_NOT_FIT"
 
 
 def test_preferred_place_invalid_request_falls_back_to_region_default():

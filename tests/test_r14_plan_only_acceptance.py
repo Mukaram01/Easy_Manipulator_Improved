@@ -44,6 +44,28 @@ def test_process_exit_is_not_clean_if_moveit_crashed():
     assert acceptance.process_failures(clean + '\n' + crash) == [crash]
 
 
+# Actual ros2 launch lines from the owned ur5_2f_test fake-hardware shutdown (2026-10-28).
+LAUNCH_EXITS = '''[INFO] [ros2_control_node-3]: process has finished cleanly [pid 680540]
+[ERROR] [move_group-4]: process has died [pid 682130, exit code -11, cmd '/opt/ros/humble/lib/moveit_ros_move_group/move_group --ros-args']
+[ERROR] [rviz2-1]: process has died [pid 681167, exit code -11, cmd '/opt/ros/humble/lib/rviz2/rviz2 -d x']
+[ERROR] [spawner-8]: process has died [pid 681182, exit code -2, cmd 'spawner']'''
+
+
+def test_every_owned_exit_status_is_reported():
+    assert acceptance.process_exits(LAUNCH_EXITS) == [
+        dict(process='ros2_control_node', pid=680540, exit_code=0),
+        dict(process='move_group', pid=682130, exit_code=-11),
+        dict(process='rviz2', pid=681167, exit_code=-11),
+        dict(process='spawner', pid=681182, exit_code=-2)]
+
+
+def test_move_group_crash_is_an_unclean_shutdown_rviz_is_reported_separately():
+    exits = acceptance.process_exits(LAUNCH_EXITS)
+    assert acceptance.shutdown_failures(exits) == [dict(process='move_group', pid=682130, exit_code=-11)]
+    only_rviz = [e for e in exits if e['process'] != 'move_group']
+    assert acceptance.shutdown_failures(only_rviz) == []
+
+
 def executed_result():
     result = successful_result()
     result.update(result='PASS', selected_object_id='runtime::sample-cup', selected_grasp_index=3,

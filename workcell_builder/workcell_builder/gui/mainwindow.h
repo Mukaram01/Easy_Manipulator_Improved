@@ -206,6 +206,7 @@ private:
   void delete_selected_scene();
   bool is_safe_scene_path_for_trash_move(const boost::filesystem::path & scene_path, QString * reason = nullptr) const;
   void refresh_task_intent_panel();
+  void refresh_task_intent_summary();
   void refresh_epd_readiness_panel();
   void refresh_environment_task_editor();
   bool save_environment_task_editor(QString * error);

@@ -80,7 +80,11 @@ endif()
 add_library(workcell_support_contact SHARED src_support_contact_adapter.cpp)
 ament_target_dependencies(workcell_support_contact moveit_core moveit_ros_planning pluginlib joint_trajectory_controller)
 target_link_libraries(workcell_support_contact yaml-cpp)
-target_compile_options(workcell_support_contact PRIVATE -frounding-math -ffp-contract=off)
+# The controller-interval certificate is header-only interval arithmetic. Left
+# unoptimized (no build type), a UR5 approach took ~40 s instead of ~2.6 s and
+# longer transfers exceeded the 120 s planning watchdog. -frounding-math and
+# -ffp-contract=off keep directed rounding valid at -O2; the test uses the same.
+target_compile_options(workcell_support_contact PRIVATE -O2 -frounding-math -ffp-contract=off)
 pluginlib_export_plugin_description_file(moveit_core support_contact_plugins.xml)
 install(TARGETS workcell_support_contact LIBRARY DESTINATION lib)
 
@@ -392,7 +396,7 @@ if(BUILD_TESTING)
   target_include_directories(workcell_support_contact_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   ament_target_dependencies(workcell_support_contact_test moveit_core moveit_ros_planning pluginlib joint_trajectory_controller)
   target_link_libraries(workcell_support_contact_test yaml-cpp)
-  target_compile_options(workcell_support_contact_test PRIVATE -frounding-math -ffp-contract=off)
+  target_compile_options(workcell_support_contact_test PRIVATE -O2 -frounding-math -ffp-contract=off)
 
   ament_add_gtest(workcell_link_deletion_test test/link_deletion_test.cpp)
   ament_add_gtest(workcell_directory_inspection_test test/workcell_directory_inspection_test.cpp)

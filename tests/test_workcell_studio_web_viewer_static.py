@@ -4832,3 +4832,59 @@ assert.ok(near(s.x,0.2)&&near(s.y,0.2)&&near(s.z,0.5),JSON.stringify(s));
 `,context);
 """
     subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
+def test_primitive_placement_ghost_is_its_real_size_solid_resting_on_the_origin():
+    """A library box/cylinder has no mesh; its ghost must be physical so a click can place it on a support."""
+    js_path = VIEWER / "viewer.js"
+    three = VIEWER / "node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const THREE_MOD=require(process.argv[2]);
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',style:{},classList:{toggle(){},add(){},remove(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_MOD,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+THREE=THREE_MOD;state.three.scene=new THREE.Scene();
+const near=(a,b)=>Math.abs(a-b)<1e-6;
+for(const [asset,size] of [[{id:'pick_box',geometry_type:'box',dimensions:[0.08,0.1,0.12],mesh_uri:''},[0.08,0.1,0.12]],
+                           [{id:'cylinder',geometry_type:'cylinder',primitive:{radius:0.03,length:0.12,dimensions:[0.06,0.06,0.12]},mesh_uri:''},[0.06,0.06,0.12]]]){
+  armPlacement({asset});
+  const bounds=collectPlacementPreviewPhysicalBounds(state.placement.previewRoot).bounds;
+  assert.ok(bounds,asset.id+' ghost has physical bounds');
+  const s=bounds.getSize(new THREE.Vector3());
+  assert.ok(near(s.x,size[0])&&near(s.y,size[1])&&near(s.z,size[2]),asset.id+' '+JSON.stringify(s));
+  assert.ok(near(bounds.min.z,0),asset.id+' bottom face on the group origin '+bounds.min.z);
+  cancelPlacement();
+}
+// A mesh asset keeps the non-physical loading placeholder until its mesh loads.
+armPlacement({asset:{id:'mesh',mesh_uri:''}});
+assert.strictEqual(collectPlacementPreviewPhysicalBounds(state.placement.previewRoot).bounds,null);
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
+def test_placement_support_is_an_upward_face_not_a_side():
+    js_path = VIEWER / "viewer.js"
+    three = VIEWER / "node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const THREE_MOD=require(process.argv[2]);
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',style:{},classList:{toggle(){},add(){},remove(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_MOD,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+THREE=THREE_MOD;
+const hit=(normal,rotateX=0)=>{const o=new THREE.Object3D();o.rotation.x=rotateX;o.updateMatrixWorld(true);return {object:o,face:{normal:new THREE.Vector3(...normal)}};};
+assert.strictEqual(upwardPlacementSurfaceHit(hit([0,0,1])),true);           // table top
+assert.strictEqual(upwardPlacementSurfaceHit(hit([1,0,0])),false);          // table side
+assert.strictEqual(upwardPlacementSurfaceHit(hit([0,0,-1])),false);         // underside
+assert.strictEqual(upwardPlacementSurfaceHit(hit([0,1,0],Math.PI/2)),true);  // mesh modelled Y-up, placed Z-up
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)

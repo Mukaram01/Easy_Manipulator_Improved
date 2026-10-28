@@ -154,6 +154,9 @@ TEST(RvizPreviewMetadataCommandTest, SavedTaskUsesOneExistingSupervisorAndPlanOn
   auto scene = runnable_scene();
   const auto command = workcell_builder::build_full_cycle_command(scene, "/home/user/workcell_ws", "/tmp/cycle evidence", 201, true);
   EXPECT_TRUE(command.contains("run_r14_plan_only_acceptance.py"));
+  // The registered MoveIt teardown overlay precedes the workspace; no record sources nothing.
+  EXPECT_TRUE(command.startsWith("eval \"$(python3 '"));
+  EXPECT_TRUE(command.contains("qualified_physics_runtime.py' moveit-env)\" && source '/home/user/workcell_ws/install/local_setup.bash'"));
   EXPECT_TRUE(command.contains("--resolve-if-needed --stream-status"));
   EXPECT_FALSE(command.contains("--execute"));
   EXPECT_TRUE(command.contains("--scene-dir"));

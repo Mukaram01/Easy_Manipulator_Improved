@@ -17,6 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from grasp_strategy_candidates import generate_strategy_candidates
 from physical_destination import (
     RequestedLocalPoseError,
+    placement_fit_problems,
     resolve_destination,
     resolve_local_destination,
 )
@@ -204,6 +205,68 @@ def explain_observations(intent, environment, observations, now, max_age_cap=Non
     return decisions
 
 
+def _placement_fit(eligible, destinations, clearance, floor_z):
+    """Objects and destinations a placement can satisfy, before any motion is planned.
+
+    Returns (fitting objects, fitting destinations, {object id: first problem per destination}).
+    """
+    problems = {item["id"]: [placement_fit_problems(destination, item["dimensions"], clearance, floor_z)
+                             for destination in destinations] for item in eligible}
+    usable = [i for i in range(len(destinations)) if any(not found[i] for found in problems.values())]
+    fitting = [item for item in eligible if any(not problems[item["id"]][i] for i in usable)]
+    unfit = {key: [f"{destinations[i]['id']}: {found[i][0]}" for i in range(len(destinations)) if found[i]]
+             for key, found in problems.items() if any(found)}
+    return fitting, [destinations[i] for i in usable], unfit
+
+
+def place_destinations(intent, environment):
+    """The destinations resolve_task_intent plans: (requested or region, region default, fallback, ordered list).
+
+    EXACT outside the region raises RequestedLocalPoseError; PREFERRED records its region fallback.
+    """
+    target = intent["place"]["target"]
+    placement = intent["place"]["placement"]
+    destination = resolve_destination(environment, target["region_ref"])
+    default_destination = copy.deepcopy(destination)
+    if destination["target_id"] != target["asset_ref"]:
+        raise ValueError("Place target asset does not match the physical region target.")
+    fallback = {"used": False}
+    if placement["policy"] != "AUTO":
+        try:
+            destination = resolve_local_destination(
+                environment, target["asset_ref"], target["region_ref"],
+                placement["requested_local_pose"])
+        except RequestedLocalPoseError as exc:
+            if placement["policy"] == "EXACT":
+                raise
+            fallback = {"used": True, "reason_code": "PLACE_LOCAL_POSE_OUTSIDE_REGION", "reason": str(exc)}
+    destinations = [destination]
+    if (placement['policy'] == 'PREFERRED' and not fallback['used']
+            and (destination['pose_xyz'] != default_destination['pose_xyz'] or
+                 destination['pose_rpy'] != default_destination['pose_rpy'])):
+        destinations.append(default_destination)
+    return destination, default_destination, fallback, destinations
+
+
+def placement_fit_blocker(intent, environment, observations, destination_floor_z=None):
+    """Why none of these selected observations can be placed where the task plans, else None.
+
+    Destination errors are left to task validation, which reports them with their own code.
+    """
+    try:
+        destinations = place_destinations(intent, environment)[3]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+    fitting, _, unfit = _placement_fit(observations, destinations, intent["place"]["placement"]["clearance_m"],
+                                       destination_floor_z)
+    return None if fitting else "PLACE_OBJECT_DOES_NOT_FIT: " + _unfit_reason(unfit)
+
+
+def _unfit_reason(unfit):
+    key, problems = next(iter(unfit.items()))
+    return f"{key} cannot be placed at {problems[0]}."
+
+
 def _readiness(result, status, code, reason):
     result["readiness_status"] = status
     result["readiness"].update(primary_code=code, reason=reason)
@@ -211,12 +274,15 @@ def _readiness(result, status, code, reason):
     return result
 
 
-def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator, *, now, resolved=None) -> dict:
+def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator, *, now, resolved=None,
+                        destination_floor_z=None) -> dict:
     """Resolve deterministically; only the evaluator establishes cycle feasibility.
 
     Each evaluator request contains the normalized intent, installed cell,
     observation, generated candidate, strategy reference and physical destination.
     EXACT evaluates the first candidate once, without candidate substitution.
+    An object that cannot be contained at the destination (placement_fit_problems,
+    with the planner's floor seat ``destination_floor_z``) is refused before planning.
     """
     result = {
         "schema": "workcell_task_intent_resolution/v1",
@@ -275,24 +341,11 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
         return _readiness(result, "BLOCKED", "REQUIRED_CAPABILITY_UNAVAILABLE",
                           "Installed tool does not provide the required grasp capability.")
 
-    target = normalized["place"]["target"]
     try:
-        destination = resolve_destination(environment, target["region_ref"])
-        default_destination = copy.deepcopy(destination)
-        if destination["target_id"] != target["asset_ref"]:
-            raise ValueError("Place target asset does not match the physical region target.")
-        if placement["policy"] != "AUTO":
-            try:
-                destination = resolve_local_destination(
-                    environment, target["asset_ref"], target["region_ref"],
-                    placement["requested_local_pose"])
-            except RequestedLocalPoseError as exc:
-                if placement["policy"] == "EXACT":
-                    return _readiness(result, "BLOCKED", "PLACE_LOCAL_POSE_OUTSIDE_REGION", str(exc))
-                place_resolution["fallback"] = {
-                    "used": True, "reason_code": "PLACE_LOCAL_POSE_OUTSIDE_REGION",
-                    "reason": str(exc),
-                }
+        destination, default_destination, fallback, destinations = place_destinations(normalized, environment)
+        place_resolution["fallback"] = fallback
+    except RequestedLocalPoseError as exc:
+        return _readiness(result, "BLOCKED", "PLACE_LOCAL_POSE_OUTSIDE_REGION", str(exc))
     except (ValueError, TypeError, AttributeError, KeyError) as exc:
         return _readiness(result, "BLOCKED", "PHYSICAL_DESTINATION_INVALID", str(exc))
     local = destination["placement_local"]
@@ -331,6 +384,13 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                               'Observed objects changed; explicitly resolve the saved task again.')
         chosen = checked['grasp_resolution']
         observation = next(item for item in eligible if item['id'] == chosen['selected_object_id'])
+        try:
+            fitting, _, unfit = _placement_fit([observation], [checked['place_resolution']['destination']],
+                                               placement['clearance_m'], destination_floor_z)
+        except (ValueError, KeyError, TypeError) as exc:
+            return _readiness(checked, 'BLOCKED', 'PHYSICAL_DESTINATION_INVALID', str(exc))
+        if not fitting:
+            return _readiness(checked, 'BLOCKED', 'PLACE_OBJECT_DOES_NOT_FIT', _unfit_reason(unfit))
         try:
             effective_intent = _effective_intent_for_strategy(
                 normalized, chosen['selected_strategy_ref'])
@@ -375,11 +435,18 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
 
     preferred_failure = None
     last_failure = {"reason_code": "NO_FEASIBLE_CYCLE", "reason": "No complete cycle succeeded."}
-    destinations = [destination]
-    if (placement['policy'] == 'PREFERRED' and not place_resolution['fallback']['used']
-            and (destination['pose_xyz'] != default_destination['pose_xyz'] or
-                 destination['pose_rpy'] != default_destination['pose_rpy'])):
-        destinations.append(default_destination)
+    try:
+        eligible, fitting_destinations, unfit = _placement_fit(eligible, destinations, placement['clearance_m'],
+                                                              destination_floor_z)
+    except (ValueError, KeyError, TypeError) as exc:
+        return _readiness(result, 'BLOCKED', 'PHYSICAL_DESTINATION_INVALID', str(exc))
+    if unfit:
+        place_resolution['placement_fit'] = unfit
+    if not eligible:
+        return _readiness(result, 'BLOCKED', 'PLACE_OBJECT_DOES_NOT_FIT', _unfit_reason(unfit))
+    if not any(destinations[0] is item for item in fitting_destinations):
+        # The PREFERRED pose fits no eligible object; only its region default is planned.
+        last_failure = {'reason_code': 'PLACE_OBJECT_DOES_NOT_FIT', 'reason': _unfit_reason(unfit)}
     for destination_index, destination in enumerate(destinations):
         if destination_index:
             place_resolution['fallback'] = {'used': True, **last_failure}
@@ -389,6 +456,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                                      'rpy_rad': list(local.get('pose_rpy', local.get('pose', {}).get('rpy')))},
                 world_pose={'xyz_m': list(destination['pose_xyz']), 'rpy_rad': list(destination['pose_rpy'])},
                 destination=copy.deepcopy(destination))
+        if not any(destination is item for item in fitting_destinations):
+            continue
         for strategy in strategies:
             try:
                 effective_intent = _effective_intent_for_strategy(normalized, strategy)

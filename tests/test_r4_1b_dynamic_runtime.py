@@ -103,6 +103,23 @@ def test_the_qualified_runtime_record_is_revalidated_and_fails_closed(tmp_path):
     assert qpr.main(['env', '--workspace', str(tmp_path)]) == 2                   # env prints a failing shell line
 
 
+def test_planning_moveit_environment_sources_only_the_bound_teardown_overlay(tmp_path):
+    import qualified_physics_runtime as qpr
+    assert qpr.moveit_environment(tmp_path) == ''  # no record: installed MoveIt, reported by the runner
+    overlay = tmp_path / 'moveit overlay'
+    (overlay / 'install').mkdir(parents=True)
+    (overlay / 'install/setup.bash').write_text('')
+    manifest = overlay / 'provenance.json'
+    manifest.write_text('{}')
+    record = {'schema': qpr.SCHEMA, 'moveit_overlay': {'manifest': str(manifest),
+              'manifest_sha256': qpr._sha256(manifest)}}
+    (tmp_path / qpr.RECORD_NAME).write_text(json.dumps(record))
+    assert qpr.moveit_environment(tmp_path) == f"source '{overlay}/install/local_setup.bash'\n"
+    manifest.write_text('{"changed": true}')
+    with pytest.raises(qpr.RuntimeUnavailable, match='changed since qualification'):
+        qpr.moveit_environment(tmp_path)
+
+
 def test_the_shell_environment_comes_only_from_the_record():
     import qualified_physics_runtime as qpr
     record = dict(ros_setup='/opt/ros/humble/setup.bash', rmw_implementation='rmw_fastrtps_cpp',

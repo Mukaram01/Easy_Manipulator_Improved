@@ -303,3 +303,42 @@ def test_place_options_are_fixed_spread_places_described_from_the_robot():
     assert place_conflicts(destination, tight, cup, .005, [(world, cup)]) == []
     assert place_conflicts(destination, tight, cup, .005, [(world, cup)], PLACEMENT_TOLERANCE_M) == [0]
     assert place_options(destination, [.06, .06, .2], 0.) == []
+
+
+def ur5_2f_test_destination(clearance_axis_z=.01):
+    """default_drop_zone of ur5_2f_test with the GUI-authored EXACT place (0.01, 0, 0.01)."""
+    from physical_destination import resolve_local_destination
+    environment = {'assets': [{'id': 'target_bin_default', 'frame': 'world', 'pose_xyz': [.45, .22, .1],
+                               'pose_rpy': [0., 0., 0.], 'collision': {'enabled': True},
+                               'usable_placement': {'pose_xyz': [0., 0., .01], 'pose_rpy': [0., 0., 0.],
+                                                    'dimensions': [.24, .12, .14]}}],
+                   'task_zones': [{'id': 'default_drop_zone', 'target_ref': 'target_bin_default', 'frame': 'world',
+                                   'placement_local': {'pose_xyz': [0., 0., .01], 'pose_rpy': [0., 0., 0.],
+                                                       'dimensions': [.2, .1, .12]},
+                                   'pose_xyz': [.45, .22, .11], 'pose_rpy': [0., 0., 0.], 'dimensions': [.2, .1, .12]}]}
+    return resolve_local_destination(environment, 'target_bin_default', 'default_drop_zone',
+                                     {'xyz_m': [.01, 0., .01], 'rpy_rad': [0., 0., 0.]})
+
+
+def test_cup_with_no_room_for_the_planning_tolerance_is_refused_with_the_fix():
+    from physical_destination import placement_fit_problems
+    cup = [.06, .06, .10]   # 0.10 + 2 x 0.010 = 0.12 m region: 0 mm left on z
+    problems = placement_fit_problems(ur5_2f_test_destination(), cup, .010)
+    assert len(problems) == 1
+    assert problems[0].startswith('z of the placement region') and 'leaves 0.0 mm' in problems[0]
+    assert 'needs 3 mm' in problems[0] and 'at most 0.0070 m' in problems[0]
+    assert placement_fit_problems(ur5_2f_test_destination(), cup, .005) == []
+    assert placement_fit_problems(ur5_2f_test_destination(), cup, .007) == []   # exactly the tolerance
+
+
+def test_fit_uses_the_planners_floor_seat_and_unchanged_containment():
+    from physical_destination import check_object_containment, placement_fit_problems
+    destination = ur5_2f_test_destination()
+    # Seated on a floor 2 mm above the region bottom (0.05 m): 2 mm < 3 mm tolerance + 0 clearance.
+    assert placement_fit_problems(destination, [.06, .06, .05], 0., floor_z=.052)[0].startswith('z of')
+    assert placement_fit_problems(destination, [.06, .06, .05], 0., floor_z=.053) == []
+    assert 'no clearance fits' in placement_fit_problems(destination, [.06, .06, .13], 0.)[0]
+    # The planner's own post-plan check is unchanged: zero room passes, any further deviation fails.
+    check_object_containment(destination, [.46, .22, .11, 0, 0, 0, 1], [.06, .06, .10], clearance=.01)
+    with pytest.raises(ValueError, match='outside'):
+        check_object_containment(destination, [.46, .22, .110001, 0, 0, 0, 1], [.06, .06, .10], clearance=.01)
