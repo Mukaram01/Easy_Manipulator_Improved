@@ -8247,8 +8247,11 @@ void MainWindow::apply_scene_selection(const QString & id, const QString & role,
     refresh_selection_transform_editor_from_state(selected_item_state_);
   }
   if (scene_builder_right_panel_) {
-    apply_scene_builder_panel_visibility(
-      scene_builder_left_panel_ && !scene_builder_left_panel_->isHidden(), true);
+    // Selecting reveals a hidden Inspector; it must not re-apply remembered widths to
+    // panels that are already shown, or every selection makes the panels jump.
+    if (scene_builder_right_panel_->isHidden())
+      apply_scene_builder_panel_visibility(
+        scene_builder_left_panel_ && !scene_builder_left_panel_->isHidden(), true);
     if (scene_builder_inspector_tabs_) {
       const int selection_tab = 0;
       scene_builder_inspector_tabs_->setCurrentIndex(selection_tab);
