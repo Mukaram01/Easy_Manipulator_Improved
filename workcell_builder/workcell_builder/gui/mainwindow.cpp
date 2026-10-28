@@ -4034,14 +4034,18 @@ void MainWindow::setup_studio_shell()
     auto * process = new QProcess(this);
     (kind == "rviz" ? rviz_viewer_ : gazebo_viewer_) = process;
     connect(process, &QProcess::readyReadStandardOutput, this, [this, kind, process]() { consume_viewer_output(kind, process); });
-    connect(process, &QProcess::readyReadStandardError, this, [process]() { process->readAllStandardError(); });
+    connect(process, &QProcess::readyReadStandardError, this, [this, kind, process]() {
+      const auto lines = QString::fromUtf8(process->readAllStandardError()).trimmed().split('\n', Qt::SkipEmptyParts);
+      if (!lines.isEmpty()) viewer_stderr_tail_[kind] = lines.last().trimmed().left(300);
+    });
     connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
       [this, kind, process](int exit_code, QProcess::ExitStatus exit_status) {
         consume_viewer_output(kind, process);
         // The helper reports how its viewer ended; without that line, say what actually happened.
         if (!viewer_status_.value(kind).startsWith("CLOSED") && !viewer_status_.value(kind).startsWith("BLOCKED"))
-          viewer_status_[kind] = QString("CLOSED: viewer helper ended (exit code %1%2)").arg(exit_code)
-            .arg(exit_status == QProcess::CrashExit ? ", crashed" : "");
+          viewer_status_[kind] = QString("CLOSED: viewer helper ended (exit code %1%2)%3").arg(exit_code)
+            .arg(exit_status == QProcess::CrashExit ? ", crashed" : "",
+                 viewer_stderr_tail_.value(kind).isEmpty() ? QString() : ": " + viewer_stderr_tail_.value(kind));
         append_studio_log(QString("%1 viewer: %2").arg(kind, viewer_status_.value(kind)));
         refresh_viewer_controls();
       });
@@ -6883,7 +6887,7 @@ void MainWindow::open_viewer(const QString & kind)
   }
   const QString command = QString("source /opt/ros/humble/setup.bash && source %1 && exec python3 %2 %3")
     .arg(quote(detect_workspace_root() + "/install/setup.bash"), quote(script), args.join(' '));
-  viewer_status_[kind] = "Opening…";
+  viewer_status_[kind] = "Opening…"; viewer_stderr_tail_.remove(kind);
   append_studio_log(QString("%1 viewer: %2").arg(kind, command));
   process->start("/bin/bash", {"-c", command});
   refresh_viewer_controls();

@@ -134,8 +134,16 @@ def test_rviz_needs_a_live_move_group_and_never_starts_one():
 def test_rviz_loads_the_sessions_description_and_joint_states():
     tree = wv.nested({'robot_description': 'u', 'robot_description_kinematics.manipulator.kinematics_solver': 'k'})
     assert tree == {'robot_description': 'u', 'robot_description_kinematics': {'manipulator': {'kinematics_solver': 'k'}}}
-    command = wv.rviz_command('c.rviz', 'p.yaml', ['/physical_joint_states'])
-    assert command[:5] == ['ros2', 'run', 'rviz2', 'rviz2', '-d'] and 'joint_states:=/physical_joint_states' in command
+    command = wv.rviz_command('c.rviz', 'p.yaml', ['/physical_joint_states'], '/opt/rviz2')
+    assert command[:3] == ['/opt/rviz2', '-d', 'c.rviz'] and 'joint_states:=/physical_joint_states' in command
+    assert wv.rviz_executable().endswith('/lib/rviz2/rviz2')        # not `ros2 run`: its own exit status is reported
+    cell = (ROOT / 'scenes/ur5_2f_test/launch/demo.rviz').read_text()
+    displays = lambda c: {d['Class']: d for d in c['Visualization Manager']['Displays']}
+    session = displays(wv.session_rviz_config(cell, ['/monitored_planning_scene']))
+    assert session['moveit_rviz_plugin/PlanningScene']['Planning Scene Topic'] == '/monitored_planning_scene'
+    assert session['moveit_rviz_plugin/Trajectory'] == displays(wv.session_rviz_config(cell, []))['moveit_rviz_plugin/Trajectory']
+    unchanged = displays(wv.session_rviz_config(cell, ['/a', '/b']))       # ambiguous: the cell's own value stays
+    assert unchanged['moveit_rviz_plugin/PlanningScene']['Planning Scene Topic'] == '/moveit_cpp/publish_planning_scene'
     assert 'joint_states:=' not in ' '.join(wv.rviz_command('c.rviz', 'p.yaml', ['/a', '/b']))   # ambiguous: no guess
 
 

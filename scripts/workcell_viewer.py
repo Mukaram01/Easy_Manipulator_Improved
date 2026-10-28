@@ -31,6 +31,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 
 POLL_S = 0.5
+TOPIC_WAIT_S = 10.0
 SIGINT_GRACE_S = 5.0
 SIGTERM_GRACE_S = 2.0
 # Read from the live move_group so RViz loads exactly the robot that session plans for.
@@ -115,6 +116,14 @@ def nested(flat):
     return tree
 
 
+def move_group_topics(node, message_type, endpoints):
+    """Topics of a type that move_group's own nodes use. Its planning scene and state monitors run on private
+    nodes in the move_group process (move_group_private_*), so the owning node name is matched by prefix."""
+    return sorted(topic for topic, types in node.get_topic_names_and_types() if message_type in types
+                  and any(e.node_name == 'move_group' or e.node_name.startswith('move_group_private')
+                          for e in endpoints(topic)))
+
+
 def moveit_session(timeout=20.0):
     """Parameters and joint-state topic of the live move_group (the environment already selects its domain)."""
     import rclpy
@@ -123,6 +132,13 @@ def moveit_session(timeout=20.0):
     rclpy.init()
     node = rclpy.create_node('workcell_viewer_probe')
     try:
+        # A freshly started move_group answers services before every peer has discovered it: wait (bounded)
+        # until it is in this participant's graph, so the topic lookups below see it.
+        deadline = time.monotonic() + timeout
+        while ('move_group', '/') not in node.get_node_names_and_namespaces():
+            if time.monotonic() > deadline:
+                raise Blocked('MOVEIT_NOT_READY: move_group is not discoverable yet; open RViz again in a moment')
+            rclpy.spin_once(node, timeout_sec=0.2)
         def call(service, kind, request):
             client = node.create_client(kind, service)
             if not client.wait_for_service(timeout_sec=timeout):
@@ -139,16 +155,43 @@ def moveit_session(timeout=20.0):
         parameters = {name: parameter_value_to_python(value) for name, value in zip(names, values)}
         if not parameters.get('robot_description') or not parameters.get('robot_description_semantic'):
             raise Blocked('MOVEIT_NOT_READY: move_group has no robot description yet')
-        joint_states = sorted(topic for topic, types in node.get_subscriber_names_and_types_by_node('move_group', '/')
-                              if 'sensor_msgs/msg/JointState' in types)
-        return parameters, joint_states
+        # move_group creates its joint-state subscription and monitored-scene publisher as its planning scene
+        # monitor starts; wait (bounded) for them so RViz is wired to this session's own topics.
+        deadline = time.monotonic() + TOPIC_WAIT_S
+        while True:
+            joint_states = move_group_topics(node, 'sensor_msgs/msg/JointState', node.get_subscriptions_info_by_topic)
+            scenes = move_group_topics(node, 'moveit_msgs/msg/PlanningScene', node.get_publishers_info_by_topic)
+            if (joint_states and scenes) or time.monotonic() > deadline:
+                return parameters, joint_states, scenes
+            rclpy.spin_once(node, timeout_sec=0.2)
     finally:
         node.destroy_node()
         rclpy.shutdown()
 
 
-def rviz_command(config, params_file, joint_states):
-    command = ['ros2', 'run', 'rviz2', 'rviz2', '-d', str(config), '--ros-args', '-r', '__node:=workcell_viewer_rviz',
+def session_rviz_config(text, planning_scene_topics):
+    """The cell's RViz configuration with its PlanningScene display on the topic this move_group publishes.
+
+    Generated cells name /moveit_cpp/publish_planning_scene, which no Workcell Studio runtime publishes, so the
+    robot and scene never appeared. Only that property changes, and only when move_group publishes one scene."""
+    import yaml
+    config = yaml.safe_load(text)
+    if len(planning_scene_topics) != 1:
+        return config
+    for display in ((config.get('Visualization Manager') or {}).get('Displays') or []):
+        if display.get('Class') == 'moveit_rviz_plugin/PlanningScene':
+            display['Planning Scene Topic'] = planning_scene_topics[0]
+    return config
+
+
+def rviz_executable():
+    from ament_index_python.packages import get_package_prefix
+    return str(Path(get_package_prefix('rviz2')) / 'lib/rviz2/rviz2')
+
+
+def rviz_command(config, params_file, joint_states, executable='rviz2'):
+    # The executable itself (not `ros2 run`), so its own exit code or signal is what is reported.
+    command = [executable, '-d', str(config), '--ros-args', '-r', '__node:=workcell_viewer_rviz',
                '--params-file', str(params_file)]
     if len(joint_states) == 1:
         command += ['-r', f'joint_states:={joint_states[0]}', '-r', f'/joint_states:={joint_states[0]}']
@@ -234,16 +277,18 @@ def open_rviz(args):
     pid, info = find_move_group(domain)
     env = session_env(info['environ'], domain)
     os.environ.update({k: v for k, v in env.items() if k in SESSION_ENVIRONMENT})
-    parameters, joint_states = moveit_session()
-    params_file = Path(args.state_dir) / f'rviz_{domain}_{pid}.yaml'
-    params_file.parent.mkdir(parents=True, exist_ok=True)
+    parameters, joint_states, scenes = moveit_session()
     import yaml
+    state = Path(args.state_dir)
+    state.mkdir(parents=True, exist_ok=True)
+    params_file, config_file = state / f'rviz_{domain}_{pid}.yaml', state / f'rviz_{domain}_{pid}.rviz'
     params_file.write_text(yaml.safe_dump({'/**': {'ros__parameters': nested(parameters)}}))
+    config_file.write_text(yaml.safe_dump(session_rviz_config(Path(args.rviz_config).read_text(), scenes), sort_keys=False))
     start_ticks = info['start_ticks']
-    return supervise('rviz', rviz_command(args.rviz_config, params_file, joint_states), env,
+    return supervise('rviz', rviz_command(config_file, params_file, joint_states, rviz_executable()), env,
                      lambda: same_process(pid, start_ticks), domain=str(domain), move_group_pid=pid,
                      move_group_executable=info['command'].split(' ', 1)[0], use_sim_time=bool(parameters.get('use_sim_time')),
-                     joint_states=joint_states)
+                     joint_states=joint_states, planning_scene=scenes)
 
 
 def open_gazebo(args):
@@ -276,6 +321,9 @@ def main(argv=None):
     except Blocked as exc:
         emit(viewer=args.viewer, status='BLOCKED', reason=str(exc))
         return 2
+    except Exception as exc:                  # never fail silently: the reason reaches the Studio status line
+        emit(viewer=args.viewer, status='BLOCKED', reason=f'VIEWER_FAILED: {type(exc).__name__}: {exc}')
+        return 3
 
 
 if __name__ == '__main__':

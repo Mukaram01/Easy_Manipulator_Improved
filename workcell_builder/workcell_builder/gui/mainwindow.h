@@ -921,6 +921,7 @@ private:
   QProcess * rviz_viewer_{ nullptr };
   QProcess * gazebo_viewer_{ nullptr };
   QMap<QString, QString> viewer_status_;
+  QMap<QString, QString> viewer_stderr_tail_;   // last helper stderr line, shown if it ends without a status
   int plan_cycle_domain_{ -1 };       // ROS domain of the running Plan Saved Task session, else -1
   bool plan_cycle_rviz_{ false };     // that session already launched its own RViz
   // Live perception of the selected cell's bound camera through EPD (live_perception_session.py):
