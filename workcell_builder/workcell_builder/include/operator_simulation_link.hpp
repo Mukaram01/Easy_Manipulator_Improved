@@ -64,8 +64,9 @@ struct OperatorLinkState
   QString intent_sha256;      // normalized intent SHA-256 of the saved task the cell was generated from
   int request_revision{-1};   // latest request the Builder published to the HMI
   bool session_active{false}; // a Builder-owned planning or simulation session is running
-  QString session_id;         // id of the running physics session, if any
+  QString session_id;         // id of the running physics or sorting session, if any
   bool cancel_requested{false};
+  bool sorting_session{false}; // the running session is an R2.4 sorting session
 };
 
 struct OperatorCommandCheck
@@ -88,7 +89,7 @@ inline OperatorCommandCheck check_operator_command(const QJsonObject & command, 
     return refuse("the HMI shows another cell than the one selected in Workcell Builder; Refresh the HMI");
   if (command.value("request_revision").toInt(-2) != state.request_revision)
     return refuse("Workcell Builder has newer engineering state; Refresh the HMI before starting");
-  if (action == "run_simulation") {
+  if (action == "run_simulation" || action == "start_sorting") {
     if (state.session_active) return refuse("a session is already running; one simulation at a time");
     if (state.intent_sha256.isEmpty() || command.value("intent_sha256").toString() != state.intent_sha256)
       return refuse("the saved task shown in the HMI is not the one the cell was generated from; Save, Generate and Refresh");
@@ -98,6 +99,12 @@ inline OperatorCommandCheck check_operator_command(const QJsonObject & command, 
     if (!state.session_active || state.session_id.isEmpty()) return refuse("no simulation is running");
     if (command.value("session_id").toString() != state.session_id) return refuse("that simulation session is no longer running");
     if (state.cancel_requested) return refuse("cancellation was already requested");
+    return {true, {}};
+  }
+  if (action == "pause_sorting" || action == "resume_sorting" || action == "stop_sorting") {
+    // Applied by the session at its next cycle boundary; a stop is a software stop, never an emergency stop.
+    if (!state.session_active || state.session_id.isEmpty() || !state.sorting_session) return refuse("no sorting session is running");
+    if (command.value("session_id").toString() != state.session_id) return refuse("that sorting session is no longer running");
     return {true, {}};
   }
   return refuse("unknown action " + action);

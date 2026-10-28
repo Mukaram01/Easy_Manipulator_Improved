@@ -189,6 +189,26 @@ QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
     .arg(domain_id).arg(quote(output_dir), launch_rviz ? " --launch-rviz" : "", quote(QString::fromStdString(scene_info.scene_dir.string())));
 }
 
+QString build_sorting_session_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id,
+  const QString & control_file)
+{
+  if (scene_info.scene_name.empty() || scene_info.scene_dir.empty() || output_dir.isEmpty() || control_file.isEmpty() ||
+      domain_id < 0 || domain_id > 232) return {};
+  const auto quote = [](QString value) { return "'" + value.replace("'", "'\\''") + "'"; };
+  const auto supervisor = boost::filesystem::path(
+    preview_group_supervisor_path(scene_info, workspace_root).toStdString()).parent_path() /
+    "run_r14_plan_only_acceptance.py";
+  // The same owned supervisor as Plan Saved Task: one fake-hardware launch, the installed executor once per object.
+  return QString("eval \"$(python3 %1 moveit-env)\" && source %2 && "
+    "export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 && "
+    "exec python3 %3 --sorting-session --stream-status --timeout 7200 --domain-id %4 --output-dir %5 --control-file %6 --scene-dir %7")
+    .arg(quote(QString::fromStdString((supervisor.parent_path() / "qualified_physics_runtime.py").string())),
+      quote(QString::fromStdString((workspace_root / "install/local_setup.bash").string())),
+      quote(QString::fromStdString(supervisor.string())))
+    .arg(domain_id).arg(quote(output_dir), quote(control_file), quote(QString::fromStdString(scene_info.scene_dir.string())));
+}
+
 QString build_physics_cycle_command(const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root, const QString & output_dir)
 {

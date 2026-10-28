@@ -126,6 +126,11 @@ private slots:
   void run_full_cycle();
   void run_physics_cycle();
   void start_physics_cycle(bool operator_confirmed);
+  // R2.4 sorting session (fake hardware): start, and operator pause/resume/stop at cycle boundaries.
+  void run_sorting_session(bool operator_requested = false);
+  bool request_sorting_command(const QString & command, QString * error = nullptr);
+  QString sorting_blocker() const;
+  QString sorting_status_html() const;
   void handle_operator_command(const QJsonObject & command);
   void publish_operator_simulation_status();
   QJsonObject operator_simulation_readiness() const;
@@ -903,6 +908,15 @@ private:
   QCheckBox * cycle_rviz_box_{ nullptr };
   bool full_cycle_mode_{ false };
   bool physics_cycle_mode_{ false };
+  bool sorting_mode_{ false };
+  QJsonObject sorting_status_;            // the runner's latest {"event": "sorting"} status, never inferred
+  QString sorting_control_path_;
+  QJsonArray sorting_commands_;
+  QPushButton * run_sorting_button_{ nullptr };
+  QPushButton * pause_sorting_button_{ nullptr };
+  QPushButton * resume_sorting_button_{ nullptr };
+  QPushButton * stop_sorting_button_{ nullptr };
+  QLabel * sorting_state_label_{ nullptr };
   QString physics_cycle_blocker() const;
   // physics_cycle_preflight.py for the selected saved cell, re-run only when its saved or generated
   // inputs or the workspace's qualified runtime record change.

@@ -169,6 +169,24 @@ TEST(RvizPreviewMetadataCommandTest, SavedTaskUsesOneExistingSupervisorAndPlanOn
   EXPECT_FALSE(workcell_builder::build_full_cycle_command(scene, "/tmp/ws", "/tmp/out", 201, true).isEmpty());
 }
 
+TEST(RvizPreviewMetadataCommandTest, SortingSessionUsesTheSameSupervisorOnFakeHardwareWithAControlFile)
+{
+  auto scene = runnable_scene();
+  scene.scene_dir = "/home/user/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test";
+  const auto command = workcell_builder::build_sorting_session_command(scene, "/home/user/workcell_ws", "/tmp/sort out",
+                                                                       77, "/tmp/sort out/control.json");
+  EXPECT_TRUE(command.contains("run_r14_plan_only_acceptance.py' --sorting-session --stream-status"));
+  EXPECT_TRUE(command.contains("--control-file '/tmp/sort out/control.json'"));
+  EXPECT_TRUE(command.contains("--domain-id 77"));
+  EXPECT_FALSE(command.contains("--execute"));
+  EXPECT_FALSE(command.contains("ros2 launch"));
+  EXPECT_FALSE(command.contains("use_fake_hardware:=false"));
+  EXPECT_TRUE(command.contains("--scene-dir '/home/user/workcell_ws/src/easy_manipulation_deployment/scenes/ur5_2f_test'"));
+  EXPECT_TRUE(workcell_builder::build_sorting_session_command(scene, "/tmp/ws", "/tmp/out", 77, "").isEmpty());
+  scene.scene_dir.clear();
+  EXPECT_TRUE(workcell_builder::build_sorting_session_command(scene, "/tmp/ws", "/tmp/out", 77, "/tmp/c.json").isEmpty());
+}
+
 TEST(RvizPreviewMetadataCommandTest, PhysicsCycleRunsTheQualifiedRunnerOnTheSavedCellOnly)
 {
   auto scene = runnable_scene();

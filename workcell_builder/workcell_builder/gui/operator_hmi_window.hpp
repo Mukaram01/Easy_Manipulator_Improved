@@ -87,6 +87,7 @@ private:
   void check_simulation_status();
   void render_simulation();
   void request_simulation(const QString & action);
+  void render_sorting();
 
   OperatorHmiOptions options_;
   std::optional<OperatorPreviewRequest> request_;
@@ -159,6 +160,14 @@ private:
   QPushButton * sim_cancel_button_{nullptr};
   QLabel * sim_note_{nullptr};
   QLabel * sim_result_{nullptr};
+  // R2.4 sorting session (fake hardware), owned and run by Workcell Builder.
+  QLabel * sort_state_{nullptr};
+  QLabel * sort_note_{nullptr};
+  QLabel * sort_result_{nullptr};
+  QPushButton * sort_start_button_{nullptr};
+  QPushButton * sort_pause_button_{nullptr};
+  QPushButton * sort_resume_button_{nullptr};
+  QPushButton * sort_stop_button_{nullptr};
 
   // Events
   QTableWidget * events_{nullptr};

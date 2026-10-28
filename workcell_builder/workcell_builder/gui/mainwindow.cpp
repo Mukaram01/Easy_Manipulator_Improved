@@ -3696,6 +3696,23 @@ void MainWindow::setup_studio_shell()
   run_preview_button_ = new QPushButton("Run Full Cycle", preview); run_preview_button_->setObjectName("runFullCycle"); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   run_physics_button_ = new QPushButton("Run Physics Simulation Cycle", preview); run_physics_button_->setObjectName("runPhysicsCycle"); pl->addWidget(run_physics_button_);
   physics_state_label_ = new QLabel(preview); physics_state_label_->setObjectName("physicsCycleState"); physics_state_label_->setWordWrap(true); pl->addWidget(physics_state_label_);
+  {
+    // R2.4: continuous class-routed sorting of the saved cell on MoveIt fake hardware, one object per cycle.
+    auto * row = new QHBoxLayout;
+    run_sorting_button_ = new QPushButton("Start Sorting (Fake Hardware)", preview); run_sorting_button_->setObjectName("runSortingSession");
+    pause_sorting_button_ = new QPushButton("Pause", preview); pause_sorting_button_->setObjectName("pauseSortingSession");
+    resume_sorting_button_ = new QPushButton("Resume", preview); resume_sorting_button_->setObjectName("resumeSortingSession");
+    stop_sorting_button_ = new QPushButton("Stop at Cycle End", preview); stop_sorting_button_->setObjectName("stopSortingSession");
+    stop_sorting_button_->setToolTip("Software stop honoured at the next cycle boundary (robot home, nothing held). Not an emergency stop.");
+    for (auto * button : {run_sorting_button_, pause_sorting_button_, resume_sorting_button_, stop_sorting_button_}) row->addWidget(button);
+    row->addStretch(1); pl->addLayout(row);
+    sorting_state_label_ = new QLabel(preview); sorting_state_label_->setObjectName("sortingSessionState"); sorting_state_label_->setWordWrap(true);
+    pl->addWidget(sorting_state_label_);
+    connect(run_sorting_button_, &QPushButton::clicked, this, [this] { run_sorting_session(false); });
+    connect(pause_sorting_button_, &QPushButton::clicked, this, [this] { request_sorting_command("pause"); });
+    connect(resume_sorting_button_, &QPushButton::clicked, this, [this] { request_sorting_command("resume"); });
+    connect(stop_sorting_button_, &QPushButton::clicked, this, [this] { request_sorting_command("stop"); });
+  }
   pl->addWidget(new QLabel("<b>Engineering Visualization</b><br/>Attach RViz or the Gazebo viewer to the running session. "
                            "Viewers only show it: closing one never stops the session, and none can move the robot."));
   open_rviz_button_ = new QPushButton("Open RViz", preview); open_rviz_button_->setObjectName("openRvizViewer"); pl->addWidget(open_rviz_button_);
@@ -6334,6 +6351,20 @@ void MainWindow::refresh_preview_launch_ui()
     run_preview_button_->setToolTip(blockers.join("\n"));
   }
   if (full_cycle_mode_ && busy && run_build_button_) run_build_button_->setEnabled(false);
+  if (run_sorting_button_) {
+    const auto sort_blocker = sorting_blocker();
+    const bool can_start = has_scene && current.ready && blockers.isEmpty() && !busy && sort_blocker.isEmpty();
+    run_sorting_button_->setEnabled(can_start);
+    run_sorting_button_->setToolTip(can_start ? "Sorts every eligible object of the saved routing table, one cycle each, on fake hardware."
+                                              : (!sort_blocker.isEmpty() ? sort_blocker : busy ? QString("A session is running.") : blockers.join("\n")));
+    const QString state = sorting_mode_ && busy ? sorting_status_.value("state").toString() : QString();
+    pause_sorting_button_->setEnabled(state == "RUNNING");
+    resume_sorting_button_->setEnabled(state == "PAUSED" || state == "PAUSING");
+    stop_sorting_button_->setEnabled(state == "RUNNING" || state == "PAUSING" || state == "PAUSED" || state == "READY");
+    sorting_state_label_->setText(sorting_status_html().isEmpty()
+      ? (sort_blocker.isEmpty() ? QString("<b>Sorting session</b>: ready to start (fake hardware)") : "<b>Sorting session</b>: " + sort_blocker.toHtmlEscaped())
+      : sorting_status_html());
+  }
   if (cycle_rviz_box_) cycle_rviz_box_->setEnabled(!busy);
   if (stop_preview_button_) { stop_preview_button_->setVisible(busy); stop_preview_button_->setEnabled(busy && !preview_stop_requested_); }
   // Highlight only the action the saved task selects, and only while it can run: the primary style would
@@ -6800,6 +6831,12 @@ void MainWindow::consume_cycle_output(const QString & output)
           " · Real robot motion: locked");
     }
     if (event.value("event").toString() == "cycle_result") cycle_result_ = event.value("summary").toObject();
+    if (event.value("event").toString() == "sorting") {
+      sorting_status_ = event.value("status").toObject();
+      if (!event.value("cycle_outcome").toString().isEmpty())
+        monitor_.timeline = workcell_builder::MonitorTimeline();      // each sorting cycle has its own stages
+      refresh_preview_launch_ui();
+    }
   }
   refresh_monitor();
 }
@@ -6929,6 +6966,7 @@ void MainWindow::begin_monitor(const QString & kind)
     task.exclude.isEmpty() ? QString() : " (excluding " + task.exclude.join(", ") + ")",
     task.destination == " / " ? QString("Not available") : task.destination, task.placement.isEmpty() ? QString("?") : task.placement);
   monitor_.backend = kind == "physics" ? "Qualified physics simulation (Gazebo Fortress / DART, simulated robot)"
+                   : kind == "sorting" ? "MoveIt fake hardware — sorting session, mock controllers execute (kinematic; no physics)"
                                        : "MoveIt fake hardware — plan only, trajectory execution disabled";
   monitor_.started = QDateTime::currentDateTime();
 }
@@ -6947,7 +6985,11 @@ QJsonObject MainWindow::monitor_snapshot() const
   if (!finished) {
     if (monitor_.cancel_requested.isValid()) { code = "CANCELLING"; state = "CANCELLING — cleanup in progress (unconfirmed)"; }
     else if (physics) { code = "RUNNING"; state = t.last_motion ? "RUNNING — simulated robot moving" : "RUNNING — no motion (" + (t.current.isEmpty() ? QString("starting") : t.current.toLower()) + ")"; }
+    else if (monitor_.kind == "sorting") { code = sorting_status_.value("state").toString("STARTING"); state = "SORTING " + code + " — fake hardware, mock controllers"; }
     else { code = "RUNNING"; state = "RUNNING — planning on fake hardware, no motion"; }
+  } else if (monitor_.kind == "sorting") {
+    code = sorting_status_.value("state").toString(result == "PASS" ? "STOPPED" : "FAULT");
+    state = "SORTING " + code + (code == "STOPPED" ? " — " + sorting_status_.value("state_reason").toString() : QString());
   } else if (result == "PASS") { code = "COMPLETED"; state = physics ? "COMPLETED" : "COMPLETED — plan only, nothing executed"; }
   else if (result == "CANCELLED" || monitor_.cancel_requested.isValid()) {
     code = "CANCELLED";
@@ -6962,6 +7004,7 @@ QJsonObject MainWindow::monitor_snapshot() const
   if (monitor_.cancel_requested.isValid()) process += " · cancel requested " + monitor_.cancel_requested.toString("HH:mm:ss");
   QString robot;
   if (finished) robot = "stopped (session ended)";
+  else if (monitor_.kind == "sorting") robot = t.last_motion ? "fake-hardware robot executing " + t.last_stage : "no motion (" + (t.current.isEmpty() ? QString("between cycles") : t.current.toLower()) + ")";
   else if (!physics) robot = "no motion — plan only";
   else robot = t.last_motion ? "simulated robot executing " + t.last_stage : "no motion";
   QString gripper = "Not available";
@@ -6982,7 +7025,15 @@ QJsonObject MainWindow::monitor_snapshot() const
     {"robot", robot}, {"gripper", gripper},
     {"selected_object", cycle_result_.value("selected_object_id").toString(finished ? "Not available" : "pending resolution")},
     {"rejected", rejected}, {"cancel_requested", monitor_.cancel_requested.isValid()}, {"evidence", monitor_.output}};
-  if (finished) {
+  if (monitor_.kind == "sorting") snapshot["sorting"] = sorting_status_;
+  if (finished && monitor_.kind == "sorting") {
+    const auto fault = sorting_status_.value("fault").toObject();
+    if (!fault.isEmpty() || result != "PASS") {
+      const auto d = workcell_builder::diagnose_failure(fault.isEmpty() ? cycle_result_.value("failure").toString()
+                                                                         : fault.value("code").toString() + ": " + fault.value("reason").toString());
+      snapshot["diagnosis"] = QJsonObject{{"code", d.code}, {"meaning", d.meaning}, {"action", d.action}};
+    }
+  } else if (finished) {
     snapshot["outcome_lines"] = cycle_result_.contains("result")
       ? QJsonArray::fromStringList(workcell_builder::monitor_outcome_lines(cycle_result_, physics))
       : QJsonArray{"Outcome: Not available — the runner ended without reporting a result."};
@@ -7006,6 +7057,7 @@ void MainWindow::refresh_monitor()
     .arg(e(s["state"]), e(s["started"]), e(s["cell"]), e(s["task"]), e(s["backend"]), e(s["process"]), s["timeline_html"].toString(), e(s["last_event"]))
     .arg(monitor_.origin == "Operator HMI" ? QString(" · started from the Operator HMI") : QString());
   text += QString("<br/>Robot: %1 · Gripper: %2 · Selected object: %3").arg(e(s["robot"]), e(s["gripper"]), e(s["selected_object"]));
+  if (s.contains("sorting")) text += "<br/>" + sorting_status_html();
   QStringList not_picked; for (const auto & r : s["rejected"].toArray()) not_picked << r.toString();
   if (!not_picked.isEmpty()) text += "<br/>Not selected: " + not_picked.join("; ").toHtmlEscaped();
   for (const auto & line : s["outcome_lines"].toArray()) text += "<br/>" + line.toString().toHtmlEscaped();
@@ -7023,6 +7075,90 @@ void MainWindow::refresh_monitor()
   monitor_view_->setHtml(text);
   monitor_view_->verticalScrollBar()->setValue(scroll);
   monitor_view_->show();
+}
+
+QString MainWindow::sorting_blocker() const
+{
+  if (!has_selected_scene()) return "Select a saved cell.";
+  const auto task = saved_task_summary(selected_scene_path());
+  if (task.routes.isEmpty()) return "The saved task has no class routing table (Task > Where > Route by class).";
+  if (task.backend != "fake")
+    return "SORTING_PHYSICS_UNQUALIFIED: sorting sessions run on MoveIt fake hardware; no multi-object, multi-destination "
+           "physics world is qualified. Select fake hardware in Task > Run.";
+  if (layout_dirty_ || (environment_task_editor_ && environment_task_editor_->dirty())) return "Save the cell first: it has unsaved changes.";
+  return {};
+}
+
+QString MainWindow::sorting_status_html() const
+{
+  if (sorting_status_.isEmpty()) return {};
+  const auto e = [](const QString & v) { return v.toHtmlEscaped(); };
+  const auto counts = sorting_status_.value("counts").toObject();
+  const auto active = sorting_status_.value("active").toObject();
+  QString text = QString("<b>Sorting session %1</b> · %2").arg(e(sorting_status_.value("state").toString()),
+    e(sorting_status_.value("state_reason").toString()));
+  text += active.isEmpty() ? QString("<br/>Active object: none (between cycles)")
+    : QString("<br/>Active object: <b>%1</b> (%2) → %3 · cycle %4, attempt %5 · stage %6").arg(
+        e(active.value("id").toString()), e(active.value("class_id").toString()), e(active.value("destination").toString()))
+      .arg(active.value("cycle").toInt()).arg(active.value("attempt").toInt())
+      .arg(e(sorting_status_.value("stage").toString("starting")));
+  text += QString("<br/>Completed: <b>%1</b> · Failed: <b>%2</b> · Skipped (unrouted/disabled): %3 · Waiting (destination full): %4 · Pending: %5 · Cycles: %6")
+    .arg(counts.value("completed").toInt()).arg(counts.value("failed").toInt()).arg(counts.value("skipped").toInt())
+    .arg(counts.value("waiting_destination_full").toInt()).arg(counts.value("pending").toInt()).arg(counts.value("cycles").toInt());
+  QStringList classes, bins;
+  const auto per_class = counts.value("per_class").toObject();
+  for (auto it = per_class.begin(); it != per_class.end(); ++it) {
+    const auto row = it.value().toObject();
+    classes << QString("%1 %2✓ %3✗%4").arg(e(it.key())).arg(row.value("completed").toInt()).arg(row.value("failed").toInt())
+      .arg(row.value("skipped").toInt() ? QString(" %1 skipped").arg(row.value("skipped").toInt()) : QString());
+  }
+  const auto per_destination = counts.value("per_destination").toObject();
+  for (auto it = per_destination.begin(); it != per_destination.end(); ++it) bins << QString("%1: %2").arg(e(it.key())).arg(it.value().toInt());
+  if (!classes.isEmpty()) text += "<br/>Per class: " + classes.join(" · ");
+  text += "<br/>Per destination: " + (bins.isEmpty() ? QString("none yet") : bins.join(" · "));
+  const auto fault = sorting_status_.value("fault").toObject();
+  if (!fault.isEmpty()) {
+    const auto d = workcell_builder::diagnose_failure(fault.value("code").toString() + ": " + fault.value("reason").toString());
+    text += QString("<br/><b>FAULT %1</b>: %2%3").arg(e(fault.value("code").toString()), e(fault.value("reason").toString()),
+      d.action.isEmpty() ? QString() : "<br/>What to do: " + e(d.action));
+  }
+  text += "<br/>" + e(sorting_status_.value("execution").toString()) + " · " + e(sorting_status_.value("stop_semantics").toString());
+  return text;
+}
+
+void MainWindow::run_sorting_session(bool operator_requested)
+{
+  if (!selected_scene_readiness().ready || !has_selected_scene() || preview_process_->state() != QProcess::NotRunning) return;
+  if (!sorting_blocker().isEmpty()) { refresh_preview_launch_ui(); return; }
+  begin_monitor("sorting");
+  if (operator_requested) monitor_.origin = "Operator HMI";
+  sorting_status_ = QJsonObject(); sorting_commands_ = QJsonArray();
+  cycle_output_dir_ = detect_workspace_root() + "/log/studio_sorting/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  sorting_control_path_ = cycle_output_dir_ + "/sorting_control.json";
+  QDir().mkpath(cycle_output_dir_);
+  sorting_mode_ = true;
+  run_preview_build();                                     // the same build / package-check pipeline as Plan Saved Task
+  if (preview_state_ != "BUILD_RUNNING") { sorting_mode_ = false; monitor_ = RuntimeMonitorSession(); refresh_monitor(); return; }
+  full_cycle_mode_ = true;
+  cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
+  cycle_status_label_->setText("Building saved scene for the sorting session…<br/>Fake hardware only · Real robot motion: locked");
+  monitor_.output = cycle_output_dir_;
+  refresh_preview_launch_ui(); refresh_monitor();
+}
+
+bool MainWindow::request_sorting_command(const QString & command, QString * error)
+{
+  // Operator commands go to the running session's control file; the session applies them at cycle boundaries.
+  const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
+  if (!sorting_mode_ || !busy || sorting_control_path_.isEmpty()) { if (error) *error = "no sorting session is running"; return false; }
+  sorting_commands_.append(QJsonObject{{"seq", sorting_commands_.size() + 1}, {"command", command},
+                                       {"at", QDateTime::currentDateTime().toString(Qt::ISODate)}});
+  QSaveFile file(sorting_control_path_);
+  if (!file.open(QIODevice::WriteOnly)) { if (error) *error = "cannot write the session control file"; return false; }
+  file.write(QJsonDocument(QJsonObject{{"commands", sorting_commands_}}).toJson(QJsonDocument::Compact));
+  if (!file.commit()) { if (error) *error = "cannot write the session control file"; return false; }
+  append_studio_log(QString("Sorting session: %1 requested (applied at the cycle boundary)").arg(command));
+  return true;
 }
 
 void MainWindow::refresh_viewer_controls()
@@ -7186,7 +7322,8 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
       if (cycle_result_.value("shutdown_clean").toBool() || shutdown.value("clean").toBool()) timeline.reach("Shutdown");
     }
     const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
-      cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_plan_success").toBool() &&
+      cycle_result_.value("result").toString() == "PASS" &&
+      (sorting_mode_ || cycle_result_.value("full_cycle_plan_success").toBool()) &&
       cycle_result_.value("shutdown_clean").toBool() &&
       (!physics_cycle_mode_ || cycle_result_.value("full_cycle_execution_success").toBool());
     const bool physics_run = physics_cycle_mode_;
@@ -7203,10 +7340,13 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
                      "Ended without a reported result: " + cycle_result_.value("failure").toString()).toHtmlEscaped() +
         "<br/>Evidence: " + cycle_output_dir_.toHtmlEscaped());
     physics_cycle_mode_ = false;
+    const bool sorting_run = sorting_mode_;
+    sorting_mode_ = false;
     set_preview_state(pass ? "CYCLE_PASS" : "CYCLE_FAILED");
     preview_running_scene_key_.clear();
     // A physics run copies the saved cell; it never resolves into it, so nothing is regenerated.
-    if (pass && !physics_run && !close_after_preview_stop_ && has_selected_scene()) {
+    // A sorting session writes no task resolution (per-cycle evidence only), so it regenerates nothing either.
+    if (pass && !physics_run && !sorting_run && !close_after_preview_stop_ && has_selected_scene()) {
       const auto & selected = scene_browser_result_.scenes[(size_t)selected_scene_index_];
       if (workcell_builder::canonical_scene_identity(selected.scene_dir) ==
           workcell_builder::canonical_scene_identity(active_preview_scene_.scene_dir)) {
@@ -7242,8 +7382,11 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
       }
       plan_cycle_domain_ = QRandomGenerator::global()->bounded(30, 220); plan_cycle_rviz_ = cycle_rviz_box_->isChecked();
       viewer_status_.clear();                         // statuses belong to the session they describe
-      active_preview_command_ = workcell_builder::build_full_cycle_command(active_preview_scene_,
-        active_preview_workspace_root_.toStdString(), cycle_output_dir_, plan_cycle_domain_, plan_cycle_rviz_);
+      active_preview_command_ = sorting_mode_
+        ? workcell_builder::build_sorting_session_command(active_preview_scene_, active_preview_workspace_root_.toStdString(),
+            cycle_output_dir_, plan_cycle_domain_, sorting_control_path_)
+        : workcell_builder::build_full_cycle_command(active_preview_scene_,
+            active_preview_workspace_root_.toStdString(), cycle_output_dir_, plan_cycle_domain_, plan_cycle_rviz_);
       if (active_preview_command_.isEmpty()) { set_preview_state("CYCLE_FAILED"); return; }
       set_preview_state("PREVIEW_LAUNCHING");
       preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); return;
@@ -7378,10 +7521,19 @@ QJsonObject MainWindow::operator_simulation_readiness() const
     if (definition["normalized_intent_sha256"]) intent = QString::fromStdString(definition["normalized_intent_sha256"].as<std::string>());
   } catch (const std::exception &) {}
   const auto d = workcell_builder::diagnose_failure(blocker);
+  // Sorting (R2.4, fake hardware) has its own gates: a saved routing table and the fake backend.
+  QString sorting = preview_process_ && preview_process_->state() != QProcess::NotRunning ? QString("A session is running in Workcell Builder.")
+                                                                                          : sorting_blocker();
+  if (sorting.isEmpty()) {
+    const auto readiness = selected_scene_readiness();
+    if (!readiness.ready) sorting = readiness.blockers.isEmpty() ? QString("Generate and Validate the saved cell first.") : readiness.blockers.join("; ");
+  }
+  if (sorting.isEmpty() && intent.isEmpty()) sorting = "The cell has no generated task: Generate it in Workcell Builder.";
   return QJsonObject{{"ready", blocker.isEmpty() && !intent.isEmpty()},
     {"blocker", blocker.isEmpty() && intent.isEmpty() ? QString("The cell has no generated task: Generate it in Workcell Builder.") : blocker},
     {"action", blocker.isEmpty() || d.code == "UNCLASSIFIED" ? QString() : d.action},
-    {"backend", physics_preflight().value("backend").toString()}, {"intent_sha256", intent}};
+    {"backend", physics_preflight().value("backend").toString()}, {"intent_sha256", intent},
+    {"sorting", QJsonObject{{"ready", sorting.isEmpty()}, {"blocker", sorting}}}};
 }
 
 void MainWindow::publish_operator_simulation_status()
@@ -7406,12 +7558,15 @@ void MainWindow::handle_operator_command(const QJsonObject & command)
   state.intent_sha256 = readiness.value("intent_sha256").toString();
   state.request_revision = operator_preview_launcher_ ? operator_preview_launcher_->latest_revision() : -1;
   state.session_active = preview_process_ && preview_process_->state() != QProcess::NotRunning;
-  if (state.session_active && physics_cycle_mode_ && !monitor_.output.isEmpty()) state.session_id = QFileInfo(monitor_.output).fileName();
+  if (state.session_active && (physics_cycle_mode_ || sorting_mode_) && !monitor_.output.isEmpty()) state.session_id = QFileInfo(monitor_.output).fileName();
+  state.sorting_session = sorting_mode_;
   state.cancel_requested = preview_stop_requested_;
   auto check = workcell_builder::check_operator_command(command, state);
   const QString action = command.value("action").toString();
   if (check.accepted && action == "run_simulation" && !readiness.value("ready").toBool())
     check = {false, readiness.value("blocker").toString()};
+  if (check.accepted && action == "start_sorting" && !readiness.value("sorting").toObject().value("ready").toBool())
+    check = {false, readiness.value("sorting").toObject().value("blocker").toString()};
   if (check.accepted && action == "run_simulation" && (layout_dirty_ || (environment_task_editor_ && environment_task_editor_->dirty())))
     check = {false, "Workcell Builder has unsaved edits; only a saved, generated task may run"};
   last_operator_command_ = QJsonObject{{"id", command.value("id").toInt()}, {"action", action},
@@ -7425,6 +7580,14 @@ void MainWindow::handle_operator_command(const QJsonObject & command)
     }
   } else if (check.accepted && action == "cancel_simulation") {
     stop_preview_process();             // the existing supervised cancellation (not an emergency stop)
+  } else if (check.accepted && action == "start_sorting") {
+    run_sorting_session(true);
+    if (!sorting_mode_) { last_operator_command_["accepted"] = false; last_operator_command_["reason"] = "Workcell Builder could not start the session."; }
+  } else if (check.accepted && action.endsWith("_sorting")) {
+    QString error;
+    if (!request_sorting_command(action.section('_', 0, 0), &error)) {
+      last_operator_command_["accepted"] = false; last_operator_command_["reason"] = error;
+    }
   }
   publish_operator_simulation_status();
 }
