@@ -1648,7 +1648,9 @@ def main():
         if client is execute_client:
             cross_check_gate.require_clear()   # last precondition: a cross-check deferred during planning must pass now
         opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
-        held_before_open=contact_guard.checked_current() if opening_action else None
+        # The measured release qualification needs the simulator's contact guard; fake hardware has none.
+        measured_release=opening_action and contact_guard is not None
+        held_before_open=contact_guard.checked_current() if measured_release else None
         if client is execute_client:
             from rosidl_runtime_py.convert import message_to_ordereddict
             trajectory_evidence=message_to_ordereddict(goal.trajectory)
@@ -1690,13 +1692,13 @@ def main():
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
                 stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
                 monotonic_raw_ns=measurement_clock.now_ns(),trajectory=trajectory_evidence)
-            if opening_action:
+            if measured_release:
                 summary['owned_execution_goal'].update(run_id=measurements.receipt['run_id'],
                     target=selected_id,resolution_sha256=summary['resolution_sha256'],
                     execution_attempt=contact_guard.pile_binding['execution_attempt'],
                     selected_grasp_index=summary['selected_grasp_index'])
         try:
-            if opening_action:
+            if measured_release:
                 contact_guard.phase='opening'
                 contact_guard.begin_release(summary['owned_execution_goal'],held_before_open)
                 summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
@@ -1829,7 +1831,7 @@ def main():
         response = future.result()
         if response.status != 4 or response.result.error_code.val != 1:
             raise MoveItActionFailure(response.status, response.result.error_code.val)
-        if opening_action:
+        if measured_release:
             contact_guard.terminal_release(bytes(owned_uuid).hex(),response.status,
                                            response.result.error_code.val,time.time_ns(),measurement_clock.now_ns())
             summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
