@@ -857,7 +857,7 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
 def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         contract, operations, deadline, summary, resolved=None,
                         planning_time=3.0, retry_candidate_budget=20.0,
-                        discovery_candidate_budget=0.75, reserve_retry_budget=False):
+                        discovery_candidate_budget=0.75, reserve_retry_budget=False, occupied=None):
     """Resolve with fair discovery, then spend retries only on stochastic failures.
 
     A fresh resolve normally gives every candidate one bounded planning window
@@ -1011,7 +1011,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                                           planning_attempts=3, segment_time=float(planning_time),
                                           candidate_budget=None),
             now=resolution_reference_time, resolved=resolved,
-            destination_floor_z=contract.get('destination_floor_z'))
+            destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
         summary['candidate_search'] = {
             'mode': 'resolved_revalidation',
             'retry_pass_used': False,
@@ -1122,7 +1122,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             resolution = resolve_task_intent(
                 intent, environment, cell, targets, discover,
                 now=resolution_reference_time, resolved=None,
-                destination_floor_z=contract.get('destination_floor_z'))
+                destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
 
             phase_record = {
                 'strategy_ref': strategy,
@@ -1202,7 +1202,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, retry,
                     now=resolution_reference_time, resolved=None,
-                    destination_floor_z=contract.get('destination_floor_z'))
+                    destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
                 current = evaluation_cache.get(selected_key, {})
                 attempt = {
                     'strategy_ref': selected_key[0],
@@ -1234,7 +1234,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
                     now=resolution_reference_time, resolved=None,
-                    destination_floor_z=contract.get('destination_floor_z'))
+                    destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
                 phase_record.update(
                     resumed_discovered_candidates=len(phase_discovered) - before_resume,
                     discovered_candidates=len(phase_discovered),
@@ -1257,7 +1257,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
                     now=resolution_reference_time, resolved=None,
-                    destination_floor_z=contract.get('destination_floor_z'))
+                    destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
                 phase_record.update(
                     equivalent_candidates_evaluated=len(phase_discovered) - before_aliases,
                     discovered_candidates=len(phase_discovered),
@@ -1392,12 +1392,18 @@ def observation_geometry_matches(observed, actual):
             and min(math.dist(a[3:], b[3:]), math.dist(a[3:], [-v for v in b[3:]])) <= 1e-7)
 
 
-def observations_to_insert(objects,existing,backend):
+def observations_to_insert(objects,existing,backend,reconcile=False):
+    """Observations not yet in the live PlanningScene.
+
+    A sorting session (`reconcile`) keeps its world between cycles, like the simulator: every runtime object
+    already in the scene must be one of these observations with identical geometry, else the session's
+    reconciled world and MoveIt disagree and nothing is planned.
+    """
     ids={o['id'] for o in objects}
     duplicates=ids.intersection(existing)
-    if backend!='simulator' and duplicates:
+    if backend!='simulator' and duplicates and not reconcile:
         raise RuntimeError('runtime IDs already exist; reset the fake scene before replay')
-    if backend=='simulator':
+    if backend=='simulator' or reconcile:
         if {k for k in existing if k.startswith('runtime::')}-ids:
             raise RuntimeError('unknown prior simulator runtime objects require measured reconciliation')
         if any(not observation_geometry_matches(o,existing[o['id']]) for o in objects if o['id'] in duplicates):
@@ -1526,11 +1532,18 @@ def main():
                         'operator-chosen target-local places {"xyz_m": [...], "rpy_rad": [...]}; others use AUTO.')
     parser.add_argument('--target-object-id', help='Plan-only batch check: restrict the pick target to this eligible '
                         'observation. Every observed object is still inserted as a PlanningScene obstacle.')
+    parser.add_argument('--sorting-cycle', help='R2.4 sorting session cycle (JSON {session_id, cycle}): resolve and execute '
+                        'only --target-object-id on fake hardware, in the session\'s reconciled world, with every other '
+                        'object as an obstacle and destination occupancy. Writes no task artifacts.')
     args = parser.parse_args()
+    sorting_cycle = json.loads(args.sorting_cycle) if args.sorting_cycle else None
+    if sorting_cycle is not None and (args.backend != 'fake' or not args.resolve_task or args.target_object_id is None
+                                      or args.sequence_object_ids is not None):
+        parser.error('--sorting-cycle is fake-hardware only and requires --resolve-task and --target-object-id')
     if args.sequence_placements is not None and args.sequence_object_ids is None:
         parser.error('--sequence-placements requires --sequence-object-ids')
-    if args.target_object_id is not None and (args.start or not args.resolve_task):
-        parser.error('--target-object-id is plan-only and requires --resolve-task without --start')
+    if args.target_object_id is not None and ((args.start and sorting_cycle is None) or not args.resolve_task):
+        parser.error('--target-object-id is plan-only (or a --sorting-cycle) and requires --resolve-task')
     if args.sequence_object_ids is not None and (args.start or not args.resolve_task or args.target_object_id):
         parser.error('--sequence-object-ids is plan-only, requires --resolve-task and excludes --target-object-id')
     if not math.isfinite(args.segment_planning_time) or not 0 < args.segment_planning_time <= 10:
@@ -2515,6 +2528,8 @@ def main():
                 rejected.update({o['id']: 'not_batch_target_retained_as_obstacle' for o in objects
                                  if o['id'] != args.target_object_id and o['id'] not in rejected})
                 summary['batch_target_object_id'] = args.target_object_id
+                if sorting_cycle is not None:
+                    summary['sorting_cycle'] = sorting_cycle
             expected_resolution = None if args.resolve_task else scene_resolution(
                 package, intent, physical, document, require_ready=True)
             if expected_resolution is not None:
@@ -2578,7 +2593,8 @@ def main():
         if initial.robot_state.attached_collision_objects:
             raise RuntimeError('existing attachment requires explicit recovery')
         existing_ids = {o.id for o in initial.world.collision_objects}
-        additions=observations_to_insert(objects,{o.id:collision_object_dict(o) for o in initial.world.collision_objects},args.backend)
+        additions=observations_to_insert(objects,{o.id:collision_object_dict(o) for o in initial.world.collision_objects},args.backend,
+                                         reconcile=sorting_cycle is not None)
         manifest = yaml.safe_load((package/'config/moveit_collision_objects.yaml').read_text())
         if not {o['id'] for o in manifest['objects']}.issubset(existing_ids):
             raise RuntimeError('generated environment collisions missing')
@@ -2888,7 +2904,11 @@ def main():
                 # former 0.75 s fake discovery slice exhausted every candidate.
                 retry_candidate_budget=180.,
                 discovery_candidate_budget=60.,
-                reserve_retry_budget=True)
+                reserve_retry_budget=True,
+                # A sorting cycle places among the objects already in the cell (destination occupancy).
+                occupied=None if sorting_cycle is None else [
+                    dict(id=o['id'], pose=list(o['pose']), dimensions=list(o['dimensions']))
+                    for o in objects if o['id'] != args.target_object_id])
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')
