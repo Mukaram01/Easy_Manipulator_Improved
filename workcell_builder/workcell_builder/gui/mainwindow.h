@@ -917,7 +917,7 @@ private:
   QPushButton * open_rviz_button_{ nullptr };
   QPushButton * open_gazebo_button_{ nullptr };
   QPushButton * close_viewers_button_{ nullptr };
-  QLabel * viewer_state_label_{ nullptr };
+  QMap<QString, QLabel *> viewer_state_labels_;
   QProcess * rviz_viewer_{ nullptr };
   QProcess * gazebo_viewer_{ nullptr };
   QMap<QString, QString> viewer_status_;

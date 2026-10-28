@@ -3694,7 +3694,12 @@ void MainWindow::setup_studio_shell()
   open_rviz_button_ = new QPushButton("Open RViz", preview); open_rviz_button_->setObjectName("openRvizViewer"); pl->addWidget(open_rviz_button_);
   open_gazebo_button_ = new QPushButton("Open Gazebo", preview); open_gazebo_button_->setObjectName("openGazeboViewer"); pl->addWidget(open_gazebo_button_);
   close_viewers_button_ = new QPushButton("Close Visualization", preview); close_viewers_button_->setObjectName("closeViewers"); pl->addWidget(close_viewers_button_);
-  viewer_state_label_ = new QLabel(preview); viewer_state_label_->setObjectName("viewerState"); viewer_state_label_->setWordWrap(true); pl->addWidget(viewer_state_label_);
+  // One status line per viewer (what it is attached to, or how it ended), shown once it has one.
+  for (const QString kind : {QStringLiteral("rviz"), QStringLiteral("gazebo")}) {
+    auto * label = new QLabel(preview); label->setObjectName(kind + "ViewerState"); label->setWordWrap(true);
+    label->setTextFormat(Qt::PlainText); label->hide();      // reasons may contain "<...>"
+    viewer_state_labels_[kind] = label; pl->addWidget(label);
+  }
   stop_preview_button_ = new QPushButton("Stop Simulation", preview); stop_preview_button_->hide(); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
   preview_more_actions_button_ = new QToolButton(preview);
@@ -6838,10 +6843,12 @@ void MainWindow::refresh_viewer_controls()
     "Opens a read-only Gazebo view of the running simulation (no pause, step or editing). Rendering slows the "
     "simulator's real-time pace; physics steps and safety guards are unchanged." : gazebo_reason);
   close_viewers_button_->setEnabled(rviz_open || gazebo_open);
-  QStringList lines;
-  for (const QString kind : {QStringLiteral("rviz"), QStringLiteral("gazebo")})
-    if (viewer_status_.contains(kind)) lines << QString("%1: %2").arg(kind == "rviz" ? "RViz" : "Gazebo", viewer_status_.value(kind).toHtmlEscaped());
-  if (viewer_state_label_) viewer_state_label_->setText(lines.join("<br/>"));
+  for (const QString kind : {QStringLiteral("rviz"), QStringLiteral("gazebo")}) {
+    auto * label = viewer_state_labels_.value(kind);
+    if (!label) continue;
+    label->setText(QString("%1: %2").arg(kind == "rviz" ? "RViz" : "Gazebo", viewer_status_.value(kind)));
+    label->setVisible(viewer_status_.contains(kind));
+  }
 }
 
 void MainWindow::consume_viewer_output(const QString & kind, QProcess * process)
@@ -6855,6 +6862,7 @@ void MainWindow::consume_viewer_output(const QString & kind, QProcess * process)
           .arg(event.value("move_group_pid").toInt()).arg(event.value("use_sim_time").toBool() ? " · simulation time" : "") :
         QString("OPEN · world %1 · partition %2 · server pid %3").arg(event.value("world").toString(),
           event.value("partition").toString()).arg(event.value("server_pid").toInt());
+      append_studio_log(QString("%1 viewer: %2").arg(kind, viewer_status_.value(kind)));
     } else if (status == "BLOCKED") {
       viewer_status_[kind] = "BLOCKED: " + event.value("reason").toString();
     } else if (status == "CLOSED") {

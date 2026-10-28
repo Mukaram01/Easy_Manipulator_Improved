@@ -127,11 +127,24 @@ def test_rviz_needs_a_live_move_group_and_never_starts_one():
     with pytest.raises(wv.Blocked, match='NO_ACTIVE_MOVEIT'):
         wv.find_move_group(232)
     assert wv.main(['rviz', '--domain', '232', '--rviz-config', str(ROOT / 'scenes/ur5_2f_test/launch/demo.rviz')]) == 2
+    # A Builder-created cell has no RViz configuration: a physics session uses its qualified launch's; nothing else.
+    assert wv.rviz_config('/no/cell/demo.rviz', physics_session=True) == wv.PHYSICS_SESSION_RVIZ
+    with pytest.raises(wv.Blocked, match='VIEWER_CONFIG_MISSING'):
+        wv.rviz_config('/no/cell/demo.rviz', physics_session=False)
+    runner = (ROOT / 'scripts/run_stage_a1_finish.py').read_text()
+    assert 'repo/"scenes/ur5_2f_test/launch/demo.launch.py"' in runner      # the launch whose configuration this is
     source = (ROOT / 'scripts/workcell_viewer.py').read_text()
     assert 'ros2 launch' not in source and "'launch'" not in source and 'move_group' in source
 
 
 def test_rviz_loads_the_sessions_description_and_joint_states():
+    limits = wv.loadable({'robot_description_planning.joint_limits.j.max_position': 6,
+                          'robot_description_planning.joint_limits.k.max_position': None,      # declared, never set
+                          'robot_description_planning.joint_limits.j.has_position_limits': True, 'use_sim_time': True})
+    assert 'robot_description_planning.joint_limits.k.max_position' not in limits
+    assert limits['robot_description_planning.joint_limits.j.max_position'] == 6.0
+    assert type(limits['robot_description_planning.joint_limits.j.max_position']) is float
+    assert limits['robot_description_planning.joint_limits.j.has_position_limits'] is True and limits['use_sim_time'] is True
     tree = wv.nested({'robot_description': 'u', 'robot_description_kinematics.manipulator.kinematics_solver': 'k'})
     assert tree == {'robot_description': 'u', 'robot_description_kinematics': {'manipulator': {'kinematics_solver': 'k'}}}
     command = wv.rviz_command('c.rviz', 'p.yaml', ['/physical_joint_states'], '/opt/rviz2')

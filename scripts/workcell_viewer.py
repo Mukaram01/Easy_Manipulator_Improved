@@ -39,6 +39,10 @@ MOVEIT_PARAMETER_PREFIXES = ('robot_description', 'robot_description_semantic', 
                              'robot_description_planning')
 # The runtime's own middleware selection; a viewer with a different one would not see it.
 SESSION_ENVIRONMENT = ('ROS_DOMAIN_ID', 'ROS_LOCALHOST_ONLY', 'RMW_IMPLEMENTATION', 'IGN_PARTITION', 'IGN_IP')
+# A physics cycle runs this checkout's qualified launch for every authored cell (run_stage_a1_finish.py
+# launch_target); a cell created in the Builder has no RViz configuration of its own, so its session uses
+# that launch's configuration. The robot itself always comes from the live move_group, never from a file.
+PHYSICS_SESSION_RVIZ = SCRIPTS.parent / 'scenes/ur5_2f_test/launch/demo.rviz'
 
 
 class Blocked(RuntimeError):
@@ -55,9 +59,11 @@ def process_info(pid):
 
 
 def same_process(pid, start_ticks):
+    """Is pid still the process that started at start_ticks? Only its stat is read: a reused pid may belong
+    to another user, whose environment cannot be read, and that is simply not the same process."""
     try:
-        return process_info(pid)['start_ticks'] == start_ticks
-    except (FileNotFoundError, ProcessLookupError, IndexError):
+        return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[19] == start_ticks
+    except (OSError, IndexError):
         return False
 
 
@@ -124,6 +130,15 @@ def move_group_topics(node, message_type, endpoints):
                           for e in endpoints(topic)))
 
 
+def loadable(parameters):
+    """The session's parameters as RViz's MoveIt loader declares them. A parameter move_group declared but never
+    set (the qualified physics session leaves joint_limits.*.max_position unset) is omitted, not passed as null:
+    RViz would reject the whole robot model. MoveIt declares joint limit values as doubles, so an integer one is
+    passed as a double; booleans (has_*) stay booleans."""
+    return {name: float(value) if name.startswith('robot_description_planning.') and type(value) is int else value
+            for name, value in parameters.items() if value is not None}
+
+
 def moveit_session(timeout=20.0):
     """Parameters and joint-state topic of the live move_group (the environment already selects its domain)."""
     import rclpy
@@ -152,7 +167,7 @@ def moveit_session(timeout=20.0):
                           ListParameters.Request(prefixes=list(MOVEIT_PARAMETER_PREFIXES), depth=0)).result.names)
         names.append('use_sim_time')
         values = call('/move_group/get_parameters', GetParameters, GetParameters.Request(names=names)).values
-        parameters = {name: parameter_value_to_python(value) for name, value in zip(names, values)}
+        parameters = loadable({name: parameter_value_to_python(value) for name, value in zip(names, values)})
         if not parameters.get('robot_description') or not parameters.get('robot_description_semantic'):
             raise Blocked('MOVEIT_NOT_READY: move_group has no robot description yet')
         # move_group creates its joint-state subscription and monitored-scene publisher as its planning scene
@@ -268,7 +283,16 @@ def session_env(environ, domain=None):
     return env
 
 
+def rviz_config(requested, physics_session):
+    if Path(requested).is_file():
+        return Path(requested)
+    if physics_session and PHYSICS_SESSION_RVIZ.is_file():
+        return PHYSICS_SESSION_RVIZ
+    raise Blocked(f'VIEWER_CONFIG_MISSING: {requested}')
+
+
 def open_rviz(args):
+    config = rviz_config(args.rviz_config, bool(args.cycle_output))
     if args.cycle_output:
         _, receipt, _ = live_receipt(args.cycle_output)
         domain = receipt['domain']
@@ -283,12 +307,12 @@ def open_rviz(args):
     state.mkdir(parents=True, exist_ok=True)
     params_file, config_file = state / f'rviz_{domain}_{pid}.yaml', state / f'rviz_{domain}_{pid}.rviz'
     params_file.write_text(yaml.safe_dump({'/**': {'ros__parameters': nested(parameters)}}))
-    config_file.write_text(yaml.safe_dump(session_rviz_config(Path(args.rviz_config).read_text(), scenes), sort_keys=False))
+    config_file.write_text(yaml.safe_dump(session_rviz_config(config.read_text(), scenes), sort_keys=False))
     start_ticks = info['start_ticks']
     return supervise('rviz', rviz_command(config_file, params_file, joint_states, rviz_executable()), env,
                      lambda: same_process(pid, start_ticks), domain=str(domain), move_group_pid=pid,
                      move_group_executable=info['command'].split(' ', 1)[0], use_sim_time=bool(parameters.get('use_sim_time')),
-                     joint_states=joint_states, planning_scene=scenes)
+                     joint_states=joint_states, planning_scene=scenes, rviz_config=str(config))
 
 
 def open_gazebo(args):
@@ -314,9 +338,8 @@ def main(argv=None):
     gazebo.add_argument('--gui-config', type=Path, default=SCRIPTS.parent / 'config/simulation/workcell_physics_viewer.config')
     args = parser.parse_args(argv)
     try:
-        for path in ([args.rviz_config] if args.viewer == 'rviz' else [args.gui_config]):
-            if not Path(path).is_file():
-                raise Blocked(f'VIEWER_CONFIG_MISSING: {path}')
+        if args.viewer == 'gazebo' and not Path(args.gui_config).is_file():
+            raise Blocked(f'VIEWER_CONFIG_MISSING: {args.gui_config}')
         return open_rviz(args) if args.viewer == 'rviz' else open_gazebo(args)
     except Blocked as exc:
         emit(viewer=args.viewer, status='BLOCKED', reason=str(exc))
