@@ -19,6 +19,7 @@ QJsonObject OperatorPreviewRequest::to_json() const
     {"scene_name", scene_name}, {"workspace_root", workspace_root}, {"scripts_dir", scripts_dir},
     {"task_dirty", task_dirty}, {"layout_dirty", layout_dirty}, {"activate", activate},
     {"builder_pid", static_cast<double>(builder_pid)}, {"requested_at", requested_at}};
+  if (!control_token.isEmpty()) json.insert("control_token", control_token);
   if (task_dirty) json.insert("task_draft", task_draft);
   return json;
 }
@@ -42,6 +43,7 @@ std::optional<OperatorPreviewRequest> OperatorPreviewRequest::from_json(
   request.activate = json.value("activate").toBool();
   request.builder_pid = static_cast<qint64>(json.value("builder_pid").toDouble());
   request.requested_at = json.value("requested_at").toString();
+  request.control_token = json.value("control_token").toString();
   if (request.revision < 0) return fail("Preview request has no revision.");
   if (request.scene_dir.isEmpty()) return fail("Preview request names no scene.");
   if (request.task_dirty) {

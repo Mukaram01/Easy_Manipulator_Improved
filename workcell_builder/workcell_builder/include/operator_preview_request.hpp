@@ -26,6 +26,8 @@ struct OperatorPreviewRequest
   bool activate{false};         // user asked for the preview now: refresh and raise
   qint64 builder_pid{0};
   QString requested_at;         // ISO-8601 UTC
+  // Random per Builder launcher: the HMI's simulation commands must echo it (operator_simulation_link.hpp).
+  QString control_token;
 
   QJsonObject to_json() const;
   static std::optional<OperatorPreviewRequest> from_json(const QJsonObject & json, QString * error);

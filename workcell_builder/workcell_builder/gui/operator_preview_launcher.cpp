@@ -5,11 +5,22 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QJsonDocument>
+#include <QSaveFile>
+#include <QUuid>
+
+#include <cstdio>
+
+#include "operator_simulation_link.hpp"
 
 namespace workcell_builder
 {
 
-OperatorPreviewLauncher::OperatorPreviewLauncher(QObject * parent) : QObject(parent) {}
+OperatorPreviewLauncher::OperatorPreviewLauncher(QObject * parent)
+: QObject(parent),
+  // Random per launcher: a command made from any other request (or a standalone HMI) never matches.
+  control_token_(QUuid::createUuid().toString(QUuid::WithoutBraces) + QUuid::createUuid().toString(QUuid::WithoutBraces))
+{}
 
 OperatorPreviewLauncher::~OperatorPreviewLauncher() { shutdown(2000); }
 
@@ -45,6 +56,7 @@ bool OperatorPreviewLauncher::write_request(OperatorPreviewRequest & request, bo
   request.activate = activate;
   request.builder_pid = QCoreApplication::applicationPid();
   request.requested_at = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+  request.control_token = control_token_;
   if (!request.task_dirty) request.task_draft = {};
   return write_operator_preview_request(request_path(), request, error);
 }
@@ -71,7 +83,9 @@ bool OperatorPreviewLauncher::open_or_refresh(OperatorPreviewRequest request, QS
   }
   if (!process_) {
     process_ = new QProcess(this);
-    process_->setProcessChannelMode(QProcess::ForwardedChannels);
+    // stdout is the HMI's command channel to this Builder; its stderr (logs) stays forwarded.
+    process_->setProcessChannelMode(QProcess::ForwardedErrorChannel);
+    connect(process_, &QProcess::readyReadStandardOutput, this, &OperatorPreviewLauncher::read_hmi_output);
     connect(process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
             [this](int code, QProcess::ExitStatus status) {
               emit state_changed("closed", status == QProcess::NormalExit
@@ -89,6 +103,32 @@ bool OperatorPreviewLauncher::open_or_refresh(OperatorPreviewRequest request, QS
   emit state_changed("opened", QString("Operator Preview opened for %1 (revision %2).")
     .arg(request.scene_name).arg(request.revision));
   return true;
+}
+
+void OperatorPreviewLauncher::read_hmi_output()
+{
+  output_buffer_ += process_->readAllStandardOutput();
+  int end;
+  while ((end = output_buffer_.indexOf('\n')) >= 0) {
+    const QByteArray line = output_buffer_.left(end + 1);
+    output_buffer_.remove(0, end + 1);
+    QJsonObject command;
+    if (parse_operator_command_line(line, &command)) {
+      emit simulation_command(command);
+    } else {
+      std::fwrite(line.constData(), 1, static_cast<size_t>(line.size()), stdout);   // any other output, unchanged
+      std::fflush(stdout);
+    }
+  }
+}
+
+void OperatorPreviewLauncher::publish_simulation_status(const QJsonObject & status)
+{
+  if (!directory_) return;
+  const QByteArray bytes = QJsonDocument(status).toJson(QJsonDocument::Indented);
+  if (bytes == last_status_) return;
+  QSaveFile file(operator_status_file(request_path()));
+  if (file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() && file.commit()) last_status_ = bytes;
 }
 
 void OperatorPreviewLauncher::publish_update(OperatorPreviewRequest request)

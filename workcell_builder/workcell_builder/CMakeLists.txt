@@ -657,6 +657,13 @@ if(BUILD_TESTING)
     test/preview_process_state_test.cpp)
   ament_add_gtest(workcell_runtime_monitor_test
     test/runtime_monitor_test.cpp)
+  ament_add_gtest(workcell_operator_simulation_link_test
+    test/operator_simulation_link_test.cpp
+    src_operator_preview_request.cpp)
+  if(TARGET workcell_operator_simulation_link_test)
+    target_include_directories(workcell_operator_simulation_link_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_operator_simulation_link_test Qt5::Core)
+  endif()
   if(TARGET workcell_runtime_monitor_test)
     target_include_directories(workcell_runtime_monitor_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(workcell_runtime_monitor_test Qt5::Core)
@@ -949,6 +956,7 @@ if(BUILD_TESTING)
     workcell_scene_identity_test.cpp
     preview_process_state_test.cpp
     runtime_monitor_test.cpp
+    operator_simulation_link_test.cpp
     rviz_preview_metadata_command_test.cpp
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
