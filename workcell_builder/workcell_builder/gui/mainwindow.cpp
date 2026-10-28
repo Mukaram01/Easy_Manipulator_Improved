@@ -6602,7 +6602,8 @@ QJsonObject MainWindow::physics_preflight() const
   QStringList key{dir, script};
   for (const auto & rel : {"environment.yaml", "config/workcell_builder_task_intent.yaml", "cell_definition.yaml", "config/moveit_collision_objects.yaml"})
     key << QString::number(QFileInfo(dir + "/" + rel).lastModified().toMSecsSinceEpoch());
-  key << QString::number(QFileInfo(workspace.filePath("workcell_qualified_runtime.json")).lastModified().toMSecsSinceEpoch());
+  for (const auto & record : {"workcell_qualified_runtime.json", "workcell_perception_runtime.json"})
+    key << QString::number(QFileInfo(workspace.filePath(record)).lastModified().toMSecsSinceEpoch());
   if (key.join('|') == physics_preflight_key_) return physics_preflight_;
   QProcess process;
   process.start("python3", {script, dir});
