@@ -584,9 +584,10 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     destination = resolution['place_resolution'].get('destination')
     # Class routing: every rule's destination, as validated by the resolver (place_resolution.routes).
     routes = resolution['place_resolution'].get('routes')
-    destinations = [{'id': r['region_ref'], 'target_ref': r['asset_ref'], 'frame': 'world',
-                     'pose_xyz': r['world_pose']['xyz_m'], 'pose_rpy': r['world_pose']['rpy_rad']}
-                    for r in routes or []] or ([] if destination is None else [{
+    # Many classes may share a region: one destination per region.
+    destinations = list({r['region_ref']: {'id': r['region_ref'], 'target_ref': r['asset_ref'], 'frame': 'world',
+                                           'pose_xyz': r['world_pose']['xyz_m'], 'pose_rpy': r['world_pose']['rpy_rad']}
+                         for r in routes or []}.values()) or ([] if destination is None else [{
                         'id': destination['id'], 'target_ref': destination['target_id'], 'frame': 'world',
                         'pose_xyz': destination['pose_xyz'], 'pose_rpy': destination['pose_rpy']}])
     cell_def['task'] = {

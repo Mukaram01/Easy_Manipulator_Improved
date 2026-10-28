@@ -813,9 +813,9 @@ def resolved_recipe(intent, result):
     rules = copy.deepcopy(intent.get('routing', {}).get('rules') or [
         {'id': 'direct_place', 'when': {'always': True}, 'destination': destination['id']}])
     # Class routing: every rule's validated destination, so each rule names a destination of the recipe.
-    targets = [{'id': route['region_ref'], 'target_ref': route['asset_ref'], 'frame_id': 'world',
-                'pose_xyz': route['world_pose']['xyz_m'], 'pose_rpy': route['world_pose']['rpy_rad']}
-               for route in result['place_resolution'].get('routes') or []] or [
+    targets = list({route['region_ref']: {'id': route['region_ref'], 'target_ref': route['asset_ref'], 'frame_id': 'world',
+                                          'pose_xyz': route['world_pose']['xyz_m'], 'pose_rpy': route['world_pose']['rpy_rad']}
+                    for route in result['place_resolution'].get('routes') or []}.values()) or [
         {'id': destination['id'], 'target_ref': destination['target_id'], 'frame_id': destination['frame_id'],
          'pose_xyz': destination['pose_xyz'], 'pose_rpy': destination['pose_rpy']}]
     return {

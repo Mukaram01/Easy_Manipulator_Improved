@@ -263,6 +263,17 @@ def test_generate_exports_every_routed_destination_and_class(tmp_path):
     assert summary["validation"]["cell_definition"]["result"] != "FAIL", summary["validation"]["cell_definition"]
     cell = yaml.safe_load((scene / "cell_definition.yaml").read_text())
     assert sorted(d["id"] for d in cell["task"]["destinations"]) == ["default_drop_zone", "place_zone_b"]
+    # Many classes to one region: still one destination per region (canonical validation forbids duplicates).
+    import yaml as _yaml
+    task_path = scene / "config/workcell_builder_task_intent.yaml"
+    task = _yaml.safe_load(task_path.read_text())
+    task["routing"]["rules"].append({"id": "route_3_can", "when": {"attribute": "class", "equals": "can"},
+                                     "destination": "default_drop_zone"})
+    task_path.write_text(_yaml.safe_dump(task))
+    summary = export_scene(scene, scene, validate=True)
+    assert summary["validation"]["cell_definition"]["result"] != "FAIL", summary["validation"]["cell_definition"]
+    shared = yaml.safe_load((scene / "cell_definition.yaml").read_text())["task"]["destinations"]
+    assert sorted(d["id"] for d in shared) == ["default_drop_zone", "place_zone_b"]
     assert {d["target_ref"] for d in cell["task"]["destinations"]} == {"target_bin_default", "target_bin_b"}
     assert {r["destination"] for r in cell["task"]["rules"]} == {"default_drop_zone", "place_zone_b"}
     assert cell["perception"]["required_object_classes"] == ["cup", "bottle"]
