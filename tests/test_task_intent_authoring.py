@@ -378,7 +378,11 @@ def test_perception_freshness_follows_the_saved_camera_binding():
         return {'pick': {'selection': {'source_type': 'perception'}}, 'perception': binding}
     assert freshness_source_type(intent(mode='live_epd', camera_source='realsense_d435i')) == 'live_epd_realsense'
     assert freshness_source_type(intent(mode='live_epd')) == 'live_epd_realsense'          # unknown camera: live
-    assert freshness_source_type(intent(mode='live_epd', camera_source='simulated_rgbd')) == 'perception'
+    # The simulated camera: on fake hardware its own source (a live capture, or a sorting session's rendered frame,
+    # R2.5A); in the physics simulator the generic perception source.
+    assert freshness_source_type(intent(mode='live_epd', camera_source='simulated_rgbd')) == 'simulated_rgbd_fake_hardware'
+    assert freshness_source_type(dict(intent(mode='live_epd', camera_source='simulated_rgbd'),
+                                      safety={'execution_backend': 'simulator'})) == 'perception'
     assert freshness_source_type(intent(mode='replayed_snapshot')) == 'recorded_perception'
     assert observation_age_cap(freshness_source_type(intent(mode='replayed_snapshot')), 'replay') == 2.0
     with pytest.raises(ValueError, match='OBSERVATION_PRODUCER_REJECTED'):

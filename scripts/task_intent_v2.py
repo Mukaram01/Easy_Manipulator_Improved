@@ -230,6 +230,13 @@ OBSERVATION_PRODUCER_CEILING_S = {
     # re-measured live at closure, so the ceiling bounds capture-to-selection in the qualified Stage-A
     # runtime (resolve search included), not object motion.
     "simulator_measurement": 180.0,
+    # R2.5A: a fake-hardware sorting session's frame, rendered by the cell camera from the session's own verified
+    # world and classified by EPD (runtime_pick_inputs.rendered_frame). Fake hardware has no physical world that
+    # could move an object: the frame is bound to the world revision it was rendered from, and the executor proves
+    # at acquisition and again at the execution boundary that the live PlanningScene still reproduces every rendered
+    # identity and geometry. The timestamp is the real capture time, never renewed; the ceiling bounds capture to
+    # execution (render, CPU EPD inference and the certified search).
+    "simulator_render": 300.0,
 }
 # The producers each authored source type admits. A detected_objects/v1 perception source is fed by a
 # live sensor, or in the physics simulator by its receipt-bound measurement snapshot.
@@ -243,6 +250,9 @@ SOURCE_PRODUCERS = {
     # (perception_replay.validate_replay; the executor re-checks every binding).
     "replayed_perception_in_simulation": ("simulator_measurement",),
     "manual_simulated": ("simulator_measurement",),
+    # The simulated RGB-D camera on fake hardware: a live capture keeps the live ceiling; a sorting session's
+    # world-revision-bound rendered frame has its own (R2.5A).
+    "simulated_rgbd_fake_hardware": ("live_sensor", "simulator_render"),
 }
 OBSERVATION_FRESHNESS_POLICY = {
     source: {"max_age_s": max(OBSERVATION_PRODUCER_CEILING_S[p] for p in producers), "producers": producers}
@@ -278,6 +288,8 @@ def freshness_source_type(model):
         return "replayed_perception_in_simulation" if simulated else "recorded_perception"
     if binding.get("mode") == "live_epd" and binding.get("camera_source") != "simulated_rgbd":
         return "live_epd_realsense"
+    if binding.get("mode") == "live_epd" and (model.get("safety") or {}).get("execution_backend", "fake") == "fake":
+        return "simulated_rgbd_fake_hardware"
     return source_type
 
 
@@ -392,6 +404,18 @@ def enabled_class_rules(model: dict[str, Any]) -> list[dict[str, Any]] | None:
         return None
     enabled = [rule for rule in rules if rule.get("enabled", True) is True]
     return sorted(enabled, key=lambda rule: -int(rule.get("priority", 0)))
+
+
+def session_rendered_perception(model: dict[str, Any]) -> bool:
+    """R2.5A: a class-routed fake-hardware task bound to the simulated RGB-D camera with no saved capture.
+
+    Its sorting session observes the cell itself: every cycle renders the session's verified world with the cell
+    camera and classifies it with EPD (perception_replay.session_frame). No other run has an input for it.
+    """
+    binding = model.get("perception") or {}
+    return (class_routing_rules(model) is not None and binding.get("mode") == "live_epd"
+            and binding.get("camera_source") == "simulated_rgbd" and not binding.get("replay_path")
+            and (model.get("safety") or {}).get("execution_backend", "fake") == "fake")
 
 
 def routing_job_policy(model: dict[str, Any]) -> dict[str, Any]:
