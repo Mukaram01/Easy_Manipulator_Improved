@@ -64,6 +64,18 @@ TEST(RuntimeMonitor, AFailureMarksTheCategoryItHappenedIn)
   EXPECT_TRUE(timeline.html(true, true).contains("○ Approach"));         // never reached: pending, not done
 }
 
+TEST(RuntimeMonitor, ACancelledCategoryIsInterruptedNotDone)
+{
+  MonitorTimeline timeline;
+  observe_all(timeline, {"PERCEIVING", "SIMULATOR_READY", "RESOLVE_TASK", "PREPLAN_APPROACH"}, "resolve");
+  timeline.interrupted = timeline.current;                                // Stop pressed while planning
+  observe_all(timeline, {"SIMULATOR_SHUTDOWN"});
+  const auto html = timeline.html(true, true);
+  EXPECT_TRUE(html.contains("■ Planning (1/9 planned) (interrupted)")) << html.toStdString();
+  EXPECT_FALSE(html.contains("✓ Planning"));
+  EXPECT_TRUE(html.contains("✓ Shutdown"));
+}
+
 TEST(RuntimeMonitor, RuntimeFailureCodesAreExplainedWithAnAction)
 {
   auto d = diagnose_failure("PERCEPTION_RUNTIME_UNAVAILABLE: no perception runtime is registered for workspace /w");
@@ -109,7 +121,7 @@ TEST(RuntimeMonitor, PhysicsOutcomeComesFromTheRecordedRunsMeasurements)
   unmeasured.remove("physical_evidence"); unmeasured.remove("session_shutdown");
   const auto bare = workcell_builder::monitor_outcome_lines(unmeasured, true).join("\n");
   EXPECT_TRUE(bare.contains("Executed motion: Not available"));
-  EXPECT_TRUE(bare.contains("fingertip force Not available"));
+  EXPECT_TRUE(bare.contains("fingertip force Not available ·"));
   EXPECT_TRUE(bare.contains("Placement: Not available"));
   EXPECT_TRUE(bare.contains("Session shutdown: Not available"));
 }

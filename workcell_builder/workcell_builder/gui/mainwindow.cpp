@@ -6808,7 +6808,8 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
     for (int i = 0; i < std::min(3, static_cast<int>(final_pose.size())); ++i) pose << QString::number(final_pose.at(i).toDouble(), 'f', 4);
     QString text = QString("<b>%1</b> · Live qualified physics simulation<br/>Gates: %2<br/>Target: %3 · Final object position (m): %4<br/>Shutdown: %5 · Real robot motion: locked")
       .arg(pass ? "COMPLETED" : cancelled ? "CANCELLED" : "FAILED", gates.join(", ").toHtmlEscaped(), result.value("selected_object_id").toString("unknown").toHtmlEscaped(),
-           pose.isEmpty() ? QString("not measured") : pose.join(", "), result.value("shutdown_clean").toBool() ? "clean" : "unconfirmed");
+           pose.isEmpty() ? QString("not measured") : pose.join(", "),
+           result.value("shutdown_clean").toBool() || result.value("session_shutdown").toObject().value("clean").toBool() ? "clean" : "unconfirmed");
     const auto perception = result.value("perception").toObject();
     if (!perception.isEmpty()) {
       // Stage-B: classes came only from the replayed EPD session bound to the measured objects.
@@ -7087,7 +7088,10 @@ void MainWindow::stop_preview_process()
 {
   if (!preview_process_ || preview_process_->state() == QProcess::NotRunning || preview_stop_requested_) return;
   preview_stop_requested_ = true;
-  if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid()) monitor_.cancel_requested = QDateTime::currentDateTime();
+  if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid()) {
+    monitor_.cancel_requested = QDateTime::currentDateTime();
+    monitor_.timeline.interrupted = monitor_.timeline.current;      // what was running when Stop was pressed
+  }
   set_preview_state("PREVIEW_STOPPING");
   append_studio_log("Stopping RViz...");
   const qint64 stopping_pid = preview_process_->processId();
@@ -7137,8 +7141,8 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
       monitor_.finished = QDateTime::currentDateTime();
       monitor_.exit_code = exit_code; monitor_.crashed = exit_status != QProcess::NormalExit;
       auto & timeline = monitor_.timeline;
-      if (cycle_result_.contains("result")) timeline.reach("Verification");      // the runner evaluated its own result
       const QString result = cycle_result_.value("result").toString();
+      if (result == "PASS") timeline.reach("Verification");                  // the runner verified its own result
       if (result != "PASS" && result != "CANCELLED" && timeline.failed.isEmpty()) {
         const auto at = workcell_builder::monitor_category(cycle_result_.value("failed_stage").toString(), timeline.executing);
         timeline.failed = at.isEmpty() ? timeline.current : at;

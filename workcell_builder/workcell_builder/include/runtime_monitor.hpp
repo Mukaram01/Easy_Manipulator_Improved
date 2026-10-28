@@ -63,6 +63,7 @@ struct MonitorTimeline
   QStringList reached;            // categories with real evidence, in the order first reached
   QString current;                // category of the latest event
   QString failed;                 // category the run failed in (set from the result, never guessed)
+  QString interrupted;            // category that was running when the operator asked to cancel
   bool executing{false};          // an EXECUTE_* stage was reported (physics execution started)
   QSet<QString> planned;          // the nine PREPLAN_* stages reported by the latest planning pass
   QSet<QString> executed;         // EXECUTE_* stages reported
@@ -105,6 +106,7 @@ struct MonitorTimeline
       if (category == "Planning" && !planned.isEmpty()) label += QString(" (%1/9 planned)").arg(planned_count());
       QString mark = "○", colour = "#9ca3af";
       if (!failed.isEmpty() && category == failed) { mark = "✗"; colour = "#b91c1c"; }
+      else if (!interrupted.isEmpty() && category == interrupted) { mark = "■"; colour = "#b45309"; label += " (interrupted)"; }
       else if (reached.contains(category) && (category != current || finished)) { mark = "✓"; colour = "#15803d"; }
       else if (category == current) { mark = "▶"; colour = "#1d4ed8"; }
       parts << QString("<span style='color:%1'>%2 %3</span>").arg(colour, mark, label.toHtmlEscaped());
@@ -198,8 +200,8 @@ inline QStringList monitor_outcome_lines(const QJsonObject & result, bool physic
     const auto force = e.value("fingertip_force_n").toObject();
     QStringList forces; for (auto it = force.begin(); it != force.end(); ++it) forces << QString::number(it.value().toDouble(), 'f', 1);
     const auto peak = e.value("retention_peak").toObject(), limit = e.value("retention_limits").toObject();
-    lines << QString("Grasp (measured in simulation): fingertip force %1 N · retention: %2%3")
-      .arg(forces.isEmpty() ? QString("Not available") : forces.join(" / "),
+    lines << QString("Grasp (measured in simulation): fingertip force %1 · retention: %2%3")
+      .arg(forces.isEmpty() ? QString("Not available") : forces.join(" / ") + " N",
            e.value("strict_retention_compliant").isBool() ? (e.value("strict_retention_compliant").toBool() ? "strict, compliant" : "NOT compliant") : QString("Not available"),
            peak.isEmpty() ? QString() : QString(" (peak %1 mm / %2 mrad; limits %3 mm / %4 mrad)")
              .arg(peak.value("translation_m").toDouble() * 1000, 0, 'f', 2).arg(peak.value("rotation_rad").toDouble() * 1000, 0, 'f', 2)
