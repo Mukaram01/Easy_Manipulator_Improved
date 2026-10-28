@@ -155,8 +155,14 @@ def planning_input(scene, intent, override=None):
     observations = normalize(replay_snapshot(snapshot, now) if replay else snapshot, now, geometry)
     document = yaml.safe_load((Path(scene) / 'environment.yaml').read_text())
     physical = document.get('environment', document)
-    if not select_observations(intent, physical, observations, now):
+    selected = select_observations(intent, physical, observations, now)
+    if not selected:
         raise ValueError('OBSERVATION_UNAVAILABLE: no current workpiece matches the class, confidence, age and pick-zone constraints.')
+    # The resolver's own pre-planning containment check, so the editor blocks what planning would refuse.
+    from task_intent_resolver import placement_fit_blocker
+    blocker = placement_fit_blocker(intent, physical, selected)
+    if blocker:
+        raise ValueError(blocker + ' Edit the placement in Task settings.')
     return path, replay
 
 

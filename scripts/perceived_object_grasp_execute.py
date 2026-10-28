@@ -1010,7 +1010,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             lambda request: evaluate_once(request, search_pass='revalidate',
                                           planning_attempts=3, segment_time=float(planning_time),
                                           candidate_budget=None),
-            now=resolution_reference_time, resolved=resolved)
+            now=resolution_reference_time, resolved=resolved,
+            destination_floor_z=contract.get('destination_floor_z'))
         summary['candidate_search'] = {
             'mode': 'resolved_revalidation',
             'retry_pass_used': False,
@@ -1120,7 +1121,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
             resolution = resolve_task_intent(
                 intent, environment, cell, targets, discover,
-                now=resolution_reference_time, resolved=None)
+                now=resolution_reference_time, resolved=None,
+                destination_floor_z=contract.get('destination_floor_z'))
 
             phase_record = {
                 'strategy_ref': strategy,
@@ -1199,7 +1201,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
 
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, retry,
-                    now=resolution_reference_time, resolved=None)
+                    now=resolution_reference_time, resolved=None,
+                    destination_floor_z=contract.get('destination_floor_z'))
                 current = evaluation_cache.get(selected_key, {})
                 attempt = {
                     'strategy_ref': selected_key[0],
@@ -1230,7 +1233,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 before_resume = len(phase_discovered)
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
-                    now=resolution_reference_time, resolved=None)
+                    now=resolution_reference_time, resolved=None,
+                    destination_floor_z=contract.get('destination_floor_z'))
                 phase_record.update(
                     resumed_discovered_candidates=len(phase_discovered) - before_resume,
                     discovered_candidates=len(phase_discovered),
@@ -1252,7 +1256,8 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 before_aliases = len(phase_discovered)
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
-                    now=resolution_reference_time, resolved=None)
+                    now=resolution_reference_time, resolved=None,
+                    destination_floor_z=contract.get('destination_floor_z'))
                 phase_record.update(
                     equivalent_candidates_evaluated=len(phase_discovered) - before_aliases,
                     discovered_candidates=len(phase_discovered),

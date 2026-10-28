@@ -392,3 +392,21 @@ def test_perception_freshness_follows_the_saved_camera_binding():
     with pytest.raises(ValueError, match='OBSERVATION_PRODUCER_REJECTED'):
         observation_age_cap(freshness_source_type(unbound), 'live_sensor')
     assert freshness_source_type(dict(unbound, safety={'execution_backend': 'simulator'})) == 'perception'
+
+
+def test_editor_input_blocks_a_cup_that_leaves_no_room_for_the_planning_tolerance():
+    """ur5_2f_test, GUI-authored cup task: EXACT (0.01, 0, 0.01) in the 0.12 m tall drop region."""
+    import json
+    from scripts.task_intent_authoring import planning_input
+    scene = ROOT / 'scenes/ur5_2f_test'
+    intent = json.loads((ROOT / 'tests/fixtures/ur5_2f_test_cup_exact_task.json').read_text())
+    intent['perception']['replay_path'] = str(ROOT / 'config/runtime/r1_4_replay.yaml')
+    intent['place']['placement']['clearance_m'] = 0.010
+    with pytest.raises(ValueError) as refused:
+        planning_input(scene, intent)
+    message = str(refused.value)
+    assert message.startswith('PLACE_OBJECT_DOES_NOT_FIT: runtime::sample-cup cannot be placed at default_drop_zone: '
+                              'z of the placement region')
+    assert 'at most 0.0070 m' in message and 'Edit the placement in Task settings.' in message
+    intent['place']['placement']['clearance_m'] = 0.005
+    assert planning_input(scene, intent)[1] is True
