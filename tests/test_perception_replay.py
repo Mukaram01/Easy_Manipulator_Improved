@@ -185,3 +185,23 @@ def test_a_detection_inside_one_box_binds_to_it_even_with_a_neighbour_within_the
     # Outside both, within the margin of both: ambiguous, and a target detection blocks.
     with pytest.raises(pr.PerceptionBlocked, match='ambiguous'):
         pr.associate(measured, [perceived('cup', [0.50, -0.2675, 0.02], '3')], 'cup')
+
+
+def test_physics_readiness_needs_the_registered_epd_runtime_that_every_session_detects_with(tmp_path, monkeypatch):
+    import live_perception_session as lps
+    import physics_cycle_preflight as preflight
+    scene = tmp_path / 'cell'
+    (scene / 'config').mkdir(parents=True)
+    (scene / 'perception').mkdir()
+    (scene / 'perception/perception_replay.yaml').write_text('{}')
+    (scene / 'config/workcell_builder_task_intent.yaml').write_text(yaml.safe_dump(dict(
+        schema='workcell_builder_task_intent/v2', pick=dict(selection=dict(source_type='perception')),
+        perception=dict(mode='replayed_snapshot', replay_path='perception/perception_replay.yaml'),
+        safety=dict(execution_backend='simulator'))))
+    monkeypatch.setattr(pr, 'validate_replay', lambda *args, **kwargs: None)   # a valid replay of this cell
+    blocker = preflight.check_perception(scene, None, tmp_path)                 # no perception runtime registered
+    assert blocker.startswith('PERCEPTION_RUNTIME_UNAVAILABLE') and 'live_perception_session.py register' in blocker
+    monkeypatch.setattr(lps, 'load_runtime', lambda workspace: {})
+    assert preflight.check_perception(scene, None, tmp_path) is None
+    runner = (ROOT / 'scripts/run_stage_a1_finish.py').read_text()               # refused before the build, too
+    assert runner.index('load_runtime(workspace)') < runner.index('build=build_commissioning(')

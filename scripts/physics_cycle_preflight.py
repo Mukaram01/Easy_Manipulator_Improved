@@ -3,8 +3,9 @@
 
 Read-only. It applies, in order, the checks the qualified runner applies before anything starts:
 the saved task selects the physics simulator; the generated files are current with the saved task and
-environment; the cell is inside the qualified physics envelope (its world derives); and the workspace has
-a registered, still-valid qualified runtime. The first failure is the blocker, with the action that fixes
+environment; the cell is inside the qualified physics envelope (its world derives); a replayed-perception
+task has a valid replay and a registered EPD runtime; and the workspace has a registered, still-valid
+qualified runtime. The first failure is the blocker, with the action that fixes
 it. Nothing is launched, generated or written.
 """
 import argparse
@@ -61,9 +62,11 @@ def check_world(scene):
     return None, report
 
 
-def check_perception(scene, world):
-    """Stage-B: a replayed-perception task needs its replayed EPD session to be valid for this cell and world."""
+def check_perception(scene, world, workspace):
+    """Stage-B: a replayed-perception task needs its replayed EPD session to be valid for this cell and world,
+    and the workspace's registered EPD runtime, which detects again from the recording in every session."""
     import yaml
+    from live_perception_session import PerceptionUnavailable, load_runtime
     from perception_replay import PerceptionBlocked, validate_replay
     from task_intent_v2 import freshness_source_type
     intent = yaml.safe_load((scene / 'config/workcell_builder_task_intent.yaml').read_text())
@@ -78,6 +81,10 @@ def check_perception(scene, world):
                         physics_world_sha256=world['world_sha256'] if world else None)
     except PerceptionBlocked as exc:
         return str(exc)
+    try:
+        load_runtime(workspace)
+    except PerceptionUnavailable as exc:
+        return f'PERCEPTION_RUNTIME_UNAVAILABLE: {exc}'
     return None
 
 
@@ -94,7 +101,7 @@ def preflight(scene, workspace):
     scene = Path(scene).resolve()
     checks, world = [], None
     for name, check in (('saved_task', lambda: check_task(scene)), ('generated_current', lambda: check_generated(scene)),
-                        ('physics_envelope', lambda: check_world(scene)), ('perception_replay', lambda: check_perception(scene, world)),
+                        ('physics_envelope', lambda: check_world(scene)), ('perception_replay', lambda: check_perception(scene, world, workspace)),
                         ('qualified_runtime', lambda: check_runtime(workspace))):
         try:
             result = check()
