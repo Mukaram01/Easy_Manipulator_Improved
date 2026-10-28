@@ -16,6 +16,8 @@
 #ifndef EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 
+#include "runtime_monitor.hpp"
+#include <QTextBrowser>
 #include "scene_selection_set.hpp"
 #include <QFutureWatcher>
 #include <QStackedWidget>
@@ -922,6 +924,25 @@ private:
   QProcess * gazebo_viewer_{ nullptr };
   QMap<QString, QString> viewer_status_;
   QMap<QString, QString> viewer_stderr_tail_;   // last helper stderr line, shown if it ends without a status
+  // Execution monitor of the session this page started (plan-only fake hardware or qualified physics). Every
+  // field comes from the Builder's own process state, the runner's streamed stage events or its result; the
+  // monitor is reset when a new session starts and hidden when another cell is selected.
+  struct RuntimeMonitorSession {
+    QString kind;                      // "plan" or "physics"
+    QString scene_dir, cell, task, backend, output;
+    QDateTime started, cancel_requested, finished;
+    qint64 runner_pid{ -1 };
+    int exit_code{ 0 };
+    bool crashed{ false };
+    workcell_builder::MonitorTimeline timeline;
+  };
+  RuntimeMonitorSession monitor_;
+  QTextBrowser * monitor_view_{ nullptr };
+  void begin_monitor(const QString & kind);
+  void refresh_monitor();
+  QString monitor_outcome_html() const;
+  struct SavedTaskSummary { QString backend, pick, destination, placement; QStringList exclude; };
+  SavedTaskSummary saved_task_summary(const QString & scene_dir) const;
   int plan_cycle_domain_{ -1 };       // ROS domain of the running Plan Saved Task session, else -1
   bool plan_cycle_rviz_{ false };     // that session already launched its own RViz
   // Live perception of the selected cell's bound camera through EPD (live_perception_session.py):

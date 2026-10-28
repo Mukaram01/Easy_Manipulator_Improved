@@ -1238,6 +1238,44 @@ def test_cycle_result_carries_the_executed_gates_measured_outcome(tmp_path):
     assert MODULE.cycle_result({'status':'CANCELLED','gates':gates},tmp_path)['cancellation_confirmed'] is False
 
 
+def test_the_executors_own_stage_lines_are_forwarded_with_their_phase(tmp_path,capsys):
+    from types import SimpleNamespace
+    log=tmp_path/'execute/executor.log'
+    args=SimpleNamespace(stream_status=True)
+    with MODULE.StageForwarder(args,log,'full-cycle','execute',poll_s=0.01):
+        log.parent.mkdir()
+        log.write_text('[INFO] planning\n{"stage": "PREPLAN_APPROACH"}\n{"stage": "EXECUTE_LIFT"}\n'
+                       '{"stage": "X", "extra": 1}\nnot json\n{"stage": "EXECUTE_PL')            # last line still being written
+    events=[json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [(e['stage'],e['phase'],e['motion']) for e in events]==[('PREPLAN_APPROACH','execute',False),('EXECUTE_LIFT','execute',True)]
+    assert all(e['source']=='qualified_physics_simulator' and e['gate']=='full-cycle' for e in events)
+    with MODULE.StageForwarder(SimpleNamespace(stream_status=False),log,'full-cycle','execute'):
+        pass
+    assert capsys.readouterr().out==''                                  # nothing without --stream-status
+
+
+def test_cycle_result_reports_measured_physics_and_the_sessions_shutdown(tmp_path):
+    session=tmp_path/'06-full-cycle';(session/'full-cycle').mkdir(parents=True)
+    (session/'full-cycle/summary.json').write_text(json.dumps({'result':'PASS','strict_retention_compliant':True,
+        'execution_results':[{'stage':'EXECUTE_LIFT','code':1,'action_status':4}],
+        'grasp_hold':{'after':{'fingertip_joint_force_n':{'f1':20.0,'f2':20.1}}},
+        'retention_findings':{'peak':{'translation_m':1e-4},'limits':{'translation_m':.002}},
+        'full_cycle_physical_acceptance':{'placement':{'error_to_planned_m':3e-5},'attached_ids':[],'baseline_acm_restored':True,
+                                          'final_collision_valid':True},
+        'release_evidence':{'detachment':{'held':False,'attached_ids':[],'acm_restored':True}}}))
+    (session/'session-report.json').write_text(json.dumps({'shutdown':{'clean':True,'returncode':0,'escalation':None,
+        'sent_signals':['SIGINT'],'remaining_owned_processes':False,
+        'children':[{'name':'move_group-5','returncode':0,'signal':None},{'name':'rviz2-9','returncode':-11,'signal':None}]}}))
+    result=MODULE.cycle_result({'status':'PASS','gates':{'full-cycle':{'status':'PASS','summary':'06-full-cycle/full-cycle/summary.json'}}},tmp_path)
+    evidence=result['physical_evidence']
+    assert evidence['fingertip_force_n']=={'f1':20.0,'f2':20.1} and evidence['strict_retention_compliant'] is True
+    assert evidence['placement_error_to_planned_m']==3e-5 and evidence['detached'] is True and evidence['baseline_acm_restored'] is True
+    assert 'release_disturbance_m' not in evidence                       # not measured: absent, never invented
+    shutdown=result['session_shutdown']
+    assert shutdown['clean'] is True and shutdown['processes']==2 and shutdown['abnormal']==[{'name':'rviz2-9','returncode':-11,'signal':None}]
+    assert MODULE.session_shutdown(None)=={}
+
+
 def test_operator_signals_unwind_through_owned_cleanup():
     import signal
     previous={sig:signal.getsignal(sig) for sig in (signal.SIGTERM,signal.SIGINT)}

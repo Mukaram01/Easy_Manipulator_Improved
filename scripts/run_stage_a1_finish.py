@@ -31,6 +31,7 @@ import signal
 import select
 import subprocess
 import sys
+import threading
 import time
 
 import yaml
@@ -444,6 +445,43 @@ def stream(args,stage,**fields):
         print(json.dumps(dict(stage=stage,source="qualified_physics_simulator",live=True,**fields)),flush=True)
 
 
+class StageForwarder:
+    """--stream-status: forward the executor's own stage lines ({"stage": X} on its stdout log) while it runs.
+
+    Only lines the executor itself printed are forwarded, labelled with the session phase (resolve, revalidate,
+    execute) and whether the stage commands motion (EXECUTE_*). Nothing is inferred; the log is only read."""
+    def __init__(self,args,log,gate,phase,poll_s=0.5):
+        self.args,self.log,self.gate,self.phase,self.poll_s=args,Path(log),gate,phase,poll_s
+        self.offset=0;self.done=threading.Event();self.thread=None
+
+    def drain(self):
+        try:
+            with self.log.open() as text:
+                text.seek(self.offset)
+                while True:
+                    line=text.readline()
+                    if not line.endswith("\n"):break
+                    self.offset=text.tell()
+                    try:event=json.loads(line)
+                    except ValueError:continue
+                    if isinstance(event,dict) and set(event)=={"stage"} and isinstance(event["stage"],str):
+                        stream(self.args,event["stage"],gate=self.gate,phase=self.phase,motion=event["stage"].startswith("EXECUTE_"))
+        except FileNotFoundError:
+            pass
+
+    def __enter__(self):
+        if getattr(self.args,"stream_status",False):
+            def follow():
+                while not self.done.wait(self.poll_s):self.drain()
+            self.thread=threading.Thread(target=follow,daemon=True);self.thread.start()
+        return self
+
+    def __exit__(self,*exc):
+        if self.thread is not None:
+            self.done.set();self.thread.join();self.drain()
+        return False
+
+
 class OperatorCancel(BaseException):
     """SIGTERM/SIGINT to the runner (e.g. the Workcell Builder's Cancel): unwind through every owned cleanup."""
 
@@ -458,6 +496,38 @@ CYCLE_RESULT_FIELDS=("result","failure","failed_stage","selected_object_id","sel
                      "perception","rejected_objects")
 
 
+def physical_evidence(executed:dict)->dict:
+    """The executed gate's measured physical outcome, copied (never derived) from its own summary."""
+    acceptance=executed.get("full_cycle_physical_acceptance") or {}
+    placement=acceptance.get("placement") or {}
+    detachment=(executed.get("release_evidence") or {}).get("detachment") or {}
+    retention=executed.get("retention_findings") or {}
+    evidence=dict(
+        executed_stages=[dict(stage=r.get("stage"),code=r.get("code"),action_status=r.get("action_status"))
+                         for r in executed.get("execution_results") or []],
+        fingertip_force_n=((executed.get("grasp_hold") or {}).get("after") or {}).get("fingertip_joint_force_n"),
+        strict_retention_compliant=executed.get("strict_retention_compliant"),
+        retention_peak=retention.get("peak"),retention_limits=retention.get("limits"),
+        placement_error_to_planned_m=placement.get("error_to_planned_m"),
+        release_disturbance_m=placement.get("release_disturbance_m"),
+        attached_ids=acceptance.get("attached_ids"),baseline_acm_restored=acceptance.get("baseline_acm_restored"),
+        final_collision_valid=acceptance.get("final_collision_valid"),
+        detached=None if not detachment else (detachment.get("held") is False and detachment.get("attached_ids")==[]),
+        detach_acm_restored=detachment.get("acm_restored"),measured_geometry_matches=detachment.get("measured_geometry_matches"))
+    return {key:value for key,value in evidence.items() if value is not None}
+
+
+def session_shutdown(shutdown)->dict:
+    """How the session's owned processes ended (its own shutdown record), or nothing when it was not recorded."""
+    if not isinstance(shutdown,dict):return {}
+    children=shutdown.get("children") or []
+    return dict(clean=shutdown.get("clean"),returncode=shutdown.get("returncode"),escalation=shutdown.get("escalation"),
+                signals=shutdown.get("sent_signals"),remaining_owned_processes=shutdown.get("remaining_owned_processes"),
+                processes=len(children),
+                abnormal=[dict(name=c.get("name"),returncode=c.get("returncode"),signal=c.get("signal"))
+                          for c in children if c.get("returncode") not in (0,None) or c.get("signal")])
+
+
 def cycle_result(overall,output:Path)->dict:
     """The run's outcome for the operator: gate statuses plus the executed gate's own measured summary."""
     gates=overall.get("gates") or {}
@@ -470,6 +540,9 @@ def cycle_result(overall,output:Path)->dict:
             summary={key:executed[key] for key in CYCLE_RESULT_FIELDS if key in executed}
             final=(executed.get("release_evidence") or {}).get("final_pose")
             if final is not None:summary["final_object_pose"]=final
+            summary["physical_evidence"]=physical_evidence(executed)
+        report=output/f"{GATES.index(name)+1:02d}-{name}"/"session-report.json"
+        if report.is_file():summary["session_shutdown"]=session_shutdown(json.loads(report.read_text()).get("shutdown"))
     cancelled=overall.get("status")=="CANCELLED"
     if cancelled:
         # Cancellation is confirmed only by the clean owned shutdown of every session that ran.
@@ -835,9 +908,10 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         report["bridge_overlay"]=verify_session_bridge(domain,env["IGN_PARTITION"],args.bridge_overlay_identity)
         resolve_summary=session/"resolve/summary.json"
         stream(args,"RESOLVE_TASK",gate=gate,motion=False)
-        run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,
-                resolve=True,search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
+        with StageForwarder(args,session/"resolve/executor.log",gate,"resolve"):
+            run(executor_command(repo,scene,receipt,observations,resolve_summary,args.segment_planning_time,
+                    resolve=True,search_timeout=args.search_timeout),
+                env=env,cwd=repo,log=session/"resolve/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
         resolved=json.loads(resolve_summary.read_text());assert_plan(resolved,require_resolved=True)
 
         # The search may be long. Re-measure the same geometry and renew only
@@ -846,9 +920,10 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         generate_scene(scene)
         plan_summary=session/"revalidate/summary.json"
         stream(args,"REVALIDATE_PLAN",gate=gate,motion=False)
-        run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time,
-                search_timeout=args.search_timeout),
-            env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
+        with StageForwarder(args,session/"revalidate/executor.log",gate,"revalidate"):
+            run(executor_command(repo,scene,receipt,observations,plan_summary,args.segment_planning_time,
+                    search_timeout=args.search_timeout),
+                env=env,cwd=repo,log=session/"revalidate/executor.log",timeout=args.search_timeout+120+SERVICE_RETRY_ALLOWANCE_S)
         planned=json.loads(plan_summary.read_text());assert_plan(planned,require_resolved=True)
         report.update(selected_object_id=planned.get("selected_object_id"),
             selected_grasp_index=planned.get("selected_grasp_index"),
@@ -867,10 +942,11 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         gate_summary=session/f"{gate}/summary.json"
         stream(args,"EXECUTE_"+gate.upper().replace("-","_"),gate=gate,motion=True)
         functional=getattr(args,"mode","full")=="functional"
-        run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
-                gate=gate,evidence=evidence,search_timeout=args.search_timeout,
-                retention_policy="record" if functional else None),
-            env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+EXECUTION_GATE_MARGIN_S)
+        with StageForwarder(args,session/f"{gate}/executor.log",gate,"execute"):
+            run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
+                    gate=gate,evidence=evidence,search_timeout=args.search_timeout,
+                    retention_policy="record" if functional else None),
+                env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+EXECUTION_GATE_MARGIN_S)
         result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity,functional=functional)
         report.update(status="PASS",result=result["result"],selected_object_id=result.get("selected_object_id"),
                       selected_grasp_index=result.get("selected_grasp_index"))
