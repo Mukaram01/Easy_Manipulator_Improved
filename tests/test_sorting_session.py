@@ -227,9 +227,11 @@ def test_a_sorting_cycle_is_fake_hardware_replay_only_so_live_frames_are_never_r
     executor = Path(__file__).resolve().parents[1] / "scripts/perceived_object_grasp_execute.py"
     base = [sys.executable, str(executor), "--summary-output", "/dev/null", "--detections", "x.yaml", "--resolve-task",
             "--start", "--target-object-id", "runtime::a", "--sorting-cycle", '{"session_id": "s", "cycle": 1}']
-    for extra in ([], ["--replay", "--backend", "simulator"]):            # live input, or a non-fake backend
-        result = subprocess.run(base + extra, capture_output=True, text=True, timeout=60)
-        assert result.returncode == 2 and "--sorting-cycle is fake-hardware only and requires --replay" in result.stderr
+    # A non-fake backend is refused at the command line; a live frame when the input is read (sorting_cycle_input,
+    # tests/test_rendered_sorting.py): a sorting cycle takes only --replay or its own simulator-rendered frame.
+    result = subprocess.run(base + ["--replay", "--backend", "simulator"], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 2 and "--sorting-cycle is fake-hardware only" in result.stderr
+    assert "rendered = sorting_cycle_input(snapshot, sorting_cycle=sorting_cycle, replay=args.replay" in executor.read_text()
     text = executor.read_text()
     guarded = text[text.index("summary['execution_observation_refresh'] = fake_world_refresh(") - 400:
                    text.index("summary['execution_observation_refresh'] = fake_world_refresh(")]
