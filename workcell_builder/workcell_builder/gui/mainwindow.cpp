@@ -6845,6 +6845,22 @@ void MainWindow::consume_cycle_output(const QString & output)
 
 void MainWindow::show_cycle_result(const QJsonObject & result)
 {
+  if (result.contains("sorting_session") || result.contains("sorting_status")) {
+    // A sorting session's result is its session report: each completed object was verified in its own cycle.
+    const auto status = result.value("sorting_status").toObject();
+    const auto counts = status.value("counts").toObject();
+    const bool pass = result.value("result").toString() == "PASS";
+    cycle_status_label_->setText(QString("<b>%1</b> · Sorting session %2 · %3<br/>Completed %4 · Failed %5 · Skipped %6 · Waiting %7 · Cycles %8"
+        "<br/>Each completed object: nine executed stages, detach, routed-destination containment and home verified in its own cycle."
+        "<br/>Shutdown: %9 · Fake hardware (mock controllers) · Real robot motion: locked%10")
+      .arg(pass ? "PASS" : "FAIL", status.value("state").toString("ended").toHtmlEscaped(), status.value("state_reason").toString().toHtmlEscaped())
+      .arg(counts.value("completed").toInt()).arg(counts.value("failed").toInt()).arg(counts.value("skipped").toInt())
+      .arg(counts.value("waiting_destination_full").toInt()).arg(counts.value("cycles").toInt())
+      .arg(result.value("shutdown_clean").toBool() ? "clean" : "UNCLEAN",
+           pass ? QString() : "<br/>Failure: " + result.value("failure").toString().toHtmlEscaped()));
+    refresh_monitor();
+    return;
+  }
   if (result.value("mode").toString() == "physics_simulation") {
     const bool pass = result.value("result").toString() == "PASS";
     const bool cancelled = result.value("result").toString() == "CANCELLED";
