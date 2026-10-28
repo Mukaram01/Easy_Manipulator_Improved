@@ -1,0 +1,147 @@
+{
+ "evidence": "<LENLEG>/gui_gazebo_full_cycle_20261028/physics_run",
+ "execution_attempted": true,
+ "failure": null,
+ "final_object_pose": [
+  0.45001963377429804,
+  0.22000255220347323,
+  0.02549993019807678,
+  1.4402252273375474e-17,
+  1.2510050277581919e-17,
+  -2.6141166987576513e-07,
+  0.9999999999999658
+ ],
+ "full_cycle_execution_success": true,
+ "full_cycle_plan_success": true,
+ "gates": {
+  "full-cycle": "PASS"
+ },
+ "live": true,
+ "mode": "physics_simulation",
+ "perception": {
+  "bindings": {
+   "object_bottle": {
+    "association_distance_m": 0.02140084946725368,
+    "class_id": "bottle",
+    "confidence": 0.7822234630584717,
+    "detection": "1",
+    "replay_age_s": 0.0,
+    "world_xyz": [
+     0.620157538287132,
+     -0.32690475136041636,
+     0.12148749449399279
+    ]
+   },
+   "object_cup": {
+    "association_distance_m": 0.00793216008939135,
+    "class_id": "cup",
+    "confidence": 0.7204800248146057,
+    "detection": "2",
+    "replay_age_s": 0.0,
+    "world_xyz": [
+     0.5049178016693421,
+     -0.2516656789230182,
+     0.0284964803063123
+    ]
+   }
+  },
+  "perception": "<workspace>/log/studio_physics_cycles/da25cdac-3001-4b54-a749-c65c421fea87/06-full-cycle/perception/perception_replay.yaml",
+  "perception_sha256": "8c040013a4eab924bc750ac235807a02ab7656b1d2181eb7898fd18fdaa8d454",
+  "provenance": "SIMULATOR_RENDERED_SYNTHETIC",
+  "recording_sha256": "b3a4df65c4460e45aad366a60ff525cfa12757abc778f47076a43d6c6b3d4d9b",
+  "rejected_detections": [],
+  "unbound_detections": []
+ },
+ "physical_evidence": {
+  "attached_ids": [],
+  "baseline_acm_restored": true,
+  "detach_acm_restored": true,
+  "detached": true,
+  "executed_stages": [
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_APPROACH"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_GRASP"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_CLOSE_GRIPPER"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_LIFT"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_TRANSFER"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_PLACE"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_OPEN_GRIPPER"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_RETREAT"
+   },
+   {
+    "action_status": 4,
+    "code": 1,
+    "stage": "EXECUTE_HOME"
+   }
+  ],
+  "final_collision_valid": true,
+  "fingertip_force_n": {
+   "gripper_finger1_finger_tip_joint": 19.98987485435393,
+   "gripper_finger2_finger_tip_joint": 20.10055962646575
+  },
+  "measured_geometry_matches": true,
+  "placement_error_to_planned_m": 2.8102057309588068e-05,
+  "release_disturbance_m": 0.002613092973688052,
+  "retention_limits": {
+   "rotation_rad": 0.01,
+   "translation_m": 0.002
+  },
+  "retention_peak": {
+   "rotation_phase": "transfer",
+   "rotation_rad": 0.0001103861245377552,
+   "translation_m": 0.00011443128069036923,
+   "translation_phase": "place"
+  },
+  "strict_retention_compliant": true
+ },
+ "rejected_objects": {
+  "runtime::object_bottle": "outside_authored_selection"
+ },
+ "result": "PASS",
+ "selected_grasp_index": 2,
+ "selected_object_id": "runtime::object_cup",
+ "session_shutdown": {
+  "abnormal": [],
+  "clean": true,
+  "escalation": null,
+  "processes": 10,
+  "remaining_owned_processes": false,
+  "returncode": 0,
+  "signals": [
+   "SIGINT"
+  ]
+ },
+ "shutdown_clean": true,
+ "stage_a_acceptance": false,
+ "status": "PASS"
+}

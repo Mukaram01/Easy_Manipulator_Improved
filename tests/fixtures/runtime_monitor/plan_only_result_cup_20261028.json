@@ -1,0 +1,107 @@
+{
+ "execution_action_goals": [],
+ "execution_attempted": false,
+ "full_cycle_plan_success": true,
+ "plan_metadata": [
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_APPROACH",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_GRASP",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_CLOSE_GRIPPER",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_LIFT",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_TRANSFER",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_PLACE",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_OPEN_GRIPPER",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_RETREAT",
+   "success": true
+  },
+  {
+   "moveit_code": 1,
+   "stage": "PREPLAN_HOME",
+   "success": true
+  }
+ ],
+ "process_exits": [
+  {
+   "exit_code": 0,
+   "pid": 706463,
+   "process": "workcell_studio_planning_scene_node.py"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706664,
+   "process": "spawner"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706702,
+   "process": "spawner"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706741,
+   "process": "spawner"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706453,
+   "process": "robot_state_publisher"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706455,
+   "process": "static_transform_publisher"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706457,
+   "process": "ros2_control_node"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706461,
+   "process": "workcell_studio_layout_mesh_preview_node.py"
+  },
+  {
+   "exit_code": 0,
+   "pid": 706459,
+   "process": "move_group"
+  }
+ ],
+ "rejected_objects": {
+  "runtime::sample-bottle": "outside_authored_selection"
+ },
+ "remaining_owned_process_groups": [],
+ "result": "PASS",
+ "selected_object_id": "runtime::sample-cup",
+ "shutdown_clean": true,
+ "shutdown_crashes": []
+}

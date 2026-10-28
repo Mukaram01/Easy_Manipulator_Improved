@@ -655,6 +655,14 @@ if(BUILD_TESTING)
     src_workcell_yaml_utils.cpp)
   ament_add_gtest(workcell_preview_process_state_test
     test/preview_process_state_test.cpp)
+  ament_add_gtest(workcell_runtime_monitor_test
+    test/runtime_monitor_test.cpp)
+  if(TARGET workcell_runtime_monitor_test)
+    target_include_directories(workcell_runtime_monitor_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(workcell_runtime_monitor_test Qt5::Core)
+    target_compile_definitions(workcell_runtime_monitor_test PRIVATE
+      RUNTIME_MONITOR_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/fixtures/runtime_monitor")
+  endif()
   if(TARGET workcell_scene_identity_test)
     target_sources(workcell_scene_identity_test PRIVATE src_visual_mesh_source_resolver.cpp)
     target_link_libraries(workcell_scene_identity_test Qt5::Core)
@@ -940,6 +948,7 @@ if(BUILD_TESTING)
     mainwindow_rviz_preview_compile_test.cpp
     workcell_scene_identity_test.cpp
     preview_process_state_test.cpp
+    runtime_monitor_test.cpp
     rviz_preview_metadata_command_test.cpp
     visual_mesh_source_resolver_test.cpp
     studio_log_issue_tracker_test.cpp
