@@ -582,6 +582,13 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     # Every compatibility field is derived from the normalized task, never environment.task.
     selection = task_intent_payload['pick']['selection']
     destination = resolution['place_resolution'].get('destination')
+    # Class routing: every rule's destination, as validated by the resolver (place_resolution.routes).
+    routes = resolution['place_resolution'].get('routes')
+    destinations = [{'id': r['region_ref'], 'target_ref': r['asset_ref'], 'frame': 'world',
+                     'pose_xyz': r['world_pose']['xyz_m'], 'pose_rpy': r['world_pose']['rpy_rad']}
+                    for r in routes or []] or ([] if destination is None else [{
+                        'id': destination['id'], 'target_ref': destination['target_id'], 'frame': 'world',
+                        'pose_xyz': destination['pose_xyz'], 'pose_rpy': destination['pose_rpy']}])
     cell_def['task'] = {
         **task_intent_payload['task'],
         'object_source': selection['source_type'],
@@ -591,15 +598,17 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
         'place': {'target_ref': task_intent_payload['place']['target']['region_ref']},
         'object_filter': selection['object_filter'],
         'home_pose': robot_env.get('home_named_target', 'home'),
-        'destinations': [] if destination is None else [{
-            'id': destination['id'], 'target_ref': destination['target_id'], 'frame': 'world',
-            'pose_xyz': destination['pose_xyz'], 'pose_rpy': destination['pose_rpy']}],
+        'destinations': destinations,
         'rules': task_intent_payload.get('routing', {}).get('rules', []),
     }
     if 'mode' in task_intent_payload.get('perception', {}):
         cell_def['perception'].update(task_intent_payload['perception'])
         cell_def['perception']['enabled'] = task_intent_payload['perception']['mode'] != 'off'
-        cell_def['perception']['required_object_classes'] = [selection['object_filter']['class_id']] if selection['object_filter'].get('class_id') else []
+        from task_intent_v2 import class_routing_rules
+        rules = class_routing_rules(task_intent_payload)
+        cell_def['perception']['required_object_classes'] = (
+            [rule['when']['equals'] for rule in rules] if rules is not None   # class routing: the routed classes
+            else [selection['object_filter']['class_id']] if selection['object_filter'].get('class_id') else [])
         cell_def['perception']['confidence_threshold'] = selection['object_filter'].get('min_confidence')
         cell_def['perception']['freshness_timeout_s'] = selection['object_filter'].get('max_age_seconds') or 2.0
     builder_task_intent = task_intent_payload

@@ -207,3 +207,61 @@ def test_physics_stays_blocked_for_a_routed_task(monkeypatch, tmp_path):
     monkeypatch.setattr(simulator_world, "_cell", lambda scene: ({}, {}, {}, routed_intent(), {}))
     with pytest.raises(simulator_world.SimulatorWorldError, match="TASK_ROUTING_PHYSICS_UNQUALIFIED"):
         simulator_world.derive_world(tmp_path)
+
+
+def _two_bin_cell(tmp_path):
+    """A copy of ur5_2f_test with the same catalog bin and region added at y=-0.29 and a routed saved task."""
+    import json
+    import shutil
+    from pathlib import Path
+    import yaml
+    root = Path(__file__).resolve().parents[1]
+    scene = tmp_path / "ur5_2f_test"
+    shutil.copytree(root / "scenes/ur5_2f_test", scene, ignore=shutil.ignore_patterns("smoke", "acceptance", "preview_launch"))
+    doc = yaml.safe_load((scene / "environment.yaml").read_text())
+    env = doc["environment"]
+    bin_b = copy.deepcopy(next(a for a in env["assets"] if a["id"] == "target_bin_default"))
+    bin_b.update(id="target_bin_b", layout_item_ref="target_bin_b", task_zone_ref="place_zone_b", pose_xyz=[0.45, -0.29, 0.1])
+    zone_b = copy.deepcopy(next(z for z in env["task_zones"] if z["id"] == "place_zone_default"))
+    zone_b.update(id="place_zone_b", layout_item_ref="place_zone_b", target_ref="target_bin_b", pose_xyz=[0.45, -0.29, 0.11])
+    env["assets"].append(bin_b)
+    env["task_zones"].append(zone_b)
+    for z in env["task_zones"]:
+        if z["id"] == "pick_zone_main":
+            z.update(pose_xyz=[0.35, -0.08, 0.3], dimensions=[0.30, 0.16, 0.6])
+    doc["assets"] = copy.deepcopy(env["assets"])
+    (scene / "environment.yaml").write_text(yaml.safe_dump(doc, sort_keys=False))
+    layout_path = scene / "layout/workcell_studio_layout.yaml"
+    layout = yaml.safe_load(layout_path.read_text())
+    for source, item in (("target_bin_default", bin_b), ("place_zone_default", zone_b)):
+        added = copy.deepcopy(next(i for i in layout["items"] if i["id"] == source))
+        added.update({k: v for k, v in item.items() if k in ("id", "layout_item_ref", "task_zone_ref", "target_ref")})
+        added["pose"]["xyz"] = list(item["pose_xyz"])
+        layout["items"].append(added)
+    for item in layout["items"]:
+        if item["id"] == "pick_zone_main":
+            item.update(dimensions=[0.30, 0.16, 0.6]); item["pose"]["xyz"] = [0.35, -0.08, 0.3]
+    layout_path.write_text(yaml.safe_dump(layout, sort_keys=False))
+    task = json.loads((root / "tests/fixtures/ur5_2f_test_cup_exact_task.json").read_text())
+    task["pick"]["selection"]["object_filter"]["class_id"] = ""
+    task["perception"]["replay_path"] = str(root / "config/runtime/r1_4_replay.yaml")
+    task["place"]["placement"].update(policy="AUTO", requested_local_pose=None, clearance_m=0.005)
+    task["routing"] = {"mode": "class", "rules": [
+        {"id": "route_1_cup", "when": {"attribute": "class", "equals": "cup"}, "destination": "default_drop_zone"},
+        {"id": "route_2_bottle", "when": {"attribute": "class", "equals": "bottle"}, "destination": "place_zone_b"}]}
+    (scene / "config/workcell_builder_task_intent.yaml").write_text(yaml.safe_dump(task, sort_keys=True))
+    return scene
+
+
+def test_generate_exports_every_routed_destination_and_class(tmp_path):
+    import yaml
+    from scripts.export_builder_scene_to_cell_definition import export_scene
+    scene = _two_bin_cell(tmp_path)
+    summary = export_scene(scene, scene, validate=True)
+    assert summary["validation"]["cell_definition"]["result"] != "FAIL", summary["validation"]["cell_definition"]
+    cell = yaml.safe_load((scene / "cell_definition.yaml").read_text())
+    assert sorted(d["id"] for d in cell["task"]["destinations"]) == ["default_drop_zone", "place_zone_b"]
+    assert {d["target_ref"] for d in cell["task"]["destinations"]} == {"target_bin_default", "target_bin_b"}
+    assert {r["destination"] for r in cell["task"]["rules"]} == {"default_drop_zone", "place_zone_b"}
+    assert cell["perception"]["required_object_classes"] == ["cup", "bottle"]
+    assert cell["task_intent_resolution"]["readiness"]["primary_code"] == "CYCLE_EVALUATION_REQUIRED"
