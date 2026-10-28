@@ -9,6 +9,8 @@ shutdown overlay, validates each with its own admission check, and writes the ge
 ``env`` (what the Workcell Builder runs) re-validates that record against the files on disk and prints
 the shell environment for the qualified runner; any changed, missing or unqualified component fails
 closed with the reason and the command that requalifies or re-registers it. ``check`` reports it as JSON.
+``moveit-env`` (fake-hardware planning) prints only the registered MoveIt teardown overlay, still bound by
+its manifest hash; with no record it prints nothing and the planning runner reports unpatched MoveIt.
 The workspace is this checkout's colcon workspace (``<repo>/../..``); no user name or path is assumed.
 """
 import argparse
@@ -145,13 +147,31 @@ def shell_environment(record):
     ]) + '\n'
 
 
+def moveit_environment(workspace=WORKSPACE):
+    """The qualified MoveIt teardown overlay alone, for fake-hardware planning (no physics prerequisites).
+
+    No registered record selects installed MoveIt; a registered overlay that changed fails closed. The
+    planning runner still verifies the binaries the owned MoveGroup actually maps."""
+    path = Path(workspace).resolve() / RECORD_NAME
+    if not path.is_file():
+        return ''
+    try:
+        record = json.loads(path.read_text())
+        if record.get('schema') != SCHEMA:
+            raise RuntimeUnavailable('unknown qualified runtime record schema')
+        moveit = _moveit(record['moveit_overlay']['manifest'], record['moveit_overlay']['manifest_sha256'])
+    except (OSError, KeyError, ValueError, TypeError) as exc:
+        raise RuntimeUnavailable(f'qualified MoveIt overlay of {Path(workspace).resolve()} rejected: {exc}') from exc
+    return f"source {shlex.quote(str(Path(moveit['root']) / 'install/local_setup.bash'))}\n"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='command', required=True)
     reg = sub.add_parser('register')
     reg.add_argument('--from-acceptance', type=Path, required=True, help='passing Stage-A acceptance evidence directory')
     reg.add_argument('--bridge-overlay', type=Path, required=True, help='published bridge shutdown overlay root')
-    for name in ('env', 'check'):
+    for name in ('env', 'check', 'moveit-env'):
         sub.add_parser(name)
     for command in sub.choices.values():
         command.add_argument('--workspace', type=Path, default=WORKSPACE)
@@ -159,10 +179,13 @@ def main(argv=None):
     try:
         if args.command == 'register':
             return register(args)
+        if args.command == 'moveit-env':
+            sys.stdout.write(moveit_environment(args.workspace))
+            return 0
         record = load(args.workspace)
     except (RuntimeUnavailable, RuntimeError, OSError, KeyError, ValueError) as exc:
         print(('echo ' + shlex.quote('QUALIFIED_RUNTIME_UNAVAILABLE: ' + str(exc)) + ' >&2; false')
-              if args.command == 'env' else json.dumps(dict(status='UNAVAILABLE', reason=str(exc))))
+              if args.command in ('env', 'moveit-env') else json.dumps(dict(status='UNAVAILABLE', reason=str(exc))))
         return 2
     sys.stdout.write(shell_environment(record) if args.command == 'env' else json.dumps(dict(status='READY', **record), indent=2) + '\n')
     return 0
