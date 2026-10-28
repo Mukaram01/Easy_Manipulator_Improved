@@ -82,6 +82,11 @@ private:
   void log_event(const QString & level, const QString & code, const QString & message);
   void write_status() const;
   void poll_acceptance_commands();
+  // Simulation link (operator_simulation_link.hpp): the Builder owns the run; this window asks and shows.
+  bool simulation_linked() const;
+  void check_simulation_status();
+  void render_simulation();
+  void request_simulation(const QString & action);
 
   OperatorHmiOptions options_;
   std::optional<OperatorPreviewRequest> request_;
@@ -106,6 +111,10 @@ private:
   QTimer * command_poll_{nullptr};
   int last_command_{0};
   QJsonArray command_results_;
+  QJsonObject sim_status_;             // the Builder's operator_simulation_status.json
+  int sim_command_id_{0};
+  int sim_waiting_for_{-1};            // a request sent and not yet decided by the Builder
+  QString sim_last_code_, sim_last_event_, sim_last_session_;
 
   // Header
   QLabel * title_{nullptr};
@@ -145,6 +154,11 @@ private:
   QLabel * results_summary_{nullptr};
   QPushButton * start_button_{nullptr};
   QLabel * production_blockers_{nullptr};
+  QLabel * sim_state_{nullptr};
+  QPushButton * sim_run_button_{nullptr};
+  QPushButton * sim_cancel_button_{nullptr};
+  QLabel * sim_note_{nullptr};
+  QLabel * sim_result_{nullptr};
 
   // Events
   QTableWidget * events_{nullptr};

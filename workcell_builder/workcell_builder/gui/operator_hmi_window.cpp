@@ -1,4 +1,7 @@
 #include "operator_hmi_window.hpp"
+#include "operator_simulation_link.hpp"
+#include <cstdio>
+#include <QMessageBox>
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -268,6 +271,8 @@ OperatorHmiWindow::~OperatorHmiWindow() { stop_checks(); }
 
 void OperatorHmiWindow::start()
 {
+  // Request ids are unique per HMI process, so a decision on another (earlier) HMI's request never matches ours.
+  sim_command_id_ = static_cast<int>(QDateTime::currentMSecsSinceEpoch() % 1000000000);
   if (!options_.acceptance_commands.isEmpty()) {
     // Commands written for an earlier HMI process are not replayed.
     QFile existing(options_.acceptance_commands);
@@ -308,6 +313,7 @@ void OperatorHmiWindow::start()
 
 void OperatorHmiWindow::check_request_file()
 {
+  check_simulation_status();
   if (request_watcher_ && !request_watcher_->files().contains(options_.request_path) &&
     QFileInfo::exists(options_.request_path))
   {
@@ -533,6 +539,9 @@ void OperatorHmiWindow::log_event(const QString & level, const QString & code, c
 
 void OperatorHmiWindow::closeEvent(QCloseEvent * event)
 {
+  // A running simulation belongs to Workcell Builder: closing this window neither cancels nor stops it.
+  if (sim_status_.value("session").toObject().value("active").toBool())
+    std::fprintf(stderr, "Operator HMI closed; the running simulation continues under Workcell Builder.\n");
   stop_checks();
   event->accept();
 }
@@ -789,6 +798,27 @@ QWidget * OperatorHmiWindow::build_controls()
   results_summary_ = value_label(host);
   body->addWidget(results_summary_);
 
+  layout->addWidget(card(host, "Simulation · qualified Gazebo", &body));
+  sim_state_ = value_label(host);
+  body->addWidget(sim_state_);
+  sim_run_button_ = new QPushButton("Run Simulation Cycle", host);
+  sim_run_button_->setObjectName("hmiPrimary");
+  sim_run_button_->setToolTip("Asks Workcell Builder to run one bounded pick-and-place cycle of the saved cell in the "
+                              "qualified physics simulation. Simulated robot only; the real robot stays locked.");
+  connect(sim_run_button_, &QPushButton::clicked, this, [this]() { request_simulation("run_simulation"); });
+  body->addWidget(sim_run_button_);
+  sim_cancel_button_ = new QPushButton("Cancel Simulation", host);
+  sim_cancel_button_->setObjectName("hmiSecondary");
+  sim_cancel_button_->setToolTip("Asks Workcell Builder to cancel the running simulation with its supervised cleanup. "
+                                 "This is not an emergency stop.");
+  connect(sim_cancel_button_, &QPushButton::clicked, this, [this]() { request_simulation("cancel_simulation"); });
+  body->addWidget(sim_cancel_button_);
+  sim_note_ = value_label(host);
+  sim_note_->setObjectName("hmiCaption");
+  body->addWidget(sim_note_);
+  sim_result_ = value_label(host);
+  body->addWidget(sim_result_);
+
   layout->addWidget(card(host, "Production", &body));
   start_button_ = new QPushButton("Start production cycle", host);
   start_button_->setObjectName("hmiDanger");
@@ -891,6 +921,7 @@ void OperatorHmiWindow::render()
   render_overview();
   render_monitoring();
   render_controls();
+  render_simulation();
   write_status();
 }
 
@@ -995,7 +1026,8 @@ void OperatorHmiWindow::render_overview()
       {"Offline validation", offline},
       {"Task resolution", resolution},
       {"Task input", input},
-      {"Simulation", muted("Workcell Builder only (not from HMI)")},
+      {"Simulation", simulation_linked() ? escaped("Qualified Gazebo simulation, run by Workcell Builder")
+                                         : muted("Not available: standalone HMI (no Workcell Builder control session)")},
       {"Live operation", state_text("NOT SUPPORTED", "warn")},
     }));
 }
@@ -1161,12 +1193,178 @@ void OperatorHmiWindow::write_status() const
     {"replay_enabled", replay_button_ && replay_button_->isEnabled()},
     {"dry_run_enabled", dry_run_button_ && dry_run_button_->isEnabled()},
     {"input_kind", view_.input_kind}, {"input_blocker", view_.input_blocker},
+    {"simulation_linked", simulation_linked()},
+    {"simulation_run_enabled", sim_run_button_ && sim_run_button_->isEnabled()},
+    {"simulation_cancel_enabled", sim_cancel_button_ && sim_cancel_button_->isEnabled()},
+    {"simulation_session", sim_status_.value("session")},
   };
   QSaveFile file(options_.status_out);
   if (file.open(QIODevice::WriteOnly)) {
     file.write(QJsonDocument(status).toJson());
     file.commit();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Simulation link: Workcell Builder owns, starts, supervises and cancels the run
+// ---------------------------------------------------------------------------
+
+bool OperatorHmiWindow::simulation_linked() const
+{
+  return !options_.request_path.isEmpty() && request_ && !request_->control_token.isEmpty();
+}
+
+void OperatorHmiWindow::check_simulation_status()
+{
+  if (options_.request_path.isEmpty()) return;
+  QFile file(operator_status_file(options_.request_path));
+  if (!file.open(QIODevice::ReadOnly)) return;
+  const auto document = QJsonDocument::fromJson(file.readAll());
+  if (!document.isObject() || document.object().value("schema").toString() != operator_status_schema()) return;
+  const auto status = document.object();
+  if (status == sim_status_) return;
+  sim_status_ = status;
+  const auto session = status.value("session").toObject();
+  const QString id = session.value("session_id").toString();
+  if (!id.isEmpty() && id != sim_last_session_) {
+    sim_last_session_ = id; sim_last_code_.clear(); sim_last_event_.clear();
+    log_event("info", "SIMULATION_SESSION", QString("Session %1 of %2 (%3), started %4 by %5.").arg(id.left(8),
+      session.value("cell").toString(), session.value("kind").toString(), session.value("started").toString(),
+      session.value("origin").toString()));
+  }
+  if (!id.isEmpty() && session.value("state_code").toString() != sim_last_code_) {
+    sim_last_code_ = session.value("state_code").toString();
+    const QString level = sim_last_code_ == "COMPLETED" ? "info" : sim_last_code_ == "RUNNING" ? "info" : "notice";
+    log_event(level, "SIMULATION_" + sim_last_code_, session.value("state").toString());
+  }
+  if (!id.isEmpty() && session.value("last_event").toString() != sim_last_event_) {
+    sim_last_event_ = session.value("last_event").toString();
+    log_event("info", "SIMULATION_STAGE", sim_last_event_);
+  }
+  const auto decision = status.value("last_command").toObject();
+  if (sim_waiting_for_ >= 0 && decision.value("id").toInt(-1) == sim_waiting_for_) {
+    log_event(decision.value("accepted").toBool() ? "info" : "error",
+      decision.value("accepted").toBool() ? "SIMULATION_REQUEST_ACCEPTED" : "SIMULATION_REQUEST_REFUSED",
+      decision.value("action").toString() + (decision.value("accepted").toBool() ? QString() : ": " + decision.value("reason").toString()));
+    sim_waiting_for_ = -1;
+  }
+  render_simulation();
+  write_status();
+}
+
+void OperatorHmiWindow::render_simulation()
+{
+  if (!sim_run_button_) return;
+  const auto disable = [this](const QString & state, const QString & note) {
+      sim_run_button_->setEnabled(false); sim_cancel_button_->setEnabled(false);
+      sim_state_->setText(state); sim_note_->setText(note); sim_result_->clear();
+    };
+  if (!simulation_linked()) {
+    disable(state_text("NOT AVAILABLE", "neutral"),
+      muted("Standalone HMI: there is no Workcell Builder control session, so nothing can be started from here."));
+    return;
+  }
+  if (sim_status_.isEmpty()) { disable(muted("Waiting for Workcell Builder's simulation status…"), QString()); return; }
+  const auto canonical = [](const QString & path) { const auto c = QFileInfo(path).canonicalFilePath(); return c.isEmpty() ? path : c; };
+  const QString here = canonical(scene_dir_);
+  const auto cell = sim_status_.value("cell").toObject();
+  const auto readiness = sim_status_.value("readiness").toObject();
+  const auto session = sim_status_.value("session").toObject();
+  const bool same_cell = !here.isEmpty() && canonical(cell.value("scene_dir").toString()) == here;
+  const bool session_here = !session.isEmpty() && canonical(session.value("scene_dir").toString()) == here;
+  const bool active = session.value("active").toBool();
+  const bool waiting = sim_waiting_for_ >= 0;
+
+  // State of the session, only if it is this cell's: never another cell's or an earlier session's as current.
+  QString state;
+  if (active && !session_here) {
+    state = state_text("BUSY", "warn") + " " + escaped(QString("Workcell Builder is running a session of %1.").arg(session.value("cell").toString()));
+  } else if (session_here) {
+    const QString code = session.value("state_code").toString();
+    const QString tone = code == "COMPLETED" ? "ok" : code == "RUNNING" ? "info" : code == "CANCELLING" ? "warn" : "error";
+    state = state_text(escaped(session.value("state").toString()), tone) + "<br>" +
+      muted(QString("%1 · %2 · session %3 · started %4 by %5").arg(session.value("kind").toString() == "physics" ? "Qualified physics simulation" : "Fake-hardware plan only",
+        session.value("process").toString(), session.value("session_id").toString().left(8), session.value("started").toString(),
+        session.value("origin").toString()));
+    if (!active) state = "<b>Last session of this cell</b><br>" + state;
+  } else {
+    state = muted("No simulation of this cell in this Workcell Builder session.");
+  }
+  sim_state_->setText(state);
+
+  QString reason;
+  if (!same_cell) reason = "Workcell Builder has another cell selected; Refresh this HMI.";
+  else if (update_banner_ && update_banner_->isVisible()) reason = "Workcell Builder has newer engineering state; Refresh first.";
+  else if (!view_loaded_ || !view_.usable) reason = "The cell's configuration is not available.";
+  else if (view_.draft) reason = "A DRAFT task cannot run: save it in Workcell Builder.";
+  else if (view_.layout_unsaved) reason = "Workcell Builder has unsaved layout edits: save them first.";
+  else if (active) reason = "A session is running.";
+  else if (!readiness.value("ready").toBool())
+    reason = readiness.value("blocker").toString() + (readiness.value("action").toString().isEmpty() ? QString() : " What to do: " + readiness.value("action").toString());
+  else if (view_.saved_intent_sha256 != readiness.value("intent_sha256").toString())
+    reason = "The saved task shown here is not the one the cell was generated from: Generate in Workcell Builder, then Refresh.";
+  else if (waiting) reason = "Waiting for Workcell Builder to decide on the last request.";
+  sim_run_button_->setEnabled(reason.isEmpty());
+  sim_cancel_button_->setEnabled(active && session_here && session.value("kind").toString() == "physics" &&
+                                 !session.value("cancel_requested").toBool() && !waiting);
+  sim_note_->setText(reason.isEmpty()
+    ? muted(QString("Ready: %1. Simulated robot only; the real robot stays locked.").arg(readiness.value("backend").toString()))
+    : state_text("Run unavailable: ", "warn") + escaped(reason));
+
+  // Live and final evidence from the Builder's monitor of this cell's session (R2.2 semantics, nothing derived here).
+  QString result;
+  if (session_here) {
+    result = "<b>Stages</b><br>" + session.value("timeline_html").toString() +
+      "<br>" + muted("Last verified event: " + session.value("last_event").toString()) +
+      "<br>Selected object: " + escaped(session.value("selected_object").toString());
+    QStringList rejected; for (const auto & r : session.value("rejected").toArray()) rejected << r.toString();
+    if (!rejected.isEmpty()) result += "<br>Not selected: " + escaped(rejected.join("; "));
+    const auto lines = session.value("outcome_lines").toArray();
+    if (!lines.isEmpty()) {
+      result += "<br><b>Final evidence</b>";
+      for (const auto & line : lines) result += "<br>" + escaped(line.toString());
+    }
+    const auto diagnosis = session.value("diagnosis").toObject();
+    if (!diagnosis.isEmpty()) {
+      result += "<br>" + state_text(diagnosis.value("code").toString(), "error") + " " + escaped(diagnosis.value("meaning").toString());
+      if (!diagnosis.value("action").toString().isEmpty()) result += "<br>" + muted("What to do: " + diagnosis.value("action").toString());
+    }
+    robot_status_->setText(QString("<b>Robot · simulated</b><br>%1<br>%2<br>%3").arg(escaped(session.value("robot").toString()),
+      muted("Gripper: " + session.value("gripper").toString()), state_text("Real robot: LOCKED", "ok")));
+    cycle_status_->setText(QString("<b>Cycle · %1</b><br>%2").arg(escaped(session.value("state_code").toString()),
+      muted(session.value("last_event").toString())));
+  }
+  sim_result_->setText(result);
+}
+
+void OperatorHmiWindow::request_simulation(const QString & action)
+{
+  if (!simulation_linked() || sim_waiting_for_ >= 0) return;
+  const auto session = sim_status_.value("session").toObject();
+  if (action == "run_simulation") {
+    const auto readiness = sim_status_.value("readiness").toObject();
+    // An explicit, specific confirmation: nothing runs on a single click.
+    if (QMessageBox::question(this, "Run Simulation Cycle",
+          QString("Run one bounded pick-and-place SIMULATION of the saved cell \"%1\"?\n\nTask: pick %2 → %3\nBackend: %4\n\n"
+                  "Simulated robot only: the real robot stays locked and this is not production.\n"
+                  "Workcell Builder runs and supervises the simulation. Cancel Simulation is not an emergency stop.")
+            .arg(view_.scene_name, view_.target_class.isEmpty() ? QString("any class") : view_.target_class,
+                 view_.destinations.join(", "), readiness.value("backend").toString()),
+          QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+      log_event("info", "SIMULATION_REQUEST_DECLINED", "The operator did not confirm the simulation.");
+      return;
+    }
+  }
+  const auto command = make_operator_command(++sim_command_id_, action, request_->control_token, scene_dir_,
+    view_.saved_intent_sha256, request_->revision, session.value("session_id").toString());
+  const QByteArray line = operator_command_line(command);
+  std::fwrite(line.constData(), 1, static_cast<size_t>(line.size()), stdout);   // only the owning Builder reads this
+  std::fflush(stdout);
+  sim_waiting_for_ = sim_command_id_;
+  log_event("info", action == "run_simulation" ? "SIMULATION_REQUESTED" : "SIMULATION_CANCEL_REQUESTED",
+    action == "run_simulation" ? "Asked Workcell Builder to run the simulation." :
+                                 "Asked Workcell Builder to cancel the simulation (supervised cleanup, not an emergency stop).");
+  render_simulation();
 }
 
 // Test-only: acceptance runs drive the real buttons through a command file so
@@ -1192,7 +1390,8 @@ void OperatorHmiWindow::poll_acceptance_commands()
       };
     const QHash<QString, QPushButton *> buttons{
       {"replay_check", replay_button_}, {"dry_run", dry_run_button_}, {"check", check_button_},
-      {"refresh", refresh_button_}, {"stop", stop_button_}, {"start_production", start_button_}};
+      {"refresh", refresh_button_}, {"stop", stop_button_}, {"start_production", start_button_},
+      {"cancel_simulation", sim_cancel_button_}};
     if (buttons.contains(action)) {
       click(buttons.value(action));
     } else if (action == "select_object") {
