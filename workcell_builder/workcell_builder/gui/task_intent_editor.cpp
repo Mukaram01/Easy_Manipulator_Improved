@@ -566,6 +566,36 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   auto * where = section("Where");
   assets_ = choice_field(where, "taskPlaceAsset", "Physical target", "place/target/asset_ref", {});
   regions_ = choice_field(where, "taskPlaceRegion", "Placement region", "place/target/region_ref", {});
+  {
+    // Class routing (routing.mode class): each EPD class goes to its own placement region; a class
+    // without a rule is not picked. Empty = direct pick/place into the placement region above.
+    auto * routes = new QLineEdit(this); routes->setObjectName("taskClassRouting");
+    routes->setPlaceholderText("empty = direct; or class=region, e.g. cup=drop_a, bottle=drop_b");
+    routes->setToolTip("Each detected class is placed only in its own region; unlisted classes are not picked. "
+                       "Leave Object class empty and choose one of these regions as the placement region.");
+    where->addRow("Route by class", routes);
+    readers_["routing"] = [routes](const QJsonValue & v) {
+      QStringList pairs;
+      if (v.toObject().value("mode").toString() == "class")
+        for (const auto & item : v.toObject().value("rules").toArray()) {
+          const auto rule = item.toObject();
+          pairs << rule.value("when").toObject().value("equals").toString() + "=" + rule.value("destination").toString();
+        }
+      routes->setText(pairs.join(", "));
+    };
+    connect(routes, &QLineEdit::textEdited, this, [this](const QString & text) {
+      QJsonArray rules;
+      for (const auto & part : text.split(',')) {
+        if (part.trimmed().isEmpty()) continue;
+        const QString name = part.section('=', 0, 0).trimmed();
+        rules.append(QJsonObject{{"id", QString("route_%1_%2").arg(rules.size() + 1).arg(name)},
+                                 {"when", QJsonObject{{"attribute", "class"}, {"equals", name}}},
+                                 {"destination", part.contains('=') ? part.section('=', 1).trimmed() : QString()}});
+      }
+      // Clearing the routes restores direct pick/place into the authored placement region.
+      set_field("routing", QJsonObject{{"mode", rules.isEmpty() ? "direct" : "class"}, {"rules", rules}});
+    });
+  }
   auto * place = section("How to place");
   choice_field(place, "taskPlacePolicy", "Placement policy", "place/placement/policy", {"AUTO", "PREFERRED", "EXACT"});
   vector_field(place, "taskLocalXYZ", "Requested local XYZ (m)", "place/placement/requested_local_pose/xyz_m");

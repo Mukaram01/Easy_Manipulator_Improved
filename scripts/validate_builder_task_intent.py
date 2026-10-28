@@ -97,6 +97,13 @@ def validate_payload(payload, scene_package=None, grasp_dir=None):
                             warnings.append(message + ' PREFERRED may use the region default.')
             except Exception as exc:
                 diagnostics.append({'code': 'R19_DESTINATION_INVALID', 'message': str(exc)})
+            if not diagnostics:
+                # Class routing: every routed region is checked like the placement region (resolver authority).
+                from task_intent_resolver import class_routes
+                try:
+                    class_routes(normalized, env)
+                except ValueError as exc:
+                    diagnostics.append({'code': 'TASK_ROUTE_DESTINATION_INVALID', 'message': str(exc)})
             safety = normalized.get('safety', {})
             backend = safety.get('execution_backend', 'fake')
             locked = (backend == 'fake' and safety.get('real_hardware_enabled') is not True

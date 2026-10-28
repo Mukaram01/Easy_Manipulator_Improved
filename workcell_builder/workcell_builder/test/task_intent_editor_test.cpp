@@ -737,3 +737,37 @@ TEST(TaskIntentEditor, ExecutionBackendIsAnExplicitAuthoredChoiceThatSurvivesReo
   EXPECT_EQ(reverted["execution_backend"].toString(), "fake");
   EXPECT_TRUE(reverted["require_fake_hardware"].toBool(false));
 }
+
+TEST(TaskIntentEditor, ClassRoutingIsAuthoredInTheWhereSectionAndSurvivesReopen) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  auto environment = read(dir.path() + "/environment.yaml");
+  environment.replace("assets:\n", "assets:\n- {id: bin2, frame: world, pose_xyz: [1, -2, 3], pose_rpy: [0, 0, 0], collision: {enabled: true}, usable_placement: {pose_xyz: [0, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.4, 0.3, 0.2]}}\n");
+  environment += "- {id: drop2, target_ref: bin2, frame: world, pose_xyz: [1.05, -2, 3.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1], placement_local: {pose_xyz: [0.05, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1]}}\n";
+  write(dir.path() + "/environment.yaml", environment);
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  edit(editor, "taskTargetClass", "");
+  editor.findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("AUTO");
+  edit(editor, "taskClassRouting", "cup=drop, cup=drop2");          // one class, two bins: ambiguous
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(editor.blocker().contains("ROUTING_CLASS_AMBIGUOUS")) << editor.blocker().toStdString();
+  edit(editor, "taskClassRouting", "cup=drop, bottle=nowhere");      // a region that does not exist
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(editor.blocker().contains("TASK_ROUTE_DESTINATION_INVALID")) << editor.blocker().toStdString();
+  edit(editor, "taskClassRouting", "cup=drop, bottle=drop2");
+  ASSERT_TRUE(editor.save());
+  EXPECT_FALSE(editor.blocker().contains("ROUTING")) << editor.blocker().toStdString();
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  EXPECT_EQ(reopened.findChild<QLineEdit *>("taskClassRouting")->text(), "cup=drop, bottle=drop2");
+  const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(reopened.model().to_yaml()))).object();
+  const auto rules = root["routing"].toObject()["rules"].toArray();
+  EXPECT_EQ(root["routing"].toObject()["mode"].toString(), "class");
+  ASSERT_EQ(rules.size(), 2);
+  EXPECT_EQ(rules[1].toObject()["when"].toObject()["equals"].toString(), "bottle");
+  EXPECT_EQ(rules[1].toObject()["destination"].toString(), "drop2");
+  edit(reopened, "taskClassRouting", "");                              // back to direct pick/place
+  const auto direct = QJsonDocument::fromJson(QByteArray::fromStdString(
+      workcell_builder::canonical_task_intent_json_for_testing(reopened.model().to_yaml()))).object();
+  EXPECT_EQ(direct["routing"].toObject()["mode"].toString(), "direct");
+  EXPECT_TRUE(direct["routing"].toObject()["rules"].toArray().isEmpty());
+}
