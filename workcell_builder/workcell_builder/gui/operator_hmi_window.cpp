@@ -1308,7 +1308,9 @@ void OperatorHmiWindow::render_simulation()
     state = state_text("BUSY", "warn") + " " + escaped(QString("Workcell Builder is running a session of %1.").arg(session.value("cell").toString()));
   } else if (session_here) {
     const QString code = session.value("state_code").toString();
-    const QString tone = code == "COMPLETED" ? "ok" : code == "RUNNING" ? "info" : code == "CANCELLING" ? "warn" : "error";
+    // Sorting sessions report their lifecycle state (STOPPED is a normal end; PAUSED/STOPPING are operator states).
+    const QString tone = code == "COMPLETED" || code == "STOPPED" ? "ok" : code == "RUNNING" ? "info"
+      : code == "CANCELLING" || code == "PAUSING" || code == "PAUSED" || code == "STOPPING" || code == "READY" || code == "STARTING" ? "warn" : "error";
     state = state_text(escaped(session.value("state").toString()), tone) + "<br>" +
       muted(QString("%1 · %2 · session %3 · started %4 by %5").arg(session.value("kind").toString() == "physics" ? "Qualified physics simulation"
           : session.value("kind").toString() == "sorting" ? "Sorting session, fake hardware" : "Fake-hardware plan only",

@@ -6817,7 +6817,8 @@ void MainWindow::consume_cycle_output(const QString & output)
     if (event.contains("stage")) {
       const QString stage = event.value("stage").toString();
       if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid()) {
-        monitor_.timeline.observe(stage, event.value("phase").toString(), event.value("motion").toBool(), QDateTime::currentDateTime());
+        monitor_.timeline.observe(stage, event.value("phase").toString(),
+          event.value("motion").toBool() || (sorting_mode_ && stage.startsWith("EXECUTE_")), QDateTime::currentDateTime());
         if (monitor_.runner_pid < 0 && preview_process_) monitor_.runner_pid = preview_process_->processId();
       }
       QString friendly = stage.toLower(); friendly.replace('_', ' ');
@@ -7019,7 +7020,8 @@ QJsonObject MainWindow::monitor_snapshot() const
     {"kind", monitor_.kind}, {"session_id", QFileInfo(monitor_.output).fileName()}, {"origin", monitor_.origin},
     {"cell", monitor_.cell}, {"scene_dir", monitor_.scene_dir}, {"task", monitor_.task}, {"backend", monitor_.backend},
     {"started", monitor_.started.toString("HH:mm:ss")}, {"active", !finished}, {"state", state}, {"state_code", code},
-    {"process", process}, {"timeline_html", t.html(physics, finished)},
+    // A sorting session executes on mock controllers: its executed stages are shown, never as plan-only.
+    {"process", process}, {"timeline_html", t.html(physics || monitor_.kind == "sorting", finished)},
     {"last_event", t.last_stage.isEmpty() ? QString("none yet") :
       QString("%1%2 at %3 (%4)").arg(t.last_stage, t.last_phase.isEmpty() ? QString() : " · " + t.last_phase, t.last_time.toString("HH:mm:ss.zzz"),
                                      physics ? QString("live qualified physics runner") : QString("fake-hardware executor"))},
