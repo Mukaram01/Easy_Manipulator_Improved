@@ -75,7 +75,7 @@ FAST_TEST_FILES=(
     "tests/test_bridge_shutdown_overlay.py",
     "tests/test_closure_clearance.py","tests/test_destination_binding.py",
     "tests/test_end_effector_hold.py","tests/test_simulation_collision.py","tests/test_simulator_world.py","tests/test_scene_package_dir_launch.py","tests/test_r4_1b_dynamic_runtime.py",
-    "tests/test_perception_replay.py",
+    "tests/test_perception_replay.py","tests/test_live_perception_session.py",
     "tests/test_end_effector_selection.py",
     "tests/test_tool_interface.py","tests/test_transport_policy.py",
     "tests/test_extraction_runtime.py","tests/test_full_cycle_preplanner.py",
@@ -1064,6 +1064,10 @@ def main(argv=None):
                 try:validate_replay(yaml.safe_load(Path(args.authored_cell["perception"]["replay"]).read_text()),
                                     args.authored_cell["package"],physics_world_sha256=world_report["world_sha256"])
                 except PerceptionBlocked as exc:raise RuntimeError(str(exc)) from exc
+                # Every session detects again with the registered EPD runtime: refuse now, not after the build.
+                from live_perception_session import PerceptionUnavailable,load_runtime
+                try:load_runtime(workspace)
+                except PerceptionUnavailable as exc:raise RuntimeError(f"PERCEPTION_RUNTIME_UNAVAILABLE: {exc}") from exc
                 args.authored_cell["perception"]["workspace"]=str(workspace)
         elif args.mode!="fast":source_world=discover_source_world(args.source_world,workspace,args.world_profile)
         launch_checkout_guard(repo)
