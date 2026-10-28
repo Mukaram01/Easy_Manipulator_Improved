@@ -231,7 +231,10 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
         emit()
         while True:
             apply_control(cycle_active=False)
+            before_boundary = session.state
             session.boundary()
+            if session.state != before_boundary:
+                emit()                                   # PAUSING -> PAUSED / STOPPING -> STOPPED are reported too
             if session.state == 'STOPPED':
                 break
             if session.state == 'PAUSED':
@@ -241,6 +244,7 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
             if target is None:
                 session.transition('STOPPING', 'BATCH_COMPLETE: no further object can be sorted from this batch')
                 session.boundary()
+                emit()
                 break
             session.begin_cycle(target)
             emit()
