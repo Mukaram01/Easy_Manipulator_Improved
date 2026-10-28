@@ -192,3 +192,14 @@ def test_physics_stays_blocked_until_a_qualified_scope_covers_the_task():
     assert physics_task_qualification(valid_intent(), catalog)["qualified"]    # the qualified single cycle
     future = dict(catalog, task_scope={"class_routing": True, "max_destinations": 3, "continuous_sorting": True})
     assert physics_task_qualification(routed, future, sorting_session=True)["qualified"]   # no engine change
+
+
+def test_fake_world_refresh_renews_only_a_reproduced_world():
+    from scripts.perceived_object_grasp_execute import fake_world_refresh
+    cup = {"id": "runtime::cup-1", "pose": [0.3, -0.1, 0.05, 0, 0, 0, 1], "dimensions": [0.06, 0.06, 0.10], "timestamp": 1.0}
+    evidence = fake_world_refresh([cup], {cup["id"]: copy.deepcopy(cup)}, clock=lambda: 50.0)
+    assert cup["timestamp"] == 50.0 and evidence["source"] == "fake_hardware_planning_scene"
+    moved = dict(copy.deepcopy(cup), pose=[0.3, -0.1, 0.06, 0, 0, 0, 1])
+    with pytest.raises(RuntimeError, match="SORTING_WORLD_CHANGED"):
+        fake_world_refresh([cup], {cup["id"]: moved}, clock=lambda: 60.0)
+    assert cup["timestamp"] == 50.0                                              # nothing renewed on refusal

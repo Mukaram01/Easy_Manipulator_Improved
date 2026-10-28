@@ -1411,6 +1411,27 @@ def observations_to_insert(objects,existing,backend,reconcile=False):
     return [o for o in objects if o['id'] not in duplicates]
 
 
+def fake_world_refresh(objects, live, clock=time.time):
+    """Renew a fake-hardware sorting cycle's observation time from its live PlanningScene, or refuse.
+
+    Fake hardware has no physical world: the live PlanningScene is the whole world model, and
+    VERIFY_PREPLAN_UNCHANGED has just proven it unchanged since the observations were inserted. Like the
+    simulator's execution-boundary refresh, the observations are renewed only if that measurement reproduces
+    every observed identity and geometry exactly; the unchanged age limit is applied afterwards. Never used with
+    a simulated or physical backend.
+    """
+    changed = sorted(o['id'] for o in objects if not observation_geometry_matches(o, live.get(o['id'])))
+    if changed:
+        raise RuntimeError('SORTING_WORLD_CHANGED: the live PlanningScene differs from the observed objects: '
+                           + ', '.join(changed))
+    renewed = clock()
+    for o in objects:
+        o['timestamp'] = renewed
+    return dict(source='fake_hardware_planning_scene', renewed_wall_s=renewed,
+                verified_object_ids=sorted(o['id'] for o in objects),
+                note='fake hardware only: identity and geometry reproduced by the live PlanningScene; no sensor')
+
+
 def discovered_graph(read_graph, spin, timeout=10.0):
     """Node names once this process has discovered a controller_manager (bounded).
 
@@ -3012,6 +3033,10 @@ def main():
             first=motion[0]['trajectory'].joint_trajectory
             snapshot,summary['execution_observation_refresh']=refresh_at_execution_boundary(
                 snapshot,objects,measurements,dict(names=list(first.joint_names),positions=list(first.points[0].positions)))
+        if sorting_cycle is not None and not measurements:
+            # Fake hardware: the live PlanningScene is the whole world (see fake_world_refresh).
+            summary['execution_observation_refresh'] = fake_world_refresh(
+                objects, {o.id: collision_object_dict(o) for o in scene_now().world.collision_objects})
         fresh = select_observations(intent, physical, objects, time.time(), age_cap) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
