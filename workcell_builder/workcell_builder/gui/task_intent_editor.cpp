@@ -576,8 +576,12 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     auto * box = new QWidget(this);
     auto * column = new QVBoxLayout(box); column->setContentsMargins(0, 0, 0, 0);
     routing_table_ = new QTableWidget(0, 4, box); routing_table_->setObjectName("taskRoutingTable");
-    routing_table_->setHorizontalHeaderLabels({"Object class", "Destination region", "Enabled", "Priority"});
-    routing_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    routing_table_->setHorizontalHeaderLabels({"Class", "Destination region", "On", "Priority"});
+    // The destination takes the remaining width: region names (e.g. a bin's left/right compartment) must stay distinct.
+    routing_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    routing_table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    routing_table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
+    routing_table_->horizontalHeader()->resizeSection(0, 100);
     routing_table_->verticalHeader()->setVisible(false);
     routing_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     routing_table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -590,7 +594,9 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     auto * remove = new QPushButton("Delete rule", box); remove->setObjectName("taskRoutingDelete");
     buttons->addWidget(add); buttons->addWidget(remove); buttons->addStretch(1);
     column->addLayout(buttons);
-    where->addRow("Route by class", box);
+    // Full width: class and region names must stay readable in the narrow task panel.
+    where->addRow(new QLabel("Route by class", this));
+    where->addRow(box);
     unrouted_policy_ = new QComboBox(this); unrouted_policy_->setObjectName("taskUnroutedPolicy");
     unrouted_policy_->addItem("Leave in place (not picked)", "leave_in_place");
     unrouted_policy_->addItem("Stop the sorting session", "stop_session");
@@ -846,6 +852,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     }
     regions_->clear(); regions_->addItems(report["regions"].toObject().keys());
     region_ids_ = report["regions"].toObject().keys();
+    report_ = report;                      // routing rows read the region -> target map while the fields load
     vocabulary_.clear();
     for (const auto & value : report["class_vocabulary"].toObject()["classes"].toArray()) vocabulary_ << value.toString();
     strategies_->setEditable(false);
@@ -1375,6 +1382,8 @@ void TaskIntentEditor::add_routing_row(const QJsonObject & rule)
   const int row = routing_table_->rowCount();
   routing_table_->insertRow(row);
   auto * cls = new QComboBox(routing_table_); cls->setEditable(true); cls->addItems(vocabulary_);
+  // Size to a short class name, not the longest vocabulary label, so the destination column stays readable.
+  cls->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); cls->setMinimumContentsLength(5);
   cls->setCurrentText(rule.value("when").toObject().value("equals").toString());
   cls->setProperty("rule_id", rule.value("id").toString());
   cls->setObjectName(QString("taskRoutingClass%1").arg(row));
@@ -1383,10 +1392,18 @@ void TaskIntentEditor::add_routing_row(const QJsonObject & rule)
   if (!region.isEmpty() && destination->findText(region) < 0) destination->addItem(region);   // shown, then validated
   destination->setCurrentText(region);
   destination->setObjectName(QString("taskRoutingDestination%1").arg(row));
+  const auto regions = report_.value("regions").toObject();
+  for (int i = 0; i < destination->count(); ++i)
+    destination->setItemData(i, destination->itemText(i) + " in " + regions.value(destination->itemText(i)).toString("?"), Qt::ToolTipRole);
+  destination->setToolTip(destination->currentText() + " in " + regions.value(destination->currentText()).toString("?"));
+  connect(destination, &QComboBox::currentTextChanged, destination, [destination, regions](const QString & text) {
+    destination->setToolTip(text + " in " + regions.value(text).toString("?"));
+  });
   auto * enabled = new QCheckBox(routing_table_); enabled->setChecked(rule.value("enabled").toBool(true));
   enabled->setObjectName(QString("taskRoutingEnabled%1").arg(row));
   auto * priority = new QSpinBox(routing_table_); priority->setRange(-1000, 1000);
   priority->setValue(rule.value("priority").toInt(0));
+  priority->setMaximumWidth(72);
   priority->setObjectName(QString("taskRoutingPriority%1").arg(row));
   routing_table_->setCellWidget(row, 0, cls);
   routing_table_->setCellWidget(row, 1, destination);
