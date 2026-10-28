@@ -2876,9 +2876,14 @@ def main():
                 cell=document, targets=eligible, contract=contract, operations=operations,
                 deadline=deadline, summary=summary, resolved=expected_resolution,
                 planning_time=args.segment_planning_time,
-                retry_candidate_budget=180. if args.backend=='simulator' else 20.,
-                discovery_candidate_budget=60. if args.backend=='simulator' else .75,
-                reserve_retry_budget=args.backend=='simulator')
+                # move_group certifies every emitted controller spline on both
+                # backends, so fake hardware needs the same certificate-aware
+                # slices. Measured on ur5_2f_test (LENLEG, 2026-10-28): approach
+                # ~3 s and transfer 4-35 s of certificate per candidate; the
+                # former 0.75 s fake discovery slice exhausted every candidate.
+                retry_candidate_budget=180.,
+                discovery_candidate_budget=60.,
+                reserve_retry_budget=True)
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')
