@@ -125,6 +125,10 @@ private slots:
   void run_fake_hardware_preview();
   void run_full_cycle();
   void run_physics_cycle();
+  void start_physics_cycle(bool operator_confirmed);
+  void handle_operator_command(const QJsonObject & command);
+  void publish_operator_simulation_status();
+  QJsonObject operator_simulation_readiness() const;
   void stop_preview_process();
   void handle_preview_stdout();
   void handle_preview_stderr();
@@ -930,6 +934,7 @@ private:
   struct RuntimeMonitorSession {
     QString kind;                      // "plan" or "physics"
     QString scene_dir, cell, task, backend, output;
+    QString origin{ "Workcell Builder" };   // or "Operator HMI" when the HMI asked for it
     QDateTime started, cancel_requested, finished;
     qint64 runner_pid{ -1 };
     int exit_code{ 0 };
@@ -940,7 +945,8 @@ private:
   QTextBrowser * monitor_view_{ nullptr };
   void begin_monitor(const QString & kind);
   void refresh_monitor();
-  QString monitor_outcome_html() const;
+  QJsonObject monitor_snapshot() const;
+  QJsonObject last_operator_command_;   // the HMI's last simulation request and the Builder's decision
   struct SavedTaskSummary { QString backend, pick, destination, placement; QStringList exclude; };
   SavedTaskSummary saved_task_summary(const QString & scene_dir) const;
   int plan_cycle_domain_{ -1 };       // ROS domain of the running Plan Saved Task session, else -1
