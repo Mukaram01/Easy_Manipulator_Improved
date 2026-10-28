@@ -73,6 +73,8 @@
 #include <QDir>
 #include <QUrl>
 #include <QDateTime>
+#include <QTextBrowser>
+#include <QScrollBar>
 #include <QIODevice>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -3674,9 +3676,10 @@ void MainWindow::setup_studio_shell()
   preview_safety_label_ = new QLabel("<b>Status</b><br/>Mode: Plan / Simulate | Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked | Real hardware execution requires explicit guarded setup and is not launched from this mode."); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
   cycle_status_label_ = new QLabel("Input: Replay / Commissioning Fixture<br/>Ready to run the complete pick/place cycle.", preview);
   cycle_status_label_->setObjectName("cycleStatus"); cycle_status_label_->setWordWrap(true); pl->addWidget(cycle_status_label_);
-  monitor_label_ = new QLabel(preview); monitor_label_->setObjectName("executionMonitor"); monitor_label_->setWordWrap(true);
-  monitor_label_->setTextFormat(Qt::RichText); monitor_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  monitor_label_->hide(); pl->addWidget(monitor_label_);
+  // One scrollable read-only view: word-wrapped labels on this stacked page do not grow with their text.
+  monitor_view_ = new QTextBrowser(preview); monitor_view_->setObjectName("executionMonitor"); monitor_view_->setOpenLinks(false);
+  monitor_view_->setFixedHeight(440); monitor_view_->setProperty("studioFixedHeight", true);
+  monitor_view_->hide(); pl->addWidget(monitor_view_);
   cycle_rviz_box_ = new QCheckBox("Show RViz during the cycle", preview); cycle_rviz_box_->setChecked(true); pl->addWidget(cycle_rviz_box_);
   auto * cycle_diagnostics = new QGroupBox("Diagnostics", preview); cycle_diagnostics->setCheckable(true); cycle_diagnostics->setChecked(false);
   auto * diagnostics_layout = new QVBoxLayout(cycle_diagnostics);
@@ -6275,12 +6278,6 @@ void MainWindow::refresh_preview_launch_ui()
         : saved_task.backend.isEmpty() ? QString("not saved") : QString("MoveIt fake hardware (plan / preview, no physical motion)"),
       physics_backend ? QString(" | Run Physics Simulation Cycle executes it in the simulator; Plan Saved Task only plans it on fake hardware")
                       : QString(" | Plan Saved Task plans it on fake hardware; nothing is executed")));
-  // The highlighted action is the one the saved task selects.
-  for (auto * button : {run_preview_button_, run_physics_button_}) {
-    if (!button) continue;
-    button->setProperty("role", (button == run_physics_button_) == physics_backend ? "primary" : "");
-    button->style()->unpolish(button); button->style()->polish(button);
-  }
   const auto current = selected_scene_readiness();
   if (!blockers.isEmpty()) {
     const auto d = workcell_builder::diagnose_failure(blockers.join("; "));
@@ -6323,15 +6320,31 @@ void MainWindow::refresh_preview_launch_ui()
       }
     }
   }
+  // Before any run of this cell, the cycle line states what can actually run (never a fixed "Ready").
+  if (cycle_status_label_ && monitor_.kind.isEmpty() && cycle_result_.isEmpty() && !busy) {
+    cycle_status_label_->setText(!has_scene ? QString("Select a saved cell.") :
+      current.ready && blockers.isEmpty() ? QString("No run of this cell yet. Plan Saved Task can run (fake hardware, plan only).")
+      : "No run of this cell yet. Plan Saved Task is blocked: " + (blockers.isEmpty() ? current.blockers.join("; ") : blockers.first()).toHtmlEscaped());
+  }
   if (run_preview_button_) {
     run_preview_button_->show();
     run_preview_button_->setText("Plan Saved Task (Fake Hardware)");
-    run_preview_button_->setEnabled(has_scene && current.ready && !busy);
+    run_preview_button_->setEnabled(has_scene && current.ready && blockers.isEmpty() && !busy);
     run_preview_button_->setToolTip(blockers.join("\n"));
   }
   if (full_cycle_mode_ && busy && run_build_button_) run_build_button_->setEnabled(false);
   if (cycle_rviz_box_) cycle_rviz_box_->setEnabled(!busy);
   if (stop_preview_button_) { stop_preview_button_->setVisible(busy); stop_preview_button_->setEnabled(busy && !preview_stop_requested_); }
+  // Highlight only the action the saved task selects, and only while it can run: the primary style would
+  // otherwise make a disabled button look available.
+  for (auto * button : {run_preview_button_, run_physics_button_}) {
+    if (!button) continue;
+    const char * role = button->isEnabled() && (button == run_physics_button_) == physics_backend ? "primary" : "";
+    if (button->property("role").toString() != role) {
+      button->setProperty("role", role);
+      button->style()->unpolish(button); button->style()->polish(button);
+    }
+  }
   refresh_viewer_controls();
 }
 
@@ -6820,7 +6833,7 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
       "confirmed (simulator shut down cleanly; nothing to recover)" : "UNCONFIRMED: check for remaining simulator processes");
     else if (!pass) text += "<br/>Failure: " + result.value("failure").toString("See diagnostics").toHtmlEscaped();
     text += "<br/>Evidence: " + result.value("evidence").toString(cycle_output_dir_).toHtmlEscaped();
-    cycle_status_label_->setText(text);
+    cycle_status_label_->setText(text); refresh_monitor();
     set_physics_state(pass ? "COMPLETED" : cancelled ? "CANCELLED" : "FAILED", text);
     return;
   }
@@ -6863,7 +6876,7 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
         result.value("cancellation_confirmed").toBool() ? "confirmed" : "unconfirmed");
   }
   text += QString("<br/>Runtime: %1 s<br/>Evidence: %2").arg(result.value("runtime_seconds").toDouble(),0,'f',1).arg(cycle_output_dir_.toHtmlEscaped());
-  cycle_status_label_->setText(text);
+  cycle_status_label_->setText(text); refresh_monitor();
   // The log keeps the outcome and its reason after the page has moved on.
   append_studio_log("Cycle result: " + QString(text).replace("<br/>", " | ").remove(QRegularExpression("<[^>]*>")));
 }
@@ -6874,7 +6887,9 @@ MainWindow::SavedTaskSummary MainWindow::saved_task_summary(const QString & scen
     const auto task = YAML::LoadFile((scene_dir + "/config/workcell_builder_task_intent.yaml").toStdString());
     const auto text = [](const YAML::Node & node) { return node && node.IsScalar() ? QString::fromStdString(node.as<std::string>()) : QString(); };
     const auto filter = task["pick"]["selection"]["object_filter"];
+    // TaskIntent v2: a task that names no execution backend runs on fake hardware (task_intent_v2.py).
     summary.backend = text(task["safety"]["execution_backend"]);
+    if (summary.backend.isEmpty()) summary.backend = "fake";
     summary.pick = text(filter["class_id"]);
     if (filter["exclude_class_ids"] && filter["exclude_class_ids"].IsSequence())
       for (const auto & item : filter["exclude_class_ids"]) summary.exclude << QString::fromStdString(item.as<std::string>());
@@ -6913,8 +6928,8 @@ QString MainWindow::monitor_outcome_html() const
 
 void MainWindow::refresh_monitor()
 {
-  if (!monitor_label_) return;
-  if (monitor_.kind.isEmpty()) { monitor_label_->hide(); return; }
+  if (!monitor_view_) return;
+  if (monitor_.kind.isEmpty()) { monitor_view_->hide(); if (cycle_status_label_) cycle_status_label_->show(); return; }
   const bool physics = monitor_.kind == "physics";
   const bool finished = monitor_.finished.isValid();
   const auto & t = monitor_.timeline;
@@ -6964,8 +6979,14 @@ void MainWindow::refresh_monitor()
       d.action.isEmpty() ? QString() : "<br/>What to do: " + d.action.toHtmlEscaped());
   }
   if (!monitor_.output.isEmpty()) text += "<br/>Evidence: " + monitor_.output.toHtmlEscaped();
-  monitor_label_->setText(text);
-  monitor_label_->show();
+  // The page's existing live stage line and result details (show_cycle_result) follow in the same view.
+  if (cycle_status_label_ && !cycle_status_label_->text().isEmpty())
+    text += "<hr/><b>Runner report</b><br/>" + cycle_status_label_->text();
+  if (cycle_status_label_) cycle_status_label_->hide();
+  const int scroll = monitor_view_->verticalScrollBar()->value();
+  monitor_view_->setHtml(text);
+  monitor_view_->verticalScrollBar()->setValue(scroll);
+  monitor_view_->show();
 }
 
 void MainWindow::refresh_viewer_controls()
@@ -7076,6 +7097,7 @@ void MainWindow::stop_preview_process()
     // its owned scene. Never kill the supervisor before its bounded cleanup.
     cycle_status_label_->setText("Stopping simulation… Cancellation is unconfirmed until reported by the backend.");
     if (physics_cycle_mode_) set_physics_state(physics_state_, "Cancel requested: the runner is stopping the executor and shutting the simulator down. Unconfirmed until it reports.");
+    refresh_monitor();
     return;
   }
   // Supervisor: 5s launch-led SIGINT + .7s TERM + .4s KILL verification.

@@ -660,7 +660,8 @@ void polishConsolePage(QWidget * page)
   bool grows = false;
   for (int i = 0; i < layout->count(); ++i) {
     QWidget * widget = layout->itemAt(i) ? layout->itemAt(i)->widget() : nullptr;
-    if (qobject_cast<QAbstractScrollArea *>(widget)) grows = true;
+    // A fixed-height scroll view (studioFixedHeight) scrolls its own content and does not make the page grow.
+    if (qobject_cast<QAbstractScrollArea *>(widget) && !widget->property("studioFixedHeight").toBool()) grows = true;
   }
   if (grows) return;
   layout->addStretch(1);

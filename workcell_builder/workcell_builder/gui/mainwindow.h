@@ -17,6 +17,7 @@
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__GUI__MAINWINDOW_H_
 
 #include "runtime_monitor.hpp"
+#include <QTextBrowser>
 #include "scene_selection_set.hpp"
 #include <QFutureWatcher>
 #include <QStackedWidget>
@@ -936,7 +937,7 @@ private:
     workcell_builder::MonitorTimeline timeline;
   };
   RuntimeMonitorSession monitor_;
-  QLabel * monitor_label_{ nullptr };
+  QTextBrowser * monitor_view_{ nullptr };
   void begin_monitor(const QString & kind);
   void refresh_monitor();
   QString monitor_outcome_html() const;
