@@ -907,6 +907,22 @@ private:
   void set_physics_state(const QString & state, const QString & detail);
   QLabel * physics_state_label_{ nullptr };
   QString physics_state_;
+  // Engineering viewers (scripts/workcell_viewer.py): RViz2 or the Gazebo GUI client attached to the
+  // running Studio-owned session. Each runs under its own QProcess; the helper owns the viewer's process
+  // group and closes it when the session ends. Viewers only show the session and never stop it.
+  void open_viewer(const QString & kind);
+  void close_viewers();
+  void refresh_viewer_controls();
+  void consume_viewer_output(const QString & kind, QProcess * process);
+  QPushButton * open_rviz_button_{ nullptr };
+  QPushButton * open_gazebo_button_{ nullptr };
+  QPushButton * close_viewers_button_{ nullptr };
+  QLabel * viewer_state_label_{ nullptr };
+  QProcess * rviz_viewer_{ nullptr };
+  QProcess * gazebo_viewer_{ nullptr };
+  QMap<QString, QString> viewer_status_;
+  int plan_cycle_domain_{ -1 };       // ROS domain of the running Plan Saved Task session, else -1
+  bool plan_cycle_rviz_{ false };     // that session already launched its own RViz
   // Live perception of the selected cell's bound camera through EPD (live_perception_session.py):
   // perception preview and task eligibility only; robot planning stays blocked without calibration.
   void discover_live_cameras();

@@ -3689,6 +3689,12 @@ void MainWindow::setup_studio_shell()
   run_preview_button_ = new QPushButton("Run Full Cycle", preview); run_preview_button_->setObjectName("runFullCycle"); run_preview_button_->setProperty("role","primary"); pl->addWidget(run_preview_button_);
   run_physics_button_ = new QPushButton("Run Physics Simulation Cycle", preview); run_physics_button_->setObjectName("runPhysicsCycle"); pl->addWidget(run_physics_button_);
   physics_state_label_ = new QLabel(preview); physics_state_label_->setObjectName("physicsCycleState"); physics_state_label_->setWordWrap(true); pl->addWidget(physics_state_label_);
+  pl->addWidget(new QLabel("<b>Engineering Visualization</b><br/>Attach RViz or the Gazebo viewer to the running session. "
+                           "Viewers only show it: closing one never stops the session, and none can move the robot."));
+  open_rviz_button_ = new QPushButton("Open RViz", preview); open_rviz_button_->setObjectName("openRvizViewer"); pl->addWidget(open_rviz_button_);
+  open_gazebo_button_ = new QPushButton("Open Gazebo", preview); open_gazebo_button_->setObjectName("openGazeboViewer"); pl->addWidget(open_gazebo_button_);
+  close_viewers_button_ = new QPushButton("Close Visualization", preview); close_viewers_button_->setObjectName("closeViewers"); pl->addWidget(close_viewers_button_);
+  viewer_state_label_ = new QLabel(preview); viewer_state_label_->setObjectName("viewerState"); viewer_state_label_->setWordWrap(true); pl->addWidget(viewer_state_label_);
   stop_preview_button_ = new QPushButton("Stop Simulation", preview); stop_preview_button_->hide(); pl->addWidget(stop_preview_button_);
   copy_launch_button_ = new QPushButton("Copy Launch Command", preview); pl->addWidget(copy_launch_button_);
   preview_more_actions_button_ = new QToolButton(preview);
@@ -4024,6 +4030,25 @@ void MainWindow::setup_studio_shell()
   connect(preview_process_, &QProcess::readyReadStandardError, this, &MainWindow::handle_preview_stderr);
   connect(preview_process_, &QProcess::errorOccurred, this, &MainWindow::handle_preview_error);
   connect(preview_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this, &MainWindow::handle_preview_finished);
+  for (const QString kind : {QStringLiteral("rviz"), QStringLiteral("gazebo")}) {
+    auto * process = new QProcess(this);
+    (kind == "rviz" ? rviz_viewer_ : gazebo_viewer_) = process;
+    connect(process, &QProcess::readyReadStandardOutput, this, [this, kind, process]() { consume_viewer_output(kind, process); });
+    connect(process, &QProcess::readyReadStandardError, this, [process]() { process->readAllStandardError(); });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+      [this, kind, process](int exit_code, QProcess::ExitStatus exit_status) {
+        consume_viewer_output(kind, process);
+        // The helper reports how its viewer ended; without that line, say what actually happened.
+        if (!viewer_status_.value(kind).startsWith("CLOSED") && !viewer_status_.value(kind).startsWith("BLOCKED"))
+          viewer_status_[kind] = QString("CLOSED: viewer helper ended (exit code %1%2)").arg(exit_code)
+            .arg(exit_status == QProcess::CrashExit ? ", crashed" : "");
+        append_studio_log(QString("%1 viewer: %2").arg(kind, viewer_status_.value(kind)));
+        refresh_viewer_controls();
+      });
+  }
+  connect(open_rviz_button_, &QPushButton::clicked, this, [this]() { open_viewer("rviz"); });
+  connect(open_gazebo_button_, &QPushButton::clicked, this, [this]() { open_viewer("gazebo"); });
+  connect(close_viewers_button_, &QPushButton::clicked, this, &MainWindow::close_viewers);
   refresh_scene_browser_ui();
   refresh_preview_launch_ui();
   refresh_new_cell_checklist();
@@ -5797,6 +5822,12 @@ void MainWindow::closeEvent(QCloseEvent * event)
     if (box.clickedButton() != discard) { event->ignore(); return; }
     append_studio_log(QStringLiteral("Unsaved layout edits in %1 were discarded on closing.").arg(selected_scene_state_.name));
   }
+  for (auto * viewer : {rviz_viewer_, gazebo_viewer_}) {
+    if (viewer && viewer->state() != QProcess::NotRunning) {
+      viewer->terminate();                            // the helper closes only its own viewer group
+      if (!viewer->waitForFinished(12000)) viewer->kill();
+    }
+  }
   if (perception_process_ && perception_process_->state() != QProcess::NotRunning) {
     perception_process_->terminate();                 // the session stops EPD, then exits
     if (!perception_process_->waitForFinished(20000)) perception_process_->kill();
@@ -6253,6 +6284,7 @@ void MainWindow::refresh_preview_launch_ui()
   if (full_cycle_mode_ && busy && run_build_button_) run_build_button_->setEnabled(false);
   if (cycle_rviz_box_) cycle_rviz_box_->setEnabled(!busy);
   if (stop_preview_button_) { stop_preview_button_->setVisible(busy); stop_preview_button_->setEnabled(busy && !preview_stop_requested_); }
+  refresh_viewer_controls();
 }
 
 // Validation is only "current" when the validator actually ran and passed.
@@ -6778,6 +6810,97 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
   // The log keeps the outcome and its reason after the page has moved on.
   append_studio_log("Cycle result: " + QString(text).replace("<br/>", " | ").remove(QRegularExpression("<[^>]*>")));
 }
+void MainWindow::refresh_viewer_controls()
+{
+  if (!open_rviz_button_) return;
+  const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
+  const bool physics_session = busy && physics_cycle_mode_;
+  const bool plan_session = busy && full_cycle_mode_ && !physics_cycle_mode_ && plan_cycle_domain_ > 0;
+  const bool rviz_open = rviz_viewer_ && rviz_viewer_->state() != QProcess::NotRunning;
+  const bool gazebo_open = gazebo_viewer_ && gazebo_viewer_->state() != QProcess::NotRunning;
+  QString rviz_reason;
+  if (rviz_open) rviz_reason = "RViz is already open for this session.";
+  else if (busy && !full_cycle_mode_) rviz_reason = "This fake-hardware preview already shows RViz.";
+  else if (plan_session && plan_cycle_rviz_) rviz_reason = "This run already shows RViz (Show RViz during the cycle).";
+  else if (!plan_session && !physics_session)
+    rviz_reason = "RViz attaches to a running session: start Plan Saved Task or a physics simulation cycle first.";
+  open_rviz_button_->setEnabled(rviz_reason.isEmpty());
+  open_rviz_button_->setToolTip(rviz_reason.isEmpty() ?
+    "Opens RViz on this session's live MoveIt (robot, TF, planning scene). Closing RViz leaves the session running." : rviz_reason);
+  const QString gazebo_reason = gazebo_open ? "The Gazebo viewer is already open." :
+    physics_session ? QString() : "The Gazebo viewer attaches to a running physics simulation cycle.";
+  open_gazebo_button_->setEnabled(gazebo_reason.isEmpty());
+  open_gazebo_button_->setToolTip(gazebo_reason.isEmpty() ?
+    "Opens a read-only Gazebo view of the running simulation (no pause, step or editing). Rendering slows the "
+    "simulator's real-time pace; physics steps and safety guards are unchanged." : gazebo_reason);
+  close_viewers_button_->setEnabled(rviz_open || gazebo_open);
+  QStringList lines;
+  for (const QString kind : {QStringLiteral("rviz"), QStringLiteral("gazebo")})
+    if (viewer_status_.contains(kind)) lines << QString("%1: %2").arg(kind == "rviz" ? "RViz" : "Gazebo", viewer_status_.value(kind).toHtmlEscaped());
+  if (viewer_state_label_) viewer_state_label_->setText(lines.join("<br/>"));
+}
+
+void MainWindow::consume_viewer_output(const QString & kind, QProcess * process)
+{
+  while (process->canReadLine()) {
+    const auto event = QJsonDocument::fromJson(process->readLine().trimmed()).object();
+    const QString status = event.value("status").toString();
+    if (status == "OPEN") {
+      viewer_status_[kind] = kind == "rviz" ?
+        QString("OPEN · ROS domain %1 · move_group pid %2%3").arg(event.value("domain").toString())
+          .arg(event.value("move_group_pid").toInt()).arg(event.value("use_sim_time").toBool() ? " · simulation time" : "") :
+        QString("OPEN · world %1 · partition %2 · server pid %3").arg(event.value("world").toString(),
+          event.value("partition").toString()).arg(event.value("server_pid").toInt());
+    } else if (status == "BLOCKED") {
+      viewer_status_[kind] = "BLOCKED: " + event.value("reason").toString();
+    } else if (status == "CLOSED") {
+      const QString reason = event.value("reason").toString();
+      viewer_status_[kind] = QString("CLOSED: %1 (viewer exit code %2%3)")
+        .arg(reason == "RUNTIME_ENDED" ? "the session ended" : reason == "STOP_REQUESTED" ? "closed from Workcell Studio" : "closed by the user")
+        .arg(event.value("viewer_exit_code").toInt()).arg(event.value("clean").toBool() ? "" : ", not clean");
+    }
+  }
+  refresh_viewer_controls();
+}
+
+void MainWindow::open_viewer(const QString & kind)
+{
+  auto * process = kind == "rviz" ? rviz_viewer_ : gazebo_viewer_;
+  if (!process || process->state() != QProcess::NotRunning) return;       // one viewer of each kind
+  refresh_viewer_controls();
+  if (!(kind == "rviz" ? open_rviz_button_ : open_gazebo_button_)->isEnabled()) return;
+  QString script;
+  if (!helper_script_exists("workcell_viewer.py", &script)) {
+    viewer_status_[kind] = "BLOCKED: scripts/workcell_viewer.py is missing."; refresh_viewer_controls(); return;
+  }
+  const auto quote = [](QString value) { return "'" + value.replace("'", "'\\''") + "'"; };
+  QStringList args{kind};
+  if (kind == "rviz") {
+    args << (physics_cycle_mode_ ? QString("--cycle-output %1").arg(quote(cycle_output_dir_)) : QString("--domain %1").arg(plan_cycle_domain_))
+         << "--rviz-config" << quote(QString::fromStdString((active_preview_scene_.scene_dir / "launch" / "demo.rviz").string()));
+  } else {
+    args << "--cycle-output" << quote(cycle_output_dir_);
+  }
+  const QString command = QString("source /opt/ros/humble/setup.bash && source %1 && exec python3 %2 %3")
+    .arg(quote(detect_workspace_root() + "/install/setup.bash"), quote(script), args.join(' '));
+  viewer_status_[kind] = "Opening…";
+  append_studio_log(QString("%1 viewer: %2").arg(kind, command));
+  process->start("/bin/bash", {"-c", command});
+  refresh_viewer_controls();
+}
+
+void MainWindow::close_viewers()
+{
+  for (auto * viewer : {rviz_viewer_, gazebo_viewer_}) {
+    if (!viewer || viewer->state() == QProcess::NotRunning) continue;
+    const qint64 pid = viewer->processId();
+    viewer->terminate();                    // the helper stops its viewer group (SIGINT, TERM, KILL) and exits
+    QTimer::singleShot(12000, this, [viewer, pid]() {
+      if (viewer->state() != QProcess::NotRunning && viewer->processId() == pid) viewer->kill();
+    });
+  }
+}
+
 void MainWindow::stop_preview_process()
 {
   if (!preview_process_ || preview_process_->state() == QProcess::NotRunning || preview_stop_requested_) return;
@@ -6822,6 +6945,8 @@ void MainWindow::handle_preview_error(QProcess::ProcessError error){
   const QString msg=preview_process_?preview_process_->errorString():"unknown error"; append_studio_log(QString("ERROR stage=%1 QProcess error=%2 message=%3 output_tail=%4").arg(preview_state_).arg(static_cast<int>(error)).arg(msg,preview_output_tail_)); if(preview_state_=="BUILD_RUNNING") set_preview_state("BUILD_FAILED"); else set_preview_state("PREVIEW_FAILED"); }
 void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exit_status){
   const QString completed_stage=preview_state_;
+  // The session this page owned has ended: close its viewers and forget its domain.
+  if (completed_stage != "BUILD_RUNNING" && completed_stage != "PACKAGE_CHECK_RUNNING") { close_viewers(); plan_cycle_domain_ = -1; }
   if (full_cycle_mode_ && (completed_stage == "PREVIEW_RUNNING" || completed_stage == "PREVIEW_LAUNCHING" || preview_stop_requested_)) {
     handle_preview_stdout();
     const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
@@ -6878,8 +7003,9 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
           scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir != active_preview_scene_.scene_dir) {
         set_preview_state("CYCLE_FAILED"); cycle_status_label_->setText("Scene changed during build. Save, Generate and Validate before running."); return;
       }
+      plan_cycle_domain_ = QRandomGenerator::global()->bounded(30, 220); plan_cycle_rviz_ = cycle_rviz_box_->isChecked();
       active_preview_command_ = workcell_builder::build_full_cycle_command(active_preview_scene_,
-        active_preview_workspace_root_.toStdString(), cycle_output_dir_, QRandomGenerator::global()->bounded(30, 220), cycle_rviz_box_->isChecked());
+        active_preview_workspace_root_.toStdString(), cycle_output_dir_, plan_cycle_domain_, plan_cycle_rviz_);
       if (active_preview_command_.isEmpty()) { set_preview_state("CYCLE_FAILED"); return; }
       set_preview_state("PREVIEW_LAUNCHING");
       preview_process_->start("/bin/bash", {"-lc", active_preview_command_}); return;
