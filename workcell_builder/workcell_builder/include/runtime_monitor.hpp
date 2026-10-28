@@ -147,6 +147,15 @@ inline FailureDiagnosis diagnose_failure(const QString & text)
   if (in({"PLACE_OBJECT_DOES_NOT_FIT", "DESTINATION_CONTAINMENT", "PLACE_LOCAL_POSE_OUTSIDE_REGION", "PHYSICAL_DESTINATION_INVALID"}))
     return {code, "The selected object cannot be placed inside the configured destination with this clearance and the planner's placement tolerance.",
       "Task > How to place: reduce the placement clearance (the message names the largest that fits) or choose another destination, then Save, Generate and Validate."};
+  if (in({"TASK_ROUTE_DESTINATION_INVALID"}))
+    return {code, "A class routing rule names a placement region that is missing, not inside its target, or on a target without collision geometry.",
+      "Task > Where > Route by class: name an existing placement region of a collision-modelled bin for every class, then Save, Generate and Validate."};
+  if (in({"TASK_ROUTE_CHANGED"}))
+    return {code, "The resolved object no longer routes to the destination it was planned for; no other bin is substituted.",
+      "Resolve the saved task again (Plan Saved Task), then Generate and Validate."};
+  if (in({"TASK_ROUTING_PHYSICS_UNQUALIFIED"}))
+    return {code, "Class routing is qualified for fake-hardware planning only; the qualified physics world binds one destination.",
+      "Use Plan Saved Task (fake hardware). Physics execution of a routed task needs a separately qualified multi-destination world."};
   if (in({"QUALIFIED_RUNTIME_UNAVAILABLE", "MOVEIT_OVERLAY_REJECTED", "SIMULATOR_IDENTITY_REJECTED", "NO_ACTIVE_SIMULATION",
           "SIMULATOR_EXECUTION_UNCOMMISSIONED"}))
     return {code, "No qualified physics simulator runtime is available, or it no longer matches its qualification.",

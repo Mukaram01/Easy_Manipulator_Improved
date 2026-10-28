@@ -947,7 +947,7 @@ private:
   void refresh_monitor();
   QJsonObject monitor_snapshot() const;
   QJsonObject last_operator_command_;   // the HMI's last simulation request and the Builder's decision
-  struct SavedTaskSummary { QString backend, pick, destination, placement; QStringList exclude; };
+  struct SavedTaskSummary { QString backend, pick, destination, placement; QStringList exclude, routes; };
   SavedTaskSummary saved_task_summary(const QString & scene_dir) const;
   int plan_cycle_domain_{ -1 };       // ROS domain of the running Plan Saved Task session, else -1
   bool plan_cycle_rviz_{ false };     // that session already launched its own RViz

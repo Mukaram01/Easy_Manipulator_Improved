@@ -6903,6 +6903,9 @@ MainWindow::SavedTaskSummary MainWindow::saved_task_summary(const QString & scen
       for (const auto & item : filter["exclude_class_ids"]) summary.exclude << QString::fromStdString(item.as<std::string>());
     summary.destination = text(task["place"]["target"]["asset_ref"]) + " / " + text(task["place"]["target"]["region_ref"]);
     summary.placement = text(task["place"]["placement"]["policy"]);
+    if (text(task["routing"]["mode"]) == "class" && task["routing"]["rules"].IsSequence())   // class routing
+      for (const auto & rule : task["routing"]["rules"])
+        summary.routes << text(rule["when"]["equals"]) + " → " + text(rule["destination"]);
   } catch (const std::exception &) {
     // An unreadable task is reported as such by readiness; here it stays "Not available".
   }
@@ -6919,7 +6922,10 @@ void MainWindow::begin_monitor(const QString & kind)
   monitor_.cell = QString::fromStdString(scene.scene_name);
   // A snapshot of the saved task this session runs: later edits never relabel a running or finished session.
   const auto task = saved_task_summary(monitor_.scene_dir);
-  monitor_.task = QString("pick %1%2 → %3 (%4 placement)").arg(task.pick.isEmpty() ? QString("any class") : task.pick,
+  monitor_.task = !task.routes.isEmpty()
+    ? QString("route by class: %1; other classes not picked (%2 placement)").arg(task.routes.join(", "),
+        task.placement.isEmpty() ? QString("?") : task.placement)
+    : QString("pick %1%2 → %3 (%4 placement)").arg(task.pick.isEmpty() ? QString("any class") : task.pick,
     task.exclude.isEmpty() ? QString() : " (excluding " + task.exclude.join(", ") + ")",
     task.destination == " / " ? QString("Not available") : task.destination, task.placement.isEmpty() ? QString("?") : task.placement);
   monitor_.backend = kind == "physics" ? "Qualified physics simulation (Gazebo Fortress / DART, simulated robot)"
