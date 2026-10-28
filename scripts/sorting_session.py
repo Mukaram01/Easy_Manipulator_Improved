@@ -14,6 +14,12 @@ emergency stop. Observation sources:
   execution evidence (completed objects at their verified placed pose), never the old frame again.
 * ``continuous`` - every cycle ingests a new live frame (camera or simulator measurement); a frame that
   still shows a processed object at its pick place is rejected as stale instead of re-picking it.
+
+R2.5A rendered frames (runtime_pick_inputs.rendered_frame): in continuous mode on fake hardware every cycle observes a
+frame the cell camera rendered from this session's own world (``render_world``) and EPD classified. A frame must name
+the current world revision and reproduce every known object's geometry, else FRAME_WORLD_MISMATCH. Identity is the
+cell's test object; class and confidence come only from EPD. An object EPD does not classify in the current frame
+(``unperceived``) is not eligible in it; one whose class changes between frames is CLASS_UNSTABLE and never picked.
 """
 from __future__ import annotations
 
@@ -39,6 +45,7 @@ TRANSITIONS = {
 PENDING, COMPLETED, REJECTED = 'PENDING', 'COMPLETED', 'REJECTED'
 SKIPPED_UNROUTED, SKIPPED_DISABLED, NOT_ELIGIBLE = 'SKIPPED_UNROUTED', 'SKIPPED_DISABLED', 'NOT_ELIGIBLE'
 WAITING_FULL, REMOVED = 'WAITING_DESTINATION_FULL', 'REMOVED'
+UNPERCEIVED = 'unperceived'       # an object EPD did not classify (perception_replay.associate)
 # Resolver/planner refusals that another attempt on an unchanged world cannot change.
 DETERMINISTIC_REFUSALS = ('PLACE_OBJECT_DOES_NOT_FIT', 'DESTINATION_CONTAINMENT', 'GRASP_CANDIDATE_INVALID',
                           'STRATEGY_TOOL_INCOMPATIBLE', 'REQUIRED_CAPABILITY_UNAVAILABLE', 'TARGET_NOT_ELIGIBLE',
@@ -65,6 +72,14 @@ def _rpy_from_quaternion(q):
     pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
     yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
     return [roll, pitch, yaw]
+
+
+def _same_geometry(a, b, tolerance=1e-7):
+    """Equal pose and size (quaternion sign-insensitive), as the executor compares the live PlanningScene."""
+    pa, pb = a['pose'], b['pose']
+    return (all(abs(x - y) <= tolerance for x, y in zip(pa[:3], pb[:3]))
+            and all(abs(x - y) <= tolerance for x, y in zip(a['dimensions'], b['dimensions']))
+            and min(math.dist(pa[3:], pb[3:]), math.dist(pa[3:], [-v for v in pb[3:]])) <= tolerance)
 
 
 def failure_code(text):
@@ -126,6 +141,8 @@ class SortingSession:
         self.stage = None
         self.frames = []         # provenance of every ingested frame
         self.control_seq = 0
+        self.initial_world = None  # R2.5A rendered frames: the cell's test objects at rest, before any frame
+        self.observing = None      # what the runner is acquiring now (render + EPD), for status
 
     # -------------------------------------------------------------- lifecycle
     def transition(self, state, reason=''):
@@ -184,11 +201,20 @@ class SortingSession:
     # -------------------------------------------------------------- observations
     def ingest_frame(self, snapshot, observations, *, source_sha256):
         """Record a frame's objects. A frame showing a processed object back at its pick place is stale."""
-        from runtime_pick_inputs import contained, zone
+        from runtime_pick_inputs import RENDER_PRODUCER, contained, world_revision, zone
         import perceived_object_grasp_plan as geometry
         if self.mode == 'batch_replay' and self.frames:
             raise SortingFault('BATCH_FRAME_ALREADY_CONSUMED',
                                'a replayed batch frame is consumed once; later cycles use the reconciled world')
+        source = snapshot.get('source') or {}
+        rendered = source.get('producer') == RENDER_PRODUCER
+        if rendered:
+            if self.mode != 'continuous':
+                raise SortingFault('SORTING_MODE_UNSUPPORTED', 'a rendered frame is a continuous observation')
+            expected = world_revision(self.render_world())
+            if source.get('world_revision') != expected:
+                raise SortingFault('FRAME_WORLD_MISMATCH', f"the frame was rendered from world {source.get('world_revision')}, "
+                                   f'the session world is {expected}: a stale or foreign frame is never used')
         region = zone({'environment': self.environment}, self.intent['pick']['selection']['zone_ref'])
         seen = set()
         for item in observations:
@@ -200,11 +226,19 @@ class SortingSession:
                     'confidence': item.get('confidence'), 'dimensions': list(item['dimensions']),
                     'initial_pose': list(item['pose']), 'pose': list(item['pose']), 'status': PENDING,
                     'attempts': [], 'destination': None, 'first_frame': len(self.frames)}
+                if rendered:
+                    self.objects[item['id']].update(frame_class=item.get('class_id'),
+                                                    class_history=[[len(self.frames), item.get('class_id')]])
                 continue
             if known['status'] == COMPLETED and contained(item, region, geometry):
                 raise SortingFault('PROCESSED_OBJECT_STILL_OBSERVED',
                                    f"{item['id']} was placed in {known['destination']} but this frame still shows it in "
                                    'the pick zone; the frame is stale or the placement did not happen')
+            if rendered:
+                if not _same_geometry(item, known):
+                    raise SortingFault('FRAME_WORLD_MISMATCH', f"{item['id']}: the frame's geometry is not the session's")
+                self._observe_class(known, item)
+                continue
             if known['class_id'] != item.get('class_id'):
                 raise SortingFault('OBJECT_IDENTITY_CONFLICT',
                                    f"{item['id']} changed class {known['class_id']!r} -> {item.get('class_id')!r}")
@@ -213,7 +247,45 @@ class SortingSession:
             if self.mode == 'continuous' and oid not in seen and known['status'] in (PENDING, WAITING_FULL):
                 known['status'] = REMOVED
         self.frames.append({'source_sha256': source_sha256, 'objects': len(observations), 'time': self.clock(),
-                            'source': copy.deepcopy(snapshot.get('source'))})
+                            'source': copy.deepcopy(snapshot.get('source')),
+                            'classes': {item['id']: item.get('class_id') for item in observations}})
+
+    def _observe_class(self, known, item):
+        """A rendered frame's EPD class for a known object (the current frame decides eligibility)."""
+        observed = item.get('class_id')
+        known['frame_class'] = observed
+        known.setdefault('class_history', []).append([len(self.frames), observed])
+        if observed == UNPERCEIVED or known['status'] in (COMPLETED, REJECTED):
+            return                                        # a finished object is never re-decided by its class
+        if known['class_id'] == UNPERCEIVED:
+            known['class_id'], known['confidence'] = observed, item.get('confidence')
+        elif observed != known['class_id']:
+            known['class_unstable'] = True
+            known['status'], known['reason'] = NOT_ELIGIBLE, (
+                f"CLASS_UNSTABLE: EPD classified it {known['class_id']!r} and later {observed!r}; it is never picked")
+        else:
+            known['confidence'] = item.get('confidence')
+
+    def effective_class(self, entry):
+        """The class the current frame supports: unperceived when EPD did not classify it now or its class is unstable."""
+        if entry.get('class_unstable') or entry.get('frame_class', entry['class_id']) == UNPERCEIVED:
+            return UNPERCEIVED
+        return entry['class_id']
+
+    def render_world(self):
+        """The world the cell camera must render for the next frame: [{object_id, pose: {xyz, rpy}, dimensions}].
+
+        Before any frame, the cell's test objects at rest (``initial_world``); after, every object at its ledger
+        pose (a completed object at its state-verified final pose).
+        """
+        if not self.objects:
+            if not self.initial_world:
+                raise SortingFault('SORTING_NO_OBJECTS', 'the cell has no test objects to render')
+            return copy.deepcopy(self.initial_world)
+        return [{'object_id': e['object_id'], 'pose': {'frame_id': 'world', 'xyz': list(e['pose'][:3]),
+                                                       'rpy': _rpy_from_quaternion(e['pose'][3:])},
+                 'dimensions': list(e['dimensions'])}
+                for e in sorted(self.objects.values(), key=lambda e: e['object_id']) if e['status'] != REMOVED]
 
     def world_snapshot(self, base_snapshot):
         """detected_objects/v1 of the reconciled world for the next cycle (batch replay), with its provenance."""
@@ -239,7 +311,7 @@ class SortingSession:
 
     def current_observations(self, now):
         """The ledger as normalized observations (resolver input) at time `now`."""
-        return [{'id': e['id'], 'object_id': e['object_id'], 'class_id': e['class_id'], 'confidence': e['confidence'],
+        return [{'id': e['id'], 'object_id': e['object_id'], 'class_id': self.effective_class(e), 'confidence': e['confidence'],
                  'timestamp': now, 'frame_id': 'world', 'shape': 'BOX', 'pose': list(e['pose']),
                  'dimensions': list(e['dimensions'])}
                 for e in self.objects.values() if e['status'] != REMOVED]
@@ -263,6 +335,13 @@ class SortingSession:
         for decision in explain_observations(self.intent, self.environment, observations, now):
             entry = self.objects[decision['id']]
             if entry['status'] in (COMPLETED, REJECTED):
+                continue
+            if self.effective_class(entry) == UNPERCEIVED:
+                # Not classified by the current frame (or its class is unstable): never a target, always an obstacle.
+                if entry['status'] in (PENDING, WAITING_FULL, NOT_ELIGIBLE):
+                    entry['status'] = NOT_ELIGIBLE
+                    if not entry.get('class_unstable'):
+                        entry['reason'] = 'UNPERCEIVED: EPD did not classify it in the current frame; it stays an obstacle'
                 continue
             in_zone = contained(next(o for o in observations if o['id'] == entry['id']), region, geometry)
             if decision['reason_code'] in ('CLASS_NOT_ROUTED', 'CLASS_ROUTE_DISABLED') and in_zone:
@@ -381,9 +460,19 @@ class SortingSession:
                 'active': copy.deepcopy(self.active), 'stage': self.stage, 'counts': self.counts(),
                 'unrouted_policy': self.policy['unrouted_policy'],
                 'max_attempts_per_object': self.policy['max_attempts_per_object'],
+                'observation': self.observation_status(),
                 'execution': 'MoveIt fake hardware (mock controllers): planning and kinematic execution only; '
                              'no physics, contact or retention evidence; real robot locked',
                 'stop_semantics': 'Pause and Stop are software requests honoured at the cycle boundary; not an emergency stop'}
+
+    def observation_status(self):
+        last = self.frames[-1] if self.frames else {}
+        source = last.get('source') or {}
+        classes = list((last.get('classes') or {}).values())
+        return {'frames': len(self.frames), 'acquiring': self.observing, 'producer': source.get('producer'),
+                'provenance': source.get('provenance'), 'world_revision': source.get('world_revision'),
+                'capture_wall_ns': source.get('capture_wall_ns'),
+                'classified': sum(1 for c in classes if c != UNPERCEIVED), 'unperceived': classes.count(UNPERCEIVED)}
 
     def report(self):
         return dict(self.status(), objects=sorted(copy.deepcopy(list(self.objects.values())), key=lambda e: e['id']),
