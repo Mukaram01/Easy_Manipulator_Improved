@@ -316,6 +316,11 @@ class SortingSession:
         """Classify the active cycle from its executor evidence; returns the outcome. Faults raise."""
         target = self.active
         entry = self.objects[target['id']]
+        if not isinstance(summary, dict) or not isinstance(summary.get('execution_attempted'), bool):
+            # No executor evidence (killed, crashed, unreadable): whether it moved is unknown, so never retry blind.
+            self.active = None
+            raise SortingFault('CYCLE_EVIDENCE_MISSING', f"{target['id']}: the executor ended (exit {returncode}) "
+                               'without its evidence; the world state is unverified')
         attempt = {'cycle': target['cycle'], 'attempt': target['attempt'], 'returncode': returncode,
                    'evidence': str(evidence_dir) if evidence_dir else None,
                    'failure': summary.get('failure'), 'failed_stage': summary.get('failed_stage'),

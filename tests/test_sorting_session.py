@@ -123,6 +123,13 @@ def test_unverified_motion_faults_and_failures_retry_then_reject():
     with pytest.raises(ss.SortingFault, match="CYCLE_EXECUTION_UNVERIFIED"):
         s.record_cycle(bad, 1, [4] * 9)
     assert s.counts()["completed"] == 0                                        # never counted
+    for missing in (None, {}, {"result": "FAIL"}):                             # executor died without evidence
+        s = session(attempts=5)
+        batch(s, obj("cup-1", "cup", 0.30))
+        target = s.next_target(); s.begin_cycle(target)
+        with pytest.raises(ss.SortingFault, match="CYCLE_EVIDENCE_MISSING"):
+            s.record_cycle(missing, -9, [])
+        assert s.objects[target["id"]]["attempts"] == [] and s.counts()["completed"] == 0
     s = session(attempts=2)
     batch(s, obj("cup-1", "cup", 0.30))
     for expected in ("RETRY", ss.REJECTED):

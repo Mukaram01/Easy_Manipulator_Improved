@@ -266,7 +266,10 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
             stream_stages()
             for _ in range(10):   # status messages published just before the executor exited
                 rclpy.spin_once(node, timeout_sec=.1)
-            summary = json.loads((cycle_dir / 'executor.json').read_text()) if (cycle_dir / 'executor.json').exists() else {}
+            try:
+                summary = json.loads((cycle_dir / 'executor.json').read_text())
+            except (OSError, ValueError):
+                summary = None                   # missing or torn evidence: the session faults (CYCLE_EVIDENCE_MISSING)
             new_statuses = [status for key, status in statuses.items() if key not in before]
             outcome = session.record_cycle(summary, child.returncode, new_statuses, cycle_dir)
             child = None
