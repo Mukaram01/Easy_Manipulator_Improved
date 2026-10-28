@@ -94,10 +94,10 @@ static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& t
   ControllerAuditOptions options;options.checkpoint=PlanningAttempt::checkpoint;
   const auto certificate=controller_certificate::certify(trajectory,scene,options);
   RCLCPP_INFO(rclcpp::get_logger("workcell.controller_certificate"),
-    "result=%d reason=%s inspected=%zu certified=%zu subdivided=%zu depth=%u interval=[%ld,%ld] seconds=%.6f contact_timestamps=%zu initial_contacts_expired=%zu",
+    "result=%d reason=%s inspected=%zu certified=%zu subdivided=%zu depth=%u interval=[%ld,%ld] seconds=%.6f contact_timestamps=%zu initial_contacts_expired=%zu limit_timestamps=%zu",
     static_cast<int>(certificate.result),certificate.reason.c_str(),certificate.inspected,certificate.certified,
     certificate.subdivided,certificate.deepest,certificate.failure_begin_ns,certificate.failure_end_ns,certificate.wall_seconds,
-    certificate.contact_timestamps,certificate.initial_contacts_expired);
+    certificate.contact_timestamps,certificate.initial_contacts_expired,certificate.limit_timestamps);
   // Keep the exact emitted spline and frozen scene before a rejected response
   // is cleared. The existing opt-in trace can then reproduce an inconclusive
   // interval offline without replaying any controller action.
@@ -120,7 +120,8 @@ static bool auditControllerTrajectory(const robot_trajectory::RobotTrajectory& t
            << "\ninterval " << certificate.failure_begin_ns << ' ' << certificate.failure_end_ns
            << "\ninspected " << certificate.inspected << "\nseconds " << certificate.wall_seconds
            << "\ncontact_timestamps " << certificate.contact_timestamps
-           << "\ninitial_contacts_expired " << certificate.initial_contacts_expired << '\n';
+           << "\ninitial_contacts_expired " << certificate.initial_contacts_expired
+           << "\nlimit_timestamps " << certificate.limit_timestamps << '\n';
   }
   if(certificate.result!=ControllerCertificate::CERTIFIED_CLEAR) return false;
   constexpr std::size_t max_samples=120001;

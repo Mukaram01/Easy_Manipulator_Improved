@@ -800,6 +800,41 @@ TEST(ControllerCertificate, PrecisionLimitCannotBecomeSuccess) {
   EXPECT_EQ(report.reason,"PRECISION_OR_DEPTH_LIMIT");
   EXPECT_EQ(report.certified,0U);EXPECT_EQ(report.failure_begin_ns,0);
 }
+// A gripper closing from its open stop starts exactly on a position limit, as
+// mock hardware reports it. The roundoff charge then crosses that limit at every
+// depth; the installed controller's integer-nanosecond outputs decide instead.
+robot_trajectory::RobotTrajectoryPtr fromLowerLimit(const SupportFixture& fixture,double start_velocity) {
+  auto trajectory=std::make_shared<robot_trajectory::RobotTrajectory>(fixture.scene->getRobotModel(),"arm");
+  for(unsigned i=0;i<2;++i) {
+    auto state=fixture.scene->getCurrentState();
+    state.setVariablePosition("lift",i?.1:-.1);
+    state.setVariableVelocity("lift",i?0.:start_velocity);
+    state.setVariableAcceleration("lift",0.);
+    state.update();trajectory->addSuffixWayPoint(state,i?1.:0.);
+  }
+  return trajectory;
+}
+TEST(ControllerCertificate, StartExactlyOnLimitCertifiesFromControllerSamples) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,.5);
+  ASSERT_EQ(f.scene->getRobotModel()->getVariableBounds("lift").min_position_,-.1);
+  const auto report=workcell::controller_certificate::certify(*fromLowerLimit(f,0.),*f.scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::CERTIFIED_CLEAR) << report.reason;
+  EXPECT_GT(report.limit_timestamps,0U);
+  EXPECT_LE(report.limit_timestamps,120001U);
+}
+TEST(ControllerCertificate, MotionOutOfLimitStillRejects) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,.5);
+  const auto report=workcell::controller_certificate::certify(*fromLowerLimit(f,-.2),*f.scene);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(report.reason,"JOINT_LIMIT");
+}
+TEST(ControllerCertificate, LimitTimestampBudgetFailsClosed) {
+  SupportFixture f(0.);prepareOrdinaryRequest(f,.5);
+  workcell::ControllerAuditOptions options;options.max_limit_timestamps=0;
+  const auto report=workcell::controller_certificate::certify(*fromLowerLimit(f,0.),*f.scene,options);
+  EXPECT_EQ(report.result,workcell::ControllerCertificate::UNCERTIFIED);
+  EXPECT_EQ(report.reason,"LIMIT_TIMESTAMP_LIMIT");
+}
 TEST(ControllerCertificate, MovingWorldWithoutBoundRejects) {
   SupportFixture f(0.);prepareOrdinaryRequest(f,2.);
   workcell::ControllerAuditOptions options;options.stationary_world=false;
