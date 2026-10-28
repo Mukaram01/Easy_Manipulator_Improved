@@ -9,7 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
-from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, installed_tool_capabilities, STRATEGY_DIR
+from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, installed_tool_capabilities, STRATEGY_DIR, class_routing_rules
 try:
     import yaml
 except Exception:
@@ -97,7 +97,7 @@ def validate_payload(payload, scene_package=None, grasp_dir=None):
                             warnings.append(message + ' PREFERRED may use the region default.')
             except Exception as exc:
                 diagnostics.append({'code': 'R19_DESTINATION_INVALID', 'message': str(exc)})
-            if not diagnostics:
+            if not diagnostics and class_routing_rules(normalized) is not None:
                 # Class routing: every routed region is checked like the placement region (resolver authority).
                 from task_intent_resolver import class_routes
                 try:
