@@ -86,6 +86,9 @@ TEST(RuntimeMonitor, RuntimeFailureCodesAreExplainedWithAnAction)
   EXPECT_TRUE(d.action.contains("clearance"));
   EXPECT_EQ(diagnose_failure("SIMULATOR_IDENTITY_REJECTED: live process mismatch").code, "SIMULATOR_IDENTITY_REJECTED");
   EXPECT_EQ(diagnose_failure("OBSERVATION_STALE: runtime::cup is 4.1 s old").code, "OBSERVATION_STALE");
+  // A stale generated handoff is a Generate step, not a perception refresh.
+  EXPECT_TRUE(diagnose_failure("TASK_HANDOFF_STALE: Generate the current resolution before consuming it").action.contains("Generate"));
+  EXPECT_FALSE(diagnose_failure("TASK_HANDOFF_STALE: Generate the current resolution").meaning.contains("observation"));
   EXPECT_TRUE(diagnose_failure("NO_FEASIBLE_CYCLE: 13/13 candidates").meaning.contains("unreachable"));
   EXPECT_TRUE(diagnose_failure("GRASP_HOLD_CONTACT_LOST at lift").meaning.contains("did not hold"));
   EXPECT_EQ(diagnose_failure("cancelled by the operator (SIGTERM)").code, "CANCELLED");

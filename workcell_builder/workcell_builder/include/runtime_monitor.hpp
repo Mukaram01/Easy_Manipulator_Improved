@@ -160,7 +160,10 @@ inline FailureDiagnosis diagnose_failure(const QString & text)
           "SIMULATOR_EXECUTION_UNCOMMISSIONED"}))
     return {code, "No qualified physics simulator runtime is available, or it no longer matches its qualification.",
       "Register the workspace's qualified runtime from passing Stage-A evidence (scripts/qualified_physics_runtime.py register); physics never runs on an unqualified runtime."};
-  if (in({"OBSERVATION_STALE", "PERCEPTION_STALE", "OBSERVATION_TIME_INVALID", "TIMESTAMP_INVALID", "CLOCK_DOMAIN_MISMATCH", "TASK_HANDOFF_STALE"}))
+  if (in({"TASK_HANDOFF_STALE", "TASK_RESOLUTION_STALE"}))
+    return {code, "The saved task or its resolution changed after the last Generate, so the generated handoff no longer matches it.",
+      "Generate the cell again (Home > More > Generate Package), Validate, then plan."};
+  if (in({"OBSERVATION_STALE", "PERCEPTION_STALE", "OBSERVATION_TIME_INVALID", "TIMESTAMP_INVALID", "CLOCK_DOMAIN_MISMATCH"}))
     return {code, "The object observation is too old or carries an invalid time, so it may not be planned against.",
       "Refresh perception (record and detect the replay again, or rerun the live session), then plan again."};
   if (in({"OBSERVATION_UNAVAILABLE", "OBSERVATION_INVALID", "NO_ELIGIBLE_OBSERVATIONS", "TASK_INPUT_UNAVAILABLE", "REPLAY_INPUT_REQUIRED",
