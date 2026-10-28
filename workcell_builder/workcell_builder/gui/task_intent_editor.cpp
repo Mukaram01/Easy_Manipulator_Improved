@@ -23,6 +23,9 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSet>
+#include <QSpinBox>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QSignalBlocker>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -567,34 +570,48 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   assets_ = choice_field(where, "taskPlaceAsset", "Physical target", "place/target/asset_ref", {});
   regions_ = choice_field(where, "taskPlaceRegion", "Placement region", "place/target/region_ref", {});
   {
-    // Class routing (routing.mode class): each EPD class goes to its own placement region; a class
-    // without a rule is not picked. Empty = direct pick/place into the placement region above.
-    auto * routes = new QLineEdit(this); routes->setObjectName("taskClassRouting");
-    routes->setPlaceholderText("empty = direct; or class=region, e.g. cup=drop_a, bottle=drop_b");
-    routes->setToolTip("Each detected class is placed only in its own region; unlisted classes are not picked. "
-                       "Leave Object class empty and choose one of these regions as the placement region.");
-    where->addRow("Route by class", routes);
-    readers_["routing"] = [routes](const QJsonValue & v) {
-      QStringList pairs;
-      if (v.toObject().value("mode").toString() == "class")
-        for (const auto & item : v.toObject().value("rules").toArray()) {
-          const auto rule = item.toObject();
-          pairs << rule.value("when").toObject().value("equals").toString() + "=" + rule.value("destination").toString();
-        }
-      routes->setText(pairs.join(", "));
-    };
-    connect(routes, &QLineEdit::textEdited, this, [this](const QString & text) {
-      QJsonArray rules;
-      for (const auto & part : text.split(',')) {
-        if (part.trimmed().isEmpty()) continue;
-        const QString name = part.section('=', 0, 0).trimmed();
-        rules.append(QJsonObject{{"id", QString("route_%1_%2").arg(rules.size() + 1).arg(name)},
-                                 {"when", QJsonObject{{"attribute", "class"}, {"equals", name}}},
-                                 {"destination", part.contains('=') ? part.section('=', 1).trimmed() : QString()}});
-      }
-      // Clearing the routes restores direct pick/place into the authored placement region.
-      set_field("routing", QJsonObject{{"mode", rules.isEmpty() ? "direct" : "class"}, {"rules", rules}});
+    // Class routing (routing.mode class): a rule table sending each detected class to an authored placement
+    // region. Many classes may share a region; a class without an enabled rule follows the unrouted policy.
+    // No rows = direct pick/place into the placement region above.
+    auto * box = new QWidget(this);
+    auto * column = new QVBoxLayout(box); column->setContentsMargins(0, 0, 0, 0);
+    routing_table_ = new QTableWidget(0, 4, box); routing_table_->setObjectName("taskRoutingTable");
+    routing_table_->setHorizontalHeaderLabels({"Object class", "Destination region", "Enabled", "Priority"});
+    routing_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    routing_table_->verticalHeader()->setVisible(false);
+    routing_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    routing_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    routing_table_->setMinimumHeight(140);
+    routing_table_->setToolTip("Each class is placed only in its own region. Classes come from the perception "
+                               "vocabulary; regions from this cell. Higher priority is picked first.");
+    column->addWidget(routing_table_);
+    auto * buttons = new QHBoxLayout;
+    auto * add = new QPushButton("Add rule", box); add->setObjectName("taskRoutingAdd");
+    auto * remove = new QPushButton("Delete rule", box); remove->setObjectName("taskRoutingDelete");
+    buttons->addWidget(add); buttons->addWidget(remove); buttons->addStretch(1);
+    column->addLayout(buttons);
+    where->addRow("Route by class", box);
+    unrouted_policy_ = new QComboBox(this); unrouted_policy_->setObjectName("taskUnroutedPolicy");
+    unrouted_policy_->addItem("Leave in place (not picked)", "leave_in_place");
+    unrouted_policy_->addItem("Stop the sorting session", "stop_session");
+    where->addRow("Unrouted objects", unrouted_policy_);
+    max_attempts_ = new QSpinBox(this); max_attempts_->setObjectName("taskMaxAttempts");
+    max_attempts_->setRange(1, 5); max_attempts_->setValue(2);
+    where->addRow("Attempts per object", max_attempts_);
+    readers_["routing"] = [this](const QJsonValue & v) { fill_routing(v.toObject()); };
+    connect(add, &QPushButton::clicked, this, [this] {
+      add_routing_row(QJsonObject{{"when", QJsonObject{{"attribute", "class"}, {"equals", QString()}}},
+                                  {"destination", regions_->currentText()}});
+      write_routing();
     });
+    connect(remove, &QPushButton::clicked, this, [this] {
+      const int row = routing_table_->currentRow();
+      if (row < 0) return;
+      routing_table_->removeRow(row);
+      write_routing();
+    });
+    connect(unrouted_policy_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] { write_routing(); });
+    connect(max_attempts_, qOverload<int>(&QSpinBox::valueChanged), this, [this] { write_routing(); });
   }
   auto * place = section("How to place");
   choice_field(place, "taskPlacePolicy", "Placement policy", "place/placement/policy", {"AUTO", "PREFERRED", "EXACT"});
@@ -828,6 +845,9 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
       pair.first->clear(); for (const auto & value : report[pair.second].toArray()) pair.first->addItem(value.toString());
     }
     regions_->clear(); regions_->addItems(report["regions"].toObject().keys());
+    region_ids_ = report["regions"].toObject().keys();
+    vocabulary_.clear();
+    for (const auto & value : report["class_vocabulary"].toObject()["classes"].toArray()) vocabulary_ << value.toString();
     strategies_->setEditable(false);
     refresh_fields(); setEnabled(true); apply_report(report); rebuild_sequence(report); update_dirty_ui(); return true;
   } catch (const std::exception & exc) {
@@ -1348,4 +1368,75 @@ void TaskIntentEditor::finish_plan_check(int exit_code, bool normal_exit)
   lines << "GRASP plans are not reachability-free execution approvals. No robot movement was performed.";
   lines << "Evidence: " + r.value("output_dir").toString();
   details->setPlainText(lines.join("\n"));
+}
+
+void TaskIntentEditor::add_routing_row(const QJsonObject & rule)
+{
+  const int row = routing_table_->rowCount();
+  routing_table_->insertRow(row);
+  auto * cls = new QComboBox(routing_table_); cls->setEditable(true); cls->addItems(vocabulary_);
+  cls->setCurrentText(rule.value("when").toObject().value("equals").toString());
+  cls->setProperty("rule_id", rule.value("id").toString());
+  cls->setObjectName(QString("taskRoutingClass%1").arg(row));
+  auto * destination = new QComboBox(routing_table_); destination->addItems(region_ids_);
+  const QString region = rule.value("destination").toString();
+  if (!region.isEmpty() && destination->findText(region) < 0) destination->addItem(region);   // shown, then validated
+  destination->setCurrentText(region);
+  destination->setObjectName(QString("taskRoutingDestination%1").arg(row));
+  auto * enabled = new QCheckBox(routing_table_); enabled->setChecked(rule.value("enabled").toBool(true));
+  enabled->setObjectName(QString("taskRoutingEnabled%1").arg(row));
+  auto * priority = new QSpinBox(routing_table_); priority->setRange(-1000, 1000);
+  priority->setValue(rule.value("priority").toInt(0));
+  priority->setObjectName(QString("taskRoutingPriority%1").arg(row));
+  routing_table_->setCellWidget(row, 0, cls);
+  routing_table_->setCellWidget(row, 1, destination);
+  routing_table_->setCellWidget(row, 2, enabled);
+  routing_table_->setCellWidget(row, 3, priority);
+  connect(cls, &QComboBox::currentTextChanged, this, [this] { write_routing(); });
+  connect(destination, &QComboBox::currentTextChanged, this, [this] { write_routing(); });
+  connect(enabled, &QCheckBox::toggled, this, [this] { write_routing(); });
+  connect(priority, qOverload<int>(&QSpinBox::valueChanged), this, [this] { write_routing(); });
+}
+
+void TaskIntentEditor::fill_routing(const QJsonObject & routing)
+{
+  routing_loading_ = true;
+  routing_table_->setRowCount(0);
+  const bool routed = routing.value("mode").toString() == "class";
+  if (routed)
+    for (const auto & item : routing.value("rules").toArray()) add_routing_row(item.toObject());
+  const int policy = unrouted_policy_->findData(routing.value("unrouted_policy").toString("leave_in_place"));
+  unrouted_policy_->setCurrentIndex(policy >= 0 ? policy : 0);
+  max_attempts_->setValue(routing.value("max_attempts_per_object").toInt(2));
+  unrouted_policy_->setEnabled(routed); max_attempts_->setEnabled(routed);
+  routing_loading_ = false;
+}
+
+void TaskIntentEditor::write_routing()
+{
+  if (routing_loading_ || loading_) return;
+  // Rule ids stay stable across edits; a new row gets the next free route_<n>.
+  QSet<QString> used;
+  for (int row = 0; row < routing_table_->rowCount(); ++row)
+    used << static_cast<QComboBox *>(routing_table_->cellWidget(row, 0))->property("rule_id").toString();
+  QJsonArray rules;
+  for (int row = 0, next = 1; row < routing_table_->rowCount(); ++row) {
+    auto * cls = static_cast<QComboBox *>(routing_table_->cellWidget(row, 0));
+    QString id = cls->property("rule_id").toString();
+    if (id.isEmpty()) {
+      while (used.contains(QString("route_%1").arg(next))) ++next;
+      id = QString("route_%1").arg(next); used << id; cls->setProperty("rule_id", id);
+    }
+    QJsonObject rule{{"id", id}, {"when", QJsonObject{{"attribute", "class"}, {"equals", cls->currentText().trimmed()}}},
+                     {"destination", static_cast<QComboBox *>(routing_table_->cellWidget(row, 1))->currentText()},
+                     {"enabled", static_cast<QCheckBox *>(routing_table_->cellWidget(row, 2))->isChecked()}};
+    if (const int priority = static_cast<QSpinBox *>(routing_table_->cellWidget(row, 3))->value()) rule["priority"] = priority;
+    rules.append(rule);
+  }
+  const bool routed = !rules.isEmpty();
+  unrouted_policy_->setEnabled(routed); max_attempts_->setEnabled(routed);
+  // No rows: direct pick/place into the authored placement region.
+  set_field("routing", routed ? QJsonObject{{"mode", "class"}, {"unrouted_policy", unrouted_policy_->currentData().toString()},
+                                            {"max_attempts_per_object", max_attempts_->value()}, {"rules", rules}}
+                              : QJsonObject{{"mode", "direct"}, {"rules", QJsonArray()}});
 }

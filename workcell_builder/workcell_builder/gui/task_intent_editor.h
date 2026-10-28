@@ -7,6 +7,8 @@
 class QFormLayout;
 class QLabel;
 class QComboBox;
+class QSpinBox;
+class QTableWidget;
 class QTimer;
 class QProcess;
 
@@ -54,6 +56,15 @@ private:
   QComboBox * assets_;
   QComboBox * regions_;
   QComboBox * pick_zones_;
+  // R2.4 class routing table (routing.mode class): class, destination region, enabled, priority.
+  QTableWidget * routing_table_{nullptr};
+  QComboBox * unrouted_policy_{nullptr};
+  QSpinBox * max_attempts_{nullptr};
+  QStringList region_ids_, vocabulary_;
+  bool routing_loading_{false};
+  void add_routing_row(const QJsonObject & rule);
+  void fill_routing(const QJsonObject & routing);
+  void write_routing();
   // Feature 4B: owned plan-only batch check (fake hardware, never executes).
   QProcess * plan_check_{nullptr};
   QString plan_check_scene_, plan_check_task_bytes_;

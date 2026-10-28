@@ -13,6 +13,9 @@
 #include <QLineEdit>
 #include <QLabel>
 #include <QTemporaryDir>
+#include <QTableWidget>
+#include <QSpinBox>
+#include <QCheckBox>
 #include "gui/task_intent_editor.h"
 
 namespace {
@@ -738,7 +741,7 @@ TEST(TaskIntentEditor, ExecutionBackendIsAnExplicitAuthoredChoiceThatSurvivesReo
   EXPECT_TRUE(reverted["require_fake_hardware"].toBool(false));
 }
 
-TEST(TaskIntentEditor, ClassRoutingIsAuthoredInTheWhereSectionAndSurvivesReopen) {
+TEST(TaskIntentEditor, RoutingTableAuthorsManyClassesToManyRegionsAndSurvivesReopen) {
   application(); QTemporaryDir dir; seed(dir.path());
   auto environment = read(dir.path() + "/environment.yaml");
   environment.replace("assets:\n", "assets:\n- {id: bin2, frame: world, pose_xyz: [1, -2, 3], pose_rpy: [0, 0, 0], collision: {enabled: true}, usable_placement: {pose_xyz: [0, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.4, 0.3, 0.2]}}\n");
@@ -747,27 +750,44 @@ TEST(TaskIntentEditor, ClassRoutingIsAuthoredInTheWhereSectionAndSurvivesReopen)
   TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
   edit(editor, "taskTargetClass", "");
   editor.findChild<QComboBox *>("taskPlacePolicy")->setCurrentText("AUTO");
-  edit(editor, "taskClassRouting", "cup=drop, cup=drop2");          // one class, two bins: ambiguous
+  auto * table = editor.findChild<QTableWidget *>("taskRoutingTable"); ASSERT_NE(table, nullptr);
+  auto * add = editor.findChild<QPushButton *>("taskRoutingAdd");
+  const auto set_row = [&](int row, const QString & cls, const QString & region) {
+    static_cast<QComboBox *>(table->cellWidget(row, 0))->setCurrentText(cls);
+    static_cast<QComboBox *>(table->cellWidget(row, 1))->setCurrentText(region);
+  };
+  // Destinations offered are the cell's own regions.
+  add->click();
+  auto * destination = static_cast<QComboBox *>(table->cellWidget(0, 1));
+  EXPECT_GE(destination->findText("drop"), 0); EXPECT_GE(destination->findText("drop2"), 0);
+  add->click(); add->click(); add->click();
+  set_row(0, "cup", "drop"); set_row(1, "can", "drop"); set_row(2, "box", "drop2"); set_row(3, "cup", "drop2");
   ASSERT_TRUE(editor.save());
-  EXPECT_TRUE(editor.blocker().contains("ROUTING_CLASS_AMBIGUOUS")) << editor.blocker().toStdString();
-  edit(editor, "taskClassRouting", "cup=drop, bottle=nowhere");      // a region that does not exist
-  ASSERT_TRUE(editor.save());
-  EXPECT_TRUE(editor.blocker().contains("TASK_ROUTE_DESTINATION_INVALID")) << editor.blocker().toStdString();
-  edit(editor, "taskClassRouting", "cup=drop, bottle=drop2");
+  EXPECT_TRUE(editor.blocker().contains("ROUTING_CLASS_AMBIGUOUS")) << editor.blocker().toStdString();   // cup twice
+  table->selectRow(3); editor.findChild<QPushButton *>("taskRoutingDelete")->click();
+  static_cast<QSpinBox *>(table->cellWidget(2, 3))->setValue(7);
+  add->click(); set_row(3, "tray", "drop2"); static_cast<QCheckBox *>(table->cellWidget(3, 2))->setChecked(false);
+  editor.findChild<QComboBox *>("taskUnroutedPolicy")->setCurrentIndex(1);
   ASSERT_TRUE(editor.save());
   EXPECT_FALSE(editor.blocker().contains("ROUTING")) << editor.blocker().toStdString();
   TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
-  EXPECT_EQ(reopened.findChild<QLineEdit *>("taskClassRouting")->text(), "cup=drop, bottle=drop2");
   const auto root = QJsonDocument::fromJson(QByteArray::fromStdString(
       workcell_builder::canonical_task_intent_json_for_testing(reopened.model().to_yaml()))).object();
-  const auto rules = root["routing"].toObject()["rules"].toArray();
-  EXPECT_EQ(root["routing"].toObject()["mode"].toString(), "class");
-  ASSERT_EQ(rules.size(), 2);
-  EXPECT_EQ(rules[1].toObject()["when"].toObject()["equals"].toString(), "bottle");
-  EXPECT_EQ(rules[1].toObject()["destination"].toString(), "drop2");
-  edit(reopened, "taskClassRouting", "");                              // back to direct pick/place
+  const auto routing = root["routing"].toObject();
+  EXPECT_EQ(routing["mode"].toString(), "class");
+  EXPECT_EQ(routing["unrouted_policy"].toString(), "stop_session");
+  const auto rules = routing["rules"].toArray();
+  ASSERT_EQ(rules.size(), 4);
+  EXPECT_EQ(rules[1].toObject()["destination"].toString(), "drop");                       // two classes, one region
+  EXPECT_EQ(rules[2].toObject()["priority"].toInt(), 7);
+  EXPECT_FALSE(rules[3].toObject()["enabled"].toBool(true));
+  EXPECT_EQ(rules[0].toObject()["id"].toString(), "route_1");                            // ids stable across edits
+  auto * again = reopened.findChild<QTableWidget *>("taskRoutingTable");
+  ASSERT_EQ(again->rowCount(), 4);
+  EXPECT_EQ(static_cast<QComboBox *>(again->cellWidget(2, 0))->currentText(), "box");
+  EXPECT_EQ(static_cast<QComboBox *>(again->cellWidget(2, 1))->currentText(), "drop2");
+  for (int row = 3; row >= 0; --row) { again->selectRow(row); reopened.findChild<QPushButton *>("taskRoutingDelete")->click(); }
   const auto direct = QJsonDocument::fromJson(QByteArray::fromStdString(
       workcell_builder::canonical_task_intent_json_for_testing(reopened.model().to_yaml()))).object();
-  EXPECT_EQ(direct["routing"].toObject()["mode"].toString(), "direct");
-  EXPECT_TRUE(direct["routing"].toObject()["rules"].toArray().isEmpty());
+  EXPECT_EQ(direct["routing"].toObject()["mode"].toString(), "direct");                   // no rows: direct pick/place
 }
