@@ -5383,6 +5383,15 @@ function placementHitRendered(hit) {
   }
   return null;
 }
+// A support is a face that points up (within 45 degrees of world +Z); the side
+// of a table or a box is not somewhere a part can rest.
+const PLACEMENT_SUPPORT_MIN_NORMAL_Z = Math.SQRT1_2;
+function upwardPlacementSurfaceHit(hit) {
+  const normal = hit?.face?.normal;
+  if (!normal || !hit.object?.matrixWorld || !THREE?.Matrix3) return true;  // no face data: unchanged
+  const world = normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
+  return world.z >= PLACEMENT_SUPPORT_MIN_NORMAL_Z;
+}
 function isEligiblePlacementSurfaceHit(hit) {
   const rendered = placementHitRendered(hit);
   const item = rendered?.item;
@@ -5521,6 +5530,7 @@ function placementPointFromViewport(position, options = {}) {
     .filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
     if (!isEligiblePlacementSurfaceHit(hit)) continue;
+    if (!upwardPlacementSurfaceHit(hit)) return null;
     const rendered = placementHitRendered(hit);
     const resolvedPoint = placementPointForPhysicalSurfaceItem(rendered?.item, hit.point);
     if (state.placement.armed) state.placement.supportOwnerId = String(explicitUiSelectionItemId(rendered) || rendered?.item?.support_surface_ref || rendered?.item?.id || '').trim();
@@ -5771,7 +5781,24 @@ async function createPlacementPreview(asset) {
   markPlacementPreviewHelper(placeholder);
 
   const uri = safeMeshUri(asset);
-  if (!uri) return root;
+  if (!uri) {
+    // A library primitive (box, cylinder) has no mesh: its real-size solid is the
+    // physical ghost. The bottom face sits on the group origin, i.e. on the support.
+    const visual = asset.geometry_type ? makePrimitiveMesh(asset) : null;
+    if (!visual) return root;
+    const bounds = new THREE.Box3().setFromObject(visual);
+    if (!Number.isFinite(bounds.min.z)) return root;
+    visual.position.z -= bounds.min.z;
+    stylePlacementPreview(visual);
+    markPlacementPreviewHelper(visual);
+    markPlacementPreviewPhysicalVisual(visual);
+    visual.traverse(node => { node.userData.item = asset; });  // the primitive is the part, not a fallback
+    root.remove(placeholder);
+    disposeOwnedObject3d(placeholder);
+    root.add(visual);
+    setPlacementPoint(state.placement.rawPoint);
+    return root;
+  }
   try {
     const ext = meshExtensionFromUri(uri);
     const loader = ext === 'stl' ? new STLLoader() : (ext === 'dae' ? new ColladaLoader() : new OBJLoader());

@@ -287,7 +287,7 @@ public:
   void request_authoring_save();
   void arm_embedded_asset_placement(
     const QString & asset_id, const QString & mesh_uri, double mesh_scale,
-    bool persistent = false);
+    bool persistent = false, const QJsonObject & primitive = QJsonObject());
   void cancel_embedded_asset_placement();
   // Native drag/drop is only a lifecycle adapter. MainWindow resolves the
   // catalog identity and arms/cancels the same placement session as the button.

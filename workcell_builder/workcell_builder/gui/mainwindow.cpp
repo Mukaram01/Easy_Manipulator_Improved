@@ -11390,9 +11390,21 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
   if (scene_preview_widget_ &&
       scene_preview_widget_->active_product_view_backend() == ScenePreviewWidget::ProductViewBackend::EmbeddedWeb3D) {
+    // A URDF primitive is drawn as its real-size solid, so a click places it on a surface.
+    QJsonObject primitive_geometry;
+    if (const auto primitive = first_urdf_visual_primitive(match->source_path)) {
+      primitive_geometry.insert(QStringLiteral("geometry_type"), primitive->type);
+      const QJsonArray size{primitive->sx, primitive->sy, primitive->sz};
+      if (primitive->type == QStringLiteral("box"))
+        primitive_geometry.insert(QStringLiteral("dimensions"), size);
+      else
+        primitive_geometry.insert(QStringLiteral("primitive"), QJsonObject{
+          {QStringLiteral("radius"), primitive->radius}, {QStringLiteral("length"), primitive->length},
+          {QStringLiteral("dimensions"), size}});
+    }
     scene_preview_widget_->arm_embedded_asset_placement(
       match->asset_id, match->source_path, match->scale,
-      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked());
+      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked(), primitive_geometry);
   }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
     .arg(match->display_name, match->category, armed_asset_id_)

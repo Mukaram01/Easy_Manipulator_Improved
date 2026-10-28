@@ -43959,6 +43959,14 @@ function placementHitRendered(hit) {
   }
   return null;
 }
+var PLACEMENT_SUPPORT_MIN_NORMAL_Z = Math.SQRT1_2;
+function upwardPlacementSurfaceHit(hit) {
+  const normal = hit?.face?.normal;
+  if (!normal || !hit.object?.matrixWorld || !THREE?.Matrix3)
+    return true;
+  const world = normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
+  return world.z >= PLACEMENT_SUPPORT_MIN_NORMAL_Z;
+}
 function isEligiblePlacementSurfaceHit(hit) {
   const rendered = placementHitRendered(hit);
   const item = rendered?.item;
@@ -44056,6 +44064,8 @@ function placementPointFromViewport(position, options = {}) {
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
     if (!isEligiblePlacementSurfaceHit(hit))
       continue;
+    if (!upwardPlacementSurfaceHit(hit))
+      return null;
     const rendered = placementHitRendered(hit);
     const resolvedPoint = placementPointForPhysicalSurfaceItem(rendered?.item, hit.point);
     if (state.placement.armed)
@@ -44322,8 +44332,26 @@ async function createPlacementPreview(asset) {
   root.add(placeholder);
   markPlacementPreviewHelper(placeholder);
   const uri = safeMeshUri(asset);
-  if (!uri)
+  if (!uri) {
+    const visual = asset.geometry_type ? makePrimitiveMesh(asset) : null;
+    if (!visual)
+      return root;
+    const bounds = new THREE.Box3().setFromObject(visual);
+    if (!Number.isFinite(bounds.min.z))
+      return root;
+    visual.position.z -= bounds.min.z;
+    stylePlacementPreview(visual);
+    markPlacementPreviewHelper(visual);
+    markPlacementPreviewPhysicalVisual(visual);
+    visual.traverse((node) => {
+      node.userData.item = asset;
+    });
+    root.remove(placeholder);
+    disposeOwnedObject3d(placeholder);
+    root.add(visual);
+    setPlacementPoint(state.placement.rawPoint);
     return root;
+  }
   try {
     const ext = meshExtensionFromUri(uri);
     const loader = ext === "stl" ? new STLLoader2() : ext === "dae" ? new ColladaLoader2() : new OBJLoader2();
