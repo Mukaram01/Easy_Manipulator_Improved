@@ -2622,6 +2622,10 @@ def main():
         if not {o['id'] for o in manifest['objects']}.issubset(existing_ids):
             raise RuntimeError('generated environment collisions missing')
         if additions:apply(inputs.scene_diff(additions))
+        elif sorting_cycle is not None:
+            # A later sorting cycle finds every object already reconciled in the scene; the in-motion guard still
+            # needs one completed PlanningScene exchange before owned execution, so make it with an empty diff.
+            apply(PlanningScene(is_diff=True))
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
