@@ -3698,14 +3698,13 @@ void MainWindow::setup_studio_shell()
   physics_state_label_ = new QLabel(preview); physics_state_label_->setObjectName("physicsCycleState"); physics_state_label_->setWordWrap(true); pl->addWidget(physics_state_label_);
   {
     // R2.4: continuous class-routed sorting of the saved cell on MoveIt fake hardware, one object per cycle.
-    auto * row = new QHBoxLayout;
+    // Added directly to the page: polishConsolePage groups consecutive buttons into one action bar.
     run_sorting_button_ = new QPushButton("Start Sorting (Fake Hardware)", preview); run_sorting_button_->setObjectName("runSortingSession");
     pause_sorting_button_ = new QPushButton("Pause", preview); pause_sorting_button_->setObjectName("pauseSortingSession");
     resume_sorting_button_ = new QPushButton("Resume", preview); resume_sorting_button_->setObjectName("resumeSortingSession");
     stop_sorting_button_ = new QPushButton("Stop at Cycle End", preview); stop_sorting_button_->setObjectName("stopSortingSession");
     stop_sorting_button_->setToolTip("Software stop honoured at the next cycle boundary (robot home, nothing held). Not an emergency stop.");
-    for (auto * button : {run_sorting_button_, pause_sorting_button_, resume_sorting_button_, stop_sorting_button_}) row->addWidget(button);
-    row->addStretch(1); pl->addLayout(row);
+    for (auto * button : {run_sorting_button_, pause_sorting_button_, resume_sorting_button_, stop_sorting_button_}) pl->addWidget(button);
     sorting_state_label_ = new QLabel(preview); sorting_state_label_->setObjectName("sortingSessionState"); sorting_state_label_->setWordWrap(true);
     pl->addWidget(sorting_state_label_);
     connect(run_sorting_button_, &QPushButton::clicked, this, [this] { run_sorting_session(false); });
@@ -6361,8 +6360,10 @@ void MainWindow::refresh_preview_launch_ui()
     pause_sorting_button_->setEnabled(state == "RUNNING");
     resume_sorting_button_->setEnabled(state == "PAUSED" || state == "PAUSING");
     stop_sorting_button_->setEnabled(state == "RUNNING" || state == "PAUSING" || state == "PAUSED" || state == "READY");
+    const QString start_blocker = !sort_blocker.isEmpty() ? sort_blocker : busy ? QString("a session is running")
+      : !has_scene || !current.ready || !blockers.isEmpty() ? (blockers.isEmpty() ? current.blockers.join("; ") : blockers.first()) : QString();
     sorting_state_label_->setText(sorting_status_html().isEmpty()
-      ? (sort_blocker.isEmpty() ? QString("<b>Sorting session</b>: ready to start (fake hardware)") : "<b>Sorting session</b>: " + sort_blocker.toHtmlEscaped())
+      ? (start_blocker.isEmpty() ? QString("<b>Sorting session</b>: ready to start (fake hardware)") : "<b>Sorting session</b>: " + start_blocker.toHtmlEscaped())
       : sorting_status_html());
   }
   if (cycle_rviz_box_) cycle_rviz_box_->setEnabled(!busy);
