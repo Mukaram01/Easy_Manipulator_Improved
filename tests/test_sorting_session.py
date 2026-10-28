@@ -206,8 +206,24 @@ def test_fake_world_refresh_renews_only_a_reproduced_world():
     from scripts.perceived_object_grasp_execute import fake_world_refresh
     cup = {"id": "runtime::cup-1", "pose": [0.3, -0.1, 0.05, 0, 0, 0, 1], "dimensions": [0.06, 0.06, 0.10], "timestamp": 1.0}
     evidence = fake_world_refresh([cup], {cup["id"]: copy.deepcopy(cup)}, clock=lambda: 50.0)
-    assert cup["timestamp"] == 50.0 and evidence["source"] == "fake_hardware_planning_scene"
+    assert cup["timestamp"] == 50.0 and evidence["source"] == "fake_hardware_planning_scene" and evidence["synthetic"]
     moved = dict(copy.deepcopy(cup), pose=[0.3, -0.1, 0.06, 0, 0, 0, 1])
     with pytest.raises(RuntimeError, match="SORTING_WORLD_CHANGED"):
         fake_world_refresh([cup], {cup["id"]: moved}, clock=lambda: 60.0)
     assert cup["timestamp"] == 50.0                                              # nothing renewed on refusal
+
+
+def test_a_sorting_cycle_is_fake_hardware_replay_only_so_live_frames_are_never_restamped():
+    import subprocess
+    import sys
+    from pathlib import Path
+    executor = Path(__file__).resolve().parents[1] / "scripts/perceived_object_grasp_execute.py"
+    base = [sys.executable, str(executor), "--summary-output", "/dev/null", "--detections", "x.yaml", "--resolve-task",
+            "--start", "--target-object-id", "runtime::a", "--sorting-cycle", '{"session_id": "s", "cycle": 1}']
+    for extra in ([], ["--replay", "--backend", "simulator"]):            # live input, or a non-fake backend
+        result = subprocess.run(base + extra, capture_output=True, text=True, timeout=60)
+        assert result.returncode == 2 and "--sorting-cycle is fake-hardware only and requires --replay" in result.stderr
+    text = executor.read_text()
+    guarded = text[text.index("summary['execution_observation_refresh'] = fake_world_refresh(") - 400:
+                   text.index("summary['execution_observation_refresh'] = fake_world_refresh(")]
+    assert "sorting_cycle is not None and args.backend == 'fake' and args.replay and not measurements" in guarded

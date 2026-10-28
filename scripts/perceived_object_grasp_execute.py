@@ -1427,7 +1427,7 @@ def fake_world_refresh(objects, live, clock=time.time):
     renewed = clock()
     for o in objects:
         o['timestamp'] = renewed
-    return dict(source='fake_hardware_planning_scene', renewed_wall_s=renewed,
+    return dict(source='fake_hardware_planning_scene', synthetic=True, renewed_wall_s=renewed,
                 verified_object_ids=sorted(o['id'] for o in objects),
                 note='fake hardware only: identity and geometry reproduced by the live PlanningScene; no sensor')
 
@@ -1558,9 +1558,11 @@ def main():
                         'object as an obstacle and destination occupancy. Writes no task artifacts.')
     args = parser.parse_args()
     sorting_cycle = json.loads(args.sorting_cycle) if args.sorting_cycle else None
-    if sorting_cycle is not None and (args.backend != 'fake' or not args.resolve_task or args.target_object_id is None
-                                      or args.sequence_object_ids is not None):
-        parser.error('--sorting-cycle is fake-hardware only and requires --resolve-task and --target-object-id')
+    if sorting_cycle is not None and (args.backend != 'fake' or not args.replay or not args.resolve_task
+                                      or args.target_object_id is None or args.sequence_object_ids is not None):
+        # --replay: a sorting cycle observes the session's reconciled replay world, never a live sensor frame, so
+        # the fake-world refresh below can never re-stamp a live EPD observation.
+        parser.error('--sorting-cycle is fake-hardware only and requires --replay, --resolve-task and --target-object-id')
     if args.sequence_placements is not None and args.sequence_object_ids is None:
         parser.error('--sequence-placements requires --sequence-object-ids')
     if args.target_object_id is not None and ((args.start and sorting_cycle is None) or not args.resolve_task):
@@ -3037,7 +3039,7 @@ def main():
             first=motion[0]['trajectory'].joint_trajectory
             snapshot,summary['execution_observation_refresh']=refresh_at_execution_boundary(
                 snapshot,objects,measurements,dict(names=list(first.joint_names),positions=list(first.points[0].positions)))
-        if sorting_cycle is not None and not measurements:
+        if sorting_cycle is not None and args.backend == 'fake' and args.replay and not measurements:
             # Fake hardware: the live PlanningScene is the whole world (see fake_world_refresh).
             summary['execution_observation_refresh'] = fake_world_refresh(
                 objects, {o.id: collision_object_dict(o) for o in scene_now().world.collision_objects})
