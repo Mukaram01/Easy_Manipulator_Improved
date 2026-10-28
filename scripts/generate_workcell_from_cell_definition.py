@@ -625,7 +625,10 @@ def _profile_review_launch_owned(scene: Path | None, package_name: str, world_fr
         return True
     # Exact predecessor template only: preserve any user-edited launch.
     predecessor = text.replace(repr(package_name), '@PACKAGE@').replace("'--frame-id', " + repr(world_frame), "'--frame-id', @WORLD@")
-    if hashlib.sha256(predecessor.encode()).hexdigest() == 'afe99cb2a124087e7a022169c847d643a87248207e02cf0d007460208d5d9094':
+    # Earlier generator templates: R2.0d/e, then the one without the workcell request adapters (R2.5A).
+    if hashlib.sha256(predecessor.encode()).hexdigest() in (
+            'afe99cb2a124087e7a022169c847d643a87248207e02cf0d007460208d5d9094',
+            '04426a86cdfe5190009b6b7db2fc06ed994f7e6656d68b8b24c29541408b57b1'):
         return True
     match = re.search(r'\[generated scene\] package=\S+ source=([^"\n]+)', text)
     return bool(match and text == _render_demo_launch(package_name, Path(match[1]), world_frame))

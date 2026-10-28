@@ -205,3 +205,23 @@ def test_review_launch_rejects_real_hardware_before_model_or_nodes(tmp_path, mon
     monkeypatch.setattr(subprocess, 'run', forbidden)
     with pytest.raises(RuntimeError, match='real hardware is locked'):
         module['_review'](context)
+
+
+def test_generated_cell_launch_plans_the_executors_certified_segments(tmp_path):
+    """A Create New Cell launch loads the workcell request adapters the executor requires (as the canonical launch)
+    and replaces the earlier generated template that lacked them; a hand-edited launch is still preserved."""
+    import subprocess
+    import generate_workcell_from_cell_definition as generator
+    text = generator._render_physical_review_launch('cell_x', 'world')
+    assert 'workcell/InitialSupportContact workcell/StraightCartesianPath' in text
+    old = subprocess.check_output(['git', 'show', 'b452724a:workcell_builder/workcell_builder/templates/ros2/humble/'
+                                   'physical_review.launch.py.in'], cwd=ROOT, text=True)
+    scene = tmp_path / 'cell_x'
+    (scene / 'urdf').mkdir(parents=True)
+    (scene / 'launch').mkdir()
+    (scene / 'urdf/scene.urdf.xacro').write_text('<robot/>')
+    (scene / 'environment.yaml').write_text(yaml.safe_dump({'workcell_studio': {'recommended_profile': 'ur5_2f_workbench'}}))
+    (scene / 'launch/demo.launch.py').write_text(old.replace('@PACKAGE@', repr('cell_x')).replace('@WORLD@', repr('world')))
+    assert generator._profile_review_launch_owned(scene, 'cell_x', 'world')
+    (scene / 'launch/demo.launch.py').write_text(text + '# edited\n')
+    assert not generator._profile_review_launch_owned(scene, 'cell_x', 'world')
