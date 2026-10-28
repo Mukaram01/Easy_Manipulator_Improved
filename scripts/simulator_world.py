@@ -307,6 +307,12 @@ def derive_world(scene, catalog_path=CATALOG):
     """(world SDF text, derivation report) for the authored cell at ``scene``."""
     catalog = load_catalog(catalog_path)
     doc, environment, manifest, intent, provenance = _cell(scene)
+    if (intent.get('routing') or {}).get('mode') == 'class':
+        # The qualified world binds exactly one physical destination (DESTINATION_MODEL); a routed task
+        # may place into another one, which has no physics body or measured walls here.
+        raise SimulatorWorldError('TASK_ROUTING_PHYSICS_UNQUALIFIED: class routing to several destinations is '
+                                  'qualified for fake-hardware planning only; the physics world has one '
+                                  'destination. Use Plan Saved Task (fake hardware)')
     envelope = _commissioned(doc, catalog)
     root, world = _engine(catalog)
     target_ref = intent['place']['target'].get('asset_ref')

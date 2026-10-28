@@ -28,6 +28,7 @@ from task_intent_v2 import (
     canonical_hash,
     normalized_intent_hash,
     parse_validate_normalize,
+    class_routing_rules,
 )
 
 
@@ -139,7 +140,63 @@ def observation_rejection(observation, filters, now, max_age_cap=None):
     if observation.get("class_id") in (filters.get("exclude_class_ids") or []):
         # never a pick target; an obstacle only with validated geometry and frame
         return "CLASS_EXCLUDED", f"class_id {observation.get('class_id')!r} is excluded by the task."
+    routed = filters.get("routed_class_ids")
+    if routed is not None and observation.get("class_id") not in routed:
+        # class routing: an observed class without a rule is never picked (it stays an obstacle)
+        return "CLASS_NOT_ROUTED", f"class_id {observation.get('class_id')!r} has no routing rule; not picked."
     return None
+
+
+def _selection_filters(intent):
+    """The pick eligibility filters, plus the routed classes of a class-routed task."""
+    filters = intent['pick']['selection']['object_filter']
+    rules = class_routing_rules(intent)
+    if rules is None:
+        return filters
+    return {**filters, 'routed_class_ids': sorted(rule['when']['equals'] for rule in rules)}
+
+
+def class_routes(intent, environment):
+    """{class: route} of a class-routed task, each with its physically resolved destination; None if direct.
+
+    Every rule's region must resolve to a contained placement in a collision-modelled target asset
+    (physical_destination.resolve_destination). Raises ValueError with the failing rule.
+    """
+    rules = class_routing_rules(intent)
+    if rules is None:
+        return None
+    assets = {asset.get('id'): asset for asset in environment.get('assets', []) if isinstance(asset, dict)}
+    routes = {}
+    for rule in rules:
+        try:
+            destination = resolve_destination(environment, rule['destination'])
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError(f"rule {rule['id']}: destination {rule['destination']!r}: {exc}") from exc
+        collision = (assets.get(destination['target_id']) or {}).get('collision') or {}
+        if collision.get('enabled') is not True:
+            raise ValueError(f"rule {rule['id']}: target {destination['target_id']!r} of {rule['destination']!r} "
+                             'has no enabled collision geometry, so the planner cannot check the place')
+        routes[rule['when']['equals']] = {
+            'rule_id': rule['id'], 'class_id': rule['when']['equals'], 'region_ref': destination['id'],
+            'asset_ref': destination['target_id'], 'destination': destination}
+    return routes
+
+
+def _route_summary(route):
+    destination = route['destination']
+    return {'rule_id': route['rule_id'], 'class_id': route['class_id'], 'region_ref': route['region_ref'],
+            'asset_ref': route['asset_ref'], 'world_pose': {'xyz_m': list(destination['pose_xyz']),
+                                                           'rpy_rad': list(destination['pose_rpy'])}}
+
+
+def _record_route(place_resolution, route):
+    """place_resolution names the selected object's routed destination (route identity for revalidation)."""
+    destination = route['destination']
+    local = destination['placement_local']
+    place_resolution.update(
+        selected_local_pose={'xyz_m': list(local['pose_xyz']), 'rpy_rad': list(local['pose_rpy'])},
+        world_pose={'xyz_m': list(destination['pose_xyz']), 'rpy_rad': list(destination['pose_rpy'])},
+        destination=copy.deepcopy(destination), route=_route_summary(route))
 
 
 def _observation_priority(item):
@@ -176,7 +233,7 @@ def select_observations(intent, environment, observations, now, max_age_cap=None
             (source_type == 'manual_simulated' and source_ref == selection['zone_ref'])):
         raise ValueError('PICK_SOURCE_UNSUPPORTED: select detected_objects/v1 or the manual simulated pick region')
     region = zone({'environment': environment}, selection['zone_ref'])
-    return [item for item in _eligible_observations(observations, selection['object_filter'], now, max_age_cap)
+    return [item for item in _eligible_observations(observations, _selection_filters(intent), now, max_age_cap)
             if contained(item, region, geometry)]
 
 
@@ -189,7 +246,7 @@ def explain_observations(intent, environment, observations, now, max_age_cap=Non
     selected = {item['id'] for item in select_observations(intent, environment, observations, now, max_age_cap)}
     decisions = []
     for observation in observations:
-        rejection = observation_rejection(observation, selection["object_filter"], now, max_age_cap)
+        rejection = observation_rejection(observation, _selection_filters(intent), now, max_age_cap)
         if rejection is None and not contained(observation, region, geometry):
             rejection = ("OUTSIDE_PICK_ZONE", f"Outside pick zone {selection['zone_ref']}.")
         accepted = rejection is None and observation.get('id') in selected
@@ -248,17 +305,32 @@ def place_destinations(intent, environment):
     return destination, default_destination, fallback, destinations
 
 
+def _routed_placement_fit(eligible, routes, clearance, floor_z):
+    """Class routing: each object fits only its own class's destination. (fitting objects, unfit reasons)."""
+    unfit = {}
+    for item in eligible:
+        destination = routes[item['class_id']]['destination']
+        problems = placement_fit_problems(destination, item['dimensions'], clearance, floor_z)
+        if problems:
+            unfit[item['id']] = [f"{destination['id']}: {problems[0]}"]
+    return [item for item in eligible if item['id'] not in unfit], unfit
+
+
 def placement_fit_blocker(intent, environment, observations, destination_floor_z=None):
     """Why none of these selected observations can be placed where the task plans, else None.
 
     Destination errors are left to task validation, which reports them with their own code.
     """
+    clearance = intent["place"]["placement"]["clearance_m"]
     try:
+        routes = class_routes(intent, environment)
         destinations = place_destinations(intent, environment)[3]
     except (ValueError, KeyError, TypeError, AttributeError):
         return None
-    fitting, _, unfit = _placement_fit(observations, destinations, intent["place"]["placement"]["clearance_m"],
-                                       destination_floor_z)
+    if routes is not None:
+        fitting, unfit = _routed_placement_fit(observations, routes, clearance, destination_floor_z)
+    else:
+        fitting, _, unfit = _placement_fit(observations, destinations, clearance, destination_floor_z)
     return None if fitting else "PLACE_OBJECT_DOES_NOT_FIT: " + _unfit_reason(unfit)
 
 
@@ -307,11 +379,19 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
     result["pick_selection"] = copy.deepcopy(normalized["pick"]["selection"])
     routing = normalized.get('routing') or {}
     rules = routing.get('rules') or []
-    if (normalized['task']['type'] != 'pick_place' or routing.get('mode', 'direct') != 'direct' or
+    routes = None
+    if routing.get('mode') == 'class':
+        # Class routing (structure checked by task_intent_v2): every rule's destination must be physically true.
+        try:
+            routes = class_routes(normalized, environment)
+        except ValueError as exc:
+            return _readiness(result, 'BLOCKED', 'TASK_ROUTE_DESTINATION_INVALID', str(exc))
+    elif (normalized['task']['type'] != 'pick_place' or routing.get('mode', 'direct') != 'direct' or
             any(rule.get('when') not in ({'always': True}, {'default': True}) or
                 rule.get('destination') != normalized['place']['target']['region_ref'] for rule in rules)):
         return _readiness(result, 'BLOCKED', 'TASK_ROUTING_UNSUPPORTED',
-                          'The full-cycle planner supports direct pick/place to the authored region only.')
+                          'The full-cycle planner supports direct pick/place to the authored region, or '
+                          'class routing (routing.mode class) to authored regions only.')
     grasp = normalized["pick"]["grasp"]
     placement = normalized["place"]["placement"]
     grasp_resolution = result["grasp_resolution"] = {
@@ -359,6 +439,9 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
         physical_destination_contract=destination["physical_destination_contract"],
         destination=copy.deepcopy(destination),
     )
+    if routes is not None:
+        # Until an object is selected, the task's own region is shown; the selected object's route replaces it.
+        place_resolution["routes"] = [_route_summary(routes[key]) for key in sorted(routes)]
 
     if cycle_evaluator is None:
         return _readiness(result, "BLOCKED", "CYCLE_EVALUATION_REQUIRED",
@@ -384,6 +467,14 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                               'Observed objects changed; explicitly resolve the saved task again.')
         chosen = checked['grasp_resolution']
         observation = next(item for item in eligible if item['id'] == chosen['selected_object_id'])
+        if routes is not None:
+            # The route chosen at resolve is kept; another bin is never substituted after planning.
+            route = routes.get(observation['class_id'])
+            if (route is None or checked['place_resolution'].get('route') != _route_summary(route) or
+                    checked['place_resolution']['destination'] != route['destination']):
+                return _readiness(checked, 'BLOCKED', 'TASK_ROUTE_CHANGED',
+                                  f"{observation['id']} ({observation['class_id']!r}) no longer routes to the resolved "
+                                  'destination; resolve the saved task again.')
         try:
             fitting, _, unfit = _placement_fit([observation], [checked['place_resolution']['destination']],
                                                placement['clearance_m'], destination_floor_z)
@@ -436,8 +527,12 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
     preferred_failure = None
     last_failure = {"reason_code": "NO_FEASIBLE_CYCLE", "reason": "No complete cycle succeeded."}
     try:
-        eligible, fitting_destinations, unfit = _placement_fit(eligible, destinations, placement['clearance_m'],
-                                                              destination_floor_z)
+        if routes is None:
+            eligible, fitting_destinations, unfit = _placement_fit(eligible, destinations, placement['clearance_m'],
+                                                                  destination_floor_z)
+        else:
+            eligible, unfit = _routed_placement_fit(eligible, routes, placement['clearance_m'], destination_floor_z)
+            fitting_destinations = destinations   # AUTO only: one pass; each object is planned to its own route
     except (ValueError, KeyError, TypeError) as exc:
         return _readiness(result, 'BLOCKED', 'PHYSICAL_DESTINATION_INVALID', str(exc))
     if unfit:
@@ -470,11 +565,13 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                         strategy, observation, _candidate_constraints(strategy, effective_grasp))
                 except (ValueError, KeyError, TypeError) as exc:
                     return _readiness(result, "BLOCKED", "GRASP_CANDIDATE_INVALID", str(exc))
+                route = None if routes is None else routes[observation["class_id"]]
+                target = destination if route is None else route["destination"]
                 for candidate in candidates:
                     evaluation = cycle_evaluator({
                         "intent": copy.deepcopy(effective_intent), "cell": copy.deepcopy(cell),
                         "strategy_ref": strategy, "observation": copy.deepcopy(observation),
-                        "candidate": candidate, "destination": copy.deepcopy(destination),
+                        "candidate": candidate, "destination": copy.deepcopy(target),
                     })
                     # A phased evaluator may defer this candidate without
                     # testing it. Keep control flow out of feasibility evidence.
@@ -489,6 +586,7 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                     grasp_resolution["attempts"].append({
                         "strategy_ref": strategy, "object_id": observation["id"],
                         "candidate_id": candidate.candidate_id, "success": success,
+                        **({"route_rule_id": route["rule_id"], "destination_id": target["id"]} if route else {}),
                         "checks": checks,
                         "reason_code": evaluation.get("reason_code"),
                         "reason": evaluation.get("reason"),
@@ -501,6 +599,8 @@ def resolve_task_intent(intent, environment, cell, observations, cycle_evaluator
                             evaluation.get("reason_code") or "SEARCH_BUDGET_EXHAUSTED",
                             evaluation.get("reason") or "Candidate search budget exhausted.")
                     if success:
+                        if route is not None:
+                            _record_route(place_resolution, route)
                         grasp_resolution.update(selected_strategy_ref=strategy,
                                                 selected_object_id=observation["id"],
                                                 selected_candidate_id=candidate.candidate_id,
@@ -644,6 +744,12 @@ def resolved_recipe(intent, result):
     # Direct pick/place is already authored semantics, not a routing fallback.
     rules = copy.deepcopy(intent.get('routing', {}).get('rules') or [
         {'id': 'direct_place', 'when': {'always': True}, 'destination': destination['id']}])
+    # Class routing: every rule's validated destination, so each rule names a destination of the recipe.
+    targets = [{'id': route['region_ref'], 'target_ref': route['asset_ref'], 'frame_id': 'world',
+                'pose_xyz': route['world_pose']['xyz_m'], 'pose_rpy': route['world_pose']['rpy_rad']}
+               for route in result['place_resolution'].get('routes') or []] or [
+        {'id': destination['id'], 'target_ref': destination['target_id'], 'frame_id': destination['frame_id'],
+         'pose_xyz': destination['pose_xyz'], 'pose_rpy': destination['pose_rpy']}]
     return {
         'schema_version': 'task_recipe/v1',
         'enabled': True, 'recipe_id': intent['task']['id'], 'id': intent['task']['id'],
@@ -652,9 +758,8 @@ def resolved_recipe(intent, result):
                  'pick_zone': selection['zone_ref'], 'allowed_grasp_methods': ['finger'],
                  'grasp_strategy': {'strategy_ref': result['grasp_resolution']['selected_strategy_ref']}},
         'decision_rules': copy.deepcopy(rules),
-        'destinations': [{'id': destination['id'], 'target_ref': destination['target_id'],
-                          'frame_id': 'world', 'pose_xyz': destination['pose_xyz'],
-                          'pose_rpy': destination['pose_rpy'], 'action': 'place'}],
+        'destinations': [{'id': t['id'], 'target_ref': t['target_ref'], 'frame_id': 'world', 'pose_xyz': t['pose_xyz'],
+                          'pose_rpy': t['pose_rpy'], 'action': 'place'} for t in targets],
         'expected': {'allow_fallback_rule': False, 'require_destination_pose': True},
         'normalized_intent_sha256': result['normalized_intent_sha256'],
         'resolution_sha256': result['resolution_sha256'],
@@ -662,9 +767,8 @@ def resolved_recipe(intent, result):
                  'object_source': selection['source_type'],
                  'source_object': selection['source_ref'],
                  'object_filter': copy.deepcopy(selection['object_filter']),
-                 'destinations': [{'id': destination['id'], 'target_ref': destination['target_id'],
-                                   'frame': destination['frame_id'], 'pose_xyz': destination['pose_xyz'],
-                                   'pose_rpy': destination['pose_rpy']}],
+                 'destinations': [{'id': t['id'], 'target_ref': t['target_ref'], 'frame': t['frame_id'],
+                                   'pose_xyz': t['pose_xyz'], 'pose_rpy': t['pose_rpy']} for t in targets],
                  'decision_rules': copy.deepcopy(rules)},
         'grasp': {'strategy_ref': result['grasp_resolution']['selected_strategy_ref']},
         'task_intent_resolution': copy.deepcopy(result),

@@ -367,7 +367,73 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
         errors.append({"code": "DYNAMIC_SAFETY_IN_INTENT", "message": "dynamic runtime state is not authored intent"})
     if model.get("sequence") is not None:  # null: no saved sequence
         errors.extend(_sequence_errors(model))
+    routing = model.get("routing")
+    if isinstance(routing, dict) and routing.get("mode") == "class":
+        errors.extend(_class_routing_errors(model))
     return errors
+
+
+def class_routing_rules(model: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The rules of a class-routed task (routing.mode ``class``), else None for direct pick/place."""
+    routing = model.get("routing")
+    if not isinstance(routing, dict) or routing.get("mode") != "class":
+        return None
+    return routing.get("rules") or []
+
+
+def _class_routing_errors(model: dict[str, Any]) -> list[dict[str, str]]:
+    """Structure of class-to-destination routing (R2.4A).
+
+    Each rule sends one EPD class to one authored placement region:
+    ``{id, when: {attribute: class, equals: <class>}, destination: <region id>}``. There is no
+    default rule: an observed class without a rule is never picked. Physical destination truth is
+    checked by the resolver against environment.yaml.
+    """
+    def error(code: str, message: str) -> list[dict[str, str]]:
+        return [{"code": code, "message": "routing: " + message}]
+
+    rules = class_routing_rules(model)
+    if model.get("task", {}).get("type") != "pick_place":
+        return error("ROUTING_TASK_UNSUPPORTED", "class routing applies to pick_place tasks only")
+    if not isinstance(rules, list) or not rules:
+        return error("ROUTING_RULES_REQUIRED", "class routing needs at least one class rule")
+    ids: set[str] = set()
+    destinations: dict[str, str] = {}
+    for index, rule in enumerate(rules, 1):
+        if not isinstance(rule, dict) or set(rule) != {"id", "when", "destination"}:
+            return error("ROUTING_RULE_INVALID", f"rule {index} must have exactly id, when and destination")
+        rule_id, when, destination = rule["id"], rule["when"], rule["destination"]
+        if not isinstance(rule_id, str) or not rule_id.strip() or rule_id in ids:
+            return error("ROUTING_RULE_INVALID", f"rule {index} needs a unique id")
+        ids.add(rule_id)
+        if (not isinstance(when, dict) or set(when) != {"attribute", "equals"} or when["attribute"] != "class"
+                or not isinstance(when["equals"], str) or not when["equals"].strip()):
+            return error("ROUTING_CONDITION_UNSUPPORTED",
+                         f"{rule_id}: only 'when: {{attribute: class, equals: <class>}}' is supported; "
+                         "unmatched classes are not picked, so no default rule")
+        if not isinstance(destination, str) or not destination.strip():
+            return error("ROUTING_DESTINATION_MISSING", f"{rule_id}: destination must name a placement region")
+        if when["equals"] in destinations:
+            return error("ROUTING_CLASS_AMBIGUOUS",
+                         f"class {when['equals']!r} has more than one rule ({destinations[when['equals']]} and "
+                         f"{destination}); each class needs exactly one destination")
+        destinations[when["equals"]] = destination
+    object_filter = model.get("pick", {}).get("selection", {}).get("object_filter", {})
+    if object_filter.get("class_id") not in (None, ""):
+        return error("ROUTING_CLASS_FILTER_CONFLICT",
+                     "the routed classes decide which objects are picked; leave Object class empty")
+    excluded = sorted(set(destinations) & set(object_filter.get("exclude_class_ids") or []))
+    if excluded:
+        return error("ROUTING_CLASS_EXCLUDED", f"class {excluded[0]!r} is both routed and excluded")
+    if model.get("place", {}).get("placement", {}).get("policy") != "AUTO":
+        return error("ROUTING_PLACEMENT_POLICY",
+                     "a requested local pose belongs to one destination; routed tasks use AUTO placement")
+    if model.get("place", {}).get("target", {}).get("region_ref") not in destinations.values():
+        return error("ROUTING_PRIMARY_DESTINATION",
+                     "the task's placement region must be one of the routed destinations")
+    if model.get("sequence") is not None:
+        return error("ROUTING_SEQUENCE_UNSUPPORTED", "a saved multi-object sequence is not supported with class routing")
+    return []
 
 
 def _sequence_errors(model: dict[str, Any]) -> list[dict[str, str]]:
