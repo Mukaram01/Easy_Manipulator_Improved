@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, ast, collections, copy, importlib, importlib.util, json, math, os, re, shutil, subprocess, sys
+import argparse, ast, collections, copy, hashlib, importlib, importlib.util, json, math, os, re, shutil, subprocess, sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -949,6 +949,41 @@ def _write_repo_local_ament_index_stub(package_dirs):
     )
     return stub_root, mapping
 
+def _source_package_ament_prefix(scene_dir, workspace_root=None):
+    """An ament prefix exposing source-tree packages to real xacro's $(find ...).
+
+    A saved or new cell is not colcon-built yet, so its own package (and repo
+    asset packages) exist only as sources. The prefix holds index markers and
+    share/<name> links chosen by discover_package_map's precedence; xacro_env
+    appends it after every installed prefix, so built packages still win.
+    """
+    package_map, _ = discover_package_map(scene_dir, workspace_root=workspace_root)
+    sources = {name: Path(path).resolve() for name, path in package_map.items()
+               if not str(Path(path).resolve()).startswith(('/opt/ros/', str(Path(workspace_root or '/nonexistent') / 'install')))}
+    scene_xml = Path(scene_dir) / 'package.xml'
+    if scene_xml.is_file():
+        scene_name, parse_error = _package_name_from_xml(scene_xml)
+        if not parse_error:
+            sources.setdefault(scene_name, Path(scene_dir).resolve())
+    if not sources:
+        return None
+    rows = sorted((name, str(path)) for name, path in sources.items())
+    digest = hashlib.sha256(json.dumps(rows).encode()).hexdigest()[:16]
+    prefix = ROOT / 'build' / 'xacro_source_ament_prefix' / digest
+    index = prefix / 'share' / 'ament_index' / 'resource_index' / 'packages'
+    index.mkdir(parents=True, exist_ok=True)
+    # share/<name> links expose package.xml files inside the source tree;
+    # without this marker a workspace colcon build finds them as duplicates.
+    (prefix.parent / 'COLCON_IGNORE').touch()
+    for name, path in rows:
+        link = prefix / 'share' / name
+        try:
+            link.symlink_to(path, target_is_directory=True)
+        except FileExistsError:
+            pass
+        (index / name).touch()
+    return prefix
+
 def xacro_env(scene_dir, workspace_root=None):
     roots, package_dirs = _package_search_paths(scene_dir, workspace_root)
     rp=[str(p) for p in [*roots, *package_dirs, *(p.parent for p in package_dirs)] if p]
@@ -979,6 +1014,14 @@ def xacro_env(scene_dir, workspace_root=None):
     ros_humble=Path('/opt/ros/humble')
     if ros_humble.exists():
         ament_prefix_entries.append(str(ros_humble))
+        # /opt/ros/humble/bin/xacro imports its own module: an unsourced caller
+        # (release gate, desktop launch) needs the distro's Python paths too.
+        python_dirs=[str(d) for d in sorted(ros_humble.glob('lib/python3*/site-packages')) +
+                     sorted(ros_humble.glob('local/lib/python3*/dist-packages'))]
+        env['PYTHONPATH']=os.pathsep.join(_dedupe_path_entries([*env.get('PYTHONPATH','').split(os.pathsep), *python_dirs]))
+    source_prefix=_source_package_ament_prefix(scene_dir, workspace_root)
+    if source_prefix:
+        ament_prefix_entries.append(str(source_prefix))
     env['AMENT_PREFIX_PATH']=os.pathsep.join(_dedupe_path_entries(ament_prefix_entries))
     return env
 

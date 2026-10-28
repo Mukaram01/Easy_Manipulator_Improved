@@ -13,6 +13,7 @@ namespace workcell_builder
 struct LayoutItemSaveState
 {
   std::string id, display_name, type, category, role, catalog_asset_id, mesh_path, source_package;
+  std::string geometry_type;  // box/cylinder/sphere for a primitive asset (no mesh)
   std::array<double, 3> xyz{}, rpy{}, dimensions{};
   std::array<double, 3> mesh_scale{{1.0, 1.0, 1.0}};
 };
@@ -114,6 +115,7 @@ inline YAML::Node serialize_layout_item(
         mesh["source_package"] = state.source_package;
       mesh["scale"] = layout_sequence3(state.mesh_scale); item["mesh"] = mesh;
     }
+    if (state.mesh_path.empty() && !state.geometry_type.empty()) item["geometry_type"] = state.geometry_type;
     item["scale"] = layout_sequence3(state.mesh_scale);
   } else if (metadata_explicitly_edited) {
     // Unchanged metadata keeps its authored spelling.

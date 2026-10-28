@@ -11,6 +11,61 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "workcell_studio_web" / "viewer"
 
 
+def test_synthetic_physical_edit_roots_do_not_duplicate_required_mesh_diagnostics():
+    """Transform owners remain editable; only their actual visuals require meshes."""
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const THREE_IMPL=require('./workcell_studio_web/viewer/node_modules/three/build/three.cjs');
+const element=()=>({classList:{toggle(){}},addEventListener(){},setAttribute(){}});
+const context={console,assert,THREE_IMPL,window:{location:{search:''}},document:{getElementById:element},URLSearchParams};
+vm.createContext(context);vm.runInContext(source+`
+THREE=THREE_IMPL;createLabelElement=()=>null;
+for (const [category,type,reference] of [['camera','camera','camera_id'],['table','support_surface','support_surface_ref']]) {
+  const ownerItem={id:'authored_owner',type,geometry_type:'mesh',mesh_uri:'assets/body.stl',mesh_load_required:true,
+    mesh_status:'missing_file',pose:{xyz:[1,2,3],rpy:[0,0,0]},editable:true,locked:false};
+  const visualItem={id:'generated_body',source:'urdf_flattened',mesh_contract_category:category,
+    render_policy:'primary',geometry_type:'mesh',mesh_uri:'assets/body.stl',mesh_load_required:true,
+    editable:false,locked:true,[reference]:ownerItem.id,owner_relative_visual_transform:{xyz:[0.1,0,0],rpy:[0,0,0]}};
+  state.sceneJson={ui_selection_owners:[ownerItem],sensors:[visualItem]};
+  state.three.scene=new THREE.Scene();state.pickRecords=[];state.objects=[];
+  rebuildSelectionIdentityIndex();
+  const visual={item:visualItem,object3d:new THREE.Group(),renderInfo:{render_status:'mesh_loaded'}};
+  state.objects.push(visual);state.three.scene.add(visual.object3d);
+  const bindings=bindExportedPhysicalTransformOwnership();
+  assert.strictEqual(bindings.length,1);
+  const owner=bindings[0].owner;
+  assert.strictEqual(owner.physicalEditRoot,true);
+  assert.strictEqual(selectionOwnerRenderedById('authored_owner'),owner);
+  assert.strictEqual(canonicalTransformOwner(visual),owner);
+  assert.strictEqual(visual.object3d.parent,owner.object3d);
+  assert.strictEqual(visual.object3d.position.x,0.1);
+  assert.strictEqual(canEditItem(owner.item),true);
+  assert.strictEqual(itemRequiresMeshBackedVisual(visual.item),true,'real primary mesh must still be required');
+  assert.strictEqual(computeSceneSummary().expectedMeshLoadedCount,1,'synthetic owner must not require a second mesh');
+  assert.strictEqual(computeSceneSummary().meshLoadedCount,1);
+  assert.strictEqual(computeSceneSummary().meshFailedCount,0,'owner metadata is not a failed visual');
+  assert.strictEqual(statusCountedRenderables().includes(owner),false);
+  assert.strictEqual(state.objects.includes(owner),true,'owner must remain available for editing');
+  visual.renderInfo.render_status='required_mesh_failed_debug_fallback';visual.item.mesh_status='missing_file';
+  assert.strictEqual(computeSceneSummary().expectedMeshLoadedCount,1,'failure must not reduce the requirement');
+  assert.strictEqual(computeSceneSummary().meshLoadedCount,0);
+  assert.strictEqual(computeSceneSummary().meshFailedCount,1);
+  assert.strictEqual(statusCountedRenderables().filter(isRequiredMeshFailureStatus).length,1);
+  const authored={item:{...ownerItem,id:'standalone_authored_mesh',render_policy:'primary'},renderInfo:{render_status:'mesh_loaded'}};
+  state.objects.push(authored);
+  assert.strictEqual(computeSceneSummary().expectedMeshLoadedCount,2,'ordinary authored primary meshes remain required');
+  assert.strictEqual(statusCountedRenderables().includes(authored),true);
+}
+`,context);
+"""
+    result = subprocess.run(
+        ["node", "-e", harness, str(VIEWER / "viewer.js")],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_selection_identity_index_and_expanded_urdf_picks_behave_end_to_end(tmp_path):
     payload = exporter.build_web_scene(
         ROOT / "scenes" / "ur5_2f_test",
@@ -4752,3 +4807,28 @@ onEditorKeyDown({key:'Escape',code:'Escape',target:null,preventDefault(){}});arm
 '''
     result = subprocess.run(["node", "-e", harness, str(js_path)], cwd=ROOT, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_primitive_cylinder_stands_on_z_with_urdf_radius_and_length():
+    """A URDF cylinder (radius/length, Z axis) is drawn upright at its own size, not as a Y-axis 0.25 m rod."""
+    js_path = VIEWER / "viewer.js"
+    three = VIEWER / "node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
+    harness = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const THREE_MOD=require(process.argv[2]);
+let source=fs.readFileSync(process.argv[1],'utf8').replace(/boot\(\);\s*$/,'');
+const element=()=>({hidden:false,checked:false,disabled:false,textContent:'',className:'',innerHTML:'',classList:{toggle(){}},querySelector(){return null;},querySelectorAll(){return[];},addEventListener(){},setAttribute(){},appendChild(){},remove(){}});
+const context={console,assert,THREE_MOD,window:{location:{search:''},dispatchEvent(){},parent:{postMessage(){}}},document:{getElementById(){return element();},querySelectorAll(){return[];},createElement(){return element();}},URLSearchParams,CustomEvent:function(){},requestAnimationFrame(){},setTimeout(){},clearTimeout(){}};
+vm.createContext(context); vm.runInContext(source+`
+THREE=THREE_MOD;
+const size=item=>new THREE.Box3().setFromObject(makePrimitiveMesh(item)).getSize(new THREE.Vector3());
+const near=(a,b)=>Math.abs(a-b)<1e-6;
+let s=size({id:'c',primitive:{type:'cylinder',radius:0.03,length:0.12}});
+assert.ok(near(s.x,0.06)&&near(s.y,0.06)&&near(s.z,0.12),JSON.stringify(s));
+s=size({id:'d',geometry_type:'cylinder',dimensions:[0.2,0.2,0.5],primitive:{dimensions:[0.2,0.2,0.5]}});
+assert.ok(near(s.x,0.2)&&near(s.y,0.2)&&near(s.z,0.5),JSON.stringify(s));
+`,context);
+"""
+    subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)

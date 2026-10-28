@@ -77,13 +77,18 @@ jobs:
         with:
           required-ros-distributions: humble
 
+      - name: Set up Node.js 20 (Web3D bundle freshness target)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The workspace lives outside the checkout so the source symlink cannot
+      # recurse into it. Never put COLCON_IGNORE/AMENT_IGNORE in the workspace
+      # root: colcon then discovers nothing and every later step passes empty.
       - name: Create workspace
         run: |
-          mkdir -p ws/src
-          ln -s "${GITHUB_WORKSPACE}" ws/src/easy_manipulation_deployment
-          # Prevent rosdep/colcon from following the symlink back into the
-          # workspace directory and creating an infinite recursion loop.
-          touch ws/COLCON_IGNORE ws/AMENT_IGNORE
+          mkdir -p "${{ runner.temp }}/ws/src"
+          ln -s "${GITHUB_WORKSPACE}" "${{ runner.temp }}/ws/src/easy_manipulation_deployment"
 
       - name: Cache rosdep database
         uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
@@ -97,14 +102,14 @@ jobs:
         uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: |
-            ws/build
-            ws/install
+            ${{ runner.temp }}/ws/build
+            ${{ runner.temp }}/ws/install
           key: colcon-humble-${{ hashFiles('**/CMakeLists.txt', '**/package.xml', '**/setup.py') }}
           restore-keys: |
             colcon-humble-
 
       - name: Import source dependencies
-        working-directory: ws
+        working-directory: ${{ runner.temp }}/ws
         run: |
           if ! command -v vcs >/dev/null 2>&1; then
             sudo apt-get update
@@ -113,11 +118,11 @@ jobs:
           vcs import --recursive --skip-existing src < src/easy_manipulation_deployment/dependencies/emd_epd_ws.repos
 
       - name: Workspace package uniqueness preflight
-        working-directory: ws
+        working-directory: ${{ runner.temp }}/ws
         run: ./src/easy_manipulation_deployment/scripts/fix_workspace_layout.sh --layout-only
 
       - name: Install dependencies
-        working-directory: ws
+        working-directory: ${{ runner.temp }}/ws
         run: |
           set -o pipefail
           ./src/easy_manipulation_deployment/scripts/ensure_rosdep_overrides.sh
@@ -136,24 +141,46 @@ jobs:
           fi
 
       - name: Reproducibility guard (workspace discovery)
-        working-directory: ws
+        working-directory: ${{ runner.temp }}/ws
         run: ./src/easy_manipulation_deployment/scripts/verify_workspace_discovery.sh
 
       - name: Workcell Studio static release gate
-        working-directory: ws/src/easy_manipulation_deployment
+        working-directory: ${{ runner.temp }}/ws/src/easy_manipulation_deployment
         continue-on-error: true
-        run: python3 scripts/run_workcell_studio_release_gate.py --profile static --workspace-root "$GITHUB_WORKSPACE/ws"
+        run: python3 scripts/run_workcell_studio_release_gate.py --profile static --workspace-root "${{ runner.temp }}/ws"
 
+      # The supported Humble build path: it installs the pinned OSQP v1 /
+      # OsqpEigen stack into /usr/local and hides those sources from colcon,
+      # exactly as on a workstation, then builds the full profile.
       - name: Build
-        working-directory: ws
+        working-directory: ${{ runner.temp }}/ws
         run: |
-          colcon build --symlink-install \
-            --packages-skip tesseract_qt qtadvanceddocking QtADS tesseract_rviz tesseract_planning_server
+          set -eo pipefail
+          source /opt/ros/humble/setup.bash
+          mapfile -t emd < <(colcon list --base-paths src/easy_manipulation_deployment --names-only)
+          echo "easy_manipulation_deployment packages discovered: ${#emd[@]}"
+          if [[ ${#emd[@]} -eq 0 ]]; then echo "::error::colcon discovered no repository packages"; exit 1; fi
+          printf '%s\n' "${emd[@]}" > emd_packages.txt
+          ./src/easy_manipulation_deployment/fix_and_build_humble.sh --workspace "$PWD" --build --profile full --parallel-workers 2
+          for pkg in "${emd[@]}"; do
+            [[ -d "install/$pkg" ]] || { echo "::error::$pkg was not built"; exit 1; }
+          done
 
       - name: Test
-        working-directory: ws
-        run: colcon test
+        working-directory: ${{ runner.temp }}/ws
+        run: |
+          set -eo pipefail
+          source /opt/ros/humble/setup.bash
+          mapfile -t emd < emd_packages.txt
+          colcon test --base-paths src --packages-select "${emd[@]}"
 
       - name: Test results
-        working-directory: ws
-        run: colcon test-result --verbose
+        working-directory: ${{ runner.temp }}/ws
+        run: |
+          set -eo pipefail
+          source /opt/ros/humble/setup.bash
+          colcon test-result --verbose
+          summary="$(colcon test-result | tail -n 1)"
+          echo "$summary"
+          tests="$(sed -n 's/^Summary: \([0-9]*\) tests.*/\1/p' <<<"$summary")"
+          if [[ -z "$tests" || "$tests" -eq 0 ]]; then echo "::error::no test results were produced"; exit 1; fi

@@ -100,7 +100,10 @@ def materialize(scene, profile_id, destination):
     for key in ('robot', 'tool', 'end_effector', 'environment', 'camera', 'safety'):
         authored[key] = copy.deepcopy(defaults[key])
     authored['schema_version'] = 'workcell_scene/v1'
-    authored['scene'] = {'id': scene.name, 'name': scene.name}
+    # Keep the display name and description the user typed in the wizard.
+    wizard_scene = authored.get('scene') if isinstance(authored.get('scene'), dict) else {}
+    authored['scene'] = {'id': scene.name, 'name': wizard_scene.get('display_name') or scene.name}
+    authored['scene'].update({key: wizard_scene[key] for key in ('display_name', 'description') if wizard_scene.get(key)})
     authored['scaffold_only'] = False
     robot, tool = authored['robot'], authored['tool']
     frames = studio['frames']

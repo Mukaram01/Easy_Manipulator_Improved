@@ -1016,3 +1016,85 @@ def test_visual_acceptance_versions_the_exact_viewer_bundle() -> None:
     assert 'viewer_bundle = REPO_ROOT / "workcell_studio_web" / "viewer" / "dist" / "viewer.bundle.js"' in source
     assert "hashlib.sha256(viewer_bundle.read_bytes()).hexdigest()" in source
     assert 'f"&viewerBuild={viewer_build}"' in source
+
+
+def test_supported_scene_matrix_reports_export_failure_not_browser_unavailable():
+    report = {
+        "scene_id": "ur5_airpick4_test",
+        "steps": [{
+            "command": ["/usr/bin/python3", "scripts/export_workcell_studio_web_scene.py"],
+            "returncode": 3,
+            "stdout": "",
+            "stderr": "task/physical destination: place_zone_main missing or ambiguous",
+        }],
+        "browser": {"available": False, "method": "not_run", "status": None},
+    }
+    row = module._matrix_row_from_report(
+        report, {"robot": "ur5", "tool": "airpick4"}, require_browser=True
+    )
+    assert row["status"] == "BLOCKED"
+    assert row["browser_attempted"] is False
+    assert "export_workcell_studio_web_scene.py exited 3" in row["staging_failures"][0]
+    assert "place_zone_main" in row["errors"][0]
+    assert all("browser unavailable" not in error for error in row["errors"])
+
+
+def test_supported_scene_matrix_distinguishes_runtime_browser_failure():
+    report = {
+        "scene_id": "ur5_3f_test",
+        "steps": [{"command": ["python3", "export.py"], "returncode": 0}],
+        "browser": {
+            "available": False,
+            "method": "failed",
+            "status": None,
+            "error": "Chromium launch failed",
+        },
+    }
+    row = module._matrix_row_from_report(
+        report, {"robot": "ur5", "tool": "robotiq_3f"}, require_browser=True
+    )
+    assert row["status"] == "BLOCKED"
+    assert row["browser_attempted"] is True
+    assert row["staging_failures"] == []
+    assert any("Chromium launch failed" in error for error in row["errors"])
+
+
+
+def test_camera_bounds_use_rotation_aware_world_extents_not_unrotated_axes():
+    from math import sqrt
+    camera = {
+        "id": "generated_urdf::camera_link::visual_17::17",
+        "category": "camera", "link_name": "camera_link",
+        "render_status": "mesh_loaded", "exclude_from_fit_bounds": False,
+        "expected_dimensions_m": {"x": 0.09, "y": 0.025, "z": 0.025},
+        "bounding_box_size": {"x": 0.025, "y": 0.025, "z": 0.09},
+        "world_quaternion": {"x": 0, "y": sqrt(0.5), "z": 0, "w": sqrt(0.5)},
+    }
+    assert module._camera_bounds_errors({"renderedMeshDiagnostics": [camera]}) == []
+    camera["bounding_box_size"] = {"x": 0.025, "y": 0.025, "z": 0.4}
+    errors = module._camera_bounds_errors({"renderedMeshDiagnostics": [camera]})
+    assert any("camera_link loaded mesh bounds are oversized" in error for error in errors)
+
+
+def test_camera_bounds_reject_genuinely_oversized_visual_without_rotation():
+    camera = {
+        "id": "realsense_overhead", "category": "camera",
+        "render_status": "mesh_loaded", "exclude_from_fit_bounds": False,
+        "expected_dimensions_m": {"x": 0.09, "y": 0.025, "z": 0.025},
+        "bounding_box_size": {"x": 0.4, "y": 0.2, "z": 0.12},
+        "world_quaternion": {"x": 0, "y": 0, "z": 0, "w": 1},
+    }
+    assert module._camera_bounds_errors({"renderedMeshDiagnostics": [camera]})
+
+
+
+def test_visual_acceptance_enables_read_only_diagnostic_scene_export():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert '"--stage-assets", "--allow-incomplete-preview"' in source
+    assert '"visual_only": visual_only' in source
+    exporter = (ROOT / "scripts/export_workcell_studio_web_scene_impl.py").read_text(encoding="utf-8")
+    assert '"save_layout_enabled": False' in exporter
+    assert '"execution_enabled": False' in exporter
+    assert 'item["editable"] = False' in exporter
+    assert 'item["locked"] = True' in exporter
+

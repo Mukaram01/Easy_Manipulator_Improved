@@ -118,7 +118,10 @@ inline void refresh_context_header(QMainWindow * window, QStackedWidget * pages,
   }
   const bool selected = table && row >= 0 && row < table->rowCount() && table->item(row, 0);
   const QString scene_id = selected ? scene_id_at(table, row) : QString();
-  const QString scene_title = selected ? friendly_workcell_name(scene_id) : QStringLiteral("Workcell Studio");
+  // The same name as the Home row: the cell's display name, else the friendly id.
+  const QString display_name = selected ? table->item(row, 0)->data(kDisplayNameRole).toString().trimmed() : QString();
+  const QString scene_title = !selected ? QStringLiteral("Workcell Studio") :
+    (display_name.isEmpty() || display_name == scene_id ? friendly_workcell_name(scene_id) : display_name);
   const QString status = selected ? scene_status_at(table, row) : QStringLiteral("No scene selected");
 
   if (auto * label = window->findChild<QLabel *>(QStringLiteral("studioContextSceneTitle"))) {

@@ -390,24 +390,49 @@ def test_move_transform_controls_use_world_axes_and_commit_once_after_preview():
     assert "emitTransformCommitted" not in object_change
 
 
-def test_rotate_transform_controls_preserve_canonical_components_and_commit_once():
+def test_rotate_rings_turn_the_part_about_the_axis_they_show():
+    """A ring drag is the rotation about the ring's displayed axis, in world and local space."""
     import subprocess
 
+    three = ROOT / "workcell_studio_web/viewer/node_modules/three/build/three.cjs"
+    if not three.exists():
+        pytest.skip("three.cjs not installed")
     harness = r"""
-const fs=require('fs'),assert=require('assert');const source=fs.readFileSync(process.argv[1],'utf8');
-const helper=source.slice(source.indexOf('function canonicalRotatePreviewTransform'),source.indexOf('function previewTransientPivotDrag'));
-const cloneTransform=value=>JSON.parse(JSON.stringify(value));eval(helper);
-const start={pose:{xyz:{x:.45,y:-.28,z:.19},rpy:{x:.10,y:-.20,z:.30}},scale:{x:1,y:1,z:1}};
-for(const [axis,component] of [['X','x'],['Y','y'],['Z','z']])for(const angle of [.37,-.41]){
-  const next=canonicalRotatePreviewTransform(start,axis,angle);assert(next);assert.strictEqual(next.pose.rpy[component],start.pose.rpy[component]+angle);
-  for(const other of ['x','y','z'].filter(value=>value!==component))assert.strictEqual(next.pose.rpy[other],start.pose.rpy[other]);
+const fs=require('fs'),assert=require('assert');const THREE=require(process.argv[2]);
+const source=fs.readFileSync(process.argv[1],'utf8');
+const helper=source.slice(source.indexOf('function nearestRosRpy'),source.indexOf('function previewTransientPivotDrag'));
+const cloneTransform=value=>JSON.parse(JSON.stringify(value));
+const rosRpyEuler=rpy=>new THREE.Euler(rpy.x,rpy.y,rpy.z,'ZYX');
+const rosRpyFromQuaternion=q=>{const e=new THREE.Euler().setFromQuaternion(q,'ZYX');return {x:e.x,y:e.y,z:e.z};};
+eval(helper);
+const quat=t=>new THREE.Quaternion().setFromEuler(rosRpyEuler(t.pose.rpy));
+const same=(a,b)=>Math.abs(Math.abs(a.dot(b))-1)<1e-12;
+const unit={X:new THREE.Vector3(1,0,0),Y:new THREE.Vector3(0,1,0),Z:new THREE.Vector3(0,0,1)};
+const start={pose:{xyz:{x:.45,y:-.28,z:.19},rpy:{x:.10,y:-.20,z:.96}},scale:{x:1,y:1,z:1}};
+for(const axis of ['X','Y','Z'])for(const angle of [.37,-.41])for(const space of ['world','local']){
+  const next=canonicalRotatePreviewTransform(start,axis,angle,space);assert(next);
+  const turn=new THREE.Quaternion().setFromAxisAngle(unit[axis],angle);
+  const expected=space==='world'?turn.clone().multiply(quat(start)):quat(start).multiply(turn);
+  assert(same(quat(next),expected),`${space} ${axis} ${angle}`);
   assert.deepStrictEqual(next.pose.xyz,start.pose.xyz);assert.deepStrictEqual(next.scale,start.scale);
 }
+// Where one RPY component is the ring's rotation the arithmetic stays exact.
+assert.strictEqual(canonicalRotatePreviewTransform(start,'Z',.37,'world').pose.rpy.z,start.pose.rpy.z+.37);
+assert.strictEqual(canonicalRotatePreviewTransform(start,'X',.37,'local').pose.rpy.x,start.pose.rpy.x+.37);
+// A yawed part turned on the world X ring tips about world X, not its own x.
+const yawed={pose:{xyz:{x:0,y:0,z:0},rpy:{x:0,y:0,z:Math.PI/4}},scale:{x:1,y:1,z:1}};
+const tipped=canonicalRotatePreviewTransform(yawed,'X',Math.PI/2,'world');
+const up=new THREE.Vector3(0,0,1).applyQuaternion(quat(tipped));
+assert(up.distanceTo(new THREE.Vector3(0,-1,0))<1e-12);
+// Values stay continuous through pitch 90 degrees and yaw 180 degrees.
+let walk=cloneTransform(start);
+for(let i=0;i<40;i++){const n=canonicalRotatePreviewTransform(walk,'Y',.1,'world');
+  for(const c of ['x','y','z'])assert(Math.abs(n.pose.rpy[c]-walk.pose.rpy[c])<.25,`jump in ${c} at ${i}`);walk=n;}
 for(const axis of ['E','XYZE','XYZ',null])assert.strictEqual(canonicalRotatePreviewTransform(start,axis,.2),null);
 assert.strictEqual(canonicalRotatePreviewTransform(start,'X',NaN),null);
 """
     subprocess.run(
-        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js")],
+        ["node", "-e", harness, str(ROOT / "workcell_studio_web/viewer/viewer.js"), str(three)],
         cwd=ROOT, check=True, capture_output=True, text=True,
     )
 
@@ -922,7 +947,9 @@ def test_qt_reconciles_exported_selection_owner_registry_as_identity_only_rows()
     assert 'source_layer == QStringLiteral("selection_owner_registry")' in body
     assert "all_scene_preview_items_.removeAt(i)" in body
     assert "item.id.trimmed() == declaration.id" in body
-    assert "if (id_already_owned) continue;" in body
+    # 473aab14: only a user-facing hierarchy row already owning the ID suppresses the registry row.
+    assert "return item.id.trimmed() == declaration.id && is_user_facing_scene_hierarchy_item(item);" in body
+    assert "if (id_already_owned_by_hierarchy_item) continue;" in body
     assert 'owner.source_layer = QStringLiteral("selection_owner_registry")' in body
     assert "owner.locked = true" in body
     assert "owner.editable = false" in body

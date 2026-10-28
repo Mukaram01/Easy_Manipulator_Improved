@@ -39,21 +39,31 @@ def evaluate_scene(scene:Path,strict:bool,in_place:bool)->dict:
         starter=True
         warnings.append('preview-only; starter editable layout can be created')
 
-    export_code, export_report, export_msg = _run(['python3', str(EXPORTER), str(work_scene), '--output-dir', str(work_scene/'generated'), '--json'])
+    # The Builder's Generate: export the saved task into the scene, then
+    # regenerate that scene package in place (generation reads the scene's
+    # own saved task intent, so a separate output tree cannot generate).
+    export_code, export_report, export_msg = _run(['python3', str(EXPORTER), str(work_scene), '--output-dir', str(work_scene), '--validate'])
     if export_code != 0:
         blockers.append(f'export failed: {export_msg[:200]}')
-    cell_def = work_scene/'generated/cell_definition.yaml'
-    if not cell_def.is_file(): blockers.append('missing generated/cell_definition.yaml')
+    cell_def = work_scene/'cell_definition.yaml'
+    if export_code == 0 and not cell_def.is_file(): blockers.append('missing cell_definition.yaml')
 
-    gen_code, _, gen_msg = _run(['python3', str(GENERATOR), str(cell_def), '--output-dir', str(work_scene/'generated_package'), '--package-name', scene.name, '--force']) if cell_def.is_file() else (1,{},'skipped generation')
+    package_ready = (work_scene/'package.xml').is_file() and (work_scene/'CMakeLists.txt').is_file()
+    if export_code != 0 or not cell_def.is_file():
+        gen_code, gen_msg = 1, 'skipped generation'
+    elif not package_ready:
+        gen_code, gen_msg = 1, 'scene is not a ROS package (package.xml/CMakeLists.txt missing)'
+    else:
+        gen_code, _, gen_msg = _run(['python3', str(GENERATOR), str(cell_def), '--output-dir', str(work_scene.parent),
+                                     '--package-name', scene.name, '--existing-package-dir', str(work_scene)])
     if gen_code != 0: blockers.append(f'generation failed: {gen_msg[:200]}')
 
     parity_status='SKIPPED'
     if gen_code == 0:
-        _, parity_report, _ = _run(['python3', str(PARITY), str(work_scene/'generated_package'/scene.name), '--json'])
+        _, parity_report, _ = _run(['python3', str(PARITY), str(work_scene), '--json'])
         parity_status = parity_report.get('status','SKIPPED') if isinstance(parity_report,dict) else 'SKIPPED'
 
-    generated_dir = work_scene/'generated_package'/scene.name
+    generated_dir = work_scene
     gen_files={f:(generated_dir/f).is_file() for f in REQ_FILES}
     if strict and not all(gen_files.values()): blockers.append('missing required generated files')
 

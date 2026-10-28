@@ -37,6 +37,8 @@
 #include "visual_mesh_source_resolver.hpp"
 #include "workcell_warning_once.hpp"
 #include "include/asset_catalog_model.h"
+#include <optional>
+#include <QXmlStreamReader>
 #include <QFileDialog>
 #include <QAction>
 #include <QWidgetAction>
@@ -194,6 +196,67 @@ using workcell_builder::workcell_builder_repo_root_from_source;
 static QStringList generation_asset_support_preflight(const fs::path & layout_path, bool * severe_failure);
 
 namespace {
+
+// The pending authoring session is captured once, when the layout first turns
+// dirty, and merged back on refresh. Structural edits keep its membership in
+// step: an undone add must not resurrect under a reused ID.
+void upsert_session_item(QVector<ScenePreviewWidget::PreviewItem> & session, const ScenePreviewWidget::PreviewItem & item)
+{
+  for (auto & existing : session) if (existing.id == item.id) { existing = item; return; }
+  session.push_back(item);
+}
+void remove_session_item(QVector<ScenePreviewWidget::PreviewItem> & session, const QString & id)
+{
+  for (int i = session.size() - 1; i >= 0; --i) if (session[i].id == id) session.removeAt(i);
+}
+
+// The first visual primitive (box, cylinder or sphere) of a URDF/xacro asset:
+// such assets have no mesh, so placement needs their real size and shape.
+// Values xacro must evaluate (${...}) are not guessed: nothing is returned.
+struct UrdfVisualPrimitive
+{
+  QString type;
+  double sx{0.0}, sy{0.0}, sz{0.0}, radius{0.0}, length{0.0};
+};
+std::optional<UrdfVisualPrimitive> first_urdf_visual_primitive(const QString & path)
+{
+  if (!path.endsWith(QStringLiteral(".urdf"), Qt::CaseInsensitive) &&
+      !path.endsWith(QStringLiteral(".xacro"), Qt::CaseInsensitive)) return std::nullopt;
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) return std::nullopt;
+  QXmlStreamReader xml(&file);
+  bool in_visual = false, in_geometry = false;
+  const auto number = [](const QStringView text, double * out) {
+    bool ok = false; *out = text.toDouble(&ok); return ok && std::isfinite(*out) && *out > 0.0;
+  };
+  while (!xml.atEnd()) {
+    xml.readNext();
+    if (xml.isEndElement() && xml.name() == QLatin1String("visual")) { in_visual = in_geometry = false; continue; }
+    if (!xml.isStartElement()) continue;
+    if (xml.name() == QLatin1String("visual")) { in_visual = true; continue; }
+    if (in_visual && xml.name() == QLatin1String("geometry")) { in_geometry = true; continue; }
+    if (!in_geometry) continue;
+    UrdfVisualPrimitive primitive;
+    primitive.type = xml.name().toString();
+    const auto attrs = xml.attributes();
+    if (primitive.type == QLatin1String("box")) {
+      const auto size = attrs.value(QLatin1String("size")).toString().simplified().split(' ');
+      if (size.size() != 3 || !number(size[0], &primitive.sx) || !number(size[1], &primitive.sy) ||
+          !number(size[2], &primitive.sz)) return std::nullopt;
+    } else if (primitive.type == QLatin1String("cylinder")) {
+      if (!number(attrs.value(QLatin1String("radius")), &primitive.radius) ||
+          !number(attrs.value(QLatin1String("length")), &primitive.length)) return std::nullopt;
+      primitive.sx = primitive.sy = 2.0 * primitive.radius; primitive.sz = primitive.length;
+    } else if (primitive.type == QLatin1String("sphere")) {
+      if (!number(attrs.value(QLatin1String("radius")), &primitive.radius)) return std::nullopt;
+      primitive.sx = primitive.sy = primitive.sz = 2.0 * primitive.radius;
+    } else {
+      return std::nullopt;
+    }
+    return primitive;
+  }
+  return std::nullopt;
+}
 [[maybe_unused]] static const char * kSelectionTransformActionTokens =
   "Apply | Revert | Copy Transform | Paste Transform | Live update";
 [[maybe_unused]] static const char * kScene3DCompatibilityValidatorTokens =
@@ -559,7 +622,7 @@ bool is_good_scene_path(const fs::path & scene_path)
     has_file("package.xml");
 }
 
-enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ, RoleMetadataExplicitlyEdited, RoleMountingYaml };
+enum CanvasRoles { RoleId = Qt::UserRole + 1, RoleDisplayName, RoleType, RoleCategory, RoleRole, RoleSource, RoleSourcePackage, RolePoseZ, RoleRoll, RolePitch, RoleYaw, RoleWidth, RoleDepth, RoleHeight, RoleImported, RoleGeneratedPlaceholder, RoleLocked, RoleWarning, RolePoseText, RoleSourceLayer, RoleCatalogAssetId, RoleMeshScaleX, RoleMeshScaleY, RoleMeshScaleZ, RoleMetadataExplicitlyEdited, RoleMountingYaml, RoleGeometryType };
 enum SceneTreeRoles {
   TreeRoleId = Qt::UserRole + 1, TreeRoleCategory, TreeRolePoseText, TreeRoleSource, TreeRolePoseX, TreeRolePoseY, TreeRolePoseZ, TreeRoleRoll, TreeRolePitch, TreeRoleYaw, TreeRolePoseAvailable, TreeRoleRole,
   TreeRoleSourceLayer, TreeRoleActiveVisualSource, TreeRoleEditable, TreeRoleLocked, TreeRoleLinkedEditableLayout, TreeRoleVisualBackingStatus, TreeRoleGeneratedVisual, TreeRoleItemTypeClass,
@@ -5566,6 +5629,9 @@ void MainWindow::append_studio_log(
   if (studio_log_) {
     studio_log_->append(message);
   }
+  // Opt-in terminal copy of the Studio log for diagnosing a live GUI session.
+  static const bool mirror_to_stderr = qEnvironmentVariableIntValue("WORKCELL_STUDIO_LOG_STDERR") == 1;
+  if (mirror_to_stderr) std::cerr << "[studio] " << message.toStdString() << std::endl;
   const QString stable_key = issue_key.isEmpty() ? message : issue_key;
   studio_log_issue_tracker_.report(severity, stable_key.toStdString());
   const int scene_builder_error_count = studio_log_issue_tracker_.error_count();
@@ -5702,6 +5768,20 @@ void MainWindow::closeEvent(QCloseEvent * event)
     if (answer == QMessageBox::Cancel || (answer == QMessageBox::Save && !environment_task_editor_->save())) {
       event->ignore(); return;
     }
+  }
+  if (layout_dirty_) {
+    // Same choice as opening another cell: closing discards them for good.
+    QMessageBox box(QMessageBox::Warning, QStringLiteral("Unsaved layout edits"),
+      QStringLiteral("%1 has unsaved layout edits. Closing Workcell Studio discards them; Undo cannot bring them back.")
+        .arg(selected_scene_state_.name.isEmpty() ? QStringLiteral("This cell") : selected_scene_state_.name),
+      QMessageBox::NoButton, this);
+    box.setObjectName(QStringLiteral("unsavedLayoutCloseDialog"));
+    box.setInformativeText(QStringLiteral("To keep them, choose Stay and use Save Layout (Ctrl+S) first."));
+    auto * discard = box.addButton(QStringLiteral("Discard edits and close"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(box.addButton(QStringLiteral("Stay"), QMessageBox::RejectRole));
+    box.exec();
+    if (box.clickedButton() != discard) { event->ignore(); return; }
+    append_studio_log(QStringLiteral("Unsaved layout edits in %1 were discarded on closing.").arg(selected_scene_state_.name));
   }
   if (perception_process_ && perception_process_->state() != QProcess::NotRunning) {
     perception_process_->terminate();                 // the session stops EPD, then exits
@@ -7580,6 +7660,9 @@ void MainWindow::rebuild_digital_twin_canvas()
     item->setData(RoleSourcePackage, QString(""));
     item->setData(RoleWidth, entry.width); item->setData(RoleDepth, entry.depth); item->setData(RoleHeight, entry.height);
     item->setData(RoleCatalogAssetId, QString::fromStdString(entry.catalog_asset_id));
+    // Only a mesh-less item is a primitive; a mesh item never takes this role.
+    item->setData(RoleGeometryType, entry.source_file.empty() && entry.mesh_path.empty()
+      ? QString::fromStdString(entry.primitive_geometry_type) : QString());
     item->setData(RoleMeshScaleX, entry.mesh_scale_x); item->setData(RoleMeshScaleY, entry.mesh_scale_y); item->setData(RoleMeshScaleZ, entry.mesh_scale_z);
     const bool is_preview_placeholder = category.contains("placeholder", Qt::CaseInsensitive) || category == "warning";
     item->setData(RoleImported, false); item->setData(RoleGeneratedPlaceholder, is_preview_placeholder);
@@ -8268,6 +8351,7 @@ void MainWindow::merge_active_editable_layout_session(
     canvas_item.source_file = item.source_path.toStdString();
     canvas_item.mesh_path = item.mesh_path.toStdString();
     canvas_item.mesh_type = item.mesh_type.toStdString();
+    canvas_item.primitive_geometry_type = item.primitive_geometry_type.toStdString();
     canvas_item.x = item.x; canvas_item.y = item.y; canvas_item.z = item.z;
     canvas_item.roll = item.roll; canvas_item.pitch = item.pitch; canvas_item.yaw = item.yaw;
     canvas_item.width = item.sx; canvas_item.depth = item.sy; canvas_item.height = item.sz;
@@ -8486,6 +8570,8 @@ static YAML::Node serialized_editable_canvas_item(QGraphicsItem * gi, const YAML
   const int assets_marker = scenes_marker >= 0 ? portable_mesh_path.indexOf(QStringLiteral("/assets/"), scenes_marker + 8) : -1;
   if (assets_marker >= 0) portable_mesh_path = portable_mesh_path.mid(assets_marker + 1);
   state.mesh_path = portable_mesh_path.toStdString();
+  state.geometry_type = gi->data(RoleGeometryType).toString().toStdString();
+  if (!state.geometry_type.empty()) state.mesh_path.clear();
   state.source_package = gi->data(RoleSourcePackage).toString().toStdString();
   state.xyz = {{gi->pos().x() / 100.0, gi->pos().y() / 100.0, gi->data(RolePoseZ).toDouble()}};
   state.rpy = {{gi->data(RoleRoll).toDouble(), gi->data(RolePitch).toDouble(), gi->data(RoleYaw).toDouble()}};
@@ -8609,6 +8695,14 @@ bool MainWindow::apply_web_transforms_to_editable_layout_session(
     update.canvas->setData(RoleRoll, update.roll);
     update.canvas->setData(RolePitch, update.pitch);
     update.canvas->setData(RoleYaw, update.yaw);
+    // A dirty session is written back onto the canvas before serializing. The
+    // browser pose already includes any Inspector edit pushed to it, so it is
+    // the newer pending value: a gizmo edit after Inspector Apply must survive.
+    for (auto & session_item : editable_layout_session_items_) {
+      if (session_item.id != update.id) continue;
+      session_item.x = update.x; session_item.y = update.y; session_item.z = update.z;
+      session_item.roll = update.roll; session_item.pitch = update.pitch; session_item.yaw = update.yaw;
+    }
   }
   // Keep the pending Inspector snapshot intact while saving dirty edits.
   if (!layout_dirty_) capture_active_editable_layout_session();
@@ -10041,7 +10135,7 @@ bool MainWindow::leave_cell_session_for(int scene_index)
     box.setObjectName(QStringLiteral("unsavedLayoutSwitchDialog"));
     box.setInformativeText(QStringLiteral("To keep them, choose Stay and use Save Layout (Ctrl+S) first."));
     auto * discard = box.addButton(QStringLiteral("Discard edits and open"), QMessageBox::DestructiveRole);
-    box.addButton(QStringLiteral("Stay"), QMessageBox::RejectRole);
+    box.setDefaultButton(box.addButton(QStringLiteral("Stay"), QMessageBox::RejectRole));
     box.exec();
     if (box.clickedButton() != discard) return false;
     append_studio_log(QStringLiteral("Unsaved layout edits in %1 were discarded on opening another cell.").arg(selected_scene_state_.name));
@@ -10678,6 +10772,7 @@ void MainWindow::undo_layout_edit(){
     append_studio_log(QString("Restored %1").arg(selected_item_state_.display_name.isEmpty() ? c.item_id : selected_item_state_.display_name));
   } else if (c.kind == QStringLiteral("duplicate") || c.kind == QStringLiteral("add")) {
     for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == c.item_id) all_scene_preview_items_.removeAt(i);
+    remove_session_item(editable_layout_session_items_, c.item_id);
     for (auto * item : digital_twin_scene_->items()) if (item->data(RoleId).toString() == c.item_id) { delete item; break; }
     current_selected_scene_item_id_.clear(); selected_item_state_ = {};
     if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
@@ -10745,6 +10840,7 @@ void MainWindow::redo_layout_edit(){
     bool exists = false;
     for (const auto & existing : all_scene_preview_items_) if (existing.id == p.id) { exists = true; break; }
     if (!exists) all_scene_preview_items_.push_back(p);
+    upsert_session_item(editable_layout_session_items_, p);
     if (!find_canvas_item_by_stable_id(p.id)) {
       auto * item = new DraggableCanvasItem(QRectF(0, 0, qMax(10.0, p.sx * 35.0), qMax(10.0, p.sy * 35.0)));
       item->setPos(p.x * 100.0, p.y * 100.0);
@@ -10752,6 +10848,7 @@ void MainWindow::redo_layout_edit(){
       item->setData(RoleSource, p.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder")); item->setData(RoleSourceLayer, QStringLiteral("editable_layout")); item->setData(RoleLocked, false);
       item->setData(RolePoseZ, p.z); item->setData(RoleRoll, p.roll); item->setData(RolePitch, p.pitch); item->setData(RoleYaw, p.yaw);
       item->setData(RoleWidth, p.sx); item->setData(RoleDepth, p.sy); item->setData(RoleHeight, p.sz);
+      item->setData(RoleCatalogAssetId, p.catalog_asset_id); item->setData(RoleGeometryType, p.primitive_geometry_type);
       item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
       item->position_filter = [this](const QPointF & pos){ return snap_canvas_position(pos); };
       digital_twin_scene_->addItem(item);
@@ -10872,6 +10969,7 @@ void MainWindow::duplicate_selected_item()
   item->setData(RoleId, copy.id); item->setData(RoleDisplayName, copy.display_name);
   item->setData(RoleType, target.state.type); item->setData(RoleCategory, copy.category); item->setData(RoleRole, copy.role);
   item->setData(RoleSource, copy.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder"));
+  item->setData(RoleGeometryType, copy.primitive_geometry_type);
   item->setData(RolePoseZ, copy.z); item->setData(RoleRoll, copy.roll); item->setData(RolePitch, copy.pitch); item->setData(RoleYaw, copy.yaw);
   item->setData(RoleWidth, copy.sx); item->setData(RoleDepth, copy.sy); item->setData(RoleHeight, copy.sz);
   item->setData(RoleCatalogAssetId, copy.catalog_asset_id);
@@ -10894,6 +10992,7 @@ void MainWindow::duplicate_selected_item()
   } else {
     apply_scene3d_preview_layer_filters(false);
   }
+  upsert_session_item(editable_layout_session_items_, copy);
   apply_scene_selection(new_id, copy.role, false, false);
   refresh_scene_hierarchy_tree_from_current_items();
   refresh_minimap_card();
@@ -11326,23 +11425,30 @@ void MainWindow::commit_armed_asset_placement(
     QMessageBox::warning(this, "Default placement", "No robot/table found; placing asset at canvas center.");
   }
   item->setPos(placement);
+  // A URDF primitive is centred on its link origin: rest it on the surface.
+  const auto primitive = first_urdf_visual_primitive(source_path);
+  const double placed_z = armed_asset_z_m_ + (primitive ? primitive->sz / 2.0 : 0.0);
+  // The primitive is authored as geometry_type + dimensions, never as a mesh path.
+  const QString placed_source = primitive ? QString() : source_path;
   item->setData(RoleId, new_id);
   item->setData(RoleDisplayName, display_name);
   item->setData(RoleType, role_type);
   item->setData(RoleCategory, category);
   item->setData(RoleRole, "asset");
-  item->setData(RoleSource, source_path);
+  item->setData(RoleSource, placed_source);
   item->setData(RoleSourcePackage, "asset_folder");
-  item->setData(RolePoseZ, armed_asset_z_m_);
+  item->setData(RoleGeometryType, primitive ? primitive->type : QString());
+  item->setData(RolePoseZ, placed_z);
   item->setData(RoleRoll, armed_asset_roll_rad_); item->setData(RolePitch, armed_asset_pitch_rad_); item->setData(RoleYaw, armed_asset_yaw_rad_);
-  item->setData(RoleWidth, 1.0); item->setData(RoleDepth, 1.0); item->setData(RoleHeight, 1.0);
+  item->setData(RoleWidth, primitive ? primitive->sx : 1.0); item->setData(RoleDepth, primitive ? primitive->sy : 1.0);
+  item->setData(RoleHeight, primitive ? primitive->sz : 1.0);
   item->setData(RoleCatalogAssetId, asset_id);
   item->setData(RoleMeshScaleX, armed_asset_scale_); item->setData(RoleMeshScaleY, armed_asset_scale_); item->setData(RoleMeshScaleZ, armed_asset_scale_);
-  item->setData(RoleImported,
+  item->setData(RoleImported, !primitive && (
     source_path.endsWith(".stl", Qt::CaseInsensitive) ||
     source_path.endsWith(".obj", Qt::CaseInsensitive) ||
     source_path.endsWith(".dae", Qt::CaseInsensitive) ||
-    source_path.endsWith(".urdf", Qt::CaseInsensitive));
+    source_path.endsWith(".urdf", Qt::CaseInsensitive)));
   item->setData(RoleGeneratedPlaceholder, category.contains("placeholder", Qt::CaseInsensitive));
   item->setData(RoleSourceLayer, QStringLiteral("editable_layout"));
   item->setData(RoleLocked, false);
@@ -11367,9 +11473,9 @@ void MainWindow::commit_armed_asset_placement(
   preview_item.role = canonical_scene_hierarchy_role(
     QStringLiteral("asset"), category, display_name);
   preview_item.status = QStringLiteral("ready");
-  preview_item.source_path = source_path;
-  preview_item.mesh_path = source_path;
-  preview_item.mesh_type = QFileInfo(source_path).suffix().toLower();
+  preview_item.source_path = placed_source;
+  preview_item.mesh_path = placed_source;
+  preview_item.mesh_type = QFileInfo(placed_source).suffix().toLower();
   preview_item.source_layer = QStringLiteral("editable_layout");
   preview_item.active_visual_source = QStringLiteral("mesh_preview");
   preview_item.linked_to_editable_layout_state = true;
@@ -11379,17 +11485,24 @@ void MainWindow::commit_armed_asset_placement(
   preview_item.metadata_complete = true;
   preview_item.x = item->pos().x() / 100.0;
   preview_item.y = item->pos().y() / 100.0;
-  preview_item.z = armed_asset_z_m_;
+  preview_item.z = placed_z;
   preview_item.roll = armed_asset_roll_rad_;
   preview_item.pitch = armed_asset_pitch_rad_;
   preview_item.yaw = armed_asset_yaw_rad_;
-  preview_item.sx = 1.0; preview_item.sy = 1.0; preview_item.sz = 1.0;
+  preview_item.sx = primitive ? primitive->sx : 1.0;
+  preview_item.sy = primitive ? primitive->sy : 1.0;
+  preview_item.sz = primitive ? primitive->sz : 1.0;
+  if (primitive) {
+    preview_item.primitive_geometry_type = primitive->type;
+    preview_item.primitive_radius = primitive->radius;
+    preview_item.primitive_length = primitive->length;
+  }
   preview_item.mesh_scale_x = armed_asset_scale_;
   preview_item.mesh_scale_y = armed_asset_scale_;
   preview_item.mesh_scale_z = armed_asset_scale_;
-  preview_item.has_mesh_metadata = true;
-  preview_item.mesh_available = QFileInfo(source_path).isFile();
-  if (!preview_item.mesh_available) {
+  preview_item.has_mesh_metadata = !primitive;
+  preview_item.mesh_available = !primitive && QFileInfo(source_path).isFile();
+  if (!primitive && !preview_item.mesh_available) {
     preview_item.mesh_load_warning = QStringLiteral("mesh file not found: %1").arg(source_path);
     append_studio_log(QStringLiteral("Asset Browser warning: mesh failed availability check for %1; item remains editable but fallback boxes are not enabled for this asset.").arg(source_path));
   }
@@ -11397,6 +11510,7 @@ void MainWindow::commit_armed_asset_placement(
     if (all_scene_preview_items_[i].id == new_id) { all_scene_preview_items_.removeAt(i); break; }
   }
   all_scene_preview_items_.push_back(preview_item);
+  upsert_session_item(editable_layout_session_items_, preview_item);
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
     scene_preview_widget_->add_authoring_item(preview_item);
   else apply_scene3d_preview_layer_filters(false);
@@ -15211,7 +15325,13 @@ void MainWindow::populate_asset_catalog()
   if (!asset_catalog_tree_) return;
   asset_catalog_tree_->clear();
   asset_catalog_entries_.clear();
-  const fs::path repo_root = fs::current_path();
+  // The library lives in the repository, never in the launch directory: from a
+  // workspace launch the current path holds no assets at all.
+  const QString workspace_root = QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT"));
+  const QString resolved_root = resolve_workcell_studio_repo_root(has_selected_scene()
+    ? fs::path(selected_scene_path().toStdString())
+    : fs::path((workspace_root + QStringLiteral("/src/easy_manipulation_deployment/scenes")).toStdString()));
+  const fs::path repo_root = resolved_root.isEmpty() ? fs::current_path() : fs::path(resolved_root.toStdString());
   const std::string scene_catalog_root = has_selected_scene()
     ? (fs::path(selected_scene_path().toStdString()) / "assets" / "imported").string()
     : std::string();

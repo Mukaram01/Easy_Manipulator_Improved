@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <string>
 #include <tuple>
@@ -476,6 +477,7 @@ AssetCatalogModel discover_asset_catalog(
   AssetCatalogModel model;
   std::vector<RankedAsset> candidates;
   std::set<std::string> seen_files;
+  std::map<std::string, int> visual_meshes_per_package;
 
   for (const auto & root : candidate_roots(workspace_root, repo_root)) {
     model.discovered_roots.push_back(root.string());
@@ -512,6 +514,7 @@ AssetCatalogModel discover_asset_catalog(
       RankedAsset candidate;
       const fs::path group_dir = package_dir.empty() ? description_directory_for(path, root) : package_dir;
       candidate.package_key = group_dir.empty() ? std::string() : group_dir.generic_string();
+      if (!package_dir.empty() && is_supported_visual_mesh(path)) ++visual_meshes_per_package[candidate.package_key];
       candidate.rank = file_rank(path, root, workspace_root, repo_root);
       candidate.entry.id = package_name.empty() ? path.stem().string() : package_name;
       candidate.entry.path = path.string();
@@ -521,7 +524,16 @@ AssetCatalogModel discover_asset_catalog(
         path,
         path_is_internal_placeholder(path),
         path_is_canonical_asset(path) && !path_is_internal_placeholder(path));
-      candidate.entry.display_name = asset_display_name(candidate.entry);
+      // A package is one product: name it from the package, not from whichever
+      // of its meshes ranked first ("Link 0" for Panda, "Finger" for the 3F).
+      std::string product_name = package_name;
+      const std::string suffix = "_description";
+      if (product_name.size() > suffix.size() &&
+          product_name.compare(product_name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        product_name.resize(product_name.size() - suffix.size());
+      }
+      candidate.entry.display_name = product_name.empty()
+        ? asset_display_name(candidate.entry) : humanize_asset_identifier(product_name);
       candidates.push_back(candidate);
     }
   }
@@ -579,6 +591,16 @@ AssetCatalogModel discover_asset_catalog(
     const std::string identity = candidate.entry.id + "|" + canonical.generic_string();
     if (!emitted_id_paths.insert(identity).second) continue;
     model.assets.push_back(candidate.entry);
+    // Placing a multi-part tool adds one loose link mesh, not the assembled
+    // gripper. It is configured as the cell's end effector instead.
+    const auto meshes = visual_meshes_per_package.find(candidate.package_key);
+    auto & placed = model.assets.back();
+    if (placed.category == "end_effector" && meshes != visual_meshes_per_package.end() && meshes->second > 1) {
+      placed.readiness = "ASSIGN_AS_END_EFFECTOR";
+      placed.can_add_to_scene = false;
+      placed.blockers.insert(placed.blockers.begin(), "Multi-part tool (" + std::to_string(meshes->second) +
+        " meshes): choose it as the cell's end effector in New Cell > End Effector. Placing it here would add one loose part, not the assembled tool.");
+    }
   }
 
   if (model.assets.empty()) {

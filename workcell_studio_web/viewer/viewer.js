@@ -33,6 +33,9 @@ const REQUIRED_LOAD_DEADLINE_MS = 40000;
 const VALID_SCENE_LIFECYCLE_STATES = Object.freeze(['booting', 'scene_loading', 'scene_ready', 'scene_failed']);
 const LOCKED_EDIT_REASON = 'Locked/generated preview item; edit source layout/environment instead.';
 const MIN_FRAME_RADIUS = 1.2;
+// Fit Selection frames one part; the cell-sized floor above would leave a
+// 9 cm camera as a speck. This floor only keeps the camera outside the part.
+const MIN_SELECTION_FRAME_RADIUS = 0.08;
 const EMPTY_SCENE_MESSAGE = 'Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.';
 const FRAME_DISTANCE_MULTIPLIER = 2.35;
 const CAMERA_PRESET_DIRECTIONS = Object.freeze({
@@ -617,7 +620,9 @@ function isMissingOrFailedMeshStatus(status) {
     .includes(String(status || '').toLowerCase());
 }
 function statusCountedRenderables() {
-  return (state.objects || []).filter(obj => isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
+  // Synthetic edit roots carry authored metadata and transforms, but no visual
+  // of their own. Their generated child retains the primary mesh requirement.
+  return (state.objects || []).filter(obj => obj.physicalEditRoot !== true && isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
 }
 function isRequiredMeshFailureStatus(obj) {
   return obj?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback' || obj?.item?.renderInfo?.render_status === 'required_mesh_failed_debug_fallback';
@@ -2004,11 +2009,19 @@ function applyTransformToObject(object, transform) {
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   return true;
 }
+// A dependent that edit authority locks to its target must also move with
+// that target, or it is left behind as a stale, uneditable destination.
+function followsTargetTransform(candidate, target) {
+  const targetId = target?.item?.id;
+  if (!targetId || candidate === target) return false;
+  return derivedTransformTargetId(candidate.item) === targetId ||
+    Boolean(candidate.item?.placement_local && candidate.item?.target_ref === targetId);
+}
 function editableTransformGroupMembers(rendered) {
   const group = String(rendered?.item?.transform_group || '').trim();
   if (!rendered || !canEditItem(rendered.item)) return rendered ? [rendered] : [];
   return state.objects.filter(candidate => candidate === rendered ||
-    (candidate.item?.placement_local && candidate.item?.target_ref === rendered.item.id) ||
+    followsTargetTransform(candidate, rendered) ||
     (group && canEditItem(candidate.item) && String(candidate.item.transform_group || '').trim() === group));
 }
 function captureTransformGroup(rendered) {
@@ -2023,7 +2036,7 @@ function linkedTransformChanges(rendered, before, after, memberStarts = null) {
       ? cloneTransform(before)
       : cloneTransform(memberStarts?.get(member.item.id) || state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d));
     if (member === rendered) return { rendered: member, before: memberBefore, after: cloneTransform(after) };
-    if (member.item?.placement_local && member.item?.target_ref === rendered.item.id) {
+    if (followsTargetTransform(member, rendered)) {
       const matrix = transform => {
         const object = new THREE.Object3D();
         applyTransformToObject(object, transform);
@@ -2055,6 +2068,9 @@ function applyTransformChanges(changes, { updateDirty = false } = {}) {
     else state.dirtyTransforms.set(change.rendered.item.id, { oldTransform: cloneTransform(change.rendered.originalTransform), newTransform: cloneTransform(change.after) });
     syncInspectorTransformFields(change.rendered);
   }
+  // The selection box is computed from world bounds; recompute it whenever a
+  // transform lands so it never stays at the pre-edit pose.
+  if (state.three.selectionHighlight) refreshSelectionHighlight(state.three.selectionHighlightTarget);
   updateLabels();
   return true;
 }
@@ -2665,7 +2681,15 @@ function makePrimitiveMesh(item) {
   const kind = String(item.geometry_type || item.primitive_geometry_type || primitive?.type || primitive?.shape || '').toLowerCase();
   let geometry;
   if (kind.includes('sphere')) geometry = new THREE.SphereGeometry(Number(primitive?.radius || 0.12), 24, 16);
-  else if (kind.includes('cylinder')) geometry = new THREE.CylinderGeometry(Number(primitive?.radius || 0.08), Number(primitive?.radius || 0.08), Number(primitive?.height || 0.25), 24);
+  else if (kind.includes('cylinder')) {
+    // ROS cylinders stand on their Z axis (URDF radius/length); three.js builds
+    // them along Y. Fall back to the item's dimensions only when they are given.
+    const dims = dimensionsFromPrimitive(primitive);
+    const fields = Array.isArray(primitive) ? {} : (primitive || {});  // an array's .length is not a size
+    const radius = Number(fields.radius || (dims ? dims[0] / 2 : 0.08));
+    const length = Number(fields.length || fields.height || (dims ? dims[2] : 0.25));
+    geometry = new THREE.CylinderGeometry(radius, radius, length, 24).rotateX(Math.PI / 2);
+  }
   else {
     const dims = dimensionsFromPrimitive(primitive);
     if (!dims) return null;
@@ -3011,10 +3035,21 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
     else requiredReadinessCompleteForItem(item);
   }
 }
+// When one ID is exported twice (a meshless primitive also gets a
+// diagnostic_only record), the record that draws the part wins; a later
+// diagnostic copy must not hide the primary physical record.
+const RENDER_POLICY_PRECEDENCE = { primary: 3, legacy_primary: 3, overlay: 2, diagnostic_only: 1 };
 function collectItems(sceneJson) {
   const buckets = ['robots', 'tools', 'assets', 'sensors', 'zones', 'items', 'objects', 'frames'];
   const byId = new Map();
-  for (const bucket of buckets) for (const item of asArray(sceneJson[bucket])) if (item && typeof item === 'object') byId.set(item.id || `${bucket}_${byId.size}`, { ...item, id: item.id || `${bucket}_${byId.size}` });
+  const rank = item => RENDER_POLICY_PRECEDENCE[itemRenderPolicy(item)] || 0;
+  for (const bucket of buckets) for (const item of asArray(sceneJson[bucket])) {
+    if (!item || typeof item !== 'object') continue;
+    const id = item.id || `${bucket}_${byId.size}`;
+    const candidate = { ...item, id };
+    const existing = byId.get(id);
+    if (!existing || rank(candidate) >= rank(existing)) byId.set(id, candidate);
+  }
   return Array.from(byId.values());
 }
 function frameNameOf(frame, fallback = '') {
@@ -3491,7 +3526,10 @@ function physicalBoundsHelperReasons(object, item, identity, options = {}) {
   if (DEBUG_OVERLAY_TOKEN_RE.test(localIdentity)) add('debug_helper');
   const renderStatus = String(data.render_status || data.renderInfo?.render_status || '').toLowerCase();
   const localFallbackIdentity = `${renderStatus} ${localIdentity}`;
-  if (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity)) add('fallback_geometry');
+  // A meshless authored primitive (a library box or cylinder) has no other
+  // geometry: its primitive is the physical part, not a stand-in for a mesh.
+  const meshlessPrimitive = Boolean(item) && !displayMeshUri(item) && Boolean(dimensionsFromPrimitive(primitiveOf(item)));
+  if (!meshlessPrimitive && (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity))) add('fallback_geometry');
   return reasons;
 }
 function isRobotPrimitiveFallbackObject(object, item, identity) {
@@ -4124,7 +4162,7 @@ function applyCameraClipping(camera, radius, distance) {
   camera.far = Math.max(camera.near + 1, safeDistance + safeRadius * 8, safeRadius * 20, 100);
   camera.updateProjectionMatrix();
 }
-function frameScene(bounds, { preset = 'isometric' } = {}) {
+function frameScene(bounds, { preset = 'isometric', minRadius = MIN_FRAME_RADIUS } = {}) {
   const { camera, controls } = state.three;
   const finiteBounds = finiteBox3(bounds);
   if (!camera || !controls || !finiteBounds) return false;
@@ -4133,10 +4171,10 @@ function frameScene(bounds, { preset = 'isometric' } = {}) {
   finiteBounds.getCenter(center);
   finiteBounds.getBoundingSphere(sphere);
   if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite)) return false;
-  const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
+  const radius = Math.max(sphere.radius, minRadius);
   const direction = cameraDirectionForPreset(preset);
   const multiplier = preset === 'top' ? 2.15 : (preset === 'robot' ? 2.05 : FRAME_DISTANCE_MULTIPLIER);
-  const distance = Math.max(radius * multiplier, MIN_FRAME_RADIUS * multiplier);
+  const distance = Math.max(radius * multiplier, minRadius * multiplier);
   camera.position.copy(center).addScaledVector(direction, distance);
   applyCameraClipping(camera, radius, distance);
   if (![camera.position.x, camera.position.y, camera.position.z, camera.near, camera.far].every(Number.isFinite)) return false;
@@ -4199,7 +4237,7 @@ function fitSelection() {
   if (!selectedId) return fallback('No physical item selected; fitting the workcell');
   if (!rendered?.object3d) return fallback('Selected item has no visible physical geometry; fitting the workcell');
   const physical = collectPhysicalVisibleBounds(rendered.object3d);
-  if (!physical.bounds || !frameScene(physical.bounds)) return fallback('Selected item has no visible physical geometry; fitting the workcell');
+  if (!physical.bounds || !frameScene(physical.bounds, { minRadius: MIN_SELECTION_FRAME_RADIUS })) return fallback('Selected item has no visible physical geometry; fitting the workcell');
   if (state.editorError === 'No physical item selected; fitting the workcell' || state.editorError === 'Selected item has no visible physical geometry; fitting the workcell') clearError();
   pushEditorEvent('fit_selection', { itemId: selectedId, physicalRenderableCount: physical.count, bounds: physical.bounds_json });
   return true;
@@ -5093,6 +5131,7 @@ function refreshSelectionHighlight(rendered) {
   helper.material.depthTest = false;
   helper.renderOrder = 10;
   state.three.selectionHighlight = helper;
+  state.three.selectionHighlightTarget = rendered;
   state.three.scene.add(helper);
 }
 
@@ -6114,14 +6153,44 @@ function beginTransientPivotDrag(owner) {
   pivot.group.updateWorldMatrix(true, false);
   state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d));
   state.gizmoDragGroupStart = captureTransformGroup(owner);
-  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis };
+  const parent = owner.object3d.parent;
+  const parentQuaternion = parent && parent !== state.three.scene ? parent.getWorldQuaternion(new THREE.Quaternion()) : null;
+  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis, space: state.transformSpace, parentQuaternion };
   return true;
 }
-function canonicalRotatePreviewTransform(start, axis, angle) {
+// Of the ROS RPY triples naming one orientation, the one closest to `reference`,
+// so a ring drag stays continuous past yaw +/-180 and pitch +/-90 degrees.
+function nearestRosRpy(rpy, reference) {
+  const wrapNear = (value, target) => value + 2 * Math.PI * Math.round((target - value) / (2 * Math.PI));
+  let best = null;
+  for (const [x, y, z] of [[rpy.x, rpy.y, rpy.z], [rpy.x + Math.PI, Math.PI - rpy.y, rpy.z + Math.PI]]) {
+    const candidate = { x: wrapNear(x, reference.x), y: wrapNear(y, reference.y), z: wrapNear(z, reference.z) };
+    const distance = Math.abs(candidate.x - reference.x) + Math.abs(candidate.y - reference.y) + Math.abs(candidate.z - reference.z);
+    if (!best || distance < best.distance) best = { rpy: candidate, distance };
+  }
+  return best.rpy;
+}
+// A ring turns the part about the axis it shows: a world axis in world space,
+// the part's own axis in local space. Adding the angle to one RPY component is
+// that rotation only for world Z (yaw) and local X (roll), and is kept exact
+// there; every other ring composes the true rotation and returns to ROS RPY.
+// parentQuaternion expresses world axes in the frame the pose is stored in.
+function canonicalRotatePreviewTransform(start, axis, angle, space = 'world', parentQuaternion = null) {
   if (!start || !['X', 'Y', 'Z'].includes(axis) || !Number.isFinite(angle)) return null;
   const next = cloneTransform(start);
-  const component = axis.toLowerCase();
-  next.pose.rpy[component] = start.pose.rpy[component] + angle;
+  const local = space === 'local';
+  if (angle === 0) return next;
+  if ((!local && axis === 'Z' && !parentQuaternion) || (local && axis === 'X')) {
+    const component = axis.toLowerCase();
+    next.pose.rpy[component] = start.pose.rpy[component] + angle;
+    return next;
+  }
+  const unit = new THREE.Vector3(axis === 'X' ? 1 : 0, axis === 'Y' ? 1 : 0, axis === 'Z' ? 1 : 0);
+  if (!local && parentQuaternion) unit.applyQuaternion(parentQuaternion.clone().invert());
+  const turn = new THREE.Quaternion().setFromAxisAngle(unit, angle);
+  const orientation = new THREE.Quaternion().setFromEuler(rosRpyEuler(start.pose.rpy));
+  if (local) orientation.multiply(turn); else orientation.premultiply(turn);
+  next.pose.rpy = nearestRosRpy(rosRpyFromQuaternion(orientation), start.pose.rpy);
   return next;
 }
 function previewTransientPivotDrag(owner) {
@@ -6130,7 +6199,7 @@ function previewTransientPivotDrag(owner) {
   if (!start || !pivot || pivot.owner !== owner) return false;
   let next = null;
   if (state.editorMode === 'rotate') {
-    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle);
+    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle, start.space, start.parentQuaternion);
   } else {
     pivot.group.updateWorldMatrix(true, false);
     const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());

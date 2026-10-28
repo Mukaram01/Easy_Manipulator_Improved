@@ -411,6 +411,34 @@ def _table_mesh_contract_errors(status: Mapping[str, Any]) -> list[str]:
     return errors
 
 
+def _camera_expected_world_bounds(
+    diagnostic: Mapping[str, Any], expected: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    """Project authored dimensions into world AABB axes using the render quaternion.
+
+    A 90-degree camera mounting rotation permutes the long and short dimensions.
+    Comparing the world AABB to unrotated dimensions falsely labels a healthy
+    RealSense visual as oversized. Keep the strict 3x check after projection.
+    """
+    raw = diagnostic.get("world_quaternion") or diagnostic.get("worldQuaternion")
+    if not isinstance(raw, Mapping):
+        return expected
+    try:
+        x, y, z, w = (float(raw[key]) for key in ("x", "y", "z", "w"))
+    except (KeyError, TypeError, ValueError):
+        return expected
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if not math.isfinite(norm) or norm < 1e-9:
+        return expected
+    x, y, z, w = (component / norm for component in (x, y, z, w))
+    matrix = (
+        (1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)),
+        (2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)),
+        (2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)),
+    )
+    return tuple(sum(abs(row[j]) * expected[j] for j in range(3)) for row in matrix)
+
+
 def _camera_bounds_errors(status: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     for diagnostic in _rendered_mesh_diagnostics_from_status(status):
@@ -425,7 +453,8 @@ def _camera_bounds_errors(status: Mapping[str, Any]) -> list[str]:
         excluded = _diagnostic_bool(diagnostic, "exclude_from_fit_bounds", "excludeFromFitBounds", "debug_overlay", "debugOverlay")
         if not size or not expected:
             continue
-        ratios = [size[index] / expected[index] for index in range(3) if expected[index] > 0]
+        expected_world = _camera_expected_world_bounds(diagnostic, expected)
+        ratios = [size[index] / expected_world[index] for index in range(3) if expected_world[index] > 0]
         if ratios and max(ratios) > 3.0 and not excluded:
             name = _diagnostic_link_name(diagnostic) or str(diagnostic.get("object_id") or diagnostic.get("id") or "camera")
             errors.append(f"browser viewer camera/Realsense {name} loaded mesh bounds are oversized and still included in normal product/fit bounds")
@@ -1351,6 +1380,26 @@ def _missing_required_link_lists(status: Mapping[str, Any]) -> tuple[list[Any], 
     return robot_missing, tool_missing
 
 
+def _failed_staging_steps(report: Mapping[str, Any]) -> list[str]:
+    """Expose the failed exporter/validator instead of misreporting a browser failure."""
+    failures: list[str] = []
+    for step in report.get("steps", []):
+        if not isinstance(step, Mapping):
+            continue
+        code = step.get("returncode", 0)
+        if code == 0:
+            continue
+        command = step.get("command")
+        if isinstance(command, (list, tuple)) and command:
+            label = Path(str(command[1] if len(command) > 1 else command[0])).name
+        else:
+            label = "unknown staging command"
+        output = str(step.get("stderr") or step.get("stdout") or "").strip()
+        tail = " | ".join(output.splitlines()[-5:])[-600:] if output else "no diagnostics"
+        failures.append(f"{label} exited {code}: {tail}")
+    return failures
+
+
 def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, str], require_browser: bool) -> dict[str, Any]:
     browser = report.get("browser") if isinstance(report.get("browser"), Mapping) else {}
     status = browser.get("status") if isinstance(browser.get("status"), Mapping) else {}
@@ -1361,12 +1410,17 @@ def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, st
     failed_mesh_urls = _status_list(status, "failed_mesh_urls", "failedMeshUrls", "robot_failed_mesh_urls", "robotFailedMeshUrls") if isinstance(status, Mapping) else []
     terminal_stage = str(_status_value(status, "web3d_readiness_state", "web3dReadinessState", "viewer_boot_state", "viewerBootState") or "not_run") if isinstance(status, Mapping) else "not_run"
     errors: list[str] = []
-    if require_browser and browser.get("available") is not True:
-        errors.append("browser unavailable; acceptance is BLOCKED")
-    if browser.get("method") != "playwright":
-        errors.append(f"real Playwright browser required, got {browser.get('method')!r}")
-    if terminal_stage != "scene_ready":
-        errors.append(f"terminal stage must be scene_ready, got {terminal_stage!r}")
+    staging_failures = _failed_staging_steps(report)
+    if staging_failures:
+        errors.extend(f"staging failed: {detail}" for detail in staging_failures)
+        errors.append("browser not attempted because scene staging failed")
+    else:
+        if require_browser and browser.get("available") is not True:
+            errors.append("browser unavailable; acceptance is BLOCKED: " + str(browser.get("error") or "no browser diagnostics"))
+        if browser.get("method") != "playwright":
+            errors.append(f"real Playwright browser required, got {browser.get('method')!r}")
+        if terminal_stage != "scene_ready":
+            errors.append(f"terminal stage must be scene_ready, got {terminal_stage!r}")
     if _status_bool(status, "robot_preview_loaded", "robotPreviewLoaded") is False:
         errors.append("robot_preview_loaded is false")
     if _status_int_any(status, "robot_failed_visual_count", "robotFailedVisualCount") != 0:
@@ -1383,12 +1437,14 @@ def _matrix_row_from_report(report: Mapping[str, Any], expected: Mapping[str, st
         errors.append("JavaScript errors: " + "; ".join(map(str, browser.get("javascript_errors")[:5])))
     if browser.get("failed_network_requests"):
         errors.append("failed network requests: " + "; ".join(map(str, browser.get("failed_network_requests")[:5])))
-    if any(step.get("returncode", 0) != 0 for step in report.get("steps", []) if isinstance(step, Mapping)):
-        errors.append("one or more staging/static checks failed")
+
     errors.extend(str(error) for error in report.get("strict_status_errors", []) if error)
     return {
         "scene_id": report.get("scene_id", ""),
-        "status": "BLOCKED" if errors and browser.get("available") is not True else ("FAIL" if errors else "PASS"),
+        "visual_only": report.get("visual_only", {}),
+        "status": "BLOCKED" if staging_failures or (errors and browser.get("available") is not True) else ("FAIL" if errors else "PASS"),
+        "staging_failures": staging_failures,
+        "browser_attempted": not bool(staging_failures) and browser.get("method") not in ("not_run", None),
         "terminal_stage": terminal_stage,
         "expected_robot": expected.get("robot", "unknown"),
         "expected_tool": expected.get("tool", "unknown"),
@@ -1417,7 +1473,10 @@ def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | 
     screenshot_path = BUILD_ROOT / (f"{scene_id}.rviz_parity.png" if scene_id == "ur5_2f_test" else f"{scene_id}.visual_acceptance.png")
     BUILD_ROOT.mkdir(parents=True, exist_ok=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    steps = [run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path), "--stage-assets"])]
+    # Visual acceptance must still inspect a physical scene with invalid task
+    # authoring. This exporter mode is explicitly read-only: Save and execution
+    # remain disabled and the destination validator is never bypassed.
+    steps = [run_step([sys.executable, "scripts/ensure_workcell_studio_web_scene_fresh.py", "--scene", repo_relative(scene_dir), "--output", repo_relative(output_path), "--stage-assets", "--allow-incomplete-preview"])]
     if steps[-1]["returncode"] == 0:
         steps.append(run_step([sys.executable, "scripts/check_workcell_web_scene_mesh_contract.py", repo_relative(output_path)]))
     if steps[-1]["returncode"] == 0:
@@ -1449,7 +1508,21 @@ def run_one_scene(scene_dir: Path, *, output_path: Path | None, scene_id: str | 
     status = browser.get("status") if isinstance(browser, Mapping) else None
     legacy_strict_scene = not expected or (expected.get("robot") == "ur5" and expected.get("tool") == "robotiq_2f")
     strict_status_errors = validate_browser_status(status) if legacy_strict_scene and isinstance(status, Mapping) else []
-    report = {"scene_id": scene_id, "scene_dir": repo_relative(scene_dir), "expected": dict(expected or {}), "web_scene_json": repo_relative(output_path), "viewer_url": viewer_url, "server_status": server_status, "browser": browser, "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {}, "strict_status_errors": strict_status_errors, "steps": steps, "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "", "report": repo_relative(report_path), "screenshot": repo_relative(screenshot_path), "screenshot_dimensions": png_dimensions(screenshot_path), "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0}
+    visual_only = {}
+    if output_path.is_file() and steps[0]["returncode"] == 0:
+        try:
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            if payload.get("preview_mode") == "diagnostic" or payload.get("authoring_status") == "blocked":
+                visual_only = {
+                    "preview_mode": "diagnostic",
+                    "authoring_status": "blocked",
+                    "authoring_blockers": payload.get("authoring_blockers", []),
+                    "save_layout_enabled": payload.get("authoring_actions", {}).get("save_layout_enabled"),
+                    "execution_enabled": payload.get("authoring_actions", {}).get("execution_enabled"),
+                }
+        except (OSError, ValueError, TypeError):
+            pass
+    report = {"scene_id": scene_id, "scene_dir": repo_relative(scene_dir), "expected": dict(expected or {}), "visual_only": visual_only, "web_scene_json": repo_relative(output_path), "viewer_url": viewer_url, "server_status": server_status, "browser": browser, "robot_preview_lifecycle_diagnostics": robot_preview_lifecycle_diagnostics(browser.get("status")) if isinstance(browser.get("status"), Mapping) else {}, "strict_status_errors": strict_status_errors, "steps": steps, "browser_status_json": repo_relative(browser_status_path) if browser_status_path.exists() else "", "report": repo_relative(report_path), "screenshot": repo_relative(screenshot_path), "screenshot_dimensions": png_dimensions(screenshot_path), "screenshot_size_bytes": screenshot_path.stat().st_size if screenshot_path.exists() else 0}
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if server is not None:
         server.shutdown()

@@ -52,6 +52,36 @@ TEST(LayoutSerializationContractTest, SessionAddedTransformsBypassStaleDiskPatch
   EXPECT_NE(controller.find("unified authored transaction complete"), std::string::npos);
 }
 
+TEST(LayoutSerializationContractTest, BrowserTransformUpdatesPendingSessionBeforeReconciliation)
+{
+  // Inspector Apply leaves a dirty session that is written back onto the canvas
+  // before serializing; a later gizmo edit from the browser must update that
+  // session too, or the save silently persists the older Inspector pose.
+  const std::string src = load_file("gui/mainwindow.cpp");
+  const auto apply = src.find("bool MainWindow::apply_web_transforms_to_editable_layout_session(");
+  ASSERT_NE(apply, std::string::npos);
+  const auto body_end = src.find("bool MainWindow::save_native_layout_changes(", apply);
+  const std::string body = src.substr(apply, body_end - apply);
+  const auto canvas_write = body.find("update.canvas->setData(RoleYaw, update.yaw);");
+  const auto session_write = body.find("session_item.roll = update.roll; session_item.pitch = update.pitch; session_item.yaw = update.yaw;");
+  ASSERT_NE(canvas_write, std::string::npos);
+  ASSERT_NE(session_write, std::string::npos);
+  EXPECT_LT(canvas_write, session_write);
+  EXPECT_NE(body.find("for (auto & session_item : editable_layout_session_items_)"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, ClosingWithUnsavedLayoutEditsAsksAndDefaultsToStay)
+{
+  const std::string src = load_file("gui/mainwindow.cpp");
+  const auto close = src.find("void MainWindow::closeEvent(QCloseEvent * event)");
+  ASSERT_NE(close, std::string::npos);
+  const std::string body = src.substr(close, src.find("void MainWindow::on_load_workcell_clicked()", close) - close);
+  EXPECT_NE(body.find("if (layout_dirty_) {"), std::string::npos);
+  EXPECT_NE(body.find("unsavedLayoutCloseDialog"), std::string::npos);
+  EXPECT_NE(body.find("box.setDefaultButton(box.addButton(QStringLiteral(\"Stay\"), QMessageBox::RejectRole));"), std::string::npos);
+  EXPECT_NE(body.find("if (box.clickedButton() != discard) { event->ignore(); return; }"), std::string::npos);
+}
+
 TEST(LayoutSerializationContractTest, InstanceIdentityAndMeshScaleRemainIndependent)
 {
   const std::string src = load_file("gui/mainwindow.cpp");
@@ -310,4 +340,25 @@ TEST(LayoutSerializationContractTest, DuplicateSelectedCopiesAuthoredRecordWithS
   EXPECT_NE(src.find("item->setData(RoleWidth, copy.sx)"), std::string::npos);
   EXPECT_NE(src.find("apply_scene_selection(new_id, copy.role, false, false)"), std::string::npos);
   EXPECT_NE(src.find("Duplicated %1 as %2"), std::string::npos);
+}
+
+TEST(LayoutSerializationContractTest, PrimitiveAssetIsSavedAsGeometryNotMesh)
+{
+  // A library primitive (URDF box/cylinder) has no mesh: the environment
+  // projection accepts geometry_type + dimensions, but rejects a mesh path
+  // that is not an STL.
+  workcell_builder::LayoutItemSaveState state;
+  state.id = "object_01";
+  state.type = "object";
+  state.category = "environment_object";
+  state.catalog_asset_id = "cylinder_object.urdf";
+  state.geometry_type = "cylinder";
+  state.dimensions = {{0.06, 0.06, 0.12}};
+  const YAML::Node item = workcell_builder::serialize_layout_item(state, YAML::Node());
+  EXPECT_FALSE(item["mesh"]);
+  EXPECT_FALSE(item["mesh_path"]);
+  ASSERT_TRUE(item["geometry_type"]);
+  EXPECT_EQ(item["geometry_type"].as<std::string>(), "cylinder");
+  ASSERT_TRUE(item["dimensions"] && item["dimensions"].IsSequence());
+  EXPECT_DOUBLE_EQ(item["dimensions"][2].as<double>(), 0.12);
 }

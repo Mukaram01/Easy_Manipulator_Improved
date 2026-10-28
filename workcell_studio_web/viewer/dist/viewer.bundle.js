@@ -38302,6 +38302,7 @@ var REQUIRED_LOAD_DEADLINE_MS = 4e4;
 var VALID_SCENE_LIFECYCLE_STATES = Object.freeze(["booting", "scene_loading", "scene_ready", "scene_failed"]);
 var LOCKED_EDIT_REASON = "Locked/generated preview item; edit source layout/environment instead.";
 var MIN_FRAME_RADIUS = 1.2;
+var MIN_SELECTION_FRAME_RADIUS = 0.08;
 var EMPTY_SCENE_MESSAGE = "Scene contains no renderable robots, tools, assets, sensors, zones, items, or objects.";
 var FRAME_DISTANCE_MULTIPLIER = 2.35;
 var CAMERA_PRESET_DIRECTIONS = Object.freeze({
@@ -38954,7 +38955,7 @@ function isMissingOrFailedMeshStatus(status) {
   return ["missing_file", "unresolved_package_uri", "unsafe_path", "unsupported_format", "load_error", "url_not_served", "file_access_blocked", "loader_failure"].includes(String(status || "").toLowerCase());
 }
 function statusCountedRenderables() {
-  return (state.objects || []).filter((obj) => isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
+  return (state.objects || []).filter((obj) => obj.physicalEditRoot !== true && isPrimaryRenderableItem(obj.item) && !isDebugOverlayItem(obj.item));
 }
 function isRequiredMeshFailureStatus(obj) {
   return obj?.renderInfo?.render_status === "required_mesh_failed_debug_fallback" || obj?.item?.renderInfo?.render_status === "required_mesh_failed_debug_fallback";
@@ -40453,11 +40454,17 @@ function applyTransformToObject(object, transform) {
   object.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
   return true;
 }
+function followsTargetTransform(candidate, target) {
+  const targetId = target?.item?.id;
+  if (!targetId || candidate === target)
+    return false;
+  return derivedTransformTargetId(candidate.item) === targetId || Boolean(candidate.item?.placement_local && candidate.item?.target_ref === targetId);
+}
 function editableTransformGroupMembers(rendered) {
   const group = String(rendered?.item?.transform_group || "").trim();
   if (!rendered || !canEditItem(rendered.item))
     return rendered ? [rendered] : [];
-  return state.objects.filter((candidate) => candidate === rendered || candidate.item?.placement_local && candidate.item?.target_ref === rendered.item.id || group && canEditItem(candidate.item) && String(candidate.item.transform_group || "").trim() === group);
+  return state.objects.filter((candidate) => candidate === rendered || followsTargetTransform(candidate, rendered) || group && canEditItem(candidate.item) && String(candidate.item.transform_group || "").trim() === group);
 }
 function captureTransformGroup(rendered) {
   return new Map(editableTransformGroupMembers(rendered).map((member) => [member.item.id, cloneTransform(state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d))]));
@@ -40470,7 +40477,7 @@ function linkedTransformChanges(rendered, before, after, memberStarts = null) {
     const memberBefore = member === rendered ? cloneTransform(before) : cloneTransform(memberStarts?.get(member.item.id) || state.dirtyTransforms.get(member.item.id)?.newTransform || transformFromObject(member.object3d));
     if (member === rendered)
       return { rendered: member, before: memberBefore, after: cloneTransform(after) };
-    if (member.item?.placement_local && member.item?.target_ref === rendered.item.id) {
+    if (followsTargetTransform(member, rendered)) {
       const matrix = (transform) => {
         const object2 = new THREE.Object3D();
         applyTransformToObject(object2, transform);
@@ -40506,6 +40513,8 @@ function applyTransformChanges(changes, { updateDirty = false } = {}) {
       state.dirtyTransforms.set(change.rendered.item.id, { oldTransform: cloneTransform(change.rendered.originalTransform), newTransform: cloneTransform(change.after) });
     syncInspectorTransformFields(change.rendered);
   }
+  if (state.three.selectionHighlight)
+    refreshSelectionHighlight(state.three.selectionHighlightTarget);
   updateLabels();
   return true;
 }
@@ -41151,9 +41160,13 @@ function makePrimitiveMesh(item) {
   let geometry;
   if (kind.includes("sphere"))
     geometry = new THREE.SphereGeometry(Number(primitive?.radius || 0.12), 24, 16);
-  else if (kind.includes("cylinder"))
-    geometry = new THREE.CylinderGeometry(Number(primitive?.radius || 0.08), Number(primitive?.radius || 0.08), Number(primitive?.height || 0.25), 24);
-  else {
+  else if (kind.includes("cylinder")) {
+    const dims = dimensionsFromPrimitive(primitive);
+    const fields = Array.isArray(primitive) ? {} : primitive || {};
+    const radius = Number(fields.radius || (dims ? dims[0] / 2 : 0.08));
+    const length = Number(fields.length || fields.height || (dims ? dims[2] : 0.25));
+    geometry = new THREE.CylinderGeometry(radius, radius, length, 24).rotateX(Math.PI / 2);
+  } else {
     const dims = dimensionsFromPrimitive(primitive);
     if (!dims)
       return null;
@@ -41531,13 +41544,21 @@ async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
       requiredReadinessCompleteForItem(item);
   }
 }
+var RENDER_POLICY_PRECEDENCE = { primary: 3, legacy_primary: 3, overlay: 2, diagnostic_only: 1 };
 function collectItems(sceneJson) {
   const buckets = ["robots", "tools", "assets", "sensors", "zones", "items", "objects", "frames"];
   const byId = /* @__PURE__ */ new Map();
+  const rank = (item) => RENDER_POLICY_PRECEDENCE[itemRenderPolicy(item)] || 0;
   for (const bucket of buckets)
-    for (const item of asArray(sceneJson[bucket]))
-      if (item && typeof item === "object")
-        byId.set(item.id || `${bucket}_${byId.size}`, { ...item, id: item.id || `${bucket}_${byId.size}` });
+    for (const item of asArray(sceneJson[bucket])) {
+      if (!item || typeof item !== "object")
+        continue;
+      const id = item.id || `${bucket}_${byId.size}`;
+      const candidate = { ...item, id };
+      const existing = byId.get(id);
+      if (!existing || rank(candidate) >= rank(existing))
+        byId.set(id, candidate);
+    }
   return Array.from(byId.values());
 }
 function frameNameOf(frame, fallback = "") {
@@ -42083,7 +42104,8 @@ function physicalBoundsHelperReasons(object, item, identity2, options = {}) {
     add("debug_helper");
   const renderStatus = String(data.render_status || data.renderInfo?.render_status || "").toLowerCase();
   const localFallbackIdentity = `${renderStatus} ${localIdentity}`;
-  if (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity))
+  const meshlessPrimitive = Boolean(item) && !displayMeshUri(item) && Boolean(dimensionsFromPrimitive(primitiveOf(item)));
+  if (!meshlessPrimitive && (data.fallback_geometry === true || data.isFallback === true || /fallback/.test(localFallbackIdentity)))
     add("fallback_geometry");
   return reasons;
 }
@@ -42605,7 +42627,7 @@ function applyCameraClipping(camera, radius, distance) {
   camera.far = Math.max(camera.near + 1, safeDistance + safeRadius * 8, safeRadius * 20, 100);
   camera.updateProjectionMatrix();
 }
-function frameScene(bounds, { preset = "isometric" } = {}) {
+function frameScene(bounds, { preset = "isometric", minRadius = MIN_FRAME_RADIUS } = {}) {
   const { camera, controls } = state.three;
   const finiteBounds3 = finiteBox3(bounds);
   if (!camera || !controls || !finiteBounds3)
@@ -42616,10 +42638,10 @@ function frameScene(bounds, { preset = "isometric" } = {}) {
   finiteBounds3.getBoundingSphere(sphere);
   if (![center.x, center.y, center.z, sphere.radius].every(Number.isFinite))
     return false;
-  const radius = Math.max(sphere.radius, MIN_FRAME_RADIUS);
+  const radius = Math.max(sphere.radius, minRadius);
   const direction = cameraDirectionForPreset(preset);
   const multiplier = preset === "top" ? 2.15 : preset === "robot" ? 2.05 : FRAME_DISTANCE_MULTIPLIER;
-  const distance = Math.max(radius * multiplier, MIN_FRAME_RADIUS * multiplier);
+  const distance = Math.max(radius * multiplier, minRadius * multiplier);
   camera.position.copy(center).addScaledVector(direction, distance);
   applyCameraClipping(camera, radius, distance);
   if (![camera.position.x, camera.position.y, camera.position.z, camera.near, camera.far].every(Number.isFinite))
@@ -42705,7 +42727,7 @@ function fitSelection() {
   if (!rendered?.object3d)
     return fallback("Selected item has no visible physical geometry; fitting the workcell");
   const physical = collectPhysicalVisibleBounds(rendered.object3d);
-  if (!physical.bounds || !frameScene(physical.bounds))
+  if (!physical.bounds || !frameScene(physical.bounds, { minRadius: MIN_SELECTION_FRAME_RADIUS }))
     return fallback("Selected item has no visible physical geometry; fitting the workcell");
   if (state.editorError === "No physical item selected; fitting the workcell" || state.editorError === "Selected item has no visible physical geometry; fitting the workcell")
     clearError();
@@ -43663,6 +43685,7 @@ function refreshSelectionHighlight(rendered) {
   helper.material.depthTest = false;
   helper.renderOrder = 10;
   state.three.selectionHighlight = helper;
+  state.three.selectionHighlightTarget = rendered;
   state.three.scene.add(helper);
 }
 function isNormalSelectableRendered(rendered) {
@@ -44738,15 +44761,44 @@ function beginTransientPivotDrag(owner) {
   pivot.group.updateWorldMatrix(true, false);
   state.gizmoDragStart = cloneTransform(state.dirtyTransforms.get(owner.item.id)?.newTransform || transformFromObject(owner.object3d));
   state.gizmoDragGroupStart = captureTransformGroup(owner);
-  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis };
+  const parent = owner.object3d.parent;
+  const parentQuaternion = parent && parent !== state.three.scene ? parent.getWorldQuaternion(new THREE.Quaternion()) : null;
+  state.gizmoPivotDragStart = { ownerWorld: owner.object3d.matrixWorld.clone(), pivotWorld: pivot.group.matrixWorld.clone(), axis, space: state.transformSpace, parentQuaternion };
   return true;
 }
-function canonicalRotatePreviewTransform(start, axis, angle) {
+function nearestRosRpy(rpy, reference) {
+  const wrapNear = (value, target) => value + 2 * Math.PI * Math.round((target - value) / (2 * Math.PI));
+  let best = null;
+  for (const [x, y, z] of [[rpy.x, rpy.y, rpy.z], [rpy.x + Math.PI, Math.PI - rpy.y, rpy.z + Math.PI]]) {
+    const candidate = { x: wrapNear(x, reference.x), y: wrapNear(y, reference.y), z: wrapNear(z, reference.z) };
+    const distance = Math.abs(candidate.x - reference.x) + Math.abs(candidate.y - reference.y) + Math.abs(candidate.z - reference.z);
+    if (!best || distance < best.distance)
+      best = { rpy: candidate, distance };
+  }
+  return best.rpy;
+}
+function canonicalRotatePreviewTransform(start, axis, angle, space = "world", parentQuaternion = null) {
   if (!start || !["X", "Y", "Z"].includes(axis) || !Number.isFinite(angle))
     return null;
   const next = cloneTransform(start);
-  const component = axis.toLowerCase();
-  next.pose.rpy[component] = start.pose.rpy[component] + angle;
+  const local = space === "local";
+  if (angle === 0)
+    return next;
+  if (!local && axis === "Z" && !parentQuaternion || local && axis === "X") {
+    const component = axis.toLowerCase();
+    next.pose.rpy[component] = start.pose.rpy[component] + angle;
+    return next;
+  }
+  const unit = new THREE.Vector3(axis === "X" ? 1 : 0, axis === "Y" ? 1 : 0, axis === "Z" ? 1 : 0);
+  if (!local && parentQuaternion)
+    unit.applyQuaternion(parentQuaternion.clone().invert());
+  const turn = new THREE.Quaternion().setFromAxisAngle(unit, angle);
+  const orientation = new THREE.Quaternion().setFromEuler(rosRpyEuler(start.pose.rpy));
+  if (local)
+    orientation.multiply(turn);
+  else
+    orientation.premultiply(turn);
+  next.pose.rpy = nearestRosRpy(rosRpyFromQuaternion(orientation), start.pose.rpy);
   return next;
 }
 function previewTransientPivotDrag(owner) {
@@ -44756,7 +44808,7 @@ function previewTransientPivotDrag(owner) {
     return false;
   let next = null;
   if (state.editorMode === "rotate") {
-    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle);
+    next = canonicalRotatePreviewTransform(state.gizmoDragStart, start.axis, state.three.transformControls?.rotationAngle, start.space, start.parentQuaternion);
   } else {
     pivot.group.updateWorldMatrix(true, false);
     const delta = pivot.group.matrixWorld.clone().multiply(start.pivotWorld.clone().invert());

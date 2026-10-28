@@ -956,15 +956,18 @@ def generate_files_from_yaml(scene_dir:str|Path)->dict[str,Any]:
     if failed:
         return {"ok": False, "error": f"Canonical export validation failed for authored file '{authored_paths[0]}': {', '.join(sorted(failed))}"}
 
-    required_names = (
+    required_names = [
         "cell_definition.yaml",
         "environment_layout.yaml",
         "task_recipe_from_builder_intent.yaml",
-        "offline_plan_preview_request.yaml",
         "selected_assets.json",
         "compatibility_report.json",
         "builder_export_summary.json",
-    )
+    ]
+    # The exporter writes a plan-preview request only for a resolved task; a
+    # blocked task (e.g. CYCLE_EVALUATION_REQUIRED) deliberately has none.
+    if (summary.get("task_recipe_generation") or {}).get("status") == "PASS":
+        required_names.append("offline_plan_preview_request.yaml")
     generated_files = [output_dir / name for name in required_names]
     missing = [path for path in generated_files if not path.is_file()]
     if missing:
