@@ -1417,6 +1417,12 @@ void OperatorHmiWindow::render_sorting()
     : QString("Active object: <b>%1</b> (%2) → <b>%3</b> · cycle %4 · stage %5").arg(escaped(current.value("id").toString()),
         escaped(current.value("class_id").toString()), escaped(current.value("destination").toString()))
         .arg(current.value("cycle").toInt()).arg(escaped(sorting.value("stage").toString("starting")));
+  const auto observation = sorting.value("observation").toObject();
+  if (!observation.value("acquiring").toString().isEmpty())
+    text += "<br>Observation: <b>acquiring</b> — " + escaped(observation.value("acquiring").toString());
+  else if (observation.value("producer").toString() == "simulator_render")
+    text += QString("<br>Observation: frame %1 · simulator-rendered (synthetic), classified by EPD · %2 classified, %3 unperceived")
+      .arg(observation.value("frames").toInt()).arg(observation.value("classified").toInt()).arg(observation.value("unperceived").toInt());
   text += QString("<br>Completed <b>%1</b> · Failed <b>%2</b> · Skipped %3 · Waiting (bin full) %4 · Pending %5")
     .arg(counts.value("completed").toInt()).arg(counts.value("failed").toInt()).arg(counts.value("skipped").toInt())
     .arg(counts.value("waiting_destination_full").toInt()).arg(counts.value("pending").toInt());
