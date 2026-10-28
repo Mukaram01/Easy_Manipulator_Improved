@@ -6701,6 +6701,7 @@ void MainWindow::run_physics_cycle()
   full_cycle_mode_ = true; physics_cycle_mode_ = true; preview_stop_requested_ = false;
   cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
   cycle_output_dir_ = detect_workspace_root() + "/log/studio_physics_cycles/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+  viewer_status_.clear();                             // statuses belong to the session they describe
   active_preview_command_ = workcell_builder::build_physics_cycle_command(active_preview_scene_,
     detect_workspace_root().toStdString(), cycle_output_dir_);
   if (active_preview_command_.isEmpty()) { physics_cycle_mode_ = false; set_physics_state("FAILED", "No physics cycle command."); set_preview_state("CYCLE_FAILED"); return; }
@@ -7016,6 +7017,7 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
         set_preview_state("CYCLE_FAILED"); cycle_status_label_->setText("Scene changed during build. Save, Generate and Validate before running."); return;
       }
       plan_cycle_domain_ = QRandomGenerator::global()->bounded(30, 220); plan_cycle_rviz_ = cycle_rviz_box_->isChecked();
+      viewer_status_.clear();                         // statuses belong to the session they describe
       active_preview_command_ = workcell_builder::build_full_cycle_command(active_preview_scene_,
         active_preview_workspace_root_.toStdString(), cycle_output_dir_, plan_cycle_domain_, plan_cycle_rviz_);
       if (active_preview_command_.isEmpty()) { set_preview_state("CYCLE_FAILED"); return; }

@@ -309,10 +309,14 @@ def open_rviz(args):
     params_file.write_text(yaml.safe_dump({'/**': {'ros__parameters': nested(parameters)}}))
     config_file.write_text(yaml.safe_dump(session_rviz_config(config.read_text(), scenes), sort_keys=False))
     start_ticks = info['start_ticks']
-    return supervise('rviz', rviz_command(config_file, params_file, joint_states, rviz_executable()), env,
-                     lambda: same_process(pid, start_ticks), domain=str(domain), move_group_pid=pid,
-                     move_group_executable=info['command'].split(' ', 1)[0], use_sim_time=bool(parameters.get('use_sim_time')),
-                     joint_states=joint_states, planning_scene=scenes, rviz_config=str(config))
+    try:
+        return supervise('rviz', rviz_command(config_file, params_file, joint_states, rviz_executable()), env,
+                         lambda: same_process(pid, start_ticks), domain=str(domain), move_group_pid=pid,
+                         move_group_executable=info['command'].split(' ', 1)[0], use_sim_time=bool(parameters.get('use_sim_time')),
+                         joint_states=joint_states, planning_scene=scenes, rviz_config=str(config))
+    finally:
+        for path in (params_file, config_file):          # this session's copies only
+            path.unlink(missing_ok=True)
 
 
 def open_gazebo(args):
