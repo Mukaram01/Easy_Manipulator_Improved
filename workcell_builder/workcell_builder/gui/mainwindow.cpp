@@ -3674,6 +3674,9 @@ void MainWindow::setup_studio_shell()
   preview_safety_label_ = new QLabel("<b>Status</b><br/>Mode: Plan / Simulate | Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked | Real hardware execution requires explicit guarded setup and is not launched from this mode."); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
   cycle_status_label_ = new QLabel("Input: Replay / Commissioning Fixture<br/>Ready to run the complete pick/place cycle.", preview);
   cycle_status_label_->setObjectName("cycleStatus"); cycle_status_label_->setWordWrap(true); pl->addWidget(cycle_status_label_);
+  monitor_label_ = new QLabel(preview); monitor_label_->setObjectName("executionMonitor"); monitor_label_->setWordWrap(true);
+  monitor_label_->setTextFormat(Qt::RichText); monitor_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  monitor_label_->hide(); pl->addWidget(monitor_label_);
   cycle_rviz_box_ = new QCheckBox("Show RViz during the cycle", preview); cycle_rviz_box_->setChecked(true); pl->addWidget(cycle_rviz_box_);
   auto * cycle_diagnostics = new QGroupBox("Diagnostics", preview); cycle_diagnostics->setCheckable(true); cycle_diagnostics->setChecked(false);
   auto * diagnostics_layout = new QVBoxLayout(cycle_diagnostics);
@@ -6232,7 +6235,13 @@ bool MainWindow::preview_command_is_safe(const QString & command, QStringList * 
   return safe;
 }
 
-void MainWindow::set_preview_state(const QString & state){ preview_state_=state; refresh_preview_launch_ui(); }
+void MainWindow::set_preview_state(const QString & state){
+  preview_state_=state;
+  // The Builder's own build and package check are the plan session's real preflight steps.
+  if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid() && (state == "BUILD_RUNNING" || state == "PACKAGE_CHECK_RUNNING"))
+    monitor_.timeline.observe(state, "builder", false, QDateTime::currentDateTime());
+  refresh_preview_launch_ui(); refresh_monitor();
+}
 
 void MainWindow::refresh_preview_launch_ui()
 {
@@ -6250,7 +6259,33 @@ void MainWindow::refresh_preview_launch_ui()
     if (validation_summary_label_) validation_summary_label_->setText(QString("<b>Validation Summary</b><br/>Scene: %1<br/>Readiness Gate: %2<br/>Validation: <b>%3</b>")
       .arg(QString::fromStdString(s.scene_name), readiness, validation_state_text()));
   }
+  const bool session_running = preview_process_ && preview_process_->state() != QProcess::NotRunning;
+  const QString selected_dir = has_scene ? QString::fromStdString(scene_browser_result_.scenes[(size_t)selected_scene_index_].scene_dir.string()) : QString();
+  if (!session_running && !monitor_.scene_dir.isEmpty() && monitor_.scene_dir != selected_dir) {
+    // The shown run belongs to another cell: it is never presented as this cell's result.
+    monitor_ = RuntimeMonitorSession(); cycle_result_ = QJsonObject(); viewer_status_.clear(); physics_state_.clear();
+    if (cycle_status_label_) cycle_status_label_->setText("No run of this cell in this Studio session.");
+    refresh_monitor();
+  }
+  const auto saved_task = has_scene ? saved_task_summary(selected_dir) : SavedTaskSummary();
+  const bool physics_backend = saved_task.backend == "simulator";
+  if (preview_safety_label_) preview_safety_label_->setText(QString("<b>Status</b><br/>Saved task backend: <b>%1</b> | Real robot: <b>locked</b> "
+      "(no hardware interface is launched from this page)%2").arg(
+      !has_scene ? QString("no cell selected") : physics_backend ? QString("Qualified physics simulation (Gazebo Fortress)")
+        : saved_task.backend.isEmpty() ? QString("not saved") : QString("MoveIt fake hardware (plan / preview, no physical motion)"),
+      physics_backend ? QString(" | Run Physics Simulation Cycle executes it in the simulator; Plan Saved Task only plans it on fake hardware")
+                      : QString(" | Plan Saved Task plans it on fake hardware; nothing is executed")));
+  // The highlighted action is the one the saved task selects.
+  for (auto * button : {run_preview_button_, run_physics_button_}) {
+    if (!button) continue;
+    button->setProperty("role", (button == run_physics_button_) == physics_backend ? "primary" : "");
+    button->style()->unpolish(button); button->style()->polish(button);
+  }
   const auto current = selected_scene_readiness();
+  if (!blockers.isEmpty()) {
+    const auto d = workcell_builder::diagnose_failure(blockers.join("; "));
+    if (d.code != "UNCLASSIFIED" && !d.action.isEmpty()) blockers << QString("What to do (%1): %2").arg(d.code, d.action);
+  }
   if (preview_status_label_) preview_status_label_->setText(QString("<b>Readiness</b><br/>Saved: %1 · Generated: %2 · Validated: %3<br/>%4")
     .arg(has_scene && !layout_dirty_ ? "yes" : "no", current.generation_current ? "current" : "stale",
       current.validation_current ? "current" : "required", blockers.join("; ").toHtmlEscaped()));
@@ -6271,7 +6306,11 @@ void MainWindow::refresh_preview_launch_ui()
     run_physics_button_->setToolTip(blocker.isEmpty() ? "Runs one bounded pick/place cycle of the saved cell in the qualified physics simulation." : blocker);
     if (!physics_cycle_mode_) {
       if (!has_scene) set_physics_state(QString(), QString());
-      else if (!blocker.isEmpty()) set_physics_state("BLOCKED", blocker.toHtmlEscaped());
+      else if (!blocker.isEmpty()) {
+        const auto d = workcell_builder::diagnose_failure(blocker);
+        set_physics_state("BLOCKED", blocker.toHtmlEscaped() + (d.code == "UNCLASSIFIED" || d.action.isEmpty() ? QString() :
+          QString("<br/>What to do: %1").arg(d.action.toHtmlEscaped())));
+      }
       else if (!physics.ready) set_physics_state("BLOCKED", (physics.blockers.isEmpty() ? QString("Generate and Validate the saved cell first.")
                                                           : physics.blockers.join("; ")).toHtmlEscaped());
       else if (physics_state_ != "COMPLETED" && physics_state_ != "FAILED" && physics_state_ != "CANCELLED") {
@@ -6623,13 +6662,15 @@ void MainWindow::run_full_cycle()
 {
   if (!selected_scene_readiness().ready || !has_selected_scene() ||
       preview_process_->state() != QProcess::NotRunning) return;
+  begin_monitor("plan");
   run_preview_build();  // Reuse the selected-package build/discovery pipeline.
-  if (preview_state_ != "BUILD_RUNNING") return;
+  if (preview_state_ != "BUILD_RUNNING") { monitor_ = RuntimeMonitorSession(); refresh_monitor(); return; }
   full_cycle_mode_ = true;
   cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
   cycle_output_dir_ = detect_workspace_root() + "/log/studio_cycles/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
   cycle_status_label_->setText("Building saved scene for full-cycle replay…<br/>Fake hardware only · Real robot motion: locked");
-  refresh_preview_launch_ui();
+  monitor_.output = cycle_output_dir_;
+  refresh_preview_launch_ui(); refresh_monitor();
 }
 
 QJsonObject MainWindow::physics_preflight() const
@@ -6701,7 +6742,8 @@ void MainWindow::run_physics_cycle()
   full_cycle_mode_ = true; physics_cycle_mode_ = true; preview_stop_requested_ = false;
   cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
   cycle_output_dir_ = detect_workspace_root() + "/log/studio_physics_cycles/" + QUuid::createUuid().toString(QUuid::WithoutBraces);
-  viewer_status_.clear();                             // statuses belong to the session they describe
+  viewer_status_.clear();
+  begin_monitor("physics"); monitor_.output = cycle_output_dir_;                             // statuses belong to the session they describe
   active_preview_command_ = workcell_builder::build_physics_cycle_command(active_preview_scene_,
     detect_workspace_root().toStdString(), cycle_output_dir_);
   if (active_preview_command_.isEmpty()) { physics_cycle_mode_ = false; set_physics_state("FAILED", "No physics cycle command."); set_preview_state("CYCLE_FAILED"); return; }
@@ -6722,6 +6764,10 @@ void MainWindow::consume_cycle_output(const QString & output)
     const auto event = QJsonDocument::fromJson(line).object();
     if (event.contains("stage")) {
       const QString stage = event.value("stage").toString();
+      if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid()) {
+        monitor_.timeline.observe(stage, event.value("phase").toString(), event.value("motion").toBool(), QDateTime::currentDateTime());
+        if (monitor_.runner_pid < 0 && preview_process_) monitor_.runner_pid = preview_process_->processId();
+      }
       QString friendly = stage.toLower(); friendly.replace('_', ' ');
       const bool physics = event.value("source").toString() == "qualified_physics_simulator" && event.value("live").toBool();
       cycle_status_label_->setText("<b>" + friendly.toHtmlEscaped() + "</b><br/>" +
@@ -6735,6 +6781,7 @@ void MainWindow::consume_cycle_output(const QString & output)
     }
     if (event.value("event").toString() == "cycle_result") cycle_result_ = event.value("summary").toObject();
   }
+  refresh_monitor();
 }
 
 void MainWindow::show_cycle_result(const QJsonObject & result)
@@ -6820,6 +6867,107 @@ void MainWindow::show_cycle_result(const QJsonObject & result)
   // The log keeps the outcome and its reason after the page has moved on.
   append_studio_log("Cycle result: " + QString(text).replace("<br/>", " | ").remove(QRegularExpression("<[^>]*>")));
 }
+MainWindow::SavedTaskSummary MainWindow::saved_task_summary(const QString & scene_dir) const
+{
+  SavedTaskSummary summary;
+  try {
+    const auto task = YAML::LoadFile((scene_dir + "/config/workcell_builder_task_intent.yaml").toStdString());
+    const auto text = [](const YAML::Node & node) { return node && node.IsScalar() ? QString::fromStdString(node.as<std::string>()) : QString(); };
+    const auto filter = task["pick"]["selection"]["object_filter"];
+    summary.backend = text(task["safety"]["execution_backend"]);
+    summary.pick = text(filter["class_id"]);
+    if (filter["exclude_class_ids"] && filter["exclude_class_ids"].IsSequence())
+      for (const auto & item : filter["exclude_class_ids"]) summary.exclude << QString::fromStdString(item.as<std::string>());
+    summary.destination = text(task["place"]["target"]["asset_ref"]) + " / " + text(task["place"]["target"]["region_ref"]);
+    summary.placement = text(task["place"]["placement"]["policy"]);
+  } catch (const std::exception &) {
+    // An unreadable task is reported as such by readiness; here it stays "Not available".
+  }
+  return summary;
+}
+
+void MainWindow::begin_monitor(const QString & kind)
+{
+  monitor_ = RuntimeMonitorSession();
+  if (!has_selected_scene()) return;
+  const auto & scene = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  monitor_.kind = kind;
+  monitor_.scene_dir = QString::fromStdString(scene.scene_dir.string());
+  monitor_.cell = QString::fromStdString(scene.scene_name);
+  // A snapshot of the saved task this session runs: later edits never relabel a running or finished session.
+  const auto task = saved_task_summary(monitor_.scene_dir);
+  monitor_.task = QString("pick %1%2 → %3 (%4 placement)").arg(task.pick.isEmpty() ? QString("any class") : task.pick,
+    task.exclude.isEmpty() ? QString() : " (excluding " + task.exclude.join(", ") + ")",
+    task.destination == " / " ? QString("Not available") : task.destination, task.placement.isEmpty() ? QString("?") : task.placement);
+  monitor_.backend = kind == "physics" ? "Qualified physics simulation (Gazebo Fortress / DART, simulated robot)"
+                                       : "MoveIt fake hardware — plan only, trajectory execution disabled";
+  monitor_.started = QDateTime::currentDateTime();
+}
+
+QString MainWindow::monitor_outcome_html() const
+{
+  QString html;
+  for (const auto & line : workcell_builder::monitor_outcome_lines(cycle_result_, monitor_.kind == "physics")) html += "<br/>" + line.toHtmlEscaped();
+  return html;
+}
+
+void MainWindow::refresh_monitor()
+{
+  if (!monitor_label_) return;
+  if (monitor_.kind.isEmpty()) { monitor_label_->hide(); return; }
+  const bool physics = monitor_.kind == "physics";
+  const bool finished = monitor_.finished.isValid();
+  const auto & t = monitor_.timeline;
+  const QString result = cycle_result_.value("result").toString();
+  QString state;
+  if (!finished) {
+    if (monitor_.cancel_requested.isValid()) state = "CANCELLING — cleanup in progress (unconfirmed)";
+    else if (physics) state = t.last_motion ? "RUNNING — simulated robot moving" : "RUNNING — no motion (" + (t.current.isEmpty() ? QString("starting") : t.current.toLower()) + ")";
+    else state = "RUNNING — planning on fake hardware, no motion";
+  } else if (result == "PASS") state = physics ? "COMPLETED" : "COMPLETED — plan only, nothing executed";
+  else if (result == "CANCELLED" || monitor_.cancel_requested.isValid())
+    state = cycle_result_.value("cancellation_confirmed").toBool() ? "CANCELLED — confirmed by a clean owned shutdown" : "CANCELLED — completion UNCONFIRMED";
+  else if (physics && cycle_result_.value("status").toString() == "BLOCKED" && cycle_result_.value("gates").toObject().isEmpty()) state = "BLOCKED — nothing was started";
+  else state = "FAILED";
+  QString process = finished ? QString("runner exited %1%2 at %3").arg(monitor_.exit_code).arg(monitor_.crashed ? " (crashed)" : "", monitor_.finished.toString("HH:mm:ss"))
+                    : preview_state_ == "BUILD_RUNNING" ? QString("building the scene package")
+                    : preview_state_ == "PACKAGE_CHECK_RUNNING" ? QString("checking the installed package")
+                    : QString("running%1").arg(monitor_.runner_pid > 0 ? QString(" (pid %1)").arg(monitor_.runner_pid) : QString());
+  if (monitor_.cancel_requested.isValid()) process += " · cancel requested " + monitor_.cancel_requested.toString("HH:mm:ss");
+  QString robot;
+  if (finished) robot = "stopped (session ended)";
+  else if (!physics) robot = "no motion — plan only";
+  else robot = t.last_motion ? "simulated robot executing " + t.last_stage : "no motion";
+  QString gripper = "Not available";
+  if (physics && t.executed.contains("EXECUTE_OPEN_GRIPPER")) gripper = "open commanded (executed)";
+  else if (physics && t.executed.contains("EXECUTE_CLOSE_GRIPPER")) gripper = "close commanded (executed) — physical retention is verified at completion";
+  else if (t.planned.contains("PREPLAN_CLOSE_GRIPPER")) gripper = "close/open planned only";
+  QString text = QString("<b>Execution monitor</b> · %1 · session started %2<br/>Workcell: <b>%3</b> · Task: %4<br/>Backend: %5 · Real robot: <b>LOCKED</b>"
+                         "<br/>Process: %6<br/>Stages: %7")
+    .arg(state.toHtmlEscaped(), monitor_.started.toString("HH:mm:ss"), monitor_.cell.toHtmlEscaped(), monitor_.task.toHtmlEscaped(),
+         monitor_.backend.toHtmlEscaped(), process.toHtmlEscaped(), t.html(physics, finished));
+  text += QString("<br/>Last verified event: %1").arg(t.last_stage.isEmpty() ? QString("none yet") :
+    QString("%1%2 at %3 (%4)").arg(t.last_stage, t.last_phase.isEmpty() ? QString() : " · " + t.last_phase, t.last_time.toString("HH:mm:ss.zzz"),
+                                   physics ? QString("live qualified physics runner") : QString("fake-hardware executor")).toHtmlEscaped());
+  text += QString("<br/>Robot: %1 · Gripper: %2 · Selected object: %3").arg(robot.toHtmlEscaped(), gripper.toHtmlEscaped(),
+    cycle_result_.value("selected_object_id").toString(finished ? "Not available" : "pending resolution").toHtmlEscaped());
+  const auto rejected = cycle_result_.value("rejected_objects").toObject();
+  if (!rejected.isEmpty()) {
+    QStringList not_picked; for (auto it = rejected.begin(); it != rejected.end(); ++it) not_picked << it.key() + ": " + it.value().toString();
+    text += "<br/>Not selected: " + not_picked.join("; ").toHtmlEscaped();
+  }
+  if (finished && cycle_result_.contains("result")) text += monitor_outcome_html();
+  else if (finished) text += "<br/>Outcome: Not available — the runner ended without reporting a result.";
+  if (finished && result != "PASS") {
+    const auto d = workcell_builder::diagnose_failure(cycle_result_.value("failure").toString(cycle_result_.value("orchestration_failure").toString()));
+    text += QString("<br/><b>Diagnosis %1</b>: %2%3").arg(d.code.toHtmlEscaped(), d.meaning.toHtmlEscaped(),
+      d.action.isEmpty() ? QString() : "<br/>What to do: " + d.action.toHtmlEscaped());
+  }
+  if (!monitor_.output.isEmpty()) text += "<br/>Evidence: " + monitor_.output.toHtmlEscaped();
+  monitor_label_->setText(text);
+  monitor_label_->show();
+}
+
 void MainWindow::refresh_viewer_controls()
 {
   if (!open_rviz_button_) return;
@@ -6918,6 +7066,7 @@ void MainWindow::stop_preview_process()
 {
   if (!preview_process_ || preview_process_->state() == QProcess::NotRunning || preview_stop_requested_) return;
   preview_stop_requested_ = true;
+  if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid()) monitor_.cancel_requested = QDateTime::currentDateTime();
   set_preview_state("PREVIEW_STOPPING");
   append_studio_log("Stopping RViz...");
   const qint64 stopping_pid = preview_process_->processId();
@@ -6962,6 +7111,19 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
   if (completed_stage != "BUILD_RUNNING" && completed_stage != "PACKAGE_CHECK_RUNNING") { close_viewers(); plan_cycle_domain_ = -1; }
   if (full_cycle_mode_ && (completed_stage == "PREVIEW_RUNNING" || completed_stage == "PREVIEW_LAUNCHING" || preview_stop_requested_)) {
     handle_preview_stdout();
+    if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid()) {
+      monitor_.finished = QDateTime::currentDateTime();
+      monitor_.exit_code = exit_code; monitor_.crashed = exit_status != QProcess::NormalExit;
+      auto & timeline = monitor_.timeline;
+      if (cycle_result_.contains("result")) timeline.reach("Verification");      // the runner evaluated its own result
+      const QString result = cycle_result_.value("result").toString();
+      if (result != "PASS" && result != "CANCELLED" && timeline.failed.isEmpty()) {
+        const auto at = workcell_builder::monitor_category(cycle_result_.value("failed_stage").toString(), timeline.executing);
+        timeline.failed = at.isEmpty() ? timeline.current : at;
+      }
+      const auto shutdown = cycle_result_.value("session_shutdown").toObject();
+      if (cycle_result_.value("shutdown_clean").toBool() || shutdown.value("clean").toBool()) timeline.reach("Shutdown");
+    }
     const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
       cycle_result_.value("result").toString() == "PASS" && cycle_result_.value("full_cycle_plan_success").toBool() &&
       cycle_result_.value("shutdown_clean").toBool() &&
@@ -6992,6 +7154,7 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
         validate_generated_scene_for_selected_scene();
       }
     }
+    refresh_monitor();
     if(close_after_preview_stop_) QTimer::singleShot(0,this,&QWidget::close);
     return;
   }
