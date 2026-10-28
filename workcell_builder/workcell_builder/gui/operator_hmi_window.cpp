@@ -1239,7 +1239,7 @@ void OperatorHmiWindow::check_simulation_status()
   }
   if (!id.isEmpty() && session.value("last_event").toString() != sim_last_event_) {
     sim_last_event_ = session.value("last_event").toString();
-    log_event("info", "SIMULATION_STAGE", sim_last_event_);
+    if (sim_last_event_ != "none yet") log_event("info", "SIMULATION_STAGE", sim_last_event_);   // only real events
   }
   const auto decision = status.value("last_command").toObject();
   if (sim_waiting_for_ >= 0 && decision.value("id").toInt(-1) == sim_waiting_for_) {

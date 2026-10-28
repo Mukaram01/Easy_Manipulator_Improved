@@ -86,6 +86,30 @@ TaskIntent v2 has no explicit ignore list. "Ignored objects" therefore states th
 
 **Start production cycle** is always disabled in R3, and the reasons are listed: no qualified execution backend, no live input, no approved bundle, draft or layout edits, resolution not ready. The HMI provides no emergency stop; use the cell's hardware E-stop.
 
+## Simulation from the HMI (R2.3)
+
+A managed HMI can ask its Workcell Builder to run one qualified Gazebo simulation cycle of the saved cell; the
+Builder keeps every authority. The **Simulation · qualified Gazebo** card has:
+
+- **Run Simulation Cycle**: after an explicit confirmation (cell, task, destination, backend, "simulated robot only,
+  not production"), the HMI sends a request. The Builder runs its existing qualified physics cycle (the same as
+  **Run Physics Simulation Cycle**) only if every check still holds:
+  - the request carries this Builder launcher's random control token (a standalone HMI has none);
+  - it names the cell selected in the Builder and was made from the latest request revision;
+  - the HMI showed the SAVED task whose normalized intent SHA-256 the cell was generated from;
+  - no session is running, the Builder has no unsaved edits, and the physics preflight and readiness pass.
+- **Cancel Simulation**: asks for the existing supervised cancellation of this cell's running session (by its id,
+  once). It is not an emergency stop.
+- State, stages (planned vs executed), last verified event, simulated robot and gripper, selected and rejected
+  objects, the final physics evidence, any diagnosis and the shutdown come from the Builder's R2.2 monitor of this
+  cell's session only.
+
+Requests travel on the HMI's stdout (`WORKCELL_OPERATOR_COMMAND <json>`), which only the launching Builder reads;
+status travels in `operator_simulation_status.json` beside the request (`include/operator_simulation_link.hpp`).
+Closing the HMI never stops a running simulation; reopening it shows the same session. Closing the Builder
+follows its existing contract (its session is cancelled and the HMI exits). **Start production cycle** stays
+disabled.
+
 ## Standalone use
 
 ```bash
@@ -118,7 +142,7 @@ A separate reopen run checks that the saved intent SHA-256 is recovered. The HMI
 ## Not in R3
 
 These remain blocked or out of scope:
-- simulation started from the HMI (fake-hardware simulation stays in Workcell Builder, Plan / Simulate);
+- fake-hardware planning started from the HMI (it stays in Workcell Builder, Plan / Simulate); qualified Gazebo simulation is available since R2.3 (above);
 - live perception consumption;
 - robot state and cycle telemetry;
 - approval workflow;
