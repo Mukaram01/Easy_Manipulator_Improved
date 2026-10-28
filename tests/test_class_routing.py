@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import copy
+import math
 
 import pytest
 
 from scripts import simulator_world
 from scripts.task_intent_resolver import (
+    class_routes,
     consume_resolution,
     explain_observations,
     placement_fit_blocker,
@@ -22,7 +24,7 @@ def routed_intent(rules=None):
     intent = valid_intent()
     intent["pick"]["selection"]["object_filter"]["class_id"] = ""
     intent["place"]["target"] = {"asset_ref": "bin_a", "region_ref": "drop_a"}
-    intent["routing"] = {"mode": "class", "rules": rules if rules is not None else [
+    intent["routing"] = {"mode": "class", "unrouted_policy": "leave_in_place", "rules": rules if rules is not None else [
         {"id": "toy_a_to_bin_a", "when": {"attribute": "class", "equals": "toy_a"}, "destination": "drop_a"},
         {"id": "toy_b_to_bin_b", "when": {"attribute": "class", "equals": "toy_b"}, "destination": "drop_b"},
     ]}
@@ -246,7 +248,7 @@ def _two_bin_cell(tmp_path):
     task["pick"]["selection"]["object_filter"]["class_id"] = ""
     task["perception"]["replay_path"] = str(root / "config/runtime/r1_4_replay.yaml")
     task["place"]["placement"].update(policy="AUTO", requested_local_pose=None, clearance_m=0.005)
-    task["routing"] = {"mode": "class", "rules": [
+    task["routing"] = {"mode": "class", "unrouted_policy": "leave_in_place", "rules": [
         {"id": "route_1_cup", "when": {"attribute": "class", "equals": "cup"}, "destination": "default_drop_zone"},
         {"id": "route_2_bottle", "when": {"attribute": "class", "equals": "bottle"}, "destination": "place_zone_b"}]}
     (scene / "config/workcell_builder_task_intent.yaml").write_text(yaml.safe_dump(task, sort_keys=True))
@@ -265,3 +267,100 @@ def test_generate_exports_every_routed_destination_and_class(tmp_path):
     assert {r["destination"] for r in cell["task"]["rules"]} == {"default_drop_zone", "place_zone_b"}
     assert cell["perception"]["required_object_classes"] == ["cup", "bottle"]
     assert cell["task_intent_resolution"]["readiness"]["primary_code"] == "CYCLE_EVALUATION_REQUIRED"
+
+
+# ---- R2.4: N-to-M routing, enabled/priority, explicit unrouted policy, occupancy-aware places ----
+
+def three_bins():
+    """two_bins() plus bin_c at x=-1 with region drop_c: any number of authored destinations."""
+    env = two_bins()
+    bin_c, drop_c = copy.deepcopy(env["assets"][0]), copy.deepcopy(env["task_zones"][1])
+    bin_c.update(id="bin_c", pose_xyz=[-1.0, 0.0, 3.0])
+    drop_c.update(id="drop_c", target_ref="bin_c", pose_xyz=[-0.95, 0.0, 3.10])
+    env["assets"].append(bin_c)
+    env["task_zones"].append(drop_c)
+    return env
+
+
+def rule(cls, destination, **extra):
+    return {"id": f"route_{cls}", "when": {"attribute": "class", "equals": cls}, "destination": destination, **extra}
+
+
+N_TO_M = [rule("cup", "drop_a"), rule("bottle", "drop_a"), rule("can", "drop_a"), rule("box", "drop_b"),
+          rule("tray", "drop_c")]
+
+
+def test_many_classes_share_a_destination_and_every_destination_is_resolved():
+    intent = routed_intent(N_TO_M)
+    routes = class_routes(intent, three_bins())
+    assert {c: r["region_ref"] for c, r in routes.items()} == {
+        "cup": "drop_a", "bottle": "drop_a", "can": "drop_a", "box": "drop_b", "tray": "drop_c"}
+    for cls, region in (("can", "drop_a"), ("box", "drop_b"), ("tray", "drop_c")):
+        result = resolve(intent, [observation(f"epd::{cls}-1", cls)], env=three_bins())
+        assert result["readiness_status"] == "READY", result["readiness"]
+        assert result["place_resolution"]["route"]["region_ref"] == region
+
+
+def test_unrouted_policy_is_explicit_and_attempts_are_bounded():
+    intent = routed_intent()
+    del intent["routing"]["unrouted_policy"]
+    assert resolve(intent, [observation("epd::a", "toy_a")])["diagnostics"][0]["code"] == "ROUTING_UNROUTED_POLICY_REQUIRED"
+    intent = routed_intent()
+    intent["routing"]["max_attempts_per_object"] = 9
+    assert resolve(intent, [observation("epd::a", "toy_a")])["diagnostics"][0]["code"] == "ROUTING_ATTEMPTS_INVALID"
+
+
+def test_a_disabled_rule_is_not_a_route_and_priority_orders_the_pick():
+    rules = [rule("toy_a", "drop_a", priority=1), rule("toy_b", "drop_b", priority=5), rule("toy_c", "drop_b", enabled=False)]
+    intent = routed_intent(rules)
+    objects = [observation("epd::a", "toy_a", x=0.3), observation("epd::b", "toy_b", x=0.5),
+               observation("epd::c", "toy_c", x=0.7)]
+    evaluated = []
+    result = resolve(intent, objects, recording(evaluated))
+    assert result["grasp_resolution"]["selected_object_id"] == "epd::b"          # priority 5 before 1
+    decisions = {d["id"]: d["reason_code"] for d in explain_observations(intent, two_bins(), objects, 100.0)}
+    assert decisions["epd::c"] == "CLASS_ROUTE_DISABLED"
+    assert "toy_c" not in class_routes(intent, two_bins())
+    only_disabled = routed_intent([rule("toy_a", "drop_a", enabled=False)])
+    assert resolve(only_disabled, objects)["diagnostics"][0]["code"] == "ROUTING_RULES_REQUIRED"
+
+
+def placed(object_id, xyz, dims=(0.06, 0.05, 0.10)):
+    return {"id": object_id, "pose": list(xyz) + [0.0, 0.0, 0.0, 1.0], "dimensions": list(dims)}
+
+
+def test_occupancy_packs_free_places_and_reports_a_full_destination():
+    intent = routed_intent()
+    cup = observation("epd::a2", "toy_a")
+    empty = resolve(intent, [cup], occupied=[])
+    first = empty["place_resolution"]["selected_local_pose"]["xyz_m"]
+    assert first[0] < 0.05 - 1e-6                                     # packed from the region corner, not centred
+    world = empty["place_resolution"]["world_pose"]["xyz_m"]
+    after = resolve(intent, [cup], occupied=[placed("epd::a1", world)])
+    second = after["place_resolution"]["world_pose"]["xyz_m"]
+    assert after["readiness_status"] == "READY" and math.dist(second, world) > 0.06
+    assert after["place_resolution"]["occupancy"]["considered_object_ids"] == ["epd::a1"]
+    full = resolve(intent, [cup], occupied=[placed("epd::x", [1.05, 2.0, 3.06], dims=(0.20, 0.10, 0.10))])
+    assert full["readiness"]["primary_code"] == "DESTINATION_FULL"
+    assert resolve(intent, [cup])["place_resolution"]["selected_local_pose"]["xyz_m"] == [0.05, 0.0, 0.10]  # no occupancy: unchanged
+
+
+def test_revalidation_refuses_a_place_that_became_occupied():
+    intent, cup = routed_intent(), observation("epd::a2", "toy_a")
+    resolved = resolve(intent, [cup], occupied=[])
+    assert resolve(intent, [cup], occupied=[], resolved=resolved)["readiness_status"] == "READY"
+    world = resolved["place_resolution"]["world_pose"]["xyz_m"]
+    blocked = resolve(intent, [cup], occupied=[placed("epd::late", world)], resolved=resolved)
+    assert blocked["readiness"]["primary_code"] == "DESTINATION_OCCUPIED"
+
+
+def test_routed_classes_must_come_from_the_registered_perception_vocabulary(tmp_path):
+    import json
+    from scripts.validate_builder_task_intent import perception_vocabulary
+    labels = tmp_path / "labels.txt"
+    labels.write_text("background\ncup\nbottle\n")
+    (tmp_path / "workcell_perception_runtime.json").write_text(json.dumps({"epd": {"labels": str(labels)}}))
+    scene = tmp_path / "src/scenes/cell"
+    scene.mkdir(parents=True)
+    assert perception_vocabulary(scene) == {"source": str(labels), "classes": ["cup", "bottle"]}
+

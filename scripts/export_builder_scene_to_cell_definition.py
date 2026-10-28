@@ -604,8 +604,8 @@ def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str
     if 'mode' in task_intent_payload.get('perception', {}):
         cell_def['perception'].update(task_intent_payload['perception'])
         cell_def['perception']['enabled'] = task_intent_payload['perception']['mode'] != 'off'
-        from task_intent_v2 import class_routing_rules
-        rules = class_routing_rules(task_intent_payload)
+        from task_intent_v2 import enabled_class_rules
+        rules = enabled_class_rules(task_intent_payload)
         cell_def['perception']['required_object_classes'] = (
             [rule['when']['equals'] for rule in rules] if rules is not None   # class routing: the routed classes
             else [selection['object_filter']['class_id']] if selection['object_filter'].get('class_id') else [])
