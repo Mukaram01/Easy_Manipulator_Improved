@@ -135,6 +135,15 @@ A sorting session or a routed task is refused in Gazebo:
 
 The qualified Stage-A world covers one object, one destination and one cycle. That scope is fixed in code: no catalog or other editable file can widen it, because the catalog is not bound to qualification evidence. A future multi-destination or continuous-sorting qualification must provide a scope verified against its own bound contact, retention and placement evidence; no such verifier exists yet, so routed and multi-destination physics fail closed. The sorting engine needs no change when one is added.
 
+**Multi-bin physics world, plan-only (R2.5B G0–G2).**
+- **Deriving it:** `simulator_world.derive_world(scene, physical_destinations='all')` makes every authored target bin on the task's support a hollow static physics bin (`target_bin_physics`, `target_bin_physics_2`, … in asset-id order). Every task configuration of a cell therefore derives the same world.
+- **Overlap:** overlapping bins are refused.
+- **Binding:** the simulator launch binds each physics bin to the planning bin whose measured mesh floor lies under it (`destination_geometry_bindings`).
+- **Planning:** the executor adds every bin's physics walls as planning obstacles and seats the placement on the task's own bin floor.
+- **Motion refused:** in such a world the executor refuses motion (`MULTI_DESTINATION_PHYSICS_UNQUALIFIED`) and the contact guard does not arm.
+- **Runner:** it accepts `--physical-destinations all` only for `--mode targeted --gate resolve`.
+- **One-bin cells:** worlds, receipts and wall ids are unchanged.
+
 ### Limits
 - **Fake hardware only:** planning and kinematic execution on mock controllers. There is no contact, retention or settling evidence.
 - **Continuous mode:** its only frame source is the session's own simulator-rendered EPD frame (R2.5A). There is no live camera source, so a live continuous session is still refused (`CONTINUOUS_SOURCE_UNAVAILABLE`).

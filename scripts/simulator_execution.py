@@ -1071,6 +1071,9 @@ DESTINATION_PHASES=('place','opening','released')
 
 class ContactGuard:
     def __init__(self,measurements,object_id,dimensions,touch_links,support,baseline,tool):
+        if (getattr(measurements,'receipt',None) or {}).get('destination_geometry_bindings'):
+            # R2.5B multi-destination worlds are plan-only: no physical guard is armed in them.
+            raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: no contact guard for several destination bins')
         from ament_index_python.packages import get_package_prefix
         library=ctypes.CDLL(str(Path(get_package_prefix('workcell_builder'))/'lib/libworkcell_support_contact.so'))
         self.predicate=library.workcell_support_contact_valid

@@ -336,8 +336,54 @@ def physics_task_qualification(intent, verified_scope=None, *, sorting_session=F
                                          'continuous_sorting': sorting_session}}
 
 
-def derive_world(scene, catalog_path=CATALOG):
-    """(world SDF text, derivation report) for the authored cell at ``scene``."""
+PHYSICAL_DESTINATIONS = ('task', 'all')
+
+
+def _physical_bins(environment, target_ref, region_ref, support_ref):
+    """Every authored destination bin on the task's support, as {asset id: region id}, ordered by asset id.
+
+    The task's bin keeps the task's region; every other bin its own authored placement region (task_zone_ref).
+    """
+    bins = {}
+    for asset in environment.get('assets', []):
+        if asset.get('role') != 'target_bin':
+            continue
+        if asset.get('support_surface_ref') != support_ref:
+            raise SimulatorWorldError(f"destination {asset.get('id')!r} is not on the task's support surface "
+                                      f'{support_ref!r}; one physical support is qualified')
+        region = region_ref if asset.get('id') == target_ref else asset.get('task_zone_ref')
+        if not region:
+            raise SimulatorWorldError(f"destination {asset.get('id')!r} has no authored placement region")
+        bins[asset['id']] = region
+    if target_ref not in bins:
+        raise SimulatorWorldError(f'the task destination {target_ref!r} is not an authored target bin')
+    return dict(sorted(bins.items()))
+
+
+def _require_separate_bins(destinations):
+    """Physics bins (interior plus proxy walls) must not overlap: two solids in one place is no physical cell."""
+    def footprint(d):
+        t = d['proxy_wall_thickness_m']
+        return [[d['interior_world'][axis][0] - t, d['interior_world'][axis][1] + t] for axis in ('x', 'y')]
+    for i, a in enumerate(destinations):
+        for b in destinations[i + 1:]:
+            fa, fb = footprint(a), footprint(b)
+            if all(fa[k][0] < fb[k][1] and fb[k][0] < fa[k][1] for k in range(2)):
+                raise SimulatorWorldError(f"destination bins {a['asset_ref']!r} and {b['asset_ref']!r} overlap "
+                                          f'(outer footprints {fa} and {fb}); move them apart in the Studio')
+
+
+def derive_world(scene, catalog_path=CATALOG, *, physical_destinations='task'):
+    """(world SDF text, derivation report) for the authored cell at ``scene``.
+
+    ``physical_destinations``: ``task`` (the qualified world: only the task's destination is a physics bin) or
+    ``all`` (R2.5B: every authored target bin is a hollow physics bin, named in asset-id order DESTINATION_MODEL,
+    DESTINATION_MODEL_2, ... so every task configuration of the cell derives the same world). An ``all`` world is
+    for plan-only qualification: the simulator launch binds every bin (destination_binding) and the executor refuses
+    motion in it until a multi-destination physics scope is qualified.
+    """
+    if physical_destinations not in PHYSICAL_DESTINATIONS:
+        raise SimulatorWorldError(f'physical destinations {physical_destinations!r} not in {PHYSICAL_DESTINATIONS}')
     catalog = load_catalog(catalog_path)
     doc, environment, manifest, intent, provenance = _cell(scene)
     qualification = physics_task_qualification(intent)
@@ -351,8 +397,20 @@ def derive_world(scene, catalog_path=CATALOG):
     if len(targets) != 1 or not targets[0].get('support_surface_ref'):
         raise SimulatorWorldError(f'destination {target_ref!r} missing or not on an authored support surface')
     support = _support(world, manifest, targets[0]['support_surface_ref'], catalog)
-    destination = _destination(world, environment, manifest, target_ref, intent['place']['target'].get('region_ref'), catalog)
-    objects = _objects(world, doc, support, catalog)
+    region_ref = intent['place']['target'].get('region_ref')
+    destinations = None
+    if physical_destinations == 'task':
+        destination = _destination(world, environment, manifest, target_ref, region_ref, catalog)
+        objects = _objects(world, doc, support, catalog)
+    else:
+        bins = _physical_bins(environment, target_ref, region_ref, targets[0]['support_surface_ref'])
+        names = {asset: DESTINATION_MODEL if index == 0 else f'{DESTINATION_MODEL}_{index + 1}'
+                 for index, asset in enumerate(bins)}
+        destinations = [dict(_destination(world, environment, manifest, asset, region, catalog, names[asset]),
+                             model=names[asset]) for asset, region in bins.items()]
+        _require_separate_bins(destinations)
+        destination = next(d for d in destinations if d['asset_ref'] == target_ref)
+        objects = _objects(world, doc, support, catalog, reserved=names.values())
     text = ET.tostring(root, encoding='unicode')
     template_bytes = TEMPLATE.read_bytes()
     report = dict(schema='workcell_simulator_world/v2', scene=str(Path(scene).resolve()), **provenance, **envelope,
@@ -360,7 +418,11 @@ def derive_world(scene, catalog_path=CATALOG):
                   engine_template=str(TEMPLATE), engine_template_sha256=_sha256(template_bytes),
                   world_name=world.get('name'), world_sha256=_sha256(text.encode()),
                   support=support, destination=destination, objects=objects,
-                  planning_only_objects=planning_only_objects(manifest, {support['source_item_id'], destination['asset_ref']}))
+                  planning_only_objects=planning_only_objects(
+                      manifest, {support['source_item_id'], *(d['asset_ref'] for d in destinations or [destination])}))
+    if destinations is not None:
+        report.update(physical_destinations='all', destinations=destinations,
+                      execution='PLAN_ONLY: multi-destination physics is not qualified for motion')
     return text, report
 
 

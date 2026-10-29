@@ -1936,12 +1936,14 @@ def test_release_is_planned_only_after_a_measured_stop_and_executed_only_after_a
 
 def test_simulator_place_seating_uses_the_receipt_bound_destination_floor():
     source = (Path(__file__).resolve().parents[1]/'scripts/perceived_object_grasp_execute.py').read_text()
-    block = source[source.index("destination_binding = json.loads(receipt_bytes).get('destination_geometry_binding')"):]
+    block = source[source.index("receipt_record = json.loads(receipt_bytes)"):]
     block = block[:block.index('initial = scene_now()')]
     # Bound only from the identity-verified receipt, beside the physics walls; absent binding: unchanged.
     assert block.index('apply(walls_scene_diff(destination_binding))') < \
         block.index("contract['destination_floor_z'] = float(destination_binding['floor_z'])")
-    assert source.count("contract['destination_floor_z']") == 1
+    # R2.5B: a multi-destination receipt adds every bin's walls and seats on the task's own bin (plan-only).
+    assert block.index('apply(walls_scene_diff(binding))') < block.index("contract['destination_floor_z'] = float(selected['floor_z'])")
+    assert source.count("contract['destination_floor_z']") == 2
 def test_tool_interface_and_live_revalidation_gate_every_run_before_planning():
     source=SCRIPT.read_text()
     preflight=source[source.index("_PLANNER.bind_tool_actuation(contract,"):source.index("summary['tool_actuation'] =")]

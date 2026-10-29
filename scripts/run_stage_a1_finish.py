@@ -1030,6 +1030,9 @@ def main(argv=None):
     parser.add_argument("--prior-evidence",type=Path,
         help="targeted --gate full-cycle only: completed run whose passing cancel, telemetry, stationary and "
              "contact-release summaries are reused for a diagnostic transfer trial (never Stage-A acceptance)")
+    parser.add_argument("--physical-destinations",choices=("task","all"),default="task",
+        help="with --scene-package: 'all' derives every authored target bin as a physics bin (R2.5B); plan-only, "
+             "allowed with --mode targeted --gate resolve only")
     parser.add_argument("--gil-watchdog-ms",type=float,
         help="opt-in executor diagnostic: dump every thread's stack when one holds the GIL this long")
     parser.add_argument("--gil-probe-ms",type=float,
@@ -1087,6 +1090,9 @@ def main(argv=None):
                              "evidence; give --prior-evidence")
         elif args.prior_evidence is not None and (args.mode!="targeted" or args.gate!="full-cycle"):
             parser.error("--prior-evidence applies to a targeted full-cycle or functional run only")
+    if args.physical_destinations!="task" and (args.scene_package is None or args.mode!="targeted" or args.gate!="resolve"):
+        parser.error("--physical-destinations all is plan-only qualification: it needs --scene-package, --mode targeted "
+                     "and --gate resolve (multi-destination motion is not qualified)")
     if args.gil_watchdog_ms is not None:
         if args.mode=="fast":parser.error("the GIL watchdog observes executor sessions; fast mode runs none")
         if args.mode!="targeted" or args.gate not in GIL_WATCHDOG_GATES:
@@ -1109,6 +1115,9 @@ def main(argv=None):
              "gates":{},"preflight":None,"started_wall_ns":started_wall_ns,
              "search_timeout_s":args.search_timeout,"segment_planning_time_s":args.segment_planning_time,
              "invocation":invocation}
+    if args.physical_destinations!="task":
+        overall.update(physical_destinations=args.physical_destinations,
+                       scope="MULTI_DESTINATION_PLAN_ONLY_NOT_QUALIFIED_FOR_MOTION")
     print("stage-a1 settings: "+", ".join(f"{key}={value}{' (default)' if key in invocation['defaulted'] else ''}"
                                           for key,value in invocation["effective"].items()),file=sys.stderr,flush=True)
     if args.mode=="full":overall["through"]=args.through
@@ -1129,7 +1138,7 @@ def main(argv=None):
             args.authored_cell=authored_cell(args.scene_package)
             from simulator_world import derive_world,engine_equivalent,TEMPLATE
             if git_blob(TEMPLATE,repo)!=SOURCE_WORLDS["sparse"][1]:raise RuntimeError("qualified world template changed")
-            world_text,world_report=derive_world(args.authored_cell["package"])
+            world_text,world_report=derive_world(args.authored_cell["package"],physical_destinations=args.physical_destinations)
             world_report["engine_equivalent_to_qualified_template"]=engine_equivalent(world_text)
             (args.output/"authored-world").mkdir()
             source_world=args.output/"authored-world/world.sdf";source_world.write_text(world_text)
