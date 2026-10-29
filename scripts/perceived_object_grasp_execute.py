@@ -1577,6 +1577,10 @@ def main():
     parser.add_argument('--backend', choices=('fake', 'simulator'), default='fake')
     parser.add_argument('--simulator-commission', choices=('cancel', 'telemetry', 'stationary', 'contact-release', 'full-cycle'), help='Explicit bounded simulator trial; ordinary execution remains blocked')
     parser.add_argument('--commission-evidence', type=Path, help='Passing measured trial and cancellation evidence required for full-cycle')
+    parser.add_argument('--physics-scope', type=Path,
+                        help='workcell_physics_scope/v1 trial record (qualification runner only): the one destination bin '
+                             'a multi-destination full-cycle may place into')
+    parser.add_argument('--physics-scope-sha256', help='sha256 of --physics-scope as authorised')
     parser.add_argument('--retention-policy', choices=('strict', 'record'), default='strict',
                         help='full-cycle only: record keeps the unchanged retention limits but records exceedances as '
                              'task-quality findings instead of aborting (functional validation, never Stage-A acceptance)')
@@ -2670,6 +2674,7 @@ def main():
             # A later sorting cycle finds every object already reconciled in the scene; the in-motion guard still
             # needs one completed PlanningScene exchange before owned execution, so make it with an empty diff.
             apply(PlanningScene(is_diff=True))
+        scoped_destination = None       # the one bin a verified physics scope admits in a multi-destination world
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
@@ -2682,19 +2687,38 @@ def main():
             destination_binding = receipt_record.get('destination_geometry_binding')
             destination_bindings = receipt_record.get('destination_geometry_bindings')
             if destination_bindings:
-                # R2.5B multi-destination world: plan-only until a multi-destination physics scope is qualified.
-                # Its contact guard binds no destination floor, so motion is refused before any planning.
-                if args.start:
-                    raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: the simulator world has '
-                                       f'{len(destination_bindings)} physical destination bins; motion is not qualified '
-                                       'in it (plan-only)')
+                # R2.5B multi-destination world: plan-only unless a verified physics scope authorises this one
+                # full-cycle into the task's bin. Motion is refused before any planning otherwise.
                 if destination_binding is not None or intent is None:
                     raise RuntimeError('ambiguous simulator destination binding')
                 from destination_binding import select_destination_binding
+                selected = select_destination_binding(destination_bindings, intent['place']['target']['asset_ref'])
+                if args.start:
+                    if args.physics_scope is None or args.simulator_commission != 'full-cycle':
+                        raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: the simulator world has '
+                                           f'{len(destination_bindings)} physical destination bins; motion is not '
+                                           'qualified in it without an authorised physics scope (plan-only)')
+                    import physics_scope_qualification as scope_qualification
+                    from ament_index_python.packages import get_package_prefix
+                    workspace = Path(__file__).resolve().parents[3]
+                    scope_record = scope_qualification.verify_trial(args.physics_scope, args.physics_scope_sha256,
+                        scope_qualification.scope_binding(
+                            cell_dir=package, receipt_path=args.simulator_receipt, observations_path=args.detections,
+                            native=scope_qualification.native_identity(Path(get_package_prefix('workcell_builder')) /
+                                'share/workcell_builder/commission_execute_build.json'),
+                            runtime=scope_qualification.runtime_identity(workspace),
+                            commission_evidence_path=args.commission_evidence,
+                            resolution_sha256=(expected_resolution or {}).get('resolution_sha256')))
+                    if scope_record['binding']['destination']['model'] != selected['model']:
+                        raise RuntimeError('PHYSICS_SCOPE_MISMATCH: the authorised bin is not the task\'s bin')
+                    scoped_destination = selected
+                    summary['physics_scope'] = dict(path=str(Path(args.physics_scope).resolve()),
+                        sha256=args.physics_scope_sha256, state=scope_record['state'],
+                        evidence_scope=scope_qualification.TRIAL_EVIDENCE_SCOPE,
+                        destination=scope_record['binding']['destination'])
                 # Every bin is an obstacle; the task's own bin sets the seating floor.
                 for binding in destination_bindings:
                     apply(walls_scene_diff(binding))
-                selected = select_destination_binding(destination_bindings, intent['place']['target']['asset_ref'])
                 contract['destination_floor_z'] = float(selected['floor_z'])
                 summary['physical_destination_walls'] = dict(
                     object_ids=[i for b in destination_bindings for i in wall_object_ids(b)],
@@ -3061,7 +3085,8 @@ def main():
                     args.commission_evidence,summary['commissioning_capability'])
             support=next((s['metadata']['initial_support_contact'] for s in cycle['steps'] if s.get('metadata',{}).get('initial_support_contact')),None)
             selected=next(o for o in objects if o['id']==selected_id)
-            contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,contract['tool_link'])
+            contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,
+                                       contract['tool_link'],destination_binding=scoped_destination)
             contact_guard.hold_profile=hold_profile
             if args.retention_policy!='strict' and args.simulator_commission!='full-cycle':
                 raise RuntimeError('a recorded retention policy applies to the full-cycle functional validation only')
@@ -3391,6 +3416,11 @@ def main():
             planned_pose=pose_values(planned.pose) if planned is not None else None
             destination_pose=list(destination["pose_xyz"])+_PLANNER.quaternion_from_rpy(destination["pose_rpy"])
             quaternion_angle=lambda a,b:2*math.acos(min(1.,abs(sum(x*y for x,y in zip(a[3:],b[3:])))))
+            if summary.get('physics_scope') is not None:
+                # The authorised record must be unchanged for the whole operation.
+                from simulator_backend import digest
+                if digest(Path(args.physics_scope).read_bytes()) != args.physics_scope_sha256:
+                    raise RuntimeError('PHYSICS_SCOPE_RECORD_CHANGED during the operation')
             summary.update(result='PASS' if summary['strict_retention_compliant'] else 'FUNCTIONAL_PASS',
                 full_cycle_execution_success=True,
                 full_cycle_physical_acceptance=dict(final_pose=final_pose,

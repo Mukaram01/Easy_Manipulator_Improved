@@ -1070,10 +1070,17 @@ DESTINATION_PHASES=('place','opening','released')
 
 
 class ContactGuard:
-    def __init__(self,measurements,object_id,dimensions,touch_links,support,baseline,tool):
-        if (getattr(measurements,'receipt',None) or {}).get('destination_geometry_bindings'):
-            # R2.5B multi-destination worlds are plan-only: no physical guard is armed in them.
-            raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: no contact guard for several destination bins')
+    def __init__(self,measurements,object_id,dimensions,touch_links,support,baseline,tool,destination_binding=None):
+        receipt=getattr(measurements,'receipt',None) or {}
+        if receipt.get('destination_geometry_bindings'):
+            # A multi-destination world arms a guard only for the one bin a verified physics scope selected
+            # (physics_scope_qualification); every other bin stays an unpermitted obstacle.
+            if destination_binding is None or destination_binding not in receipt['destination_geometry_bindings']:
+                raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: no contact guard for several destination bins')
+        elif destination_binding is not None:
+            raise RuntimeError('a single-destination world binds its destination floor in the receipt')
+        else:destination_binding=receipt.get('destination_geometry_binding')
+        self.destination_binding=destination_binding
         from ament_index_python.packages import get_package_prefix
         library=ctypes.CDLL(str(Path(get_package_prefix('workcell_builder'))/'lib/libworkcell_support_contact.so'))
         self.predicate=library.workcell_support_contact_valid
@@ -1086,7 +1093,7 @@ class ContactGuard:
         # certified floor, never by a planning-scene allowance: refuse an ACM that would
         # let `(a,b) in self.allowed` admit a finger/support contact.
         # The destination floor (receipt binding) is admitted the same way during place/opening/released.
-        binding=(getattr(measurements,'receipt',None) or {}).get('destination_geometry_binding')
+        binding=destination_binding
         self.destination=(dict(object_id=object_id,support_id=binding['object_id'],floor_z=float(binding['floor_z']))
                           if binding and binding.get('object_id') and binding.get('floor_z') is not None else None)
         for bound in (support,self.destination):
@@ -1296,8 +1303,10 @@ class ContactGuard:
         # The bound support's physics model carries the planning identity recorded in the
         # receipt (sparse world: model pick_support, collision object support_surface_table).
         # Only the exact bound link/collision maps; other geometry of that model stays unmapped.
-        for key in ('support_geometry_binding','destination_geometry_binding'):
-            binding=self.m.receipt.get(key)
+        # A multi-destination world maps only the bin its verified scope armed; a one-bin world its receipt binding.
+        destination=(self.destination_binding if self.m.receipt.get('destination_geometry_bindings')
+                     else self.m.receipt.get('destination_geometry_binding'))
+        for binding in (self.m.receipt.get('support_geometry_binding'),destination):
             if (binding and binding.get('object_id') and len(fields)==4 and
                     fields[1:4]==[binding.get('model'),binding.get('link'),binding.get('collision')]):
                 return binding['object_id']
