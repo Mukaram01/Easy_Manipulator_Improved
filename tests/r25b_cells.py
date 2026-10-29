@@ -17,17 +17,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from r4_1b_cells import CELL_A_OBJECT  # noqa: E402
 from test_r4_1_authored_cell_flow import SIMULATE, create_cell, generate_and_validate, task_editor_save  # noqa: E402
 
-# Bin B beside the default bin (0.45, 0.22): their 0.30 m x 0.20 m interiors plus 10 mm proxy walls leave ~10 mm.
-BIN_B, ZONE_B, XYZ_B = 'target_bin_b', 'place_zone_b', [0.12, 0.26, 0.1]
+# The default bin moved out to x 0.58 and Bin B beside it at x 0.25: their 0.30 m x 0.20 m interiors plus 10 mm proxy
+# walls leave a 10 mm gap. Bin B at x 0.12 (beside the bin's default x 0.45) sits over the robot base: every transfer
+# to it drove the forearm into the bin (LENLEG 2026-10-29 G2, -27).
+XYZ_A = [0.58, 0.22, 0.1]
+BIN_B, ZONE_B, XYZ_B = 'target_bin_b', 'place_zone_b', [0.25, 0.26, 0.1]
 TO_BIN_B = [(('place', 'target', 'asset_ref'), BIN_B), (('place', 'target', 'region_ref'), ZONE_B)]
 
 
 def add_bin_b(scene):
-    """Studio: duplicate the sorting bin and its placement region as Bin B, then the Save projection."""
+    """Studio: move the sorting bin out, duplicate it and its placement region as Bin B beside it, then Save."""
     from workcell_studio_layout_merge import merge
     path = scene / 'layout/workcell_studio_layout.yaml'
     layout = yaml.safe_load(path.read_text())
     items = {i['id']: i for i in layout['items']}
+    items['target_bin_default']['pose']['xyz'] = list(XYZ_A)
+    items['place_zone_default']['pose']['xyz'] = [XYZ_A[0], XYZ_A[1], items['place_zone_default']['pose']['xyz'][2]]
     b = copy.deepcopy(items['target_bin_default'])
     b.update(id=BIN_B, task_zone_ref=ZONE_B, display_name='Destination Bin B')
     b['pose']['xyz'] = list(XYZ_B)
