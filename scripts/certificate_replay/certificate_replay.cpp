@@ -125,5 +125,27 @@ int main(int argc, char** argv) {
             << " inspected " << report.inspected << " certified " << report.certified
             << " subdivided " << report.subdivided << " deepest " << report.deepest
             << " seconds " << report.wall_seconds << '\n';
+  if (report.failure_begin_ns >= 0) {
+    // The colliding pairs (unpadded FCL contacts) and the configuration at the start and end of the failing interval.
+    for (const long ns : {report.failure_begin_ns, report.failure_end_ns}) {
+      auto shared = std::make_shared<moveit::core::RobotState>(scene.getCurrentState());
+      trajectory.getStateAtDurationFromStart(ns * 1e-9, shared);
+      shared->update();
+      collision_detection::CollisionRequest req; req.contacts = true; req.max_contacts = 50; req.max_contacts_per_pair = 1;
+      collision_detection::CollisionResult res;
+      scene.checkCollisionUnpadded(req, res, *shared);
+      std::cout << "state t " << ns * 1e-9 << " collision " << res.collision;
+      for (const auto& name : model->getJointModelGroup(group)->getVariableNames())
+        std::cout << ' ' << name << ' ' << shared->getVariablePosition(name);
+      for (const auto& link : {"tool0", "ee_palm"})
+        if (model->hasLinkModel(link))
+          std::cout << ' ' << link << ' ' << shared->getGlobalLinkTransform(link).translation().transpose();
+      std::cout << '\n';
+      for (const auto& entry : res.contacts)
+        for (const auto& c : entry.second)
+          std::cout << "  contact " << c.body_name_1 << " / " << c.body_name_2 << " depth " << c.depth
+                    << " at " << c.pos.transpose() << '\n';
+    }
+  }
   return report.result == workcell::ControllerCertificate::CERTIFIED_CLEAR ? 0 : 1;
 }
