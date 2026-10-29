@@ -322,3 +322,46 @@ The live 180-second run is **BLOCKED** before planning because EPD supplied no
 valid 3D tracked object (`geometry_valid_total=0` in sampled diagnostics).
 Class names, authored tabletop height, and source-zone containment are not the
 blocker for this mode. No live execution success is claimed.
+
+
+## Future Stage C — Industrial deployment, virtualised Workcell Runtime and plant integration
+
+**Status: FUTURE DESIGN REQUIREMENT — NOT IMPLEMENTED OR QUALIFIED.** This is not part of the active G3–G6 simulated-physics work, the current investor-demo acceptance, or a release commitment. Prioritise existing qualified ROS 2/MoveIt/Gazebo execution, perception and beginner-facing authoring milestones first. Per AGENTS.md, factory deployment requires separate physical commissioning, machine risk assessment, appropriate safety engineering and evidence. Record the architecture now; **do not initiate VM, PLC, hardware, networking or runtime implementation simply because this section exists**.
+
+### Intended product boundary and deployment modes
+
+- **Workcell Builder (engineering workstation):** Author robot, gripper, sensors, equipment, task and object-handling intent; generate, validate and eventually deploy an integrity-checked, versioned cell-runtime bundle with explicit configuration, dependency, calibration and provenance identities. Changes to hardware or calibration invalidate applicable qualifications.
+- **Workcell Runtime (ROS 2-native Linux application):** Run the task engine, MoveIt 2, EPD integration, robot/tool adapters, execution monitoring, diagnostics and HMI service. The task and plant-facing interfaces remain independent of robot brand; robot-specific kinematics, hardware drivers, controller integration and safety prerequisites require model-specific acceptance.
+- **Mode A — local edge:** An appropriately rated industrial Linux computer or production embedded module runs the runtime at or near the cell.
+- **Mode B — on-premises factory VM + thin client (requested target):** A dedicated Linux VM on the customer's local OT infrastructure hosts Workcell Runtime and its HMI server. A cabinet-mounted thin-client touchscreen is **only the operator HMI endpoint**, not the robotics execution host. Use a qualified **Ethernet camera** with measured latency, timestamps and freshness checks, camera-to-world calibration and validated network acquisition. Normal operation must not require the engineering laptop or internet.
+- **Mode C — hybrid:** A factory VM hosts coordination/HMI/management as appropriate, while a local edge gateway performs camera acquisition and/or timing-sensitive robot interfaces if required. Remote/cloud-hosted primary motion execution is not the default or automatically supported.
+- **Robot controller:** The manufacturer's controller remains responsible for low-level actuation and its approved motion interface. ROS 2 abstractions minimise robot-specific task code, but importing a CAD/URDF alone does not confer operational compatibility.
+
+### Optional plant PLC supervisory contract
+
+A conventional Siemens, Beckhoff, Allen-Bradley or other plant PLC **manages the rest of the plant** (conveyors, process machinery, machine sequencing and conventional I/O). It is **not required to host ROS 2 or plan robot motion**, and a conventional plant PLC is not mandatory for an otherwise viable standalone robot cell.
+
+Define a future **Workcell Industrial Interface v1**, independent of robot brand and runtime topology, for *supervisory* messages only:
+
+- **PLC to Runtime:** StartTask(task_id), SelectRecipe(recipe_id), PauseRequest, ResumeRequest, StopAfterCycle, AbortRequest, ResetRequest and equipment-ready/permission state.
+- **Runtime to PLC:** Ready, Running, Paused, Stopping, Stopped, Faulted, RecoveryRequired, command acknowledgements/rejections, CycleComplete and result, good/reject counts, recipe, structured fault details and heartbeat.
+- Bind each command to an identifier, issuing controller/session, active cell/revision and explicit acknowledgement/outcome. Specify state-machine transitions, deduplication/idempotency, replay protection, reconnect/timeout rules, heartbeat loss, command arbitration and restart recovery so no duplicate or stale instruction repeats a physical cycle.
+- Target **OPC UA** as the first qualified supervisory adapter, with optional future PROFINET, EtherNet/IP and Modbus TCP adapters mapped to the same internal contract. Protocol choice and site tag mapping belong in a future beginner-friendly **PLC Interface** page of Workcell Builder, not in the generic task logic.
+- **StopAfterCycle and ordinary software AbortRequest are not safety-rated emergency stops.** Guarding, protective stops, E-stops and other required safety functions must be independently assessed and implemented using appropriate safety-rated robot/safety-controller interfaces, not ordinary ROS 2, OPC UA, the VM or thin-client communications.
+
+### Factory VM, robot timing and failure qualification
+
+Before supporting Mode B for physical operation, qualify the exact hypervisor, allocated VM resources, selected robot controller mode and OT network:
+
+- Reserve and monitor appropriate CPU/RAM/GPU/storage/network resources; measure worst-case scheduling jitter, trajectory communication timing, feedback latency, Ethernet camera bandwidth/freshness, inference throughput and robot-driver watchdog behaviour against documented controller requirements.
+- Test independent losses of **thin-client HMI**, **Ethernet camera/perception**, **PLC heartbeat/equipment permission**, **robot controller feedback/network**, **VM/host** and service/power restart. Specify required safe states, hold/cancellation or protective response, operator acknowledgement, recovery permissions and revalidation for each. Losing the display must not be conflated with losing robot communication.
+- No unqualified VM suspend, snapshot restore, live migration, automatic failover or automatic task resumption during physical operation. Prove stale commands, observations and robot state cannot be reused after disconnect/restart; independent safety functions must remain effective even if the VM fails.
+- Perform measured repeatability and longer-duration stability testing, including network/host disturbance, backup/restore, approved software updates and rollback. Record the exact virtualisation environment and qualified driver/runtime identities. VM startup or basic ROS connectivity is **not** physical-motion qualification.
+
+### Secure remote maintenance, deployment and acceptance
+
+Support future **customer-approved VPN or zero-trust access** with MFA, role-based privileges, time-bounded permissions, OT segmentation, audit logs, approved updates, backups and rollback. Remote diagnostics and maintenance must never silently grant authority for physical motion or override local operator/safety control.
+
+The future **Deploy to Cell** wizard shall select Mode A/B/C, produce the versioned runtime bundle, validate destination hardware and robot/tool/sensor adapter readiness, configure the HMI and optional PLC interface, and guide independent calibration, commissioning, safety validation and rollback. The deployed revision must retain verified provenance; previous simulation or other-hardware evidence cannot authorise physical execution.
+
+**Future acceptance demonstration (NOT currently passed):** Deploy a Builder-generated cell to an on-premises Linux VM, access its operator HMI from a cabinet thin client, process calibrated Ethernet-camera observations, exchange acknowledged supervisory PLC messages when a PLC is present, run with a qualified supported robot/controller, demonstrate bounded VM/network-loss responses, controlled customer-approved remote diagnostics and rollback, and preserve complete runtime and safety evidence. Do not claim universal production support without separate acceptance for each robot adapter and deployment topology.
