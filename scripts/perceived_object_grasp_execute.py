@@ -2459,6 +2459,12 @@ def main():
         goal_msg.planning_options.replan = False
         goal_msg.planning_options.look_around = False
         goal_msg.planning_options.planning_scene_diff = copy.deepcopy(view)
+        from simulation_collision import PHYSICS_PAD_ALLOWANCE_M, physics_pad_scene
+        if physics_pads is not None and name in PHYSICS_PAD_ALLOWANCE_M:
+            # Free-space motion is planned and certified against the fingertip boxes Gazebo simulates, plus the
+            # stage's tracking allowance (planning only: the view, live scene and contact stages are unchanged).
+            goal_msg.planning_options.planning_scene_diff = physics_pad_scene(
+                view, physics_pads[0], physics_pads[1], PHYSICS_PAD_ALLOWANCE_M[name])
         if closure_clearance is not None:
             from closure_clearance import expanded_closure_scene
             goal_msg.planning_options.planning_scene_diff = expanded_closure_scene(
@@ -2515,6 +2521,8 @@ def main():
                         planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
                         allowed_planning_time=planning_time, planning_attempts=planning_attempts,
                         max_velocity_scaling_factor=motion_scaling, max_acceleration_scaling_factor=motion_scaling,
+                        **({'physics_pad_allowance_m': PHYSICS_PAD_ALLOWANCE_M[name]}
+                           if physics_pads is not None and name in PHYSICS_PAD_ALLOWANCE_M else {}),
                         **({'closure_clearance':copy.deepcopy(closure_clearance),
                             'closure_planning_scene_sha256':closure_scene_sha256}
                            if closure_clearance is not None else {}),
@@ -2699,6 +2707,7 @@ def main():
             # needs one completed PlanningScene exchange before owned execution, so make it with an empty diff.
             apply(PlanningScene(is_diff=True))
         scoped_destination = None       # the one bin a verified physics scope admits in a multi-destination world
+        physics_pads = None             # the receipt-bound fingertip boxes Gazebo simulates (simulation_collision)
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
@@ -2708,6 +2717,13 @@ def main():
             if digest(receipt_bytes) != summary['backend_identity']['receipt_sha256']:
                 raise RuntimeError('simulator receipt changed after identity verification')
             receipt_record = json.loads(receipt_bytes)
+            if receipt_record.get('simulator_collision_primitives') is not None:
+                physics_pads = (receipt_record['simulator_collision_primitives'],
+                                {link.get('name') for link in ET.fromstring(params[2].string_value).findall('link')})
+                from simulation_collision import PHYSICS_PAD_ALLOWANCE_M
+                summary['physics_pads'] = dict(allowance_m=dict(PHYSICS_PAD_ALLOWANCE_M),
+                    links=[record['link'] for record in physics_pads[0]['links']],
+                    boxes=sum(len(record['boxes']) for record in physics_pads[0]['links']))
             destination_binding = receipt_record.get('destination_geometry_binding')
             destination_bindings = receipt_record.get('destination_geometry_bindings')
             if destination_bindings:

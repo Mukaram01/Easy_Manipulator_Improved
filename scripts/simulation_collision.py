@@ -26,8 +26,9 @@ with two shapes per fingertip, the controller-interval certificate loses its
 single-shape triangle-cover bound against the concave bin mesh and could no longer
 certify the place descent (fingertips inside the bin), and grasp qualification is defined
 on the planning geometry. The boxes are a superset of the mesh, so any extra physical
-contact is still caught by the unpermitted-contact guard. The fake-hardware path is
-unchanged.
+contact is still caught by the unpermitted-contact guard. Free-space stages additionally
+plan and certify against the boxes themselves (``physics_pad_scene`` below, G3C). The
+fake-hardware path is unchanged.
 
 Capability record block (``end_effector.simulator_collision``):
 
@@ -211,3 +212,80 @@ def bind_native_model(output, end_effector):
     spec['simulator_collision_primitives'] = binding
     spec_path.write_text(json.dumps(spec, indent=2))
     return binding
+
+
+# G3C (Bin A trial 3): planning kept the exact mesh while Gazebo simulates the slab boxes above, so a certified home path
+# with 2.63 mm mesh clearance touched a bin wall. Free-space stages are therefore planned and certified against the bound
+# physics boxes themselves (planning only; the view, the live scene and every contact stage are unchanged). Each box is
+# inflated by its stage's tracking allowance, the measured deviation of the physical boxes from the certified controller
+# spline over five Bin A/B trials (log/qualification/g3c/clearance_fix): the straight Cartesian retreat <= 0.26 mm -> 1 mm;
+# free OMPL segments <= 13.94 mm at a commanded velocity corner (steady gravity sag <= 2.53 mm) -> 15 mm.
+PHYSICS_PAD_ALLOWANCE_M = {'PREPLAN_APPROACH': 0.015, 'PREPLAN_TRANSFER': 0.015, 'PREPLAN_HOME': 0.015,
+                           'PREPLAN_RETREAT': 0.001}
+PAD_PREFIX = 'physics_pad::'
+
+
+def _quaternion(roll, pitch, yaw):
+    cr, sr, cp, sp, cy, sy = (f(a / 2) for a in (roll, pitch, yaw) for f in (math.cos, math.sin))
+    return [sr*cp*cy - cr*sp*sy, cr*sp*cy + sr*cp*sy, cr*cp*sy - sr*sp*cy, cr*cp*cy + sr*sp*sy]
+
+
+def physics_pad_scene(view, primitives, robot_links, allowance_m):
+    """A planning-only copy of PlanningScene ``view`` in which every bound physics box (the verified receipt's
+    ``simulator_collision_primitives``) is attached to its link as its own single-box body, so the controller-interval
+    certificate keeps its exact single-shape bound, inflated by ``allowance_m`` on every face.
+
+    A pad is the same physical body as its link: it inherits exactly the link's allowed collisions and the touch-link
+    exemptions attached bodies grant that link. Gazebo simulates no robot self-collision, so pads ignore robot links
+    (MoveIt still checks the robot's own meshes); pads never check each other."""
+    from geometry_msgs.msg import Pose
+    from moveit_msgs.msg import AllowedCollisionEntry, AttachedCollisionObject, CollisionObject
+    from shape_msgs.msg import SolidPrimitive
+    if not isinstance(allowance_m, (int, float)) or not math.isfinite(allowance_m) or allowance_m < 0:
+        raise SimulationCollisionError('physics pad allowance must be finite and non-negative')
+    scene = copy.deepcopy(view)
+    attached = scene.robot_state.attached_collision_objects
+    if any(body.object.id.startswith(PAD_PREFIX) for body in attached):
+        raise SimulationCollisionError('the view already carries physics pads')
+    pads, bodies = [], []
+    for record in (primitives or {}).get('links') or []:
+        if record.get('link') not in robot_links or not record.get('boxes'):
+            raise SimulationCollisionError(f"bound physics boxes for an unknown link {record.get('link')!r}")
+        for index, box in enumerate(record['boxes']):
+            size, pose = [float(v) for v in box['box_size_m']], [float(v) for v in box['pose']]
+            if len(size) != 3 or len(pose) != 6 or not all(map(math.isfinite, size + pose)) or min(size) <= 0:
+                raise SimulationCollisionError(f"{record['link']}: invalid bound physics box")
+            body = AttachedCollisionObject(link_name=record['link'], touch_links=sorted(robot_links))
+            body.object = CollisionObject(id=f"{PAD_PREFIX}{record['link']}_box{index}", operation=CollisionObject.ADD)
+            body.object.header.frame_id = record['link']
+            body.object.pose.orientation.w = 1.
+            placed = Pose()
+            placed.position.x, placed.position.y, placed.position.z = pose[:3]
+            placed.orientation.x, placed.orientation.y, placed.orientation.z, placed.orientation.w = _quaternion(*pose[3:])
+            body.object.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[s + 2 * allowance_m for s in size])]
+            body.object.primitive_poses = [placed]
+            pads.append((body.object.id, record['link']))
+            bodies.append(body)
+    if not pads:
+        raise SimulationCollisionError('no bound physics boxes to plan against')
+    acm = scene.allowed_collision_matrix
+    names = list(acm.entry_names)
+    allowed = lambda a, b: a in names and b in names and acm.entry_values[names.index(a)].enabled[names.index(b)]
+    partners = {pad: ({x for x in names if allowed(link, x)} |
+                      {body.object.id for body in attached if link in body.touch_links} |
+                      {other for other, _ in pads}) - {pad} for pad, link in pads}
+    for name in [pad for pad, _ in pads] + sorted(set().union(*partners.values()) - set(names) - {p for p, _ in pads}):
+        names.append(name)
+        acm.entry_names.append(name)
+        for row in acm.entry_values:
+            row.enabled.append(False)
+        acm.entry_values.append(AllowedCollisionEntry(enabled=[False] * len(names)))
+    for pad, link in pads:
+        for other in partners[pad]:
+            i, j = names.index(pad), names.index(other)
+            acm.entry_values[i].enabled[j] = acm.entry_values[j].enabled[i] = True
+        if link in acm.default_entry_names and acm.default_entry_values[list(acm.default_entry_names).index(link)]:
+            acm.default_entry_names.append(pad)
+            acm.default_entry_values.append(True)
+    attached.extend(bodies)
+    return scene
