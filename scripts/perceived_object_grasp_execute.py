@@ -1635,6 +1635,8 @@ def main():
     # Keep the context alive until bounded cancellation/recovery has finished.
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     def interrupted(signum, frame):
+        # The owned cancellation that follows is never re-interrupted (as the runner's own cleanup).
+        for sig in (signal.SIGINT, signal.SIGTERM):signal.signal(sig, signal.SIG_IGN)
         raise KeyboardInterrupt(f'interrupted by signal {signum}')
     signal.signal(signal.SIGINT, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
@@ -1720,7 +1722,12 @@ def main():
             trajectory_evidence=message_to_ordereddict(goal.trajectory)
         if not client.wait_for_server(timeout_sec=5):
             raise RuntimeError('MoveIt action unavailable')
-        if controlled_cancel and controller_audit:controller_audit.arm()
+        # A scoped multi-destination trial audits every owned arm goal, so any interruption (an operator SIGTERM
+        # included) proves which controller goal was cancelled and that it ended CANCELED.
+        audited=bool(controller_audit is not None and client is execute_client and
+                     (controlled_cancel or summary.get('physics_scope') is not None) and
+                     set(contract['home_joint_names']).issubset(goal.trajectory.joint_trajectory.joint_names))
+        if audited:controller_audit.arm()
         if client is execute_client:
             # Owned motion starts: a stop measured before it can never certify the
             # state after it, interrupted or not (Trial 33); only a later stop may.
@@ -1776,6 +1783,12 @@ def main():
                     measurements.joints(accepted_sample),contract['home_joint_names'],
                     accepted_monotonic_raw_ns=summary['owned_execution_goal']['monotonic_raw_ns'])
                 summary['cancellation_motion']=motion_trial.evidence
+            elif audited:
+                from simulator_execution import CancellationMotion
+                accepted_sample=measurements.fresh()
+                motion_trial=CancellationMotion(bytes(owned_uuid).hex(),accepted_sample,
+                    measurements.joints(accepted_sample),contract['home_joint_names'],
+                    accepted_monotonic_raw_ns=summary['owned_execution_goal']['monotonic_raw_ns'])
             if execution_monitor is None:
                 rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
             else:
@@ -1827,11 +1840,16 @@ def main():
                         wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),monotonic_raw_ns=measurement_clock.now_ns())
                     try:
                         summary['cancel_measurement']=measurements.fresh()
+                        if audited and not controlled_cancel:
+                            # Movement of the interrupted goal, from the same fresh measurement.
+                            summary['cancellation_movement_verified']=motion_trial.observe(
+                                summary['cancel_measurement'],measurements.joints(summary['cancel_measurement']))
+                            summary['cancellation_motion']=motion_trial.evidence
                     except RuntimeError as exc:
                         # Lost evidence must fail acceptance, never prevent the
                         # owned stop request that makes the failure safe.
                         summary['cancel_measurement_error']=str(exc)
-                    if controlled_cancel and controller_audit:
+                    if audited:
                         try:controller_audit.before_cancel()
                         except Exception as exc:summary['controller_audit_failure']=str(exc)
                     summary['cancellation_request'].update(wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
@@ -1854,12 +1872,12 @@ def main():
                         moveit_code=future.result().result.error_code.val if ended else None,
                         wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
                     controller_ok=True
-                    if controlled_cancel and controller_audit:
+                    if audited:
                         try:summary['controller_cancellation']=controller_audit.collect()
                         except Exception as exc:
                             controller_ok=False;summary['controller_audit_failure']=str(exc)
                         summary['controller_status_events']=controller_audit.events
-                    return ended and controller_ok and (not controlled_cancel or future.result().status==5)
+                    return ended and controller_ok and (not audited or future.result().status==5)
                 def stopped():
                     summary['motion_stop_verified']=wait_stopped()
                     return summary['motion_stop_verified']
@@ -3115,7 +3133,7 @@ def main():
             contact_guard.validate_current=measured_fcl
             cross_check_gate.cross_check=contact_guard.drain   # physical checks on any backlog, then the cross-check
             execution_monitor=contact_guard.drain
-            if args.simulator_commission=='cancel':
+            if args.simulator_commission=='cancel' or summary.get('physics_scope') is not None:
                 from simulator_execution import ControllerCancellationAudit
                 controller_audit=ControllerCancellationAudit(node,motion_controllers,contract['home_joint_names'])
                 until=time.monotonic()+.2
@@ -3504,6 +3522,10 @@ def main():
             except Exception as recovery_error:
                 summary['recovery_inspection_failure'] = str(recovery_error)
                 if recovery is not None:recovery.block('RECOVERY_CLEANUP_FAILED',str(recovery_error))
+        if summary.get('physics_scope') is not None and summary.get('failed_stage')=='EXECUTE_TRANSFER':
+            # G5A: what an interrupted scoped transfer left behind, judged from this run's own evidence.
+            from simulator_execution import transfer_cancellation_acceptance
+            summary['transfer_cancellation']=transfer_cancellation_acceptance(summary)
         if args.simulator_commission=='cancel' and summary.get('failure')=='CONTROLLED_CANCELLATION':
             try:
                 from simulator_execution import require_cancellation_acceptance

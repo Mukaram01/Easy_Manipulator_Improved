@@ -164,6 +164,19 @@ def test_executor_refuses_motion_in_a_multi_destination_world():
     assert 'verify_qualified_scope' not in source        # the executor has no qualified-scope admission path
 
 
+def test_scoped_trials_audit_every_owned_arm_goal_and_cancellation_is_never_reinterrupted():
+    """G5A: in a scoped trial any interruption of an owned arm goal (an operator SIGTERM included) is cancelled through
+    the owned goal with the controller audit armed, must end CANCELED, and a second signal cannot cut it short."""
+    source = (ROOT / 'scripts/perceived_object_grasp_execute.py').read_text()
+    assert "(controlled_cancel or summary.get('physics_scope') is not None)" in source
+    assert "if args.simulator_commission=='cancel' or summary.get('physics_scope') is not None:" in source
+    assert 'if audited:controller_audit.arm()' in source and source.count('                    if audited:\n') == 2
+    assert "(not audited or future.result().status==5)" in source
+    handler = source[source.index('def interrupted(signum, frame):'):]
+    assert handler.index('signal.SIG_IGN') < handler.index('raise KeyboardInterrupt')
+    assert "summary['transfer_cancellation']=transfer_cancellation_acceptance(summary)" in source
+
+
 @pytest.mark.parametrize('extra', [[], ['--mode', 'targeted', '--gate', 'full-cycle', '--prior-evidence', 'x'],
                                    ['--mode', 'full'],
                                    ['--mode', 'targeted', '--gate', 'resolve', '--authorise-physics-trial'],

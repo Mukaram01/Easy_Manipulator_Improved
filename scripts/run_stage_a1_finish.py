@@ -61,6 +61,9 @@ SERVICE_RETRY_ALLOWANCE_S=220
 # steps, release, holds, service retries) may total ~2 ks after the search; the last-resort
 # subprocess kill must come after the executor's own cancellation, never before it.
 EXECUTION_GATE_MARGIN_S=2100
+# An operator stop (SIGTERM/SIGINT) is forwarded to the running child, whose own owned cancellation (controller goal
+# cancel, measured stop, reconciliation) must finish first; SIGKILL after this grace is a recorded last resort.
+OPERATOR_CANCEL_GRACE_S=90
 MODES=("full","targeted","fast","functional")
 # full-cycle needs passing cancel, telemetry, stationary and contact-release
 # evidence on the same binaries (executor --commission-evidence); the runner only
@@ -259,8 +262,24 @@ def stop_owned(process,log=None):
 def run(command,*,env,cwd,log,timeout,check=True):
     log=Path(log);log.parent.mkdir(parents=True,exist_ok=True)
     with log.open("w") as stream:
-        completed=subprocess.run([str(x) for x in command],cwd=cwd,env=env,
-            stdout=stream,stderr=subprocess.STDOUT,timeout=timeout,check=False)
+        process=subprocess.Popen([str(x) for x in command],cwd=cwd,env=env,stdout=stream,stderr=subprocess.STDOUT)
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill();process.wait();raise
+        except OperatorCancel as exc:
+            # subprocess.run would SIGKILL the child here and bypass its controller cancellation.
+            exc.child=dict(command=str(command[1]) if len(command)>1 else str(command[0]),pid=process.pid,
+                           forwarded="SIGTERM",grace_s=OPERATOR_CANCEL_GRACE_S,killed=False)
+            process.send_signal(signal.SIGTERM)
+            try:process.wait(timeout=OPERATOR_CANCEL_GRACE_S)
+            except subprocess.TimeoutExpired:
+                process.kill();process.wait();exc.child["killed"]=True
+            exc.child["returncode"]=process.returncode
+            raise
+        except BaseException:
+            process.kill();process.wait();raise
+        completed=subprocess.CompletedProcess(command,process.returncode)
     if check and completed.returncode:
         try:
             lines=log.read_text(errors="replace").splitlines()
@@ -985,6 +1004,15 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         return gate_summary
     except Exception as exc:
         report["failure"]=str(exc);raise
+    except OperatorCancel as exc:
+        # The interrupted gate's own executor evidence decides what the stop achieved; nothing is assumed.
+        executed=session/f"{gate}/summary.json"
+        summary=json.loads(executed.read_text()) if executed.is_file() else {}
+        report["operator_cancel"]=dict(signal=str(exc),child=getattr(exc,"child",None),
+            executor_summary=str(executed) if executed.is_file() else None,
+            failed_stage=summary.get("failed_stage"),cancellation_confirmed=summary.get("cancellation_confirmed"),
+            recovery_required=summary.get("recovery_required"),transfer_cancellation=summary.get("transfer_cancellation"))
+        report["failure"]=f"cancelled by the operator ({exc})";raise
     finally:
         stream(args,"SIMULATOR_SHUTDOWN",gate=gate)
         report["shutdown"]=stop_owned(launch,session/"launch.log" if launch_log is not None else None)
@@ -1246,7 +1274,7 @@ def main(argv=None):
                 if session_report.is_file():
                     failed["session_report"]=str(session_report.relative_to(args.output))
                     recorded=json.loads(session_report.read_text())
-                    for key in ("shutdown","shutdown_failure","moveit_overlay","bridge_overlay"):
+                    for key in ("shutdown","shutdown_failure","moveit_overlay","bridge_overlay","operator_cancel"):
                         if key in recorded:failed[key]=recorded[key]
                 overall["gates"][gate]=failed
                 if args.mode=="functional":

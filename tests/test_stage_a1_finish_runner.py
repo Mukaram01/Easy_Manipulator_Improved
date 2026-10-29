@@ -1384,3 +1384,41 @@ def test_saved_cell_rejects_a_cli_policy_override_before_creating_a_session(tmp_
     assert exc.value.code == 2
     assert 'saved cell' in capsys.readouterr().err
     assert not output.exists()
+
+
+CHILD='''import signal,sys,time
+from pathlib import Path
+marker=Path(sys.argv[1])
+def stop(signum,frame):
+    marker.write_text("cancelled-by-owner");sys.exit(7)
+if sys.argv[2]=="cancel":signal.signal(signal.SIGTERM,stop)
+else:signal.signal(signal.SIGTERM,signal.SIG_IGN)
+marker.write_text("running")
+time.sleep(30)
+'''
+
+
+@pytest.mark.parametrize('behaviour',['cancel','ignore'])
+def test_operator_stop_reaches_the_owned_child_before_any_kill(tmp_path,monkeypatch,behaviour):
+    """G5A: the runner forwards an operator stop to the running executor, waits for its own cancellation, and SIGKILLs
+    only as a recorded last resort (subprocess.run would SIGKILL at once and bypass controller cancellation)."""
+    import os,signal,sys,threading,time
+    monkeypatch.setattr(MODULE,'OPERATOR_CANCEL_GRACE_S',2)
+    child=tmp_path/'child.py';child.write_text(CHILD);marker=tmp_path/'marker'
+    previous=signal.signal(signal.SIGUSR1,MODULE.cancel_on_signal)
+    def operator_stop():
+        while not marker.is_file() or marker.read_text()!='running':time.sleep(.02)
+        os.kill(os.getpid(),signal.SIGUSR1)
+    threading.Thread(target=operator_stop,daemon=True).start()
+    try:
+        with pytest.raises(MODULE.OperatorCancel) as stopped:
+            MODULE.run([sys.executable,child,marker,behaviour],env=dict(os.environ),cwd=tmp_path,log=tmp_path/'log',timeout=20)
+    finally:
+        for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,signal.default_int_handler if sig==signal.SIGINT else signal.SIG_DFL)
+        signal.signal(signal.SIGUSR1,previous)
+    record=stopped.value.child
+    assert record['forwarded']=='SIGTERM' and record['grace_s']==2
+    if behaviour=='cancel':
+        assert marker.read_text()=='cancelled-by-owner' and record['killed'] is False and record['returncode']==7
+    else:
+        assert marker.read_text()=='running' and record['killed'] is True and record['returncode']==-signal.SIGKILL

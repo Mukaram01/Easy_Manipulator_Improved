@@ -1,9 +1,11 @@
 """Fault injection for the existing executor's nested owned-cancel request."""
 import ast
+import pytest
 from pathlib import Path
 from types import SimpleNamespace as N
 
-def test_stale_measurement_does_not_prevent_owned_goal_cancellation():
+@pytest.mark.parametrize('audited',[False,True])   # True: a scoped trial's owned arm goal (G5A controller audit armed)
+def test_stale_measurement_does_not_prevent_owned_goal_cancellation(audited):
     source=Path(__file__).parents[1]/'scripts/perceived_object_grasp_execute.py'
     tree=ast.parse(source.read_text())
     fn=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='request_cancel')
@@ -12,17 +14,18 @@ def test_stale_measurement_does_not_prevent_owned_goal_cancellation():
     def stale():raise RuntimeError('stale telemetry')
     def send():events.append('cancel sent');return future
     summary={}
-    namespace=dict(summary=summary,owned_uuid=uuid,measurements=N(fresh=stale),
-        controlled_cancel=False,controller_audit=None,time=N(time_ns=lambda:1,monotonic_ns=lambda:1),
+    audit=N(before_cancel=lambda:events.append('controller audit before cancel'))
+    namespace=dict(summary=summary,owned_uuid=uuid,measurements=N(fresh=stale),audited=audited,motion_trial=None,
+        controlled_cancel=False,controller_audit=audit if audited else None,time=N(time_ns=lambda:1,monotonic_ns=lambda:1),
         measurement_clock=N(now_ns=lambda:1),
         handle=N(cancel_goal_async=send),node=None,
         rclpy=N(spin_until_future_complete=lambda *a,**kw:events.append('awaited cancellation')),
         cancel_response_matches=lambda owned,r:owned==uuid and r is response)
     exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
     assert namespace['request_cancel']()
-    assert events==['cancel sent','awaited cancellation']
+    assert events==['controller audit before cancel']*audited+['cancel sent','awaited cancellation']
     assert summary['cancel_measurement_error']=='stale telemetry'
-    assert 'cancel_measurement' not in summary
+    assert 'cancel_measurement' not in summary and 'cancellation_movement_verified' not in summary
 
 
 def test_failure_stop_does_not_require_controlled_trial_metrics():
