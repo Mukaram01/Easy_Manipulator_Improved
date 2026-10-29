@@ -819,6 +819,33 @@ QWidget * OperatorHmiWindow::build_controls()
   sim_result_ = value_label(host);
   body->addWidget(sim_result_);
 
+  layout->addWidget(card(host, "Sorting · fake hardware", &body));
+  sort_state_ = value_label(host);
+  body->addWidget(sort_state_);
+  {
+    auto * row = new QHBoxLayout;
+    sort_start_button_ = new QPushButton("Start Sorting", host);
+    sort_start_button_->setObjectName("hmiPrimary");
+    sort_start_button_->setToolTip("Asks Workcell Builder to sort every eligible object of the saved routing table, one cycle "
+                                   "each, on MoveIt fake hardware. Simulated robot only; the real robot stays locked.");
+    sort_pause_button_ = new QPushButton("Pause", host);
+    sort_resume_button_ = new QPushButton("Resume", host);
+    sort_stop_button_ = new QPushButton("Stop", host);
+    sort_stop_button_->setToolTip("Software stop at the end of the current cycle. This is not an emergency stop.");
+    for (auto * button : {sort_pause_button_, sort_resume_button_, sort_stop_button_}) button->setObjectName("hmiSecondary");
+    connect(sort_start_button_, &QPushButton::clicked, this, [this]() { request_simulation("start_sorting"); });
+    connect(sort_pause_button_, &QPushButton::clicked, this, [this]() { request_simulation("pause_sorting"); });
+    connect(sort_resume_button_, &QPushButton::clicked, this, [this]() { request_simulation("resume_sorting"); });
+    connect(sort_stop_button_, &QPushButton::clicked, this, [this]() { request_simulation("stop_sorting"); });
+    for (auto * button : {sort_start_button_, sort_pause_button_, sort_resume_button_, sort_stop_button_}) row->addWidget(button);
+    body->addLayout(row);
+  }
+  sort_note_ = value_label(host);
+  sort_note_->setObjectName("hmiCaption");
+  body->addWidget(sort_note_);
+  sort_result_ = value_label(host);
+  body->addWidget(sort_result_);
+
   layout->addWidget(card(host, "Production", &body));
   start_button_ = new QPushButton("Start production cycle", host);
   start_button_->setObjectName("hmiDanger");
@@ -1281,9 +1308,12 @@ void OperatorHmiWindow::render_simulation()
     state = state_text("BUSY", "warn") + " " + escaped(QString("Workcell Builder is running a session of %1.").arg(session.value("cell").toString()));
   } else if (session_here) {
     const QString code = session.value("state_code").toString();
-    const QString tone = code == "COMPLETED" ? "ok" : code == "RUNNING" ? "info" : code == "CANCELLING" ? "warn" : "error";
+    // Sorting sessions report their lifecycle state (STOPPED is a normal end; PAUSED/STOPPING are operator states).
+    const QString tone = code == "COMPLETED" || code == "STOPPED" ? "ok" : code == "RUNNING" ? "info"
+      : code == "CANCELLING" || code == "PAUSING" || code == "PAUSED" || code == "STOPPING" || code == "READY" || code == "STARTING" ? "warn" : "error";
     state = state_text(escaped(session.value("state").toString()), tone) + "<br>" +
-      muted(QString("%1 · %2 · session %3 · started %4 by %5").arg(session.value("kind").toString() == "physics" ? "Qualified physics simulation" : "Fake-hardware plan only",
+      muted(QString("%1 · %2 · session %3 · started %4 by %5").arg(session.value("kind").toString() == "physics" ? "Qualified physics simulation"
+          : session.value("kind").toString() == "sorting" ? "Sorting session, fake hardware" : "Fake-hardware plan only",
         session.value("process").toString(), session.value("session_id").toString().left(8), session.value("started").toString(),
         session.value("origin").toString()));
     if (!active) state = "<b>Last session of this cell</b><br>" + state;
@@ -1335,6 +1365,77 @@ void OperatorHmiWindow::render_simulation()
       muted(session.value("last_event").toString())));
   }
   sim_result_->setText(result);
+  render_sorting();
+}
+
+void OperatorHmiWindow::render_sorting()
+{
+  if (!sort_start_button_) return;
+  for (auto * button : {sort_start_button_, sort_pause_button_, sort_resume_button_, sort_stop_button_}) button->setEnabled(false);
+  sort_result_->clear();
+  if (!simulation_linked()) {
+    sort_state_->setText(state_text("NOT AVAILABLE", "neutral"));
+    sort_note_->setText(muted("Standalone HMI: sorting is started and owned by Workcell Builder."));
+    return;
+  }
+  const auto canonical = [](const QString & path) { const auto c = QFileInfo(path).canonicalFilePath(); return c.isEmpty() ? path : c; };
+  const auto session = sim_status_.value("session").toObject();
+  const auto readiness = sim_status_.value("readiness").toObject().value("sorting").toObject();
+  const bool here = !session.isEmpty() && canonical(session.value("scene_dir").toString()) == canonical(scene_dir_);
+  const auto sorting = here && session.value("kind").toString() == "sorting" ? session.value("sorting").toObject() : QJsonObject();
+  const bool active = session.value("active").toBool();
+  const bool waiting = sim_waiting_for_ >= 0;
+  const QString state = sorting.value("state").toString();
+  if (sorting.isEmpty()) sort_state_->setText(muted("No sorting session of this cell in this Workcell Builder session."));
+  else {
+    const QString tone = state == "RUNNING" ? "info" : state == "STOPPED" ? "ok" : state == "FAULT" ? "error" : "warn";
+    sort_state_->setText(state_text(escaped(state.isEmpty() ? QString("STARTING") : state), tone) + " " +
+                         muted(sorting.value("state_reason").toString()) + (active ? QString() : "<br>" + muted("Session ended.")));
+  }
+  QString reason;
+  if (active) reason = "A session is running.";
+  else if (view_.draft) reason = "A DRAFT task cannot run: save it in Workcell Builder.";
+  else if (update_banner_ && update_banner_->isVisible()) reason = "Workcell Builder has newer engineering state; Refresh first.";
+  else if (!readiness.value("ready").toBool()) reason = readiness.value("blocker").toString("Sorting readiness unavailable.");
+  else if (view_.saved_intent_sha256 != sim_status_.value("readiness").toObject().value("intent_sha256").toString())
+    reason = "The saved task shown here is not the one the cell was generated from: Generate in Workcell Builder, then Refresh.";
+  else if (waiting) reason = "Waiting for Workcell Builder to decide on the last request.";
+  sort_start_button_->setEnabled(reason.isEmpty());
+  const bool controllable = active && !sorting.isEmpty() && !waiting;
+  sort_pause_button_->setEnabled(controllable && state == "RUNNING");
+  sort_resume_button_->setEnabled(controllable && (state == "PAUSED" || state == "PAUSING"));
+  sort_stop_button_->setEnabled(controllable && (state == "RUNNING" || state == "PAUSING" || state == "PAUSED" || state == "READY"));
+  sort_note_->setText(reason.isEmpty() || active
+    ? muted("MoveIt fake hardware: planning and kinematic execution only, no physics. Pause and Stop act at the end of the "
+            "current cycle; they are not an emergency stop. Real robot: LOCKED.")
+    : state_text("Start unavailable: ", "warn") + escaped(reason));
+  if (sorting.isEmpty()) return;
+  // Counts and the active object are the session's own (counted only from verified execution evidence).
+  const auto counts = sorting.value("counts").toObject();
+  const auto current = sorting.value("active").toObject();
+  QString text = current.isEmpty() ? muted("Active object: none (between cycles)")
+    : QString("Active object: <b>%1</b> (%2) → <b>%3</b> · cycle %4 · stage %5").arg(escaped(current.value("id").toString()),
+        escaped(current.value("class_id").toString()), escaped(current.value("destination").toString()))
+        .arg(current.value("cycle").toInt()).arg(escaped(sorting.value("stage").toString("starting")));
+  text += QString("<br>Completed <b>%1</b> · Failed <b>%2</b> · Skipped %3 · Waiting (bin full) %4 · Pending %5")
+    .arg(counts.value("completed").toInt()).arg(counts.value("failed").toInt()).arg(counts.value("skipped").toInt())
+    .arg(counts.value("waiting_destination_full").toInt()).arg(counts.value("pending").toInt());
+  QStringList classes, bins;
+  const auto per_class = counts.value("per_class").toObject();
+  for (auto it = per_class.begin(); it != per_class.end(); ++it)
+    classes << QString("%1: %2 done, %3 failed").arg(escaped(it.key())).arg(it.value().toObject().value("completed").toInt())
+                 .arg(it.value().toObject().value("failed").toInt());
+  const auto per_destination = counts.value("per_destination").toObject();
+  for (auto it = per_destination.begin(); it != per_destination.end(); ++it) bins << QString("%1: %2").arg(escaped(it.key())).arg(it.value().toInt());
+  text += "<br>Per class: " + (classes.isEmpty() ? muted("none") : classes.join(" · "));
+  text += "<br>Per destination: " + (bins.isEmpty() ? muted("none yet") : bins.join(" · "));
+  const auto fault = sorting.value("fault").toObject();
+  if (!fault.isEmpty()) {
+    text += "<br>" + state_text("FAULT " + escaped(fault.value("code").toString()), "error") + " " + escaped(fault.value("reason").toString());
+    const auto diagnosis = session.value("diagnosis").toObject();
+    if (!diagnosis.value("action").toString().isEmpty()) text += "<br>" + muted("What to do: " + diagnosis.value("action").toString());
+  }
+  sort_result_->setText(text);
 }
 
 void OperatorHmiWindow::request_simulation(const QString & action)
@@ -1355,15 +1456,29 @@ void OperatorHmiWindow::request_simulation(const QString & action)
       return;
     }
   }
+  if (action == "start_sorting" &&
+      QMessageBox::question(this, "Start Sorting",
+        QString("Sort the saved cell \"%1\" with its routing table, one object per cycle, until the batch is done or you stop it?\n\n"
+                "MoveIt fake hardware only (planning and kinematic execution, no physics). The real robot stays locked and "
+                "this is not production.\nPause and Stop act at the end of the current cycle; they are not an emergency stop.")
+          .arg(view_.scene_name), QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+    log_event("info", "SORTING_REQUEST_DECLINED", "The operator did not confirm the sorting session.");
+    return;
+  }
   const auto command = make_operator_command(++sim_command_id_, action, request_->control_token, scene_dir_,
     view_.saved_intent_sha256, request_->revision, session.value("session_id").toString());
   const QByteArray line = operator_command_line(command);
   std::fwrite(line.constData(), 1, static_cast<size_t>(line.size()), stdout);   // only the owning Builder reads this
   std::fflush(stdout);
   sim_waiting_for_ = sim_command_id_;
-  log_event("info", action == "run_simulation" ? "SIMULATION_REQUESTED" : "SIMULATION_CANCEL_REQUESTED",
-    action == "run_simulation" ? "Asked Workcell Builder to run the simulation." :
-                                 "Asked Workcell Builder to cancel the simulation (supervised cleanup, not an emergency stop).");
+  if (action.endsWith("_sorting"))
+    log_event("info", "SORTING_" + action.section('_', 0, 0).toUpper() + "_REQUESTED",
+      QString("Asked Workcell Builder to %1 the sorting session%2.").arg(action.section('_', 0, 0),
+        action == "start_sorting" ? QString() : QString(" (applied at the end of the current cycle; not an emergency stop)")));
+  else
+    log_event("info", action == "run_simulation" ? "SIMULATION_REQUESTED" : "SIMULATION_CANCEL_REQUESTED",
+      action == "run_simulation" ? "Asked Workcell Builder to run the simulation." :
+                                   "Asked Workcell Builder to cancel the simulation (supervised cleanup, not an emergency stop).");
   render_simulation();
 }
 
@@ -1391,7 +1506,8 @@ void OperatorHmiWindow::poll_acceptance_commands()
     const QHash<QString, QPushButton *> buttons{
       {"replay_check", replay_button_}, {"dry_run", dry_run_button_}, {"check", check_button_},
       {"refresh", refresh_button_}, {"stop", stop_button_}, {"start_production", start_button_},
-      {"cancel_simulation", sim_cancel_button_}};
+      {"cancel_simulation", sim_cancel_button_}, {"pause_sorting", sort_pause_button_},
+      {"resume_sorting", sort_resume_button_}, {"stop_sorting", sort_stop_button_}};
     if (buttons.contains(action)) {
       click(buttons.value(action));
     } else if (action == "select_object") {

@@ -255,7 +255,9 @@ def project(scene: Path, draft: dict[str, Any] | None = None, *, evaluate_input:
             # TaskIntent v2 has no explicit ignore list: everything the pick
             # filter does not select is left in place.
             "not_targeted": {"explicit_list": None,
-                             "rule": "Objects that do not match the pick filter are not picked."},
+                             "rule": ("Objects whose class has no routing rule are not picked."
+                                      if (intent.get("routing") or {}).get("mode") == "class" else
+                                      "Objects that do not match the pick filter are not picked.")},
             "destinations": [{"id": d, "target_ref": (report.get("regions") or {}).get(d)}
                              for d in destination_ids],
             "place_target": place.get("target"),

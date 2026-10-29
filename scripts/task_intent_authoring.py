@@ -191,6 +191,8 @@ def load_authoring(scene, draft=None):
                             if 'two_finger_parallel' in installed_tool_capabilities(tool) else [])
     report['assets'] = [a['id'] for a in env.get('assets', [])]
     report['regions'] = {z['id']: z.get('target_ref') for z in env.get('task_zones', []) if z.get('target_ref')}
+    from validate_builder_task_intent import perception_vocabulary
+    report['class_vocabulary'] = perception_vocabulary(scene)
     try:
         input_path, replay = planning_input(scene, payload)
         report['planning_input'] = {'path': str(input_path), 'replay': replay}

@@ -9,7 +9,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from capability_registry import load_structured_data
 from workcell_studio_layout_source import CANONICAL_LAYOUT_REL
-from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, installed_tool_capabilities, STRATEGY_DIR
+from task_intent_v2 import normalize_v2, validate_intent, normalized_intent_hash, installed_tool_capabilities, STRATEGY_DIR, class_routing_rules
 try:
     import yaml
 except Exception:
@@ -55,6 +55,25 @@ def _load_scene_layout_ids(scene: Path) -> set[str]:
 def validate(path: Path, scene_package: Path|None=None, grasp_dir: Path|None=None)->dict[str,Any]:
     return validate_payload(_load(path), scene_package, grasp_dir)
 
+def perception_vocabulary(scene_package):
+    """The class labels the workspace's registered EPD runtime can emit (workcell_perception_runtime.json epd.labels).
+
+    {'source': label file or None, 'classes': list or None}; None when no runtime/label list is registered, so the
+    vocabulary is unknown rather than guessed.
+    """
+    for parent in Path(scene_package).resolve().parents:
+        record = parent / 'workcell_perception_runtime.json'
+        if record.is_file():
+            try:
+                labels = Path(json.loads(record.read_text())['epd']['labels'])
+                classes = [line.strip() for line in labels.read_text().splitlines()
+                           if line.strip() and line.strip() != 'background']
+            except (OSError, ValueError, KeyError, TypeError):
+                return {'source': str(record), 'classes': None}
+            return {'source': str(labels), 'classes': classes}
+    return {'source': None, 'classes': None}
+
+
 def validate_payload(payload, scene_package=None, grasp_dir=None):
     """Validate an in-memory editor draft without rewriting authored files."""
     errors=[]; warnings=[]
@@ -97,6 +116,21 @@ def validate_payload(payload, scene_package=None, grasp_dir=None):
                             warnings.append(message + ' PREFERRED may use the region default.')
             except Exception as exc:
                 diagnostics.append({'code': 'R19_DESTINATION_INVALID', 'message': str(exc)})
+            if not diagnostics and class_routing_rules(normalized) is not None:
+                # Class routing: every routed region is checked like the placement region (resolver authority).
+                from task_intent_resolver import class_routes
+                try:
+                    class_routes(normalized, env)
+                except ValueError as exc:
+                    diagnostics.append({'code': 'TASK_ROUTE_DESTINATION_INVALID', 'message': str(exc)})
+                vocabulary = perception_vocabulary(scene_package)
+                if vocabulary['classes'] is not None:
+                    outside = sorted({rule['when']['equals'] for rule in class_routing_rules(normalized)}
+                                     - set(vocabulary['classes']))
+                    if outside:
+                        diagnostics.append({'code': 'ROUTING_CLASS_NOT_IN_VOCABULARY', 'message':
+                            f"routing: class(es) {outside} are not in the perception vocabulary {vocabulary['source']}; "
+                            'EPD can never report them'})
             safety = normalized.get('safety', {})
             backend = safety.get('execution_backend', 'fake')
             locked = (backend == 'fake' and safety.get('real_hardware_enabled') is not True

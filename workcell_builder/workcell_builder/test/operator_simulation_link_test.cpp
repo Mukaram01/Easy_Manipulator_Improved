@@ -87,3 +87,25 @@ TEST(OperatorSimulationLink, TheRequestCarriesTheControlToken)
   ASSERT_TRUE(back.has_value()) << error.toStdString();
   EXPECT_EQ(back->control_token, "token-1");
 }
+
+TEST(OperatorSimulationLink, SortingIsStartedLikeASimulationAndControlledOnlyInItsOwnSession)
+{
+  Fixture f;
+  auto start = f.run(); start["action"] = "start_sorting";
+  EXPECT_TRUE(check_operator_command(start, f.state).accepted);
+  start["intent_sha256"] = "sha-draft";
+  EXPECT_FALSE(check_operator_command(start, f.state).accepted);                        // not the generated task
+  auto pause = make_operator_command(4, "pause_sorting", "token-1", f.state.scene_dir, "sha-saved", 7, "sorting-1");
+  EXPECT_EQ(check_operator_command(pause, f.state).reason, "no sorting session is running");
+  f.state.session_active = true; f.state.session_id = "sorting-1";
+  EXPECT_FALSE(check_operator_command(pause, f.state).accepted);                        // a physics run is not a sorting session
+  f.state.sorting_session = true;
+  for (const char * action : {"pause_sorting", "resume_sorting", "stop_sorting"}) {
+    pause["action"] = action;
+    EXPECT_TRUE(check_operator_command(pause, f.state).accepted) << action;
+  }
+  pause["session_id"] = "sorting-0";
+  EXPECT_FALSE(check_operator_command(pause, f.state).accepted);                        // another session
+  start["intent_sha256"] = "sha-saved";
+  EXPECT_FALSE(check_operator_command(start, f.state).accepted);                        // one session at a time
+}

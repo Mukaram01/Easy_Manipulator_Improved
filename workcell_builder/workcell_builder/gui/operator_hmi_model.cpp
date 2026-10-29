@@ -138,11 +138,14 @@ OperatorPreviewView parse_operator_preview(const QJsonObject & projection, bool 
   }
   for (const auto & item : task.value("routing_rules").toArray()) {
     const auto rule = item.toObject();
-    const bool always = rule.value("when").toObject().value("always").toBool();
+    const auto when = rule.value("when").toObject();
+    const bool always = when.value("always").toBool();
+    const bool attribute = when.contains("attribute") && when.contains("equals");
     view.routing_rules << QString("%1: %2 → %3").arg(
       rule.value("id").toString(),
-      always ? QStringLiteral("every selected object") : QString::fromUtf8(
-        QJsonDocument(rule.value("when").toObject()).toJson(QJsonDocument::Compact)),
+      always ? QStringLiteral("every selected object")
+      : attribute ? when.value("attribute").toString() + " = " + when.value("equals").toString()
+      : QString::fromUtf8(QJsonDocument(when).toJson(QJsonDocument::Compact)),
       rule.value("destination").toString());
   }
   const auto grasp = task.value("grasp").toObject();

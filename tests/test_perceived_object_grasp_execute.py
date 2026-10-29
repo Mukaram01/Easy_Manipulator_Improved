@@ -1460,6 +1460,9 @@ def test_execution_boundary_refresh_precedes_unchanged_expiry_check():
     assert start<expiry and 'if not motion or not motion[0]' in block
     assert 'time.time()' not in block.split('fresh = select_observations')[0]
     assert "select_observations(intent, physical, objects, time.time(), age_cap)" in text[start:expiry]   # same producer cap as selection
+    # A fake-hardware sorting cycle renews only through the verifying fake_world_refresh, never the bare clock.
+    fake = text[text.index("if sorting_cycle is not None and args.backend == 'fake' and args.replay and not measurements:"):expiry]
+    assert 'fake_world_refresh(' in fake and 'time.time()' not in fake.split('fresh = select_observations')[0]
 
 
 # ---------------------------------------------------------------- carried-step owned execution wait

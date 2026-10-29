@@ -86,11 +86,18 @@ TEST(RuntimeMonitor, RuntimeFailureCodesAreExplainedWithAnAction)
   EXPECT_TRUE(d.action.contains("clearance"));
   EXPECT_EQ(diagnose_failure("SIMULATOR_IDENTITY_REJECTED: live process mismatch").code, "SIMULATOR_IDENTITY_REJECTED");
   EXPECT_EQ(diagnose_failure("OBSERVATION_STALE: runtime::cup is 4.1 s old").code, "OBSERVATION_STALE");
+  // A stale generated handoff is a Generate step, not a perception refresh.
+  EXPECT_TRUE(diagnose_failure("TASK_HANDOFF_STALE: Generate the current resolution before consuming it").action.contains("Generate"));
+  EXPECT_FALSE(diagnose_failure("TASK_HANDOFF_STALE: Generate the current resolution").meaning.contains("observation"));
   EXPECT_TRUE(diagnose_failure("NO_FEASIBLE_CYCLE: 13/13 candidates").meaning.contains("unreachable"));
   EXPECT_TRUE(diagnose_failure("GRASP_HOLD_CONTACT_LOST at lift").meaning.contains("did not hold"));
   EXPECT_EQ(diagnose_failure("cancelled by the operator (SIGTERM)").code, "CANCELLED");
   EXPECT_EQ(diagnose_failure("launch/planning deadline exceeded").code, "EXECUTION_TIMEOUT");
   EXPECT_EQ(diagnose_failure("SHUTDOWN_UNCLEAN: move_group exit -11 after the owned stop").code, "SHUTDOWN_UNCLEAN");
+  // R2.4A class routing: a wrong route, a substituted bin, and physics outside its one-destination qualification.
+  EXPECT_TRUE(diagnose_failure("TASK_ROUTE_DESTINATION_INVALID: rule route_2: destination 'x': unknown").action.contains("Route by class"));
+  EXPECT_TRUE(diagnose_failure("TASK_ROUTE_CHANGED: cup no longer routes").meaning.contains("no other bin is substituted"));
+  EXPECT_TRUE(diagnose_failure("BLOCKED\nTASK_ROUTING_PHYSICS_UNQUALIFIED: class routing ...").action.contains("Plan Saved Task"));
   const auto unknown = diagnose_failure("something unexpected");
   EXPECT_EQ(unknown.code, "UNCLASSIFIED");
   EXPECT_EQ(unknown.meaning, "something unexpected");                     // the runtime's own text, never replaced

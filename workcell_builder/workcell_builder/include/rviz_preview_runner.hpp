@@ -37,6 +37,11 @@ QString build_physics_cycle_command(const WorkcellStudioSceneInfo & scene_info,
 QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root, const QString & output_dir,
   int domain_id, bool launch_rviz);
+// R2.4: a continuous class-routed sorting session of the saved cell on MoveIt fake hardware (the same
+// supervisor, --sorting-session); operator pause/resume/stop are written to control_file.
+QString build_sorting_session_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id,
+  const QString & control_file);
 bool launch_command_is_safe(const QString & command, QString * reason = nullptr);
 QString build_shell_command(const QString & scene_pkg, const boost::filesystem::path & workspace_root);
 QString build_shell_command(const WorkcellStudioSceneInfo & scene_info, const boost::filesystem::path & workspace_root);

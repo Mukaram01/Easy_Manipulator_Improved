@@ -857,7 +857,7 @@ def plan_legacy_cycle(*, initial_scene, targets, destination, contract, operatio
 def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                         contract, operations, deadline, summary, resolved=None,
                         planning_time=3.0, retry_candidate_budget=20.0,
-                        discovery_candidate_budget=0.75, reserve_retry_budget=False):
+                        discovery_candidate_budget=0.75, reserve_retry_budget=False, occupied=None):
     """Resolve with fair discovery, then spend retries only on stochastic failures.
 
     A fresh resolve normally gives every candidate one bounded planning window
@@ -1011,7 +1011,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                                           planning_attempts=3, segment_time=float(planning_time),
                                           candidate_budget=None),
             now=resolution_reference_time, resolved=resolved,
-            destination_floor_z=contract.get('destination_floor_z'))
+            destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
         summary['candidate_search'] = {
             'mode': 'resolved_revalidation',
             'retry_pass_used': False,
@@ -1122,7 +1122,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
             resolution = resolve_task_intent(
                 intent, environment, cell, targets, discover,
                 now=resolution_reference_time, resolved=None,
-                destination_floor_z=contract.get('destination_floor_z'))
+                destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
 
             phase_record = {
                 'strategy_ref': strategy,
@@ -1202,7 +1202,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, retry,
                     now=resolution_reference_time, resolved=None,
-                    destination_floor_z=contract.get('destination_floor_z'))
+                    destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
                 current = evaluation_cache.get(selected_key, {})
                 attempt = {
                     'strategy_ref': selected_key[0],
@@ -1234,7 +1234,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
                     now=resolution_reference_time, resolved=None,
-                    destination_floor_z=contract.get('destination_floor_z'))
+                    destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
                 phase_record.update(
                     resumed_discovered_candidates=len(phase_discovered) - before_resume,
                     discovered_candidates=len(phase_discovered),
@@ -1257,7 +1257,7 @@ def plan_authored_cycle(*, initial_scene, intent, environment, cell, targets,
                 resolution = resolve_task_intent(
                     intent, environment, cell, targets, discover,
                     now=resolution_reference_time, resolved=None,
-                    destination_floor_z=contract.get('destination_floor_z'))
+                    destination_floor_z=contract.get('destination_floor_z'), occupied=occupied)
                 phase_record.update(
                     equivalent_candidates_evaluated=len(phase_discovered) - before_aliases,
                     discovered_candidates=len(phase_discovered),
@@ -1392,17 +1392,44 @@ def observation_geometry_matches(observed, actual):
             and min(math.dist(a[3:], b[3:]), math.dist(a[3:], [-v for v in b[3:]])) <= 1e-7)
 
 
-def observations_to_insert(objects,existing,backend):
+def observations_to_insert(objects,existing,backend,reconcile=False):
+    """Observations not yet in the live PlanningScene.
+
+    A sorting session (`reconcile`) keeps its world between cycles, like the simulator: every runtime object
+    already in the scene must be one of these observations with identical geometry, else the session's
+    reconciled world and MoveIt disagree and nothing is planned.
+    """
     ids={o['id'] for o in objects}
     duplicates=ids.intersection(existing)
-    if backend!='simulator' and duplicates:
+    if backend!='simulator' and duplicates and not reconcile:
         raise RuntimeError('runtime IDs already exist; reset the fake scene before replay')
-    if backend=='simulator':
+    if backend=='simulator' or reconcile:
         if {k for k in existing if k.startswith('runtime::')}-ids:
             raise RuntimeError('unknown prior simulator runtime objects require measured reconciliation')
         if any(not observation_geometry_matches(o,existing[o['id']]) for o in objects if o['id'] in duplicates):
             raise RuntimeError('simulator observation geometry changed; refresh and reconcile')
     return [o for o in objects if o['id'] not in duplicates]
+
+
+def fake_world_refresh(objects, live, clock=time.time):
+    """Renew a fake-hardware sorting cycle's observation time from its live PlanningScene, or refuse.
+
+    Fake hardware has no physical world: the live PlanningScene is the whole world model, and
+    VERIFY_PREPLAN_UNCHANGED has just proven it unchanged since the observations were inserted. Like the
+    simulator's execution-boundary refresh, the observations are renewed only if that measurement reproduces
+    every observed identity and geometry exactly; the unchanged age limit is applied afterwards. Never used with
+    a simulated or physical backend.
+    """
+    changed = sorted(o['id'] for o in objects if not observation_geometry_matches(o, live.get(o['id'])))
+    if changed:
+        raise RuntimeError('SORTING_WORLD_CHANGED: the live PlanningScene differs from the observed objects: '
+                           + ', '.join(changed))
+    renewed = clock()
+    for o in objects:
+        o['timestamp'] = renewed
+    return dict(source='fake_hardware_planning_scene', synthetic=True, renewed_wall_s=renewed,
+                verified_object_ids=sorted(o['id'] for o in objects),
+                note='fake hardware only: identity and geometry reproduced by the live PlanningScene; no sensor')
 
 
 def discovered_graph(read_graph, spin, timeout=10.0):
@@ -1526,11 +1553,20 @@ def main():
                         'operator-chosen target-local places {"xyz_m": [...], "rpy_rad": [...]}; others use AUTO.')
     parser.add_argument('--target-object-id', help='Plan-only batch check: restrict the pick target to this eligible '
                         'observation. Every observed object is still inserted as a PlanningScene obstacle.')
+    parser.add_argument('--sorting-cycle', help='R2.4 sorting session cycle (JSON {session_id, cycle}): resolve and execute '
+                        'only --target-object-id on fake hardware, in the session\'s reconciled world, with every other '
+                        'object as an obstacle and destination occupancy. Writes no task artifacts.')
     args = parser.parse_args()
+    sorting_cycle = json.loads(args.sorting_cycle) if args.sorting_cycle else None
+    if sorting_cycle is not None and (args.backend != 'fake' or not args.replay or not args.resolve_task
+                                      or args.target_object_id is None or args.sequence_object_ids is not None):
+        # --replay: a sorting cycle observes the session's reconciled replay world, never a live sensor frame, so
+        # the fake-world refresh below can never re-stamp a live EPD observation.
+        parser.error('--sorting-cycle is fake-hardware only and requires --replay, --resolve-task and --target-object-id')
     if args.sequence_placements is not None and args.sequence_object_ids is None:
         parser.error('--sequence-placements requires --sequence-object-ids')
-    if args.target_object_id is not None and (args.start or not args.resolve_task):
-        parser.error('--target-object-id is plan-only and requires --resolve-task without --start')
+    if args.target_object_id is not None and ((args.start and sorting_cycle is None) or not args.resolve_task):
+        parser.error('--target-object-id is plan-only (or a --sorting-cycle) and requires --resolve-task')
     if args.sequence_object_ids is not None and (args.start or not args.resolve_task or args.target_object_id):
         parser.error('--sequence-object-ids is plan-only, requires --resolve-task and excludes --target-object-id')
     if not math.isfinite(args.segment_planning_time) or not 0 < args.segment_planning_time <= 10:
@@ -1635,7 +1671,9 @@ def main():
         if client is execute_client:
             cross_check_gate.require_clear()   # last precondition: a cross-check deferred during planning must pass now
         opening_action=client is execute_client and summary.get('current_stage') in ('COMMISSION_RELEASE','EXECUTE_OPEN_GRIPPER')
-        held_before_open=contact_guard.checked_current() if opening_action else None
+        # The measured release qualification needs the simulator's contact guard; fake hardware has none.
+        measured_release=opening_action and contact_guard is not None
+        held_before_open=contact_guard.checked_current() if measured_release else None
         if client is execute_client:
             from rosidl_runtime_py.convert import message_to_ordereddict
             trajectory_evidence=message_to_ordereddict(goal.trajectory)
@@ -1677,13 +1715,13 @@ def main():
             summary['owned_execution_goal']=dict(uuid=bytes(owned_uuid).hex(),accepted=True,
                 stage=summary.get('current_stage'),wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
                 monotonic_raw_ns=measurement_clock.now_ns(),trajectory=trajectory_evidence)
-            if opening_action:
+            if measured_release:
                 summary['owned_execution_goal'].update(run_id=measurements.receipt['run_id'],
                     target=selected_id,resolution_sha256=summary['resolution_sha256'],
                     execution_attempt=contact_guard.pile_binding['execution_attempt'],
                     selected_grasp_index=summary['selected_grasp_index'])
         try:
-            if opening_action:
+            if measured_release:
                 contact_guard.phase='opening'
                 contact_guard.begin_release(summary['owned_execution_goal'],held_before_open)
                 summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
@@ -1816,7 +1854,7 @@ def main():
         response = future.result()
         if response.status != 4 or response.result.error_code.val != 1:
             raise MoveItActionFailure(response.status, response.result.error_code.val)
-        if opening_action:
+        if measured_release:
             contact_guard.terminal_release(bytes(owned_uuid).hex(),response.status,
                                            response.result.error_code.val,time.time_ns(),measurement_clock.now_ns())
             summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
@@ -2515,6 +2553,8 @@ def main():
                 rejected.update({o['id']: 'not_batch_target_retained_as_obstacle' for o in objects
                                  if o['id'] != args.target_object_id and o['id'] not in rejected})
                 summary['batch_target_object_id'] = args.target_object_id
+                if sorting_cycle is not None:
+                    summary['sorting_cycle'] = sorting_cycle
             expected_resolution = None if args.resolve_task else scene_resolution(
                 package, intent, physical, document, require_ready=True)
             if expected_resolution is not None:
@@ -2578,11 +2618,16 @@ def main():
         if initial.robot_state.attached_collision_objects:
             raise RuntimeError('existing attachment requires explicit recovery')
         existing_ids = {o.id for o in initial.world.collision_objects}
-        additions=observations_to_insert(objects,{o.id:collision_object_dict(o) for o in initial.world.collision_objects},args.backend)
+        additions=observations_to_insert(objects,{o.id:collision_object_dict(o) for o in initial.world.collision_objects},args.backend,
+                                         reconcile=sorting_cycle is not None)
         manifest = yaml.safe_load((package/'config/moveit_collision_objects.yaml').read_text())
         if not {o['id'] for o in manifest['objects']}.issubset(existing_ids):
             raise RuntimeError('generated environment collisions missing')
         if additions:apply(inputs.scene_diff(additions))
+        elif sorting_cycle is not None:
+            # A later sorting cycle finds every object already reconciled in the scene; the in-motion guard still
+            # needs one completed PlanningScene exchange before owned execution, so make it with an empty diff.
+            apply(PlanningScene(is_diff=True))
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
@@ -2888,7 +2933,11 @@ def main():
                 # former 0.75 s fake discovery slice exhausted every candidate.
                 retry_candidate_budget=180.,
                 discovery_candidate_budget=60.,
-                reserve_retry_budget=True)
+                reserve_retry_budget=True,
+                # A sorting cycle places among the objects already in the cell (destination occupancy).
+                occupied=None if sorting_cycle is None else [
+                    dict(id=o['id'], pose=list(o['pose']), dimensions=list(o['dimensions']))
+                    for o in objects if o['id'] != args.target_object_id])
             destination = summary['task_intent_resolution']['place_resolution']['destination']
             if expected_resolution is not None and expected_resolution['resolution_sha256'] != summary['resolution_sha256']:
                 raise ValueError('TASK_RESOLUTION_DIVERGED: current planning differs from generated resolution; resolve and regenerate')
@@ -2990,6 +3039,10 @@ def main():
             first=motion[0]['trajectory'].joint_trajectory
             snapshot,summary['execution_observation_refresh']=refresh_at_execution_boundary(
                 snapshot,objects,measurements,dict(names=list(first.joint_names),positions=list(first.points[0].positions)))
+        if sorting_cycle is not None and args.backend == 'fake' and args.replay and not measurements:
+            # Fake hardware: the live PlanningScene is the whole world (see fake_world_refresh).
+            summary['execution_observation_refresh'] = fake_world_refresh(
+                objects, {o.id: collision_object_dict(o) for o in scene_now().world.collision_objects})
         fresh = select_observations(intent, physical, objects, time.time(), age_cap) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')

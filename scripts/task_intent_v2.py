@@ -367,7 +367,116 @@ def validate_intent(model: dict[str, Any]) -> list[dict[str, str]]:
         errors.append({"code": "DYNAMIC_SAFETY_IN_INTENT", "message": "dynamic runtime state is not authored intent"})
     if model.get("sequence") is not None:  # null: no saved sequence
         errors.extend(_sequence_errors(model))
+    routing = model.get("routing")
+    if isinstance(routing, dict) and routing.get("mode") == "class":
+        errors.extend(_class_routing_errors(model))
     return errors
+
+
+UNROUTED_POLICIES = ("leave_in_place", "stop_session")
+MAX_ATTEMPTS_LIMIT = 5
+
+
+def class_routing_rules(model: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Every rule of a class-routed task (routing.mode ``class``), else None for direct pick/place."""
+    routing = model.get("routing")
+    if not isinstance(routing, dict) or routing.get("mode") != "class":
+        return None
+    return routing.get("rules") or []
+
+
+def enabled_class_rules(model: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The enabled rules (``enabled`` defaults to true), highest ``priority`` first, then authored order."""
+    rules = class_routing_rules(model)
+    if rules is None:
+        return None
+    enabled = [rule for rule in rules if rule.get("enabled", True) is True]
+    return sorted(enabled, key=lambda rule: -int(rule.get("priority", 0)))
+
+
+def routing_job_policy(model: dict[str, Any]) -> dict[str, Any]:
+    """Unrouted-object policy and bounded attempts per object of a class-routed task."""
+    routing = model.get("routing") or {}
+    return {"unrouted_policy": routing.get("unrouted_policy"),
+            "max_attempts_per_object": int(routing.get("max_attempts_per_object", 2))}
+
+
+def _class_routing_errors(model: dict[str, Any]) -> list[dict[str, str]]:
+    """Structure of class-to-destination routing (R2.4).
+
+    Any number of rules; each sends one EPD class to one authored placement region and many classes may
+    share a region: ``{id, when: {attribute: class, equals: <class>}, destination: <region id>,
+    enabled: <bool, default true>, priority: <int, default 0>}``. There is no default rule: a class
+    without an enabled rule is never picked, and ``unrouted_policy`` states explicitly what the job does
+    when such an object is present (``leave_in_place`` or ``stop_session``). Physical destination truth
+    is checked by the resolver against environment.yaml; the class vocabulary by the authoring validator.
+    """
+    def error(code: str, message: str) -> list[dict[str, str]]:
+        return [{"code": code, "message": "routing: " + message}]
+
+    routing = model["routing"]
+    rules = class_routing_rules(model)
+    if model.get("task", {}).get("type") != "pick_place":
+        return error("ROUTING_TASK_UNSUPPORTED", "class routing applies to pick_place tasks only")
+    unknown = set(routing) - {"mode", "rules", "unrouted_policy", "max_attempts_per_object"}
+    if unknown:
+        return error("ROUTING_FIELD_UNKNOWN", f"unknown routing field(s) {sorted(unknown)}")
+    if routing.get("unrouted_policy") not in UNROUTED_POLICIES:
+        return error("ROUTING_UNROUTED_POLICY_REQUIRED",
+                     f"unrouted_policy must be one of {list(UNROUTED_POLICIES)}: what to do with an object of a "
+                     "class without an enabled rule")
+    attempts = routing.get("max_attempts_per_object", 2)
+    if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= MAX_ATTEMPTS_LIMIT:
+        return error("ROUTING_ATTEMPTS_INVALID", f"max_attempts_per_object must be an integer in [1, {MAX_ATTEMPTS_LIMIT}]")
+    if not isinstance(rules, list) or not rules:
+        return error("ROUTING_RULES_REQUIRED", "class routing needs at least one class rule")
+    ids: set[str] = set()
+    destinations: dict[str, str] = {}
+    for index, rule in enumerate(rules, 1):
+        if (not isinstance(rule, dict) or not {"id", "when", "destination"} <= set(rule)
+                or set(rule) - {"id", "when", "destination", "enabled", "priority"}):
+            return error("ROUTING_RULE_INVALID", f"rule {index} must have id, when and destination "
+                                                 "(optional enabled, priority) and nothing else")
+        rule_id, when, destination = rule["id"], rule["when"], rule["destination"]
+        if not isinstance(rule_id, str) or not rule_id.strip() or rule_id in ids:
+            return error("ROUTING_RULE_INVALID", f"rule {index} needs a unique id")
+        ids.add(rule_id)
+        if (not isinstance(when, dict) or set(when) != {"attribute", "equals"} or when["attribute"] != "class"
+                or not isinstance(when["equals"], str) or not when["equals"].strip()):
+            return error("ROUTING_CONDITION_UNSUPPORTED",
+                         f"{rule_id}: only 'when: {{attribute: class, equals: <class>}}' is supported; "
+                         "unmatched classes follow unrouted_policy, so no default rule")
+        if not isinstance(destination, str) or not destination.strip():
+            return error("ROUTING_DESTINATION_MISSING", f"{rule_id}: destination must name a placement region")
+        if not isinstance(rule.get("enabled", True), bool):
+            return error("ROUTING_RULE_INVALID", f"{rule_id}: enabled must be true or false")
+        priority = rule.get("priority", 0)
+        if isinstance(priority, bool) or not isinstance(priority, int) or abs(priority) > 1000:
+            return error("ROUTING_RULE_INVALID", f"{rule_id}: priority must be an integer in [-1000, 1000]")
+        if when["equals"] in destinations:
+            return error("ROUTING_CLASS_AMBIGUOUS",
+                         f"class {when['equals']!r} has more than one rule ({destinations[when['equals']]} and "
+                         f"{destination}); each class needs exactly one destination")
+        destinations[when["equals"]] = destination
+    enabled = enabled_class_rules(model)
+    if not enabled:
+        return error("ROUTING_RULES_REQUIRED", "class routing needs at least one enabled rule")
+    object_filter = model.get("pick", {}).get("selection", {}).get("object_filter", {})
+    if object_filter.get("class_id") not in (None, ""):
+        return error("ROUTING_CLASS_FILTER_CONFLICT",
+                     "the routed classes decide which objects are picked; leave Object class empty")
+    excluded = sorted(set(destinations) & set(object_filter.get("exclude_class_ids") or []))
+    if excluded:
+        return error("ROUTING_CLASS_EXCLUDED", f"class {excluded[0]!r} is both routed and excluded")
+    if model.get("place", {}).get("placement", {}).get("policy") != "AUTO":
+        return error("ROUTING_PLACEMENT_POLICY",
+                     "each object is placed in a free place of its own destination; routed tasks use AUTO placement")
+    if model.get("place", {}).get("target", {}).get("region_ref") not in {r["destination"] for r in enabled}:
+        return error("ROUTING_PRIMARY_DESTINATION",
+                     "the task's placement region must be the destination of an enabled rule")
+    if model.get("sequence") is not None:
+        return error("ROUTING_SEQUENCE_UNSUPPORTED", "a saved multi-object sequence is not supported with class routing")
+    return []
 
 
 def _sequence_errors(model: dict[str, Any]) -> list[dict[str, str]]:

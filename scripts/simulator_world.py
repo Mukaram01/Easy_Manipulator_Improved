@@ -303,10 +303,48 @@ def planning_only_objects(manifest, represented):
     return sorted(item['id'] for item in manifest.get('objects', []) if item.get('source_item_id') not in represented)
 
 
+# What the qualified physics world has been accepted for: the Stage-A qualification is one object, one destination
+# (DESTINATION_MODEL), one cycle per session. Fixed in code: no editable file can widen it.
+QUALIFIED_TASK_SCOPE_DEFAULT = {'class_routing': False, 'max_destinations': 1, 'continuous_sorting': False}
+
+
+def physics_task_qualification(intent, verified_scope=None, *, sorting_session=False):
+    """Whether the qualified physics world covers this task: {qualified, code, problems, scope, required}.
+
+    The accepted scope is the Stage-A scope above. It is never read from the catalog or any other editable file
+    (the catalog's hash is recorded, not bound to qualification evidence). ``verified_scope`` is reserved for a
+    future qualification record verified against its own bound contact, retention and placement evidence; no such
+    verifier exists yet, so every caller passes nothing and routed or multi-destination physics fails closed. The
+    sorting engine and resolver need no change when one is added.
+    """
+    from task_intent_v2 import enabled_class_rules
+    scope = dict(QUALIFIED_TASK_SCOPE_DEFAULT, **(verified_scope or {}))
+    rules = enabled_class_rules(intent)
+    destinations = (sorted({rule['destination'] for rule in rules}) if rules is not None
+                    else [intent.get('place', {}).get('target', {}).get('region_ref')])
+    problems = []
+    if rules is not None and not scope['class_routing']:
+        problems.append('class routing is not part of the qualified physics scope')
+    if len(destinations) > scope['max_destinations']:
+        problems.append(f"the task places into {len(destinations)} destinations {destinations}; the qualified world "
+                        f"has {scope['max_destinations']}")
+    if sorting_session and not scope['continuous_sorting']:
+        problems.append('continuous multi-object sorting is not qualified in physics (contact, retention and '
+                        'placement evidence exist for single cycles only)')
+    code = 'SORTING_PHYSICS_UNQUALIFIED' if sorting_session else 'TASK_ROUTING_PHYSICS_UNQUALIFIED'
+    return {'qualified': not problems, 'code': None if not problems else code, 'problems': problems,
+            'scope': scope, 'required': {'destinations': destinations, 'class_routing': rules is not None,
+                                         'continuous_sorting': sorting_session}}
+
+
 def derive_world(scene, catalog_path=CATALOG):
     """(world SDF text, derivation report) for the authored cell at ``scene``."""
     catalog = load_catalog(catalog_path)
     doc, environment, manifest, intent, provenance = _cell(scene)
+    qualification = physics_task_qualification(intent)
+    if not qualification['qualified']:
+        raise SimulatorWorldError(f"{qualification['code']}: " + '; '.join(qualification['problems']) +
+                                  '. Use Plan Saved Task or a sorting session on fake hardware')
     envelope = _commissioned(doc, catalog)
     root, world = _engine(catalog)
     target_ref = intent['place']['target'].get('asset_ref')
