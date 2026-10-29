@@ -2698,6 +2698,9 @@ def main():
                         raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: the simulator world has '
                                            f'{len(destination_bindings)} physical destination bins; motion is not '
                                            'qualified in it without an authorised physics scope (plan-only)')
+                    if args.retention_policy != 'strict':
+                        raise RuntimeError('PHYSICS_SCOPE_UNSUPPORTED: an authorised trial runs the strict retention '
+                                           'policy only')
                     import physics_scope_qualification as scope_qualification
                     from ament_index_python.packages import get_package_prefix
                     workspace = Path(__file__).resolve().parents[3]

@@ -118,6 +118,8 @@ def _models(text, names):
 
 def destination_occupants(observations, binding):
     """Measured objects whose centre lies over the bin's bound floor (the bin must be empty before a trial)."""
+    if any((o.get('pose') or {}).get('frame_id') != 'world' for o in observations.get('objects', [])):
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_UNSUPPORTED: measured object poses must be in the world frame')
     centre, size = binding['floor_xyz'], binding['floor_size_m']
     return sorted(o['object_id'] for o in observations.get('objects', [])
                   if all(abs(o['pose']['xyz'][i] - centre[i]) <= size[i] / 2 for i in (0, 1)))
@@ -210,3 +212,221 @@ def verify_trial(path, sha256, binding):
     if differing:
         raise PhysicsScopeRefused('PHYSICS_SCOPE_MISMATCH: ' + ', '.join(differing))
     return record
+
+
+# --- Qualification (offline; admits no motion) -------------------------------------------------------------------
+# A QUALIFIED scope would admit one exact cell (its task places into one bin of a multi-destination world) beyond the
+# CLI trial path. Fixed in code: no editable file can lower it. Nothing here authorises motion, and a trial never
+# qualifies itself: readiness is recomputed from the bound evidence of several independent strict trials, and the
+# contract's stop/cancel item has no accepted evidence yet, so every readiness is NOT_QUALIFIED today.
+QUALIFIED = 'QUALIFIED'
+QUALIFICATION_CONTRACT = {
+    'strict_trials': 3,               # independent strict PASS sessions of the exact cell into its bin
+    'seat_tolerance_m': 0.001,        # measured part bottom on the bin's bound floor
+    'placement_tolerance_m': 0.003,   # measured final pose to the planned seat (the executor's own bound)
+    'stop_cancel': 'R2.5B G5: stop at cycle end and SIGTERM cancellation in the multi-destination world',
+}
+# The exact cell across sessions: cell_definition.yaml embeds the session's plan resolution (bound per trial).
+QUALIFIED_CELL_FILES = tuple(name for name in CELL_FILES if name != 'cell_definition.yaml')
+# The launched URDF embeds the session's controller path; its source is bound by the cell's xacro files.
+STABLE_ROBOT_KEYS = tuple(k for k in ROBOT_RECEIPT_KEYS if k not in ('description_sha256', 'native_description_sha256'))
+FULL_CYCLE_STAGES = ['EXECUTE_APPROACH', 'EXECUTE_GRASP', 'EXECUTE_CLOSE_GRIPPER', 'ATTACH', 'EXECUTE_LIFT',
+                     'EXECUTE_TRANSFER', 'EXECUTE_PLACE', 'EXECUTE_OPEN_GRIPPER', 'DETACH', 'EXECUTE_RETREAT',
+                     'EXECUTE_HOME']
+PREREQUISITE_RESULTS = ['CANCELLATION_TRIAL_PASS', 'CONTACT_RELEASE_PASS', 'MOTION_TELEMETRY_PASS',
+                        'STATIONARY_RETENTION_PASS']
+
+
+def _rotate(q, v):
+    x, y, z, w = q
+    tx, ty, tz = 2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0])
+    return [v[0] + w * tx + y * tz - z * ty, v[1] + w * ty + z * tx - x * tz, v[2] + w * tz + x * ty - y * tx]
+
+
+def trial_evidence(run_dir):
+    """One authorised trial, judged from its own evidence files: kind STRICT_PASS, PRE_MOTION_FAILURE or FAILED."""
+    run, contract = Path(run_dir), QUALIFICATION_CONTRACT
+    session = run / '06-full-cycle'
+    paths = dict(report=run / 'stage-a1-targeted-report.json', session_report=session / 'session-report.json',
+                 scope=session / 'physics-scope.json', summary=session / 'full-cycle/summary.json')
+    out = dict(run=str(run.resolve()), kind='FAILED', problems=[], digests={})
+    if not paths['report'].is_file():
+        out['problems'].append('no trial report')
+        return out
+    report = json.loads(paths['report'].read_text())
+    if not paths['scope'].is_file() and report.get('status') != 'PASS':
+        # Stopped before any scope was authorised (so before motion): a reliability finding, not a safety one.
+        planned = [json.loads(p.read_text()) for p in (session / 'revalidate/summary.json', session / 'resolve/summary.json')
+                   if p.is_file()]
+        why = next((f"{s.get('failed_stage')}: {s.get('failure')}" for s in planned if s.get('failure')),
+                   str(report.get('failure', 'not authorised'))[:300])
+        return dict(out, kind='PRE_MOTION_FAILURE', problems=[why])
+    missing = sorted(k for k, path in paths.items() if not path.is_file())
+    if missing:
+        out['problems'].append('evidence missing: ' + ', '.join(missing))
+        return out
+    out['digests'] = {k: _sha256(path.read_bytes()) for k, path in paths.items()}
+    session_report, record, summary = (json.loads(paths[k].read_text()) for k in ('session_report', 'scope', 'summary'))
+    bound = record.get('binding') or {}
+    out.update(binding=bound, run_id=(bound.get('session') or {}).get('run_id'))
+    problems = out['problems']
+    if (report.get('status') != 'PASS' or report.get('scope') != TRIAL_EVIDENCE_SCOPE or report.get('mode') != 'targeted'
+            or report.get('gate') != 'full-cycle' or report.get('stage_a_acceptance') is not False):
+        problems.append('not a passing authorised trial report')
+    if (report.get('preflight') or {}).get('repo_dirty') is not False:
+        problems.append('trial ran from a modified checkout')
+    if ((session_report.get('physics_scope') or {}).get('sha256') != out['digests']['scope'] or
+            (summary.get('physics_scope') or {}).get('sha256') != out['digests']['scope']):
+        problems.append('scope record differs from the one the trial verified')
+    if (record.get('schema') != SCHEMA or record.get('state') != AUTHORISED_TRIAL or
+            record.get('operation') != TRIAL_OPERATION or record.get('binding_sha256') != _sha256(_canonical(bound))):
+        problems.append('scope record invalid')
+    if not (session_report.get('shutdown') or {}).get('clean'):
+        problems.append('owned shutdown not clean')
+    accepted = summary.get('full_cycle_physical_acceptance') or {}
+    release = summary.get('release_evidence') or {}
+    prerequisites = summary.get('commissioning_prerequisites') or {}
+    if (summary.get('result') != 'PASS' or summary.get('strict_retention_compliant') is not True or
+            summary.get('retention_policy') != 'strict' or (summary.get('retention_findings') or {}).get('findings')):
+        problems.append('not a strict full-cycle PASS')
+    if summary.get('stages') != FULL_CYCLE_STAGES:
+        problems.append('incomplete stage sequence')
+    if release.get('state') != 'RELEASE_CONFIRMED' or release.get('settled') is not True:
+        problems.append('release not confirmed and settled')
+    if (accepted.get('attached_ids') != [] or accepted.get('baseline_acm_restored') is not True or
+            accepted.get('final_collision_valid') is not True):
+        problems.append('attachment, collision permissions or final collision state not restored')
+    if not (accepted.get('placement') or {}).get('error_to_planned_m', 1.0) <= contract['placement_tolerance_m']:
+        problems.append('placement error to the planned seat exceeds the bound')
+    if (sorted(prerequisites.get('results') or []) != PREREQUISITE_RESULTS or
+            prerequisites.get('capability_sha256') != (bound.get('native') or {}).get('sha256') or
+            prerequisites.get('sources') != (bound.get('native') or {}).get('sources')):
+        problems.append('Stage-A prerequisite trials not bound to the trial build')
+    # The measured part rests inside the selected bin, its lowest corner on the bound floor.
+    try:
+        bin_ = next(d for d in bound['destinations'] if d['model'] == bound['destination']['model'])
+        part = next(o for o in bound['world']['objects']
+                    if 'runtime::' + o['object_id'] == summary.get('selected_object_id'))
+        pose = accepted['final_pose']
+        bottom = min(pose[2] + _rotate(pose[3:], [sx * part['dimensions_m'][0] / 2, sy * part['dimensions_m'][1] / 2,
+                                                  sz * part['dimensions_m'][2] / 2])[2]
+                     for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1))
+        inside = all(abs(pose[i] - bin_['floor_xyz'][i]) <= bin_['floor_size_m'][i] / 2 for i in (0, 1))
+        if not inside or abs(bottom - bin_['floor_z']) > contract['seat_tolerance_m']:
+            problems.append('measured part not seated on the selected bin floor')
+    except (KeyError, StopIteration, TypeError, IndexError):
+        problems.append('measured final pose or selected bin not recorded')
+    if not problems:
+        out['kind'] = 'STRICT_PASS'
+    return out
+
+
+def _qualified_cell(cell_dir):
+    cell_dir = Path(cell_dir)
+    files = {name: _sha256((cell_dir / name).read_bytes()) for name in QUALIFIED_CELL_FILES if (cell_dir / name).is_file()}
+    if len(files) != len(QUALIFIED_CELL_FILES):
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_INCOMPLETE: the cell lacks a bound file')
+    return files, cell_world(cell_dir)[1]
+
+
+def _shared(binding):
+    """What every trial of one qualified scope must share exactly (session-specific fields left out)."""
+    strip = lambda record: {k: v for k, v in record.items() if k != 'manifest_sha256'}
+    return dict(destination=binding['destination'], world=binding['world'],
+                destinations=[strip(d) for d in binding['destinations']], support=strip(binding['support']),
+                robot={k: binding['robot'][k] for k in STABLE_ROBOT_KEYS},
+                cell={k: binding['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES})
+
+
+def qualification_readiness(cell_dir, trial_dirs, native, runtime):
+    """Whether the listed trials qualify the exact cell's scope under QUALIFICATION_CONTRACT. Never writes anything."""
+    files, world = _qualified_cell(cell_dir)
+    trials = [trial_evidence(run) for run in trial_dirs]
+    unmet, reliability, counted, shared = [], [], [], None
+    for trial in trials:
+        if trial['kind'] == 'PRE_MOTION_FAILURE':
+            reliability.append(dict(run=trial['run'], finding=trial['problems'][0]))
+            continue
+        if trial['kind'] != 'STRICT_PASS':
+            unmet.append(f"{trial['run']}: {'; '.join(trial['problems'])}")
+            continue
+        bound = trial['binding']
+        why = [name for name, ok in (
+            ('native identity changed', bound.get('native') == native),
+            ('runtime identity changed', bound.get('runtime') == runtime),
+            ('another cell', {k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files),
+            ('another world', bound['world']['derived_sha256'] == world['derived_sha256']),
+            ('another bin', bound['destination']['asset'] == world['destination_asset']),
+        ) if not ok]
+        if why:
+            unmet.append(f"{trial['run']}: {', '.join(why)}")
+            continue
+        if shared is None:
+            shared = _shared(bound)
+        elif _shared(bound) != shared:
+            unmet.append(f"{trial['run']}: geometry, robot or cell differs from the other trials")
+            continue
+        if any(trial['run_id'] == c['run_id'] or trial['digests']['scope'] == c['digests']['scope'] for c in counted):
+            unmet.append(f"{trial['run']}: the same trial session counted twice")
+            continue
+        counted.append(dict(run=trial['run'], run_id=trial['run_id'], digests=trial['digests']))
+    required = QUALIFICATION_CONTRACT['strict_trials']
+    if len(counted) < required:
+        unmet.append(f'{len(counted)} of {required} independent strict trial PASS sessions')
+    unmet.append('stop/cancel acceptance not established: ' + QUALIFICATION_CONTRACT['stop_cancel'])
+    return dict(status='NOT_QUALIFIED' if unmet else 'QUALIFIED_READY', contract=QUALIFICATION_CONTRACT,
+                cell=files, world=world['derived_sha256'], destination=world['destination_asset'],
+                native=native, runtime=runtime, trials=counted, unmet=unmet, reliability_findings=reliability)
+
+
+def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
+    """The QUALIFIED record at ``path`` if every bound trial still qualifies the exact cell now; else refuse."""
+    data = Path(path).read_bytes()
+    if not sha256 or _sha256(data) != sha256:
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_RECORD_CHANGED: the qualified record differs from the issued one')
+    record = json.loads(data)
+    if record.get('schema') != SCHEMA or record.get('state') != QUALIFIED:
+        raise PhysicsScopeRefused(f"PHYSICS_SCOPE_UNSUPPORTED: not a qualified scope ({record.get('state')!r})")
+    if record.get('contract') != QUALIFICATION_CONTRACT:
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_UNSUPPORTED: issued under another qualification contract')
+    body = {k: v for k, v in record.items() if k != 'binding_sha256'}
+    if record.get('binding_sha256') != _sha256(_canonical(body)):
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_RECORD_CHANGED: binding digest mismatch')
+    bound = record.get('trials') or []
+    if len({t.get('run_id') for t in bound}) != len(bound) or len({t.get('run') for t in bound}) != len(bound):
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_REPLAYED: a trial session is bound twice')
+    for trial in bound:
+        current = trial_evidence(trial['run'])
+        if current.get('digests') != trial.get('digests') or current.get('run_id') != trial.get('run_id'):
+            raise PhysicsScopeRefused(f"PHYSICS_SCOPE_EVIDENCE_CHANGED: {trial.get('run')}")
+    readiness = qualification_readiness(cell_dir, [t['run'] for t in bound], native, runtime)
+    for key in ('cell', 'world', 'destination', 'native', 'runtime'):
+        if record.get(key) != readiness[key]:
+            raise PhysicsScopeRefused(f'PHYSICS_SCOPE_MISMATCH: {key}')
+    if readiness['status'] != 'QUALIFIED_READY':
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_NOT_QUALIFIED: ' + '; '.join(readiness['unmet']))
+    return record
+
+
+def main(argv=None):
+    """Offline readiness display: python3 physics_scope_qualification.py readiness --cell DIR --trial RUN..."""
+    import argparse
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    parser.add_argument('command', choices=['readiness'])
+    parser.add_argument('--cell', type=Path, required=True)
+    parser.add_argument('--trial', type=Path, action='append', default=[])
+    parser.add_argument('--workspace', type=Path, default=Path(__file__).resolve().parents[3])
+    args = parser.parse_args(argv)
+    try:
+        native = native_identity(args.workspace / 'install/workcell_builder/share/workcell_builder/'
+                                 'commission_execute_build.json')
+        readiness = qualification_readiness(args.cell, args.trial, native, runtime_identity(args.workspace))
+    except PhysicsScopeRefused as exc:
+        readiness = dict(status='REFUSED', reason=str(exc))
+    print(json.dumps(readiness, indent=2, sort_keys=True))
+    return 0 if readiness['status'] == 'QUALIFIED_READY' else 2
+
+
+if __name__ == '__main__':
+    import sys
+    sys.exit(main())

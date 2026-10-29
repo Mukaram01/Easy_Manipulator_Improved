@@ -203,3 +203,139 @@ def test_an_occupied_destination_or_a_single_bin_world_is_unsupported(cells, tmp
     (single / 'runtime/receipt.json').write_text(json.dumps(data))
     with pytest.raises(psq.PhysicsScopeRefused, match='does not bind a multi-destination world'):
         binding(single, cells['b'])
+
+
+# --- Qualification (offline): trials are judged from their evidence and never qualify themselves ------------------
+def strict_trial(root, cell, run_id, *, cell_dir=None, native=NATIVE, edit=None):
+    """A run directory laid out like the qualification runner's, for one strict trial PASS session."""
+    session = launch(root / 'launch', cell)
+    receipt = json.loads((session / 'runtime/receipt.json').read_text())
+    receipt['run_id'] = run_id
+    (session / 'runtime/receipt.json').write_text(json.dumps(receipt))
+    bound = binding(session, cell, native=native)
+    run = root / 'run'
+    scope = run / '06-full-cycle/physics-scope.json'
+    scope.parent.mkdir(parents=True)
+    sha = psq.authorise_trial(scope, bound)
+    selected = next(d for d in bound['destinations'] if d['model'] == bound['destination']['model'])
+    pose = [selected['floor_xyz'][0], selected['floor_xyz'][1], selected['floor_z'] + 0.0125, 0.0, 0.0, 0.0, 1.0]
+    summary = dict(result='PASS', strict_retention_compliant=True, retention_policy='strict',
+                   retention_findings={'findings': []}, stages=psq.FULL_CYCLE_STAGES, selected_object_id='runtime::part_04',
+                   release_evidence={'state': 'RELEASE_CONFIRMED', 'settled': True}, physics_scope={'sha256': sha},
+                   full_cycle_physical_acceptance=dict(attached_ids=[], baseline_acm_restored=True, final_collision_valid=True,
+                                                       final_pose=pose, placement={'error_to_planned_m': 0.0001}),
+                   commissioning_prerequisites=dict(results=psq.PREREQUISITE_RESULTS, capability_sha256=native['sha256'],
+                                                    sources=native['sources']))
+    report = dict(status='PASS', scope=psq.TRIAL_EVIDENCE_SCOPE, mode='targeted', gate='full-cycle',
+                  stage_a_acceptance=False, preflight={'repo_dirty': False})
+    if edit:
+        edit(summary, report)
+    (run / '06-full-cycle/full-cycle').mkdir()
+    (run / '06-full-cycle/full-cycle/summary.json').write_text(json.dumps(summary))
+    (run / '06-full-cycle/session-report.json').write_text(json.dumps({'physics_scope': {'sha256': sha},
+                                                                       'shutdown': {'clean': True}}))
+    (run / 'stage-a1-targeted-report.json').write_text(json.dumps(report))
+    return run
+
+
+@pytest.fixture(scope='module')
+def trials(cells, tmp_path_factory):
+    root = tmp_path_factory.mktemp('trials')
+    return [strict_trial(root / str(i), cells['b'], f'run-{i}') for i in range(3)]
+
+
+def qualified_record(path, readiness, **change):
+    """A QUALIFIED record as an issuer would write it (no issuer exists: qualification is not reachable yet)."""
+    body = dict(schema=psq.SCHEMA, state=psq.QUALIFIED, contract=psq.QUALIFICATION_CONTRACT, trials=readiness['trials'],
+                **{k: readiness[k] for k in ('cell', 'world', 'destination', 'native', 'runtime')})
+    body.update(change)
+    data = (json.dumps(dict(body, binding_sha256=hashlib.sha256(psq._canonical(body)).hexdigest())) + '\n').encode()
+    path.write_bytes(data)
+    return hashlib.sha256(data).hexdigest()
+
+
+def test_strict_trials_never_qualify_themselves(cells, trials):
+    one = psq.qualification_readiness(cells['b'], trials[:1], NATIVE, RUNTIME)
+    assert one['status'] == 'NOT_QUALIFIED' and '1 of 3 independent strict trial PASS sessions' in one['unmet']
+    three = psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME)
+    assert len(three['trials']) == 3                                       # every per-trial criterion holds
+    assert three['status'] == 'NOT_QUALIFIED'                              # stop/cancel acceptance is still missing
+    assert three['unmet'] == ['stop/cancel acceptance not established: ' + psq.QUALIFICATION_CONTRACT['stop_cancel']]
+
+
+@pytest.mark.parametrize('edit,match', [
+    (lambda s, r: s.update(result='FUNCTIONAL_PASS'), 'not a strict full-cycle PASS'),
+    (lambda s, r: s['retention_findings'].update(findings=[{'phase': 'transfer'}]), 'not a strict full-cycle PASS'),
+    (lambda s, r: s.update(stages=psq.FULL_CYCLE_STAGES[:-1]), 'incomplete stage sequence'),
+    (lambda s, r: s['release_evidence'].update(settled=False), 'release not confirmed and settled'),
+    (lambda s, r: s['full_cycle_physical_acceptance'].update(attached_ids=['runtime::part_04']), 'not restored'),
+    (lambda s, r: s['full_cycle_physical_acceptance']['final_pose'].__setitem__(2, 0.0145), 'not seated'),
+    (lambda s, r: s['full_cycle_physical_acceptance']['placement'].update(error_to_planned_m=0.004), 'placement error'),
+    (lambda s, r: s['commissioning_prerequisites'].update(results=psq.PREREQUISITE_RESULTS[1:]), 'prerequisite'),
+    (lambda s, r: s['physics_scope'].update(sha256='other'), 'differs from the one the trial verified'),
+    (lambda s, r: r.update(preflight={'repo_dirty': True}), 'modified checkout'),
+    (lambda s, r: r.update(scope='DIAGNOSTIC_NOT_STAGE_A_ACCEPTANCE'), 'not a passing authorised trial report'),
+])
+def test_a_trial_missing_any_physical_or_provenance_criterion_does_not_count(cells, tmp_path, edit, match):
+    run = strict_trial(tmp_path, cells['b'], 'run-x', edit=edit)
+    readiness = psq.qualification_readiness(cells['b'], [run], NATIVE, RUNTIME)
+    assert readiness['trials'] == [] and any(match in u for u in readiness['unmet'])
+
+
+def test_stale_cross_bin_and_replayed_trials_do_not_count(cells, trials, tmp_path):
+    stale = psq.qualification_readiness(cells['b'], trials, dict(NATIVE, support_sha256='rebuilt'), RUNTIME)
+    assert stale['trials'] == [] and all('native identity changed' in u for u in stale['unmet'][:3])
+    other = psq.qualification_readiness(cells['a'], trials, NATIVE, RUNTIME)            # Bin B trials for the Bin A cell
+    assert other['trials'] == [] and all('another cell' in u and 'another bin' in u for u in other['unmet'][:3])
+    twice = psq.qualification_readiness(cells['b'], [trials[0], trials[0], trials[1]], NATIVE, RUNTIME)
+    assert len(twice['trials']) == 2 and any('counted twice' in u for u in twice['unmet'])
+    blocked = tmp_path / 'blocked'
+    (blocked / '06-full-cycle/resolve').mkdir(parents=True)
+    (blocked / 'stage-a1-targeted-report.json').write_text(json.dumps({'status': 'BLOCKED', 'failure': 'command failed'}))
+    (blocked / '06-full-cycle/resolve/summary.json').write_text(json.dumps(
+        {'failed_stage': 'PREPLAN_TRANSFER', 'failure': 'SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted'}))
+    found = psq.qualification_readiness(cells['b'], [blocked, *trials], NATIVE, RUNTIME)
+    assert len(found['trials']) == 3 and found['reliability_findings'] == [dict(
+        run=str(blocked.resolve()), finding='PREPLAN_TRANSFER: SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted')]
+
+
+def test_a_qualified_record_is_refused_while_any_requirement_is_unmet_or_any_binding_is_forged(cells, trials, tmp_path):
+    readiness = psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME)
+    path = tmp_path / 'qualified.json'
+    verify = lambda sha, cell='b', native=NATIVE: psq.verify_qualified_scope(path, sha, cells[cell], native, RUNTIME)
+    sha = qualified_record(path, readiness)
+    # Everything bound correctly, yet not qualified: the stop/cancel acceptance does not exist.
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_NOT_QUALIFIED: stop/cancel'):
+        verify(sha)
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_RECORD_CHANGED'):
+        verify('0' * 64)
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: native'):          # stale
+        verify(sha, native=dict(NATIVE, support_sha256='rebuilt'))
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: cell'):            # cross-bin cell
+        verify(sha, cell='a')
+    for change, match in ((dict(contract=dict(psq.QUALIFICATION_CONTRACT, strict_trials=1)), 'another qualification contract'),
+                          (dict(state=psq.AUTHORISED_TRIAL), 'not a qualified scope'),
+                          (dict(destination='target_bin_default'), 'PHYSICS_SCOPE_MISMATCH: destination'),
+                          (dict(trials=[readiness['trials'][0]] * 3), 'PHYSICS_SCOPE_REPLAYED'),
+                          (dict(trials=[dict(readiness['trials'][0], run_id='run-9'), *readiness['trials'][1:]]),
+                           'PHYSICS_SCOPE_EVIDENCE_CHANGED')):                                  # cross-session
+        with pytest.raises(psq.PhysicsScopeRefused, match=match):
+            verify(qualified_record(path, readiness, **change))
+    sha = qualified_record(path, readiness)
+    summary = Path(readiness['trials'][1]['run']) / '06-full-cycle/full-cycle/summary.json'
+    original = summary.read_bytes()
+    summary.write_bytes(original.replace(b'"settled": true', b'"settled": true, "edited": 1'))
+    try:
+        with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_EVIDENCE_CHANGED'):     # modified evidence
+            verify(sha)
+    finally:
+        summary.write_bytes(original)
+
+
+def test_trial_scope_needs_world_frame_measurements(cells, tmp_path):
+    session = launch(tmp_path, cells['b'])
+    parts = yaml.safe_load((session / 'parts.yaml').read_text())
+    parts['objects'][0]['pose']['frame_id'] = 'camera_link'
+    (session / 'parts.yaml').write_text(yaml.safe_dump(parts))
+    with pytest.raises(psq.PhysicsScopeRefused, match='world frame'):
+        binding(session, cells['b'])

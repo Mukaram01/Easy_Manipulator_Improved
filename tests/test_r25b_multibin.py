@@ -160,6 +160,8 @@ def test_executor_refuses_motion_in_a_multi_destination_world():
     assert block.index('verify_trial(') < block.index('scoped_destination = selected') < block.index('apply(')
     assert "scope_record['binding']['destination']['model'] != selected['model']" in block
     assert source.count('destination_binding=scoped_destination') == 1   # the guard arms the scope-verified bin only
+    assert block.index('verify_trial(') > block.index("args.retention_policy != 'strict'")   # strict retention only
+    assert 'verify_qualified_scope' not in source        # the executor has no qualified-scope admission path
 
 
 @pytest.mark.parametrize('extra', [[], ['--mode', 'targeted', '--gate', 'full-cycle', '--prior-evidence', 'x'],
