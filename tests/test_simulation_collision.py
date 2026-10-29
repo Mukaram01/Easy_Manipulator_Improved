@@ -242,3 +242,15 @@ def test_only_free_space_stages_plan_against_the_physics_pads_with_their_measure
     # Only the planning request carries the pads: before/after views are taken from the unpadded view.
     assert 'before = copy.deepcopy(view)' in plan and 'after = copy.deepcopy(view)' in plan
     assert "receipt_record.get('simulator_collision_primitives')" in source        # from the verified receipt only
+
+
+def test_free_space_corners_are_blended_by_time_parameterisation():
+    """G3C: path_tolerance 0.0 (the UR5 package's value) left OMPL corners unblended; the controller's quintic then
+    implied up to 18.5 rad/s^2 (limit 3.15) and the arm cut corners by 14 mm. The launch sets a positive blend after
+    merging the robot package's OMPL settings, ahead of the adapter that certifies the time-parameterised spline."""
+    source = (REPO/'scenes/ur5_2f_test/launch/demo.launch.py').read_text()
+    assert 'TOTG_PATH_TOLERANCE = 0.01' in source
+    merged = source.index('ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)')
+    assert source.index('ompl_planning_pipeline_config["ompl"]["path_tolerance"] = TOTG_PATH_TOLERANCE') > merged
+    adapters = source[source.index('"request_adapters"'):merged]
+    assert adapters.index('workcell/StraightCartesianPath') < adapters.index('AddTimeOptimalParameterization')

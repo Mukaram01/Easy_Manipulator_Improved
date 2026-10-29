@@ -103,6 +103,9 @@ def _cell_runtime():
     return values
 
 
+# Joint-space corner blend for TOTG (see the planning pipeline below; the offline replay is in
+# log/qualification/g3c/trajectory_continuity).
+TOTG_PATH_TOLERANCE = 0.01
 CANONICAL_LAYOUT_REL_PATH = "layout/workcell_studio_layout.yaml"
 COLLISION_MANIFEST_REL_PATH = "config/moveit_collision_objects.yaml"
 CONTROLLERS_REL_PATH = "config/ros2_controllers.yaml"
@@ -498,6 +501,11 @@ def _launch_setup(context):
     }
     if isinstance(ompl_planning_yaml, dict):
         ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)
+    # TOTG blends each OMPL vertex within this joint-space tolerance. 0.0 (the robot package's value) left every corner
+    # unblended: the trajectory turned instantly between two 0.1 s samples, so the controller's quintic implied up to
+    # 18.5 rad/s^2 (UR5 limit 3.15) and the arm cut the corner by up to 14 mm (G3C). The blend cannot cut an obstacle
+    # unseen: workcell/StraightCartesianPath certifies the time-parameterised controller spline afterwards.
+    ompl_planning_pipeline_config["ompl"]["path_tolerance"] = TOTG_PATH_TOLERANCE
 
     moveit_controller_manager = {
         "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
