@@ -175,6 +175,13 @@ def test_scoped_trials_audit_every_owned_arm_goal_and_cancellation_is_never_rein
     handler = source[source.index('def interrupted(signum, frame):'):]
     assert handler.index('signal.SIG_IGN') < handler.index('raise KeyboardInterrupt')
     assert "summary['transfer_cancellation']=transfer_cancellation_acceptance(summary)" in source
+    # G5A trial 1 (log/qualification/g5a/trial): the cancellation stop drained ~590 samples unchecked, so the guard's
+    # held-part sequence check refused the next sample and the held part was reconciled as free. A scoped held stop
+    # now checks every stop sample, and a failed hold check is recorded, never silently treated as 'not held'.
+    assert 'if monitor_contacts is None:monitor_contacts=stop_proves_hold()' in source   # every default stop wait
+    guard_stop = source[source.index('def stop_proves_hold():'):source.index('def wait_stopped(')]
+    assert "summary.get('physics_scope') is not None" in guard_stop and 'recovery is None' in guard_stop
+    assert "except RuntimeError as exc:summary['held_check_failure']=str(exc)" in source
 
 
 @pytest.mark.parametrize('extra', [[], ['--mode', 'targeted', '--gate', 'full-cycle', '--prior-evidence', 'x'],

@@ -1918,7 +1918,13 @@ def main():
                                            response.result.error_code.val,time.time_ns(),measurement_clock.now_ns())
             summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
         return response.result
-    def wait_stopped(monitor_contacts=False):
+    def stop_proves_hold():
+        # A scoped trial stopped with the part held checks every stop sample through the guard: the hold is proved
+        # across the stop, and the guard's held-part check needs that unbroken sample sequence (G5A).
+        return bool(summary.get('physics_scope') is not None and contact_guard is not None and contact_guard.held
+                    and contact_guard.phase not in ('opening','released') and recovery is None)
+    def wait_stopped(monitor_contacts=None):
+        if monitor_contacts is None:monitor_contacts=stop_proves_hold()
         from simulator_execution import StopWindow
         names={j.get('name') for control in measurements.robot.findall('ros2_control') for j in control.findall('joint')}
         window=StopWindow(names)
@@ -2050,7 +2056,7 @@ def main():
         if contact_guard.held and contact_guard.phase not in ('opening','released'):
             try:
                 s=contact_guard.checked_current();p=measurements.object_pose(s,contact_guard.name);held=True
-            except RuntimeError:pass
+            except RuntimeError as exc:summary['held_check_failure']=str(exc)   # never a silent 'not held'
         if held:
             from simulator_execution import measured_attachment
             reconciliation=measured_attachment(original,contract,measurements,s)

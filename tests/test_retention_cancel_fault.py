@@ -44,6 +44,7 @@ def test_failure_stop_does_not_require_controlled_trial_metrics():
         fresh=lambda:{},drain=drain,record=lambda *a:None,joints=lambda s:{'joint':[0.,0.]})
     summary={'cancellation_request':{'uuid':'ordinary-fault'}}
     namespace=dict(summary=summary,measurements=measurements,time=time,measurement_clock=measurement_clock,node=None,
+        stop_proves_hold=lambda:False,   # not a scoped held stop: the default stop wait checks no contacts
                    rclpy=N(spin_once=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[fn],type_ignores=[]),str(source),'exec'),namespace)
     assert namespace['wait_stopped']()
