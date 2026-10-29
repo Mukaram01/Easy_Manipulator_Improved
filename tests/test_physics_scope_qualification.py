@@ -339,3 +339,62 @@ def test_trial_scope_needs_world_frame_measurements(cells, tmp_path):
     (session / 'parts.yaml').write_text(yaml.safe_dump(parts))
     with pytest.raises(psq.PhysicsScopeRefused, match='world frame'):
         binding(session, cells['b'])
+
+
+# --- G5B: Stop at Cycle End during the transfer of an authorised trial ---------------------------------------------
+def stopped_trial(root, cell, edit=None, session_edit=None):
+    """A strict trial whose runner latched SIGUSR1 while the executor was transferring, as the runner records it."""
+    def stop(summary, report):
+        summary['stage_events'] = [{'stage': 'EXECUTE_LIFT', 'timestamp': 90.0}, {'stage': 'EXECUTE_TRANSFER', 'timestamp': 100.0},
+                                   {'stage': 'EXECUTE_PLACE', 'timestamp': 110.0}, {'stage': 'EXECUTE_HOME', 'timestamp': 130.0}]
+        report.update(gates={'full-cycle': {'status': 'PASS'}}, stop_after_cycle=dict(
+            signal='SIGUSR1', requested_wall_ns=105_000_000_000, state='STOPPED', gate='full-cycle', phase='execute',
+            executor_stage='EXECUTE_TRANSFER', forwarded=None, repeated=0, stopped_wall_ns=140_000_000_000,
+            completed_gates=['full-cycle'], gates_not_started=[]))
+        if edit:
+            edit(summary, report, report['stop_after_cycle'])
+    run = strict_trial(root, cell, 'run-stop', edit=stop)
+    if session_edit:
+        path = run / '06-full-cycle/session-report.json'
+        record = json.loads(path.read_text())
+        session_edit(record)
+        path.write_text(json.dumps(record))
+    return run
+
+
+def test_a_stop_after_cycle_latched_during_transfer_and_completed_strictly_is_accepted(cells, tmp_path):
+    run = stopped_trial(tmp_path, cells['b'])
+    accepted = psq.stop_after_cycle_acceptance(run)
+    assert accepted['accepted'] is True and accepted['state'] == 'STOPPED_AFTER_CYCLE' and accepted['failed'] == []
+    # The contract is unchanged: G5B evidence alone never satisfies the qualification's stop/cancel item.
+    readiness = psq.qualification_readiness(cells['b'], [run], NATIVE, RUNTIME)
+    assert readiness['status'] == 'NOT_QUALIFIED' and any('stop/cancel acceptance' in u for u in readiness['unmet'])
+
+
+@pytest.mark.parametrize('edit,session_edit,failed', [
+    (lambda s, r, x: r.pop('stop_after_cycle'), None, 'latched'),
+    (lambda s, r, x: x.update(signal='SIGTERM'), None, 'latched'),
+    (lambda s, r, x: x.update(forwarded='SIGUSR1'), None, 'latched'),
+    (lambda s, r, x: x.update(acknowledgement_error='OSError()'), None, 'latched'),
+    (lambda s, r, x: x.update(requested_wall_ns=99_000_000_000), None, 'during_transfer'),     # before the transfer
+    (lambda s, r, x: x.update(requested_wall_ns=111_000_000_000), None, 'during_transfer'),    # after the place began
+    (lambda s, r, x: x.update(executor_stage='EXECUTE_LIFT'), None, 'during_transfer'),
+    (lambda s, r, x: x.update(phase='revalidate'), None, 'during_transfer'),
+    (lambda s, r, x: s.update(stage_events=[]), None, 'during_transfer'),
+    (lambda s, r, x: x.update(superseded_by='SIGTERM'), None, 'not_cancelled'),
+    (None, lambda d: d.update(operator_cancel={'signal': 'SIGTERM'}), 'not_cancelled'),
+    (lambda s, r, x: s.update(failed_stage='EXECUTE_PLACE', result='FAIL'), None, 'not_cancelled'),
+    (lambda s, r, x: s.update(recovery_required=True), None, 'not_cancelled'),
+    (lambda s, r, x: s['release_evidence'].update(state='RELEASE_UNCONFIRMED'), None, 'cycle_completed_strictly'),
+    (lambda s, r, x: s.update(stages=psq.FULL_CYCLE_STAGES[:-1]), None, 'cycle_completed_strictly'),
+    (lambda s, r, x: s['full_cycle_physical_acceptance'].update(attached_ids=['runtime::part_04']), None,
+     'cycle_completed_strictly'),
+    (None, lambda d: d.update(shutdown={'clean': False}), 'cycle_completed_strictly'),
+    (lambda s, r, x: x.update(state='STOPPING'), None, 'no_further_cycle'),
+    (lambda s, r, x: x.update(gates_not_started=['full-cycle']), None, 'no_further_cycle'),
+    (lambda s, r, x: r['gates'].update({'resolve': {'status': 'PASS'}}), None, 'no_further_cycle'),
+])
+def test_a_stop_after_cycle_missing_any_item_is_not_accepted(cells, tmp_path, edit, session_edit, failed):
+    run = stopped_trial(tmp_path, cells['b'], edit=edit, session_edit=session_edit)
+    accepted = psq.stop_after_cycle_acceptance(run)
+    assert accepted['accepted'] is False and accepted['state'] == 'NOT_ACCEPTED' and failed in accepted['failed']

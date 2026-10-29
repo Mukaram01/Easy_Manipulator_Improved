@@ -480,15 +480,14 @@ class StageForwarder:
                 while True:
                     line=text.readline()
                     if not line.endswith("\n"):break
-                    self.offset=text.tell()
-                    try:event=json.loads(line)
-                    except ValueError:continue
-                    if isinstance(event,dict) and set(event)=={"stage"} and isinstance(event["stage"],str):
-                        stream(self.args,event["stage"],gate=self.gate,phase=self.phase,motion=event["stage"].startswith("EXECUTE_"))
+                    self.offset=text.tell();stage=executor_stage(line)
+                    if stage is not None:
+                        stream(self.args,stage,gate=self.gate,phase=self.phase,motion=stage.startswith("EXECUTE_"))
         except FileNotFoundError:
             pass
 
     def __enter__(self):
+        STOP_AFTER_CYCLE.active=(self.gate,self.phase,self.log)
         if getattr(self.args,"stream_status",False):
             def follow():
                 while not self.done.wait(self.poll_s):self.drain()
@@ -496,9 +495,17 @@ class StageForwarder:
         return self
 
     def __exit__(self,*exc):
+        STOP_AFTER_CYCLE.active=None
         if self.thread is not None:
             self.done.set();self.thread.join();self.drain()
         return False
+
+
+def executor_stage(line):
+    """The stage of one executor stdout line ({"stage": X}), else None."""
+    try:event=json.loads(line)
+    except ValueError:return None
+    return event["stage"] if isinstance(event,dict) and set(event)=={"stage"} and isinstance(event["stage"],str) else None
 
 
 class OperatorCancel(BaseException):
@@ -508,6 +515,36 @@ class OperatorCancel(BaseException):
 def cancel_on_signal(signum,frame):
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,signal.SIG_IGN)   # cleanup is never re-interrupted
     raise OperatorCancel(signal.Signals(signum).name)
+
+
+class StopAfterCycle:
+    """SIGUSR1 to the runner: the operator's Stop at Cycle End (G5B), the sorting session's software stop, not an
+    emergency stop. It is latched and acknowledged, never forwarded: the running cycle continues under every guard and
+    its own failure handling, and no further session starts. SIGTERM/SIGINT still cancel at once and take precedence."""
+    def __init__(self):self.args=self.active=self.record=None
+
+    def request(self,signum,frame):
+        requested=time.time_ns()
+        if self.record is not None:
+            self.record["repeated"]+=1;return
+        gate,phase,log=self.active or (None,None,None)
+        self.record=dict(signal=signal.Signals(signum).name,requested_wall_ns=requested,state="STOPPING",gate=gate,
+                         phase=phase,executor_stage=None,forwarded=None,repeated=0)
+        # Nothing may escape the handler: an exception inside run() would SIGKILL the running cycle.
+        try:
+            if log is not None and Path(log).is_file():   # the executor's own last stage line
+                lines=reversed(Path(log).read_text(errors="replace").splitlines())
+                self.record["executor_stage"]=next((s for s in map(executor_stage,lines) if s),None)
+            output=getattr(self.args,"output",None)
+            if output is not None and output.is_dir():
+                (output/"stop-after-cycle.json").write_text(json.dumps(self.record,indent=2)+"\n")
+            # os.write: a handler must not re-enter a buffered stream the main thread may be writing.
+            os.write(2,("stage-a1 stop after cycle latched: "+json.dumps(self.record)+"\n").encode())
+        except Exception as exc:
+            self.record["acknowledgement_error"]=repr(exc)
+
+
+STOP_AFTER_CYCLE=StopAfterCycle()
 
 
 CYCLE_RESULT_FIELDS=("result","failure","failed_stage","selected_object_id","selected_grasp_index","execution_attempted",
@@ -1197,6 +1234,8 @@ def main(argv=None):
         overall.update(gate=args.gate,cancellation_qualified_this_run=False)
     if args.gil_watchdog_ms is not None:overall["gil_watchdog_ms"]=args.gil_watchdog_ms
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,cancel_on_signal)
+    STOP_AFTER_CYCLE.__init__();STOP_AFTER_CYCLE.args=args
+    signal.signal(signal.SIGUSR1,STOP_AFTER_CYCLE.request)
     try:
         if args.gil_probe_ms is not None:
             overall["gil_probe"]=dict(build_gil_probe(repo,args.output),threshold_ms=args.gil_probe_ms,
@@ -1263,6 +1302,7 @@ def main(argv=None):
             list(enumerate(GATES[:GATES.index(args.through)+1],1))
         last=selected[-1][1]
         for index,gate in selected:
+            if STOP_AFTER_CYCLE.record is not None:break     # Stop at Cycle End: never start another cycle
             began=time.monotonic()
             try:
                 path=one_session(args,repo,source_world,build["sha256"],gate,index,prior)
@@ -1288,18 +1328,27 @@ def main(argv=None):
                                                      "duration_s":round(time.monotonic()-began,1),
                                                      "end_effector_hold":(json.loads(path.read_text()).get("end_effector_hold") or {}).get("profile")}
             overall["status"]="PASS" if gate==last else "IN_PROGRESS"
+        stop=STOP_AFTER_CYCLE.record
+        if stop is not None:
+            remaining=[gate for _,gate in selected if gate not in overall["gates"]]
+            stop.update(state="STOPPED",stopped_wall_ns=time.time_ns(),completed_gates=list(overall["gates"]),
+                        gates_not_started=remaining)
+            if remaining:overall["status"]="STOPPED"
         # Stage-A acceptance is the reference cell's qualification; an authored cell reports its own cycle.
         overall["stage_a_acceptance"]=(not args.authored_cell and args.mode=="full" and args.through=="full-cycle"
                                        and overall["status"]=="PASS")
-        return 0
+        return 4 if overall["status"]=="STOPPED" else 0
     except Exception as exc:
         overall["status"]="BLOCKED";overall["failure"]=str(exc);return 1
     except OperatorCancel as exc:
-        overall["status"]="CANCELLED";overall["failure"]=f"cancelled by the operator ({exc})";return 3
+        overall["status"]="CANCELLED";overall["failure"]=f"cancelled by the operator ({exc})"
+        if STOP_AFTER_CYCLE.record is not None:STOP_AFTER_CYCLE.record["superseded_by"]=str(exc)   # cancel takes precedence
+        return 3
     except BaseException as exc:
         overall["status"]="BLOCKED";overall["failure"]=f"interrupted: {type(exc).__name__}";raise
     finally:
         overall["finished_wall_ns"]=time.time_ns();overall["duration_s"]=round(time.monotonic()-started,1)
+        if STOP_AFTER_CYCLE.record is not None:overall["stop_after_cycle"]=STOP_AFTER_CYCLE.record
         (args.output/REPORT_NAMES[args.mode]).write_text(json.dumps(overall,indent=2)+"\n")
         if getattr(args,"stream_status",False):
             print(json.dumps({"event":"cycle_result","summary":cycle_result(overall,args.output)}),flush=True)

@@ -68,6 +68,23 @@ A qualified scope would admit **one exact cell**: its task, placing into one bin
 - the Stage-A cancellation trial is a prerequisite of every trial;
 - in addition, R2.5B G5 (stop at cycle end, and SIGTERM cancellation during transfer, in the multi-destination world) must be accepted. That acceptance does not exist yet, so this item is always unmet.
 
+**Operator stops during a trial** (the runner's own process; nothing else is signalled):
+
+| Request | Signal to the runner | Effect | Acceptance (from the trial's own evidence) |
+|---|---|---|---|
+| Cancel (G5A) | SIGTERM or SIGINT | Forwarded to the executor, which cancels its owned goal at once; the part stays held, recovery is required | `simulator_execution.transfer_cancellation_acceptance`: `RECOVERY_REQUIRED_HELD_STOPPED` |
+| Stop at Cycle End (G5B) | SIGUSR1 | Latched and acknowledged (`stop-after-cycle.json`, a stderr line), never forwarded. The running cycle continues under every guard and its own failure handling; no further session starts | `physics_scope_qualification.stop_after_cycle_acceptance`: `STOPPED_AFTER_CYCLE` |
+
+- **Precedence:** a cancel after a latched stop still cancels at once; the stop record is marked `superseded_by`.
+- **Stop at Cycle End is the sorting session's software stop,** not an emergency stop. If the running cycle fails, its existing failure and recovery handling applies; completion is never forced.
+- **Runner outcome:** a stop that leaves selected sessions unstarted reports `STOPPED` (exit 4); a stop in the last session leaves its result unchanged.
+- **G5B acceptance needs all of these:**
+  - the stop was latched during `EXECUTE_TRANSFER`, between the executor's transfer and place stage events;
+  - it was not forwarded and not superseded, and no cancellation or recovery followed;
+  - the cycle is a strict trial PASS (`trial_evidence`);
+  - no other session ran.
+- **Q7 is unchanged:** these acceptances are evidence for the stop/cancel item; the verifier still reports it unmet until a reviewed change binds them.
+
 **Q8 Repeatability:**
 - at least **3** independent strict trial PASS sessions of the exact cell;
 - any listed trial that failed after motion blocks qualification;

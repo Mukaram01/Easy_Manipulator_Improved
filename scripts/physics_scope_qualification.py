@@ -321,6 +321,36 @@ def trial_evidence(run_dir):
     return out
 
 
+def stop_after_cycle_acceptance(run_dir):
+    """G5B: an operator Stop at Cycle End (SIGUSR1 to the runner) latched during the authorised trial's transfer, the
+    cycle completed as a strict trial and nothing else started. Judged only from the trial's own evidence files."""
+    run = Path(run_dir)
+    trial = trial_evidence(run)
+    report, session_report, summary = (json.loads(p.read_text()) if p.is_file() else {} for p in (
+        run / 'stage-a1-targeted-report.json', run / '06-full-cycle/session-report.json',
+        run / '06-full-cycle/full-cycle/summary.json'))
+    stop = report.get('stop_after_cycle') or {}
+    requested = stop.get('requested_wall_ns')
+    began = {e.get('stage'): e.get('timestamp') for e in summary.get('stage_events') or [] if isinstance(e, dict)}
+    transfer, place = began.get('EXECUTE_TRANSFER'), began.get('EXECUTE_PLACE')
+    checks = dict(
+        latched=stop.get('signal') == 'SIGUSR1' and isinstance(requested, int) and stop.get('forwarded') is None
+        and 'acknowledgement_error' not in stop,
+        during_transfer=(stop.get('gate') == 'full-cycle' and stop.get('phase') == 'execute'
+                         and stop.get('executor_stage') == 'EXECUTE_TRANSFER' and isinstance(requested, int)
+                         and isinstance(transfer, (int, float)) and isinstance(place, (int, float))
+                         and transfer * 1e9 < requested < place * 1e9),
+        not_cancelled=('operator_cancel' not in session_report and 'superseded_by' not in stop
+                       and summary.get('failed_stage') is None and not summary.get('recovery_required')),
+        cycle_completed_strictly=trial['kind'] == 'STRICT_PASS',
+        no_further_cycle=(stop.get('state') == 'STOPPED' and stop.get('gates_not_started') == []
+                          and list(report.get('gates') or {}) == ['full-cycle']),
+    )
+    failed = [name for name, ok in checks.items() if not ok]
+    return dict(accepted=not failed, state='STOPPED_AFTER_CYCLE' if not failed else 'NOT_ACCEPTED', failed=failed,
+                checks=checks, trial_problems=trial['problems'])
+
+
 def _qualified_cell(cell_dir):
     cell_dir = Path(cell_dir)
     files = {name: _sha256((cell_dir / name).read_bytes()) for name in QUALIFIED_CELL_FILES if (cell_dir / name).is_file()}
