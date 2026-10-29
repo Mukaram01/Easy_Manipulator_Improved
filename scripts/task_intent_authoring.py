@@ -95,6 +95,11 @@ def _wizard_intent(scene, env):
     }
 
 
+# R2.5A: the input of a session-rendered task (task_intent_v2.session_rendered_perception) is not a file: its sorting
+# session renders and classifies a new frame every cycle. Only a sorting session can run it.
+SESSION_RENDER_INPUT = 'simulated-rgbd://sorting-session-render'
+
+
 def planning_input(scene, intent, override=None):
     """Consume the saved input binding; never substitute observations for new tasks.
 
@@ -109,6 +114,11 @@ def planning_input(scene, intent, override=None):
     mode = binding['mode']
     if mode not in ('off', 'replayed_snapshot', 'live_epd'):
         raise ValueError('PERCEPTION_MODE_UNSUPPORTED: choose off, replay or live.')
+    from task_intent_v2 import session_rendered_perception
+    if session_rendered_perception(intent):
+        if override is not None:
+            raise ValueError('TASK_INPUT_OVERRIDE_REJECTED: this task is observed by its sorting session\'s simulated camera.')
+        return SESSION_RENDER_INPUT, False
     name = binding.get('replay_path')
     if not isinstance(name, str) or not name.strip():
         raise ValueError('TASK_INPUT_UNAVAILABLE: choose a commissioning replay or normalized live snapshot in Task settings.')

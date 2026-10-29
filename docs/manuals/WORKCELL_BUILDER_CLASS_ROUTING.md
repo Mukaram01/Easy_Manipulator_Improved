@@ -94,8 +94,39 @@ A sorting session sorts the saved cell continuously, one object per cycle, on **
 - **Shown in:** both the Plan / Simulate monitor and the HMI.
 - **Evidence:** the session report (`sorting_session.json`) and every cycle's observations and executor evidence are under `log/studio_sorting/<session>/`.
 
+### Simulator-rendered EPD observations (R2.5A)
+A routed fake-hardware task can be observed by its own sorting session instead of a saved batch. In **Task > Perception**, choose **Live EPD** with the camera **Simulated RGB-D (Gazebo + EPD)** and leave the observation snapshot empty. The cell needs authored physical test objects (box bodies with declared visual meshes, class `unclassified`) and an enabled cell camera.
+
+**Each frame.** Before the first cycle, after every cycle and after a pause, the session observes again (`perception_replay.py session-frame`):
+1. **Render.** The cell camera renders the session's current world: the authored objects at rest, then each completed object at its state-verified final pose in its bin.
+   - The render-only world (`simulator_world.derive_render_world`) has static models, every routed destination container and no robot.
+   - It is renamed, so no physics entry point can run it.
+2. **Classify.** EPD's production node classifies the rendered frames (replay mode, CPU).
+3. **Bind.** Each EPD world centroid binds to the one object box that contains it.
+   - An object takes EPD's class and confidence only from exactly one detection; otherwise it is `unperceived`.
+   - Detections matching no object, or several, are reported and never used.
+   - Identity, pose and size are always the world's.
+
+The frame is labelled `SIMULATOR_RENDERED_SYNTHETIC`. It carries its real capture time and the world revision it shows, and the cycle's executor receives it unchanged.
+
+**What the session accepts:**
+- **World revision.** A frame must name the session's current world revision and reproduce every known object (`FRAME_WORLD_MISMATCH`).
+- **Unclassified objects.** An object EPD does not classify in the current frame is not eligible and stays an obstacle. It is never subject to the unrouted policy, and it becomes eligible if a later frame classifies it.
+- **Changing classes.** An object whose class changes between frames is `CLASS_UNSTABLE` and is never picked.
+- **Finished objects.** A completed or rejected object is never re-decided by the class EPD now reports for it.
+
+**Freshness.** Rendered frames have their own producer, `simulator_render`. It is admitted only for the simulated camera on fake hardware.
+- **Ceiling:** 300 s from capture to execution, covering render, CPU inference and the certified search.
+- **Timestamps:** never renewed.
+- **At the execution boundary:** the executor verifies that the live PlanningScene still reproduces the rendered world, then applies the ceiling to the true capture time.
+- **Live sources unchanged:** a live capture keeps the 2 s live ceiling, and a RealSense task never admits this producer.
+
+**Limits.** These frames are synthetic renderings of the fake-hardware world.
+- **No real camera:** this is not a real-camera observation, and the robot is not rendered.
+- **Positions:** objects move only through verified fake-hardware cycles.
+
 ### Fake-hardware observation refresh
-A cycle's certified search outlives the 2 s replay age limit. On fake hardware only, observation time is renewed at the execution boundary when the live PlanningScene reproduces every observed identity and geometry exactly (`fake_world_refresh`). The PlanningScene is the fake backend's whole world. The unchanged age limit is then applied; any difference is `SORTING_WORLD_CHANGED`.
+For a replayed batch (not a rendered frame): a cycle's certified search outlives the 2 s replay age limit. On fake hardware only, observation time is renewed at the execution boundary when the live PlanningScene reproduces every observed identity and geometry exactly (`fake_world_refresh`). The PlanningScene is the fake backend's whole world. The unchanged age limit is then applied; any difference is `SORTING_WORLD_CHANGED`.
 
 ### Physics
 A sorting session or a routed task is refused in Gazebo:
@@ -106,5 +137,5 @@ The qualified Stage-A world covers one object, one destination and one cycle. Th
 
 ### Limits
 - **Fake hardware only:** planning and kinematic execution on mock controllers. There is no contact, retention or settling evidence.
-- **Continuous mode:** implemented and unit-tested, but no live frame source is wired into the runner. The runner refuses continuous mode (`CONTINUOUS_SOURCE_UNAVAILABLE`).
+- **Continuous mode:** its only frame source is the session's own simulator-rendered EPD frame (R2.5A). There is no live camera source, so a live continuous session is still refused (`CONTINUOUS_SOURCE_UNAVAILABLE`).
 - **Conveyors:** no conveyor tracking or production batching.

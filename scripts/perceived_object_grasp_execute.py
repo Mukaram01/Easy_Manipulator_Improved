@@ -1432,6 +1432,43 @@ def fake_world_refresh(objects, live, clock=time.time):
                 note='fake hardware only: identity and geometry reproduced by the live PlanningScene; no sensor')
 
 
+def sorting_cycle_input(snapshot, *, sorting_cycle, replay, backend):
+    """The observation input a run may take; returns a rendered frame's source, else None.
+
+    A sorting cycle observes either its session's replayed, reconciled world (``--replay``) or its session's own
+    simulator-rendered EPD frame (R2.5A, runtime_pick_inputs.rendered_frame): never a live sensor frame, so nothing
+    live is ever re-stamped or bound to a session world. A rendered frame is a fake-hardware sorting cycle's only.
+    """
+    from runtime_pick_inputs import rendered_frame
+    rendered = rendered_frame(snapshot)
+    if rendered is not None and (sorting_cycle is None or replay or backend != 'fake'):
+        raise ValueError('RENDER_FRAME_SORTING_ONLY: a simulator-rendered frame is observed only by its fake-hardware '
+                         'sorting cycle, without --replay')
+    if sorting_cycle is not None and not replay and rendered is None:
+        raise ValueError('SORTING_INPUT_UNSUPPORTED: a sorting cycle observes its replayed reconciled world or its own '
+                         'simulator-rendered frame; a live sensor frame is never accepted')
+    return rendered
+
+
+def rendered_world_revalidation(objects, live, source, clock=time.time):
+    """A rendered sorting frame at the execution boundary: verified against the live PlanningScene, never renewed.
+
+    Fake hardware has no physical world: the live PlanningScene is the whole world model, and VERIFY_PREPLAN_UNCHANGED
+    has just proven it unchanged since the observations were inserted. The frame stays valid only while that scene
+    reproduces every rendered identity and geometry exactly (the frame's world revision); its capture time is kept and
+    the unchanged producer ceiling (simulator_render) is applied afterwards.
+    """
+    changed = sorted(o['id'] for o in objects if not observation_geometry_matches(o, live.get(o['id'])))
+    if changed:
+        raise RuntimeError('SORTING_WORLD_CHANGED: the live PlanningScene differs from the rendered frame\'s world: '
+                           + ', '.join(changed))
+    capture = source['capture_wall_ns'] / 1e9
+    return dict(source='simulator_rendered_frame', synthetic=True, timestamps_renewed=False,
+                world_revision=source['world_revision'], capture_wall_s=capture, age_at_boundary_s=clock() - capture,
+                verified_object_ids=sorted(o['id'] for o in objects),
+                note='fake hardware only: the live PlanningScene reproduces the rendered world revision; capture time kept')
+
+
 def discovered_graph(read_graph, spin, timeout=10.0):
     """Node names once this process has discovered a controller_manager (bounded).
 
@@ -1558,11 +1595,11 @@ def main():
                         'object as an obstacle and destination occupancy. Writes no task artifacts.')
     args = parser.parse_args()
     sorting_cycle = json.loads(args.sorting_cycle) if args.sorting_cycle else None
-    if sorting_cycle is not None and (args.backend != 'fake' or not args.replay or not args.resolve_task
+    if sorting_cycle is not None and (args.backend != 'fake' or not args.resolve_task
                                       or args.target_object_id is None or args.sequence_object_ids is not None):
-        # --replay: a sorting cycle observes the session's reconciled replay world, never a live sensor frame, so
-        # the fake-world refresh below can never re-stamp a live EPD observation.
-        parser.error('--sorting-cycle is fake-hardware only and requires --replay, --resolve-task and --target-object-id')
+        # Its input is the session's replayed reconciled world (--replay) or its own rendered frame, never a live
+        # sensor frame (sorting_cycle_input), so the fake-world refresh below can never re-stamp a live observation.
+        parser.error('--sorting-cycle is fake-hardware only and requires --resolve-task and --target-object-id')
     if args.sequence_placements is not None and args.sequence_object_ids is None:
         parser.error('--sequence-placements requires --sequence-object-ids')
     if args.target_object_id is not None and ((args.start and sorting_cycle is None) or not args.resolve_task):
@@ -2511,6 +2548,7 @@ def main():
         summary['observation_sha256']=sha256(observation_text.encode()).hexdigest()
         summary['observation_input']=dict(path=str(Path(args.detections).resolve()),
             sha256=summary['observation_sha256'],loaded_wall_ns=time.time_ns())
+        rendered = sorting_cycle_input(snapshot, sorting_cycle=sorting_cycle, replay=args.replay, backend=args.backend)
         if args.replay:
             snapshot = inputs.replay_snapshot(snapshot, time.time())
         objects = inputs.normalize(snapshot, time.time(), _PLANNER)
@@ -2521,10 +2559,14 @@ def main():
             # snapshot (verified against the live receipt below), a replay, or a live sensor.
             from task_intent_v2 import freshness_source_type, observation_age_cap
             producer = ('simulator_measurement' if args.backend == 'simulator' and snapshot.get('simulator_receipt_sha256')
-                        else 'replay' if args.replay else 'live_sensor')
+                        else 'replay' if args.replay else inputs.RENDER_PRODUCER if rendered is not None else 'live_sensor')
             age_cap = observation_age_cap(freshness_source_type(intent), producer)
             summary['observation_freshness'] = dict(producer=producer, ceiling_s=age_cap,
                 authored_max_age_s=intent['pick']['selection']['object_filter']['max_age_seconds'])
+            if rendered is not None:
+                summary['observation_freshness']['rendered_frame'] = {key: rendered.get(key) for key in (
+                    'provenance', 'camera_source', 'capture_wall_ns', 'frame_stamp_ns', 'world_revision',
+                    'recording_sha256', 'render_world_sha256')}
             # Stage-B: classes from replayed EPD detections bound to these measured objects. Only a replayed-
             # perception task takes them, and each binding keeps the replay ceiling on the recording clock.
             binding = snapshot.get('perception_binding')
@@ -3043,6 +3085,9 @@ def main():
             # Fake hardware: the live PlanningScene is the whole world (see fake_world_refresh).
             summary['execution_observation_refresh'] = fake_world_refresh(
                 objects, {o.id: collision_object_dict(o) for o in scene_now().world.collision_objects})
+        elif rendered is not None:
+            summary['execution_observation_refresh'] = rendered_world_revalidation(
+                objects, {o.id: collision_object_dict(o) for o in scene_now().world.collision_objects}, rendered)
         fresh = select_observations(intent, physical, objects, time.time(), age_cap) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')

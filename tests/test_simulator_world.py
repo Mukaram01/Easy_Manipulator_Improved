@@ -179,3 +179,21 @@ def test_stale_generated_files_and_floating_drop_regions_are_refused(cells, tmp_
 def test_cli_reports_blocked_with_the_reason(tmp_path, capsys):
     assert sw.main([str(tmp_path), '--output', str(tmp_path / 'w.sdf')]) == 2
     assert json.loads(capsys.readouterr().out)['status'] == 'BLOCKED'
+
+
+def test_a_routed_cell_renders_but_never_becomes_a_physics_world(cells, tmp_path):
+    """R2.5A: the render-only world skips the physics task qualification; derive_world keeps it."""
+    cell = copy_cell(cells['a'], tmp_path)
+    path = cell / 'config/workcell_builder_task_intent.yaml'
+    intent = yaml.safe_load(path.read_text())
+    intent['routing'] = {'mode': 'class', 'unrouted_policy': 'leave_in_place', 'rules': [
+        {'id': 'route_1', 'when': {'attribute': 'class', 'equals': 'cup'}, 'destination': intent['place']['target']['region_ref']}]}
+    path.write_text(json.dumps(intent))
+    with pytest.raises(sw.SimulatorWorldError, match='TASK_ROUTING_PHYSICS_UNQUALIFIED'):
+        sw.derive_world(cell)
+    text, report = sw.derive_render_world(cell)
+    assert report['render_only'] and not report['physics_execution'] and report['world_name'] == sw.RENDER_WORLD_NAME
+    assert ET.fromstring(text).find('world').get('name') == sw.RENDER_WORLD_NAME != sw.load_catalog()['engine']['world_name']
+    assert not sw.engine_equivalent(text)                       # no qualified physics entry point accepts it
+    assert set(models(text)) == {'pick_support', 'target_bin_physics', 'part_04'}
+    assert not any(m.find('include') is not None or 'ur5' in m.get('name') for m in models(text).values())   # no robot

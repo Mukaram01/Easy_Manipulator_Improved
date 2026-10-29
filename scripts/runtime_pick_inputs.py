@@ -133,6 +133,46 @@ def replay_snapshot(template, now):
     return result
 
 
+# R2.5A: a sorting session's simulator-rendered EPD frame (perception_replay.session_frame). The cell camera renders
+# the session's verified fake-hardware world; EPD classifies the rendered images; geometry is the world's own.
+RENDER_PRODUCER = 'simulator_render'
+RENDER_SOURCE_MODE = 'simulator_rendered'
+RENDER_PROVENANCE = 'SIMULATOR_RENDERED_SYNTHETIC'
+
+
+def world_revision(objects):
+    """Identity of a rendered world: every object's id, pose (xyz, rpy) and size, exactly as rendered."""
+    import hashlib
+    import json
+    rows = sorted([str(o['object_id']), [float(v) for v in o['pose']['xyz']], [float(v) for v in o['pose']['rpy']],
+                   [float(v) for v in o['dimensions']]] for o in objects)
+    return hashlib.sha256(json.dumps(rows, separators=(',', ':')).encode()).hexdigest()
+
+
+def rendered_frame(snapshot):
+    """The provenance of a simulator-rendered sorting frame, or None; raises when it claims to be one but is not.
+
+    The frame keeps its real capture time on every object (never stamped at load), names its world revision, and
+    that revision must be the revision of the objects it carries.
+    """
+    source = snapshot.get('source') if isinstance(snapshot, dict) else None
+    if not isinstance(source, dict) or (source.get('producer') != RENDER_PRODUCER and source.get('mode') != RENDER_SOURCE_MODE):
+        return None
+    if (source.get('mode') != RENDER_SOURCE_MODE or source.get('producer') != RENDER_PRODUCER
+            or source.get('provenance') != RENDER_PROVENANCE or source.get('camera_source') != 'simulated_rgbd'):
+        raise ValueError('RENDER_FRAME_INVALID: a rendered frame must be simulator_rendered / simulator_render / '
+                         'SIMULATOR_RENDERED_SYNTHETIC from the simulated RGB-D camera')
+    capture = source.get('capture_wall_ns')
+    if not isinstance(capture, int) or isinstance(capture, bool) or capture <= 0:
+        raise ValueError('RENDER_FRAME_INVALID: the frame has no capture time')
+    for obj in snapshot.get('objects') or []:
+        if obj.get('timestamp') != capture / 1e9 or 'age_seconds' in obj:
+            raise ValueError(f"RENDER_FRAME_INVALID: {obj.get('object_id')} is not stamped with the frame's capture time")
+    if source.get('world_revision') != world_revision(snapshot.get('objects') or []):
+        raise ValueError('RENDER_FRAME_INVALID: the frame\'s objects are not the world revision it was rendered from')
+    return source
+
+
 def scene_diff(objects):
     from geometry_msgs.msg import Pose
     from moveit_msgs.msg import CollisionObject, PlanningScene

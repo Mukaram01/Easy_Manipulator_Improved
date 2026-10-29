@@ -7121,6 +7121,13 @@ QString MainWindow::sorting_status_html() const
         e(active.value("id").toString()), e(active.value("class_id").toString()), e(active.value("destination").toString()))
       .arg(active.value("cycle").toInt()).arg(active.value("attempt").toInt())
       .arg(e(sorting_status_.value("stage").toString("starting")));
+  // R2.5A: a session observing simulator-rendered, EPD-classified frames of its own world.
+  const auto observation = sorting_status_.value("observation").toObject();
+  if (!observation.value("acquiring").toString().isEmpty())
+    text += "<br/>Observation: <b>acquiring</b> — " + e(observation.value("acquiring").toString());
+  else if (observation.value("producer").toString() == "simulator_render")
+    text += QString("<br/>Observation: frame %1 · simulator-rendered (synthetic), classified by EPD · %2 classified, %3 unperceived")
+      .arg(observation.value("frames").toInt()).arg(observation.value("classified").toInt()).arg(observation.value("unperceived").toInt());
   text += QString("<br/>Completed: <b>%1</b> · Failed: <b>%2</b> · Skipped (unrouted/disabled): %3 · Waiting (destination full): %4 · Pending: %5 · Cycles: %6")
     .arg(counts.value("completed").toInt()).arg(counts.value("failed").toInt()).arg(counts.value("skipped").toInt())
     .arg(counts.value("waiting_destination_full").toInt()).arg(counts.value("pending").toInt()).arg(counts.value("cycles").toInt());

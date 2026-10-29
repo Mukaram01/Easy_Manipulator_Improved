@@ -153,12 +153,12 @@ def group_alive(pgid):
     return False
 
 
-def stop(process):
+def stop(process, grace=10):
     if process is None:
         return True
     if process.poll() is None:
         process.send_signal(signal.SIGINT)
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + grace
     while group_alive(process.pid) and time.monotonic() < deadline:
         process.poll()
         time.sleep(.1)
@@ -189,14 +189,21 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
     The session (scripts/sorting_session.py) chooses the target and reconciles the world; every cycle is the
     existing executor resolving and executing exactly that target. Operator pause/stop are read from the
     control file and honoured at cycle boundaries. Returns None; the audit carries the session report.
+
+    R2.5A: a task observed through the simulated RGB-D camera (task_intent_v2.session_rendered_perception) runs in
+    continuous mode: before the first cycle and after every cycle (and after a pause) the cell camera renders the
+    session's current world and EPD classifies it (perception_replay.py session-frame); that frame, unchanged, is the
+    next cycle's observation.
     """
     import hashlib
     import yaml
     from sorting_session import SortingFault, SortingSession, write_json_atomic
-    from runtime_pick_inputs import normalize, replay_snapshot
+    from runtime_pick_inputs import normalize, rendered_frame, replay_snapshot, world_revision
+    from task_intent_v2 import session_rendered_perception
     import perceived_object_grasp_plan as geometry
     document = yaml.safe_load((scene_dir / 'environment.yaml').read_text())
     environment = document.get('environment', document)
+    rendered_source = session_rendered_perception(intent)
     mode = 'batch_replay' if replay_input else 'continuous'
     control = args.control_file or out / 'sorting_control.json'
     report_path = out / 'sorting_session.json'
@@ -215,19 +222,65 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
         for applied in session.poll_control(control, cycle_active=cycle_active):
             emit({'control': applied})
 
+    def observe():
+        """Render the session's current world, classify it with EPD and ingest the frame (R2.5A)."""
+        nonlocal child, base
+        world = session.render_world()
+        revision = world_revision(world)
+        index = len(session.frames) + 1
+        frames = out / 'frames'
+        frames.mkdir(exist_ok=True)
+        world_path = frames / f'{index:03d}_world.json'
+        world_path.write_text(json.dumps({'revision': revision, 'objects': world}, indent=1) + '\n')
+        session.observing = f'frame {index}: rendering the current world with the cell camera and classifying it with EPD'
+        emit()
+        with (frames / f'{index:03d}.log').open('w') as log:
+            child = subprocess.Popen([sys.executable, str(Path(__file__).resolve().with_name('perception_replay.py')),
+                                      'session-frame', '--cell', str(scene_dir), '--world', str(world_path),
+                                      '--output', str(frames / f'{index:03d}')],
+                                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            spin_until(lambda: apply_control(cycle_active=True) or child.poll() is not None)
+        returncode, child = child.returncode, None
+        session.observing = None
+        frame_path = frames / f'{index:03d}' / 'frame.yaml'
+        if returncode != 0 or not frame_path.is_file():
+            lines = (frames / f'{index:03d}.log').read_text().strip().splitlines()
+            raise SortingFault('OBSERVATION_UNAVAILABLE', f'frame {index}: ' + (lines[-1] if lines else f'exit {returncode}'))
+        raw = frame_path.read_bytes()
+        base = yaml.safe_load(raw)
+        try:
+            source = rendered_frame(base)
+        except ValueError as exc:
+            raise SortingFault('FRAME_WORLD_MISMATCH', f'frame {index}: {exc}') from exc
+        if source is None or source.get('world_revision') != revision:
+            raise SortingFault('FRAME_WORLD_MISMATCH', f'frame {index} is not a rendering of world {revision}')
+        session.ingest_frame(base, normalize(base, time.time(), geometry), source_sha256=hashlib.sha256(raw).hexdigest())
+        emit({'frame': index})
+
+    base = None
     try:
-        if mode == 'continuous':
+        if mode == 'continuous' and not rendered_source:
             raise SortingFault('CONTINUOUS_SOURCE_UNAVAILABLE',
                                'continuous sorting needs successive live frames (camera or simulator measurement); '
-                               'this runner has no live frame source for the saved task. Use a replayed batch.')
-        raw = input_path.read_bytes()
-        base = yaml.safe_load(raw)
-        now = time.time()
-        session.ingest_frame(base, normalize(replay_snapshot(base, now) if replay_input else base, now, geometry),
-                             source_sha256=hashlib.sha256(raw).hexdigest())
-        session.transition('READY', 'fake-hardware MoveIt launched; replayed batch frame ingested')
+                               'this runner has no live frame source for the saved task. Use a replayed batch or the '
+                               'simulated RGB-D camera.')
+        if rendered_source:
+            from perception_replay import authored_world
+            session.initial_world = authored_world(document)
+            observe()
+            if session.state == 'IDLE':                  # a stop requested while observing is honoured below
+                session.transition('READY', 'fake-hardware MoveIt launched; first simulator-rendered EPD frame ingested')
+        else:
+            raw = input_path.read_bytes()
+            base = yaml.safe_load(raw)
+            now = time.time()
+            session.ingest_frame(base, normalize(replay_snapshot(base, now) if replay_input else base, now, geometry),
+                                 source_sha256=hashlib.sha256(raw).hexdigest())
+            session.transition('READY', 'fake-hardware MoveIt launched; replayed batch frame ingested')
         emit()
-        session.transition('RUNNING', 'sorting started')
+        needs_frame = False
+        if session.state == 'READY':
+            session.transition('RUNNING', 'sorting started')
         emit()
         while True:
             apply_control(cycle_active=False)
@@ -238,8 +291,13 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
             if session.state == 'STOPPED':
                 break
             if session.state == 'PAUSED':
+                needs_frame = rendered_source            # the world is observed again after a pause
                 spin_until_or(lambda: False, spin_until, 0.5)
                 continue
+            if needs_frame:
+                observe()
+                needs_frame = False
+                continue                                 # control requested while observing applies first
             target = session.next_target()
             if target is None:
                 session.transition('STOPPING', 'BATCH_COMPLETE: no further object can be sorted from this batch')
@@ -251,10 +309,11 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
             cycle_dir = out / 'cycles' / f"{session.active['cycle']:03d}"
             cycle_dir.mkdir(parents=True)
             snapshot_path = cycle_dir / 'observations.yaml'
-            snapshot_path.write_text(yaml.safe_dump(session.world_snapshot(base), sort_keys=False))
+            # A rendered frame is the cycle's observation unchanged (its own capture time and world revision).
+            snapshot_path.write_text(yaml.safe_dump(base if rendered_source else session.world_snapshot(base), sort_keys=False))
             before = set(statuses)
             child = subprocess.Popen([sys.executable, str(executor_path), '--scene-package', str(scene_dir),
-                '--detections', str(snapshot_path), '--replay', '--resolve-task', '--start',
+                '--detections', str(snapshot_path), *([] if rendered_source else ['--replay']), '--resolve-task', '--start',
                 '--target-object-id', target['id'], '--timeout', str(args.cycle_timeout),
                 '--sorting-cycle', json.dumps({'session_id': session.session_id, 'cycle': session.active['cycle']}),
                 '--summary-output', str(cycle_dir / 'executor.json')],
@@ -273,6 +332,7 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
             new_statuses = [status for key, status in statuses.items() if key not in before]
             outcome = session.record_cycle(summary, child.returncode, new_statuses, cycle_dir)
             child = None
+            needs_frame = rendered_source                # every cycle is followed by a new observation
             emit({'cycle_outcome': outcome})
         audit['result'] = 'PASS'
     except SortingFault as fault:
@@ -283,7 +343,8 @@ def run_sorting_session(args, out, scene_dir, input_path, replay_input, intent, 
         audit['result'], audit['failure'] = 'FAIL', f'SESSION_INTERRUPTED: {exc}'
     finally:
         if child is not None:
-            audit['sorting_cycle_executor_stopped_cleanly'] = stop(child)
+            # The frame observer stops its render and EPD processes itself on SIGINT; give it time to.
+            audit['sorting_child_stopped_cleanly'] = stop(child, grace=10 if session.observing is None else 60)
         audit['sorting_session'] = session.report()
         audit['sorting_counts'] = session.counts()
         emit()
@@ -354,10 +415,25 @@ def main():
         from task_intent_authoring import planning_input
         saved_intent, _, _ = read_scene_task(scene_dir)
         input_path, replay_input = planning_input(scene_dir, saved_intent, args.detections)
+        from task_intent_authoring import SESSION_RENDER_INPUT
+        if input_path == SESSION_RENDER_INPUT and not args.sorting_session:
+            parser.error('SESSION_RENDER_ONLY: this task is observed by its sorting session\'s simulated camera; '
+                         'start a sorting session (or save a captured snapshot in Task settings)')
         if args.sorting_session:
             from task_intent_v2 import class_routing_rules
             if class_routing_rules(saved_intent) is None:
                 parser.error('SORTING_REQUIRES_CLASS_ROUTING: the saved task has no class routing table')
+            from task_intent_v2 import session_rendered_perception
+            if session_rendered_perception(saved_intent):
+                # R2.5A: refuse before launching anything when the cell cannot be rendered or EPD is not registered.
+                from perception_replay import PerceptionBlocked, _perception_runtime, cell_camera, load_cell
+                from simulator_world import SimulatorWorldError, derive_render_world
+                try:
+                    cell_camera(load_cell(scene_dir)[1])
+                    _perception_runtime(Path(__file__).resolve().parents[3])
+                    derive_render_world(scene_dir)
+                except (PerceptionBlocked, SimulatorWorldError) as exc:
+                    parser.error(f'SORTING_OBSERVATION_UNAVAILABLE: {exc}')
             if saved_intent.get('safety', {}).get('execution_backend', 'fake') != 'fake':
                 from simulator_world import physics_task_qualification
                 verdict = physics_task_qualification(saved_intent, sorting_session=True)
