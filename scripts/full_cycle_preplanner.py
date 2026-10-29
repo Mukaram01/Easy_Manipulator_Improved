@@ -490,14 +490,16 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                     destination_object = target_xyz + quaternion_from_rpy(destination['pose_rpy'])
                     place_goal = operations.pose_message(compose_pose(destination_object, inverse_pose(object_in_tool)))
                 transfer_goal = operations.translated_pose(place_goal, dz=place_approach)
-                if transport is None:
-                    motion('PREPLAN_TRANSFER', transfer_goal)
-                else:
+
+                def transfer(**ik):
+                    if transport is None:
+                        motion('PREPLAN_TRANSFER', transfer_goal, **ik)
+                        return
                     # Bounded attempts along the authored ladder; a budget or lifecycle stop is never retried.
                     attempts = []
                     for attempt in transport.attempts():
                         try:
-                            motion('PREPLAN_TRANSFER', transfer_goal, **({} if attempt.tilt_tolerance_rad is None else
+                            motion('PREPLAN_TRANSFER', transfer_goal, **ik, **({} if attempt.tilt_tolerance_rad is None else
                                    {'transport_tilt_tolerance_rad': attempt.tilt_tolerance_rad}))
                         except (SearchBudgetExhausted, CandidateBudgetExhausted, PlanningLifecycleFailure):
                             raise
@@ -510,11 +512,39 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
                         attempts.append(dict(attempt.as_dict(), success=True))
                         steps[-1]['metadata']['transport_policy'] = dict(transport.as_contract(), attempts=attempts)
                         break
+
                 # The authored place approach is z_down: descend straight into the
                 # destination like the grasp descent and the retreat. A free OMPL
                 # segment into the bin cavity cut corners through the bound physics
                 # walls between waypoints (LENLEG 2026-10-24, controller-interpolated audit).
-                motion('PREPLAN_PLACE', place_goal, straight=True)
+                # The transfer pose's IK branch decides whether that descent exists: one branch can reach the pose
+                # but not descend into the cavity (LENLEG 2026-10-29 R2.5B Bin B: wrist-flipped branch,
+                # FCL_COLLISION in every candidate). When the place descent fails after an unbound transfer, the
+                # transfer IK is solved once more from the authored home configuration; the same failed branch is
+                # refused, and any new branch is planned and certified exactly like the first. A resolved
+                # (bound) transfer branch is never substituted.
+                alternatives = [None] if contract.get('transfer_ik_seed') is not None else [None, home]
+                transfer_mark = (copy.deepcopy(view), len(steps), len(stages), len(checks))
+                failed_branches = []
+                for reference in alternatives:
+                    ik = {} if reference is None else dict(ik_reference=reference, ik_exclude=failed_branches)
+                    transfer(**ik)
+                    branch = (stages[-1].get('transfer_ik_seed') or {}).get('joint_positions')
+                    try:
+                        motion('PREPLAN_PLACE', place_goal, straight=True)
+                    except (SearchBudgetExhausted, CandidateBudgetExhausted, PlanningLifecycleFailure):
+                        raise
+                    except Exception as exc:
+                        if reference is not None or len(alternatives) == 1 or branch is None:
+                            raise
+                        view = copy.deepcopy(transfer_mark[0])
+                        del steps[transfer_mark[1]:]; del stages[transfer_mark[2]:]; del checks[transfer_mark[3]:]
+                        failed_branches.append(copy.deepcopy(branch))
+                        checks.append(dict(code='TRANSFER_IK_ALTERNATIVE', status='RETRY', reference='home',
+                                           failed_branch=copy.deepcopy(branch), place_failure=str(exc)[:200],
+                                           details=copy.deepcopy(getattr(exc, 'details', None))))
+                        continue
+                    break
                 reached = operations.fk(view.robot_state, contract['tool_link'])
                 achieved = operations.object_pose_after_motion(original, tool_at_grasp.pose, reached.pose)
                 if math.dist(achieved[:3], target_xyz) > PLACEMENT_TOLERANCE_M:

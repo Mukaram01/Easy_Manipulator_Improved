@@ -721,6 +721,14 @@ def ik_scene_matches_live(planned, live):
             == live.robot_state.attached_collision_objects)
 
 
+IK_BRANCH_TOLERANCE_RAD = 0.1
+
+
+def same_ik_branch(values, reference, names, tolerance=IK_BRANCH_TOLERANCE_RAD):
+    """Whether two arm configurations are the same IK branch: every joint within ``tolerance`` modulo a full turn."""
+    return all(abs(math.remainder(values[n] - reference[n], 2 * math.pi)) <= tolerance for n in names)
+
+
 def nearest_ik_winding(values, reference, joints):
     """Keep an IK pose while choosing the closest model-permitted joint turns.
 
@@ -2149,7 +2157,7 @@ def main():
     def plan_segment(view, name, goal, group=None, straight=False, initial_support=None,
                      ik_binding=None, ik_seed=None, cartesian_corridor=None,
                      initial_separation_object_ids=None, extraction_intent=None, closure_clearance=None,
-                     transport_tilt_tolerance_rad=None):
+                     transport_tilt_tolerance_rad=None, ik_reference=None, ik_exclude=()):
         stage(name)
         if transport_tilt_tolerance_rad is not None and (
                 name != 'PREPLAN_TRANSFER' or isinstance(goal, dict) or straight or cartesian_corridor is not None):
@@ -2162,6 +2170,12 @@ def main():
                                    or (group is not None and group != contract['planning_group'])
                                    or ik_binding is not None or straight or cartesian_corridor is not None):
             raise RuntimeError('TRANSFER_IK_SEED_CONTEXT: seed requires an unbound transfer pose')
+        if (ik_reference is not None or ik_exclude) and (
+                name != 'PREPLAN_TRANSFER' or isinstance(goal, dict) or ik_seed is not None or ik_binding is not None
+                or (group is not None and group != contract['planning_group']) or straight
+                or cartesian_corridor is not None):
+            raise RuntimeError('TRANSFER_IK_ALTERNATIVE_CONTEXT: an alternative IK reference applies to an unbound '
+                               'transfer pose only')
         wall_deadline = min(deadline, float(contract.get('_candidate_wall_deadline', deadline)))
         def wall_budget_failure():
             from full_cycle_preplanner import SearchBudgetExhausted, CandidateBudgetExhausted
@@ -2358,6 +2372,9 @@ def main():
             if ik_seed is not None:
                 ik_request.ik_request.robot_state = bound_transfer_seed(
                     ik_seed, goal, contract, view.robot_state, mimics)
+            if ik_reference is not None:
+                # Only where the solver starts: the solution is still planned and certified as any other.
+                ik_request.ik_request.robot_state = updated_state(view.robot_state, ik_reference, mimics)
             # Avoid rejecting a pose solely because IK selected a colliding arm
             # branch. The live service is usable only while its collision scene
             # matches this private view; otherwise preserve seed continuity and
@@ -2389,6 +2406,11 @@ def main():
                 if any(n not in values or not math.isfinite(values[n]) or abs(values[n]-v) > 0.0001
                        for n,v in ik_seed['joint_positions'].items()):
                     raise RuntimeError('TRANSFER_IK_BRANCH_CHANGED: resolve current scene again')
+            for excluded in ik_exclude:
+                if same_ik_branch(values, excluded, contract['home_joint_names']):
+                    from full_cycle_preplanner import MotionFeasibilityFailure
+                    raise MotionFeasibilityFailure('TRANSFER_IK_BRANCH_EQUIVALENT: the alternative IK reference '
+                                                   'returned the arm branch that already failed')
             request.goal_constraints = [joint_constraints({n:values[n] for n in contract['home_joint_names']})]
             goal_state = updated_state(view.robot_state,
                                        {n: values[n] for n in contract['home_joint_names']}, mimics)
