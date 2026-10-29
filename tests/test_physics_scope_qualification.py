@@ -247,7 +247,7 @@ def trials(cells, tmp_path_factory):
 def qualified_record(path, readiness, **change):
     """A QUALIFIED record as an issuer would write it (no issuer exists: qualification is not reachable yet)."""
     body = dict(schema=psq.SCHEMA, state=psq.QUALIFIED, contract=psq.QUALIFICATION_CONTRACT, trials=readiness['trials'],
-                **{k: readiness[k] for k in ('cell', 'world', 'destination', 'native', 'runtime')})
+                **{k: readiness[k] for k in ('cell', 'world', 'destination', 'native', 'runtime', 'stop_cancel')})
     body.update(change)
     data = (json.dumps(dict(body, binding_sha256=hashlib.sha256(psq._canonical(body)).hexdigest())) + '\n').encode()
     path.write_bytes(data)
@@ -398,3 +398,143 @@ def test_a_stop_after_cycle_missing_any_item_is_not_accepted(cells, tmp_path, ed
     run = stopped_trial(tmp_path, cells['b'], edit=edit, session_edit=session_edit)
     accepted = psq.stop_after_cycle_acceptance(run)
     assert accepted['accepted'] is False and accepted['state'] == 'NOT_ACCEPTED' and failed in accepted['failed']
+
+
+# --- Q7: the accepted G5A cancel and G5B stop-at-cycle-end runs, bound by identity --------------------------------
+CANCEL = dict(signal='SIGTERM', child=dict(forwarded='SIGTERM', killed=False, grace_s=90, returncode=1))
+
+
+def cancelled_trial(root, cell, run_id='run-cancel', edit=None, session_edit=None):
+    """A G5A run as the runner records it: SIGTERM forwarded to the executor, its held transfer cancelled."""
+    from simulator_execution import transfer_cancellation_acceptance
+    from test_simulator_execution import g5a_summary
+    def cancelled(summary, report):
+        scope = summary['physics_scope']
+        summary.clear()
+        summary.update(g5a_summary(), physics_scope=scope)
+        summary['transfer_cancellation'] = transfer_cancellation_acceptance(summary)
+        report.update(status='CANCELLED', gates={'full-cycle': {'status': 'INTERRUPTED', 'operator_cancel': CANCEL}})
+        if edit:
+            edit(summary, report)
+    run = strict_trial(root, cell, run_id, edit=cancelled)
+    path = run / '06-full-cycle/session-report.json'
+    record = dict(json.loads(path.read_text()), operator_cancel=copy.deepcopy(CANCEL))
+    if session_edit:
+        session_edit(record)
+    path.write_text(json.dumps(record))
+    return run
+
+
+def rebound(run, edit):
+    """The run's scope record re-bound after ``edit`` and every copy of its digest updated (a consistent forgery)."""
+    session = run / '06-full-cycle'
+    sha = rewrite(session / 'physics-scope.json', edit)
+    for path in (session / 'session-report.json', session / 'full-cycle/summary.json'):
+        rewrite_json = json.loads(path.read_text())
+        rewrite_json['physics_scope']['sha256'] = sha
+        path.write_text(json.dumps(rewrite_json))
+    return run
+
+
+@pytest.fixture(scope='module')
+def g5(cells, tmp_path_factory):
+    root = tmp_path_factory.mktemp('g5')
+    return dict(cancel=cancelled_trial(root / 'cancel', cells['b']), stop=stopped_trial(root / 'stop', cells['b']))
+
+
+def test_q7_recognises_both_accepted_g5_runs_and_never_replaces_the_strict_trials(cells, trials, g5):
+    q7 = 'stop/cancel acceptance not established'
+    ready = psq.qualification_readiness(cells['b'], [*trials[:2], g5['stop']], NATIVE, RUNTIME,
+                                        cancellation_trial=g5['cancel'], stop_trial=g5['stop'])
+    assert ready['status'] == 'QUALIFIED_READY' and ready['unmet'] == [] and len(ready['trials']) == 3
+    assert {k: v['state'] for k, v in ready['stop_cancel'].items()} == {
+        'cancellation': 'RECOVERY_REQUIRED_HELD_STOPPED', 'stop_after_cycle': 'STOPPED_AFTER_CYCLE'}
+    assert ready['stop_cancel']['cancellation']['run_id'] == 'run-cancel' and ready['stop_cancel']['stop_after_cycle']['run_id'] == 'run-stop'
+    # G5B counts toward Q8 only when listed as a trial; G5A never does (it is not a completed placement).
+    unlisted = psq.qualification_readiness(cells['b'], trials[:2], NATIVE, RUNTIME, cancellation_trial=g5['cancel'], stop_trial=g5['stop'])
+    assert unlisted['unmet'] == ['2 of 3 independent strict trial PASS sessions']
+    listed = psq.qualification_readiness(cells['b'], [*trials[:2], g5['cancel']], NATIVE, RUNTIME,
+                                         cancellation_trial=g5['cancel'], stop_trial=g5['stop'])
+    assert len(listed['trials']) == 2 and any('not a passing authorised trial report' in u for u in listed['unmet'])
+    # Either G5 run alone, or none, leaves Q7 unmet.
+    for kwargs in (dict(), dict(cancellation_trial=g5['cancel']), dict(stop_trial=g5['stop'])):
+        alone = psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME, **kwargs)
+        assert alone['status'] == 'NOT_QUALIFIED' and alone['stop_cancel'] == {} and any(q7 in u for u in alone['unmet'])
+    # G5 is once per multi-destination world (R2.5B): the same runs serve the other bin's cell, whose Q8 still fails.
+    other = psq.qualification_readiness(cells['a'], [], NATIVE, RUNTIME, cancellation_trial=g5['cancel'], stop_trial=g5['stop'])
+    assert other['unmet'] == ['0 of 3 independent strict trial PASS sessions'] and len(other['stop_cancel']) == 2
+
+
+@pytest.mark.parametrize('edit,session_edit,reason', [
+    (lambda s, r: r.update(status='PASS'), None, 'not a cancelled authorised trial report'),
+    (lambda s, r: r.update(preflight={'repo_dirty': True}), None, 'modified checkout'),
+    (lambda s, r: s['physics_scope'].update(sha256='other'), None, 'differs from the one the trial verified'),
+    (None, lambda d: d.update(shutdown={'clean': False}), 'owned shutdown not clean'),
+    (None, lambda d: d['operator_cancel']['child'].update(killed=True), 'not forwarded'),
+    (None, lambda d: d['operator_cancel']['child'].update(forwarded=None), 'not forwarded'),
+    (None, lambda d: d.pop('operator_cancel'), 'not forwarded'),
+    (lambda s, r: r['gates']['full-cycle'].pop('operator_cancel'), None, 'not forwarded'),
+    (lambda s, r: s['measured_reconciliation'].update(held=False), None, 'part_still_held'),
+    (lambda s, r: s['controller_cancellation']['ur5_arm_controller'].update(status=4), None, 'controller_goal_canceled'),
+    (lambda s, r: s['execution_results'].append({'stage': 'EXECUTE_PLACE'}), None, 'no_motion_after_cancel'),
+    (lambda s, r: s.update(result='PASS'), None, 'recovery_required'),
+    (lambda s, r: s['transfer_cancellation'].update(state='OTHER'), None, 'recorded verdict differs'),
+    (lambda s, r: s.pop('transfer_cancellation'), None, 'recorded verdict differs'),
+])
+def test_a_g5a_run_missing_any_item_fails_closed(cells, trials, g5, tmp_path, edit, session_edit, reason):
+    run = cancelled_trial(tmp_path, cells['b'], edit=edit, session_edit=session_edit)
+    found = psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME, cancellation_trial=run, stop_trial=g5['stop'])
+    assert found['status'] == 'NOT_QUALIFIED' and found['stop_cancel'] == {}
+    assert any('stop/cancel' in u and reason in u for u in found['unmet']), found['unmet']
+
+
+def test_missing_wrong_type_mismatched_or_replayed_g5_evidence_fails_closed(cells, trials, g5, tmp_path):
+    def unmet(cancel, stop, native=NATIVE, runtime=RUNTIME, cell='b'):
+        found = psq.qualification_readiness(cells[cell], trials, native, runtime, cancellation_trial=cancel, stop_trial=stop)
+        assert found['status'] == 'NOT_QUALIFIED' and found['stop_cancel'] == {}
+        return ' '.join(u for u in found['unmet'] if 'stop/cancel' in u)
+    assert 'evidence missing' in unmet(tmp_path / 'absent', g5['stop'])
+    assert 'latched' in unmet(g5['cancel'], g5['cancel'])                          # a cancel is not a stop at cycle end
+    assert 'not a cancelled authorised trial report' in unmet(g5['stop'], g5['stop'])   # nor the reverse
+    assert 'not a cancelled authorised trial report' in unmet(trials[0], g5['stop'])    # a plain strict trial
+    assert 'native identity changed' in unmet(g5['cancel'], g5['stop'], native=dict(NATIVE, support_sha256='rebuilt'))
+    assert 'runtime identity changed' in unmet(g5['cancel'], g5['stop'], runtime=dict(RUNTIME, record_sha256='other'))
+    world = rebound(cancelled_trial(tmp_path / 'world', cells['b'], run_id='run-w'),
+                    lambda r: r['binding']['world'].update(derived_sha256='other'))
+    assert 'another world' in unmet(world, g5['stop'])
+    robot = rebound(cancelled_trial(tmp_path / 'robot', cells['b'], run_id='run-r'),
+                    lambda r: r['binding']['robot'].update(model='another_robot'))
+    assert 'geometry or robot differs' in unmet(robot, g5['stop'])
+    same = stopped_trial(tmp_path / 'same', cells['b'])                               # both runs from one session
+    assert 'same trial session' in unmet(cancelled_trial(tmp_path / 'c2', cells['b'], run_id='run-stop'), same)
+    late = stopped_trial(tmp_path / 'late', cells['b'], edit=lambda s, r, x: x.update(executor_stage='EXECUTE_LIFT'))
+    assert 'during_transfer' in unmet(g5['cancel'], late)
+    truncated = cancelled_trial(tmp_path / 'truncated', cells['b'], run_id='run-t')
+    summary = truncated / '06-full-cycle/full-cycle/summary.json'
+    summary.write_bytes(summary.read_bytes()[:-40])                                # unreadable: refused, never ready
+    with pytest.raises(ValueError):
+        psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME, cancellation_trial=truncated, stop_trial=g5['stop'])
+
+
+def test_a_qualified_record_binds_the_g5_runs_and_refuses_any_change_to_them(cells, trials, g5, tmp_path):
+    """No issuer exists: this record is written as one would be, to prove the verifier re-judges the G5 evidence."""
+    ready = psq.qualification_readiness(cells['b'], [*trials[:2], g5['stop']], NATIVE, RUNTIME,
+                                        cancellation_trial=g5['cancel'], stop_trial=g5['stop'])
+    path = tmp_path / 'qualified.json'
+    verify = lambda sha: psq.verify_qualified_scope(path, sha, cells['b'], NATIVE, RUNTIME)
+    assert verify(qualified_record(path, ready))['stop_cancel'] == ready['stop_cancel']
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_NOT_QUALIFIED: stop/cancel'):     # G5 left out
+        verify(qualified_record(path, ready, stop_cancel={}))
+    other = cancelled_trial(tmp_path / 'other', cells['b'], run_id='run-cancel-2')                  # swapped G5A run
+    swapped = dict(ready['stop_cancel'], cancellation=dict(ready['stop_cancel']['cancellation'], run=str(other.resolve())))
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: stop_cancel'):
+        verify(qualified_record(path, ready, stop_cancel=swapped))
+    sha = qualified_record(path, ready)
+    summary = g5['cancel'] / '06-full-cycle/full-cycle/summary.json'
+    original = summary.read_bytes()
+    summary.write_bytes(original.replace(b'"cancellation_confirmed": true', b'"cancellation_confirmed": true, "edited": 1'))
+    try:
+        with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: stop_cancel'):    # modified evidence
+            verify(sha)
+    finally:
+        summary.write_bytes(original)

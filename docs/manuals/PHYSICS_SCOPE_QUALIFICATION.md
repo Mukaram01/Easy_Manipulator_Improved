@@ -62,12 +62,29 @@ A qualified scope would admit **one exact cell**: its task, placing into one bin
 **Q6 Replay protection:**
 - every bound trial has a distinct session run id and scope record;
 - a qualified record binds each trial's report, session report, scope record and summary digests, plus its own digest;
-- any edited, swapped, duplicated or cross-session trial refuses.
+- it also binds the two G5 runs (session run ids and the same four digests), which are re-judged on every check;
+- any edited, swapped, duplicated or cross-session trial or G5 run refuses.
 
 **Q7 Cancellation:**
 - the Stage-A cancellation trial is a prerequisite of every trial;
 - in addition, R2.5B G5 (stop at cycle end, and SIGTERM cancellation during transfer, in the multi-destination world) must be accepted.
-- Both now have accepted Bin B trials (2026-10-29: G5A `log/qualification/g5a/trial_2`, G5B `log/qualification/g5b/trial`). The verifier does not read them yet, so this item stays unmet until a reviewed change binds them.
+- **Evidence:** `qualification_readiness(..., cancellation_trial=, stop_trial=)`, or `--cancellation-trial` and `--stop-trial`. Each run is judged from its own files:
+  - **G5A** (`cancellation_evidence`):
+    - Q1 provenance of a `CANCELLED` authorised run;
+    - the operator SIGTERM forwarded to the executor, which was not killed;
+    - `transfer_cancellation_acceptance` recomputed from the summary, equal to the executor's recorded verdict, and `RECOVERY_REQUIRED_HELD_STOPPED`.
+  - **G5B:** `stop_after_cycle_acceptance` (`STOPPED_AFTER_CYCLE`, which includes the strict-trial criteria).
+- **Binding:** both runs must have the current native and runtime identity and the exact cell's derived world. They must share the bin, support and robot geometry with each other and with the counted trials.
+- **Shared between cells:** G5 runs once per multi-destination world (R2.5B), so they are not tied to one bin's task. The same runs serve both cells of the world.
+- **Distinct sessions:** the two must be different sessions.
+- **Refused:**
+  - missing, modified, wrong-type or mismatched evidence;
+  - a run offered in the other role.
+- **What counts for Q8:**
+  - G5A is cancellation evidence only and never counts as a placement;
+  - listed as a trial, it is a failed run;
+  - G5B counts toward Q8 only when listed as a trial and meeting every per-trial criterion.
+- **Accepted (2026-10-29):** G5A `log/qualification/g5a/trial_2` (run `17a40d24…`), G5B `log/qualification/g5b/trial` (run `0f6c3690…`).
 
 **Operator stops during a trial** (the runner's own process; nothing else is signalled):
 
@@ -84,22 +101,22 @@ A qualified scope would admit **one exact cell**: its task, placing into one bin
   - it was not forwarded and not superseded, and no cancellation or recovery followed;
   - the cycle is a strict trial PASS (`trial_evidence`);
   - no other session ran.
-- **Q7 is unchanged:** these acceptances are evidence for the stop/cancel item; the verifier still reports it unmet until a reviewed change binds them.
+- **Q7:** the two acceptances are the stop/cancel evidence (see Q7 above).
 
 **Q8 Repeatability:**
 - at least **3** independent strict trial PASS sessions of the exact cell;
 - any listed trial that failed after motion blocks qualification;
 - trials that stopped before authorisation (no motion) are reported as reliability findings.
 
-**Status (2026-10-29):** `qualification_readiness` returns `NOT_QUALIFIED` for both cells.
+**Status (2026-10-29):** `qualification_readiness` returns `NOT_QUALIFIED` for both cells. Q7 is met by the G5 runs; Q8 is not met.
 
 | Cell | Strict trials | Unmet | Reliability finding |
 |---|---|---|---|
-| `zz_r25b_two_bin_a` | 1 of 3 (`g3b/bin_a_trial_2`) | Q7, Q8 | trial 1 |
-| `zz_r25b_two_bin_b` | 2 of 3 (`g3a/bin_b_trial`, `g5b/trial`) | Q7, Q8 | — |
+| `zz_r25b_two_bin_a` | 1 of 3 (`g3b/bin_a_trial_2`) | Q8 | trial 1 |
+| `zz_r25b_two_bin_b` | 2 of 3 (`g3a/bin_b_trial`, `g5b/trial`) | Q8 | — |
 
 `verify_qualified_scope` therefore refuses every record, including a correctly bound one. Offline display:
-`python3 scripts/physics_scope_qualification.py readiness --cell <cell> --trial <run> ...` (exit 0 only when ready).
+`python3 scripts/physics_scope_qualification.py readiness --cell <cell> --trial <run> ... --cancellation-trial <G5A run> --stop-trial <G5B run>` (exit 0 only when ready).
 
 ## Unresolved reliability issue
 **What happened:** the first Bin A trial (`log/qualification/g3b/bin_a_trial`) stopped before motion with `PREPLAN_TRANSFER: SEARCH_BUDGET_EXHAUSTED` (107.5 s + 202.0 s).

@@ -243,12 +243,42 @@ def _rotate(q, v):
     return [v[0] + w * tx + y * tz - z * ty, v[1] + w * ty + z * tx - x * tz, v[2] + w * tz + x * ty - y * tx]
 
 
+def _run_files(run):
+    session = run / '06-full-cycle'
+    return dict(report=run / 'stage-a1-targeted-report.json', session_report=session / 'session-report.json',
+                scope=session / 'physics-scope.json', summary=session / 'full-cycle/summary.json')
+
+
+def _provenance(out, paths, status, label):
+    """Q1 for one authorised run with every evidence file present: its digests, binding and session, and every
+    provenance problem (official report with ``status``, clean checkout, the verified record, clean shutdown)."""
+    out['digests'] = {k: _sha256(path.read_bytes()) for k, path in paths.items()}
+    report, session_report, record, summary = (json.loads(paths[k].read_text())
+                                               for k in ('report', 'session_report', 'scope', 'summary'))
+    bound = record.get('binding') or {}
+    out.update(binding=bound, run_id=(bound.get('session') or {}).get('run_id'))
+    problems = out['problems']
+    if (report.get('status') != status or report.get('scope') != TRIAL_EVIDENCE_SCOPE or report.get('mode') != 'targeted'
+            or report.get('gate') != 'full-cycle' or report.get('stage_a_acceptance') is not False):
+        problems.append(f'not a {label} authorised trial report')
+    if (report.get('preflight') or {}).get('repo_dirty') is not False:
+        problems.append('trial ran from a modified checkout')
+    if ((session_report.get('physics_scope') or {}).get('sha256') != out['digests']['scope'] or
+            (summary.get('physics_scope') or {}).get('sha256') != out['digests']['scope']):
+        problems.append('scope record differs from the one the trial verified')
+    if (record.get('schema') != SCHEMA or record.get('state') != AUTHORISED_TRIAL or
+            record.get('operation') != TRIAL_OPERATION or record.get('binding_sha256') != _sha256(_canonical(bound))):
+        problems.append('scope record invalid')
+    if not (session_report.get('shutdown') or {}).get('clean'):
+        problems.append('owned shutdown not clean')
+    return report, session_report, summary
+
+
 def trial_evidence(run_dir):
     """One authorised trial, judged from its own evidence files: kind STRICT_PASS, PRE_MOTION_FAILURE or FAILED."""
     run, contract = Path(run_dir), QUALIFICATION_CONTRACT
     session = run / '06-full-cycle'
-    paths = dict(report=run / 'stage-a1-targeted-report.json', session_report=session / 'session-report.json',
-                 scope=session / 'physics-scope.json', summary=session / 'full-cycle/summary.json')
+    paths = _run_files(run)
     out = dict(run=str(run.resolve()), kind='FAILED', problems=[], digests={})
     if not paths['report'].is_file():
         out['problems'].append('no trial report')
@@ -265,24 +295,8 @@ def trial_evidence(run_dir):
     if missing:
         out['problems'].append('evidence missing: ' + ', '.join(missing))
         return out
-    out['digests'] = {k: _sha256(path.read_bytes()) for k, path in paths.items()}
-    session_report, record, summary = (json.loads(paths[k].read_text()) for k in ('session_report', 'scope', 'summary'))
-    bound = record.get('binding') or {}
-    out.update(binding=bound, run_id=(bound.get('session') or {}).get('run_id'))
-    problems = out['problems']
-    if (report.get('status') != 'PASS' or report.get('scope') != TRIAL_EVIDENCE_SCOPE or report.get('mode') != 'targeted'
-            or report.get('gate') != 'full-cycle' or report.get('stage_a_acceptance') is not False):
-        problems.append('not a passing authorised trial report')
-    if (report.get('preflight') or {}).get('repo_dirty') is not False:
-        problems.append('trial ran from a modified checkout')
-    if ((session_report.get('physics_scope') or {}).get('sha256') != out['digests']['scope'] or
-            (summary.get('physics_scope') or {}).get('sha256') != out['digests']['scope']):
-        problems.append('scope record differs from the one the trial verified')
-    if (record.get('schema') != SCHEMA or record.get('state') != AUTHORISED_TRIAL or
-            record.get('operation') != TRIAL_OPERATION or record.get('binding_sha256') != _sha256(_canonical(bound))):
-        problems.append('scope record invalid')
-    if not (session_report.get('shutdown') or {}).get('clean'):
-        problems.append('owned shutdown not clean')
+    report, session_report, summary = _provenance(out, paths, 'PASS', 'passing')
+    bound, problems = out['binding'], out['problems']
     accepted = summary.get('full_cycle_physical_acceptance') or {}
     release = summary.get('release_evidence') or {}
     prerequisites = summary.get('commissioning_prerequisites') or {}
@@ -348,7 +362,35 @@ def stop_after_cycle_acceptance(run_dir):
     )
     failed = [name for name, ok in checks.items() if not ok]
     return dict(accepted=not failed, state='STOPPED_AFTER_CYCLE' if not failed else 'NOT_ACCEPTED', failed=failed,
-                checks=checks, trial_problems=trial['problems'])
+                checks=checks, trial_problems=trial['problems'], run=trial['run'], run_id=trial.get('run_id'),
+                digests=trial['digests'], binding=trial.get('binding'))
+
+
+def cancellation_evidence(run_dir):
+    """G5A: an operator cancel (SIGTERM to the runner) of the authorised trial's held transfer, judged from the trial's
+    own evidence files: Q1 provenance of a CANCELLED run, the stop forwarded to (not killing) the executor, and
+    simulator_execution.transfer_cancellation_acceptance recomputed from the summary; the recorded verdict must agree."""
+    from simulator_execution import TRANSFER_CANCELLATION_STATE, transfer_cancellation_acceptance
+    run = Path(run_dir)
+    paths = _run_files(run)
+    out = dict(run=str(run.resolve()), accepted=False, state=None, problems=[], digests={})
+    missing = sorted(k for k, path in paths.items() if not path.is_file())
+    if missing:
+        out['problems'].append('evidence missing: ' + ', '.join(missing))
+        return out
+    report, session_report, summary = _provenance(out, paths, 'CANCELLED', 'cancelled')
+    cancel = session_report.get('operator_cancel') or {}
+    child = cancel.get('child') or {}
+    if (cancel.get('signal') != 'SIGTERM' or child.get('forwarded') != 'SIGTERM' or child.get('killed') is not False
+            or report.get('gates', {}).get('full-cycle', {}).get('operator_cancel') != cancel):
+        out['problems'].append('operator cancel not forwarded to the running executor')
+    accepted = transfer_cancellation_acceptance(summary)
+    if not accepted['accepted']:
+        out['problems'].append('transfer cancellation not accepted: ' + ', '.join(accepted['failed']))
+    if summary.get('transfer_cancellation') != accepted:
+        out['problems'].append("the executor's recorded verdict differs from its evidence")
+    out.update(accepted=not out['problems'], state=TRANSFER_CANCELLATION_STATE if not out['problems'] else None)
+    return out
 
 
 def _qualified_cell(cell_dir):
@@ -368,8 +410,48 @@ def _shared(binding):
                 cell={k: binding['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES})
 
 
-def qualification_readiness(cell_dir, trial_dirs, native, runtime):
-    """Whether the listed trials qualify the exact cell's scope under QUALIFICATION_CONTRACT. Never writes anything."""
+def _world_level(shared):
+    """What the G5 stop/cancel trials must share with the exact cell's trials: the multi-destination world, its geometry
+    and the robot. G5 is once per world in R2.5B (G3 is per bin), so not the task's bin or cell files."""
+    return {k: v for k, v in shared.items() if k not in ('destination', 'cell')}
+
+
+def stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial, trial_shared=None):
+    """Q7: the accepted G5A cancel and G5B stop-at-cycle-end runs as bound identities, and why either is not."""
+    accepted, why = {}, []
+    shared = None if trial_shared is None else _world_level(trial_shared)
+    for role, run, judge in (('cancellation', cancellation_trial, cancellation_evidence),
+                             ('stop_after_cycle', stop_trial, stop_after_cycle_acceptance)):
+        if run is None:
+            why.append(f'{role}: no evidence')
+            continue
+        found = judge(run)
+        if not found['accepted']:
+            reasons = found.get('problems', []) + found.get('failed', []) + found.get('trial_problems', [])
+            why.append(f"{role} {found['run']}: {'; '.join(reasons)}")
+            continue
+        bound = found['binding']
+        wrong = [name for name, ok in (
+            ('native identity changed', bound.get('native') == native),
+            ('runtime identity changed', bound.get('runtime') == runtime),
+            ('another world', bound['world']['derived_sha256'] == world['derived_sha256']),
+            ('geometry or robot differs from the other trials', shared is None or _world_level(_shared(bound)) == shared),
+        ) if not ok]
+        if wrong:
+            why.append(f"{role} {found['run']}: {', '.join(wrong)}")
+            continue
+        shared = _world_level(_shared(bound))
+        accepted[role] = dict(run=found['run'], run_id=found['run_id'], state=found['state'], digests=found['digests'])
+    if len(accepted) == 2 and (accepted['cancellation']['run_id'] == accepted['stop_after_cycle']['run_id'] or
+                               accepted['cancellation']['digests']['scope'] == accepted['stop_after_cycle']['digests']['scope']):
+        why.append('the same trial session given as both stop and cancellation evidence')
+    return accepted, why
+
+
+def qualification_readiness(cell_dir, trial_dirs, native, runtime, cancellation_trial=None, stop_trial=None):
+    """Whether the listed trials qualify the exact cell's scope under QUALIFICATION_CONTRACT. Never writes anything.
+    ``cancellation_trial`` (G5A) and ``stop_trial`` (G5B) are the Q7 evidence; the G5B run counts toward Q8 only when it
+    is also listed in ``trial_dirs`` and meets every per-trial criterion there."""
     files, world = _qualified_cell(cell_dir)
     trials = [trial_evidence(run) for run in trial_dirs]
     unmet, reliability, counted, shared = [], [], [], None
@@ -403,10 +485,14 @@ def qualification_readiness(cell_dir, trial_dirs, native, runtime):
     required = QUALIFICATION_CONTRACT['strict_trials']
     if len(counted) < required:
         unmet.append(f'{len(counted)} of {required} independent strict trial PASS sessions')
-    unmet.append('stop/cancel acceptance not established: ' + QUALIFICATION_CONTRACT['stop_cancel'])
+    stop_cancel, why = stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial, shared)
+    if why:
+        unmet.append('stop/cancel acceptance not established: ' + QUALIFICATION_CONTRACT['stop_cancel'] +
+                     ('' if cancellation_trial is None and stop_trial is None else ' (' + '; '.join(why) + ')'))
     return dict(status='NOT_QUALIFIED' if unmet else 'QUALIFIED_READY', contract=QUALIFICATION_CONTRACT,
                 cell=files, world=world['derived_sha256'], destination=world['destination_asset'],
-                native=native, runtime=runtime, trials=counted, unmet=unmet, reliability_findings=reliability)
+                native=native, runtime=runtime, trials=counted, stop_cancel=stop_cancel if not why else {},
+                unmet=unmet, reliability_findings=reliability)
 
 
 def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
@@ -429,8 +515,12 @@ def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
         current = trial_evidence(trial['run'])
         if current.get('digests') != trial.get('digests') or current.get('run_id') != trial.get('run_id'):
             raise PhysicsScopeRefused(f"PHYSICS_SCOPE_EVIDENCE_CHANGED: {trial.get('run')}")
-    readiness = qualification_readiness(cell_dir, [t['run'] for t in bound], native, runtime)
-    for key in ('cell', 'world', 'destination', 'native', 'runtime'):
+    # The G5 runs are re-judged now; their digests and session ids must equal the bound ones.
+    stop_cancel = record.get('stop_cancel') or {}
+    readiness = qualification_readiness(cell_dir, [t['run'] for t in bound], native, runtime,
+                                        cancellation_trial=(stop_cancel.get('cancellation') or {}).get('run'),
+                                        stop_trial=(stop_cancel.get('stop_after_cycle') or {}).get('run'))
+    for key in ('cell', 'world', 'destination', 'native', 'runtime', 'stop_cancel'):
         if record.get(key) != readiness[key]:
             raise PhysicsScopeRefused(f'PHYSICS_SCOPE_MISMATCH: {key}')
     if readiness['status'] != 'QUALIFIED_READY':
@@ -439,18 +529,22 @@ def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
 
 
 def main(argv=None):
-    """Offline readiness display: python3 physics_scope_qualification.py readiness --cell DIR --trial RUN..."""
+    """Offline readiness display: python3 physics_scope_qualification.py readiness --cell DIR --trial RUN...
+    [--cancellation-trial RUN] [--stop-trial RUN]"""
     import argparse
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument('command', choices=['readiness'])
     parser.add_argument('--cell', type=Path, required=True)
     parser.add_argument('--trial', type=Path, action='append', default=[])
+    parser.add_argument('--cancellation-trial', type=Path, help='Q7: the G5A run (operator cancel during the transfer)')
+    parser.add_argument('--stop-trial', type=Path, help='Q7: the G5B run (stop at cycle end); list it as --trial too for Q8')
     parser.add_argument('--workspace', type=Path, default=Path(__file__).resolve().parents[3])
     args = parser.parse_args(argv)
     try:
         native = native_identity(args.workspace / 'install/workcell_builder/share/workcell_builder/'
                                  'commission_execute_build.json')
-        readiness = qualification_readiness(args.cell, args.trial, native, runtime_identity(args.workspace))
+        readiness = qualification_readiness(args.cell, args.trial, native, runtime_identity(args.workspace),
+                                            cancellation_trial=args.cancellation_trial, stop_trial=args.stop_trial)
     except PhysicsScopeRefused as exc:
         readiness = dict(status='REFUSED', reason=str(exc))
     print(json.dumps(readiness, indent=2, sort_keys=True))
