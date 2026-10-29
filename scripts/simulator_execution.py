@@ -1571,6 +1571,14 @@ def require_trial_evidence(path,current_capability):
     current_executable=(((current_capability.get('moveit_overlay') or {}).get('move_group') or {}).get('executable') or {}).get('sha256')
     if current_executable!=move_group_sha:
         raise RuntimeError('current MoveGroup executable differs from freshly qualified evidence')
+    # The bound sources (proved against the files on disk) cover the support/Cartesian
+    # adapter, which the commission-execute library does not compile.
+    sources=current_capability.get('sources')
+    if (not isinstance(sources,dict) or not any(Path(name).name=='src_support_contact_adapter.cpp' for name in sources) or
+            any(not isinstance(sha,str) or not sha.strip() for sha in sources.values())):
+        raise RuntimeError('current commissioning capability has no complete bound source identity')
+    if any(r.get('commissioning_capability',{}).get('sources')!=sources for r in records):
+        raise RuntimeError('commissioning prerequisite evidence was built from different or unrecorded bound sources')
     for r in records:
         backend=r.get('motion_backend_identity') or r.get('backend_identity',{})
         if backend.get('backend')!='simulator':raise RuntimeError('commissioning evidence backend identity unproven')
@@ -1589,7 +1597,7 @@ def require_trial_evidence(path,current_capability):
     if contact.get('verified_lift_clearance_m',0)<.01 or not contact.get('release_evidence',{}).get('settled'):
         raise RuntimeError('physical lift/release prerequisite missing')
     return dict(capability_sha256=capability_sha,moveit_overlay_sha256=overlay_sha,
-        move_group_sha256=move_group_sha,results=sorted(expected))
+        move_group_sha256=move_group_sha,sources=sources,results=sorted(expected))
 
 
 def verify_release(guard,held_sample):

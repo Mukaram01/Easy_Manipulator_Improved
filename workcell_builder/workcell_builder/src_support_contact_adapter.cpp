@@ -255,6 +255,37 @@ public:
   }
 };
 
+// Continuity of consecutive straight Cartesian waypoints. When its seeded attempt
+// fails, KDL re-seeds anywhere in joint space, so without limits a waypoint can come
+// back on another IK branch or winding while the tool barely moves, and the
+// controller sweeps the arm between the two. MoveIt hands these per-joint limits to
+// the solver as consistency limits around the previous waypoint and truncates the
+// path at any larger step. In-branch 2.5 mm steps traced on LENLEG stay below
+// 0.01 rad; the traced branch and winding jumps are 4.3-9.4 rad.
+constexpr double cartesian_revolute_step_limit_rad=M_PI/4.;
+constexpr double cartesian_prismatic_step_limit_m=.05;
+
+// The controller interpolates raw joint values, so every emitted step is checked raw
+// against the same limits. Time parameterization has unwound continuous joints by
+// then; a bounded joint keeps the winding its solver chose inside the joint limits.
+static std::string jointDiscontinuity(const moveit::core::RobotState& previous,
+    const moveit::core::RobotState& state,const moveit::core::JointModelGroup& group) {
+  for (const auto* joint:group.getActiveJointModels()) {
+    double limit;
+    if (joint->getType()==moveit::core::JointModel::REVOLUTE) limit=cartesian_revolute_step_limit_rad;
+    else if (joint->getType()==moveit::core::JointModel::PRISMATIC) limit=cartesian_prismatic_step_limit_m;
+    else return "joint="+joint->getName()+" has no single-variable continuity limit";
+    const auto index=joint->getFirstVariableIndex();
+    const double delta=std::abs(state.getVariablePosition(index)-previous.getVariablePosition(index));
+    if (!std::isfinite(delta) || delta>limit) {
+      std::ostringstream reason;
+      reason << "joint=" << joint->getName() << " step=" << delta << " limit=" << limit;
+      return reason.str();
+    }
+  }
+  return {};
+}
+
 class StraightCartesianPath : public planning_request_adapter::PlanningRequestAdapter {
 public:
   void initialize(const rclcpp::Node::SharedPtr& node, const std::string&) override {
@@ -502,17 +533,21 @@ private:
       };
 
       const moveit::core::RobotState original_start(start);
-      EigenSTL::vector_Isometry3d waypoints{goal};
       std::vector<moveit::core::RobotStatePtr> states;
+      // Only the single-target overload passes the limits to IK; the waypoint-list
+      // overload applies them after the whole path has been solved.
       const double fraction=moveit::core::CartesianInterpolator::computeCartesianPath(
-        &start,jmg,states,link,waypoints,true,
+        &start,jmg,states,link,goal,true,
         moveit::core::MaxEEFStep(step),
-        moveit::core::JumpThreshold(0.0),valid);
+        moveit::core::JumpThreshold(cartesian_revolute_step_limit_rad,cartesian_prismatic_step_limit_m),valid);
       if (!std::isfinite(fraction) || fraction<1.0-1e-9) {
+        // The next waypoint has no valid IK solution within the continuity limits
+        // of the last continued one (or one beyond them was truncated).
         RCLCPP_WARN(
           rclcpp::get_logger("workcell.cartesian_path"),
-          "CARTESIAN_PATH_INCOMPLETE fraction=%.9f collision_rejections=%zu constraint_rejections=%zu",
-          fraction,collision_rejections,constraint_rejections);
+          "CARTESIAN_PATH_INCOMPLETE fraction=%.9f continued_waypoints=%zu collision_rejections=%zu constraint_rejections=%zu revolute_step_limit=%.6f prismatic_step_limit=%.6f",
+          fraction,states.empty()?0:states.size()-1,collision_rejections,constraint_rejections,
+          cartesian_revolute_step_limit_rad,cartesian_prismatic_step_limit_m);
         return fail("CARTESIAN_PATH_INCOMPLETE");
       }
 
@@ -548,6 +583,15 @@ private:
       for (std::size_t i=0;i<trajectory->getWayPointCount();++i) {
         PlanningAttempt::checkpoint();
         const auto& state=trajectory->getWayPoint(i);
+        if (i) {
+          const auto discontinuity=jointDiscontinuity(trajectory->getWayPoint(i-1),state,*jmg);
+          if (!discontinuity.empty()) {
+            RCLCPP_WARN(
+              rclcpp::get_logger("workcell.cartesian_path"),
+              "CARTESIAN_PATH_JOINT_DISCONTINUITY waypoint=%zu %s",i,discontinuity.c_str());
+            return fail("CARTESIAN_PATH_JOINT_DISCONTINUITY");
+          }
+        }
         if (!carried_id.empty()) {
           const auto* carried=state.getAttachedBody(carried_id);
           if (!carried)

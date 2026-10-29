@@ -472,6 +472,201 @@ TEST(CartesianAdapter, MalformedMetadataFailsClosedWithoutPlannerFallback) {
   EXPECT_FALSE(response.trajectory_);
 }
 
+// A lift carrying two coaxial spins: tool yaw is spin_a+spin_b, so (a+d,b-d) is
+// another IK branch and b-2*pi another winding of the same tool pose. The solver
+// behaves like KDL: when its seeded attempt fails it re-seeds, near the seed only
+// when given consistency limits (unless it ignores them), otherwise anywhere.
+class SpinTestIK : public kinematics::KinematicsBase {
+public:
+  SpinTestIK() { setValues("spin", "arm", "base", {"tool"}, 0.001); }
+  double reseed_at_z=NAN;               // the seeded attempt fails at this tool height
+  std::array<double,3> unconstrained{}; // the re-seeded answer, relative to the in-branch one
+  bool ignore_consistency=false;
+  bool wrap_spin_b=false;               // answers spin_b within one turn
+  mutable bool received_limits=false;
+
+  bool solve(const geometry_msgs::msg::Pose& pose, const std::vector<double>& seed,
+             const std::vector<double>& limits, std::vector<double>& solution,
+             const IKCallbackFn& callback, moveit_msgs::msg::MoveItErrorCodes& error_code) const {
+    received_limits=received_limits || !limits.empty();
+    const double yaw=2.*std::atan2(pose.orientation.z,pose.orientation.w);
+    solution={pose.position.z,seed[1],seed[2]+std::remainder(yaw-seed[1]-seed[2],2.*M_PI)};
+    if (std::abs(pose.position.z-reseed_at_z)<1e-9 && (limits.empty() || ignore_consistency))
+      for (std::size_t i=0;i<3;++i) solution[i]+=unconstrained[i];
+    if (wrap_spin_b) solution[2]=std::remainder(solution[2],2.*M_PI);
+    error_code.val=moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+    if (callback) callback(pose,solution,error_code);
+    return error_code.val==moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
+  }
+  bool getPositionIK(const geometry_msgs::msg::Pose& pose, const std::vector<double>& seed,
+      std::vector<double>& solution, moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,seed,{},solution,IKCallbackFn(),error_code);
+  }
+  bool searchPositionIK(const geometry_msgs::msg::Pose& pose, const std::vector<double>& seed, double,
+      std::vector<double>& solution, moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,seed,{},solution,IKCallbackFn(),error_code);
+  }
+  bool searchPositionIK(const geometry_msgs::msg::Pose& pose, const std::vector<double>& seed, double,
+      const std::vector<double>& limits, std::vector<double>& solution,
+      moveit_msgs::msg::MoveItErrorCodes& error_code, const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,seed,limits,solution,IKCallbackFn(),error_code);
+  }
+  bool searchPositionIK(const geometry_msgs::msg::Pose& pose, const std::vector<double>& seed, double,
+      std::vector<double>& solution, const IKCallbackFn& callback, moveit_msgs::msg::MoveItErrorCodes& error_code,
+      const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,seed,{},solution,callback,error_code);
+  }
+  bool searchPositionIK(const geometry_msgs::msg::Pose& pose, const std::vector<double>& seed, double,
+      const std::vector<double>& limits, std::vector<double>& solution, const IKCallbackFn& callback,
+      moveit_msgs::msg::MoveItErrorCodes& error_code, const kinematics::KinematicsQueryOptions&) const override {
+    return solve(pose,seed,limits,solution,callback,error_code);
+  }
+  bool getPositionFK(const std::vector<std::string>& links, const std::vector<double>& q,
+                     std::vector<geometry_msgs::msg::Pose>& poses) const override {
+    if (q.size()!=3) return false;
+    poses.assign(links.size(),geometry_msgs::msg::Pose());
+    for (std::size_t i=0;i<links.size();++i) {
+      if (links[i]!="tool") return false;
+      poses[i].position.z=q[0];poses[i].orientation.z=std::sin((q[1]+q[2])/2.);
+      poses[i].orientation.w=std::cos((q[1]+q[2])/2.);
+    }
+    return true;
+  }
+  const std::vector<std::string>& getJointNames() const override { return joints_; }
+  const std::vector<std::string>& getLinkNames() const override { return links_; }
+private:
+  const std::vector<std::string> joints_{"lift","spin_a","spin_b"};
+  const std::vector<std::string> links_{"tool"};
+};
+
+struct ContinuityFixture {
+  std::shared_ptr<SpinTestIK> ik=std::make_shared<SpinTestIK>();
+  planning_scene::PlanningScenePtr scene;
+  planning_interface::MotionPlanRequest request;
+  ContinuityFixture(const std::string& spin_b, double b, double goal_yaw) {
+    const std::string urdf=R"(<robot name="spin"><link name="base"/><link name="carriage"/><link name="hub"/>
+      <link name="tool"><collision><geometry><box size=".02 .02 .02"/></geometry></collision></link>
+      <joint name="lift" type="prismatic"><parent link="base"/><child link="carriage"/>
+      <axis xyz="0 0 1"/><limit lower="-.1" upper=".2" effort="10" velocity="1"/></joint>
+      <joint name="spin_a" type="revolute"><parent link="carriage"/><child link="hub"/><axis xyz="0 0 1"/>
+      <limit lower="-6.283185307179586" upper="6.283185307179586" effort="10" velocity="1"/></joint>
+      <joint name="spin_b" )"+spin_b+R"(<parent link="hub"/><child link="tool"/><axis xyz="0 0 1"/></joint>
+      </robot>)";
+    auto robot=urdf::parseURDF(urdf); auto srdf=std::make_shared<srdf::Model>();
+    srdf->initString(*robot,"<robot name='spin'><group name='arm'><chain base_link='base' tip_link='tool'/></group></robot>");
+    auto model=std::make_shared<moveit::core::RobotModel>(robot,srdf);
+    auto solver=ik;
+    model->setKinematicsAllocators({{"arm",[solver](const moveit::core::JointModelGroup*) { return solver; }}});
+    scene=std::make_shared<planning_scene::PlanningScene>(model);
+    auto& state=scene->getCurrentStateNonConst(); state.setToDefaultValues();
+    state.setVariablePositions(std::map<std::string,double>{{"lift",.05},{"spin_a",0.},{"spin_b",b}});
+    state.update(); moveit::core::robotStateToRobotStateMsg(state,request.start_state);
+    request.group_name="arm";
+    moveit_msgs::msg::Constraints marker;
+    marker.name="workcell_cartesian_path:{\"schema\":\"workcell_cartesian_path/v1\",\"tool_link\":\"tool\","
+      "\"max_step_m\":0.0025,\"start_pose\":"+pose(.05,b)+",\"goal_pose\":"+pose(0.,goal_yaw)+"}";
+    request.trajectory_constraints.constraints={marker};
+  }
+  static std::string pose(double z, double yaw) {
+    std::ostringstream text; text.precision(17);
+    text << "[0,0," << z << ",0,0," << std::sin(yaw/2.) << "," << std::cos(yaw/2.) << "]";
+    return text.str();
+  }
+  bool plan(planning_interface::MotionPlanResponse& response) {
+    workcell::StraightCartesianPath adapter; std::vector<std::size_t> indexes; bool downstream=false;
+    const bool result=adapter.adaptAndPlan([&](const auto&,const auto&,auto&) { return downstream=true; },
+      scene,request,response,indexes);
+    EXPECT_FALSE(downstream);
+    return result;
+  }
+  // Every emitted step is continuous and no joint makes a revolution.
+  static void expectContinuous(const robot_trajectory::RobotTrajectory& trajectory) {
+    for (std::size_t i=1;i<trajectory.getWayPointCount();++i)
+      for (const auto* name:{"lift","spin_a","spin_b"})
+        EXPECT_LE(std::abs(trajectory.getWayPoint(i).getVariablePosition(name)-
+                           trajectory.getWayPoint(i-1).getVariablePosition(name)),.01) << name << " at " << i;
+  }
+};
+
+TEST(CartesianContinuity, ReseededFinalWaypointKeepsThePreviousWinding) {
+  // The traced Bin B defect: the last descent waypoint re-seeds and returns spin_b
+  // one turn lower. Consistency limits keep it on the previous winding.
+  ContinuityFixture f(R"(type="revolute"><limit lower="-6.283185307179586" upper="6.283185307179586" effort="10" velocity="1"/>)",.2,.2);
+  f.ik->reseed_at_z=0.;f.ik->unconstrained={0.,0.,-2.*M_PI};
+  planning_interface::MotionPlanResponse response;
+  ASSERT_TRUE(f.plan(response));
+  EXPECT_TRUE(f.ik->received_limits);
+  ASSERT_TRUE(response.trajectory_);
+  ContinuityFixture::expectContinuous(*response.trajectory_);
+  const auto& last=response.trajectory_->getLastWayPoint();
+  EXPECT_NEAR(last.getVariablePosition("lift"),0.,1e-9);
+  EXPECT_NEAR(last.getVariablePosition("spin_b"),.2,1e-9);
+  const Eigen::Isometry3d tool=last.getGlobalLinkTransform("tool");
+  EXPECT_NEAR(tool.translation().norm(),0.,1e-9);
+  EXPECT_NEAR(Eigen::AngleAxisd(tool.linear()*Eigen::AngleAxisd(.2,Eigen::Vector3d::UnitZ()).toRotationMatrix().transpose()).angle(),0.,1e-9);
+}
+
+TEST(CartesianContinuity, SolverIgnoringLimitsCannotEmitBranchJumpOrWinding) {
+  for (const std::array<double,3> jump:{std::array<double,3>{0.,1.5,-1.5},std::array<double,3>{0.,0.,-2.*M_PI}}) {
+    ContinuityFixture f(R"(type="revolute"><limit lower="-6.283185307179586" upper="6.283185307179586" effort="10" velocity="1"/>)",.2,.2);
+    f.ik->reseed_at_z=0.;f.ik->unconstrained=jump;f.ik->ignore_consistency=true;
+    planning_interface::MotionPlanResponse response;
+    EXPECT_FALSE(f.plan(response));
+    EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN);
+    EXPECT_FALSE(response.trajectory_);
+  }
+}
+
+TEST(CartesianContinuity, ContinuousJointUnwindsButBoundedJointIsNotRewound) {
+  // The tool turns through yaw pi; the solver answers spin_b within one turn, which
+  // time parameterization unwinds for a continuous joint.
+  ContinuityFixture continuous(R"(type="continuous"><limit effort="10" velocity="1"/>)",3.,3.2);
+  continuous.ik->wrap_spin_b=true;
+  planning_interface::MotionPlanResponse response;
+  ASSERT_TRUE(continuous.plan(response));
+  ASSERT_TRUE(response.trajectory_);
+  ContinuityFixture::expectContinuous(*response.trajectory_);
+  EXPECT_NEAR(response.trajectory_->getLastWayPoint().getVariablePosition("spin_b"),3.2,1e-9);
+
+  // A bounded joint cannot take the continuing winding (3.2 > pi); the only one its
+  // limits admit is a full turn away, so the path fails closed.
+  ContinuityFixture bounded(R"(type="revolute"><limit lower="-3.141592653589793" upper="3.141592653589793" effort="10" velocity="1"/>)",3.,3.2);
+  bounded.ik->wrap_spin_b=true;
+  planning_interface::MotionPlanResponse rejected;
+  EXPECT_FALSE(bounded.plan(rejected));
+  EXPECT_FALSE(rejected.trajectory_);
+}
+
+TEST(CartesianContinuity, ContinuedWaypointsStillFailOnCollision) {
+  ContinuityFixture f(R"(type="revolute"><limit lower="-6.283185307179586" upper="6.283185307179586" effort="10" velocity="1"/>)",.2,.2);
+  f.ik->reseed_at_z=0.;f.ik->unconstrained={0.,0.,-2.*M_PI};
+  Eigen::Isometry3d obstacle=Eigen::Isometry3d::Identity();obstacle.translation().z()=-.012;
+  f.scene->getWorldNonConst()->addToObject("obstacle",shapes::ShapeConstPtr(new shapes::Box(.05,.05,.01)),obstacle);
+  planning_interface::MotionPlanResponse response;
+  EXPECT_FALSE(f.plan(response));
+  EXPECT_EQ(response.error_code_.val,moveit_msgs::msg::MoveItErrorCodes::INVALID_MOTION_PLAN);
+  EXPECT_FALSE(response.trajectory_);
+}
+
+TEST(CartesianContinuity, EmittedStepCheckIsRawPerJoint) {
+  // What the controller interpolates: a full turn is a discontinuity even on a
+  // continuous joint, and a prismatic joint has its own limit.
+  for (const char* spin_b:{R"(type="continuous"><limit effort="10" velocity="1"/>)",
+                           R"(type="revolute"><limit lower="-6.283185307179586" upper="6.283185307179586" effort="10" velocity="1"/>)"}) {
+    ContinuityFixture f(spin_b,.2,.2);
+    const auto& start=f.scene->getCurrentState();
+    const auto& group=*start.getJointModelGroup("arm");
+    auto next=start;next.setVariablePosition("spin_b",.2+.7);next.setVariablePosition("lift",.05-.04);next.update();
+    EXPECT_EQ(workcell::jointDiscontinuity(start,next,group),"");
+    next.setVariablePosition("spin_b",.2-2.*M_PI);next.update();
+    EXPECT_EQ(workcell::jointDiscontinuity(start,next,group).rfind("joint=spin_b",0),0U);
+    next=start;next.setVariablePosition("lift",.05-.051);next.update();
+    EXPECT_EQ(workcell::jointDiscontinuity(start,next,group).rfind("joint=lift",0),0U);
+  }
+}
+
 TEST(SupportAdapter, NumericalSupportStartAndStrictLift) {
   for(double depth : {0.,1.44e-8,0.00009}) {
     SupportFixture f(depth); bool called=false; EXPECT_TRUE(f.run({0.,.005},&called)); EXPECT_TRUE(called);

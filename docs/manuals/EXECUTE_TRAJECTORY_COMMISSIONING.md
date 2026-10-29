@@ -588,6 +588,41 @@ retry policy. The adapter returns failure locally because throwing out of an
 adapter can cause MoveIt to skip it. The build now explicitly depends on
 `joint_trajectory_controller`, whose actual interpolation implementation is used.
 
+**Cartesian waypoint continuity (R2.5C).**
+- **Defect:** some R2.5B Bin B place descents ended on another IK branch, or on a
+  +2π winding, at the seated bottom waypoint. The collision callback had rejected
+  KDL's seeded solution there, and KDL re-seeds anywhere in joint space. The
+  adapter called `computeCartesianPath` with `JumpThreshold(0.0)`, so nothing
+  stopped it. The certificate correctly rejected the resulting arm sweep.
+- **Repair:** the adapter now uses the single-target `computeCartesianPath`
+  with an absolute threshold of π/4 rad per revolute joint and 0.05 m per
+  prismatic joint, per waypoint.
+  - MoveIt passes these to IK as consistency limits, so KDL re-seeds only near
+    the previous waypoint and inside the joint bounds.
+  - Any larger step truncates the path: `CARTESIAN_PATH_INCOMPLETE` reports the
+    continued waypoints and the limits.
+- **Emitted-step check:** every emitted step is also checked raw, since that is
+  what the controller interpolates (`CARTESIAN_PATH_JOINT_DISCONTINUITY`).
+  - Time parameterization still unwinds continuous joints.
+  - A bounded joint is never rewound past its limits.
+- **Margin:** in-branch 2.5 mm steps in the LENLEG traces stay below 0.0094 rad.
+  The traced jumps are 4.3–9.4 rad.
+- **Unchanged:** collision, constraint, timing and certificate checks.
+- **Requalification:** the adapter source is bound by the commissioning build
+  manifest, so the change required a new Stage-A acceptance.
+  - LENLEG 2026-10-29: six-gate PASS at `0c4aa9e3`, support/Cartesian library
+    `61d42f98` (`stage_a_r25c_cartesian_continuity_20261029_111238`).
+  - R2.5B G2 plan-only PASS: two Bin B sessions, whose four place descents from
+    the formerly failing wrist-flipped branch all certified, and one Bin A
+    session.
+- **Evidence reuse:** reused prerequisite evidence (`--prior-evidence`, also used
+  by the Builder physics cycle) must come from a full run that recorded this
+  exact build. That means the commission-execute, support/Cartesian and
+  telemetry library hashes, the MoveIt version and overlay, and the bound source
+  hashes. A rebuilt adapter therefore invalidates reuse even though the
+  commission-execute library stays byte-identical. Older runs are still readable
+  but are refused for reuse.
+
 ### Simulator support geometry parity
 
 The `20260923-141151` trial passed the first four gates, then stopped during
