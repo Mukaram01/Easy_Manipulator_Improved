@@ -2678,8 +2678,33 @@ def main():
             receipt_bytes = Path(args.simulator_receipt).read_bytes()
             if digest(receipt_bytes) != summary['backend_identity']['receipt_sha256']:
                 raise RuntimeError('simulator receipt changed after identity verification')
-            destination_binding = json.loads(receipt_bytes).get('destination_geometry_binding')
-            if destination_binding is not None:
+            receipt_record = json.loads(receipt_bytes)
+            destination_binding = receipt_record.get('destination_geometry_binding')
+            destination_bindings = receipt_record.get('destination_geometry_bindings')
+            if destination_bindings:
+                # R2.5B multi-destination world: plan-only until a multi-destination physics scope is qualified.
+                # Its contact guard binds no destination floor, so motion is refused before any planning.
+                if args.start:
+                    raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: the simulator world has '
+                                       f'{len(destination_bindings)} physical destination bins; motion is not qualified '
+                                       'in it (plan-only)')
+                if destination_binding is not None or intent is None:
+                    raise RuntimeError('ambiguous simulator destination binding')
+                from destination_binding import select_destination_binding
+                # Every bin is an obstacle; the task's own bin sets the seating floor.
+                for binding in destination_bindings:
+                    apply(walls_scene_diff(binding))
+                selected = select_destination_binding(destination_bindings, intent['place']['target']['asset_ref'])
+                contract['destination_floor_z'] = float(selected['floor_z'])
+                summary['physical_destination_walls'] = dict(
+                    object_ids=[i for b in destination_bindings for i in wall_object_ids(b)],
+                    walls=[w for b in destination_bindings for w in b['walls']],
+                    receipt_sha256=summary['backend_identity']['receipt_sha256'],
+                    selected_destination=dict(object_id=selected['object_id'], model=selected['model'],
+                                              floor_z=selected['floor_z']),
+                    destinations=[dict(object_id=b['object_id'], model=b['model'], floor_z=b['floor_z'],
+                                       wall_object_ids=wall_object_ids(b)) for b in destination_bindings])
+            elif destination_binding is not None:
                 apply(walls_scene_diff(destination_binding))
                 # Place seating is planned against the bound physical floor (full_cycle_preplanner.seated_destination).
                 contract['destination_floor_z'] = float(destination_binding['floor_z'])
