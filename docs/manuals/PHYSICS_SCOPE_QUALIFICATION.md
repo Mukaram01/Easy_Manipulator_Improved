@@ -66,7 +66,8 @@ A qualified scope would admit **one exact cell**: its task, placing into one bin
 
 **Q7 Cancellation:**
 - the Stage-A cancellation trial is a prerequisite of every trial;
-- in addition, R2.5B G5 (stop at cycle end, and SIGTERM cancellation during transfer, in the multi-destination world) must be accepted. That acceptance does not exist yet, so this item is always unmet.
+- in addition, R2.5B G5 (stop at cycle end, and SIGTERM cancellation during transfer, in the multi-destination world) must be accepted.
+- Both now have accepted Bin B trials (2026-10-29: G5A `log/qualification/g5a/trial_2`, G5B `log/qualification/g5b/trial`). The verifier does not read them yet, so this item stays unmet until a reviewed change binds them.
 
 **Operator stops during a trial** (the runner's own process; nothing else is signalled):
 
@@ -95,7 +96,7 @@ A qualified scope would admit **one exact cell**: its task, placing into one bin
 | Cell | Strict trials | Unmet | Reliability finding |
 |---|---|---|---|
 | `zz_r25b_two_bin_a` | 1 of 3 (`g3b/bin_a_trial_2`) | Q7, Q8 | trial 1 |
-| `zz_r25b_two_bin_b` | 1 of 3 (`g3a/bin_b_trial`) | Q7, Q8 | — |
+| `zz_r25b_two_bin_b` | 2 of 3 (`g3a/bin_b_trial`, `g5b/trial`) | Q7, Q8 | — |
 
 `verify_qualified_scope` therefore refuses every record, including a correctly bound one. Offline display:
 `python3 scripts/physics_scope_qualification.py readiness --cell <cell> --trial <run> ...` (exit 0 only when ready).
