@@ -19,8 +19,10 @@ Four states are kept apart:
 The record is single-session (it binds the session receipt) and immutable: the executor verifies its digest before
 motion and again before reporting a physical result.
 """
+import ast
 import hashlib
 import json
+import subprocess
 import time
 from pathlib import Path
 
@@ -44,6 +46,82 @@ ROBOT_RECEIPT_KEYS = ('model', 'description_sha256', 'native_description_sha256'
 
 class PhysicsScopeRefused(RuntimeError):
     """The requested motion is not covered by a verified physics scope."""
+
+
+REPO = Path(__file__).resolve().parents[1]
+# Software identity (G3C): the files that decide how a trial plans and moves. Python: every repo module the executor
+# imports, directly or transitively (a test checks this list against the real import closure), except this judge,
+# whose changes never reset a campaign. Configuration: the scene template launch (MoveIt pipeline, TOTG tolerance)
+# and the capability catalog (tool hold, simulator collision boxes).
+EXECUTOR_MODULES = (
+    'asset_alignment', 'asset_arrangement', 'asset_mounting', 'build_simulator_physics_overlay', 'capability_registry',
+    'closure_clearance', 'container_geometry', 'destination_binding', 'end_effector_hold', 'full_cycle_preplanner',
+    'generate_moveit_collision_manifest', 'grasp_capture', 'grasp_strategy_candidates', 'measurement_clock',
+    'perceived_object_grasp_execute', 'perceived_object_grasp_plan', 'perception_replay', 'physical_destination',
+    'pile_extraction', 'qualified_physics_runtime', 'runtime_pick_inputs', 'simulation_batch_preview',
+    'simulation_collision', 'simulator_backend', 'simulator_execution', 'simulator_observations', 'simulator_world',
+    'task_intent_authoring', 'task_intent_resolver', 'task_intent_v2', 'tool_interface', 'transport_policy',
+    'validate_builder_task_intent', 'workcell_studio_layout_source')
+PLANNER_SOURCES = tuple(f'scripts/{m}.py' for m in EXECUTOR_MODULES) + ('scenes/ur5_2f_test/launch/demo.launch.py',
+                                                                        'catalog/capabilities')
+# The stop/cancel paths G5 accepted, by function or class (AST): a G5 run of another software version stays admissible
+# only while these are unchanged. The runner's main hosts the stop-at-cycle-end boundary, not the cancel path.
+STOP_CANCEL_MECHANISM = {
+    'cancellation': {
+        'scripts/perceived_object_grasp_execute.py': ('interrupted', 'action', 'request_cancel', 'terminal',
+                                                      'wait_stopped', 'stop_proves_hold', 'measured_reconcile',
+                                                      'reconcile_retention_loss'),
+        'scripts/simulator_execution.py': ('ContactGuard', 'ControllerCancellationAudit', 'CancellationMotion',
+                                           'validate_controller_cancellation', 'transfer_cancellation_acceptance'),
+        'scripts/run_stage_a1_finish.py': ('run', 'cancel_on_signal', 'OperatorCancel', 'one_session')},
+    'stop_after_cycle': {
+        'scripts/run_stage_a1_finish.py': ('run', 'cancel_on_signal', 'OperatorCancel', 'StopAfterCycle',
+                                           'StageForwarder', 'executor_stage', 'one_session', 'main')},
+}
+
+
+def _git(repo, *args):
+    done = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True)
+    if done.returncode:
+        raise PhysicsScopeRefused(f"PHYSICS_SCOPE_PROVENANCE_UNRECOVERABLE: git {' '.join(args[:2])}: "
+                                  f"{done.stderr.strip()[:200]}")
+    return done.stdout
+
+
+def planner_identity(repo=REPO, revision=None):
+    """The software identity of ``revision`` (default: this checkout's HEAD, whose PLANNER_SOURCES must be unmodified):
+    sha256 over the git blob id of every file in PLANNER_SOURCES. Historical trials are recovered from their recorded
+    clean commit, so no evidence file ever changes."""
+    if revision is None:
+        if _git(repo, 'status', '--porcelain', '--', *PLANNER_SOURCES).strip():
+            raise PhysicsScopeRefused('PHYSICS_SCOPE_SOFTWARE_MODIFIED: planner or executor sources differ from HEAD')
+        revision = 'HEAD'
+    blobs = {}
+    for line in _git(repo, 'ls-tree', '-r', revision, '--', *PLANNER_SOURCES).splitlines():
+        _, kind, blob, path = line.split(None, 3)
+        if kind == 'blob':
+            blobs[path] = blob
+    if not blobs:
+        raise PhysicsScopeRefused(f'PHYSICS_SCOPE_PROVENANCE_UNRECOVERABLE: no planner sources at {revision}')
+    return _sha256(_canonical(blobs))
+
+
+def mechanism_identity(role, repo=REPO, revision=None):
+    """AST hashes of the G5 ``role``'s stop/cancel functions and classes at ``revision`` (default: HEAD, whose files
+    must be unmodified)."""
+    if revision is None:
+        if _git(repo, 'status', '--porcelain', '--', *STOP_CANCEL_MECHANISM[role]).strip():
+            raise PhysicsScopeRefused('PHYSICS_SCOPE_SOFTWARE_MODIFIED: stop/cancel sources differ from HEAD')
+        revision = 'HEAD'
+    out = {}
+    for path, names in STOP_CANCEL_MECHANISM[role].items():
+        tree = ast.parse(_git(repo, 'show', f'{revision}:{path}'))
+        found = {}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in names and node.name not in found:
+                found[node.name] = hashlib.sha256(ast.dump(node).encode()).hexdigest()
+        out[path] = {name: found.get(name) for name in names}
+    return out
 
 
 def _sha256(data):
@@ -126,8 +204,9 @@ def destination_occupants(observations, binding):
 
 
 def scope_binding(*, cell_dir, receipt_path, observations_path, native, runtime, commission_evidence_path,
-                  resolution_sha256):
-    """Everything an authorised trial is bound to, recomputed from the current files. Refuses unsupported input."""
+                  resolution_sha256, planner=None):
+    """Everything an authorised trial is bound to, recomputed from the current files. Refuses unsupported input.
+    ``planner`` defaults to this checkout's software identity (planner_identity), recomputed by the executor too."""
     from destination_binding import select_destination_binding
     cell_dir = Path(cell_dir)
     receipt_bytes = Path(receipt_path).read_bytes()
@@ -174,7 +253,7 @@ def scope_binding(*, cell_dir, receipt_path, observations_path, native, runtime,
                          object_id=selected['object_id'], model=selected['model'], floor_z=selected['floor_z']),
         support=_portable(_required(support, 'support binding')),
         robot={key: _required(receipt.get(key), key) for key in ROBOT_RECEIPT_KEYS},
-        native=native, runtime=runtime,
+        native=native, runtime=runtime, planner=planner or planner_identity(),
         evidence=dict(commission_evidence_sha256=_sha256(Path(commission_evidence_path).read_bytes())),
         planning=dict(resolution_sha256=_required(resolution_sha256, 'plan resolution')),
         session=dict(receipt_sha256=_sha256(receipt_bytes), run_id=_required(receipt.get('run_id'), 'run id')),
@@ -274,7 +353,24 @@ def _provenance(out, paths, status, label):
     return report, session_report, summary
 
 
-def trial_evidence(run_dir):
+def _software(report, bound, repo):
+    """(identity, problems) of one run: recovered from its recorded clean commit; a newer run's scope record also binds
+    it, and the two must agree (a forged or substituted identity never counts)."""
+    head = (report.get('preflight') or {}).get('repo_head')
+    recorded = (bound or {}).get('planner')
+    if not head:
+        return recorded, ['software provenance unrecoverable: the trial recorded no commit']
+    try:
+        recovered = planner_identity(repo, head)
+    except PhysicsScopeRefused as exc:
+        return recorded, [str(exc)]
+    if recorded is not None and recorded != recovered:
+        # Judged as the version it really ran (never relabelled into another campaign), and refused.
+        return recovered, ['software identity differs from the commit the trial ran from']
+    return recovered, []
+
+
+def trial_evidence(run_dir, repo=REPO):
     """One authorised trial, judged from its own evidence files: kind STRICT_PASS, PRE_MOTION_FAILURE or FAILED."""
     run, contract = Path(run_dir), QUALIFICATION_CONTRACT
     session = run / '06-full-cycle'
@@ -290,13 +386,15 @@ def trial_evidence(run_dir):
                    if p.is_file()]
         why = next((f"{s.get('failed_stage')}: {s.get('failure')}" for s in planned if s.get('failure')),
                    str(report.get('failure', 'not authorised'))[:300])
-        return dict(out, kind='PRE_MOTION_FAILURE', problems=[why])
+        return dict(out, kind='PRE_MOTION_FAILURE', problems=[why], planner=_software(report, None, repo)[0])
     missing = sorted(k for k, path in paths.items() if not path.is_file())
     if missing:
         out['problems'].append('evidence missing: ' + ', '.join(missing))
         return out
     report, session_report, summary = _provenance(out, paths, 'PASS', 'passing')
     bound, problems = out['binding'], out['problems']
+    out['planner'], why = _software(report, bound, repo)
+    problems.extend(why)
     accepted = summary.get('full_cycle_physical_acceptance') or {}
     release = summary.get('release_evidence') or {}
     prerequisites = summary.get('commissioning_prerequisites') or {}
@@ -335,11 +433,11 @@ def trial_evidence(run_dir):
     return out
 
 
-def stop_after_cycle_acceptance(run_dir):
+def stop_after_cycle_acceptance(run_dir, repo=REPO):
     """G5B: an operator Stop at Cycle End (SIGUSR1 to the runner) latched during the authorised trial's transfer, the
     cycle completed as a strict trial and nothing else started. Judged only from the trial's own evidence files."""
     run = Path(run_dir)
-    trial = trial_evidence(run)
+    trial = trial_evidence(run, repo)
     report, session_report, summary = (json.loads(p.read_text()) if p.is_file() else {} for p in (
         run / 'stage-a1-targeted-report.json', run / '06-full-cycle/session-report.json',
         run / '06-full-cycle/full-cycle/summary.json'))
@@ -363,10 +461,11 @@ def stop_after_cycle_acceptance(run_dir):
     failed = [name for name, ok in checks.items() if not ok]
     return dict(accepted=not failed, state='STOPPED_AFTER_CYCLE' if not failed else 'NOT_ACCEPTED', failed=failed,
                 checks=checks, trial_problems=trial['problems'], run=trial['run'], run_id=trial.get('run_id'),
-                digests=trial['digests'], binding=trial.get('binding'))
+                digests=trial['digests'], binding=trial.get('binding'), planner=trial.get('planner'),
+                repo_head=(report.get('preflight') or {}).get('repo_head'))
 
 
-def cancellation_evidence(run_dir):
+def cancellation_evidence(run_dir, repo=REPO):
     """G5A: an operator cancel (SIGTERM to the runner) of the authorised trial's held transfer, judged from the trial's
     own evidence files: Q1 provenance of a CANCELLED run, the stop forwarded to (not killing) the executor, and
     simulator_execution.transfer_cancellation_acceptance recomputed from the summary; the recorded verdict must agree."""
@@ -379,6 +478,9 @@ def cancellation_evidence(run_dir):
         out['problems'].append('evidence missing: ' + ', '.join(missing))
         return out
     report, session_report, summary = _provenance(out, paths, 'CANCELLED', 'cancelled')
+    out['planner'], why = _software(report, out['binding'], repo)
+    out['problems'].extend(why)
+    out['repo_head'] = (report.get('preflight') or {}).get('repo_head')
     cancel = session_report.get('operator_cancel') or {}
     child = cancel.get('child') or {}
     if (cancel.get('signal') != 'SIGTERM' or child.get('forwarded') != 'SIGTERM' or child.get('killed') is not False
@@ -416,8 +518,10 @@ def _world_level(shared):
     return {k: v for k, v in shared.items() if k not in ('destination', 'cell')}
 
 
-def stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial, trial_shared=None):
-    """Q7: the accepted G5A cancel and G5B stop-at-cycle-end runs as bound identities, and why either is not."""
+def stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial, trial_shared=None, planner=None,
+                         repo=REPO):
+    """Q7: the accepted G5A cancel and G5B stop-at-cycle-end runs as bound identities, and why either is not. A run of
+    another software version is admissible only while its stop/cancel mechanism is unchanged (mechanism_identity)."""
     accepted, why = {}, []
     shared = None if trial_shared is None else _world_level(trial_shared)
     for role, run, judge in (('cancellation', cancellation_trial, cancellation_evidence),
@@ -425,7 +529,7 @@ def stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial,
         if run is None:
             why.append(f'{role}: no evidence')
             continue
-        found = judge(run)
+        found = judge(run, repo)
         if not found['accepted']:
             reasons = found.get('problems', []) + found.get('failed', []) + found.get('trial_problems', [])
             why.append(f"{role} {found['run']}: {'; '.join(reasons)}")
@@ -440,24 +544,69 @@ def stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial,
         if wrong:
             why.append(f"{role} {found['run']}: {', '.join(wrong)}")
             continue
+        compatibility = 'same software'
+        if planner is not None and found.get('planner') != planner:
+            try:
+                unchanged = mechanism_identity(role, repo, found['repo_head']) == mechanism_identity(role, repo)
+            except PhysicsScopeRefused as exc:
+                why.append(f"{role} {found['run']}: {exc}")
+                continue
+            if not unchanged:
+                why.append(f"{role} {found['run']}: stop/cancel code changed since this run (another software version)")
+                continue
+            compatibility = 'stop/cancel mechanism unchanged'
         shared = _world_level(_shared(bound))
-        accepted[role] = dict(run=found['run'], run_id=found['run_id'], state=found['state'], digests=found['digests'])
+        accepted[role] = dict(run=found['run'], run_id=found['run_id'], state=found['state'], digests=found['digests'],
+                              planner=found.get('planner'), compatibility=compatibility)
     if len(accepted) == 2 and (accepted['cancellation']['run_id'] == accepted['stop_after_cycle']['run_id'] or
                                accepted['cancellation']['digests']['scope'] == accepted['stop_after_cycle']['digests']['scope']):
         why.append('the same trial session given as both stop and cancellation evidence')
     return accepted, why
 
 
-def qualification_readiness(cell_dir, trial_dirs, native, runtime, cancellation_trial=None, stop_trial=None):
+def _campaign_runs(roots, files, world, planner, repo):
+    """Every authorised trial run of the exact cell and software version found under ``roots`` (motion was authorised:
+    it has a scope record). Operator-cancelled runs are stop evidence (G5A), not cycle outcomes."""
+    found = {}
+    for root in roots:
+        for report_path in sorted(Path(root).rglob('stage-a1-targeted-report.json')):
+            run = report_path.parent
+            scope = run / '06-full-cycle/physics-scope.json'
+            if not scope.is_file():
+                continue
+            try:
+                report, bound = json.loads(report_path.read_text()), json.loads(scope.read_text())['binding']
+                same_cell = ({k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files and
+                             bound['world']['derived_sha256'] == world['derived_sha256'] and
+                             bound['destination']['asset'] == world['destination_asset'])
+            except (OSError, ValueError, KeyError, TypeError):
+                found[str(run.resolve())] = 'unreadable trial evidence'
+                continue
+            if same_cell and report.get('status') != 'CANCELLED' and _software(report, bound, repo)[0] == planner:
+                found[str(run.resolve())] = report.get('status')
+    return found
+
+
+def qualification_readiness(cell_dir, trial_dirs, native, runtime, cancellation_trial=None, stop_trial=None,
+                            planner=None, evidence_roots=(), repo=REPO):
     """Whether the listed trials qualify the exact cell's scope under QUALIFICATION_CONTRACT. Never writes anything.
     ``cancellation_trial`` (G5A) and ``stop_trial`` (G5B) are the Q7 evidence; the G5B run counts toward Q8 only when it
-    is also listed in ``trial_dirs`` and meets every per-trial criterion there."""
+    is also listed in ``trial_dirs`` and meets every per-trial criterion there.
+
+    Repeatability counts one software version (``planner``, default this checkout's): a trial of another version is
+    listed under ``other_versions`` with its outcome, never counted and never blocking; a failure after motion of this
+    version blocks. Every run of this version and cell under ``evidence_roots`` must be listed (no cherry-picking)."""
+    planner = planner or planner_identity(repo)
     files, world = _qualified_cell(cell_dir)
-    trials = [trial_evidence(run) for run in trial_dirs]
-    unmet, reliability, counted, shared = [], [], [], None
+    trials = [trial_evidence(run, repo) for run in trial_dirs]
+    unmet, reliability, counted, shared, other_versions = [], [], [], None, []
     for trial in trials:
         if trial['kind'] == 'PRE_MOTION_FAILURE':
-            reliability.append(dict(run=trial['run'], finding=trial['problems'][0]))
+            reliability.append(dict(run=trial['run'], finding=trial['problems'][0], planner=trial.get('planner')))
+            continue
+        if trial.get('planner') is not None and trial['planner'] != planner:
+            other_versions.append(dict(run=trial['run'], kind=trial['kind'], planner=trial['planner'],
+                                       problems=trial['problems']))
             continue
         if trial['kind'] != 'STRICT_PASS':
             unmet.append(f"{trial['run']}: {'; '.join(trial['problems'])}")
@@ -485,17 +634,47 @@ def qualification_readiness(cell_dir, trial_dirs, native, runtime, cancellation_
     required = QUALIFICATION_CONTRACT['strict_trials']
     if len(counted) < required:
         unmet.append(f'{len(counted)} of {required} independent strict trial PASS sessions')
-    stop_cancel, why = stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial, shared)
+    stop_cancel, why = stop_cancel_evidence(world, native, runtime, cancellation_trial, stop_trial, shared, planner,
+                                            repo)
     if why:
         unmet.append('stop/cancel acceptance not established: ' + QUALIFICATION_CONTRACT['stop_cancel'] +
                      ('' if cancellation_trial is None and stop_trial is None else ' (' + '; '.join(why) + ')'))
+    listed = {str(Path(run).resolve()) for run in [*trial_dirs, cancellation_trial, stop_trial] if run is not None}
+    unlisted = {run: status for run, status in _campaign_runs(evidence_roots, files, world, planner, repo).items()
+                if run not in listed}
+    if unlisted:
+        unmet.append('unlisted trials of this software version: ' +
+                     ', '.join(f'{run} ({status})' for run, status in sorted(unlisted.items())))
     return dict(status='NOT_QUALIFIED' if unmet else 'QUALIFIED_READY', contract=QUALIFICATION_CONTRACT,
                 cell=files, world=world['derived_sha256'], destination=world['destination_asset'],
-                native=native, runtime=runtime, trials=counted, stop_cancel=stop_cancel if not why else {},
-                unmet=unmet, reliability_findings=reliability)
+                native=native, runtime=runtime, planner=planner, trials=counted,
+                stop_cancel=stop_cancel if not why else {}, unmet=unmet, reliability_findings=reliability,
+                other_versions=other_versions, unlisted=sorted(unlisted))
 
 
-def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
+def issue_qualified_scope(path, cell_dir, trial_dirs, native, runtime, cancellation_trial, stop_trial, planner=None,
+                          evidence_roots=(), repo=REPO):
+    """Write the QUALIFIED record of the exact cell only if every Q1-Q8 requirement holds on the evidence now; return its
+    sha256. It permits exactly TRIAL_OPERATION into the cell's bin, for one software version. Nothing consumes it: the
+    executor, Builder and HMI admit no qualified record (runtime admission is G6). An existing record is never replaced."""
+    readiness = qualification_readiness(cell_dir, trial_dirs, native, runtime, cancellation_trial, stop_trial, planner,
+                                        evidence_roots, repo)
+    if readiness['status'] != 'QUALIFIED_READY':
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_NOT_QUALIFIED: ' + '; '.join(readiness['unmet']))
+    body = dict(schema=SCHEMA, state=QUALIFIED, contract=QUALIFICATION_CONTRACT, operation=TRIAL_OPERATION,
+                trials=readiness['trials'], **{k: readiness[k] for k in QUALIFIED_RECORD_KEYS})
+    data = (json.dumps(dict(body, binding_sha256=_sha256(_canonical(body))), indent=2, sort_keys=True) + '\n').encode()
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('xb') as stream:                     # refuses an existing record
+        stream.write(data)
+    return _sha256(data)
+
+
+QUALIFIED_RECORD_KEYS = ('cell', 'world', 'destination', 'native', 'runtime', 'planner', 'stop_cancel')
+
+
+def verify_qualified_scope(path, sha256, cell_dir, native, runtime, planner=None, evidence_roots=(), repo=REPO):
     """The QUALIFIED record at ``path`` if every bound trial still qualifies the exact cell now; else refuse."""
     data = Path(path).read_bytes()
     if not sha256 or _sha256(data) != sha256:
@@ -505,6 +684,8 @@ def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
         raise PhysicsScopeRefused(f"PHYSICS_SCOPE_UNSUPPORTED: not a qualified scope ({record.get('state')!r})")
     if record.get('contract') != QUALIFICATION_CONTRACT:
         raise PhysicsScopeRefused('PHYSICS_SCOPE_UNSUPPORTED: issued under another qualification contract')
+    if record.get('operation') != TRIAL_OPERATION:
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_UNSUPPORTED: the record permits another operation than one full-cycle')
     body = {k: v for k, v in record.items() if k != 'binding_sha256'}
     if record.get('binding_sha256') != _sha256(_canonical(body)):
         raise PhysicsScopeRefused('PHYSICS_SCOPE_RECORD_CHANGED: binding digest mismatch')
@@ -512,15 +693,16 @@ def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
     if len({t.get('run_id') for t in bound}) != len(bound) or len({t.get('run') for t in bound}) != len(bound):
         raise PhysicsScopeRefused('PHYSICS_SCOPE_REPLAYED: a trial session is bound twice')
     for trial in bound:
-        current = trial_evidence(trial['run'])
+        current = trial_evidence(trial['run'], repo)
         if current.get('digests') != trial.get('digests') or current.get('run_id') != trial.get('run_id'):
             raise PhysicsScopeRefused(f"PHYSICS_SCOPE_EVIDENCE_CHANGED: {trial.get('run')}")
     # The G5 runs are re-judged now; their digests and session ids must equal the bound ones.
     stop_cancel = record.get('stop_cancel') or {}
     readiness = qualification_readiness(cell_dir, [t['run'] for t in bound], native, runtime,
                                         cancellation_trial=(stop_cancel.get('cancellation') or {}).get('run'),
-                                        stop_trial=(stop_cancel.get('stop_after_cycle') or {}).get('run'))
-    for key in ('cell', 'world', 'destination', 'native', 'runtime', 'stop_cancel'):
+                                        stop_trial=(stop_cancel.get('stop_after_cycle') or {}).get('run'),
+                                        planner=planner, evidence_roots=evidence_roots, repo=repo)
+    for key in QUALIFIED_RECORD_KEYS:
         if record.get(key) != readiness[key]:
             raise PhysicsScopeRefused(f'PHYSICS_SCOPE_MISMATCH: {key}')
     if readiness['status'] != 'QUALIFIED_READY':
@@ -529,26 +711,51 @@ def verify_qualified_scope(path, sha256, cell_dir, native, runtime):
 
 
 def main(argv=None):
-    """Offline readiness display: python3 physics_scope_qualification.py readiness --cell DIR --trial RUN...
-    [--cancellation-trial RUN] [--stop-trial RUN]"""
+    """Offline: readiness (display), issue (write the QUALIFIED record only when ready) or verify (an issued record).
+    python3 physics_scope_qualification.py readiness|issue --cell DIR --trial RUN... --cancellation-trial RUN
+    --stop-trial RUN [--evidence-root DIR...] [--output RECORD]; verify --cell DIR --record RECORD --sha256 SHA"""
     import argparse
     parser = argparse.ArgumentParser(description=main.__doc__)
-    parser.add_argument('command', choices=['readiness'])
+    parser.add_argument('command', choices=['readiness', 'issue', 'verify'])
     parser.add_argument('--cell', type=Path, required=True)
     parser.add_argument('--trial', type=Path, action='append', default=[])
     parser.add_argument('--cancellation-trial', type=Path, help='Q7: the G5A run (operator cancel during the transfer)')
     parser.add_argument('--stop-trial', type=Path, help='Q7: the G5B run (stop at cycle end); list it as --trial too for Q8')
+    parser.add_argument('--evidence-root', type=Path, action='append',
+                        help='scanned for unlisted runs of this cell and software version (default: the workspace '
+                             'qualification evidence directories)')
+    parser.add_argument('--output', type=Path, help='issue: the new QUALIFIED record (never replaced)')
+    parser.add_argument('--record', type=Path, help='verify: the issued record')
+    parser.add_argument('--sha256', help='verify: the sha256 printed when the record was issued')
     parser.add_argument('--workspace', type=Path, default=Path(__file__).resolve().parents[3])
     args = parser.parse_args(argv)
+    if (args.command == 'issue') != (args.output is not None) or (args.command == 'verify') != (args.record is not None):
+        parser.error('issue needs --output; verify needs --record and --sha256')
+    roots = args.evidence_root if args.evidence_root is not None else [
+        root for root in (args.workspace.parent / 'log/qualification', args.workspace.parent / 'r25b_multibin_20261029')
+        if root.is_dir()]
     try:
         native = native_identity(args.workspace / 'install/workcell_builder/share/workcell_builder/'
                                  'commission_execute_build.json')
-        readiness = qualification_readiness(args.cell, args.trial, native, runtime_identity(args.workspace),
-                                            cancellation_trial=args.cancellation_trial, stop_trial=args.stop_trial)
+        runtime = runtime_identity(args.workspace)
+        if args.command == 'issue':
+            sha = issue_qualified_scope(args.output, args.cell, args.trial, native, runtime, args.cancellation_trial,
+                                        args.stop_trial, evidence_roots=roots)
+            result = dict(status='ISSUED', record=str(args.output), sha256=sha, admission='none (runtime admission is G6)')
+        elif args.command == 'verify':
+            record = verify_qualified_scope(args.record, args.sha256, args.cell, native, runtime, evidence_roots=roots)
+            result = dict(status='VERIFIED', record=str(args.record), destination=record['destination'],
+                          operation=record['operation'], planner=record['planner'],
+                          trials=[t['run'] for t in record['trials']],
+                          stop_cancel={k: v['run'] for k, v in record['stop_cancel'].items()},
+                          admission='none (runtime admission is G6)')
+        else:
+            result = qualification_readiness(args.cell, args.trial, native, runtime, args.cancellation_trial,
+                                             args.stop_trial, evidence_roots=roots)
     except PhysicsScopeRefused as exc:
-        readiness = dict(status='REFUSED', reason=str(exc))
-    print(json.dumps(readiness, indent=2, sort_keys=True))
-    return 0 if readiness['status'] == 'QUALIFIED_READY' else 2
+        result = dict(status='REFUSED', reason=str(exc))
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result['status'] in ('QUALIFIED_READY', 'ISSUED', 'VERIFIED') else 2
 
 
 if __name__ == '__main__':

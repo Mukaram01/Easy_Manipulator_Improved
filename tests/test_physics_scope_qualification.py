@@ -22,6 +22,18 @@ NATIVE = {'sha256': 'commission', 'support_sha256': 'support', 'telemetry_sha256
           'sources': {'/ws/src_support_contact_adapter.cpp': 'adapter'}}
 RUNTIME = {'record_sha256': 'record', 'stage_a_evidence': '/evidence/stage_a', 'stage_a_report_sha256': 'report',
            'stage_a_repo_head': 'head'}
+# Software identity: the committed HEAD stands for "this checkout" (the working tree may be mid-edit); the clean-tree
+# check itself is tested on a scratch repository below.
+HEAD = psq._git(psq.REPO, 'rev-parse', 'HEAD').strip()
+PLANNER = psq.planner_identity(psq.REPO, HEAD)
+
+
+@pytest.fixture(autouse=True)
+def committed_software(monkeypatch):
+    planner, mechanism = psq.planner_identity, psq.mechanism_identity
+    monkeypatch.setattr(psq, 'planner_identity', lambda repo=psq.REPO, revision=None: planner(repo, revision or HEAD))
+    monkeypatch.setattr(psq, 'mechanism_identity',
+                        lambda role, repo=psq.REPO, revision=None: mechanism(role, repo, revision or HEAD))
 
 
 @pytest.fixture(scope='module')
@@ -61,10 +73,11 @@ def launch(tmp_path, cell, edit_world=None, occupant=None):
     return tmp_path
 
 
-def binding(session, cell, native=NATIVE, runtime=RUNTIME, resolution='resolution'):
+def binding(session, cell, native=NATIVE, runtime=RUNTIME, resolution='resolution', planner=PLANNER):
     return psq.scope_binding(cell_dir=cell, receipt_path=session / 'runtime/receipt.json',
                              observations_path=session / 'parts.yaml', native=native, runtime=runtime,
-                             commission_evidence_path=session / 'commission-evidence.json', resolution_sha256=resolution)
+                             commission_evidence_path=session / 'commission-evidence.json', resolution_sha256=resolution,
+                             planner=planner)
 
 
 def rewrite(path, edit):
@@ -206,13 +219,13 @@ def test_an_occupied_destination_or_a_single_bin_world_is_unsupported(cells, tmp
 
 
 # --- Qualification (offline): trials are judged from their evidence and never qualify themselves ------------------
-def strict_trial(root, cell, run_id, *, cell_dir=None, native=NATIVE, edit=None):
+def strict_trial(root, cell, run_id, *, cell_dir=None, native=NATIVE, edit=None, head=HEAD):
     """A run directory laid out like the qualification runner's, for one strict trial PASS session."""
     session = launch(root / 'launch', cell)
     receipt = json.loads((session / 'runtime/receipt.json').read_text())
     receipt['run_id'] = run_id
     (session / 'runtime/receipt.json').write_text(json.dumps(receipt))
-    bound = binding(session, cell, native=native)
+    bound = binding(session, cell, native=native, planner=psq.planner_identity(psq.REPO, head))
     run = root / 'run'
     scope = run / '06-full-cycle/physics-scope.json'
     scope.parent.mkdir(parents=True)
@@ -227,7 +240,7 @@ def strict_trial(root, cell, run_id, *, cell_dir=None, native=NATIVE, edit=None)
                    commissioning_prerequisites=dict(results=psq.PREREQUISITE_RESULTS, capability_sha256=native['sha256'],
                                                     sources=native['sources']))
     report = dict(status='PASS', scope=psq.TRIAL_EVIDENCE_SCOPE, mode='targeted', gate='full-cycle',
-                  stage_a_acceptance=False, preflight={'repo_dirty': False})
+                  stage_a_acceptance=False, preflight={'repo_dirty': False, 'repo_head': head})
     if edit:
         edit(summary, report)
     (run / '06-full-cycle/full-cycle').mkdir()
@@ -246,8 +259,8 @@ def trials(cells, tmp_path_factory):
 
 def qualified_record(path, readiness, **change):
     """A QUALIFIED record as an issuer would write it (no issuer exists: qualification is not reachable yet)."""
-    body = dict(schema=psq.SCHEMA, state=psq.QUALIFIED, contract=psq.QUALIFICATION_CONTRACT, trials=readiness['trials'],
-                **{k: readiness[k] for k in ('cell', 'world', 'destination', 'native', 'runtime', 'stop_cancel')})
+    body = dict(schema=psq.SCHEMA, state=psq.QUALIFIED, contract=psq.QUALIFICATION_CONTRACT, operation=psq.TRIAL_OPERATION,
+                trials=readiness['trials'], **{k: readiness[k] for k in psq.QUALIFIED_RECORD_KEYS})
     body.update(change)
     data = (json.dumps(dict(body, binding_sha256=hashlib.sha256(psq._canonical(body)).hexdigest())) + '\n').encode()
     path.write_bytes(data)
@@ -296,7 +309,8 @@ def test_stale_cross_bin_and_replayed_trials_do_not_count(cells, trials, tmp_pat
         {'failed_stage': 'PREPLAN_TRANSFER', 'failure': 'SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted'}))
     found = psq.qualification_readiness(cells['b'], [blocked, *trials], NATIVE, RUNTIME)
     assert len(found['trials']) == 3 and found['reliability_findings'] == [dict(
-        run=str(blocked.resolve()), finding='PREPLAN_TRANSFER: SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted')]
+        run=str(blocked.resolve()), finding='PREPLAN_TRANSFER: SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted',
+        planner=None)]
 
 
 def test_a_qualified_record_is_refused_while_any_requirement_is_unmet_or_any_binding_is_forged(cells, trials, tmp_path):
@@ -342,7 +356,7 @@ def test_trial_scope_needs_world_frame_measurements(cells, tmp_path):
 
 
 # --- G5B: Stop at Cycle End during the transfer of an authorised trial ---------------------------------------------
-def stopped_trial(root, cell, edit=None, session_edit=None):
+def stopped_trial(root, cell, edit=None, session_edit=None, head=HEAD):
     """A strict trial whose runner latched SIGUSR1 while the executor was transferring, as the runner records it."""
     def stop(summary, report):
         summary['stage_events'] = [{'stage': 'EXECUTE_LIFT', 'timestamp': 90.0}, {'stage': 'EXECUTE_TRANSFER', 'timestamp': 100.0},
@@ -353,7 +367,7 @@ def stopped_trial(root, cell, edit=None, session_edit=None):
             completed_gates=['full-cycle'], gates_not_started=[]))
         if edit:
             edit(summary, report, report['stop_after_cycle'])
-    run = strict_trial(root, cell, 'run-stop', edit=stop)
+    run = strict_trial(root, cell, 'run-stop', edit=stop, head=head)
     if session_edit:
         path = run / '06-full-cycle/session-report.json'
         record = json.loads(path.read_text())
@@ -404,7 +418,7 @@ def test_a_stop_after_cycle_missing_any_item_is_not_accepted(cells, tmp_path, ed
 CANCEL = dict(signal='SIGTERM', child=dict(forwarded='SIGTERM', killed=False, grace_s=90, returncode=1))
 
 
-def cancelled_trial(root, cell, run_id='run-cancel', edit=None, session_edit=None):
+def cancelled_trial(root, cell, run_id='run-cancel', edit=None, session_edit=None, head=HEAD):
     """A G5A run as the runner records it: SIGTERM forwarded to the executor, its held transfer cancelled."""
     from simulator_execution import transfer_cancellation_acceptance
     from test_simulator_execution import g5a_summary
@@ -416,7 +430,7 @@ def cancelled_trial(root, cell, run_id='run-cancel', edit=None, session_edit=Non
         report.update(status='CANCELLED', gates={'full-cycle': {'status': 'INTERRUPTED', 'operator_cancel': CANCEL}})
         if edit:
             edit(summary, report)
-    run = strict_trial(root, cell, run_id, edit=cancelled)
+    run = strict_trial(root, cell, run_id, edit=cancelled, head=head)
     path = run / '06-full-cycle/session-report.json'
     record = dict(json.loads(path.read_text()), operator_cancel=copy.deepcopy(CANCEL))
     if session_edit:
@@ -538,3 +552,197 @@ def test_a_qualified_record_binds_the_g5_runs_and_refuses_any_change_to_them(cel
             verify(sha)
     finally:
         summary.write_bytes(original)
+
+
+# --- Software identity: repeatability counts one version; nothing is hidden or cherry-picked -----------------------
+def commit(rev):
+    """A real historical commit of this repository (skipped where the history is not available)."""
+    try:
+        return psq._git(psq.REPO, 'rev-parse', '--verify', rev + '^{commit}').strip()
+    except psq.PhysicsScopeRefused:
+        pytest.skip(f'commit {rev} not in this clone')
+
+
+def test_the_planner_sources_cover_the_executors_whole_import_closure():
+    import ast
+    scripts, local = ROOT / 'scripts', {p.stem for p in (ROOT / 'scripts').glob('*.py')}
+    seen, todo = set(), ['perceived_object_grasp_execute']
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        for node in ast.walk(ast.parse((scripts / f'{name}.py').read_text())):
+            names = ([a.name for a in node.names] if isinstance(node, ast.Import) else
+                     [node.module] if isinstance(node, ast.ImportFrom) and node.module and not node.level else [])
+            todo += [n.split('.')[0] for n in names if n.split('.')[0] in local]
+    assert set(psq.EXECUTOR_MODULES) == seen - {'physics_scope_qualification'}
+    assert 'scripts/physics_scope_qualification.py' not in psq.PLANNER_SOURCES          # the judge never resets a campaign
+    assert {'scenes/ur5_2f_test/launch/demo.launch.py', 'catalog/capabilities'} <= set(psq.PLANNER_SOURCES)
+
+
+def test_identity_is_reproducible_from_git_and_refuses_a_modified_or_unknown_checkout(tmp_path):
+    assert psq.planner_identity(psq.REPO, HEAD) == PLANNER                             # deterministic
+    old = commit('cd383090')                                                           # Bin A trial 3's commit
+    assert psq.planner_identity(psq.REPO, old) != PLANNER                              # the clearance fix is a new version
+    with pytest.raises(psq.PhysicsScopeRefused, match='PROVENANCE_UNRECOVERABLE'):
+        psq.planner_identity(psq.REPO, '0' * 40)
+    import subprocess
+    repo = tmp_path / 'repo'
+    (repo / 'scripts').mkdir(parents=True)
+    source = repo / 'scripts/perceived_object_grasp_execute.py'
+    source.write_text('x = 1\n')
+    for args in (['init', '-q'], ['add', '.'], ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'one']):
+        subprocess.run(['git', '-C', str(repo), *args], check=True)
+    real = psq.planner_identity.__wrapped__ if hasattr(psq.planner_identity, '__wrapped__') else None
+    from importlib import reload
+    fresh = reload(__import__('physics_scope_qualification'))                          # unpatched module functions
+    try:
+        clean = fresh.planner_identity(repo)
+        source.write_text('x = 2\n')
+        with pytest.raises(fresh.PhysicsScopeRefused, match='SOFTWARE_MODIFIED'):     # never fingerprint an edited tree
+            fresh.planner_identity(repo)
+        assert clean == fresh.planner_identity(repo, 'HEAD')
+    finally:
+        reload(fresh)
+
+
+def test_trials_of_another_software_version_are_listed_never_counted_and_never_blocking(cells, trials, g5, tmp_path):
+    old = commit('cd383090')
+    passed = strict_trial(tmp_path / 'old_pass', cells['b'], 'run-old-pass', head=old)
+    failed = strict_trial(tmp_path / 'old_fail', cells['b'], 'run-old-fail', head=old,
+                          edit=lambda s, r: s.update(result='FAIL', failed_stage='EXECUTE_HOME'))
+    found = psq.qualification_readiness(cells['b'], [passed, failed, *trials], NATIVE, RUNTIME, g5['cancel'], g5['stop'])
+    assert found['status'] == 'QUALIFIED_READY' and len(found['trials']) == 3                # only this version counts
+    assert [(v['run'], v['kind']) for v in found['other_versions']] == [
+        (str(passed.resolve()), 'STRICT_PASS'), (str(failed.resolve()), 'FAILED')]        # both remain visible
+    assert all(v['planner'] != PLANNER for v in found['other_versions'])
+    same = strict_trial(tmp_path / 'new_fail', cells['b'], 'run-new-fail',
+                        edit=lambda s, r: s.update(result='FAIL', failed_stage='EXECUTE_HOME'))
+    blocked = psq.qualification_readiness(cells['b'], [same, *trials], NATIVE, RUNTIME, g5['cancel'], g5['stop'])
+    assert blocked['status'] == 'NOT_QUALIFIED' and any('not a strict full-cycle PASS' in u for u in blocked['unmet'])
+
+
+@pytest.mark.parametrize('edit,match', [
+    (lambda s, r: r['preflight'].pop('repo_head'), 'recorded no commit'),
+    (lambda s, r: r['preflight'].update(repo_head='0' * 40), 'PROVENANCE_UNRECOVERABLE'),
+])
+def test_unrecoverable_software_provenance_never_counts(cells, trials, g5, tmp_path, edit, match):
+    run = strict_trial(tmp_path, cells['b'], 'run-x', edit=edit)
+    found = psq.qualification_readiness(cells['b'], [run, *trials[:2]], NATIVE, RUNTIME, g5['cancel'], g5['stop'])
+    assert found['status'] == 'NOT_QUALIFIED' and any(match in u for u in found['unmet'])
+
+
+def test_a_bound_identity_that_differs_from_the_commit_is_refused(cells, trials, g5, tmp_path):
+    run = strict_trial(tmp_path, cells['b'], 'run-forged')
+    rebound(run, lambda r: r['binding'].update(planner='f' * 64))                           # claims another version
+    found = psq.qualification_readiness(cells['b'], [run, *trials[:2]], NATIVE, RUNTIME, g5['cancel'], g5['stop'])
+    assert found['status'] == 'NOT_QUALIFIED' and any('software identity differs' in u for u in found['unmet'])
+
+
+def test_every_unlisted_run_of_this_version_and_cell_is_found(cells, trials, g5, tmp_path):
+    root = tmp_path / 'evidence'
+    hidden = strict_trial(root / 'hidden', cells['b'], 'run-hidden',
+                          edit=lambda s, r: s.update(result='FAIL', failed_stage='EXECUTE_HOME'))
+    strict_trial(root / 'old', cells['b'], 'run-old', head=commit('cd383090'))                   # another version
+    cancelled_trial(root / 'cancel', cells['b'], run_id='run-cancel-2')                          # operator stop evidence
+    strict_trial(root / 'other_cell', cells['a'], 'run-a')                                      # another cell
+    found = psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME, g5['cancel'], g5['stop'],
+                                        evidence_roots=[root])
+    assert found['status'] == 'NOT_QUALIFIED' and found['unlisted'] == [str(hidden.resolve())]  # the failure is found
+    listed = psq.qualification_readiness(cells['b'], [*trials, hidden], NATIVE, RUNTIME, g5['cancel'], g5['stop'],
+                                         evidence_roots=[root])
+    assert listed['unlisted'] == [] and any('not a strict full-cycle PASS' in u for u in listed['unmet'])
+
+
+def test_g5_runs_of_another_version_need_their_stop_cancel_code_unchanged(cells, trials, tmp_path):
+    for role, head in (('cancellation', commit('b5092535')), ('stop_after_cycle', commit('b22b8337'))):
+        assert psq.mechanism_identity(role, psq.REPO, head) == psq.mechanism_identity(role, psq.REPO, HEAD), role
+    cancel = cancelled_trial(tmp_path / 'g5a', cells['b'], run_id='run-g5a', head=commit('b5092535'))
+    stop = stopped_trial(tmp_path / 'g5b', cells['b'], head=commit('b22b8337'))
+    found = psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME, cancel, stop)
+    assert found['status'] == 'QUALIFIED_READY'
+    assert {k: v['compatibility'] for k, v in found['stop_cancel'].items()} == {
+        'cancellation': 'stop/cancel mechanism unchanged', 'stop_after_cycle': 'stop/cancel mechanism unchanged'}
+    before = cancelled_trial(tmp_path / 'g5a_old', cells['b'], run_id='run-g5a-old', head=commit('a8b287b2'))
+    assert psq.mechanism_identity('cancellation', psq.REPO, commit('a8b287b2')) != psq.mechanism_identity(
+        'cancellation', psq.REPO, HEAD)                                                     # before the G5A fixes
+    refused = psq.qualification_readiness(cells['b'], trials, NATIVE, RUNTIME, before, stop)
+    assert refused['status'] == 'NOT_QUALIFIED' and any('stop/cancel code changed' in u for u in refused['unmet'])
+
+
+def test_the_executor_recomputes_the_identity_bound_in_its_trial_record(cells, tmp_path):
+    session = launch(tmp_path, cells['b'])
+    path = tmp_path / 'physics-scope.json'
+    sha = psq.authorise_trial(path, binding(session, cells['b']))
+    assert psq.verify_trial(path, sha, binding(session, cells['b']))['binding']['planner'] == PLANNER
+    with pytest.raises(psq.PhysicsScopeRefused):                                            # the software changed
+        psq.verify_trial(path, sha, binding(session, cells['b'], planner='e' * 64))
+
+
+# --- Issuance (G3C): a QUALIFIED record is written only when ready, and nothing consumes it -----------------------
+def test_the_issuer_writes_a_record_only_when_every_requirement_holds(cells, trials, g5, tmp_path):
+    issue = lambda path, runs, cancel=g5['cancel'], stop=g5['stop'], cell='b': psq.issue_qualified_scope(
+        path, cells[cell], runs, NATIVE, RUNTIME, cancel, stop)
+    for path, runs, kwargs, match in ((tmp_path / 'short.json', trials[:2], {}, '2 of 3'),
+                                      (tmp_path / 'no_g5.json', trials, dict(cancel=None), 'stop/cancel'),
+                                      (tmp_path / 'other_cell.json', trials, dict(cell='a'), 'another cell')):
+        with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_NOT_QUALIFIED: .*' + match):
+            issue(path, runs, **kwargs)
+        assert not path.exists()                                                     # nothing written
+    path = tmp_path / 'qualified.json'
+    sha = issue(path, trials)
+    record = psq.verify_qualified_scope(path, sha, cells['b'], NATIVE, RUNTIME)
+    assert record['state'] == psq.QUALIFIED and record['operation'] == psq.TRIAL_OPERATION and record['planner'] == PLANNER
+    assert record['destination'] == 'target_bin_b' and len(record['trials']) == 3
+    with pytest.raises(FileExistsError):                                             # an issued record is never replaced
+        issue(path, trials)
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: cell'):           # only its exact cell
+        psq.verify_qualified_scope(path, sha, cells['a'], NATIVE, RUNTIME)
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: native'):         # stale build
+        psq.verify_qualified_scope(path, sha, cells['b'], dict(NATIVE, sha256='rebuilt'), RUNTIME)
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: planner'):        # another version
+        psq.verify_qualified_scope(path, sha, cells['b'], NATIVE, RUNTIME, planner='d' * 64)
+    hidden = strict_trial(tmp_path / 'roots/hidden', cells['b'], 'run-hidden-2',
+                          edit=lambda s, r: s.update(result='FAIL', failed_stage='EXECUTE_HOME'))
+    with pytest.raises(psq.PhysicsScopeRefused, match='unlisted trials'):                         # a failure surfaces
+        psq.verify_qualified_scope(path, sha, cells['b'], NATIVE, RUNTIME, evidence_roots=[tmp_path / 'roots'])
+    widened = json.loads(path.read_text())
+    for operation in (dict(psq.TRIAL_OPERATION, cycles=2), dict(psq.TRIAL_OPERATION, class_routing=True),
+                      dict(psq.TRIAL_OPERATION, destinations=2)):
+        body = {k: v for k, v in dict(widened, operation=operation).items() if k != 'binding_sha256'}
+        forged = tmp_path / f"forged_{len(list(tmp_path.glob('forged_*')))}.json"
+        data = (json.dumps(dict(body, binding_sha256=hashlib.sha256(psq._canonical(body)).hexdigest())) + '\n').encode()
+        forged.write_bytes(data)
+        with pytest.raises(psq.PhysicsScopeRefused, match='permits another operation'):     # no wider permission
+            psq.verify_qualified_scope(forged, hashlib.sha256(data).hexdigest(), cells['b'], NATIVE, RUNTIME)
+
+
+def test_issue_and_verify_cli_report_without_admitting(cells, trials, g5, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(psq, 'native_identity', lambda path: NATIVE)
+    monkeypatch.setattr(psq, 'runtime_identity', lambda workspace: RUNTIME)
+    runs = [a for run in trials for a in ('--trial', str(run))]
+    g5_args = ['--cancellation-trial', str(g5['cancel']), '--stop-trial', str(g5['stop']), '--evidence-root', str(tmp_path)]
+    record = tmp_path / 'cli.json'
+    assert psq.main(['issue', '--cell', str(cells['b']), *runs[:2], *g5_args, '--output', str(record)]) == 2
+    assert json.loads(capsys.readouterr().out)['status'] == 'REFUSED' and not record.exists()
+    assert psq.main(['issue', '--cell', str(cells['b']), *runs, *g5_args, '--output', str(record)]) == 0
+    issued = json.loads(capsys.readouterr().out)
+    assert issued['status'] == 'ISSUED' and issued['admission'].startswith('none')
+    assert psq.main(['verify', '--cell', str(cells['b']), '--record', str(record), '--sha256', issued['sha256'],
+                     '--evidence-root', str(tmp_path)]) == 0
+    assert json.loads(capsys.readouterr().out)['status'] == 'VERIFIED'
+    assert psq.main(['verify', '--cell', str(cells['b']), '--record', str(record), '--sha256', '0' * 64]) == 2
+    assert 'RECORD_CHANGED' in json.loads(capsys.readouterr().out)['reason']
+
+
+def test_no_runtime_path_consumes_a_qualified_record():
+    """Runtime admission is G6: the executor, runner, Builder and HMI never read a QUALIFIED record or its verifier."""
+    for name in ('scripts/perceived_object_grasp_execute.py', 'scripts/run_stage_a1_finish.py', 'scripts/simulator_world.py',
+                 'scripts/simulator_execution.py', 'scripts/run_r14_plan_only_acceptance.py'):
+        source = (ROOT / name).read_text()
+        assert 'verify_qualified_scope' not in source and 'issue_qualified_scope' not in source, name
+    for source in (ROOT / 'workcell_builder').rglob('*'):
+        if source.suffix in ('.py', '.cpp', '.hpp', '.h'):
+            text = source.read_text(errors='replace')
+            assert 'verify_qualified_scope' not in text and 'issue_qualified_scope' not in text, source
