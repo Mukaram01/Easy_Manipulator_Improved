@@ -646,7 +646,7 @@ def build_commissioning(repo:Path,workspace:Path,output:Path,env:dict)->dict:
     return {"moveit_overlay":overlay,"sha256":manifest["sha256"],"moveit_version":manifest.get("moveit_version"),
             "library":str(library),"telemetry_sha256":manifest["telemetry_sha256"],
             "telemetry_library":str(telemetry),"support_sha256":manifest["support_sha256"],
-            "support_library":str(support)}
+            "support_library":str(support),"sources":manifest["sources"]}
 
 
 def assert_plan(summary,*,require_resolved):
@@ -794,13 +794,17 @@ def functional_report(summary,failure=None):
                 failure=failure,failure_cause=cause,failure_category=classify_failure(cause,summary) if cause else None)
 
 
-def prior_evidence(directory,capability_sha):
-    """Passing prerequisite summaries of a completed run, for a diagnostic targeted full-cycle.
+def prior_evidence(directory,build):
+    """Passing prerequisite summaries of a completed full run on the current build, for a diagnostic targeted full-cycle.
 
-    The executor re-proves the capability and overlay binaries of every record; this
-    only refuses an incomplete or failed run early. Reused evidence never makes the
-    targeted session Stage-A acceptance.
+    The prior run's report must have recorded the build just made and hashed here: the
+    commission-execute, support/Cartesian and telemetry library bytes, MoveIt version and
+    overlay. Every summary must carry the bound source hashes the executor proved on disk,
+    equal to the current manifest's. The executor re-proves the capability and overlay
+    binaries of every record; reused evidence never makes the targeted session Stage-A
+    acceptance.
     """
+    from simulator_backend import moveit_overlay_identity
     directory=Path(directory)
     prior={}
     for gate in ("cancel","telemetry","stationary","contact-release"):
@@ -809,9 +813,22 @@ def prior_evidence(directory,capability_sha):
         summary=json.loads(path.read_text())
         if summary.get("result")!=EXPECTED_RESULTS[gate]:
             raise RuntimeError(f"prior {gate} evidence did not pass ({summary.get('result')!r})")
-        if summary.get("commissioning_capability",{}).get("sha256")!=capability_sha:
+        capability=summary.get("commissioning_capability",{})
+        if capability.get("sha256")!=build["sha256"]:
             raise RuntimeError(f"prior {gate} evidence was produced by a different commissioning capability binary")
+        if not build.get("sources") or capability.get("sources")!=build["sources"]:
+            raise RuntimeError(f"prior {gate} evidence was produced from different or unrecorded bound sources")
         prior[gate]=path
+    report_path=directory/REPORT_NAMES["full"]
+    try:report=json.loads(report_path.read_text())
+    except (OSError,ValueError) as exc:raise RuntimeError(f"prior evidence has no readable full-run report: {report_path}") from exc
+    recorded=(report.get("preflight") or {}).get("commissioning_build") or {}
+    if report.get("mode")!="full":raise RuntimeError("prior evidence is not a full-run report")
+    for key in ("sha256","support_sha256","telemetry_sha256","moveit_version"):
+        if not recorded.get(key) or recorded[key]!=build.get(key):
+            raise RuntimeError(f"prior evidence was produced by a different or unrecorded commissioning build ({key})")
+    if moveit_overlay_identity(recorded.get("moveit_overlay") or {})!=moveit_overlay_identity(build.get("moveit_overlay") or {}):
+        raise RuntimeError("prior evidence was produced with a different MoveIt overlay")
     return prior
 
 
@@ -1176,7 +1193,7 @@ def main(argv=None):
                 source_world_git_blob=SOURCE_WORLDS[args.world_profile][1],source_world_sha256=sha256(source_world))
         prior={}
         if args.prior_evidence is not None:
-            prior=prior_evidence(args.prior_evidence,build["sha256"])
+            prior=prior_evidence(args.prior_evidence,build)
             overall["prior_evidence"]={gate:str(path) for gate,path in prior.items()}
         # A targeted gate keeps its full-run session index, so it gets the same
         # ROS domain and partition as in the sequence and its own fresh session.

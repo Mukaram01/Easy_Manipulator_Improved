@@ -615,6 +615,13 @@ adapter can cause MoveIt to skip it. The build now explicitly depends on
   - R2.5B G2 plan-only PASS: two Bin B sessions, whose four place descents from
     the formerly failing wrist-flipped branch all certified, and one Bin A
     session.
+- **Evidence reuse:** reused prerequisite evidence (`--prior-evidence`, also used
+  by the Builder physics cycle) must come from a full run that recorded this
+  exact build. That means the commission-execute, support/Cartesian and
+  telemetry library hashes, the MoveIt version and overlay, and the bound source
+  hashes. A rebuilt adapter therefore invalidates reuse even though the
+  commission-execute library stays byte-identical. Older runs are still readable
+  but are refused for reuse.
 
 ### Simulator support geometry parity
 

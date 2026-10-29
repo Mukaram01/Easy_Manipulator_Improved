@@ -772,13 +772,8 @@ def test_motion_telemetry_metrics_keep_250ms_guard_and_contiguous_iterations():
     with pytest.raises(RuntimeError,match='iteration gap'):telemetry_metrics(gap)
 
 
-def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
-    from simulator_execution import require_trial_evidence
-    capability_sha='freshly-qualified-build'
-    overlay_sha='freshly-qualified-tem-overlay'
-    move_group_sha='freshly-qualified-move-group'
-    current=dict(sha256=capability_sha,moveit_overlay={'library':{'sha256':overlay_sha},
-        'move_group':{'executable':{'sha256':move_group_sha}}})
+def qualified_trial_records(current):
+    """The four passing prerequisite trial records, all produced by the `current` capability."""
     common=dict(commissioning_capability=current,
         backend_identity={'backend':'simulator'},
         motion_backend_identity={'backend':'simulator'},
@@ -797,12 +792,26 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
         stationary_retention={'duration_sim_ns':1_100_000_000,'samples':50})
     contact=dict(common,result='CONTACT_RELEASE_PASS',verified_lift_clearance_m=.02,
         release_evidence={'settled':True})
-    records=[copy.deepcopy(r) for r in (cancellation,telemetry,retention,contact)]
+    return [copy.deepcopy(r) for r in (cancellation,telemetry,retention,contact)]
+
+
+def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
+    from simulator_execution import require_trial_evidence
+    capability_sha='freshly-qualified-build'
+    overlay_sha='freshly-qualified-tem-overlay'
+    move_group_sha='freshly-qualified-move-group'
+    sources={'/ws/workcell_builder/src_support_contact_adapter.cpp':'adapter-source',
+             '/ws/workcell_builder/src_commission_execute_capability.cpp':'commission-source'}
+    current=dict(sha256=capability_sha,sources=sources,moveit_overlay={'library':{'sha256':overlay_sha},
+        'move_group':{'executable':{'sha256':move_group_sha}}})
+    records=qualified_trial_records(current)
+    cancellation,telemetry,retention,contact=records
     path=tmp_path/'evidence.json';path.write_text(json.dumps(records))
     accepted=require_trial_evidence(path,current)
     assert accepted['capability_sha256']==capability_sha
     assert accepted['moveit_overlay_sha256']==overlay_sha
     assert accepted['move_group_sha256']==move_group_sha
+    assert accepted['sources']==sources
     for index in range(4):
         for invalid_overlay in ({'library':{'sha256':'different-tem-overlay'}},
                 {'library':{'sha256':''}}, {'library':{}}, {}):
@@ -848,6 +857,31 @@ def test_full_cycle_prerequisites_require_all_four_qualified_trials(tmp_path):
         require_trial_evidence(path,invalid_current)
     path.write_text(json.dumps([cancellation,telemetry,retention]))
     with pytest.raises(RuntimeError):require_trial_evidence(path,current)
+
+
+def test_full_cycle_prerequisites_are_bound_to_the_support_adapter_sources(tmp_path):
+    # A changed adapter rebuilds only the support/Cartesian library: the commission-execute
+    # binary and the MoveIt overlay stay byte-identical, so only the bound sources tell.
+    from simulator_execution import require_trial_evidence
+    adapter='/ws/workcell_builder/src_support_contact_adapter.cpp'
+    sources={adapter:'qualified-adapter','/ws/workcell_builder/CMakeLists.txt':'qualified-cmake'}
+    current=dict(sha256='commission',sources=sources,moveit_overlay={'library':{'sha256':'tem'},
+        'move_group':{'executable':{'sha256':'move-group'}}})
+    records=qualified_trial_records(current)
+    path=tmp_path/'evidence.json';path.write_text(json.dumps(records))
+    assert require_trial_evidence(path,current)['sources']==sources
+    changed=copy.deepcopy(current);changed['sources'][adapter]='repaired-adapter'
+    with pytest.raises(RuntimeError,match='bound sources'):require_trial_evidence(path,changed)
+    for index in range(4):
+        for stale in ({adapter:'old-adapter','/ws/workcell_builder/CMakeLists.txt':'qualified-cmake'},
+                      {'/ws/workcell_builder/CMakeLists.txt':'qualified-cmake'},{},None):
+            invalid=copy.deepcopy(records);invalid[index]['commissioning_capability']['sources']=stale
+            path.write_text(json.dumps(invalid))
+            with pytest.raises(RuntimeError,match='bound sources'):require_trial_evidence(path,current)
+    path.write_text(json.dumps(records))
+    for incomplete in ({'/ws/workcell_builder/CMakeLists.txt':'qualified-cmake'},{adapter:''},{},None):
+        with pytest.raises(RuntimeError,match='bound source identity'):
+            require_trial_evidence(path,dict(current,sources=incomplete))
 
 
 def test_same_attempt_retention_proof_is_bound_to_actual_frozen_interval(tmp_path,monkeypatch):

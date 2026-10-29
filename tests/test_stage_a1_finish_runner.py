@@ -702,7 +702,7 @@ def stubbed_preflight(monkeypatch,bridge_preflight):
     monkeypatch.setattr(MODULE,'discover_source_world',lambda *args: SCRIPT)
     calls=[]
     def build(*args):
-        calls.append('build');return {'sha256':'test','moveit_overlay':{'library':{'sha256':'test-tem'}}}
+        calls.append('build');return dict(QUALIFIED_BUILD)
     monkeypatch.setattr(MODULE,'build_commissioning',build)
     import simulator_backend
     monkeypatch.setattr(simulator_backend,'moveit_overlay_identity',lambda data:data,raising=False)
@@ -747,11 +747,22 @@ def test_targeted_full_cycle_is_refused_because_it_needs_same_run_prerequisite_e
     assert seen==[] and stubbed_preflight==[] and not (tmp_path/'evidence').exists()
 
 
-def completed_run(root,capability='test',failed=None):
+QUALIFIED_BUILD={'sha256':'test','support_sha256':'test-support','telemetry_sha256':'test-telemetry',
+    'moveit_version':'2.5.10','moveit_overlay':{'library':{'sha256':'test-tem'}},
+    'sources':{'/ws/src_support_contact_adapter.cpp':'test-adapter','/ws/CMakeLists.txt':'test-cmake'}}
+
+
+def completed_run(root,capability='test',failed=None,build=None,sources=None):
+    """A full run's four passing prerequisite summaries and its report, recorded on `build`."""
+    build=dict(QUALIFIED_BUILD if build is None else build)
     for gate in ('cancel','telemetry','stationary','contact-release'):
         path=root/f'{MODULE.GATES.index(gate)+1:02d}-{gate}'/gate/'summary.json';path.parent.mkdir(parents=True)
         result='FAILED' if gate==failed else MODULE.EXPECTED_RESULTS[gate]
-        path.write_text(json.dumps({'result':result,'commissioning_capability':{'sha256':capability}}))
+        path.write_text(json.dumps({'result':result,'commissioning_capability':{'sha256':capability,
+            'sources':build['sources'] if sources is None else sources}}))
+    recorded={k:v for k,v in build.items() if k!='sources'}   # reports before R2.5C recorded no sources here
+    (root/MODULE.REPORT_NAMES['full']).write_text(json.dumps({'mode':'full','status':'FAIL',
+        'preflight':{'commissioning_build':recorded}}))
     return root
 
 
@@ -838,8 +849,38 @@ def test_prior_evidence_must_be_a_complete_passing_run_on_the_current_capability
     root=completed_run(tmp_path/'prior',capability='other' if problem=='capability' else 'test',
                        failed='telemetry' if problem=='failed' else None)
     if problem=='missing':(root/'04-stationary/stationary/summary.json').unlink()
-    with pytest.raises(RuntimeError,match=match):MODULE.prior_evidence(root,'test')
-    assert set(MODULE.prior_evidence(completed_run(tmp_path/'good'),'test'))=={'cancel','telemetry','stationary','contact-release'}
+    with pytest.raises(RuntimeError,match=match):MODULE.prior_evidence(root,QUALIFIED_BUILD)
+    assert set(MODULE.prior_evidence(completed_run(tmp_path/'good'),QUALIFIED_BUILD))=={'cancel','telemetry','stationary','contact-release'}
+
+
+def _changed(**fields):
+    return {**QUALIFIED_BUILD,**fields}
+
+
+@pytest.mark.parametrize('recorded,sources,match',[
+    # The R2.5C repair: a new support/Cartesian library beside a byte-identical commission-execute library.
+    (_changed(support_sha256='old-support'),None,r'different or unrecorded commissioning build \(support_sha256\)'),
+    ({k:v for k,v in QUALIFIED_BUILD.items() if k!='support_sha256'},None,r'\(support_sha256\)'),
+    (_changed(telemetry_sha256='old-telemetry'),None,r'\(telemetry_sha256\)'),
+    (_changed(moveit_version='2.5.9'),None,r'\(moveit_version\)'),
+    (_changed(moveit_overlay={'library':{'sha256':'other-tem'}}),None,'different MoveIt overlay'),
+    (None,{'/ws/src_support_contact_adapter.cpp':'old-adapter','/ws/CMakeLists.txt':'test-cmake'},'bound sources'),
+    (None,{},'bound sources'),
+])
+def test_prior_evidence_is_bound_to_the_complete_current_build(tmp_path,recorded,sources,match):
+    root=completed_run(tmp_path/'prior',build=recorded,sources=sources)
+    with pytest.raises(RuntimeError,match=match):MODULE.prior_evidence(root,QUALIFIED_BUILD)
+
+
+def test_prior_evidence_needs_a_readable_full_run_report(tmp_path):
+    root=completed_run(tmp_path/'prior')
+    report=root/MODULE.REPORT_NAMES['full']
+    report.write_text(json.dumps({'mode':'targeted','preflight':{'commissioning_build':QUALIFIED_BUILD}}))
+    with pytest.raises(RuntimeError,match='not a full-run report'):MODULE.prior_evidence(root,QUALIFIED_BUILD)
+    report.unlink()
+    with pytest.raises(RuntimeError,match='no readable full-run report'):MODULE.prior_evidence(root,QUALIFIED_BUILD)
+    with pytest.raises(RuntimeError,match='bound sources'):
+        MODULE.prior_evidence(completed_run(tmp_path/'other'),{k:v for k,v in QUALIFIED_BUILD.items() if k!='sources'})
 
 
 @pytest.mark.parametrize('argv,message',[
