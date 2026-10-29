@@ -77,30 +77,37 @@ def rewrite(path, edit):
     return hashlib.sha256(data).hexdigest()
 
 
-def test_authorised_trial_verifies_against_the_same_recomputed_binding(cells, tmp_path):
-    session = launch(tmp_path, cells['b'])
-    bound = binding(session, cells['b'])
+BINS = [('a', 'target_bin_default'), ('b', 'target_bin_b')]      # the same world; each cell's task selects its bin
+
+
+@pytest.mark.parametrize('cell,asset', BINS)
+def test_authorised_trial_verifies_against_the_same_recomputed_binding(cells, tmp_path, cell, asset):
+    session = launch(tmp_path, cells[cell])
+    bound = binding(session, cells[cell])
     sha = psq.authorise_trial(tmp_path / 'scope.json', bound)
-    record = psq.verify_trial(tmp_path / 'scope.json', sha, binding(session, cells['b']))
+    record = psq.verify_trial(tmp_path / 'scope.json', sha, binding(session, cells[cell]))
     assert record['state'] == 'AUTHORISED_TRIAL' and record['operation'] == psq.TRIAL_OPERATION
-    assert record['binding']['destination']['asset'] == 'target_bin_b'
+    assert record['binding']['destination']['asset'] == asset
     assert record['binding']['destination']['model'] == db.select_destination_binding(
-        json.loads((session / 'runtime/receipt.json').read_text())['destination_geometry_bindings'], 'target_bin_b')['model']
+        json.loads((session / 'runtime/receipt.json').read_text())['destination_geometry_bindings'], asset)['model']
     assert len(record['binding']['destinations']) == 2                                   # the other bin is bound too
     assert all('manifest_path' not in d for d in record['binding']['destinations'])     # content bound, not paths
 
 
-def test_a_trial_for_one_bin_never_admits_the_other(cells, tmp_path):
-    session = launch(tmp_path, cells['b'])
-    sha = psq.authorise_trial(tmp_path / 'scope.json', binding(session, cells['b']))
-    # The same world with the task pointed at Bin A: the destination (and the cell) no longer match.
+@pytest.mark.parametrize('cell,asset', BINS)
+def test_a_trial_for_one_bin_never_admits_the_other(cells, tmp_path, cell, asset):
+    other_cell = 'a' if cell == 'b' else 'b'
+    session = launch(tmp_path, cells[cell])
+    sha = psq.authorise_trial(tmp_path / 'scope.json', binding(session, cells[cell]))
+    # The same world with the task pointed at the other bin: the destination (and the cell) no longer match.
     with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: .*destination'):
-        psq.verify_trial(tmp_path / 'scope.json', sha, binding(launch(tmp_path / 'a', cells['a']), cells['a']))
-    other = next(d for d in binding(session, cells['b'])['destinations'] if d['source_item_id'] != 'target_bin_b')
+        psq.verify_trial(tmp_path / 'scope.json', sha,
+                         binding(launch(tmp_path / other_cell, cells[other_cell]), cells[other_cell]))
+    other = next(d for d in binding(session, cells[cell])['destinations'] if d['source_item_id'] != asset)
     forged = rewrite(tmp_path / 'scope.json', lambda r: r['binding']['destination'].update(
         model=other['model'], object_id=other['object_id'], floor_z=other['floor_z']))
     with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_MISMATCH: destination'):
-        psq.verify_trial(tmp_path / 'scope.json', forged, binding(session, cells['b']))
+        psq.verify_trial(tmp_path / 'scope.json', forged, binding(session, cells[cell]))
 
 
 def test_changed_bin_geometry_refuses(cells, tmp_path):

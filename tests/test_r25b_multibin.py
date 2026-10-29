@@ -113,14 +113,15 @@ def test_multi_destination_world_arms_no_physical_guard():
         ContactGuard(Measurements(), 'runtime::part', [0.03] * 3, [], None, None, 'tool0')
 
 
-def test_a_scoped_guard_admits_only_its_own_bin_floor(cells, tmp_path):
-    """G3A: the guard armed for Bin B maps only Bin B's exact floor collision to Bin B; Bin B's walls and every
+@pytest.mark.parametrize('cell,asset', [('a', 'target_bin_default'), ('b', 'target_bin_b')])
+def test_a_scoped_guard_admits_only_its_own_bin_floor(cells, tmp_path, cell, asset):
+    """G3A/G3B: the guard armed for one bin maps only that bin's exact floor collision to it; its walls and every
     collision of the other bin stay unpermitted physical obstacles, and a substituted binding is refused."""
     from simulator_execution import ContactGuard
-    text, _ = sw.derive_world(cells['b'], physical_destinations='all')
-    db.augment_spec(spec_for(tmp_path, text), cells['b'] / 'config/moveit_collision_objects.yaml', True)
+    text, _ = sw.derive_world(cells[cell], physical_destinations='all')
+    db.augment_spec(spec_for(tmp_path, text), cells[cell] / 'config/moveit_collision_objects.yaml', True)
     bindings = json.loads((tmp_path / 'sim/spec.json').read_text())['destination_geometry_bindings']
-    selected = db.select_destination_binding(bindings, 'target_bin_b')
+    selected = db.select_destination_binding(bindings, asset)
     other = next(b for b in bindings if b is not selected)
 
     class Measurements:
@@ -131,9 +132,9 @@ def test_a_scoped_guard_admits_only_its_own_bin_floor(cells, tmp_path):
         entry_names, entry_values = [], []
     guard = ContactGuard(Measurements(), 'runtime::part_04', [0.025] * 3, [], None, Baseline(), 'tool0',
                          destination_binding=selected)
-    assert guard.destination == dict(object_id='runtime::part_04', support_id='workcell::target_bin_b',
+    assert guard.destination == dict(object_id='runtime::part_04', support_id='workcell::' + asset,
                                      floor_z=float(selected['floor_z']))
-    assert guard.identity(f"a0::{selected['model']}::bin_link::floor") == 'workcell::target_bin_b'
+    assert guard.identity(f"a0::{selected['model']}::bin_link::floor") == 'workcell::' + asset
     assert guard.identity(f"a0::{selected['model']}::bin_link::wall_x_plus") == 'workcell::' + selected['model']
     assert guard.identity(f"a0::{other['model']}::bin_link::floor") == 'workcell::' + other['model']
     # A binding that is not one of the launched bins (or none) arms nothing. Which launched bin is armed is decided
