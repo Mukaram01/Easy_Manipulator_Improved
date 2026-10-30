@@ -11,7 +11,7 @@
 | Planned trajectory | plan-only resolve and revalidate in the session | no |
 | `AUTHORISED_TRIAL` | CLI qualification runner (`--authorise-physics-trial`) after this session's revalidation | one guarded full-cycle into one bin, CLI only |
 | Strict trial PASS | the executor's verdict on that trial, labelled `PHYSICS_SCOPE_TRIAL_NOT_QUALIFIED` | no further motion |
-| `QUALIFIED` | nothing yet: no issuer exists | not wired: the executor, Builder and HMI accept no qualified record |
+| `QUALIFIED` | offline issuer only (`issue_qualified_scope`, when every requirement holds for one software version) | not wired: the executor, Builder and HMI accept no qualified record (admission is G6) |
 
 A trial needs no earlier success: it reuses the same-build Stage-A prerequisite trials (`require_trial_evidence`). A trial never qualifies itself.
 
@@ -108,15 +108,39 @@ A qualified scope would admit **one exact cell**: its task, placing into one bin
 - any listed trial that failed after motion blocks qualification;
 - trials that stopped before authorisation (no motion) are reported as reliability findings.
 
-**Status (2026-10-29):** `qualification_readiness` returns `NOT_QUALIFIED` for both cells. Q7 is met by the G5 runs; Q8 is not met.
+**Software identity (version-aware repeatability):**
+- **Planner identity** (`planner_identity`): sha256 over the git blob ids of `PLANNER_SOURCES`:
+  - the executor's whole repo-local import closure (34 modules, pinned by a test against the real closure);
+  - the scene template launch (MoveIt pipeline, TOTG blending);
+  - `catalog/capabilities` (tool hold, simulator collision boxes).
+  - **Excluded:** this judge, so editing it never resets a campaign.
+- **Bound to every new `AUTHORISED_TRIAL`** (`scope_binding`); the executor recomputes it before motion.
+  - Historical trials recover it from their recorded clean commit; no evidence file changes.
+  - A bound identity must equal the recovered one, and a run is always judged as the version it really ran.
+- **Q8 counts one version** (the current one):
+  - other versions are listed under `other_versions` with their outcome, never counted and never blocking;
+  - a failure after motion blocks its own version;
+  - every run of the exact cell and version under the evidence roots must be listed (`unlisted` otherwise); operator-cancelled runs are G5 evidence.
+- **Q7 across versions:** a G5 run of another version is admissible only while its stop/cancel functions are AST-identical (`mechanism_identity`, `STOP_CANCEL_MECHANISM`).
+- **Issuance** (`issue_qualified_scope`, CLI `issue`/`verify`, offline only):
+  - the record binds the operation, planner identity, trials and G5 runs;
+  - verify re-derives everything and refuses another operation, version, cell, build or an unlisted failure;
+  - nothing consumes a qualified record (runtime admission is G6).
 
-| Cell | Strict trials | Unmet | Reliability finding |
-|---|---|---|---|
-| `zz_r25b_two_bin_a` | 1 of 3 (`g3b/bin_a_trial_2`) | Q8 | trial 1 |
-| `zz_r25b_two_bin_b` | 2 of 3 (`g3a/bin_b_trial`, `g5b/trial`) | Q8 | — |
+**Free-space execution geometry and timing (G3C):**
+- **Pads:** approach, transfer, retreat and home plan and certify against the receipt-bound physics fingertip boxes (`simulation_collision.physics_pad_scene`). The boxes are inflated by 15 mm on free OMPL stages and 1 mm on the straight retreat, and carried on the request's start state as well as the scene diff (`e1fcfcbb`).
+- **Corner blending:** TOTG blends corners (`TOTG_PATH_TOLERANCE` 0.01 in the scene launch). With the robot package's 0.0, corners were unblended and implied up to 18.5 rad/s² (UR5 limit 3.15) and 14 mm of tracking deviation.
 
-`verify_qualified_scope` therefore refuses every record, including a correctly bound one. Offline display:
-`python3 scripts/physics_scope_qualification.py readiness --cell <cell> --trial <run> ... --cancellation-trial <G5A run> --stop-trial <G5B run>` (exit 0 only when ready).
+**Status (2026-10-30, software `09c477e0`, head `e1fcfcbb`):** `NOT_QUALIFIED` for both cells, 0 of 3 strict trials of this version.
+- **Every earlier run is listed under `other_versions`:**
+  - campaign `8a5d80d2`: 3 + 3 strict PASS;
+  - Bin A trial 3: FAILED.
+- **Why `8a5d80d2` is superseded:** that version (`caf7dbd7`) was `QUALIFIED_READY` for both cells by this contract. It was not issued, because its pads were found inactive at runtime (the start-state defect fixed in `e1fcfcbb`).
+- **Q7:** met; the G5 mechanism is unchanged.
+- **Plan-only proof at `e1fcfcbb`:** both cells pass, and the pad effect is verified by replay agreement and FK clearance.
+- **Evidence:** `log/qualification/g3c/`.
+
+Offline: `python3 scripts/physics_scope_qualification.py readiness|issue|verify --cell <cell> --trial <run> ... --cancellation-trial <G5A run> --stop-trial <G5B run>` (exit 0 only when ready, issued or verified).
 
 ## Unresolved reliability issue
 **What happened:** the first Bin A trial (`log/qualification/g3b/bin_a_trial`) stopped before motion with `PREPLAN_TRANSFER: SEARCH_BUDGET_EXHAUSTED` (107.5 s + 202.0 s).
