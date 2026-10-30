@@ -604,6 +604,27 @@ def test_simulator_handoff_reuses_only_exact_observations():
     with pytest.raises(RuntimeError):observations_to_insert([obj],{'runtime::old':obj},'simulator')
 
 
+def test_a_g4_physics_cycle_reconciles_runtime_objects_only_within_the_measured_bound():
+    import pytest
+    insert, bound = MODULE.observations_to_insert, MODULE.MEASURED_RECONCILE_TOLERANCE
+    obj = {'id': 'runtime::x', 'pose': [0.5, 0.2, 0.0155, 0., 0., 0., 1.], 'dimensions': [.025] * 3}
+    settled = dict(obj, pose=[0.5 + 4e-6, 0.2, 0.0155, 0., 0., 0., 1.])     # the placed part a moment later
+    assert insert([settled], {'runtime::x': obj}, 'simulator', measured_tolerance=bound) == [settled]   # re-inserted
+    assert insert([obj], {'runtime::x': obj}, 'simulator', measured_tolerance=bound) == []             # unchanged
+    with pytest.raises(RuntimeError, match='geometry changed'):            # without the bound: exactly as before
+        insert([settled], {'runtime::x': obj}, 'simulator')
+    moved = dict(obj, pose=[0.5 + 2e-5, 0.2, 0.0155, 0., 0., 0., 1.])     # more than the bound: a real change
+    with pytest.raises(RuntimeError, match='geometry changed'):
+        insert([moved], {'runtime::x': obj}, 'simulator', measured_tolerance=bound)
+    grown = dict(settled, dimensions=[.026, .025, .025])
+    with pytest.raises(RuntimeError, match='geometry changed'):
+        insert([grown], {'runtime::x': obj}, 'simulator', measured_tolerance=bound)
+    with pytest.raises(RuntimeError, match='geometry changed'):            # not a single box in the scene
+        insert([settled], {'runtime::x': None}, 'simulator', measured_tolerance=bound)
+    with pytest.raises(RuntimeError, match='unknown prior'):
+        insert([settled], {'runtime::x': obj, 'runtime::gone': obj}, 'simulator', measured_tolerance=bound)
+
+
 def test_bound_approach_seed_preserves_current_state_and_rejects_changed_inputs():
     import copy
     from geometry_msgs.msg import PoseStamped
