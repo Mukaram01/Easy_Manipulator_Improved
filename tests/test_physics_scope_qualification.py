@@ -1177,6 +1177,12 @@ def test_a_failed_cycle_blocks_every_later_cycle(trial):
                                current=t['bound'])
 
 
+def test_a_trial_without_a_bound_control_identity_is_judged_as_its_recovered_version():
+    control, problems = psq._g4_control({'preflight': {'repo_head': HEAD}}, {'planner': PLANNER}, psq.REPO)
+    assert control == CONTROL and problems == ['G4 control identity not bound by the trial']   # never counted
+    assert psq._g4_control({}, {'control': CONTROL}, psq.REPO)[1]                              # no recorded commit
+
+
 def trial_run(t, root):
     """A complete two-cycle trial run directory in the runner's layout, every file written by the real authority."""
     session = root / 'session'

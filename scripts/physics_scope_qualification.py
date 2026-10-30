@@ -919,12 +919,14 @@ def _g4_control(report, bound, repo):
     """(G4 control identity, problems) of one trial: recovered from its recorded clean commit and equal to the bound one."""
     head = (report.get('preflight') or {}).get('repo_head')
     recorded = (bound or {}).get('control')
-    if not head or recorded is None:
-        return recorded, ['G4 control identity unrecoverable or not bound']
+    if not head:
+        return recorded, ['G4 control identity unrecoverable: the trial recorded no commit']
     try:
         recovered = g4_control_identity(repo, head)
     except PhysicsScopeRefused as exc:
         return recorded, [str(exc)]
+    if recorded is None:                           # a trial from before the control binding: its own version, never counted
+        return recovered, ['G4 control identity not bound by the trial']
     if recorded != recovered:
         return recovered, ['G4 control identity differs from the commit the trial ran from']
     return recovered, []

@@ -218,6 +218,14 @@ def physical_destinations(intent, environment, receipt):
     return out
 
 
+def require_loaded_control(binding, loaded):
+    """The binding's G4 control identity (recomputed from HEAD) must be the code this runner process loaded at start."""
+    if binding.get('control') != loaded:
+        raise G4Stop('G4_SOFTWARE_CHANGED', 'the checkout no longer holds the G4 control code this runner loaded at start',
+                     fault=True)
+    return binding
+
+
 def expected_occupants(ledger, binding):
     """The ledger's view of what rests in a bin: every known object whose ledger pose lies over the bin's floor."""
     import physics_scope_qualification as scope
@@ -259,6 +267,13 @@ def main(argv=None):
     elif args.prior_evidence is not None:
         parser.error('--prior-evidence applies to --authorise-g4-trial only')
     repo, workspace = SCRIPTS.parent, SCRIPTS.parents[2]
+    import physics_scope_qualification as scope
+    import sorting_session  # noqa: F401  (every G4 control module is loaded before the snapshot below)
+    try:                                                 # the G4 control code (and commit) this process runs
+        args.loaded_control = scope.g4_control_identity(repo)
+        args.start_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    except (scope.PhysicsScopeRefused, subprocess.CalledProcessError, OSError) as exc:
+        parser.error(f'the G4 control code is not a committed version: {exc}')
     args.output = args.output.resolve()
     if args.output.exists():
         parser.error('choose a new output directory')
@@ -304,6 +319,11 @@ def main(argv=None):
                     report['status'] = 'BLOCKED'
         if launch_log is not None:
             launch_log.close()
+        if ledger is not None and state.get('emit') is not None:
+            try:                                         # the live status file ends in the session's final state
+                state['emit']({'final': report['status']})
+            except Exception as exc:
+                report['status_write_failure'] = str(exc)
         if ledger is not None:
             report['ledger'] = ledger.report()
             report['counts'] = ledger.counts()
@@ -351,9 +371,12 @@ def session(args, repo, workspace, report):
     build = stage_a.build_commissioning(repo, workspace, out, dict(os.environ))
     moveit_identity = moveit_overlay_identity(build['moveit_overlay'])
     report['preflight'] = dict(
+        start_repo_head=args.start_head, loaded_g4_control=args.loaded_control,
         repo_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip(),
         repo_dirty=bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=repo, text=True).strip()),
         commissioning_build=build, bridge_overlay=bridge, source_world_sha256=stage_a.sha256(source_world))
+    if report['preflight']['repo_head'] != args.start_head:
+        raise G4Stop('G4_SOFTWARE_CHANGED', 'HEAD moved after this runner started', fault=True)
     root = out / 'session'
     root.mkdir()
     commission = None
@@ -400,11 +423,12 @@ def session(args, repo, workspace, report):
     native_manifest = workspace / 'install/workcell_builder/share/workcell_builder/commission_execute_build.json'
 
     def current_binding():
-        """The session binding recomputed from the current files (as the executor recomputes it)."""
-        return scope.g4_session_binding(
+        """The session binding recomputed from the current files (as the executor recomputes it), for the G4 control
+        code this process loaded."""
+        return require_loaded_control(scope.g4_session_binding(
             cell_dir=scene, receipt_path=receipt_path, native=scope.native_identity(native_manifest),
             runtime=scope.runtime_identity(workspace), perception=scope.g4_perception(workspace, intent),
-            max_cycles=max_cycles, commission_evidence_path=commission)
+            max_cycles=max_cycles, commission_evidence_path=commission), args.loaded_control)
 
     binding = current_binding()
     session_path = root / 'g4-session.json'
@@ -431,6 +455,7 @@ def session(args, repo, workspace, report):
         write_json_atomic(status_path, ledger.report())
         if args.stream_status:
             print(json.dumps(dict(event='sorting', status=ledger.status(), **(extra or {})), default=str), flush=True)
+    state['emit'] = emit
 
     def measure(directory, classes):
         directory.mkdir(parents=True, exist_ok=True)

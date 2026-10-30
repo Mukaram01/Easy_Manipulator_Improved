@@ -103,6 +103,22 @@ def summary_file(tmp_path, target, xyz, sha, edit=None):
     return path
 
 
+@pytest.fixture(autouse=True)
+def committed_control(monkeypatch):
+    """The committed HEAD's G4 control identity stands for this checkout (the working tree may be mid-edit)."""
+    import physics_scope_qualification as psq
+    identity, head = psq.g4_control_identity, psq._git(psq.REPO, 'rev-parse', 'HEAD').strip()
+    monkeypatch.setattr(psq, 'g4_control_identity', lambda repo=psq.REPO, revision=None: identity(repo, revision or head))
+
+
+def test_the_runner_acts_only_for_the_g4_control_code_it_loaded():
+    binding = dict(control='a' * 64)
+    assert g4.require_loaded_control(binding, 'a' * 64) is binding
+    with pytest.raises(g4.G4Stop, match='G4_SOFTWARE_CHANGED') as stop:                # the checkout moved under it
+        g4.require_loaded_control(binding, 'b' * 64)
+    assert stop.value.fault
+
+
 def physical(tmp_path):
     s = physical_session()
     batch(s, obj('cup-1', 'cup', 0.30, DIMS), obj('cup-2', 'cup', 0.40, DIMS))
