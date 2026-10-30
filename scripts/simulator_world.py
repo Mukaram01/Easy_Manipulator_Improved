@@ -305,6 +305,9 @@ def planning_only_objects(manifest, represented):
 # What the qualified physics world has been accepted for: the Stage-A qualification is one object, one destination
 # (DESTINATION_MODEL), one cycle per session. Fixed in code: no editable file can widen it.
 QUALIFIED_TASK_SCOPE_DEFAULT = {'class_routing': False, 'max_destinations': 1, 'continuous_sorting': False}
+# G4: a class-routed task may derive the multi-destination world (``all``), which is plan-only: the executor refuses
+# motion in it without an authorised physics scope, and the G3C trial scope refuses routed or multi-object cells.
+ROUTED_PLAN_ONLY_WORLD_SCOPE = {'class_routing': True, 'max_destinations': 2 ** 31, 'continuous_sorting': False}
 
 
 def physics_task_qualification(intent, verified_scope=None, *, sorting_session=False):
@@ -386,7 +389,8 @@ def derive_world(scene, catalog_path=CATALOG, *, physical_destinations='task'):
         raise SimulatorWorldError(f'physical destinations {physical_destinations!r} not in {PHYSICAL_DESTINATIONS}')
     catalog = load_catalog(catalog_path)
     doc, environment, manifest, intent, provenance = _cell(scene)
-    qualification = physics_task_qualification(intent)
+    qualification = physics_task_qualification(
+        intent, ROUTED_PLAN_ONLY_WORLD_SCOPE if physical_destinations == 'all' else None)
     if not qualification['qualified']:
         raise SimulatorWorldError(f"{qualification['code']}: " + '; '.join(qualification['problems']) +
                                   '. Use Plan Saved Task or a sorting session on fake hardware')
