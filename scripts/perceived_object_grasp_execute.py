@@ -3074,8 +3074,10 @@ def main():
                 retry_candidate_budget=180.,
                 discovery_candidate_budget=60.,
                 reserve_retry_budget=True,
-                # A sorting cycle places among the objects already in the cell (destination occupancy).
-                occupied=None if sorting_cycle is None else [
+                # A sorting cycle places among the objects already in the cell (destination occupancy); so does a
+                # targeted physics resolve (the G4 runner's cycle), where measured objects may already rest in a bin.
+                occupied=None if sorting_cycle is None and not (args.backend == 'simulator' and args.target_object_id)
+                else [
                     dict(id=o['id'], pose=list(o['pose']), dimensions=list(o['dimensions']))
                     for o in objects if o['id'] != args.target_object_id])
             destination = summary['task_intent_resolution']['place_resolution']['destination']
