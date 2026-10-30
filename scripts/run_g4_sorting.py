@@ -611,7 +611,8 @@ def session(args, repo, workspace, report):
                 raise G4Stop('G4_CYCLE_FAILED', f'cycle {executed + 1}: the executor did not finish ({exc}); the world '
                              'is unverified', fault=True) from exc
             executed += 1                                          # this cycle number is spent, whatever happened
-            summary = json.loads(summary_path.read_text()) if summary_path.is_file() else None
+            summary = partial_summary()
+            summary = None if summary.get('summary_unreadable') else summary   # unreadable after motion: a FAULT below
             record['steps']['execute'] = dict(summary=str(summary_path), returncode=executed_run.returncode,
                                               result=(summary or {}).get('result'),
                                               execution_attempted=(summary or {}).get('execution_attempted'),

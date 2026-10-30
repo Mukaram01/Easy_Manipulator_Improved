@@ -1187,7 +1187,9 @@ def trial_run(t, root):
         summary = executed_summary(t, directory / 'g4-cycle.json', sha)
         summary.rename(directory / 'execute/summary.json')
         previous = dict(path=directory / 'g4-cycle.json', sha256=sha, summary_path=directory / 'execute/summary.json')
-        cycles.append(dict(cycle=n, outcome='COMPLETED', steps=dict(authorise=dict(granted=True, sha256=sha))))
+        cycles.append(dict(cycle=n, outcome='COMPLETED', steps=dict(
+            authorise=dict(granted=True, sha256=sha), execute=dict(result='PASS'), verify=dict(verified=True),
+            reconcile=dict(others={'max_position_delta_m': 0.0}))))
     (root / 'g4-sorting-report.json').write_text(json.dumps(dict(
         schema='workcell_g4_sorting_run/v1', scope='G4_TRIAL_NOT_QUALIFIED', status='PASS', result='MAX_CYCLES',
         preflight=dict(repo_head=HEAD, repo_dirty=False), shutdown=dict(clean=True), cycles=cycles,
@@ -1231,6 +1233,42 @@ def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(t
     assert lenient['incomplete'] and not any(str(run.resolve()) in u for u in lenient['unmet'])   # listed, not blocking
     report_path.write_text(json.dumps(dict(report, status='CANCELLED')))
     assert psq.g4_trial_evidence(run)['kind'] == 'CANCELLED'
+    # A FAULT after motion blocks: the runner's reconcile found a neighbour moved after a verified executor PASS.
+    faulted = copy.deepcopy(report)
+    faulted['cycles'][1].update(outcome='G4_WORLD_CHANGED')
+    del faulted['cycles'][1]['steps']['reconcile']
+    report_path.write_text(json.dumps(dict(faulted, status='FAULT', result=None, stop={'code': 'G4_WORLD_CHANGED'})))
+    judged = psq.g4_trial_evidence(run)
+    assert judged['kind'] == 'FAILED' and any('did not complete this cycle' in p for p in judged['problems'])
+    assert any(str(run.resolve()) in u for u in psq.g4_qualification_readiness(
+        trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[])['unmet'])     # it blocks readiness
+    # A cancel never hides an earlier failed cycle.
+    report_path.write_text(json.dumps(dict(faulted, status='CANCELLED')))
+    assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
+    # Authorised but stopped before the executor ran: not a moved cycle.
+    unstarted = copy.deepcopy(report)
+    unstarted['cycles'][1] = dict(cycle=2, outcome='STOPPED_BEFORE_EXECUTION',
+                                  steps=dict(authorise=report['cycles'][1]['steps']['authorise']))
+    moved_summary = run / 'session/cycles/002/execute/summary.json'
+    moved_summary.rename(moved_summary.with_suffix('.hidden'))
+    report_path.write_text(json.dumps(dict(unstarted, status='STOPPED', result='STOPPED_BY_OPERATOR')))
+    stopped_early = psq.g4_trial_evidence(run)
+    assert stopped_early['kind'] == 'INCOMPLETE' and stopped_early['cycles'][1]['moved'] is False
+    moved_summary.with_suffix('.hidden').rename(moved_summary)
+    report_path.write_text(json.dumps(dict(report, cycles='not a list')))              # malformed: FAILED, no crash
+    assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
+    report_path.write_text(json.dumps(dict(report, cycles=[dict(cycle=None, steps=dict(authorise=dict(granted=True)))])))
+    assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
+    report_path.write_text(json.dumps(report))
+    other_cell = tmp_path / 'runs/other_cell'                                             # same world, another task
+    import shutil
+    shutil.copytree(run, other_cell)
+    record = json.loads((other_cell / 'session/g4-session.json').read_text())
+    record['binding']['cell']['files']['config/workcell_builder_task_intent.yaml'] = '0' * 64
+    (other_cell / 'session/g4-session.json').write_text(json.dumps(record))
+    scan = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
+    assert str(other_cell.resolve()) not in str(scan['unlisted'])
+    shutil.rmtree(other_cell)
     # A self-consistent cycle pair of another session (record, its digest in the report, the summary naming both)
     # is caught only by the session binding.
     cycle_two, summary_two = run / 'session/cycles/002/g4-cycle.json', run / 'session/cycles/002/execute/summary.json'

@@ -154,13 +154,20 @@ def test_executor_refuses_motion_in_a_multi_destination_world():
     source = (ROOT / 'scripts/perceived_object_grasp_execute.py').read_text()
     block = source[source.index("destination_bindings = receipt_record.get('destination_geometry_bindings')"):]
     block = block[:block.index('elif destination_binding is not None:')]
-    assert block.index('if args.start:') < block.index('MULTI_DESTINATION_PHYSICS_UNQUALIFIED') < block.index('apply(')
-    # Only an authorised full-cycle with a verified scope passes the refusal; nothing else in the block moves.
-    assert "args.physics_scope is None or args.simulator_commission != 'full-cycle'" in block
-    assert block.index('verify_trial(') < block.index('scoped_destination = selected') < block.index('apply(')
-    assert "scope_record['binding']['destination']['model'] != selected['model']" in block
-    assert source.count('destination_binding=scoped_destination') == 1   # the guard arms the scope-verified bin only
-    assert block.index('verify_trial(') > block.index("args.retention_policy != 'strict'")   # strict retention only
+    # Two motion branches, each arming the guard only after its own verifier: a G4 trial cycle (G4 admission), else
+    # the G3A trial (verify_trial); everything else is refused before planning. Nothing else in the block moves.
+    g4 = block[block.index('if args.start and g4_cycle:'):block.index('elif args.start:')]
+    g3 = block[block.index('elif args.start:'):]
+    assert block.index('if args.start and g4_cycle:') < block.index('elif args.start:') < block.index('apply(')
+    assert g4.index('g4_admit_execution(') < g4.index('scoped_destination = selected')
+    assert 'G4_DESTINATION_MISMATCH' in g4 and "summary['physics_scope'] = dict(kind='G4_TRIAL'" in g4
+    assert g3.index('MULTI_DESTINATION_PHYSICS_UNQUALIFIED') < g3.index('verify_trial(')
+    assert "args.physics_scope is None or args.simulator_commission != 'full-cycle'" in g3
+    assert g3.index('verify_trial(') < g3.index('scoped_destination = selected') < g3.index('apply(')
+    assert "scope_record['binding']['destination']['model'] != selected['model']" in g3
+    assert block.count('scoped_destination = selected') == 2
+    assert source.count('destination_binding=scoped_destination') == 1   # the guard arms a verified bin only
+    assert g3.index('verify_trial(') > g3.index("args.retention_policy != 'strict'")   # strict retention only
     assert 'verify_qualified_scope' not in source        # the executor has no qualified-scope admission path
 
 

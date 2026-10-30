@@ -788,14 +788,23 @@ def _g4_prerequisite_problem(summary, bound):
 
 def g4_trial_evidence(run_dir, repo=REPO):
     """One G4 trial run judged from its own files. Kinds:
-    STRICT_PASS         both bounded cycles moved, every one re-verified, chained, bound to this session, clean run;
-    INCOMPLETE          every moved cycle verified, but fewer than the bound ran (operator stop, batch end): not counted;
-    CANCELLED           the operator cancelled (G5 stop evidence, never a cycle outcome): not counted;
-    PRE_MOTION_FAILURE  nothing moved (refused before motion): a reliability finding;
-    FAILED              a moved cycle is not verified, or the run's provenance is not clean;
+    STRICT_PASS         both bounded cycles moved and were completed by the runner (verified and reconciled), every
+                        one re-verified here, chained, bound to this session, clean run;
+    INCOMPLETE          an operator stop or batch end: every moved cycle completed and verified, fewer than the bound;
+    CANCELLED           the operator cancelled (G5 stop evidence, never a cycle outcome); every earlier cycle verified;
+    PRE_MOTION_FAILURE  nothing moved (refused, or authorised and never started): a reliability finding;
+    FAILED              a moved cycle not completed or not verified (a FAULT after motion blocks), or unclean provenance;
     NOT_A_TRIAL         a plan-only session. Malformed evidence is FAILED, never an exception."""
     run = Path(run_dir)
     out = dict(run=str(run.resolve()), kind='FAILED', problems=[], cycles=[], planner=None, binding=None, run_id=None)
+    try:
+        return _g4_trial_evidence(run, repo, out)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
+        out.update(kind='FAILED', problems=out['problems'] + [f'malformed trial evidence: {exc!r}'])
+        return out
+
+
+def _g4_trial_evidence(run, repo, out):
     try:
         report = json.loads((run / G4_RUN_REPORT).read_text())
     except (OSError, ValueError):
@@ -820,48 +829,57 @@ def g4_trial_evidence(run_dir, repo=REPO):
         provenance.append('the run did not record a clean checkout')
     if (report.get('shutdown') or {}).get('clean') is not True:
         provenance.append('the run did not shut down cleanly')
+    status = report.get('status')
     granted = [c for c in report.get('cycles', []) if ((c.get('steps') or {}).get('authorise') or {}).get('granted')]
     moved, failures, previous = 0, [], None
     for n, cycle in enumerate(granted, 1):
-        try:
-            sha = cycle['steps']['authorise'].get('sha256')
-            path = run / 'session/cycles' / f"{int(cycle['cycle']):03d}"
-            summary_path = path / 'execute/summary.json'
-            attempted = json.loads(summary_path.read_text()).get('execution_attempted') if summary_path.is_file() else None
-            if attempted is False:                     # refused before motion: nothing to verify, and nothing moved
-                out['cycles'].append(dict(cycle=n, moved=False, verified=False, problems=['refused before motion']))
-                continue
-            moved += 1
-            verified = g4_verify_cycle(path / 'g4-cycle.json', sha, summary_path, bound, session_sha256=session_sha)
-            problems = list(verified['problems'])
-            cycle_record = json.loads((path / 'g4-cycle.json').read_text())
-            if cycle_record.get('cycle') != n or cycle_record.get('previous') != previous:
-                problems.append('cycle chain broken')
-            if summary_path.is_file():
-                problem = _g4_prerequisite_problem(json.loads(summary_path.read_text()), bound)
-                if problem:
-                    problems.append(problem)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            problems, verified = [f'malformed cycle evidence: {exc}'], dict(evidence_sha256=None)
-        out['cycles'].append(dict(cycle=n, moved=True, verified=not problems, problems=problems,
+        steps = cycle['steps']
+        sha = steps['authorise'].get('sha256')
+        path = run / 'session/cycles' / f"{int(cycle['cycle']):03d}"
+        summary_path = path / 'execute/summary.json'
+        if 'execute' not in steps and not summary_path.is_file():   # authorised, stopped before the executor ran
+            out['cycles'].append(dict(cycle=n, moved=False, verified=False, problems=['authorised, never executed']))
+            continue
+        attempted = json.loads(summary_path.read_text()).get('execution_attempted') if summary_path.is_file() else None
+        if attempted is False:                     # refused before motion: nothing to verify, and nothing moved
+            out['cycles'].append(dict(cycle=n, moved=False, verified=False, problems=['refused before motion']))
+            continue
+        moved += 1
+        cancelled = cycle.get('outcome') == 'CANCELLED' and status == 'CANCELLED'
+        verified = g4_verify_cycle(path / 'g4-cycle.json', sha, summary_path, bound, session_sha256=session_sha)
+        problems = list(verified['problems'])
+        cycle_record = json.loads((path / 'g4-cycle.json').read_text())
+        if cycle_record.get('cycle') != n or cycle_record.get('previous') != previous:
+            problems.append('cycle chain broken')
+        if summary_path.is_file():
+            problem = _g4_prerequisite_problem(json.loads(summary_path.read_text()), bound)
+            if problem:
+                problems.append(problem)
+        # The runner's own post-motion checks (gate, ledger, reconcile measurement) must have completed this cycle.
+        if (cycle.get('outcome') != 'COMPLETED' or (steps.get('verify') or {}).get('verified') is not True or
+                not steps.get('reconcile')):
+            problems.append(f"the runner did not complete this cycle ({cycle.get('outcome')})")
+        out['cycles'].append(dict(cycle=n, moved=True, verified=not problems, cancelled=cancelled, problems=problems,
                                   evidence_sha256=verified.get('evidence_sha256')))
-        failures += [f'cycle {n}: {p}' for p in problems]
+        if not cancelled:                          # the cancelled cycle is stop evidence, not a cycle outcome
+            failures += [f'cycle {n}: {p}' for p in problems]
         previous = dict(cycle_sha256=sha, evidence_sha256=verified.get('evidence_sha256'))
     out['problems'] = provenance + failures
-    if report.get('status') == 'CANCELLED':
-        out['kind'] = 'CANCELLED'
-    elif failures or provenance:
+    if failures or provenance:
         out['kind'] = 'FAILED' if moved or provenance else 'PRE_MOTION_FAILURE'
+    elif status == 'CANCELLED':
+        out['kind'] = 'CANCELLED'
     elif not moved:
         out['kind'] = 'PRE_MOTION_FAILURE'
-        out['problems'].append(f"nothing moved ({report.get('status')}: {report.get('stop') or report.get('failure')})")
-    elif (moved == bound['max_cycles'] == G4_TRIAL_MAX_CYCLES and report.get('status') == 'PASS' and
-          report.get('result') == 'MAX_CYCLES'):
+        out['problems'].append(f"nothing moved ({status}: {report.get('stop') or report.get('failure')})")
+    elif moved == bound['max_cycles'] == G4_TRIAL_MAX_CYCLES and status == 'PASS' and report.get('result') == 'MAX_CYCLES':
         out['kind'] = 'STRICT_PASS'
-    else:
+    elif status == 'STOPPED' or (status == 'PASS' and report.get('result') in ('BATCH_COMPLETE', 'MAX_CYCLES')):
         out['kind'] = 'INCOMPLETE'
-        out['problems'].append(f"{moved} of {G4_TRIAL_MAX_CYCLES} bounded cycles ran ({report.get('status')} / "
-                               f"{report.get('result')})")
+        out['problems'].append(f"{moved} of {G4_TRIAL_MAX_CYCLES} bounded cycles ran ({status} / {report.get('result')})")
+    else:                                          # e.g. FAULT/BLOCKED after verified cycles: a failure after motion
+        out['kind'] = 'FAILED'
+        out['problems'].append(f"the run ended {status} after {moved} moved cycle(s): {report.get('stop') or report.get('failure')}")
     return out
 
 
@@ -924,7 +942,8 @@ def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *,
                 if record.get('state') != G4_AUTHORISED_TRIAL:
                     continue                                       # plan-only sessions never moved
                 bound = record['binding']
-                same = bound['world']['derived_sha256'] == world['derived_sha256']
+                same = (bound['world']['derived_sha256'] == world['derived_sha256'] and
+                        {k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files)   # this exact cell
                 report = json.loads((run / G4_RUN_REPORT).read_text())
                 software = _software(report, bound, repo)[0]
             except (OSError, ValueError, KeyError, TypeError):
