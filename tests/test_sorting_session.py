@@ -236,3 +236,114 @@ def test_a_sorting_cycle_is_fake_hardware_replay_only_so_live_frames_are_never_r
     guarded = text[text.index("summary['execution_observation_refresh'] = fake_world_refresh(") - 400:
                    text.index("summary['execution_observation_refresh'] = fake_world_refresh(")]
     assert "sorting_cycle is not None and args.backend == 'fake' and args.replay and not measurements" in guarded
+
+
+# --- G4: contact-backed physics cycles in the sorting ledger (offline; physics admission stays refused) -------------
+FLOOR_A = {"floor_xyz": [0.58, 0.22, 0.003], "floor_size_m": [0.30, 0.20], "floor_z": 0.003}
+DIMS = (0.06, 0.05, 0.10)
+
+
+def physical_session():
+    s = session()
+    s.backend = "simulator"
+    s.physical_destinations = {"drop_a": FLOOR_A}
+    return s
+
+
+def physical_summary(target, final_xyz):
+    """An executor summary as a strict contact-backed Gazebo full-cycle records it (G3C fields)."""
+    from scripts import physics_scope_qualification as psq
+    return {
+        "result": "PASS", "execution_attempted": True, "strict_retention_compliant": True, "retention_policy": "strict",
+        "retention_findings": {"findings": []}, "stages": list(psq.FULL_CYCLE_STAGES),
+        "selected_object_id": target["id"],
+        "release_evidence": {"state": "RELEASE_CONFIRMED", "settled": True},
+        "full_cycle_physical_acceptance": {"attached_ids": [], "baseline_acm_restored": True,
+                                           "final_collision_valid": True,
+                                           "final_pose": list(final_xyz) + [0.0, 0.0, 0.0, 1.0],
+                                           "placement": {"error_to_planned_m": 0.0001}},
+        "measured_reconciliation": {"held": False, "target": target["id"], "measured_geometry_matches": True,
+                                    "acm_restored": True},
+        "task_intent_resolution": {"place_resolution": {"route": {"class_id": target["class_id"],
+                                                                    "region_ref": target["destination"]}}},
+    }
+
+
+def physical_cycle(s):
+    batch(s, obj("cup-1", "cup", 0.30, DIMS), obj("cup-2", "cup", 0.40, DIMS))
+    s.transition("READY"); s.transition("RUNNING")
+    target = s.next_target(); s.begin_cycle(target)
+    s.part_dimensions = {o: list(DIMS) for o in s.objects}
+    return target
+
+
+def test_a_contact_backed_cycle_counts_and_the_world_is_reconciled_from_the_measured_pose():
+    s = physical_session()
+    target = physical_cycle(s)
+    measured = [0.581, 0.219, 0.003 + DIMS[2] / 2]                      # where Gazebo measured it, not where planned
+    assert s.record_cycle(physical_summary(target, measured), 0, []) == ss.COMPLETED
+    entry = s.objects[target["id"]]
+    assert entry["pose"][:3] == measured and entry["measured"] is True and entry["destination"] == "drop_a"
+    assert any(o["id"] == target["id"] and o["pose"][:3] == measured for o in s.occupied())   # next place avoids it
+    snapshot = s.world_snapshot({"source": {"mode": "replayed_snapshot", "description": "batch"}})
+    assert next(o for o in snapshot["objects"] if o["object_id"] == entry["object_id"])["pose"]["xyz"] == measured
+    assert s.next_target()["id"] != target["id"]                                # never picked again
+
+
+@pytest.mark.parametrize("edit,match", [
+    (lambda m: m.update(result="FUNCTIONAL_PASS"), "not a strict full-cycle PASS"),
+    (lambda m: m["retention_findings"].update(findings=[{"phase": "transfer"}]), "not a strict full-cycle PASS"),
+    (lambda m: m.update(stages=m["stages"][:-1]), "incomplete stage sequence"),
+    (lambda m: m["release_evidence"].update(settled=False), "release not confirmed"),
+    (lambda m: m["full_cycle_physical_acceptance"].update(attached_ids=["runtime::cup-1"]), "not restored"),
+    (lambda m: m["full_cycle_physical_acceptance"]["placement"].update(error_to_planned_m=0.004), "placement error"),
+    (lambda m: m["full_cycle_physical_acceptance"]["final_pose"].__setitem__(2, 0.08), "not seated"),   # in the air
+    (lambda m: m["full_cycle_physical_acceptance"]["final_pose"].__setitem__(0, 0.80), "not seated"),   # outside the bin
+    (lambda m: m.update(selected_object_id="runtime::cup-2"), "not the session target"),
+    (lambda m: m["measured_reconciliation"].update(held=True), "not measured, detached and reconciled"),
+    (lambda m: m["task_intent_resolution"]["place_resolution"]["route"].update(class_id="box"), "route class"),
+])
+def test_an_unproven_physics_cycle_faults_the_session_and_never_counts(edit, match):
+    s = physical_session()
+    target = physical_cycle(s)
+    summary = physical_summary(target, [0.58, 0.22, 0.003 + DIMS[2] / 2])
+    edit(summary)
+    with pytest.raises(ss.SortingFault, match="CYCLE_EXECUTION_UNVERIFIED") as fault:
+        s.record_cycle(summary, 0, [])
+    assert match in str(fault.value) and s.objects[target["id"]]["status"] != ss.COMPLETED
+
+
+def test_physics_and_fake_evidence_never_substitute_for_each_other():
+    s = physical_session()
+    target = physical_cycle(s)
+    with pytest.raises(ss.SortingFault, match="CYCLE_EXECUTION_UNVERIFIED"):     # fake hardware is not contact evidence
+        s.record_cycle(dict(completed_summary(s, target, [0.58, 0.22, 0.053]), execution_attempted=True), 0, [4] * 9)
+    s.physical_destinations = {}                                                  # no bound floor for the route
+    s.begin_cycle(target)
+    with pytest.raises(ss.SortingFault, match="selected bin not recorded"):
+        s.record_cycle(physical_summary(target, [0.58, 0.22, 0.053]), 0, [])
+    fake = session()
+    batch(fake, obj("cup-1", "cup", 0.30, DIMS))
+    fake.transition("READY"); fake.transition("RUNNING")
+    t = fake.next_target(); fake.begin_cycle(t)
+    with pytest.raises(ss.SortingFault, match="exclusive mock hardware not proven"):   # and physics is not fake evidence
+        fake.record_cycle(physical_summary(t, [0.58, 0.22, 0.053]), 0, [4] * 9)
+    with pytest.raises(ss.SortingFault, match="SORTING_BACKEND_UNSUPPORTED"):
+        ss.SortingSession(routed_intent(RULES), three_bins(), session_id="s", backend="hardware")
+
+
+def test_a_qualified_g3c_trial_is_accepted_as_a_physics_cycle_only_for_its_own_bin():
+    """Real evidence: a G3C qualification trial (log/qualification/g3c/campaign_09c477e0) judged by the ledger."""
+    from pathlib import Path
+    run = Path.home() / "workcell_ws/log/qualification/g3c/campaign_09c477e0/bin_b_1/06-full-cycle"
+    if not (run / "full-cycle/summary.json").is_file():
+        pytest.skip("G3C campaign evidence is not on this machine")
+    summary = json.loads((run / "full-cycle/summary.json").read_text())
+    binding = json.loads((run / "physics-scope.json").read_text())["binding"]
+    floor = lambda model: next(d for d in binding["destinations"] if d["model"] == model)
+    part = next(o for o in binding["world"]["objects"] if "runtime::" + o["object_id"] == summary["selected_object_id"])
+    own = ss.verify_physical_cycle(summary, summary["selected_object_id"], None, floor(binding["destination"]["model"]), part)
+    assert own == []
+    other = next(d["model"] for d in binding["destinations"] if d["model"] != binding["destination"]["model"])
+    assert any("not seated" in p for p in ss.verify_physical_cycle(summary, summary["selected_object_id"], None,
+                                                                     floor(other), part))

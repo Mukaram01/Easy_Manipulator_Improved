@@ -328,6 +328,39 @@ def _run_files(run):
                 scope=session / 'physics-scope.json', summary=session / 'full-cycle/summary.json')
 
 
+def physical_cycle_problems(summary, destination, part):
+    """Q5 for one executed full-cycle, from the executor's own measured evidence: a strict PASS, every stage, release
+    confirmed and settled, nothing attached, baseline ACM and a valid final collision state, the planned seat within
+    3 mm, and the measured part resting inside ``destination`` (a bound bin floor) with its lowest corner on that
+    floor. ``part`` gives the part's dimensions. Used by trial_evidence and by the sorting ledger (G4)."""
+    contract, problems = QUALIFICATION_CONTRACT, []
+    accepted = summary.get('full_cycle_physical_acceptance') or {}
+    release = summary.get('release_evidence') or {}
+    if (summary.get('result') != 'PASS' or summary.get('strict_retention_compliant') is not True or
+            summary.get('retention_policy') != 'strict' or (summary.get('retention_findings') or {}).get('findings')):
+        problems.append('not a strict full-cycle PASS')
+    if summary.get('stages') != FULL_CYCLE_STAGES:
+        problems.append('incomplete stage sequence')
+    if release.get('state') != 'RELEASE_CONFIRMED' or release.get('settled') is not True:
+        problems.append('release not confirmed and settled')
+    if (accepted.get('attached_ids') != [] or accepted.get('baseline_acm_restored') is not True or
+            accepted.get('final_collision_valid') is not True):
+        problems.append('attachment, collision permissions or final collision state not restored')
+    if not (accepted.get('placement') or {}).get('error_to_planned_m', 1.0) <= contract['placement_tolerance_m']:
+        problems.append('placement error to the planned seat exceeds the bound')
+    try:
+        pose = accepted['final_pose']
+        bottom = min(pose[2] + _rotate(pose[3:], [sx * part['dimensions_m'][0] / 2, sy * part['dimensions_m'][1] / 2,
+                                                  sz * part['dimensions_m'][2] / 2])[2]
+                     for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1))
+        inside = all(abs(pose[i] - destination['floor_xyz'][i]) <= destination['floor_size_m'][i] / 2 for i in (0, 1))
+        if not inside or abs(bottom - destination['floor_z']) > contract['seat_tolerance_m']:
+            problems.append('measured part not seated on the selected bin floor')
+    except (KeyError, TypeError, IndexError):
+        problems.append('measured final pose or selected bin not recorded')
+    return problems
+
+
 def _provenance(out, paths, status, label):
     """Q1 for one authorised run with every evidence file present: its digests, binding and session, and every
     provenance problem (official report with ``status``, clean checkout, the verified record, clean shutdown)."""
@@ -395,39 +428,18 @@ def trial_evidence(run_dir, repo=REPO):
     bound, problems = out['binding'], out['problems']
     out['planner'], why = _software(report, bound, repo)
     problems.extend(why)
-    accepted = summary.get('full_cycle_physical_acceptance') or {}
-    release = summary.get('release_evidence') or {}
-    prerequisites = summary.get('commissioning_prerequisites') or {}
-    if (summary.get('result') != 'PASS' or summary.get('strict_retention_compliant') is not True or
-            summary.get('retention_policy') != 'strict' or (summary.get('retention_findings') or {}).get('findings')):
-        problems.append('not a strict full-cycle PASS')
-    if summary.get('stages') != FULL_CYCLE_STAGES:
-        problems.append('incomplete stage sequence')
-    if release.get('state') != 'RELEASE_CONFIRMED' or release.get('settled') is not True:
-        problems.append('release not confirmed and settled')
-    if (accepted.get('attached_ids') != [] or accepted.get('baseline_acm_restored') is not True or
-            accepted.get('final_collision_valid') is not True):
-        problems.append('attachment, collision permissions or final collision state not restored')
-    if not (accepted.get('placement') or {}).get('error_to_planned_m', 1.0) <= contract['placement_tolerance_m']:
-        problems.append('placement error to the planned seat exceeds the bound')
-    if (sorted(prerequisites.get('results') or []) != PREREQUISITE_RESULTS or
-            prerequisites.get('capability_sha256') != (bound.get('native') or {}).get('sha256') or
-            prerequisites.get('sources') != (bound.get('native') or {}).get('sources')):
-        problems.append('Stage-A prerequisite trials not bound to the trial build')
-    # The measured part rests inside the selected bin, its lowest corner on the bound floor.
     try:
         bin_ = next(d for d in bound['destinations'] if d['model'] == bound['destination']['model'])
         part = next(o for o in bound['world']['objects']
                     if 'runtime::' + o['object_id'] == summary.get('selected_object_id'))
-        pose = accepted['final_pose']
-        bottom = min(pose[2] + _rotate(pose[3:], [sx * part['dimensions_m'][0] / 2, sy * part['dimensions_m'][1] / 2,
-                                                  sz * part['dimensions_m'][2] / 2])[2]
-                     for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1))
-        inside = all(abs(pose[i] - bin_['floor_xyz'][i]) <= bin_['floor_size_m'][i] / 2 for i in (0, 1))
-        if not inside or abs(bottom - bin_['floor_z']) > contract['seat_tolerance_m']:
-            problems.append('measured part not seated on the selected bin floor')
-    except (KeyError, StopIteration, TypeError, IndexError):
-        problems.append('measured final pose or selected bin not recorded')
+    except (KeyError, StopIteration, TypeError):
+        bin_ = part = None
+    problems.extend(physical_cycle_problems(summary, bin_, part))
+    prerequisites = summary.get('commissioning_prerequisites') or {}
+    if (sorted(prerequisites.get('results') or []) != PREREQUISITE_RESULTS or
+            prerequisites.get('capability_sha256') != (bound.get('native') or {}).get('sha256') or
+            prerequisites.get('sources') != (bound.get('native') or {}).get('sources')):
+        problems.append('Stage-A prerequisite trials not bound to the trial build')
     if not problems:
         out['kind'] = 'STRICT_PASS'
     return out

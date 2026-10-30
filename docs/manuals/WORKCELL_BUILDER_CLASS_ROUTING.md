@@ -135,6 +135,26 @@ A sorting session or a routed task is refused in Gazebo:
 
 The qualified Stage-A world covers one object, one destination and one cycle. That scope is fixed in code: no catalog or other editable file can widen it, because the catalog is not bound to qualification evidence. A future multi-destination or continuous-sorting qualification must provide a scope verified against its own bound contact, retention and placement evidence; no such verifier exists yet, so routed and multi-destination physics fail closed. The sorting engine needs no change when one is added.
 
+**Physics sorting ledger (G4, offline; motion not admitted).**
+- **The switch:** `SortingSession(..., backend='simulator', physical_destinations=, part_dimensions=)` counts a cycle only from contact-backed evidence.
+- **The checks:** `verify_physical_cycle`, which is the per-cycle judgement that qualified G3C (`physics_scope_qualification.physical_cycle_problems`), plus three session checks:
+  - the session's target;
+  - the route class;
+  - the part measured, detached and reconciled in the scene.
+- **Measured reconciliation:** a completed object is reconciled at its measured Gazebo final pose (`measured: true`). Occupancy, and so the next cycle's place, uses that pose.
+- **No substitution:** fake-hardware evidence never counts on the physics backend, and physics evidence never counts on the fake one.
+- **Still refused:** a sorting session or routed task in Gazebo (`SORTING_PHYSICS_UNQUALIFIED`). G3C qualifies one full-cycle per exact cell, not continuous sorting.
+- **Contract for the G4 runner** (not built):
+  - **One launch:** one Gazebo + MoveIt launch per session.
+  - **Each cycle, in order:**
+    1. render and EPD-classify the reconciled measured world (R2.5A);
+    2. select and route the target;
+    3. resolve and revalidate with the physics pads;
+    4. obtain a per-cycle authorisation under a qualified continuous scope (still to be defined and qualified);
+    5. execute the full-cycle under the contact guard;
+    6. judge the cycle with `verify_physical_cycle`.
+  - **Stopping:** stop at cycle end is the runner's SIGUSR1 latch (G5B); immediate cancel is SIGTERM (G5A, recovery required, session FAULT).
+
 **Multi-bin physics world, plan-only (R2.5B G0–G2).**
 - **Deriving it:** `simulator_world.derive_world(scene, physical_destinations='all')` makes every authored target bin on the task's support a hollow static physics bin (`target_bin_physics`, `target_bin_physics_2`, … in asset-id order). Every task configuration of a cell therefore derives the same world.
 - **Overlap:** overlapping bins are refused.

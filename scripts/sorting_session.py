@@ -122,8 +122,33 @@ def verify_completed_cycle(summary, target_id, route_class, new_statuses):
     return problems
 
 
+def verify_physical_cycle(summary, target_id, route_class, destination, part):
+    """Problems with a contact-backed physics cycle's evidence (empty: completed). G4: the same per-cycle judgement that
+    qualified G3C (physics_scope_qualification.physical_cycle_problems: strict PASS, every stage, release confirmed and
+    settled, nothing attached, baseline ACM, planned seat within 3 mm, the measured part resting on ``destination``'s
+    bound floor), for the session's target and route, with the part measured, detached and reconciled in the scene."""
+    from physics_scope_qualification import physical_cycle_problems
+    problems = physical_cycle_problems(summary, destination, part)
+    if summary.get('selected_object_id') != target_id:
+        problems.append(f"executor selected {summary.get('selected_object_id')!r}, not the session target {target_id!r}")
+    reconciled = summary.get('measured_reconciliation') or {}
+    if (reconciled.get('held') is not False or reconciled.get('target') != target_id or
+            reconciled.get('measured_geometry_matches') is not True or reconciled.get('acm_restored') is not True):
+        problems.append('target not measured, detached and reconciled in the planning scene')
+    if route_class is not None:
+        route = ((summary.get('task_intent_resolution') or {}).get('place_resolution') or {}).get('route') or {}
+        if route.get('class_id') != route_class:
+            problems.append(f"resolved route class {route.get('class_id')!r} differs from the object's class {route_class!r}")
+    return problems
+
+
 class SortingSession:
-    def __init__(self, intent, environment, *, session_id, mode='batch_replay', scene=None, clock=time.time):
+    def __init__(self, intent, environment, *, session_id, mode='batch_replay', scene=None, clock=time.time,
+                 backend='fake', physical_destinations=None, part_dimensions=None):
+        """``backend='simulator'`` (G4) counts a cycle only from contact-backed physics evidence (verify_physical_cycle)
+        against ``physical_destinations`` (route region -> bound bin floor) and ``part_dimensions`` (object id -> box
+        dimensions), and reconciles the completed object at its measured final pose. Admitting physics motion is not
+        this class's decision: runtime admission is refused elsewhere until a continuous scope is qualified."""
         from task_intent_v2 import class_routing_rules, routing_job_policy
         if class_routing_rules(intent) is None:
             raise SortingFault('SORTING_REQUIRES_CLASS_ROUTING', 'the saved task has no class routing table')
@@ -143,6 +168,11 @@ class SortingSession:
         self.control_seq = 0
         self.initial_world = None  # R2.5A rendered frames: the cell's test objects at rest, before any frame
         self.observing = None      # what the runner is acquiring now (render + EPD), for status
+        if backend not in ('fake', 'simulator'):
+            raise SortingFault('SORTING_BACKEND_UNSUPPORTED', backend)
+        self.backend = backend
+        self.physical_destinations = dict(physical_destinations or {})
+        self.part_dimensions = dict(part_dimensions or {})
 
     # -------------------------------------------------------------- lifecycle
     def transition(self, state, reason=''):
@@ -408,15 +438,27 @@ class SortingSession:
         entry['attempts'].append(attempt)
         outcome = None
         if summary.get('execution_attempted') is True:
-            problems = verify_completed_cycle(summary, target['id'], entry['class_id'], new_statuses)
+            if self.backend == 'simulator':
+                problems = verify_physical_cycle(
+                    summary, target['id'], entry['class_id'], self.physical_destinations.get(target['destination']),
+                    {'dimensions_m': self.part_dimensions[target['id']]} if target['id'] in self.part_dimensions else None)
+            else:
+                problems = verify_completed_cycle(summary, target['id'], entry['class_id'], new_statuses)
             if problems:
                 # Motion started and the end state is not proven: the world is uncertain, never guessed.
                 self.active = None
                 raise SortingFault('CYCLE_EXECUTION_UNVERIFIED', f"{target['id']}: " + '; '.join(problems))
-            final = summary['final_object_state']
-            place = summary['task_intent_resolution']['place_resolution']
-            entry.update(status=COMPLETED, pose=list(final['pose']), destination=place['route']['region_ref'],
-                         completed_cycle=target['cycle'], placement_error_m=summary.get('placement_error_m'))
+            if self.backend == 'simulator':
+                # The world is reconciled from the measured physics pose, never the planned one.
+                accepted = summary['full_cycle_physical_acceptance']
+                entry.update(status=COMPLETED, pose=list(accepted['final_pose']), destination=target['destination'],
+                             completed_cycle=target['cycle'], measured=True,
+                             placement_error_m=(accepted.get('placement') or {}).get('error_to_planned_m'))
+            else:
+                final = summary['final_object_state']
+                place = summary['task_intent_resolution']['place_resolution']
+                entry.update(status=COMPLETED, pose=list(final['pose']), destination=place['route']['region_ref'],
+                             completed_cycle=target['cycle'], placement_error_m=summary.get('placement_error_m'))
             attempt['outcome'] = outcome = COMPLETED
         else:
             if returncode == 0:
