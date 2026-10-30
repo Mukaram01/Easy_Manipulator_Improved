@@ -259,8 +259,11 @@ def _occupied_boxes(destination, occupied):
 
 
 def _overlapping(center, half, boxes, clearance):
+    # Footprints only (region x/y): a candidate stands at region-centre height while a placed part rests on the floor,
+    # so comparing heights would let a slot land on top of a resting part (G4 plan-only, 2026-10-30). Conservative:
+    # anything over a footprint occupies it.
     return [i for i, (c, h) in enumerate(boxes)
-            if all(abs(a-b) < x+y+clearance-1e-9 for a, b, x, y in zip(center, c, half, h))]
+            if all(abs(a-b) < x+y+clearance-1e-9 for a, b, x, y in zip(center[:2], c[:2], half[:2], h[:2]))]
 
 
 def local_to_world_pose(destination, local_pose):

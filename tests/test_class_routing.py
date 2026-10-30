@@ -356,6 +356,18 @@ def test_occupancy_packs_free_places_and_reports_a_full_destination():
     assert resolve(intent, [cup])["place_resolution"]["selected_local_pose"]["xyz_m"] == [0.05, 0.0, 0.10]  # no occupancy: unchanged
 
 
+def test_a_part_resting_below_a_slot_still_occupies_it():
+    # Slots stand at region-centre height; a placed part rests on the floor far below it (G4: 61 mm below).
+    intent, cup = routed_intent(), observation("epd::a2", "toy_a")
+    world = resolve(intent, [cup], occupied=[])["place_resolution"]["world_pose"]["xyz_m"]
+    resting = [world[0], world[1], world[2] - 0.15]
+    after = resolve(intent, [cup], occupied=[placed("epd::a1", resting)])
+    assert math.dist(after["place_resolution"]["world_pose"]["xyz_m"][:2], world[:2]) > 0.06
+    blocked = resolve(intent, [cup], occupied=[placed("epd::late", resting)],
+                      resolved=resolve(intent, [cup], occupied=[]))
+    assert blocked["readiness"]["primary_code"] == "DESTINATION_OCCUPIED"
+
+
 def test_revalidation_refuses_a_place_that_became_occupied():
     intent, cup = routed_intent(), observation("epd::a2", "toy_a")
     resolved = resolve(intent, [cup], occupied=[])
