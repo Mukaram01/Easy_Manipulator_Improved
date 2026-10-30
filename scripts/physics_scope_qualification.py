@@ -65,6 +65,11 @@ EXECUTOR_MODULES = (
     'validate_builder_task_intent', 'workcell_studio_layout_source')
 PLANNER_SOURCES = tuple(f'scripts/{m}.py' for m in EXECUTOR_MODULES) + ('scenes/ur5_2f_test/launch/demo.launch.py',
                                                                         'catalog/capabilities')
+# G4 control identity: the code outside PLANNER_SOURCES that issues, admits, judges, counts and stops G4 trial cycles
+# (this authority, the G4 runner, its ledger and the G5 runner primitives it reuses). A G4 trial binds it, so trials
+# of different control code are never one software version; it never enters the G3C identity above.
+G4_CONTROL_SOURCES = ('scripts/physics_scope_qualification.py', 'scripts/run_g4_sorting.py', 'scripts/sorting_session.py',
+                      'scripts/run_stage_a1_finish.py')
 # The stop/cancel paths G5 accepted, by function or class (AST): a G5 run of another software version stays admissible
 # only while these are unchanged. The runner's main hosts the stop-at-cycle-end boundary, not the cancel path.
 STOP_CANCEL_MECHANISM = {
@@ -89,22 +94,31 @@ def _git(repo, *args):
     return done.stdout
 
 
-def planner_identity(repo=REPO, revision=None):
-    """The software identity of ``revision`` (default: this checkout's HEAD, whose PLANNER_SOURCES must be unmodified):
-    sha256 over the git blob id of every file in PLANNER_SOURCES. Historical trials are recovered from their recorded
-    clean commit, so no evidence file ever changes."""
+def _source_identity(sources, what, repo, revision):
     if revision is None:
-        if _git(repo, 'status', '--porcelain', '--', *PLANNER_SOURCES).strip():
-            raise PhysicsScopeRefused('PHYSICS_SCOPE_SOFTWARE_MODIFIED: planner or executor sources differ from HEAD')
+        if _git(repo, 'status', '--porcelain', '--', *sources).strip():
+            raise PhysicsScopeRefused(f'PHYSICS_SCOPE_SOFTWARE_MODIFIED: {what} sources differ from HEAD')
         revision = 'HEAD'
     blobs = {}
-    for line in _git(repo, 'ls-tree', '-r', revision, '--', *PLANNER_SOURCES).splitlines():
+    for line in _git(repo, 'ls-tree', '-r', revision, '--', *sources).splitlines():
         _, kind, blob, path = line.split(None, 3)
         if kind == 'blob':
             blobs[path] = blob
     if not blobs:
-        raise PhysicsScopeRefused(f'PHYSICS_SCOPE_PROVENANCE_UNRECOVERABLE: no planner sources at {revision}')
+        raise PhysicsScopeRefused(f'PHYSICS_SCOPE_PROVENANCE_UNRECOVERABLE: no {what} sources at {revision}')
     return _sha256(_canonical(blobs))
+
+
+def planner_identity(repo=REPO, revision=None):
+    """The software identity of ``revision`` (default: this checkout's HEAD, whose PLANNER_SOURCES must be unmodified):
+    sha256 over the git blob id of every file in PLANNER_SOURCES. Historical trials are recovered from their recorded
+    clean commit, so no evidence file ever changes."""
+    return _source_identity(PLANNER_SOURCES, 'planner or executor', repo, revision)
+
+
+def g4_control_identity(repo=REPO, revision=None):
+    """The G4 control identity of ``revision``, as planner_identity over G4_CONTROL_SOURCES."""
+    return _source_identity(G4_CONTROL_SOURCES, 'G4 control', repo, revision)
 
 
 def mechanism_identity(role, repo=REPO, revision=None):
@@ -313,9 +327,11 @@ def verify_trial(path, sha256, binding):
 # - G4_PLAN_ONLY: every session the runner opens without --authorise-g4-trial. No cycle is ever authorised.
 # - G4_AUTHORISED_TRIAL: written only by the CLI runner (run_g4_sorting.py --authorise-g4-trial, registered Stage-A
 #   prerequisites), for at most G4_TRIAL_MAX_CYCLES guarded full-cycles in this one Gazebo session. It binds the
-#   issuing runner process (pid + kernel start time): only that live process authorises cycles, and only an executor
-#   it started may move. Every use recomputes the binding from the current files. Its evidence is labelled
-#   G4_TRIAL_NOT_QUALIFIED: a trial never implies continuous-production qualification.
+#   issuing runner process (pid + kernel start time + its command line, which must name the CLI trial): only that
+#   live process authorises cycles, and only an executor it started may move. This is process lineage on one host, not
+#   authentication. Every use recomputes the binding from the current files (software, G4 control code, native,
+#   runtime, cell, receipt, perception, Stage-A evidence). Its evidence is labelled G4_TRIAL_NOT_QUALIFIED: a trial
+#   never implies continuous-production qualification.
 # - G4_AUTHORISED_SESSION (continuous production): needs a G4 acceptance verifier recomputing accepted evidence. None
 #   exists; a record claiming that state is refused like any other claim (_g4_acceptance). See g4_qualification_readiness.
 G4_SCHEMA = 'workcell_g4_sorting_scope/v1'
@@ -353,7 +369,7 @@ def g4_perception(workspace, intent):
 
 
 def g4_session_binding(*, cell_dir, receipt_path, native, runtime, perception, max_cycles, planner=None,
-                       commission_evidence_path=None):
+                       control=None, commission_evidence_path=None):
     """Everything one G4 session is bound to, recomputed from the current files. Refuses unsupported input."""
     from task_intent_v2 import OBSERVATION_PRODUCER_CEILING_S, class_routing_rules, freshness_source_type, routing_job_policy
     cell_dir = Path(cell_dir)
@@ -396,7 +412,8 @@ def g4_session_binding(*, cell_dir, receipt_path, native, runtime, perception, m
         routing=dict(rules=rules, policy=routing_job_policy(intent)),
         perception=perception, safeguards=dict(G4_SAFEGUARDS), stop_conditions=list(G4_STOP_CONDITIONS),
         grasp_strategies=list(G4_QUALIFIED_GRASP_STRATEGIES),
-        native=native, runtime=runtime, planner=planner or planner_identity(), max_cycles=max_cycles, evidence=evidence,
+        native=native, runtime=runtime, planner=planner or planner_identity(), control=control or g4_control_identity(),
+        max_cycles=max_cycles, evidence=evidence,
         session=dict(receipt_sha256=_sha256(receipt_bytes), run_id=_required(receipt.get('run_id'), 'run id')))
 
 
@@ -443,13 +460,17 @@ def _g4_issuer(record, role):
 
 
 def g4_authorise_trial(path, binding, issuer):
-    """Write the CLI trial record (never replaced); returns its sha256. ``issuer`` is process_identity(runner pid)."""
+    """Write the CLI trial record (never replaced); returns its sha256. ``issuer`` is process_identity(os.getpid()) of
+    the runner itself: a record naming another process is refused."""
+    import os
     cycles = binding.get('max_cycles')
     if not isinstance(cycles, int) or isinstance(cycles, bool) or not 1 <= cycles <= G4_TRIAL_MAX_CYCLES:
         raise PhysicsScopeRefused(f'G4_TRIAL_LIMIT: a trial authorises 1..{G4_TRIAL_MAX_CYCLES} cycles, not {cycles!r}')
     if not (binding.get('evidence') or {}).get('commission_evidence_sha256'):
         raise PhysicsScopeRefused('G4_SCOPE_INCOMPLETE: a trial binds the same-build Stage-A prerequisite trials')
     problem = _g4_issuer_problem(issuer, (issuer or {}).get('pid'))
+    if problem is None and (issuer or {}).get('pid') != os.getpid():
+        problem = 'only the issuing runner itself writes its trial record'
     if problem:
         raise PhysicsScopeRefused(f'G4_SCOPE_ISSUER_MISMATCH: {problem}')
     record = dict(schema=G4_SCHEMA, state=G4_AUTHORISED_TRIAL, operation=G4_TRIAL_OPERATION,
@@ -794,12 +815,14 @@ def g4_trial_evidence(run_dir, repo=REPO):
     CANCELLED           the operator cancelled (G5 stop evidence, never a cycle outcome); every earlier cycle verified;
     PRE_MOTION_FAILURE  nothing moved (refused, or authorised and never started): a reliability finding;
     FAILED              a moved cycle not completed or not verified (a FAULT after motion blocks), or unclean provenance;
-    NOT_A_TRIAL         a plan-only session. Malformed evidence is FAILED, never an exception."""
+    NOT_A_TRIAL         a plan-only session (a run whose session record is an authorised trial is never one).
+    Malformed evidence is FAILED, never an exception."""
     run = Path(run_dir)
-    out = dict(run=str(run.resolve()), kind='FAILED', problems=[], cycles=[], planner=None, binding=None, run_id=None)
+    out = dict(run=str(run.resolve()), kind='FAILED', problems=[], cycles=[], planner=None, control=None, binding=None,
+               run_id=None)
     try:
         return _g4_trial_evidence(run, repo, out)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
+    except Exception as exc:                       # noqa: BLE001 (any malformed input is a judged failure)
         out.update(kind='FAILED', problems=out['problems'] + [f'malformed trial evidence: {exc!r}'])
         return out
 
@@ -811,6 +834,13 @@ def _g4_trial_evidence(run, repo, out):
         out['problems'].append('run report missing or unreadable')
         return out
     if report.get('scope') != G4_TRIAL_EVIDENCE_SCOPE:
+        try:
+            state = json.loads((run / 'session/g4-session.json').read_text()).get('state')
+        except (OSError, ValueError, AttributeError):
+            state = None
+        if state == G4_AUTHORISED_TRIAL:           # a trial's report relabelled or damaged: never "not a trial"
+            out['problems'].append('the run report of an authorised trial is not labelled as one')
+            return out
         out['kind'] = 'NOT_A_TRIAL'
         return out
     session_sha = (report.get('g4_session') or {}).get('sha256')
@@ -825,6 +855,8 @@ def _g4_trial_evidence(run, repo, out):
     bound = record['binding']
     out.update(binding=bound, run_id=bound['session']['run_id'])
     out['planner'], provenance = _software(report, bound, repo)
+    out['control'], control_problems = _g4_control(report, bound, repo)
+    provenance += control_problems
     if (report.get('preflight') or {}).get('repo_dirty') is not False:
         provenance.append('the run did not record a clean checkout')
     if (report.get('shutdown') or {}).get('clean') is not True:
@@ -883,22 +915,41 @@ def _g4_trial_evidence(run, repo, out):
     return out
 
 
+def _g4_control(report, bound, repo):
+    """(G4 control identity, problems) of one trial: recovered from its recorded clean commit and equal to the bound one."""
+    head = (report.get('preflight') or {}).get('repo_head')
+    recorded = (bound or {}).get('control')
+    if not head or recorded is None:
+        return recorded, ['G4 control identity unrecoverable or not bound']
+    try:
+        recovered = g4_control_identity(repo, head)
+    except PhysicsScopeRefused as exc:
+        return recorded, [str(exc)]
+    if recorded != recovered:
+        return recovered, ['G4 control identity differs from the commit the trial ran from']
+    return recovered, []
+
+
 def _g4_shared(bound):
     """What every counted trial of one G4 scope must share (session-specific fields left out)."""
     strip = lambda record: {k: v for k, v in record.items() if k != 'manifest_sha256'}
     return dict(world=bound['world'], destinations=[strip(d) for d in bound['destinations']],
                 support=strip(bound['support']), robot={k: bound['robot'][k] for k in STABLE_ROBOT_KEYS},
                 routing=bound['routing'], perception=bound['perception'], grasp_strategies=bound['grasp_strategies'],
+                safeguards=bound['safeguards'], stop_conditions=bound['stop_conditions'],
                 cell={k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES})
 
 
-def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *, evidence_roots, repo=REPO):
+def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *, evidence_roots, control=None,
+                               repo=REPO):
     """Readiness of one exact G4 cell from listed trial runs, recomputed from raw evidence (issues nothing).
     Categories as G3C: reliability (pre-motion), incomplete (stopped/cancelled, all moved cycles verified: listed, not
-    counted, not blocking), other_versions (listed, never counted), unmet (blocking). Every authorised trial session of
-    this software and cell under ``evidence_roots`` must be listed; unreadable trial evidence blocks."""
+    counted, not blocking), other_versions (another planner or G4 control identity: listed, never counted), unmet
+    (blocking). Every authorised trial session of this planner identity and cell under ``evidence_roots`` must be
+    listed; unreadable trial evidence blocks."""
     contract = G4_QUALIFICATION_CONTRACT
     current = planner or planner_identity(repo)
+    current_control = control or g4_control_identity(repo)
     _, world = cell_world(cell_dir)
     files = {name: _sha256((Path(cell_dir) / name).read_bytes()) for name in QUALIFIED_CELL_FILES}
     counted, unmet, reliability, incomplete, other_versions, seen, shared = [], [], [], [], [], set(), None
@@ -907,8 +958,9 @@ def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *,
         if ev['kind'] == 'PRE_MOTION_FAILURE':
             reliability.append(dict(run=ev['run'], problems=ev['problems']))
             continue
-        if ev['planner'] is not None and ev['planner'] != current:
-            other_versions.append(dict(run=ev['run'], planner=ev['planner'], kind=ev['kind']))
+        if (ev['planner'] is not None and ev['planner'] != current) or (
+                ev['control'] is not None and ev['control'] != current_control):
+            other_versions.append(dict(run=ev['run'], planner=ev['planner'], control=ev['control'], kind=ev['kind']))
             continue
         if ev['kind'] in ('INCOMPLETE', 'CANCELLED'):
             incomplete.append(dict(run=ev['run'], kind=ev['kind'], problems=ev['problems']))
@@ -921,7 +973,7 @@ def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *,
             ('native identity changed', bound['native'] == native), ('runtime identity changed', bound['runtime'] == runtime),
             ('another cell', {k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files),
             ('another world', bound['world']['derived_sha256'] == world['derived_sha256']),
-            ('geometry, robot, routing or perception differs from the other trials',
+            ('geometry, robot, routing, perception or safeguards differ from the other trials',
              shared is None or _g4_shared(bound) == shared),
             ('the same trial session counted twice', ev['run_id'] not in seen)) if not ok]
         if problems:
@@ -956,6 +1008,7 @@ def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *,
         unmet.append(f'unlisted trials of this software version: {unlisted}')
     unmet.append(f"stop/cancel: {contract['stop_cancel']}")
     return dict(status='NOT_QUALIFIED' if unmet else 'QUALIFIED_READY', contract=contract, planner=current,
+                control=current_control,
                 world=world['derived_sha256'], counted=counted, unmet=unmet, reliability_findings=reliability,
                 incomplete=incomplete, other_versions=other_versions, unlisted=unlisted)
 

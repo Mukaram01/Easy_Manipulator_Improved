@@ -13,18 +13,20 @@ Every cycle runs, in order:
   Authorise  one per-cycle record under the G4 session (physics_scope_qualification.g4_authorise_cycle);
   Execute    the executor's guarded strict full-cycle of exactly that authorised plan (--g4-cycle);
   Verify     the executor's gate evidence and g4_verify_cycle, independently, before anything is counted;
-  Reconcile  the ledger counts the cycle at its measured final pose, then a fresh Gazebo measurement must show every
-             other object unmoved and the placed part where the executor measured it; then Observe again.
+  Reconcile  a fresh Gazebo measurement must show every other object unmoved and the placed part where the executor
+             measured it; only then the ledger counts the cycle (at the re-measured pose); then Observe again.
 
 Without ``--authorise-g4-trial`` the session is plan-only (G4_PLAN_ONLY): Authorise refuses with G4_SCOPE_PLAN_ONLY and
 nothing moves; ``--plan-every-target`` plans each further routed object once in the same launch (never a ledger attempt
 or a count). With ``--authorise-g4-trial`` (CLI only; ``--prior-evidence`` must be the workspace's registered Stage-A
 acceptance; ``--max-cycles`` 1..2) the runner issues a G4_AUTHORISED_TRIAL record bound to this process: it alone
-authorises cycles and only an executor it starts may move. Any refused, failed or unverified cycle ends the session
-as a FAULT; nothing is retried. The evidence is labelled G4_TRIAL_NOT_QUALIFIED.
+authorises cycles and only an executor it starts may move. Any refused, failed, unverified or unreconciled cycle
+ends the session as a FAULT; a failed or timed-out helper step (measure, render, plan-only resolve, refresh) ends it
+BLOCKED. Nothing is retried. The evidence is labelled G4_TRIAL_NOT_QUALIFIED.
 
 Stop at cycle end: SIGUSR1 to this process only (the G5B latch; the running cycle finishes under every guard and is
-verified, no further cycle starts). Cancel: SIGTERM/SIGINT (forwarded to the running child, G5A; the session FAULTs).
+verified, no further cycle starts). Cancel: SIGTERM/SIGINT (forwarded to the running child, G5A; status CANCELLED and
+the ledger fails SESSION_INTERRUPTED).
 Pause/stop requests in the control file are honoured at cycle boundaries (sorting_session.poll_control).
 Exit codes: 0 PASS, 1 BLOCKED, 3 CANCELLED, 4 STOPPED (operator stop or refused input), 5 FAULT.
 """
@@ -155,43 +157,53 @@ def plan_refused(ledger, summary_path, returncode, evidence_dir):
     return ledger.record_cycle(summary, returncode, [], evidence_dir)
 
 
-def verify_and_reconcile(ledger, cycle_path, cycle_sha256, summary_path, binding, returncode, evidence_dir,
-                         session_sha256=None):
-    """Verify an executed cycle against its own authorisation (g4_verify_cycle, from the summary FILE), then let the
-    ledger count and reconcile it at the measured final pose. Returns (verification, ledger outcome). A cycle that is
-    not verified faults the session before the ledger sees it, so an unverified cycle is never counted."""
+def verify_cycle(ledger, cycle_path, cycle_sha256, summary_path, binding, session_sha256=None):
+    """Verify an executed cycle against its own authorisation (g4_verify_cycle, from the summary FILE). An unverified
+    cycle faults the session; the ledger never sees it."""
     import physics_scope_qualification as scope
     target = ledger.active
     verification = scope.g4_verify_cycle(cycle_path, cycle_sha256, summary_path, binding, session_sha256=session_sha256)
     if not verification['verified']:
         ledger.active = None
         raise G4Stop('G4_CYCLE_UNVERIFIED', f"{target['id']}: " + '; '.join(verification['problems']), fault=True)
-    summary = json.loads(Path(summary_path).read_text())
-    outcome = ledger.record_cycle(summary, returncode, [], evidence_dir)
-    if outcome != 'COMPLETED':
-        raise G4Stop('G4_CYCLE_UNVERIFIED', f"{target['id']}: the ledger did not count the verified cycle ({outcome})",
-                     fault=True)
-    return verification, outcome
+    return verification
 
 
 def reconcile_measurement(ledger, before, after, target_id, final_pose):
-    """After a counted cycle: every other object unmoved (to the world tolerance) and the placed part re-measured from
-    Gazebo's pose stream where the executor measured it; the ledger then keeps the re-measured pose. Returns evidence."""
+    """After a verified cycle, before the ledger counts it: every other object unmoved (to the world tolerance) and the
+    placed part re-measured from Gazebo's pose stream where the executor measured it. A mismatch faults the session
+    with the cycle uncounted. Returns evidence, with the re-measured pose the ledger keeps (count_cycle)."""
     import perceived_object_grasp_plan as geometry
     oid = target_id.split('::', 1)[-1]
     others = {o['object_id'] for o in before} - {oid}
-    moved = require_same_world(before, after, 'reconcile (objects other than the placed part)', only=others)
-    placed = next(o for o in after if o['object_id'] == oid)
-    position = math.dist(placed['pose']['xyz'], final_pose[:3])
-    quaternion = geometry.quaternion_from_rpy(placed['pose']['rpy'])
-    rotation = 2 * math.acos(min(1.0, abs(sum(a * b for a, b in zip(quaternion, final_pose[3:])))))
-    if position > PLACED_TOLERANCE_M or rotation > PLACED_TOLERANCE_RAD:
-        raise G4Stop('G4_WORLD_CHANGED', f'reconcile: the placed part is {position:.3g} m / {rotation:.3g} rad from the '
-                     "executor's final measurement", fault=True)
-    entry = ledger.objects[target_id]
-    entry['pose'] = list(placed['pose']['xyz']) + list(quaternion)
+    try:
+        moved = require_same_world(before, after, 'reconcile (objects other than the placed part)', only=others)
+        placed = next(o for o in after if o['object_id'] == oid)
+        position = math.dist(placed['pose']['xyz'], final_pose[:3])
+        quaternion = geometry.quaternion_from_rpy(placed['pose']['rpy'])
+        rotation = 2 * math.acos(min(1.0, abs(sum(a * b for a, b in zip(quaternion, final_pose[3:])))))
+        if position > PLACED_TOLERANCE_M or rotation > PLACED_TOLERANCE_RAD:
+            raise G4Stop('G4_WORLD_CHANGED', f'reconcile: the placed part is {position:.3g} m / {rotation:.3g} rad from '
+                         "the executor's final measurement", fault=True)
+    except G4Stop:
+        ledger.active = None
+        raise
+    return dict(others=moved, placed_delta_m=position, placed_delta_rad=rotation,
+                placed_pose=list(placed['pose']['xyz']) + list(quaternion))
+
+
+def count_cycle(ledger, summary_path, returncode, evidence_dir, reconciled):
+    """Only a verified and reconciled cycle is counted: the ledger records it from the executor evidence, then keeps the
+    re-measured pose. Returns the ledger outcome."""
+    target = ledger.active
+    outcome = ledger.record_cycle(json.loads(Path(summary_path).read_text()), returncode, [], evidence_dir)
+    if outcome != 'COMPLETED':
+        raise G4Stop('G4_CYCLE_UNVERIFIED', f"{target['id']}: the ledger did not count the verified cycle ({outcome})",
+                     fault=True)
+    entry = ledger.objects[target['id']]
+    entry['pose'] = list(reconciled['placed_pose'])
     entry['reconciled_from'] = 'Gazebo pose stream after the verified cycle'
-    return dict(others=moved, placed_delta_m=position, placed_delta_rad=rotation)
+    return outcome
 
 
 def physical_destinations(intent, environment, receipt):
@@ -626,16 +638,16 @@ def session(args, repo, workspace, report):
             stream(args, 'G4_VERIFY', cycle=index, motion=False)
             try:
                 stage_a.assert_gate('full-cycle', summary, build['sha256'], moveit_identity)
-                verification, outcome = verify_and_reconcile(ledger, cycle_path, cycle_sha, summary_path, binding,
-                                                             executed_run.returncode, cycle_dir / 'execute',
-                                                             session_sha256=session_sha)
-                record['steps']['verify'] = dict(verified=True, evidence_sha256=verification['evidence_sha256'],
-                                                 ledger_outcome=outcome)
-                # --- Reconcile: a fresh Gazebo measurement after the counted cycle ---------------------------------
+                verification = verify_cycle(ledger, cycle_path, cycle_sha, summary_path, binding,
+                                            session_sha256=session_sha)
+                record['steps']['verify'] = dict(verified=True, evidence_sha256=verification['evidence_sha256'])
+                # --- Reconcile: a fresh Gazebo measurement, then the ledger counts the cycle ---------------------
                 _, after = measure(cycle_dir / 'reconcile', unclassified)
                 record['steps']['reconcile'] = reconcile_measurement(
                     ledger, measured_world(yaml.safe_load(validated_path.read_text())), measured_world(after),
                     target['id'], summary['full_cycle_physical_acceptance']['final_pose'])
+                record['steps']['verify']['ledger_outcome'] = count_cycle(
+                    ledger, summary_path, executed_run.returncode, cycle_dir / 'execute', record['steps']['reconcile'])
             except (G4Stop, SortingFault):
                 raise
             except Exception as exc:                               # anything after motion that cannot be proven

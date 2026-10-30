@@ -26,12 +26,14 @@ RUNTIME = {'record_sha256': 'record', 'stage_a_evidence': '/evidence/stage_a', '
 # check itself is tested on a scratch repository below.
 HEAD = psq._git(psq.REPO, 'rev-parse', 'HEAD').strip()
 PLANNER = psq.planner_identity(psq.REPO, HEAD)
+CONTROL = psq.g4_control_identity(psq.REPO, HEAD)
 
 
 @pytest.fixture(autouse=True)
 def committed_software(monkeypatch):
-    planner, mechanism = psq.planner_identity, psq.mechanism_identity
+    planner, mechanism, control = psq.planner_identity, psq.mechanism_identity, psq.g4_control_identity
     monkeypatch.setattr(psq, 'planner_identity', lambda repo=psq.REPO, revision=None: planner(repo, revision or HEAD))
+    monkeypatch.setattr(psq, 'g4_control_identity', lambda repo=psq.REPO, revision=None: control(repo, revision or HEAD))
     monkeypatch.setattr(psq, 'mechanism_identity',
                         lambda role, repo=psq.REPO, revision=None: mechanism(role, repo, revision or HEAD))
 
@@ -793,7 +795,7 @@ def g4_cell(cells, tmp_path_factory):
 
 def g4_binding(cell, session, **kw):
     args = dict(cell_dir=cell, receipt_path=session / 'runtime/receipt.json', native=NATIVE, runtime=RUNTIME,
-                perception=PERCEPTION, max_cycles=2, planner=PLANNER,
+                perception=PERCEPTION, max_cycles=2, planner=PLANNER, control=CONTROL,
                 commission_evidence_path=session / 'commission-evidence.json')
     args.update(kw)
     return psq.g4_session_binding(**args)
@@ -954,6 +956,8 @@ def test_a_trial_is_bounded_cli_only_and_bound_to_its_issuing_runner(g4_cell, tm
                         (dict(evidence=None), 'G4_SCOPE_INCOMPLETE')):
         with pytest.raises(psq.PhysicsScopeRefused, match=match):
             psq.g4_authorise_trial(tmp_path / 'x.json', dict(bound, **edit), issuer)
+    with pytest.raises(psq.PhysicsScopeRefused, match='only the issuing runner itself'):  # a live runner, not the caller
+        psq.g4_authorise_trial(tmp_path / 'y.json', bound, psq.process_identity(os.getpid() + 1))
     path = tmp_path / 'trial.json'
     sha = psq.g4_authorise_trial(path, bound, issuer)
     record = json.loads(path.read_text())
@@ -983,6 +987,7 @@ def test_a_trial_is_bounded_cli_only_and_bound_to_its_issuing_runner(g4_cell, tm
 @pytest.mark.parametrize('edit,key', [
     (dict(native=dict(NATIVE, sha256='rebuilt')), 'native'), (dict(runtime=dict(RUNTIME, record_sha256='other')), 'runtime'),
     (dict(planner='0' * 64), 'planner'), (dict(perception=dict(PERCEPTION, epd_runtime_sha256='f' * 64)), 'perception'),
+    (dict(control='0' * 64), 'control'),
 ])
 def test_every_trial_use_recomputes_software_native_and_perception_identity(trial, edit, key):
     current = g4_binding(trial['cell'], trial['session'], **edit)
@@ -1210,6 +1215,9 @@ def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(t
         trial['cell'], [run], dict(NATIVE, sha256='other'), RUNTIME, PLANNER, evidence_roots=[])['unmet'])
     other = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, '0' * 64, evidence_roots=[])
     assert other['other_versions'] and not other['counted']                              # listed, never counted
+    other = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, control='0' * 64,
+                                           evidence_roots=[])
+    assert other['other_versions'] and not other['counted']                              # other G4 control code
     unlisted = psq.g4_qualification_readiness(trial['cell'], [], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
     assert unlisted['unlisted'] == [str(run.resolve())]                                  # no cherry-picking
     summary = run / 'session/cycles/002/execute/summary.json'
@@ -1255,6 +1263,19 @@ def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(t
     stopped_early = psq.g4_trial_evidence(run)
     assert stopped_early['kind'] == 'INCOMPLETE' and stopped_early['cycles'][1]['moved'] is False
     moved_summary.with_suffix('.hidden').rename(moved_summary)
+    for scope in ('G4_PLAN_ONLY', None):                       # a trial's report relabelled or damaged: never NOT_A_TRIAL
+        report_path.write_text(json.dumps(dict(report, scope=scope)))
+        assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
+    record_path = run / 'session/g4-session.json'
+    record = json.loads(record_path.read_text())
+    record['binding']['control'] = '0' * 64                    # bound control code is not the code the run's head holds
+    record['binding_sha256'] = psq._sha256(psq._canonical(record['binding']))
+    original_record = record_path.read_bytes()
+    record_path.write_text(json.dumps(record))
+    report_path.write_text(json.dumps(dict(report, g4_session=dict(report['g4_session'],
+                                                                   sha256=psq._sha256(record_path.read_bytes())))))
+    assert any('G4 control identity differs' in p for p in psq.g4_trial_evidence(run)['problems'])
+    record_path.write_bytes(original_record)
     report_path.write_text(json.dumps(dict(report, cycles='not a list')))              # malformed: FAILED, no crash
     assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
     report_path.write_text(json.dumps(dict(report, cycles=[dict(cycle=None, steps=dict(authorise=dict(granted=True)))])))

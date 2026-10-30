@@ -112,13 +112,26 @@ def physical(tmp_path):
     return s, target, *cycle_record(tmp_path, target)
 
 
-def test_a_verified_cycle_counts_and_reconciles_at_the_measured_pose(tmp_path):
+def reconcile_worlds(target, placed):
+    """The validated world and a fresh measurement after the cycle (the placed part re-measured 2 um away)."""
+    before = [{'object_id': 'cup-1', 'pose': {'xyz': [0.30, -0.1, 0.05], 'rpy': [0, 0, 0]}, 'dimensions': list(DIMS)},
+              {'object_id': 'cup-2', 'pose': {'xyz': [0.40, -0.1, 0.05], 'rpy': [0, 0, 0]}, 'dimensions': list(DIMS)}]
+    after = copy.deepcopy(before)
+    oid = target['id'].split('::')[-1]
+    next(o for o in after if o['object_id'] == oid)['pose']['xyz'] = [placed[0] + 2e-6, placed[1], placed[2]]
+    return before, after, oid
+
+
+def test_a_cycle_is_counted_only_after_verify_and_reconcile_at_the_re_measured_pose(tmp_path):
     s, target, path, sha = physical(tmp_path)
     measured = [0.581, 0.219, FLOOR_A['floor_z'] + DIMS[2] / 2]
-    verification, outcome = g4.verify_and_reconcile(s, path, sha, summary_file(tmp_path, target, measured, sha), BINDING,
-                                                    0, tmp_path)
-    assert verification['verified'] and outcome == ss.COMPLETED
-    assert s.objects[target['id']]['pose'][:3] == measured and s.objects[target['id']]['measured'] is True
+    summary = summary_file(tmp_path, target, measured, sha)
+    assert g4.verify_cycle(s, path, sha, summary, BINDING)['verified'] and s.counts()['completed'] == 0
+    before, after, _ = reconcile_worlds(target, measured)
+    reconciled = g4.reconcile_measurement(s, before, after, target['id'], measured + [0.0, 0.0, 0.0, 1.0])
+    assert reconciled['placed_delta_m'] < 1e-5 and s.counts()['completed'] == 0      # measured, not yet counted
+    assert g4.count_cycle(s, summary, 0, tmp_path, reconciled) == ss.COMPLETED
+    assert s.objects[target['id']]['pose'][0] == measured[0] + 2e-6 and s.objects[target['id']]['measured'] is True
     assert s.next_target()['id'] != target['id']                                   # never picked again
 
 
@@ -140,29 +153,24 @@ def test_an_unverified_cycle_never_reaches_the_ledger(tmp_path, tamper):
     elif tamper == 'missing':
         summary = tmp_path / 'no-summary.json'
     with pytest.raises(g4.G4Stop, match='G4_CYCLE_UNVERIFIED') as stop:
-        g4.verify_and_reconcile(s, path, sha, summary, BINDING, 0, tmp_path)
+        g4.verify_cycle(s, path, sha, summary, BINDING)
     assert stop.value.fault and s.counts()['completed'] == 0 and not s.objects[target['id']]['attempts']
 
 
-def test_the_reconcile_measurement_must_show_the_rest_of_the_world_unmoved(tmp_path):
+@pytest.mark.parametrize('fault', ['neighbour', 'placed'])
+def test_an_unreconciled_cycle_faults_the_session_uncounted(tmp_path, fault):
     s, target, path, sha = physical(tmp_path)
     placed = [0.581, 0.219, FLOOR_A['floor_z'] + DIMS[2] / 2]
-    g4.verify_and_reconcile(s, path, sha, summary_file(tmp_path, target, placed, sha), BINDING, 0, tmp_path)
-    before = [{'object_id': 'cup-1', 'pose': {'xyz': [0.30, -0.1, 0.05], 'rpy': [0, 0, 0]}, 'dimensions': list(DIMS)},
-              {'object_id': 'cup-2', 'pose': {'xyz': [0.40, -0.1, 0.05], 'rpy': [0, 0, 0]}, 'dimensions': list(DIMS)}]
-    after = copy.deepcopy(before)
-    oid = target['id'].split('::')[-1]
-    moved = next(o for o in after if o['object_id'] == oid)
-    moved['pose']['xyz'] = [placed[0] + 2e-6, placed[1], placed[2]]
-    evidence = g4.reconcile_measurement(s, before, after, target['id'], placed + [0.0, 0.0, 0.0, 1.0])
-    assert evidence['placed_delta_m'] < 1e-5 and s.objects[target['id']]['pose'][0] == placed[0] + 2e-6
-    nudged = copy.deepcopy(after)
-    next(o for o in nudged if o['object_id'] != oid)['pose']['xyz'][0] += 5e-5      # a neighbour pushed by the place
+    assert g4.verify_cycle(s, path, sha, summary_file(tmp_path, target, placed, sha), BINDING)['verified']
+    before, after, oid = reconcile_worlds(target, placed)
+    final = placed + [0.0, 0.0, 0.0, 1.0]
+    if fault == 'neighbour':
+        next(o for o in after if o['object_id'] != oid)['pose']['xyz'][0] += 5e-5   # a neighbour pushed by the place
+    else:
+        final = [placed[0] + 0.01] + placed[1:] + [0.0, 0.0, 0.0, 1.0]           # not where the executor measured it
     with pytest.raises(g4.G4Stop, match='G4_WORLD_CHANGED') as stop:
-        g4.reconcile_measurement(s, before, nudged, target['id'], placed + [0.0, 0.0, 0.0, 1.0])
-    assert stop.value.fault
-    with pytest.raises(g4.G4Stop, match='placed part'):                             # not where the executor measured it
-        g4.reconcile_measurement(s, before, after, target['id'], [placed[0] + 0.01] + placed[1:] + [0.0, 0.0, 0.0, 1.0])
+        g4.reconcile_measurement(s, before, after, target['id'], final)
+    assert stop.value.fault and s.active is None and s.counts()['completed'] == 0
 
 
 def test_the_sessions_expected_bin_contents_come_from_the_ledger_world():
