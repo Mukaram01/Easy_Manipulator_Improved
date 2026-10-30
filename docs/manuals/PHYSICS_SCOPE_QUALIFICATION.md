@@ -131,14 +131,20 @@ A qualified scope would admit **one exact cell**: its task, placing into one bin
 - **Pads:** approach, transfer, retreat and home plan and certify against the receipt-bound physics fingertip boxes (`simulation_collision.physics_pad_scene`). The boxes are inflated by 15 mm on free OMPL stages and 1 mm on the straight retreat, and carried on the request's start state as well as the scene diff (`e1fcfcbb`).
 - **Corner blending:** TOTG blends corners (`TOTG_PATH_TOLERANCE` 0.01 in the scene launch). With the robot package's 0.0, corners were unblended and implied up to 18.5 rad/s² (UR5 limit 3.15) and 14 mm of tracking deviation.
 
-**Status (2026-10-30, software `09c477e0`, head `e1fcfcbb`):** `NOT_QUALIFIED` for both cells, 0 of 3 strict trials of this version.
-- **Every earlier run is listed under `other_versions`:**
-  - campaign `8a5d80d2`: 3 + 3 strict PASS;
-  - Bin A trial 3: FAILED.
-- **Why `8a5d80d2` is superseded:** that version (`caf7dbd7`) was `QUALIFIED_READY` for both cells by this contract. It was not issued, because its pads were found inactive at runtime (the start-state defect fixed in `e1fcfcbb`).
-- **Q7:** met; the G5 mechanism is unchanged.
-- **Plan-only proof at `e1fcfcbb`:** both cells pass, and the pad effect is verified by replay agreement and FK clearance.
-- **Evidence:** `log/qualification/g3c/`.
+**Status (2026-10-30, software `09c477e0`, head `57908ef7`): QUALIFIED for both cells (offline records; no runtime admission).**
+
+| Cell | Strict trials of this version | Record (sha256) |
+|---|---|---|
+| `zz_r25b_two_bin_a` → `target_bin_default` | 3 of 3 (`g3c/campaign_09c477e0/bin_a_1..3`) | `3cc13caf…` |
+| `zz_r25b_two_bin_b` → `target_bin_b` | 3 of 3 (`g3c/campaign_09c477e0/bin_b_1..3`) | `9306a6d6…` |
+
+- **Q7:** G5A and G5B, compatible.
+- **Other versions stay listed:** campaign `8a5d80d2` ×6 PASS (pads inactive, superseded), G3A/G3B/G5B/G3C #3, and Bin A trial 3 **FAILED**.
+- **Not changed by qualification:**
+  - a record permits one full-cycle of its exact cell and bin only;
+  - Builder/HMI motion admission stays locked (G6);
+  - continuous sorting is not admitted.
+- **Evidence:** `log/qualification/g3c/qualified/`.
 
 Offline: `python3 scripts/physics_scope_qualification.py readiness|issue|verify --cell <cell> --trial <run> ... --cancellation-trial <G5A run> --stop-trial <G5B run>` (exit 0 only when ready, issued or verified).
 
