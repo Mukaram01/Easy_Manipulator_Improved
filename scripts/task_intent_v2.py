@@ -249,6 +249,10 @@ SOURCE_PRODUCERS = {
     # detection that gave it its class is separately capped at the replay ceiling on the recording clock
     # (perception_replay.validate_replay; the executor re-checks every binding).
     "replayed_perception_in_simulation": ("simulator_measurement",),
+    # G4: a class-routed task in the physics simulator observed through the simulated RGB-D camera. Each cycle renders
+    # the measured world and classifies it with EPD; classes bind to the measured objects as in Stage-B, so the same
+    # producer and replay ceiling apply (perception_replay.session_frame, simulator_observations --perception).
+    "rendered_perception_in_simulation": ("simulator_measurement",),
     "manual_simulated": ("simulator_measurement",),
     # The simulated RGB-D camera on fake hardware: a live capture keeps the live ceiling; a sorting session's
     # world-revision-bound rendered frame has its own (R2.5A).
@@ -257,6 +261,8 @@ SOURCE_PRODUCERS = {
 OBSERVATION_FRESHNESS_POLICY = {
     source: {"max_age_s": max(OBSERVATION_PRODUCER_CEILING_S[p] for p in producers), "producers": producers}
     for source, producers in SOURCE_PRODUCERS.items()}
+# Source types whose classes come from EPD detections bound to the physics simulator's measured objects.
+EPD_BOUND_SIMULATION_SOURCES = ("replayed_perception_in_simulation", "rendered_perception_in_simulation")
 
 
 def freshness_policy(source_type):
@@ -290,6 +296,8 @@ def freshness_source_type(model):
         return "live_epd_realsense"
     if binding.get("mode") == "live_epd" and (model.get("safety") or {}).get("execution_backend", "fake") == "fake":
         return "simulated_rgbd_fake_hardware"
+    if binding.get("mode") == "live_epd" and class_routing_rules(model) is not None:
+        return "rendered_perception_in_simulation"
     return source_type
 
 

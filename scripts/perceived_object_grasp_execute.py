@@ -2598,7 +2598,7 @@ def main():
         if authored:
             # Freshness follows who produced these observations: the simulator's receipt-bound measurement
             # snapshot (verified against the live receipt below), a replay, or a live sensor.
-            from task_intent_v2 import freshness_source_type, observation_age_cap
+            from task_intent_v2 import EPD_BOUND_SIMULATION_SOURCES, freshness_source_type, observation_age_cap
             producer = ('simulator_measurement' if args.backend == 'simulator' and snapshot.get('simulator_receipt_sha256')
                         else 'replay' if args.replay else inputs.RENDER_PRODUCER if rendered is not None else 'live_sensor')
             age_cap = observation_age_cap(freshness_source_type(intent), producer)
@@ -2608,12 +2608,13 @@ def main():
                 summary['observation_freshness']['rendered_frame'] = {key: rendered.get(key) for key in (
                     'provenance', 'camera_source', 'capture_wall_ns', 'frame_stamp_ns', 'world_revision',
                     'recording_sha256', 'render_world_sha256')}
-            # Stage-B: classes from replayed EPD detections bound to these measured objects. Only a replayed-
-            # perception task takes them, and each binding keeps the replay ceiling on the recording clock.
+            # Stage-B: classes from replayed EPD detections bound to these measured objects (G4: from the cycle's
+            # rendered frame). Only such a task takes them, and each binding keeps the replay ceiling on the
+            # recording clock.
             binding = snapshot.get('perception_binding')
-            if (binding is not None) != (freshness_source_type(intent) == 'replayed_perception_in_simulation'):
-                raise ValueError('PERCEPTION_BINDING_MISMATCH: replayed perception classes require a replayed-perception '
-                                 'task in simulation, and such a task requires them')
+            if (binding is not None) != (freshness_source_type(intent) in EPD_BOUND_SIMULATION_SOURCES):
+                raise ValueError('PERCEPTION_BINDING_MISMATCH: EPD perception classes require an EPD-perception task '
+                                 'in simulation, and such a task requires them')
             if binding is not None:
                 from task_intent_v2 import OBSERVATION_PRODUCER_CEILING_S
                 replay_ceiling = OBSERVATION_PRODUCER_CEILING_S['replay']

@@ -347,13 +347,14 @@ class SortingSession:
                 for e in self.objects.values() if e['status'] != REMOVED]
 
     # -------------------------------------------------------------- selection
-    def next_target(self, now=None):
+    def next_target(self, now=None, exclude=()):
         """The next object to pick, deterministically, or None when nothing more can be sorted now.
 
         Uses the resolver's own eligibility, routes, priorities and order. Objects of an unrouted or disabled
         class are skipped per the unrouted policy (stop_session faults); an object that cannot fit its route is
         rejected before planning; one whose destination has no free place waits. Completed and rejected
-        objects are never selected again.
+        objects are never selected again; nor is an id in ``exclude`` (G4 plan-only: an object already planned in
+        this session, which stays PENDING because nothing executed).
         """
         from runtime_pick_inputs import contained, zone
         import perceived_object_grasp_plan as geometry
@@ -390,7 +391,7 @@ class SortingSession:
         occupied = self.occupied()
         for item in select_observations(self.intent, self.environment, observations, now):
             entry = self.objects[item['id']]
-            if entry['status'] not in (PENDING, WAITING_FULL):
+            if entry['status'] not in (PENDING, WAITING_FULL) or item['id'] in exclude:
                 continue
             fitting, unfit, places, full = _routed_placement_fit([item], routes, clearance, None, self.environment,
                                                                  [o for o in occupied if o['id'] != item['id']])
@@ -503,8 +504,10 @@ class SortingSession:
                 'unrouted_policy': self.policy['unrouted_policy'],
                 'max_attempts_per_object': self.policy['max_attempts_per_object'],
                 'observation': self.observation_status(),
-                'execution': 'MoveIt fake hardware (mock controllers): planning and kinematic execution only; '
-                             'no physics, contact or retention evidence; real robot locked',
+                'execution': ('MoveIt fake hardware (mock controllers): planning and kinematic execution only; '
+                              'no physics, contact or retention evidence; real robot locked') if self.backend == 'fake' else
+                             ('Gazebo Fortress physics (G4): a cycle counts only from contact-backed evidence; motion '
+                              'needs a qualified G4 scope; real robot locked'),
                 'stop_semantics': 'Pause and Stop are software requests honoured at the cycle boundary; not an emergency stop'}
 
     def observation_status(self):
