@@ -143,17 +143,29 @@ The qualified Stage-A world covers one object, one destination and one cycle. Th
   - the part measured, detached and reconciled in the scene.
 - **Measured reconciliation:** a completed object is reconciled at its measured Gazebo final pose (`measured: true`). Occupancy, and so the next cycle's place, uses that pose.
 - **No substitution:** fake-hardware evidence never counts on the physics backend, and physics evidence never counts on the fake one.
-- **Still refused:** a sorting session or routed task in Gazebo (`SORTING_PHYSICS_UNQUALIFIED`). G3C qualifies one full-cycle per exact cell, not continuous sorting.
-- **Contract for the G4 runner** (not built):
-  - **One launch:** one Gazebo + MoveIt launch per session.
-  - **Each cycle, in order:**
-    1. render and EPD-classify the reconciled measured world (R2.5A);
-    2. select and route the target;
-    3. resolve and revalidate with the physics pads;
-    4. obtain a per-cycle authorisation under a qualified continuous scope (still to be defined and qualified);
-    5. execute the full-cycle under the contact guard;
-    6. judge the cycle with `verify_physical_cycle`.
-  - **Stopping:** stop at cycle end is the runner's SIGUSR1 latch (G5B); immediate cancel is SIGTERM (G5A, recovery required, session FAULT).
+- **Still refused:** a sorting session or routed task through the Builder or HMI (`SORTING_PHYSICS_UNQUALIFIED`), and any G4 motion. G3C qualifies one full-cycle per exact cell, not continuous sorting.
+
+**G4 single-launch sorting runner (`scripts/run_g4_sorting.py`, plan-only).**
+- **The cell:** a class-routed task saved with the simulator backend and the simulated RGB-D camera (Task Editor: perception live EPD, simulated camera, routing). Its source type is `rendered_perception_in_simulation`: classes come from EPD on rendered frames, bound to the objects Gazebo measures (the Stage-B binding, its replay ceiling unchanged). Any other cell is refused (`G4_CELL_UNSUPPORTED`).
+- **One launch:** Gazebo Fortress + MoveIt with every authored bin as a hollow physics bin (`physical_destinations='all'`) for the whole session.
+- **Each cycle, in order:**
+  1. **Observe:** measure every object; the measured world must be the session's verified world (1e-5 m/rad, the refresh tolerance), otherwise `G4_WORLD_CHANGED`;
+  2. **Classify:** render exactly that world with the cell camera, classify it with EPD (`perception_replay.py session-frame`), bind the classes to the measured objects (`simulator_observations.py --perception`); a frame of another world revision is refused (`FRAME_WORLD_MISMATCH`);
+  3. **Select:** the ledger (`backend='simulator'`) picks the next routed object; unclassified, unrouted, completed and removed objects are never targets and stay obstacles;
+  4. **Plan:** a padded plan-only resolve of that target only (`--target-object-id`), every other object and both bins as obstacles; the plan must be the target's own route (`G4_PLAN_MISMATCH`);
+  5. **Validate:** re-measure (geometry unchanged since classification) and record the frame's age;
+  6. **Authorise:** `g4_authorise_cycle` under the session record;
+  7. **Execute, Verify, Reconcile:** the guarded full-cycle, `g4_verify_cycle` before the ledger may count it, the ledger reconciled at the measured final pose; then Observe again.
+- **Today:** no G4 session can be authorised, so step 6 refuses (`G4_SCOPE_PLAN_ONLY`) and the session stops with zero motion. `--plan-every-target` observes again and plans each further routed object once in the same launch; a plan-only cycle is never a ledger attempt or a count. Step 7 would refuse (`G4_EXECUTOR_ADMISSION_MISSING`): the executor admits no G4 cycle record.
+- **Stopping:** SIGUSR1 latches stop at cycle end (G5B); SIGTERM/SIGINT cancel and are forwarded to the running child (G5A); control-file pause/stop apply at cycle boundaries. The G5 stop/cancel code is reused unchanged (mechanism identity equal to G3C's).
+- **Evidence:** `g4-sorting-report.json` (every cycle's steps), `sorting_session.json` (the ledger), `session/g4-session.json`, and per cycle `session/cycles/NNN/` (measurement, world, rendered frame with EPD's output, bound observations, resolve summary, validation).
+
+**G4 continuous-sorting authority (`physics_scope_qualification`, `workcell_g4_sorting_scope/v1`, offline).**
+- **Session record:** `g4_session_binding` binds one exact routed multi-object cell: its files, the derived world (every object the qualified body), every bin binding, the support, robot identities, routing rules and job policy, the simulator-rendered EPD source (producer, source type, EPD runtime record, frame age limit), safeguards (contact guard, strict retention, pads, stop/cancel), stop conditions, native/runtime/planner identity, `max_cycles` (at most one per object) and the session receipt.
+- **States:** `g4_open_session` writes `G4_PLAN_ONLY`. `G4_AUTHORISED_SESSION` would need a G4 acceptance verifier recomputing accepted evidence; none exists, so offering acceptance is refused and a record claiming that state is refused like any other claim (`G4_SCOPE_NOT_QUALIFIED`).
+- **Per cycle:** `g4_authorise_cycle` writes one record per cycle, chained to the session and to the previous cycle's verified evidence digest. It refuses: plan-only sessions, a latched stop, the session limit, a broken chain, a stale or missing frame, a class/destination pair no enabled rule routes, an unknown target.
+- **Counting:** `g4_verify_cycle` accepts a cycle only from the G3C per-cycle judgement (`physical_cycle_problems`) for its authorised target, measured, detached and reconciled; any change to the cycle record is `G4_CYCLE_RECORD_CHANGED`.
+- **G3C stays narrow:** the G3C trial scope refuses routed or multi-object cells.
 
 **Multi-bin physics world, plan-only (R2.5B G0–G2).**
 - **Deriving it:** `simulator_world.derive_world(scene, physical_destinations='all')` makes every authored target bin on the task's support a hollow static physics bin (`target_bin_physics`, `target_bin_physics_2`, … in asset-id order). Every task configuration of a cell therefore derives the same world.
@@ -161,7 +173,7 @@ The qualified Stage-A world covers one object, one destination and one cycle. Th
 - **Binding:** the simulator launch binds each physics bin to the planning bin whose measured mesh floor lies under it (`destination_geometry_bindings`).
 - **Planning:** the executor adds every bin's physics walls as planning obstacles and seats the placement on the task's own bin floor.
 - **Motion refused:** in such a world the executor refuses motion (`MULTI_DESTINATION_PHYSICS_UNQUALIFIED`) and the contact guard does not arm.
-- **Runner:** it accepts `--physical-destinations all` only for `--mode targeted --gate resolve`.
+- **Runner:** it accepts `--physical-destinations all` only for `--mode targeted --gate resolve`. A class-routed task may derive this world too (plan-only; the G4 runner).
 - **One-bin cells:** worlds, receipts and wall ids are unchanged.
 
 **One authorised trial into one bin (G3A, `workcell_physics_scope/v1`).**
