@@ -748,17 +748,23 @@ def test_no_runtime_path_consumes_a_qualified_record():
             assert 'verify_qualified_scope' not in text and 'issue_qualified_scope' not in text, source
 
 
-# --- G4: continuous sorting authority (offline; no session admits motion) -------------------------------------------
+# --- G4: continuous sorting authority: plan-only sessions and the bounded CLI trial -----------------------------------
+import os  # noqa: E402
+import time  # noqa: E402
+
 Q = [0.025, 0.025, 0.025]
-PERCEPTION = dict(producer='simulator_render', source_type='simulated_rgbd', epd_runtime_sha256='epd', max_age_s=300)
+PERCEPTION = dict(producer='simulator_render', source_type='rendered_perception_in_simulation',
+                  epd_runtime_sha256='e' * 64, max_age_s=300.0)
+RUNNER = ['python3', 'scripts/run_g4_sorting.py', '--authorise-g4-trial', '--max-cycles', '2']
 
 
 @pytest.fixture(scope='module')
 def g4_cell(cells, tmp_path_factory):
-    """The two-bin cell with three qualified-body objects and one plain cube, and a saved cup -> Bin A routing rule."""
+    """The two-bin cell with three qualified-body objects and one plain cube, observed through the simulated RGB-D
+    camera, with a saved cup -> Bin A routing rule (the Bin A cell's own placement region)."""
     import shutil
     cell = tmp_path_factory.mktemp('g4') / 'g4_two_bin'
-    shutil.copytree(cells['a'], cell)                                     # Bin A: cups route to its region
+    shutil.copytree(cells['a'], cell)
     path = cell / 'environment.yaml'
     doc = yaml.safe_load(path.read_text())
     source = doc['workcell_studio']['pick_zone']['object_source']
@@ -770,7 +776,12 @@ def g4_cell(cells, tmp_path_factory):
     path.write_text(yaml.safe_dump(doc, sort_keys=False))
     intent_path = cell / 'config/workcell_builder_task_intent.yaml'
     intent = yaml.safe_load(intent_path.read_text())
-    intent['pick']['selection']['object_filter']['class_id'] = ''
+    selection = intent['pick']['selection']
+    selection['object_filter']['class_id'] = ''
+    selection.update(source_type='perception', source_ref='detected_objects/v1')
+    selection['object_filter']['max_age_seconds'] = 180.0
+    intent['perception'] = dict(intent.get('perception') or {}, mode='live_epd', camera_source='simulated_rgbd',
+                                replay_path='')
     intent['routing'] = {'mode': 'class', 'unrouted_policy': 'leave_in_place', 'rules': [
         {'id': 'cup_to_bin_a', 'when': {'attribute': 'class', 'equals': 'cup'}, 'destination': 'default_drop_zone'}]}
     intent_path.write_text(json.dumps(intent, indent=4))
@@ -782,36 +793,117 @@ def g4_cell(cells, tmp_path_factory):
 
 def g4_binding(cell, session, **kw):
     args = dict(cell_dir=cell, receipt_path=session / 'runtime/receipt.json', native=NATIVE, runtime=RUNTIME,
-                perception=PERCEPTION, max_cycles=3, planner=PLANNER)
+                perception=PERCEPTION, max_cycles=2, planner=PLANNER,
+                commission_evidence_path=session / 'commission-evidence.json')
     args.update(kw)
     return psq.g4_session_binding(**args)
 
 
-def authorised_session(tmp_path, binding):
-    """A record claiming G4_AUTHORISED_SESSION. Only a future G4 acceptance verifier could make the claim true; today
-    it is refused (``_g4_acceptance``), so the cycle-logic tests below stand in for that verifier with monkeypatch."""
-    record = dict(schema=psq.G4_SCHEMA, state=psq.G4_AUTHORISED_SESSION, operation=psq.G4_OPERATION, binding=binding,
-                  binding_sha256=hashlib.sha256(psq._canonical(binding)).hexdigest())
-    path = tmp_path / 'g4-session.json'
-    data = (json.dumps(record) + '\n').encode()
-    path.write_bytes(data)
-    return path, hashlib.sha256(data).hexdigest()
+def fake_processes(monkeypatch, runner_cmdline=RUNNER):
+    """Every pid looks like the CLI trial runner; the executor's parent is this (runner) process."""
+    monkeypatch.setattr(psq, 'process_identity', lambda pid: dict(pid=int(pid), start_ticks='42', cmdline=list(runner_cmdline)))
+    monkeypatch.setattr(os, 'getppid', os.getpid)
 
 
-def test_a_g4_session_is_plan_only_and_g3c_never_admits_its_routed_multi_object_cell(g4_cell, cells, tmp_path):
+@pytest.fixture
+def trial(g4_cell, tmp_path, monkeypatch):
+    fake_processes(monkeypatch)
     session = launch(tmp_path / 's', g4_cell)
     bound = g4_binding(g4_cell, session)
-    assert [o['object_id'] for o in bound['world']['objects']] == ['cube_1', 'cup_1', 'cup_2', 'cup_3'] or \
-        sorted(o['object_id'] for o in bound['world']['objects']) == ['cube_1', 'cup_1', 'cup_2', 'cup_3']
-    assert bound['routing']['rules'][0]['destination'] == 'default_drop_zone' and bound['planner'] == PLANNER
-    sha = psq.g4_open_session(tmp_path / 'session.json', bound)
-    assert json.loads((tmp_path / 'session.json').read_text())['state'] == psq.G4_PLAN_ONLY
+    path = session / 'g4-session.json'
+    sha = psq.g4_authorise_trial(path, bound, psq.process_identity(os.getpid()))
+    return dict(cell=g4_cell, session=session, bound=bound, path=path, sha=sha)
+
+
+def routed(bound, asset='target_bin_default'):
+    return next(d for d in bound['destinations'] if d['source_item_id'] == asset)
+
+
+def cycle_inputs(t, name, target='cup_1', cls='cup', occupants=(), frame_age_s=1.0, grasp='top_2f::000',
+                 edit_observations=None, edit_plan=None):
+    """The frame, validated observations and plan-only summary a runner cycle produces, consistent with the binding."""
+    bound, root = t['bound'], t['session'] / name
+    root.mkdir()
+    frame = dict(schema_version='detected_objects/v1', objects=[], source=dict(
+        producer='simulator_render', world_revision='rev-' + name, capture_wall_ns=time.time_ns() - int(frame_age_s * 1e9)))
+    (root / 'frame.yaml').write_text(yaml.safe_dump(frame))
+    frame_sha = hashlib.sha256((root / 'frame.yaml').read_bytes()).hexdigest()
+    floor = routed(bound)
+    objects = []
+    for o in bound['world']['objects']:
+        xyz = list(o['spawn_pose'][:3])
+        if o['object_id'] in occupants:
+            xyz = [floor['floor_xyz'][0], floor['floor_xyz'][1], floor['floor_z'] + 0.0125]
+        objects.append(dict(object_id=o['object_id'], class_id='cup' if o['object_id'].startswith('cup') else 'unperceived',
+                            dimensions=o['dimensions_m'], pose=dict(frame_id='world', xyz=xyz, rpy=[0.0, 0.0, 0.0])))
+    observed = dict(schema_version='detected_objects/v1', simulator_receipt_sha256=bound['session']['receipt_sha256'],
+                    perception_binding=dict(perception_sha256=frame_sha, bindings={
+                        o['object_id']: dict(class_id=o['class_id']) for o in objects}), objects=objects)
+    if edit_observations:
+        edit_observations(observed)
+    (root / 'observations.yaml').write_text(yaml.safe_dump(observed))
+    plan = dict(result='PLAN_ONLY', execution_attempted=False, selected_object_id='runtime::' + target,
+                batch_target_object_id='runtime::' + target, resolution_sha256='res-' + name,
+                physics_pads=dict(allowance_m={'transfer': 0.015}), selected_extraction_intent=dict(candidate_id=grasp),
+                physical_destination_walls=dict(selected_destination=dict(model=floor['model'])),
+                task_intent_resolution=dict(resolution_sha256='res-' + name, grasp_resolution=dict(selected_candidate_id=grasp),
+                                            place_resolution=dict(route=dict(class_id=cls, region_ref='default_drop_zone',
+                                                                             asset_ref='target_bin_default'))))
+    if edit_plan:
+        edit_plan(plan)
+    (root / 'plan.json').write_text(json.dumps(plan))
+    return dict(frame_path=root / 'frame.yaml', observations_path=root / 'observations.yaml', plan_path=root / 'plan.json')
+
+
+def authorise(t, cycle, inputs, path=None, target='cup_1', cls='cup', destination='default_drop_zone', occupancy=(),
+              previous=None, current=None, **kw):
+    return psq.g4_authorise_cycle(path or t['session'] / f'c{cycle}.json', t['path'], t['sha'],
+                                  current=t['bound'] if current is None else current, cycle=cycle,
+                                  target=dict(object_id=target, class_id=cls), destination=destination,
+                                  occupancy=list(occupancy), previous=previous, **inputs, **kw)
+
+
+def executed_summary(t, record_path, record_sha, *, tilt=0.0, edit=None):
+    """An executor summary file as a strict contact-backed G4 cycle writes it, for this cycle record."""
+    import math
+    record = json.loads(Path(record_path).read_text())
+    floor = routed(t['bound'])
+    q = [math.sin(tilt / 2), 0.0, 0.0, math.cos(tilt / 2)]
+    pose = [floor['floor_xyz'][0], floor['floor_xyz'][1], floor['floor_z'] + 0.0125] + q
+    target = 'runtime::' + record['target']['object_id']
+    summary = dict(result='PASS', strict_retention_compliant=True, retention_policy='strict',
+                   retention_findings={'findings': []}, stages=psq.FULL_CYCLE_STAGES, selected_object_id=target,
+                   resolution_sha256=record['plan']['resolution_sha256'], execution_attempted=True,
+                   release_evidence={'state': 'RELEASE_CONFIRMED', 'settled': True},
+                   selected_extraction_intent={'candidate_id': record['grasp']},
+                   physics_scope=dict(kind='G4_TRIAL', cycle_sha256=record_sha, session_sha256=record['session_sha256']),
+                   commissioning_prerequisites=dict(results=psq.PREREQUISITE_RESULTS, capability_sha256=NATIVE['sha256'],
+                                                    sources=NATIVE['sources']),
+                   full_cycle_physical_acceptance=dict(attached_ids=[], baseline_acm_restored=True, final_collision_valid=True,
+                                                       final_pose=pose, placement={'error_to_planned_m': 0.0001}),
+                   measured_reconciliation=dict(held=False, target=target, acm_restored=True, measured_geometry_matches=True))
+    if edit:
+        edit(summary)
+    path = Path(record_path).with_suffix('.summary.json')
+    path.write_text(json.dumps(summary))
+    return path
+
+
+def test_a_plan_only_g4_session_never_authorises_and_g3c_never_admits_its_cell(g4_cell, cells, tmp_path):
+    session = launch(tmp_path / 's', g4_cell)
+    bound = g4_binding(g4_cell, session, max_cycles=4)
+    assert sorted(o['object_id'] for o in bound['world']['objects']) == ['cube_1', 'cup_1', 'cup_2', 'cup_3']
+    path = tmp_path / 'session.json'
+    sha = psq.g4_open_session(path, bound)
+    assert json.loads(path.read_text())['state'] == psq.G4_PLAN_ONLY
     with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_NOT_QUALIFIED'):            # no acceptance exists
         psq.g4_open_session(tmp_path / 'authorised.json', bound, acceptance={'claimed': True})
+    t = dict(session=session, bound=bound, path=path, sha=sha)
     with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_PLAN_ONLY'):                 # so nothing may move
-        psq.g4_authorise_cycle(tmp_path / 'c1.json', tmp_path / 'session.json', sha, cycle=1,
-                               frame=dict(sha256='f', world_revision='r', age_s=1.0),
-                               target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone', occupancy=[], grasp='top_2f::000')
+        authorise(t, 1, cycle_inputs(t, 'p'))
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_PLAN_ONLY'):
+        psq.g4_admit_execution(session_path=path, session_sha256=sha, cycle_path=path, cycle_sha256=sha,
+                               plan_path=path, observations_path=path, target_object_id='runtime::cup_1', current=bound)
     with pytest.raises(psq.PhysicsScopeRefused, match='one object into one destination, unrouted'):   # G3C stays narrow
         binding(session, g4_cell)
 
@@ -819,14 +911,17 @@ def test_a_g4_session_is_plan_only_and_g3c_never_admits_its_routed_multi_object_
 @pytest.mark.parametrize('kw,match', [
     (dict(max_cycles=0), 'max_cycles'), (dict(max_cycles=5), 'max_cycles'), (dict(max_cycles=True), 'max_cycles'),
     (dict(perception=dict(PERCEPTION, producer='replay')), 'simulator-rendered'),
+    (dict(perception=dict(PERCEPTION, source_type='replayed_perception_in_simulation')), 'simulator-rendered'),
+    (dict(perception=dict(PERCEPTION, max_age_s=1e9)), 'simulator-rendered'),               # no widened frame age
+    (dict(perception=dict(PERCEPTION, epd_runtime_sha256='')), 'simulator-rendered'),
     (dict(perception={k: v for k, v in PERCEPTION.items() if k != 'max_age_s'}), 'simulator-rendered'),
 ])
-def test_a_g4_session_binding_refuses_unsupported_scope(g4_cell, tmp_path, kw, match):
+def test_a_g4_binding_refuses_unsupported_scope(g4_cell, tmp_path, kw, match):
     with pytest.raises(psq.PhysicsScopeRefused, match=match):
         g4_binding(g4_cell, launch(tmp_path, g4_cell), **kw)
 
 
-def test_a_g4_session_needs_a_routed_multi_object_cell_in_a_two_bin_world(g4_cell, cells, tmp_path):
+def test_a_g4_binding_needs_its_routed_multi_object_world_exactly_as_launched(g4_cell, cells, tmp_path):
     with pytest.raises(psq.PhysicsScopeRefused, match='no class routing'):                  # the G3C cell is unrouted
         g4_binding(cells['b'], launch(tmp_path / 'b', cells['b']))
     session = launch(tmp_path / 'g4', g4_cell)
@@ -835,79 +930,321 @@ def test_a_g4_session_needs_a_routed_multi_object_cell_in_a_two_bin_world(g4_cel
     (session / 'runtime/receipt.json').write_text(json.dumps(receipt))
     with pytest.raises(psq.PhysicsScopeRefused, match='multi-destination'):
         g4_binding(g4_cell, session)
+    def move_cup(text):
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(text)
+        pose = next(m for m in root.find('world').findall('model') if m.get('name') == 'cup_2').find('pose')
+        values = pose.text.split()
+        pose.text = ' '.join([repr(float(values[0]) + 0.01)] + values[1:])
+        return ET.tostring(root, encoding='unicode')
+    moved = launch(tmp_path / 'w', g4_cell, edit_world=move_cup)               # the launched part is not the cell's
+    with pytest.raises(psq.PhysicsScopeRefused, match='PHYSICS_SCOPE_WORLD_MISMATCH'):        # geometry identity
+        g4_binding(g4_cell, moved)
 
 
-def test_a_claimed_authorised_g4_session_is_refused(g4_cell, tmp_path):
-    path, sha = authorised_session(tmp_path, g4_binding(g4_cell, launch(tmp_path / 's', g4_cell)))
-    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_NOT_QUALIFIED'):
-        psq.g4_authorise_cycle(tmp_path / 'c1.json', path, sha, cycle=1, frame=dict(sha256='f', world_revision='r', age_s=1.0),
-                               target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone', occupancy=[], grasp='top_2f::000')
-    assert not (tmp_path / 'c1.json').exists()
-
-
-def test_each_g4_cycle_is_chained_bounded_fresh_and_routed(g4_cell, tmp_path, monkeypatch):
-    bound = g4_binding(g4_cell, launch(tmp_path / 's', g4_cell))
-    path, sha = authorised_session(tmp_path, bound)
-    monkeypatch.setattr(psq, '_g4_acceptance', lambda record: None)       # as an accepting future verifier would
-    fresh = dict(sha256='frame-1', world_revision='rev-1', age_s=12.0)
-    cup = dict(object_id='cup_1', class_id='cup')
-    cycle = lambda n, **kw: psq.g4_authorise_cycle(tmp_path / f'c{n}.json', kw.pop('session', path), kw.pop('sha', sha),
-                                                   cycle=n, **{**dict(frame=fresh, target=cup, destination='default_drop_zone',
-                                                                      occupancy=[], grasp='top_2f::000'), **kw})
-    first = cycle(1)
-    assert json.loads((tmp_path / 'c1.json').read_text())['session_sha256'] == sha and first
-    previous = dict(cycle=1, verified=True, evidence_sha256='e1')
-    assert cycle(2, previous=previous, target=dict(object_id='cup_2', class_id='cup'),
-                 occupancy=[{'id': 'runtime::cup_1', 'pose': [0.58, 0.22, 0.0155, 0, 0, 0, 1]}])
-    for kw, match in ((dict(), 'CHAIN_BROKEN'),                                                  # cycle 2 without cycle 1
-                      (dict(previous=dict(previous, verified=False)), 'CHAIN_BROKEN'),
-                      (dict(previous=dict(previous, cycle=0)), 'CHAIN_BROKEN'),
-                      (dict(previous=previous, stop_latched=True), 'STOPPED'),
-                      (dict(previous=previous, frame=dict(fresh, age_s=301.0)), 'STALE'),
-                      (dict(previous=previous, frame=dict(fresh, sha256='')), 'STALE'),
-                      (dict(previous=previous, target=dict(object_id='cube_1', class_id='unclassified')), 'NOT_ROUTED'),
-                      (dict(previous=previous, destination='place_zone_b'), 'NOT_ROUTED'),
-                      (dict(previous=previous, target=dict(object_id='ghost', class_id='cup')), 'TARGET_UNKNOWN'),
-                      (dict(previous=previous, grasp='finger_pinch_basic::000'), 'GRASP_UNQUALIFIED'),  # no contact evidence
-                      (dict(previous=previous, grasp=None), 'GRASP_UNQUALIFIED'),
-                      (dict(previous=previous, sha='0' * 64), 'RECORD_CHANGED')):
+def test_a_trial_is_bounded_cli_only_and_bound_to_its_issuing_runner(g4_cell, tmp_path, monkeypatch):
+    session = launch(tmp_path / 's', g4_cell)
+    bound = g4_binding(g4_cell, session)
+    me = psq.process_identity(os.getpid())                     # pytest: not run_g4_sorting.py --authorise-g4-trial
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_ISSUER_MISMATCH'):
+        psq.g4_authorise_trial(tmp_path / 'real.json', bound, me)
+    fake_processes(monkeypatch)
+    issuer = psq.process_identity(os.getpid())
+    for edit, match in ((dict(max_cycles=3), 'G4_TRIAL_LIMIT'), (dict(max_cycles=True), 'G4_TRIAL_LIMIT'),
+                        (dict(evidence=None), 'G4_SCOPE_INCOMPLETE')):
         with pytest.raises(psq.PhysicsScopeRefused, match=match):
-            cycle(2, **kw)
-    with pytest.raises(psq.PhysicsScopeRefused, match='SESSION_LIMIT'):
-        cycle(4, previous=dict(previous, cycle=3))
+            psq.g4_authorise_trial(tmp_path / 'x.json', dict(bound, **edit), issuer)
+    path = tmp_path / 'trial.json'
+    sha = psq.g4_authorise_trial(path, bound, issuer)
+    record = json.loads(path.read_text())
+    assert record['state'] == psq.G4_AUTHORISED_TRIAL and record['operation'] == psq.G4_TRIAL_OPERATION
+    assert record['operation']['qualified'] is False and record['evidence_scope'] == 'G4_TRIAL_NOT_QUALIFIED'
+    with pytest.raises(FileExistsError):                                                   # never replaced
+        psq.g4_authorise_trial(path, bound, issuer)
+    assert psq._g4_session(path, sha, current=bound, role='runner')['state'] == psq.G4_AUTHORISED_TRIAL
+    for edit, match in ((lambda r: r.update(state=psq.G4_AUTHORISED_SESSION, operation=psq.G4_OPERATION),
+                         'G4_SCOPE_NOT_QUALIFIED'),                                          # a claimed production session
+                        (lambda r: r['operation'].update(max_cycles=9), 'G4_SCOPE_UNSUPPORTED'),   # widened operation
+                        (lambda r: r['binding'].update(max_cycles=3), 'G4_SCOPE_UNSUPPORTED'),     # widened bound
+                        (lambda r: r.update(evidence_scope='QUALIFIED'), 'G4_SCOPE_UNSUPPORTED'),
+                        (lambda r: r['issuer'].update(pid=r['issuer']['pid'] + 1), 'G4_SCOPE_ISSUER_MISMATCH')):
+        forged = tmp_path / 'forged.json'
+        forged.write_bytes(path.read_bytes())
+        forged_sha = rewrite(forged, edit)
+        with pytest.raises(psq.PhysicsScopeRefused, match=match):
+            psq._g4_session(forged, forged_sha, current=json.loads(forged.read_text())['binding'], role='runner')
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_UNVERIFIED'):              # never trusted unrecomputed
+        psq._g4_session(path, sha, role='runner')
+    monkeypatch.setattr(psq, 'process_identity', lambda pid: dict(pid=int(pid), start_ticks='42', cmdline=['bash']))
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_ISSUER_MISMATCH'):          # another live process
+        psq._g4_session(path, sha, current=bound, role='executor')
 
 
-def test_a_g4_cycle_counts_only_from_verified_physical_evidence_of_its_target(g4_cell, tmp_path, monkeypatch):
-    bound = g4_binding(g4_cell, launch(tmp_path / 's', g4_cell))
-    path, sha = authorised_session(tmp_path, bound)
-    monkeypatch.setattr(psq, '_g4_acceptance', lambda record: None)
-    record = tmp_path / 'c1.json'
-    cycle_sha = psq.g4_authorise_cycle(record, path, sha, cycle=1, frame=dict(sha256='f', world_revision='r', age_s=1.0),
-                                       target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone',
-                                       occupancy=[], grasp='top_2f::000')
-    floor = next(d for d in bound['destinations'] if d['source_item_id'] == 'target_bin_default')
-    pose = [floor['floor_xyz'][0], floor['floor_xyz'][1], floor['floor_z'] + 0.0125, 0.0, 0.0, 0.0, 1.0]
-    summary = dict(result='PASS', strict_retention_compliant=True, retention_policy='strict',
-                   retention_findings={'findings': []}, stages=psq.FULL_CYCLE_STAGES, selected_object_id='runtime::cup_1',
-                   release_evidence={'state': 'RELEASE_CONFIRMED', 'settled': True},
-                   selected_extraction_intent={'candidate_id': 'top_2f::000'},
-                   full_cycle_physical_acceptance=dict(attached_ids=[], baseline_acm_restored=True, final_collision_valid=True,
-                                                       final_pose=pose, placement={'error_to_planned_m': 0.0001}),
-                   measured_reconciliation=dict(held=False, target='runtime::cup_1', acm_restored=True,
-                                                measured_geometry_matches=True))
-    part = {'dimensions_m': Q}
-    good = psq.g4_verify_cycle(record, cycle_sha, summary, floor, part)
+@pytest.mark.parametrize('edit,key', [
+    (dict(native=dict(NATIVE, sha256='rebuilt')), 'native'), (dict(runtime=dict(RUNTIME, record_sha256='other')), 'runtime'),
+    (dict(planner='0' * 64), 'planner'), (dict(perception=dict(PERCEPTION, epd_runtime_sha256='f' * 64)), 'perception'),
+])
+def test_every_trial_use_recomputes_software_native_and_perception_identity(trial, edit, key):
+    current = g4_binding(trial['cell'], trial['session'], **edit)
+    with pytest.raises(psq.PhysicsScopeRefused, match=f'G4_SCOPE_MISMATCH: {key}'):
+        authorise(trial, 1, cycle_inputs(trial, 'i'), current=current)
+
+
+def test_a_changed_cell_or_receipt_refuses_the_trial(trial):
+    receipt = trial['session'] / 'runtime/receipt.json'
+    original = receipt.read_bytes()
+    data = json.loads(original)
+    data['run_id'] = 'run-2'                                                          # another launch
+    receipt.write_text(json.dumps(data))
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_MISMATCH: session'):
+        authorise(trial, 1, cycle_inputs(trial, 'r'), current=g4_binding(trial['cell'], trial['session']))
+    receipt.write_bytes(original)
+    evidence = trial['session'] / 'commission-evidence.json'
+    evidence.write_text('[{"result": "OTHER"}]')                                       # other prerequisite trials
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_MISMATCH: evidence'):
+        authorise(trial, 1, cycle_inputs(trial, 'e'), current=g4_binding(trial['cell'], trial['session']))
+
+
+def test_each_trial_cycle_is_authorised_once_from_its_own_verified_inputs(trial):
+    t = trial
+    for kw, match in (
+            (dict(stop_latched=True), 'G4_SESSION_STOPPED'),
+            (dict(cycle=3), 'G4_SESSION_LIMIT'), (dict(cycle=0), 'G4_SESSION_LIMIT'),
+            (dict(cycle=2), 'G4_CYCLE_CHAIN_BROKEN'),                                    # cycle 2 without cycle 1
+            (dict(inputs=dict(frame_age_s=400.0)), 'G4_OBSERVATION_STALE'),
+            (dict(inputs=dict(frame_age_s=-30.0)), 'G4_OBSERVATION_STALE'),            # a frame from the future
+            (dict(inputs=dict(edit_observations=lambda o: o.update(simulator_receipt_sha256='0' * 64))),
+             'G4_OBSERVATION_FOREIGN'),
+            (dict(inputs=dict(edit_observations=lambda o: o['perception_binding'].update(perception_sha256='0' * 64))),
+             'G4_OBSERVATION_FOREIGN'),                                                 # classes from another frame
+            (dict(inputs=dict(edit_observations=lambda o: o['perception_binding']['bindings']['cup_1'].update(
+                class_id='bottle'))), 'G4_TARGET_CLASS_MISMATCH'),
+            (dict(target='cube_1', cls='unperceived'), 'G4_TARGET_NOT_ROUTED'),         # never a target
+            (dict(destination='place_zone_b'), 'G4_TARGET_NOT_ROUTED'),
+            (dict(target='ghost'), 'G4_TARGET_UNKNOWN'),
+            (dict(inputs=dict(edit_plan=lambda p: p.update(selected_object_id='runtime::cup_2'))), 'G4_PLAN_MISMATCH'),
+            (dict(inputs=dict(edit_plan=lambda p: p.update(execution_attempted=True))), 'G4_PLAN_MISMATCH'),
+            (dict(inputs=dict(edit_plan=lambda p: p.update(physics_pads=None))), 'G4_PLAN_MISMATCH'),
+            (dict(inputs=dict(edit_plan=lambda p: p['physical_destination_walls']['selected_destination'].update(
+                model='target_bin_physics_other'))), 'G4_PLAN_MISMATCH'),                # seated on another bin
+            (dict(inputs=dict(edit_plan=lambda p: p.update(resolution_sha256='other'))), 'G4_PLAN_MISMATCH'),
+            (dict(inputs=dict(grasp='finger_pinch_basic::000')), 'G4_GRASP_UNQUALIFIED'),   # no contact evidence
+            (dict(inputs=dict(occupants=('cup_3',))), 'G4_OCCUPANCY_MISMATCH'),          # a part the ledger never placed
+            (dict(occupancy=('cup_3',)), 'G4_OCCUPANCY_MISMATCH')):                      # a part that is not there
+        kw = dict(kw)
+        inputs = cycle_inputs(t, f'n{len(list(t["session"].iterdir()))}', **kw.pop('inputs', {}))
+        with pytest.raises(psq.PhysicsScopeRefused, match=match):
+            authorise(t, kw.pop('cycle', 1), inputs, **kw)
+    assert not list(t['session'].glob('c[0-9]*.json'))                                   # nothing written by a refusal
+    sha = authorise(t, 1, cycle_inputs(t, 'ok'))                                        # refusals never spent the number
+    record = json.loads((t['session'] / 'c1.json').read_text())
+    assert record['state'] == psq.G4_TRIAL_CYCLE and record['grasp'] == 'top_2f::000' and record['previous'] is None
+    assert record['destination']['model'] == routed(t['bound'])['model'] and record['plan']['resolution_sha256'] == 'res-ok'
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_CYCLE_ALREADY_ISSUED'):          # never re-issued
+        authorise(t, 1, cycle_inputs(t, 'again'), path=t['session'] / 'c1b.json')
+    assert sha
+
+
+def test_the_executor_admits_only_the_exact_authorised_cycle_and_only_once(trial, monkeypatch):
+    t = trial
+    inputs = cycle_inputs(t, 'x')
+    sha = authorise(t, 1, inputs)
+    record = t['session'] / 'c1.json'
+    admit = lambda **kw: psq.g4_admit_execution(**{**dict(
+        session_path=t['path'], session_sha256=t['sha'], cycle_path=record, cycle_sha256=sha,
+        plan_path=inputs['plan_path'], observations_path=inputs['observations_path'], target_object_id='runtime::cup_1',
+        current=t['bound']), **kw})
+    admitted = admit()
+    assert admitted['destination']['model'] == routed(t['bound'])['model'] and admitted['resolution']['resolution_sha256'] == 'res-x'
+    other = cycle_inputs(t, 'y')
+    for kw, match in ((dict(target_object_id='runtime::cup_2'), 'G4_TARGET_MISMATCH'),
+                      (dict(observations_path=other['observations_path']), 'G4_OBSERVATION_CHANGED'),
+                      (dict(plan_path=other['plan_path']), 'G4_PLAN_CHANGED'),
+                      (dict(cycle_sha256='0' * 64), 'G4_CYCLE_RECORD_CHANGED'),
+                      (dict(session_sha256='0' * 64), 'G4_SCOPE_RECORD_CHANGED'),
+                      (dict(current=g4_binding(t['cell'], t['session'], planner='1' * 64)), 'G4_SCOPE_MISMATCH: planner')):
+        with pytest.raises(psq.PhysicsScopeRefused, match=match):
+            admit(**kw)
+    copied = t['session'] / 'c2-copy.json'                                             # a record for an unissued number
+    data = json.loads(record.read_text())
+    data['cycle'] = 2
+    copied.write_text(json.dumps(data))
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_CYCLE_UNSUPPORTED'):
+        admit(cycle_path=copied, cycle_sha256=hashlib.sha256(copied.read_bytes()).hexdigest())
+    registry = psq._g4_cycle_dir(t['path'], t['sha'])
+    for edit, match in ((lambda r: r.update(grasp='finger_pinch_basic::000'), 'G4_CYCLE_UNSUPPORTED'),   # not the issued
+                        (lambda r: r['destination'].update(region='place_zone_b'), 'G4_CYCLE_UNSUPPORTED')):  # digest
+        forged = t['session'] / 'c1-forged.json'
+        data = json.loads(record.read_text())
+        edit(data)
+        forged.write_text(json.dumps(data))
+        with pytest.raises(psq.PhysicsScopeRefused, match=match):
+            admit(cycle_path=forged, cycle_sha256=hashlib.sha256(forged.read_bytes()).hexdigest())
+    # Even with the marker rewritten to name a forged record, its content is re-checked (defence in depth).
+    original_marker = (registry / '1.issued').read_text()
+    for edit, match in ((lambda r: r.update(grasp='finger_pinch_basic::000'), 'G4_GRASP_UNQUALIFIED'),
+                        (lambda r: r['destination'].update(region='place_zone_b'), 'G4_TARGET_NOT_ROUTED'),
+                        (lambda r: r.update(previous={'cycle_sha256': 'x'}), 'G4_CYCLE_CHAIN_BROKEN')):
+        forged = t['session'] / 'c1-forged.json'
+        data = json.loads(record.read_text())
+        edit(data)
+        forged.write_text(json.dumps(data))
+        forged_sha = hashlib.sha256(forged.read_bytes()).hexdigest()
+        (registry / '1.issued').write_text(forged_sha + '\n')
+        with pytest.raises(psq.PhysicsScopeRefused, match=match):
+            admit(cycle_path=forged, cycle_sha256=forged_sha)
+    (registry / '1.issued').write_text(original_marker)
+    frame = Path(json.loads(record.read_text())['frame']['path'])
+    original = frame.read_bytes()
+    frame.write_bytes(original + b'# edited\n')
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_OBSERVATION_STALE'):
+        admit()
+    frame.write_bytes(original)
+    assert psq.g4_frame_age_problem(admitted['record'], t['bound']) is None
+    monkeypatch.setattr(os, 'getppid', lambda: 1)                                       # not started by the issuer
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_ISSUER_MISMATCH'):
+        admit()
+    monkeypatch.setattr(os, 'getppid', os.getpid)
+    psq.g4_consume_cycle(t['path'], t['sha'], 1)
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_CYCLE_REPLAYED'):             # a cycle moves once
+        psq.g4_consume_cycle(t['path'], t['sha'], 1)
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_CYCLE_REPLAYED'):
+        admit()
+
+
+def test_routes_select_their_own_bin_and_every_rule_into_a_region_counts(trial):
+    bound = trial['bound']
+    assert psq.g4_routed_destination(bound, 'default_drop_zone', 'target_bin_default')['source_item_id'] == 'target_bin_default'
+    assert psq.g4_routed_destination(bound, 'place_zone_b', 'target_bin_b')['source_item_id'] == 'target_bin_b'
+    assert psq.g4_routed_destination(bound, 'default_drop_zone', 'target_bin_default')['model'] != \
+        psq.g4_routed_destination(bound, 'place_zone_b', 'target_bin_b')['model']
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_DESTINATION_UNBOUND'):
+        psq.g4_routed_destination(bound, 'nowhere', 'no_bin')
+    two = dict(bound, routing=dict(bound['routing'], rules=bound['routing']['rules'] + [
+        {'id': 'cans', 'when': {'attribute': 'class', 'equals': 'can'}, 'destination': 'default_drop_zone'}]))
+    psq._g4_route(two, 'cup', 'default_drop_zone')                                       # both classes into one region
+    psq._g4_route(two, 'can', 'default_drop_zone')
+
+
+def test_a_trial_cycle_counts_only_from_verified_evidence_of_its_own_record(trial):
+    t = trial
+    sha = authorise(t, 1, cycle_inputs(t, 'v'))
+    record = t['session'] / 'c1.json'
+    good = psq.g4_verify_cycle(record, sha, executed_summary(t, record, sha), t['bound'])
     assert good['verified'] and good['cycle'] == 1 and good['evidence_sha256']
-    for edit, match in ((lambda s: s.update(selected_object_id='runtime::cup_2'), 'not the authorised target'),
-                        (lambda s: s.update(result='FAIL'), 'not a strict full-cycle PASS'),
-                        (lambda s: s.update(selected_extraction_intent={'candidate_id': 'top_2f::001'}),
-                         'not the authorised grasp'),
-                        (lambda s: s['measured_reconciliation'].update(held=True), 'detached and reconciled'),
-                        (lambda s: s['full_cycle_physical_acceptance']['final_pose'].__setitem__(0, 0.0), 'not seated')):
-        bad = copy.deepcopy(summary)
-        edit(bad)
-        found = psq.g4_verify_cycle(record, cycle_sha, bad, floor, part)
-        assert not found['verified'] and any(match in p for p in found['problems'])
-    assert psq.g4_verify_cycle(record, '0' * 64, summary, floor, part)['problems'] == ['G4_CYCLE_RECORD_CHANGED']
-    other = copy.deepcopy(summary); other['full_cycle_physical_acceptance']['placement']['error_to_planned_m'] = 0.0002
-    assert psq.g4_verify_cycle(record, cycle_sha, other, floor, part)['evidence_sha256'] != good['evidence_sha256']
+    import math
+    for kw, match in ((dict(edit=lambda s: s['physics_scope'].update(cycle_sha256='0' * 64)), 'not the execution of this'),
+                      (dict(edit=lambda s: s.update(resolution_sha256='other')), 'not the authorised plan'),
+                      (dict(edit=lambda s: s.update(selected_object_id='runtime::cup_2')), 'not the authorised target'),
+                      (dict(edit=lambda s: s['selected_extraction_intent'].update(candidate_id='top_2f::001')),
+                       'not the authorised grasp'),
+                      (dict(edit=lambda s: s.update(result='FAIL')), 'not a strict full-cycle PASS'),
+                      (dict(edit=lambda s: s['measured_reconciliation'].update(held=True)), 'detached and reconciled'),
+                      (dict(edit=lambda s: s['full_cycle_physical_acceptance']['placement'].update(error_to_planned_m=None)),
+                       'placement error'),
+                      (dict(tilt=math.radians(6)), 'not flat')):                         # leaning on a neighbour
+        bad = psq.g4_verify_cycle(record, sha, executed_summary(t, record, sha, **kw), t['bound'])
+        assert not bad['verified'] and any(match in p for p in bad['problems']), (match, bad['problems'])
+    assert psq.g4_verify_cycle(record, '0' * 64, executed_summary(t, record, sha), t['bound'])['problems'] == \
+        ['G4_CYCLE_RECORD_CHANGED']
+    assert not psq.g4_verify_cycle(record, sha, t['session'] / 'missing.json', t['bound'])['verified']
+
+
+def test_a_failed_cycle_blocks_every_later_cycle(trial):
+    t = trial
+    sha = authorise(t, 1, cycle_inputs(t, 'f'))
+    record = t['session'] / 'c1.json'
+    failed = executed_summary(t, record, sha, edit=lambda s: s.update(result='FAIL'))
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_CYCLE_CHAIN_BROKEN'):
+        authorise(t, 2, cycle_inputs(t, 'f2', target='cup_2', occupants=('cup_1',)), occupancy=['cup_1'], target='cup_2',
+                  previous=dict(path=record, sha256=sha, summary_path=failed))
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_CYCLE_ALREADY_ISSUED'):         # and cycle 1 never again
+        authorise(t, 1, cycle_inputs(t, 'f1'), path=t['session'] / 'c1-again.json')
+    passed = executed_summary(t, record, sha)                                          # only a verified cycle 1 chains
+    inputs2 = cycle_inputs(t, 'p2', target='cup_2', occupants=('cup_1',))
+    sha2 = authorise(t, 2, inputs2, occupancy=['cup_1'], target='cup_2',
+                     previous=dict(path=record, sha256=sha, summary_path=passed))
+    assert json.loads((t['session'] / 'c2.json').read_text())['previous']['cycle_sha256'] == sha
+    with pytest.raises(psq.PhysicsScopeRefused, match='G4_CYCLE_CHAIN_BROKEN'):       # cycle 1 never ran: 2 cannot
+        psq.g4_admit_execution(session_path=t['path'], session_sha256=t['sha'], cycle_path=t['session'] / 'c2.json',
+                               cycle_sha256=sha2, plan_path=inputs2['plan_path'],
+                               observations_path=inputs2['observations_path'], target_object_id='runtime::cup_2',
+                               current=t['bound'])
+
+
+def trial_run(t, root):
+    """A complete two-cycle trial run directory in the runner's layout, every file written by the real authority."""
+    session = root / 'session'
+    (session / 'cycles').mkdir(parents=True)
+    (session / 'g4-session.json').write_bytes(t['path'].read_bytes())
+    t = dict(t, path=session / 'g4-session.json')
+    cycles, previous = [], None
+    for n, target, occupants in ((1, 'cup_1', ()), (2, 'cup_2', ('cup_1',))):
+        directory = session / 'cycles' / f'{n:03d}'
+        (directory / 'execute').mkdir(parents=True)
+        sha = authorise(t, n, cycle_inputs(dict(t, session=directory), 'in', target=target, occupants=occupants),
+                        path=directory / 'g4-cycle.json', target=target, occupancy=list(occupants), previous=previous)
+        summary = executed_summary(t, directory / 'g4-cycle.json', sha)
+        summary.rename(directory / 'execute/summary.json')
+        previous = dict(path=directory / 'g4-cycle.json', sha256=sha, summary_path=directory / 'execute/summary.json')
+        cycles.append(dict(cycle=n, outcome='COMPLETED', steps=dict(authorise=dict(granted=True, sha256=sha))))
+    (root / 'g4-sorting-report.json').write_text(json.dumps(dict(
+        schema='workcell_g4_sorting_run/v1', scope='G4_TRIAL_NOT_QUALIFIED', status='PASS', result='MAX_CYCLES',
+        preflight=dict(repo_head=HEAD, repo_dirty=False), shutdown=dict(clean=True), cycles=cycles,
+        g4_session=dict(path=str(t['path']), sha256=t['sha']))))
+    return root
+
+
+def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(trial, tmp_path):
+    run = trial_run(trial, tmp_path / 'runs/trial_1')
+    ev = psq.g4_trial_evidence(run)
+    assert ev['kind'] == 'STRICT_PASS' and [c['verified'] for c in ev['cycles']] == [True, True], ev['problems']
+    ready = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
+    assert ready['status'] == 'NOT_QUALIFIED' and ready['counted'] == [str(run.resolve())]
+    assert any('1 of 3 accepted trial sessions' in u for u in ready['unmet']) and any('stop/cancel' in u for u in ready['unmet'])
+    twice = psq.g4_qualification_readiness(trial['cell'], [run, run], NATIVE, RUNTIME, PLANNER, evidence_roots=[])
+    assert any('counted twice' in u for u in twice['unmet'])
+    assert any('native identity changed' in u for u in psq.g4_qualification_readiness(
+        trial['cell'], [run], dict(NATIVE, sha256='other'), RUNTIME, PLANNER, evidence_roots=[])['unmet'])
+    other = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, '0' * 64, evidence_roots=[])
+    assert other['other_versions'] and not other['counted']                              # listed, never counted
+    unlisted = psq.g4_qualification_readiness(trial['cell'], [], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
+    assert unlisted['unlisted'] == [str(run.resolve())]                                  # no cherry-picking
+    summary = run / 'session/cycles/002/execute/summary.json'
+    original = summary.read_text()
+    data = json.loads(original)
+    data['full_cycle_physical_acceptance']['placement']['error_to_planned_m'] = 0.004     # a forged-up second cycle
+    summary.write_text(json.dumps(data))
+    assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
+    data = json.loads(original)
+    data['commissioning_prerequisites']['capability_sha256'] = 'another build'
+    summary.write_text(json.dumps(data))
+    assert any('Stage-A prerequisite' in p for p in psq.g4_trial_evidence(run)['problems'])
+    summary.write_text(original)
+    report_path = run / 'g4-sorting-report.json'
+    report = json.loads(report_path.read_text())
+    report_path.write_text(json.dumps(dict(report, status='STOPPED', result='STOPPED_BY_OPERATOR',
+                                           cycles=report['cycles'][:1])))
+    stopped = psq.g4_trial_evidence(run)                                                  # every moved cycle verified
+    assert stopped['kind'] == 'INCOMPLETE'
+    lenient = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[])
+    assert lenient['incomplete'] and not any(str(run.resolve()) in u for u in lenient['unmet'])   # listed, not blocking
+    report_path.write_text(json.dumps(dict(report, status='CANCELLED')))
+    assert psq.g4_trial_evidence(run)['kind'] == 'CANCELLED'
+    # A self-consistent cycle pair of another session (record, its digest in the report, the summary naming both)
+    # is caught only by the session binding.
+    cycle_two, summary_two = run / 'session/cycles/002/g4-cycle.json', run / 'session/cycles/002/execute/summary.json'
+    foreign = json.loads(cycle_two.read_text())
+    foreign['session_sha256'] = '0' * 64
+    cycle_two.write_text(json.dumps(foreign))
+    foreign_sha = hashlib.sha256(cycle_two.read_bytes()).hexdigest()
+    executed = json.loads(summary_two.read_text())
+    executed['physics_scope'].update(cycle_sha256=foreign_sha, session_sha256='0' * 64)
+    summary_two.write_text(json.dumps(executed))
+    report['cycles'][1]['steps']['authorise']['sha256'] = foreign_sha
+    report_path.write_text(json.dumps(report))
+    judged = psq.g4_trial_evidence(run)
+    assert judged['kind'] == 'FAILED' and any('another session' in p for p in judged['problems'])
+    (run / 'session/g4-session.json').write_text('{ truncated')                           # unreadable evidence blocks
+    broken = psq.g4_qualification_readiness(trial['cell'], [], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
+    assert any('unreadable trial evidence' in u for u in broken['unlisted'])

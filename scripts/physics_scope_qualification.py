@@ -15,6 +15,7 @@ Four states are kept apart:
   (``require_trial_evidence``) and the unchanged contact, retention, placement and release guards. It needs no
   earlier success, and its outcome is labelled ``PHYSICS_SCOPE_TRIAL_NOT_QUALIFIED``;
 - a qualified scope (a record binding a strict trial PASS): not produced or accepted here yet.
+G4 (continuous sorting) has its own states, G4_PLAN_ONLY and the CLI-only bounded G4_AUTHORISED_TRIAL (see below).
 
 The record is single-session (it binds the session receipt) and immutable: the executor verifies its digest before
 motion and again before reporting a physical result.
@@ -194,6 +195,24 @@ def _models(text, names):
     return {m.get('name'): ET.tostring(m) for m in world.findall('model') if m.get('name') in names}
 
 
+def _require_launched_world(receipt_path, receipt, derived, world, bindings):
+    """The launched world adds session plugins (physics overlay, measurement run id); every physical bin and object it
+    simulates must be exactly the cell's derived model, every object the qualified body, every bin bound."""
+    launched_path = Path(receipt_path).parent / 'world.sdf'
+    launched = launched_path.read_bytes() if launched_path.is_file() else b''
+    if _sha256(launched) != receipt.get('world_sha256'):
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_WORLD_MISMATCH: the launched world file is not the receipt\'s world')
+    names = set(world['bin_models']) | {o['object_id'] for o in world['objects']}
+    expected = _models(derived, names)
+    if len(expected) != len(names) or _models(launched.decode(), names) != expected:
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_WORLD_MISMATCH: the launched bins or objects differ from the cell\'s '
+                                  'derived world')
+    if not world['objects'] or not all(o['within_qualified_dimensions'] for o in world['objects']):
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_UNSUPPORTED: every physics object must have the qualified dimensions')
+    if {b.get('source_item_id') for b in bindings} != set(world['destination_assets']):
+        raise PhysicsScopeRefused('PHYSICS_SCOPE_WORLD_MISMATCH: bound bins differ from the derived world\'s bins')
+
+
 def destination_occupants(observations, binding):
     """Measured objects whose centre lies over the bin's bound floor (the bin must be empty before a trial)."""
     if any((o.get('pose') or {}).get('frame_id') != 'world' for o in observations.get('objects', [])):
@@ -230,21 +249,7 @@ def scope_binding(*, cell_dir, receipt_path, observations_path, native, runtime,
     if class_routing_rules(intent) is not None or len(world['objects']) != TRIAL_OPERATION['objects']:
         raise PhysicsScopeRefused('PHYSICS_SCOPE_UNSUPPORTED: a trial is one object into one destination, unrouted '
                                   f"(this cell routes classes or has {len(world['objects'])} objects)")
-    # The launched world adds session plugins (physics overlay, measurement run id); every physical bin and object
-    # it simulates must be exactly the cell's derived model.
-    launched_path = Path(receipt_path).parent / 'world.sdf'
-    launched = launched_path.read_bytes() if launched_path.is_file() else b''
-    if _sha256(launched) != receipt.get('world_sha256'):
-        raise PhysicsScopeRefused('PHYSICS_SCOPE_WORLD_MISMATCH: the launched world file is not the receipt\'s world')
-    names = set(world['bin_models']) | {o['object_id'] for o in world['objects']}
-    expected = _models(derived, names)
-    if len(expected) != len(names) or _models(launched.decode(), names) != expected:
-        raise PhysicsScopeRefused('PHYSICS_SCOPE_WORLD_MISMATCH: the launched bins or objects differ from the cell\'s '
-                                  'derived world')
-    if not world['objects'] or not all(o['within_qualified_dimensions'] for o in world['objects']):
-        raise PhysicsScopeRefused('PHYSICS_SCOPE_UNSUPPORTED: every physics object must have the qualified dimensions')
-    if {b.get('source_item_id') for b in bindings} != set(world['destination_assets']):
-        raise PhysicsScopeRefused('PHYSICS_SCOPE_WORLD_MISMATCH: bound bins differ from the derived world\'s bins')
+    _require_launched_world(receipt_path, receipt, derived, world, bindings)
     try:
         selected = select_destination_binding(bindings, world['destination_asset'])
     except ValueError as exc:
@@ -302,15 +307,29 @@ def verify_trial(path, sha256, binding):
     return record
 
 
-# --- G4: continuous physical sorting authority (offline). Builds on G3C without widening it ------------------------
+# --- G4: continuous physical sorting authority. Builds on G3C without widening it ---------------------------------
 # A session record binds one exact routed multi-object cell; each cycle needs its own record, chained to the session
-# and to the previous cycle's verified evidence. Motion needs G4_AUTHORISED_SESSION, which only a G4 acceptance
-# verifier recomputing accepted evidence can grant. None exists: a record claiming that state is refused like any other
-# claim (_g4_acceptance), so today every session is G4_PLAN_ONLY and no cycle is authorised.
+# and to the previous cycle's independently re-verified evidence. Three session states:
+# - G4_PLAN_ONLY: every session the runner opens without --authorise-g4-trial. No cycle is ever authorised.
+# - G4_AUTHORISED_TRIAL: written only by the CLI runner (run_g4_sorting.py --authorise-g4-trial, registered Stage-A
+#   prerequisites), for at most G4_TRIAL_MAX_CYCLES guarded full-cycles in this one Gazebo session. It binds the
+#   issuing runner process (pid + kernel start time): only that live process authorises cycles, and only an executor
+#   it started may move. Every use recomputes the binding from the current files. Its evidence is labelled
+#   G4_TRIAL_NOT_QUALIFIED: a trial never implies continuous-production qualification.
+# - G4_AUTHORISED_SESSION (continuous production): needs a G4 acceptance verifier recomputing accepted evidence. None
+#   exists; a record claiming that state is refused like any other claim (_g4_acceptance). See g4_qualification_readiness.
 G4_SCHEMA = 'workcell_g4_sorting_scope/v1'
 G4_PLAN_ONLY, G4_AUTHORISED_SESSION = 'G4_PLAN_ONLY', 'G4_AUTHORISED_SESSION'
+G4_AUTHORISED_TRIAL, G4_TRIAL_CYCLE = 'G4_AUTHORISED_TRIAL', 'G4_AUTHORISED_TRIAL_CYCLE'
+G4_TRIAL_MAX_CYCLES = 2
+G4_TRIAL_EVIDENCE_SCOPE = 'G4_TRIAL_NOT_QUALIFIED'
+G4_TRIAL_ISSUER = ('run_g4_sorting.py', '--authorise-g4-trial')
 G4_OPERATION = {'gate': 'full-cycle', 'class_routing': True, 'continuous_sorting': True, 'real_hardware': False,
                 'one_object_per_cycle': True}
+# What one authorised trial may do. Fixed in code: a record naming anything else is refused.
+G4_TRIAL_OPERATION = {'gate': 'full-cycle', 'max_cycles': G4_TRIAL_MAX_CYCLES, 'class_routing': True,
+                      'continuous_sorting': False, 'real_hardware': False, 'one_object_per_cycle': True,
+                      'qualified': False}
 G4_PERCEPTION_KEYS = ('producer', 'source_type', 'epd_runtime_sha256', 'max_age_s')
 G4_SAFEGUARDS = {'contact_guard': True, 'retention_policy': 'strict', 'physics_pads': True, 'stop_after_cycle': 'SIGUSR1',
                  'cancel': 'SIGTERM'}
@@ -319,12 +338,24 @@ G4_SAFEGUARDS = {'contact_guard': True, 'retention_policy': 'strict', 'physics_p
 # with) have no contact or retention evidence, so a cycle planned with one is never authorised.
 G4_QUALIFIED_GRASP_STRATEGIES = ('top_2f',)
 G4_STOP_CONDITIONS = ('max_cycles reached', 'stop after cycle latched', 'operator cancel', 'unverified cycle',
-                      'destination full or unroutable', 'no eligible object', 'stale or mismatched observation')
+                      'destination full or unroutable', 'no eligible object', 'stale or mismatched observation',
+                      'refused or failed execution (no retry)')
 
 
-def g4_session_binding(*, cell_dir, receipt_path, native, runtime, perception, max_cycles, planner=None):
+def g4_perception(workspace, intent):
+    """The rendered-EPD perception a G4 session is bound to, from the registered EPD runtime and the saved task."""
+    from task_intent_v2 import OBSERVATION_PRODUCER_CEILING_S, freshness_source_type
+    record = Path(workspace) / 'workcell_perception_runtime.json'
+    if not record.is_file():
+        raise PhysicsScopeRefused(f'G4_SCOPE_INCOMPLETE: no registered EPD runtime ({record})')
+    return dict(producer='simulator_render', source_type=freshness_source_type(intent),
+                epd_runtime_sha256=_sha256(record.read_bytes()), max_age_s=OBSERVATION_PRODUCER_CEILING_S['simulator_render'])
+
+
+def g4_session_binding(*, cell_dir, receipt_path, native, runtime, perception, max_cycles, planner=None,
+                       commission_evidence_path=None):
     """Everything one G4 session is bound to, recomputed from the current files. Refuses unsupported input."""
-    from task_intent_v2 import class_routing_rules, routing_job_policy
+    from task_intent_v2 import OBSERVATION_PRODUCER_CEILING_S, class_routing_rules, freshness_source_type, routing_job_policy
     cell_dir = Path(cell_dir)
     intent_path = cell_dir / 'config/workcell_builder_task_intent.yaml'
     intent = yaml.safe_load(intent_path.read_text()) if intent_path.is_file() else {}
@@ -334,29 +365,38 @@ def g4_session_binding(*, cell_dir, receipt_path, native, runtime, perception, m
     receipt_bytes = Path(receipt_path).read_bytes()
     receipt = json.loads(receipt_bytes)
     bindings = receipt.get('destination_geometry_bindings') or []
-    if len(bindings) < 2:
+    if len(bindings) < 2 or receipt.get('destination_geometry_binding') is not None:
         raise PhysicsScopeRefused('G4_SCOPE_UNSUPPORTED: the receipt does not bind a multi-destination world')
-    _, world = cell_world(cell_dir)
+    derived, world = cell_world(cell_dir)
     if len(world['objects']) < 2 or not all(o['within_qualified_dimensions'] for o in world['objects']):
         raise PhysicsScopeRefused('G4_SCOPE_UNSUPPORTED: a G4 cell has several objects, every one of the qualified body')
+    _require_launched_world(receipt_path, receipt, derived, world, bindings)
     if not isinstance(max_cycles, int) or isinstance(max_cycles, bool) or not 1 <= max_cycles <= len(world['objects']):
         raise PhysicsScopeRefused('G4_SCOPE_UNSUPPORTED: max_cycles must be between 1 and the number of objects')
-    if set(perception or {}) != set(G4_PERCEPTION_KEYS) or perception['producer'] != 'simulator_render':
-        raise PhysicsScopeRefused('G4_SCOPE_UNSUPPORTED: perception must be the simulator-rendered EPD frame source')
+    perception = dict(perception or {})
+    if (set(perception) != set(G4_PERCEPTION_KEYS) or perception['producer'] != 'simulator_render' or
+            perception['source_type'] != 'rendered_perception_in_simulation' or
+            perception['source_type'] != freshness_source_type(intent) or
+            perception['max_age_s'] != OBSERVATION_PRODUCER_CEILING_S['simulator_render'] or
+            not isinstance(perception['epd_runtime_sha256'], str) or len(perception['epd_runtime_sha256']) != 64):
+        raise PhysicsScopeRefused('G4_SCOPE_UNSUPPORTED: perception must be the simulator-rendered EPD frame source '
+                                  'of this task (g4_perception)')
     files = {}
     for name in CELL_FILES:
         if not (cell_dir / name).is_file():
             raise PhysicsScopeRefused(f'G4_SCOPE_INCOMPLETE: cell file {name} is missing')
         files[name] = _sha256((cell_dir / name).read_bytes())
+    evidence = None if commission_evidence_path is None else dict(
+        commission_evidence_sha256=_sha256(Path(commission_evidence_path).read_bytes()))
     return dict(
         cell=dict(files=files), world=world,
         destinations=sorted((_portable(b) for b in bindings), key=lambda b: b['model']),
         support=_portable(_required(receipt.get('support_geometry_binding'), 'support binding')),
         robot={key: _required(receipt.get(key), key) for key in ROBOT_RECEIPT_KEYS},
         routing=dict(rules=rules, policy=routing_job_policy(intent)),
-        perception=dict(perception), safeguards=dict(G4_SAFEGUARDS), stop_conditions=list(G4_STOP_CONDITIONS),
+        perception=perception, safeguards=dict(G4_SAFEGUARDS), stop_conditions=list(G4_STOP_CONDITIONS),
         grasp_strategies=list(G4_QUALIFIED_GRASP_STRATEGIES),
-        native=native, runtime=runtime, planner=planner or planner_identity(), max_cycles=max_cycles,
+        native=native, runtime=runtime, planner=planner or planner_identity(), max_cycles=max_cycles, evidence=evidence,
         session=dict(receipt_sha256=_sha256(receipt_bytes), run_id=_required(receipt.get('run_id'), 'run id')))
 
 
@@ -373,6 +413,54 @@ def g4_open_session(path, binding, acceptance=None):
     return _sha256(data)
 
 
+def process_identity(pid):
+    """A live process as {pid, start_ticks, cmdline}; pid plus kernel start time never repeat while the system runs."""
+    stat = Path(f'/proc/{pid}/stat').read_text()
+    cmdline = [part.decode(errors='replace') for part in Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0') if part]
+    return dict(pid=int(pid), start_ticks=stat.rsplit(')', 1)[1].split()[19], cmdline=cmdline)
+
+
+def _g4_issuer_problem(issuer, pid):
+    try:
+        live = process_identity(pid)
+    except OSError:
+        return 'the issuing runner process is gone'
+    if issuer != live:
+        return 'not the issuing runner process'
+    if not any(Path(arg).name == G4_TRIAL_ISSUER[0] for arg in live['cmdline']) or G4_TRIAL_ISSUER[1] not in live['cmdline']:
+        return f'the issuer is not {G4_TRIAL_ISSUER[0]} {G4_TRIAL_ISSUER[1]}'
+    return None
+
+
+def _g4_issuer(record, role):
+    """A trial record acts only inside the live CLI runner that issued it (``runner``) or an executor it started
+    (``executor``: its parent is that runner). A record copied, hand-written or replayed elsewhere is refused."""
+    import os
+    problem = _g4_issuer_problem(record.get('issuer'), os.getpid() if role == 'runner' else os.getppid())
+    if problem:
+        raise PhysicsScopeRefused(f'G4_SCOPE_ISSUER_MISMATCH: {problem}; a trial record acts only in the live '
+                                  f'{G4_TRIAL_ISSUER[0]} {G4_TRIAL_ISSUER[1]} that issued it')
+
+
+def g4_authorise_trial(path, binding, issuer):
+    """Write the CLI trial record (never replaced); returns its sha256. ``issuer`` is process_identity(runner pid)."""
+    cycles = binding.get('max_cycles')
+    if not isinstance(cycles, int) or isinstance(cycles, bool) or not 1 <= cycles <= G4_TRIAL_MAX_CYCLES:
+        raise PhysicsScopeRefused(f'G4_TRIAL_LIMIT: a trial authorises 1..{G4_TRIAL_MAX_CYCLES} cycles, not {cycles!r}')
+    if not (binding.get('evidence') or {}).get('commission_evidence_sha256'):
+        raise PhysicsScopeRefused('G4_SCOPE_INCOMPLETE: a trial binds the same-build Stage-A prerequisite trials')
+    problem = _g4_issuer_problem(issuer, (issuer or {}).get('pid'))
+    if problem:
+        raise PhysicsScopeRefused(f'G4_SCOPE_ISSUER_MISMATCH: {problem}')
+    record = dict(schema=G4_SCHEMA, state=G4_AUTHORISED_TRIAL, operation=G4_TRIAL_OPERATION,
+                  evidence_scope=G4_TRIAL_EVIDENCE_SCOPE, binding=binding, binding_sha256=_sha256(_canonical(binding)),
+                  issuer=dict(issuer), created_wall_ns=time.time_ns())
+    data = (json.dumps(record, indent=2, sort_keys=True) + '\n').encode()
+    with Path(path).open('xb') as out:
+        out.write(data)
+    return _sha256(data)
+
+
 def _g4_acceptance(record):
     """Recompute the accepted G4 evidence an authorised session claims. No G4 acceptance contract or verifier exists,
     so the claim is refused: a session record never authorises itself."""
@@ -380,66 +468,291 @@ def _g4_acceptance(record):
                               'is a claim, not evidence')
 
 
-def _g4_session(path, sha256):
+def _g4_session_record(path, sha256):
+    """A session record's own integrity (file and binding digests, schema, state, fixed operation, trial bounds). No
+    live check: used alone only to judge finished evidence offline, never to authorise anything."""
     data = Path(path).read_bytes()
     if not sha256 or _sha256(data) != sha256:
         raise PhysicsScopeRefused('G4_SCOPE_RECORD_CHANGED: the session record differs from the opened one')
     record = json.loads(data)
-    if (record.get('schema') != G4_SCHEMA or record.get('operation') != G4_OPERATION or
-            record.get('state') not in (G4_PLAN_ONLY, G4_AUTHORISED_SESSION) or
+    state = record.get('state')
+    operation = G4_TRIAL_OPERATION if state == G4_AUTHORISED_TRIAL else G4_OPERATION
+    if (record.get('schema') != G4_SCHEMA or record.get('operation') != operation or
+            state not in (G4_PLAN_ONLY, G4_AUTHORISED_SESSION, G4_AUTHORISED_TRIAL) or
             record.get('binding_sha256') != _sha256(_canonical(record.get('binding')))):
         raise PhysicsScopeRefused('G4_SCOPE_UNSUPPORTED: not a valid G4 session record')
-    if record['state'] == G4_AUTHORISED_SESSION:
-        _g4_acceptance(record)
+    if state == G4_AUTHORISED_TRIAL:
+        bound = record['binding']
+        if (record.get('evidence_scope') != G4_TRIAL_EVIDENCE_SCOPE or bound.get('max_cycles') not in
+                range(1, G4_TRIAL_MAX_CYCLES + 1) or not (bound.get('evidence') or {}).get('commission_evidence_sha256')):
+            raise PhysicsScopeRefused('G4_SCOPE_UNSUPPORTED: not a valid G4 trial record')
     return record
 
 
-def g4_authorise_cycle(path, session_path, session_sha256, *, cycle, frame, target, destination, occupancy, grasp,
-                       previous=None, stop_latched=False):
-    """One cycle's record, chained to the session and to the previous cycle's verified evidence digest. ``frame`` is
-    the observation it acts on ({sha256, world_revision, age_s}); ``target`` the EPD-classified object; ``destination``
-    its routed region; ``occupancy`` the measured objects already in that destination; ``grasp`` the planned grasp
-    candidate id (``strategy::index``)."""
-    session = _g4_session(session_path, session_sha256)
-    bound = session['binding']
-    if session['state'] != G4_AUTHORISED_SESSION:
-        raise PhysicsScopeRefused('G4_SCOPE_PLAN_ONLY: this session admits planning only; no cycle may move')
-    if stop_latched:
-        raise PhysicsScopeRefused('G4_SESSION_STOPPED: a stop after cycle is latched; no further cycle starts')
-    if not isinstance(cycle, int) or cycle < 1 or cycle > bound['max_cycles']:
-        raise PhysicsScopeRefused('G4_SESSION_LIMIT: cycle outside 1..max_cycles')
-    if (cycle == 1) != (previous is None) or (previous is not None and (
-            previous.get('cycle') != cycle - 1 or not previous.get('verified') or not previous.get('evidence_sha256'))):
-        raise PhysicsScopeRefused('G4_CYCLE_CHAIN_BROKEN: a cycle needs the previous cycle verified, in order')
-    if not frame or not frame.get('sha256') or frame.get('age_s') is None or frame['age_s'] > bound['perception']['max_age_s']:
-        raise PhysicsScopeRefused('G4_OBSERVATION_STALE: the cycle needs a fresh simulator-rendered frame')
-    routes = {r['destination']: r for r in bound['routing']['rules'] if r.get('enabled', True)}
-    if target.get('class_id') not in {r['when']['equals'] for r in routes.values()} or destination not in routes or \
-            routes[destination]['when']['equals'] != target.get('class_id'):
+def _g4_session(path, sha256, *, current=None, role=None):
+    """The session record if valid now. A claimed production session is refused; a trial record is also verified
+    against ``current`` (the binding recomputed from the current files now) and its live issuing process (``role``)."""
+    record = _g4_session_record(path, sha256)
+    state = record['state']
+    if state == G4_AUTHORISED_SESSION:
+        _g4_acceptance(record)
+    if state == G4_AUTHORISED_TRIAL:
+        bound = record['binding']
+        if current is None:
+            raise PhysicsScopeRefused('G4_SCOPE_UNVERIFIED: a trial record is verified against its binding recomputed now')
+        differing = sorted(key for key in set(bound) | set(current) if bound.get(key) != current.get(key))
+        if differing:
+            raise PhysicsScopeRefused('G4_SCOPE_MISMATCH: ' + ', '.join(differing))
+        _g4_issuer(record, role)
+    return record
+
+
+def _g4_cycle_dir(session_path, session_sha256):
+    """Where a trial session's issued and consumed cycle numbers are registered (beside the session record)."""
+    return Path(session_path).parent / f'g4-cycles-{session_sha256[:16]}'
+
+
+def _g4_frame(frame_path, max_age_s):
+    """(frame record, problems) of a rendered EPD frame file, re-hashed and aged now."""
+    raw = Path(frame_path).read_bytes()
+    source = (yaml.safe_load(raw) or {}).get('source') or {}
+    capture = source.get('capture_wall_ns')
+    frame = dict(path=str(Path(frame_path).resolve()), sha256=_sha256(raw), world_revision=source.get('world_revision'),
+                 capture_wall_ns=capture)
+    problems = []
+    if source.get('producer') != 'simulator_render' or not source.get('world_revision') or not isinstance(capture, int):
+        problems.append('not a simulator-rendered EPD frame')
+    else:
+        age = (time.time_ns() - capture) / 1e9
+        frame['age_s'] = age
+        if not 0 <= age <= max_age_s:
+            problems.append(f'frame age {age:.1f} s outside 0..{max_age_s} s')
+    return frame, problems
+
+
+def _g4_route(bound, class_id, destination):
+    """The receipt-bound physics bin of an enabled rule routing ``class_id`` into ``destination``, or refuse."""
+    pairs = {(r['when']['equals'], r['destination']) for r in bound['routing']['rules'] if r.get('enabled', True)}
+    if (class_id, destination) not in pairs:
         raise PhysicsScopeRefused('G4_TARGET_NOT_ROUTED: the target is not an EPD-classified object of a routed class '
                                   'into this destination')
-    if target.get('object_id') not in {o['object_id'] for o in bound['world']['objects']}:
+    return pairs
+
+
+def g4_routed_destination(bound, region, asset):
+    """The one bound bin of ``asset`` (the routed region's bin)."""
+    rows = [d for d in bound['destinations'] if d.get('source_item_id') == asset]
+    if len(rows) != 1:
+        raise PhysicsScopeRefused(f'G4_DESTINATION_UNBOUND: routed region {region!r} -> {asset!r} has '
+                                  f'{len(rows)} bound physics bins')
+    return rows[0]
+
+
+def g4_authorise_cycle(path, session_path, session_sha256, *, current, cycle, target, destination, frame_path,
+                       observations_path, plan_path, occupancy, previous=None, stop_latched=False):
+    """One trial cycle's record, written by the issuing runner after the cycle's plan-only resolve and validation.
+
+    Everything is re-read from files: ``frame_path`` the rendered EPD frame the classes came from (re-hashed, aged
+    now); ``observations_path`` the validated measured observations (receipt-bound, classes bound to that frame);
+    ``plan_path`` the plan-only resolve summary (its resolution is what the executor consumes); ``target`` {object_id,
+    class_id} and ``destination`` (routed region) from the ledger; ``occupancy`` the ledger's object ids expected in
+    that bin, which must equal what is measured there. ``previous`` ({path, sha256, summary_path}) is re-verified with
+    g4_verify_cycle. A cycle number is issued once per session (registered beside the session record), so a cycle that
+    failed or never ran can never be re-authorised: nothing moves after it.
+    """
+    session = _g4_session(session_path, session_sha256, current=current, role='runner')
+    if session['state'] != G4_AUTHORISED_TRIAL:
+        raise PhysicsScopeRefused('G4_SCOPE_PLAN_ONLY: this session admits planning only; no cycle may move')
+    bound = session['binding']
+    if stop_latched:
+        raise PhysicsScopeRefused('G4_SESSION_STOPPED: a stop after cycle is latched; no further cycle starts')
+    limit = min(bound['max_cycles'], G4_TRIAL_MAX_CYCLES)
+    if not isinstance(cycle, int) or isinstance(cycle, bool) or not 1 <= cycle <= limit:
+        raise PhysicsScopeRefused(f'G4_SESSION_LIMIT: cycle outside 1..{limit}')
+    if (cycle == 1) != (previous is None):
+        raise PhysicsScopeRefused('G4_CYCLE_CHAIN_BROKEN: cycle 1 has no predecessor; every later cycle needs one')
+    link = None
+    if previous is not None:
+        verified = g4_verify_cycle(previous['path'], previous['sha256'], previous['summary_path'], bound,
+                                   session_sha256=session_sha256)
+        prior = json.loads(Path(previous['path']).read_bytes()) if verified['verified'] else {}
+        if (not verified['verified'] or prior.get('cycle') != cycle - 1 or
+                prior.get('session_sha256') != session_sha256):
+            raise PhysicsScopeRefused('G4_CYCLE_CHAIN_BROKEN: the previous cycle is not this session\'s verified '
+                                      f"cycle {cycle - 1}: {verified['problems']}")
+        link = dict(cycle_sha256=previous['sha256'], evidence_sha256=verified['evidence_sha256'])
+    frame, problems = _g4_frame(frame_path, bound['perception']['max_age_s'])
+    if problems:
+        raise PhysicsScopeRefused('G4_OBSERVATION_STALE: ' + '; '.join(problems))
+    raw = Path(observations_path).read_bytes()
+    observed = yaml.safe_load(raw) or {}
+    perceived = observed.get('perception_binding') or {}
+    if observed.get('simulator_receipt_sha256') != bound['session']['receipt_sha256'] or \
+            perceived.get('perception_sha256') != frame['sha256']:
+        raise PhysicsScopeRefused('G4_OBSERVATION_FOREIGN: the observations are not this session\'s measurement bound '
+                                  'to this frame')
+    oid, cls = target.get('object_id'), target.get('class_id')
+    if oid not in {o['object_id'] for o in bound['world']['objects']}:
         raise PhysicsScopeRefused('G4_TARGET_UNKNOWN: the target is not an object of the bound world')
+    measured = {o['object_id']: o for o in observed.get('objects', [])}
+    if (measured.get(oid) or {}).get('class_id') != cls or ((perceived.get('bindings') or {}).get(oid) or {}).get(
+            'class_id') != cls:
+        raise PhysicsScopeRefused('G4_TARGET_CLASS_MISMATCH: the measured target is not bound to this EPD class')
+    _g4_route(bound, cls, destination)
+    plan_raw = Path(plan_path).read_bytes()
+    plan = json.loads(plan_raw)
+    resolution = plan.get('task_intent_resolution') or {}
+    route = (resolution.get('place_resolution') or {}).get('route') or {}
+    grasp = (plan.get('selected_extraction_intent') or {}).get('candidate_id')
+    walls = (plan.get('physical_destination_walls') or {}).get('selected_destination') or {}
+    routed = g4_routed_destination(bound, destination, route.get('asset_ref'))
+    if (plan.get('result') != 'PLAN_ONLY' or plan.get('execution_attempted') is not False or
+            plan.get('selected_object_id') != 'runtime::' + oid or plan.get('batch_target_object_id') != 'runtime::' + oid or
+            not plan.get('resolution_sha256') or resolution.get('resolution_sha256') != plan['resolution_sha256'] or
+            route.get('region_ref') != destination or route.get('class_id') != cls or
+            walls.get('model') != routed['model'] or not plan.get('physics_pads') or
+            (resolution.get('grasp_resolution') or {}).get('selected_candidate_id') != grasp):
+        raise PhysicsScopeRefused('G4_PLAN_MISMATCH: the plan is not this target\'s padded plan-only resolve into its '
+                                  'routed bin')
     if not isinstance(grasp, str) or grasp.split('::', 1)[0] not in bound['grasp_strategies']:
         raise PhysicsScopeRefused(f'G4_GRASP_UNQUALIFIED: {grasp!r} has no contact evidence on the qualified body '
                                   f"(qualified: {bound['grasp_strategies']})")
-    record = dict(schema=G4_SCHEMA, state='G4_AUTHORISED_CYCLE', session_sha256=session_sha256, cycle=cycle,
-                  frame=dict(frame), target=dict(target), destination=destination, occupancy=list(occupancy), grasp=grasp,
-                  previous_evidence_sha256=previous and previous['evidence_sha256'], created_wall_ns=time.time_ns())
+    occupants = destination_occupants(observed, routed)
+    if oid in occupants or occupants != sorted(occupancy):
+        raise PhysicsScopeRefused(f'G4_OCCUPANCY_MISMATCH: measured in {routed["source_item_id"]}: {occupants}; '
+                                  f'the session expects {sorted(occupancy)}')
+    record = dict(schema=G4_SCHEMA, state=G4_TRIAL_CYCLE, evidence_scope=G4_TRIAL_EVIDENCE_SCOPE,
+                  session_sha256=session_sha256, cycle=cycle, target=dict(object_id=oid, class_id=cls),
+                  destination=dict(region=destination, asset=routed['source_item_id'], model=routed['model'],
+                                   object_id=routed['object_id'], floor_z=routed['floor_z']),
+                  grasp=grasp, frame=frame, observations=dict(path=str(Path(observations_path).resolve()), sha256=_sha256(raw)),
+                  plan=dict(path=str(Path(plan_path).resolve()), sha256=_sha256(plan_raw),
+                            resolution_sha256=plan['resolution_sha256']),
+                  occupancy=[dict(object_id=o, pose=measured[o]['pose']) for o in occupants], previous=link,
+                  created_wall_ns=time.time_ns())
     data = (json.dumps(record, indent=2, sort_keys=True) + '\n').encode()
-    Path(path).write_bytes(data)
+    registry = _g4_cycle_dir(session_path, session_sha256)
+    registry.mkdir(exist_ok=True)
+    try:                               # the issued marker names the one record digest this cycle number was given
+        with (registry / f'{cycle}.issued').open('x') as marker:
+            marker.write(_sha256(data) + '\n')
+    except FileExistsError:
+        raise PhysicsScopeRefused(f'G4_CYCLE_ALREADY_ISSUED: cycle {cycle} of this session was authorised before; a '
+                                  'cycle number is never re-issued') from None
+    with Path(path).open('xb') as out:
+        out.write(data)
     return _sha256(data)
 
 
-def g4_verify_cycle(cycle_path, cycle_sha256, summary, destination_floor, part):
-    """A cycle counts only from independently verified physical evidence: the G3C per-cycle judgement for its exact
-    target and routed destination, with the target detached and reconciled. Returns {verified, problems, evidence_sha256}."""
+def g4_admit_execution(*, session_path, session_sha256, cycle_path, cycle_sha256, plan_path, observations_path,
+                       target_object_id, current):
+    """The executor's admission of one trial cycle, before any planning or motion. Returns {record, session, binding,
+    destination (the routed receipt binding), resolution (the authorised plan's, to consume unchanged)}."""
+    session = _g4_session(session_path, session_sha256, current=current, role='executor')
+    if session['state'] != G4_AUTHORISED_TRIAL:
+        raise PhysicsScopeRefused('G4_SCOPE_PLAN_ONLY: this session admits planning only; no cycle may move')
+    bound = session['binding']
     data = Path(cycle_path).read_bytes()
     if not cycle_sha256 or _sha256(data) != cycle_sha256:
-        return dict(verified=False, problems=['G4_CYCLE_RECORD_CHANGED'], evidence_sha256=None)
+        raise PhysicsScopeRefused('G4_CYCLE_RECORD_CHANGED: the cycle record differs from the authorised one')
     record = json.loads(data)
-    target = 'runtime::' + record['target']['object_id']
-    problems = physical_cycle_problems(summary, destination_floor, part)
+    cycle = record.get('cycle')
+    registry = _g4_cycle_dir(session_path, session_sha256)
+    issued = registry / f'{cycle}.issued' if isinstance(cycle, int) else None
+    if (record.get('schema') != G4_SCHEMA or record.get('state') != G4_TRIAL_CYCLE or
+            record.get('session_sha256') != session_sha256 or record.get('evidence_scope') != G4_TRIAL_EVIDENCE_SCOPE or
+            not isinstance(cycle, int) or not 1 <= cycle <= min(bound['max_cycles'], G4_TRIAL_MAX_CYCLES) or
+            not issued.is_file() or issued.read_text().strip() != cycle_sha256):
+        raise PhysicsScopeRefused('G4_CYCLE_UNSUPPORTED: not the record this session issued for that cycle')
+    if (cycle == 1) != (record.get('previous') is None) or (
+            cycle > 1 and not (registry / f'{cycle - 1}.consumed').is_file()):
+        raise PhysicsScopeRefused('G4_CYCLE_CHAIN_BROKEN: a later cycle needs its predecessor issued, run and verified')
+    if str(record.get('grasp')).split('::', 1)[0] not in bound['grasp_strategies']:
+        raise PhysicsScopeRefused(f"G4_GRASP_UNQUALIFIED: {record.get('grasp')!r} has no contact evidence on the "
+                                  'qualified body')
+    _g4_route(bound, record['target']['class_id'], record['destination']['region'])
+    if (registry / f'{cycle}.consumed').exists():
+        raise PhysicsScopeRefused(f'G4_CYCLE_REPLAYED: cycle {cycle} already ran; a cycle record moves once')
+    if 'runtime::' + record['target']['object_id'] != target_object_id:
+        raise PhysicsScopeRefused('G4_TARGET_MISMATCH: --target-object-id is not the authorised target')
+    if _sha256(Path(observations_path).read_bytes()) != record['observations']['sha256']:
+        raise PhysicsScopeRefused('G4_OBSERVATION_CHANGED: the observations are not the validated, authorised ones')
+    plan_raw = Path(plan_path).read_bytes()
+    if _sha256(plan_raw) != record['plan']['sha256']:
+        raise PhysicsScopeRefused('G4_PLAN_CHANGED: the plan is not the authorised plan-only resolve')
+    resolution = json.loads(plan_raw).get('task_intent_resolution') or {}
+    if resolution.get('resolution_sha256') != record['plan']['resolution_sha256']:
+        raise PhysicsScopeRefused('G4_PLAN_CHANGED: the plan\'s resolution is not the authorised one')
+    frame, problems = _g4_frame(record['frame']['path'], bound['perception']['max_age_s'])
+    if problems or frame['sha256'] != record['frame']['sha256']:
+        raise PhysicsScopeRefused('G4_OBSERVATION_STALE: ' + ('; '.join(problems) or 'the frame file changed'))
+    destination = g4_routed_destination(bound, record['destination']['region'], record['destination']['asset'])
+    if destination['model'] != record['destination']['model']:
+        raise PhysicsScopeRefused('G4_DESTINATION_MISMATCH: the routed bin is not the authorised bin')
+    return dict(record=record, session=session, binding=bound, destination=destination, resolution=resolution,
+                frame_age_s=frame['age_s'])
+
+
+def g4_frame_age_problem(record, bound):
+    """At the motion boundary: is the authorised frame still the same file and young enough? (None when it is.)"""
+    frame, problems = _g4_frame(record['frame']['path'], bound['perception']['max_age_s'])
+    if not problems and frame['sha256'] != record['frame']['sha256']:
+        problems.append('the frame file changed')
+    return '; '.join(problems) or None
+
+
+def g4_consume_cycle(session_path, session_sha256, cycle):
+    """Mark a cycle as run, at the motion boundary (exclusive create): a cycle record moves the robot at most once."""
+    try:
+        with (_g4_cycle_dir(session_path, session_sha256) / f'{cycle}.consumed').open('x') as marker:
+            marker.write(f'{time.time_ns()}\n')
+    except FileExistsError:
+        raise PhysicsScopeRefused(f'G4_CYCLE_REPLAYED: cycle {cycle} already ran; a cycle record moves once') from None
+
+
+def _bottom_corners_z(pose, dims):
+    return sorted(pose[2] + _rotate(pose[3:], [sx * dims[0] / 2, sy * dims[1] / 2, sz * dims[2] / 2])[2]
+                  for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1))
+
+
+def g4_verify_cycle(cycle_path, cycle_sha256, summary_path, binding, session_sha256=None):
+    """A trial cycle counts only from independently re-verified physical evidence (``summary_path``: the executor's
+    summary file): it executed exactly this record, the G3C per-cycle judgement (physical_cycle_problems) holds on the
+    record's routed bin, every bottom corner rests on that floor (no part tilted against a neighbour), and the target
+    and grasp are the authorised ones, detached and reconciled. With ``session_sha256`` the record and the summary
+    must both belong to that session. Returns {verified, problems, cycle, evidence_sha256}."""
+    data = Path(cycle_path).read_bytes()
+    if not cycle_sha256 or _sha256(data) != cycle_sha256:
+        return dict(verified=False, problems=['G4_CYCLE_RECORD_CHANGED'], cycle=None, evidence_sha256=None)
+    record = json.loads(data)
+    try:
+        summary_raw = Path(summary_path).read_bytes()
+        summary = json.loads(summary_raw)
+    except (OSError, ValueError):
+        return dict(verified=False, problems=['executor summary missing or unreadable'], cycle=record.get('cycle'),
+                    evidence_sha256=None)
+    problems = []
+    if record.get('schema') != G4_SCHEMA or record.get('state') != G4_TRIAL_CYCLE:
+        problems.append('not a G4 trial cycle record')
+    scope = summary.get('physics_scope') or {}
+    if scope.get('cycle_sha256') != cycle_sha256 or scope.get('session_sha256') != record.get('session_sha256'):
+        problems.append('the summary is not the execution of this cycle record')
+    if session_sha256 is not None and record.get('session_sha256') != session_sha256:
+        problems.append('the cycle record belongs to another session')
+    if summary.get('resolution_sha256') != (record.get('plan') or {}).get('resolution_sha256'):
+        problems.append('the executed resolution is not the authorised plan')
+    target = 'runtime::' + str((record.get('target') or {}).get('object_id'))
+    destination = next((d for d in binding.get('destinations', [])
+                        if d.get('model') == (record.get('destination') or {}).get('model')), None)
+    dims = next((o['dimensions_m'] for o in (binding.get('world') or {}).get('objects', [])
+                 if 'runtime::' + o['object_id'] == target), None)
+    problems += physical_cycle_problems(summary, destination, {'dimensions_m': dims} if dims else None)
+    try:
+        corners = _bottom_corners_z(summary['full_cycle_physical_acceptance']['final_pose'], dims)
+        if any(abs(z - destination['floor_z']) > QUALIFICATION_CONTRACT['seat_tolerance_m'] for z in corners[:4]):
+            problems.append('measured part not flat on the selected bin floor')
+    except (KeyError, TypeError, IndexError):
+        pass                                             # already reported by physical_cycle_problems
     if summary.get('selected_object_id') != target:
         problems.append('the executed object is not the authorised target')
     if not record.get('grasp') or (summary.get('selected_extraction_intent') or {}).get('candidate_id') != record['grasp']:
@@ -447,8 +760,185 @@ def g4_verify_cycle(cycle_path, cycle_sha256, summary, destination_floor, part):
     reconciled = summary.get('measured_reconciliation') or {}
     if reconciled.get('held') is not False or reconciled.get('target') != target or not reconciled.get('acm_restored'):
         problems.append('target not measured, detached and reconciled')
-    return dict(verified=not problems, problems=problems, cycle=record['cycle'],
-                evidence_sha256=_sha256(_canonical(dict(cycle=cycle_sha256, summary=_sha256(_canonical(summary))))))
+    return dict(verified=not problems, problems=problems, cycle=record.get('cycle'),
+                evidence_sha256=_sha256(_canonical(dict(cycle=cycle_sha256, summary=_sha256(summary_raw)))))
+
+
+# --- G4 qualification (offline; issues nothing) -------------------------------------------------------------------
+# Promotion of accepted trials, later: readiness is recomputed from raw trial evidence only. Fixed in code. No issuer
+# exists yet and G4 stop/cancel acceptance (G5-style, inside the G4 runner) is not defined, so readiness is never
+# QUALIFIED_READY today; _g4_acceptance keeps refusing G4_AUTHORISED_SESSION.
+G4_QUALIFICATION_CONTRACT = {
+    'trial_sessions': 3,              # independent accepted trial sessions of the exact cell and software
+    'cycles_per_session': G4_TRIAL_MAX_CYCLES,
+    'seat_tolerance_m': 0.001, 'placement_tolerance_m': 0.003,
+    'stop_cancel': 'G4 runner stop after cycle and cancel during a G4 cycle (not defined yet)',
+}
+G4_RUN_REPORT = 'g4-sorting-report.json'
+
+
+def _g4_prerequisite_problem(summary, bound):
+    prerequisites = summary.get('commissioning_prerequisites') or {}
+    if (sorted(prerequisites.get('results') or []) != PREREQUISITE_RESULTS or
+            prerequisites.get('capability_sha256') != (bound.get('native') or {}).get('sha256') or
+            prerequisites.get('sources') != (bound.get('native') or {}).get('sources')):
+        return 'Stage-A prerequisite trials not bound to the trial build'
+    return None
+
+
+def g4_trial_evidence(run_dir, repo=REPO):
+    """One G4 trial run judged from its own files. Kinds:
+    STRICT_PASS         both bounded cycles moved, every one re-verified, chained, bound to this session, clean run;
+    INCOMPLETE          every moved cycle verified, but fewer than the bound ran (operator stop, batch end): not counted;
+    CANCELLED           the operator cancelled (G5 stop evidence, never a cycle outcome): not counted;
+    PRE_MOTION_FAILURE  nothing moved (refused before motion): a reliability finding;
+    FAILED              a moved cycle is not verified, or the run's provenance is not clean;
+    NOT_A_TRIAL         a plan-only session. Malformed evidence is FAILED, never an exception."""
+    run = Path(run_dir)
+    out = dict(run=str(run.resolve()), kind='FAILED', problems=[], cycles=[], planner=None, binding=None, run_id=None)
+    try:
+        report = json.loads((run / G4_RUN_REPORT).read_text())
+    except (OSError, ValueError):
+        out['problems'].append('run report missing or unreadable')
+        return out
+    if report.get('scope') != G4_TRIAL_EVIDENCE_SCOPE:
+        out['kind'] = 'NOT_A_TRIAL'
+        return out
+    session_sha = (report.get('g4_session') or {}).get('sha256')
+    try:
+        record = _g4_session_record(run / 'session/g4-session.json', session_sha)
+    except (OSError, ValueError, PhysicsScopeRefused) as exc:
+        out['problems'].append(f'session record: {exc}')
+        return out
+    if record['state'] != G4_AUTHORISED_TRIAL:
+        out['problems'].append('the session record is not a trial')
+        return out
+    bound = record['binding']
+    out.update(binding=bound, run_id=bound['session']['run_id'])
+    out['planner'], provenance = _software(report, bound, repo)
+    if (report.get('preflight') or {}).get('repo_dirty') is not False:
+        provenance.append('the run did not record a clean checkout')
+    if (report.get('shutdown') or {}).get('clean') is not True:
+        provenance.append('the run did not shut down cleanly')
+    granted = [c for c in report.get('cycles', []) if ((c.get('steps') or {}).get('authorise') or {}).get('granted')]
+    moved, failures, previous = 0, [], None
+    for n, cycle in enumerate(granted, 1):
+        try:
+            sha = cycle['steps']['authorise'].get('sha256')
+            path = run / 'session/cycles' / f"{int(cycle['cycle']):03d}"
+            summary_path = path / 'execute/summary.json'
+            attempted = json.loads(summary_path.read_text()).get('execution_attempted') if summary_path.is_file() else None
+            if attempted is False:                     # refused before motion: nothing to verify, and nothing moved
+                out['cycles'].append(dict(cycle=n, moved=False, verified=False, problems=['refused before motion']))
+                continue
+            moved += 1
+            verified = g4_verify_cycle(path / 'g4-cycle.json', sha, summary_path, bound, session_sha256=session_sha)
+            problems = list(verified['problems'])
+            cycle_record = json.loads((path / 'g4-cycle.json').read_text())
+            if cycle_record.get('cycle') != n or cycle_record.get('previous') != previous:
+                problems.append('cycle chain broken')
+            if summary_path.is_file():
+                problem = _g4_prerequisite_problem(json.loads(summary_path.read_text()), bound)
+                if problem:
+                    problems.append(problem)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            problems, verified = [f'malformed cycle evidence: {exc}'], dict(evidence_sha256=None)
+        out['cycles'].append(dict(cycle=n, moved=True, verified=not problems, problems=problems,
+                                  evidence_sha256=verified.get('evidence_sha256')))
+        failures += [f'cycle {n}: {p}' for p in problems]
+        previous = dict(cycle_sha256=sha, evidence_sha256=verified.get('evidence_sha256'))
+    out['problems'] = provenance + failures
+    if report.get('status') == 'CANCELLED':
+        out['kind'] = 'CANCELLED'
+    elif failures or provenance:
+        out['kind'] = 'FAILED' if moved or provenance else 'PRE_MOTION_FAILURE'
+    elif not moved:
+        out['kind'] = 'PRE_MOTION_FAILURE'
+        out['problems'].append(f"nothing moved ({report.get('status')}: {report.get('stop') or report.get('failure')})")
+    elif (moved == bound['max_cycles'] == G4_TRIAL_MAX_CYCLES and report.get('status') == 'PASS' and
+          report.get('result') == 'MAX_CYCLES'):
+        out['kind'] = 'STRICT_PASS'
+    else:
+        out['kind'] = 'INCOMPLETE'
+        out['problems'].append(f"{moved} of {G4_TRIAL_MAX_CYCLES} bounded cycles ran ({report.get('status')} / "
+                               f"{report.get('result')})")
+    return out
+
+
+def _g4_shared(bound):
+    """What every counted trial of one G4 scope must share (session-specific fields left out)."""
+    strip = lambda record: {k: v for k, v in record.items() if k != 'manifest_sha256'}
+    return dict(world=bound['world'], destinations=[strip(d) for d in bound['destinations']],
+                support=strip(bound['support']), robot={k: bound['robot'][k] for k in STABLE_ROBOT_KEYS},
+                routing=bound['routing'], perception=bound['perception'], grasp_strategies=bound['grasp_strategies'],
+                cell={k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES})
+
+
+def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *, evidence_roots, repo=REPO):
+    """Readiness of one exact G4 cell from listed trial runs, recomputed from raw evidence (issues nothing).
+    Categories as G3C: reliability (pre-motion), incomplete (stopped/cancelled, all moved cycles verified: listed, not
+    counted, not blocking), other_versions (listed, never counted), unmet (blocking). Every authorised trial session of
+    this software and cell under ``evidence_roots`` must be listed; unreadable trial evidence blocks."""
+    contract = G4_QUALIFICATION_CONTRACT
+    current = planner or planner_identity(repo)
+    _, world = cell_world(cell_dir)
+    files = {name: _sha256((Path(cell_dir) / name).read_bytes()) for name in QUALIFIED_CELL_FILES}
+    counted, unmet, reliability, incomplete, other_versions, seen, shared = [], [], [], [], [], set(), None
+    for run in runs:
+        ev = g4_trial_evidence(run, repo)
+        if ev['kind'] == 'PRE_MOTION_FAILURE':
+            reliability.append(dict(run=ev['run'], problems=ev['problems']))
+            continue
+        if ev['planner'] is not None and ev['planner'] != current:
+            other_versions.append(dict(run=ev['run'], planner=ev['planner'], kind=ev['kind']))
+            continue
+        if ev['kind'] in ('INCOMPLETE', 'CANCELLED'):
+            incomplete.append(dict(run=ev['run'], kind=ev['kind'], problems=ev['problems']))
+            continue
+        if ev['kind'] != 'STRICT_PASS':
+            unmet.append(f"{ev['run']}: {ev['kind']}: {ev['problems']}")
+            continue
+        bound = ev['binding']
+        problems = [label for label, ok in (
+            ('native identity changed', bound['native'] == native), ('runtime identity changed', bound['runtime'] == runtime),
+            ('another cell', {k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files),
+            ('another world', bound['world']['derived_sha256'] == world['derived_sha256']),
+            ('geometry, robot, routing or perception differs from the other trials',
+             shared is None or _g4_shared(bound) == shared),
+            ('the same trial session counted twice', ev['run_id'] not in seen)) if not ok]
+        if problems:
+            unmet.append(f"{ev['run']}: {problems}")
+            continue
+        shared = shared or _g4_shared(bound)
+        seen.add(ev['run_id'])
+        counted.append(ev['run'])
+    if len(counted) < contract['trial_sessions']:
+        unmet.append(f"{len(counted)} of {contract['trial_sessions']} accepted trial sessions")
+    listed = {str(Path(r).resolve()) for r in runs}
+    unlisted = []
+    for root in evidence_roots:
+        for session_path in sorted(Path(root).rglob('g4-session.json')):
+            run = session_path.parent.parent
+            try:
+                record = json.loads(session_path.read_text())
+                if record.get('state') != G4_AUTHORISED_TRIAL:
+                    continue                                       # plan-only sessions never moved
+                bound = record['binding']
+                same = bound['world']['derived_sha256'] == world['derived_sha256']
+                report = json.loads((run / G4_RUN_REPORT).read_text())
+                software = _software(report, bound, repo)[0]
+            except (OSError, ValueError, KeyError, TypeError):
+                if str(run.resolve()) not in listed:
+                    unlisted.append(f'{run.resolve()} (unreadable trial evidence)')
+                continue
+            if same and software == current and str(run.resolve()) not in listed:
+                unlisted.append(str(run.resolve()))
+    if unlisted:
+        unmet.append(f'unlisted trials of this software version: {unlisted}')
+    unmet.append(f"stop/cancel: {contract['stop_cancel']}")
+    return dict(status='NOT_QUALIFIED' if unmet else 'QUALIFIED_READY', contract=contract, planner=current,
+                world=world['derived_sha256'], counted=counted, unmet=unmet, reliability_findings=reliability,
+                incomplete=incomplete, other_versions=other_versions, unlisted=unlisted)
 
 
 # --- Qualification (offline; admits no motion) -------------------------------------------------------------------
@@ -504,7 +994,8 @@ def physical_cycle_problems(summary, destination, part):
     if (accepted.get('attached_ids') != [] or accepted.get('baseline_acm_restored') is not True or
             accepted.get('final_collision_valid') is not True):
         problems.append('attachment, collision permissions or final collision state not restored')
-    if not (accepted.get('placement') or {}).get('error_to_planned_m', 1.0) <= contract['placement_tolerance_m']:
+    error = (accepted.get('placement') or {}).get('error_to_planned_m')
+    if not isinstance(error, (int, float)) or isinstance(error, bool) or not error <= contract['placement_tolerance_m']:
         problems.append('placement error to the planned seat exceeds the bound')
     try:
         pose = accepted['final_pose']
