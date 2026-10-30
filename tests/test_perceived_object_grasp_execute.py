@@ -1975,3 +1975,51 @@ def test_wait_for_baseline_does_not_add_a_legacy_gripper_to_an_authored_home_sta
         name=['arm', 'authored_tool'], position=[0., .2])))
     assert MODULE.wait_for_robot_baseline(lambda: scene, {'arm': 0., 'authored_tool': .2}, timeout=0.) is scene
     assert MODULE.wait_for_robot_baseline(lambda: scene, {'arm': 0.}, timeout=0., release={'authored_tool': .2}) is scene
+
+
+@pytest.mark.parametrize('stage,padded', [('PREPLAN_HOME', True), ('PREPLAN_APPROACH', True), ('PREPLAN_GRASP', False)])
+def test_free_space_requests_carry_the_physics_pads_on_their_start_state(stage, padded):
+    """G3C: MoveGroup's full start state replaces the scene's attached bodies, and OMPL, TOTG and the controller-interval
+    certificate build every waypoint from it. Pads only in the scene diff (campaign 8a5d80d2) were never checked."""
+    import ast
+    import copy
+    import time
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import (Constraints, JointConstraint, MotionPlanRequest, MoveItErrorCodes, PlanningScene,
+                                 RobotState, RobotTrajectory)
+    from sensor_msgs.msg import JointState
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+    main = next(n for n in ast.parse(SCRIPT.read_text()).body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    segment = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'plan_segment')
+    view = PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'], position=[0.0])))
+    original = copy.deepcopy(view)
+    trajectory = RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'], points=[
+        JointTrajectoryPoint(positions=[0.0]), JointTrajectoryPoint(positions=[0.5])]))
+    goals = []
+    def action(client, goal, timeout):
+        goals.append(copy.deepcopy(goal))
+        return MoveGroup.Result(error_code=MoveItErrorCodes(val=1), trajectory_start=copy.deepcopy(goal.request.start_state),
+                                planned_trajectory=trajectory, planning_time=.1)
+    primitives = dict(links=[dict(link=f'gripper_finger{i}_finger_tip_link', boxes=[
+        dict(box_size_m=[0.02, 0.03, 0.015], pose=[0.0] * 6)]) for i in (1, 2)])
+    links = {'base_link', 'gripper_finger1_finger_tip_link', 'gripper_finger2_finger_tip_link'}
+    context = dict(vars(MODULE), physics_pads=(primitives, links), copy=copy, time=time,
+        MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup, stage=lambda name: None, deadline=time.monotonic() + 10,
+        contract={'planning_group': 'arm_group', 'home_joint_names': ['arm'], 'tool_link': 'tcp'},
+        args=SimpleNamespace(segment_planning_time=3., backend='simulator'), mimics=[], initial=view,
+        plan_client=object(), action=action, trace=lambda *args: None, summary={},
+        joint_constraints=lambda values: Constraints(joint_constraints=[JointConstraint(
+            joint_name=n, position=v, tolerance_above=.0001, tolerance_below=.0001, weight=1.) for n, v in values.items()]))
+    exec(compile(ast.Module(body=[segment], type_ignores=[]), '<plan-segment-physics-pads>', 'exec'), context)
+    result = context['plan_segment'](view, stage, {'arm': 0.5}, group='arm_group')
+    sent = goals[-1]
+    pads = lambda state: sorted(b.object.id for b in state.attached_collision_objects if b.object.id.startswith('physics_pad::'))
+    expected = ['physics_pad::gripper_finger1_finger_tip_link_box0', 'physics_pad::gripper_finger2_finger_tip_link_box0']
+    assert pads(sent.request.start_state) == (expected if padded else [])           # what OMPL/TOTG/certificate use
+    assert pads(sent.planning_options.planning_scene_diff.robot_state) == (expected if padded else [])
+    assert sent.request.start_state.is_diff is False
+    assert view == original and pads(result['before'].robot_state) == pads(result['after'].robot_state) == []
+    assert result['metadata'].get('physics_pad_allowance_m') == (MODULE_PAD.get(stage) if padded else None)
+
+
+MODULE_PAD = __import__('simulation_collision').PHYSICS_PAD_ALLOWANCE_M

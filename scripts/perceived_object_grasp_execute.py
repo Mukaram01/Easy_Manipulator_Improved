@@ -2463,8 +2463,13 @@ def main():
         if physics_pads is not None and name in PHYSICS_PAD_ALLOWANCE_M:
             # Free-space motion is planned and certified against the fingertip boxes Gazebo simulates, plus the
             # stage's tracking allowance (planning only: the view, live scene and contact stages are unchanged).
-            goal_msg.planning_options.planning_scene_diff = physics_pad_scene(
-                view, physics_pads[0], physics_pads[1], PHYSICS_PAD_ALLOWANCE_M[name])
+            padded = physics_pad_scene(view, physics_pads[0], physics_pads[1], PHYSICS_PAD_ALLOWANCE_M[name])
+            goal_msg.planning_options.planning_scene_diff = padded
+            # The request's full start state replaces the scene's attached bodies, and OMPL, TOTG and the certificate
+            # build every waypoint from it: the pads must ride on the start state too (G3C campaign 8a5d80d2 had them
+            # only in the scene diff, so no trajectory state carried them).
+            goal_msg.request.start_state = copy.deepcopy(padded.robot_state)
+            goal_msg.request.start_state.is_diff = False
         if closure_clearance is not None:
             from closure_clearance import expanded_closure_scene
             goal_msg.planning_options.planning_scene_diff = expanded_closure_scene(
