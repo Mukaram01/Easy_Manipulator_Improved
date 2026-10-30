@@ -23,6 +23,7 @@ motion and again before reporting a physical result.
 import ast
 import hashlib
 import json
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -69,7 +70,7 @@ PLANNER_SOURCES = tuple(f'scripts/{m}.py' for m in EXECUTOR_MODULES) + ('scenes/
 # (this authority, the G4 runner, its ledger and the G5 runner primitives it reuses). A G4 trial binds it, so trials
 # of different control code are never one software version; it never enters the G3C identity above.
 G4_CONTROL_SOURCES = ('scripts/physics_scope_qualification.py', 'scripts/run_g4_sorting.py', 'scripts/sorting_session.py',
-                      'scripts/run_stage_a1_finish.py')
+                      'scripts/run_stage_a1_finish.py', 'scripts/g4_tracking_evidence.py', 'scripts/g4_qualification.py')
 # The stop/cancel paths G5 accepted, by function or class (AST): a G5 run of another software version stays admissible
 # only while these are unchanged. The runner's main hosts the stop-at-cycle-end boundary, not the cancel path.
 STOP_CANCEL_MECHANISM = {
@@ -94,7 +95,8 @@ def _git(repo, *args):
     return done.stdout
 
 
-def _source_identity(sources, what, repo, revision):
+def _source_identity(sources, what, repo, revision, require_all=False):
+    current = revision is None
     if revision is None:
         if _git(repo, 'status', '--porcelain', '--', *sources).strip():
             raise PhysicsScopeRefused(f'PHYSICS_SCOPE_SOFTWARE_MODIFIED: {what} sources differ from HEAD')
@@ -106,6 +108,8 @@ def _source_identity(sources, what, repo, revision):
             blobs[path] = blob
     if not blobs:
         raise PhysicsScopeRefused(f'PHYSICS_SCOPE_PROVENANCE_UNRECOVERABLE: no {what} sources at {revision}')
+    if require_all and current and any(not any(p == source or p.startswith(source + '/') for p in blobs) for source in sources):
+        raise PhysicsScopeRefused(f'PHYSICS_SCOPE_SOFTWARE_MODIFIED: a listed {what} source is not committed at HEAD')
     return _sha256(_canonical(blobs))
 
 
@@ -117,8 +121,9 @@ def planner_identity(repo=REPO, revision=None):
 
 
 def g4_control_identity(repo=REPO, revision=None):
-    """The G4 control identity of ``revision``, as planner_identity over G4_CONTROL_SOURCES."""
-    return _source_identity(G4_CONTROL_SOURCES, 'G4 control', repo, revision)
+    """The G4 control identity of ``revision``, as planner_identity over G4_CONTROL_SOURCES; the current identity refuses
+    a listed source that is not committed (a recorded commit is recovered from what it holds, like planner_identity)."""
+    return _source_identity(G4_CONTROL_SOURCES, 'G4 control', repo, revision, require_all=True)
 
 
 def mechanism_identity(role, repo=REPO, revision=None):
@@ -786,16 +791,38 @@ def g4_verify_cycle(cycle_path, cycle_sha256, summary_path, binding, session_sha
 
 
 # --- G4 qualification (offline; issues nothing) -------------------------------------------------------------------
-# Promotion of accepted trials, later: readiness is recomputed from raw trial evidence only. Fixed in code. No issuer
-# exists yet and G4 stop/cancel acceptance (G5-style, inside the G4 runner) is not defined, so readiness is never
-# QUALIFIED_READY today; _g4_acceptance keeps refusing G4_AUTHORISED_SESSION.
+# Readiness is recomputed from raw trial evidence only and fixed in code; it never writes or admits anything:
+# _g4_acceptance keeps refusing G4_AUTHORISED_SESSION (continuous production stays locked, G6), whatever readiness says.
+# Every counted run is a CLI trial (G4_AUTHORISED_TRIAL) of one exact cell at ONE planner identity and ONE G4 control
+# identity, with the same native build and runtime:
+# - 3 independent sessions, each STRICT_PASS for both cycles (g4_session_evidence);
+# - 1 stop-after-cycle session, G4-S (g4_stop_after_cycle_evidence): SIGUSR1 to the runner during cycle 1's
+#   EXECUTE_TRANSFER; cycle 1 completes strictly and is counted; the session stops before cycle 2 is authorised;
+# - 1 cancel-during-transfer session, G4-C (g4_cancel_evidence): SIGTERM to the runner during cycle 1's
+#   EXECUTE_TRANSFER, forwarded to the executor; the G5A transfer cancellation is recomputed from its evidence and
+#   accepted; nothing is counted and nothing further is authorised.
+# G5A/G5B (G3C) results are compatibility evidence for the shared primitives, never a substitute for G4-S/G4-C.
 G4_QUALIFICATION_CONTRACT = {
-    'trial_sessions': 3,              # independent accepted trial sessions of the exact cell and software
+    'trial_sessions': 3,              # independent STRICT_PASS two-cycle sessions of the exact cell and identities
     'cycles_per_session': G4_TRIAL_MAX_CYCLES,
-    'seat_tolerance_m': 0.001, 'placement_tolerance_m': 0.003,
-    'stop_cancel': 'G4 runner stop after cycle and cancel during a G4 cycle (not defined yet)',
+    'seat_tolerance_m': 0.001, 'placement_tolerance_m': 0.003,          # g4_verify_cycle (physical_cycle_problems)
+    'world_tolerance_m': 1e-5, 'world_tolerance_rad': 1e-5,             # every other object, validate -> reconcile
+    'placed_tolerance_m': 1e-3, 'placed_tolerance_rad': 1e-3,           # placed part, reconcile vs executor final pose
+    'goal_window_margin_s': 1.0,      # every accepted controller goal inside an executed cycle's stage-event window,
+    'goal_window_end_s': 5.0,         # widened by these margins (the home goal follows the last stage event)
+    'tracking': 'free-space stages within simulation_collision.PHYSICS_PAD_ALLOWANCE_M (g4_tracking_evidence)',
+    'stop_after_cycle': 'G4-S: SIGUSR1 during cycle 1 EXECUTE_TRANSFER; cycle 1 strict and counted; STOPPED, no cycle 2',
+    'cancel_during_transfer': 'G4-C: SIGTERM during cycle 1 EXECUTE_TRANSFER; G5A verdict accepted; nothing counted',
 }
 G4_RUN_REPORT = 'g4-sorting-report.json'
+# The only admissible ERROR in a cycle's launch log: after the cycle's home stage, the final measured reconciliation
+# re-sends the REMOVE of an attachment the DETACH stage already removed (one per cycle; never inside ATTACH..DETACH).
+G4_LATE_DETACH_LOG = re.compile(r"\[move_group-\d+\] \[ERROR\] \[(\d+\.\d+)\] \[moveit_robot_state\.robot_state\]: "
+                                r"Attached body '([^']+)' not found")
+G4_ERROR_LOG = re.compile(r'\[ERROR\] \[(\d+\.\d+)\]')
+G4_TRACKED_STAGES = ('APPROACH', 'GRASP', 'LIFT', 'TRANSFER', 'PLACE', 'RETREAT', 'HOME')   # every arm stage
+G4_FREE_STAGES = ('APPROACH', 'TRANSFER', 'RETREAT', 'HOME')       # planned against padded boxes: bounded tracking
+G4_GOAL_LOG = re.compile(r'\[(\d+\.\d+)\] \[(\w+)_controller\]: Accepted new action goal')
 
 
 def _g4_prerequisite_problem(summary, bound):
@@ -805,6 +832,38 @@ def _g4_prerequisite_problem(summary, bound):
             prerequisites.get('sources') != (bound.get('native') or {}).get('sources')):
         return 'Stage-A prerequisite trials not bound to the trial build'
     return None
+
+
+def _g4_runner_session(session_dir):
+    """Whether a directory is a runner's session (as opposed to a forged negative-test record): named 'session' and
+    holding anything a launch or a cycle writes there."""
+    session_dir = Path(session_dir)
+    return session_dir.name == 'session' and (any(
+        (session_dir / name).exists() for name in ('launch.log', 'runtime/receipt.json', 'cycles', 'commission-evidence.json')
+    ) or any(session_dir.glob('g4-cycles-*')))
+
+
+def _g4_trial_signs(session_dir, record):
+    """Why a session claiming G4_PLAN_ONLY is still a trial (empty: genuinely plan-only): a trial operation, issuer or
+    evidence scope in its record, a cycle registry, a cycle record or executor run, trial commission evidence, no
+    launch log (every session launches), or accepted controller goals in it."""
+    signs, session_dir = [], Path(session_dir)
+    if record.get('state') != G4_PLAN_ONLY or record.get('operation') != G4_OPERATION:
+        signs.append(f"state {record.get('state')!r} / operation is not the plan-only one")
+    if 'issuer' in record or 'evidence_scope' in record:
+        signs.append('the record carries a trial issuer or evidence scope')
+    if any(Path(session_dir).glob('g4-cycles-*')):
+        signs.append('a cycle registry exists')
+    if any(session_dir.glob('cycles/*/g4-cycle.json')) or any(session_dir.glob('cycles/*/execute')):
+        signs.append('a cycle record or executor run exists')
+    if (session_dir / 'commission-evidence.json').exists():
+        signs.append('trial commission evidence exists')
+    log = session_dir / 'launch.log'
+    if not log.is_file():
+        signs.append('no launch log')
+    elif _g4_goals(log.read_text(errors='replace')):
+        signs.append('the launch log has accepted controller goals')
+    return signs
 
 
 def g4_trial_evidence(run_dir, repo=REPO):
@@ -835,11 +894,11 @@ def _g4_trial_evidence(run, repo, out):
         return out
     if report.get('scope') != G4_TRIAL_EVIDENCE_SCOPE:
         try:
-            state = json.loads((run / 'session/g4-session.json').read_text()).get('state')
-        except (OSError, ValueError, AttributeError):
-            state = None
-        if state == G4_AUTHORISED_TRIAL:           # a trial's report relabelled or damaged: never "not a trial"
-            out['problems'].append('the run report of an authorised trial is not labelled as one')
+            signs = _g4_trial_signs(run / 'session', json.loads((run / 'session/g4-session.json').read_text()))
+        except (OSError, ValueError, AttributeError) as exc:
+            signs = [f'the session record is unreadable ({exc!r})']
+        if signs:                                  # a trial relabelled or damaged: never "not a trial"
+            out['problems'].append(f'the run report is not labelled a trial, but {signs}')
             return out
         out['kind'] = 'NOT_A_TRIAL'
         return out
@@ -942,77 +1001,624 @@ def _g4_shared(bound):
                 cell={k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES})
 
 
-def g4_qualification_readiness(cell_dir, runs, native, runtime, planner=None, *, evidence_roots, control=None,
-                               repo=REPO):
-    """Readiness of one exact G4 cell from listed trial runs, recomputed from raw evidence (issues nothing).
-    Categories as G3C: reliability (pre-motion), incomplete (stopped/cancelled, all moved cycles verified: listed, not
-    counted, not blocking), other_versions (another planner or G4 control identity: listed, never counted), unmet
-    (blocking). Every authorised trial session of this planner identity and cell under ``evidence_roots`` must be
-    listed; unreadable trial evidence blocks."""
+def _g4_observations(path):
+    return {o['object_id']: o for o in yaml.safe_load(Path(path).read_text())['objects']}
+
+
+def _g4_pose_delta(a, b):
+    """(m, rad) between a measured object ({pose: {xyz, rpy}}) and another one or a [x y z qx qy qz qw] pose."""
+    import math
+    from perceived_object_grasp_plan import quaternion_from_rpy
+    qa = quaternion_from_rpy(a['pose']['rpy'])
+    xyz, qb = ((b['pose']['xyz'], quaternion_from_rpy(b['pose']['rpy'])) if isinstance(b, dict) else (b[:3], b[3:]))
+    return math.dist(a['pose']['xyz'], xyz), 2 * math.acos(min(1.0, abs(sum(x * y for x, y in zip(qa, qb)))))
+
+
+def _g4_footprints_overlap(a, b, size_a, size_b):
+    """Whether two measured parts' XY footprints (yawed rectangles) intersect (separating-axis test)."""
+    import math
+
+    def corners(o, size):
+        (x, y, _), yaw = o['pose']['xyz'], o['pose']['rpy'][2]
+        c, s = math.cos(yaw), math.sin(yaw)
+        return [(x + c * u - s * v, y + s * u + c * v) for u in (-size[0] / 2, size[0] / 2) for v in (-size[1] / 2, size[1] / 2)]
+    ca, cb = corners(a, size_a), corners(b, size_b)
+    for yaw in (a['pose']['rpy'][2], b['pose']['rpy'][2]):
+        for axis in ((math.cos(yaw), math.sin(yaw)), (-math.sin(yaw), math.cos(yaw))):
+            pa, pb = [p[0] * axis[0] + p[1] * axis[1] for p in ca], [p[0] * axis[0] + p[1] * axis[1] for p in cb]
+            if max(pa) <= min(pb) or max(pb) <= min(pa):
+                return False
+    return True
+
+
+def _g4_run_files(run):
+    """(report, session record, registry dir) of a G4 run."""
+    report = json.loads((run / G4_RUN_REPORT).read_text())
+    record = json.loads((run / 'session/g4-session.json').read_text())
+    sha = (report.get('g4_session') or {}).get('sha256') or ''
+    return report, record, run / 'session' / f'g4-cycles-{sha[:16]}'
+
+
+def _g4_run_problems(run, report, record, registry, granted):
+    """Run-level provenance: the runner that wrote the report issued the record, its commit and G4 control code never
+    changed while it ran, and the registry holds exactly the issued (and, once executed, consumed) markers of the
+    granted cycles, each issued marker the digest of its cycle record."""
+    problems, preflight = [], report.get('preflight') or {}
+    if not preflight.get('start_repo_head') or preflight.get('start_repo_head') != preflight.get('repo_head'):
+        problems.append('the commit at runner start was not recorded or changed')
+    if preflight.get('loaded_g4_control') != (record.get('binding') or {}).get('control'):
+        problems.append('the runner did not run the bound G4 control code')
+    if not report.get('runner') or report.get('runner') != record.get('issuer'):
+        problems.append('the trial record was not issued by the runner that wrote this report')
+    expected = set()
+    for cycle in granted:
+        n = int(cycle['cycle'])
+        expected.add(f'{n}.issued')
+        cycle_path = run / 'session/cycles' / f'{n:03d}' / 'g4-cycle.json'
+        sha = cycle['steps']['authorise'].get('sha256')
+        if not cycle_path.is_file() or _sha256(cycle_path.read_bytes()) != sha:
+            problems.append(f'cycle {n}: the cycle record differs from the authorised one')
+        issued = registry / f'{n}.issued'
+        if not issued.is_file() or issued.read_text().strip() != sha:
+            problems.append(f'cycle {n}: no issued marker holding its record digest')
+        if (run / 'session/cycles' / f'{n:03d}' / 'execute/summary.json').is_file():
+            expected.add(f'{n}.consumed')
+    found = {p.name for p in registry.iterdir()} if registry.is_dir() else set()
+    if found != expected:
+        problems.append(f'cycle registry {sorted(found)} is not exactly {sorted(expected)}')
+    return problems
+
+
+def _g4_unmoved(a, b):
+    """Whether a measured object is where another measurement had it, by the runner's own world comparison: position
+    distance and the largest per-axis roll/pitch/yaw difference, within the world tolerance."""
+    import math
     contract = G4_QUALIFICATION_CONTRACT
-    current = planner or planner_identity(repo)
-    current_control = control or g4_control_identity(repo)
+    return (math.dist(a['pose']['xyz'], b['pose']['xyz']) <= contract['world_tolerance_m'] and
+            max(abs(math.remainder(x - y, math.tau)) for x, y in zip(a['pose']['rpy'], b['pose']['rpy']))
+            <= contract['world_tolerance_rad'])
+
+
+def _g4_cycle_raw(run, n, record, summary, bound, registry, previous):
+    """Raw evidence of one executed and completed cycle: the authorised inputs are the files kept, fresh and in order,
+    the target classified as routed in its own frame, the world unchanged since the previous cycle's reconciliation,
+    the measured routed-bin occupancy, the placed part clear of every occupant, the world reconciled, the contact guard
+    clean and every motion stage completed. (problems, facts)"""
+    contract, d, problems = G4_QUALIFICATION_CONTRACT, run / 'session/cycles' / f'{n:03d}', []
+    files = dict(measure=d / 'measure/observations.yaml', frame=d / 'frame/frame.yaml',
+                 validated=d / 'validate/observations.yaml', reconciled=d / 'reconcile/observations.yaml',
+                 plan=d / 'resolve/summary.json', plan_log=d / 'resolve/executor.log')
+    missing = sorted(k for k, f in files.items() if not f.is_file())
+    if missing:
+        return [f'cycle {n}: evidence missing: {missing}'], None
+    for key, name in (('frame', 'frame'), ('observations', 'validated'), ('plan', 'plan')):
+        if (record.get(key) or {}).get('sha256') != _sha256(files[name].read_bytes()):
+            problems.append(f'cycle {n}: the {key} file differs from the one authorised')
+    measured, validated = _g4_observations(files['measure']), _g4_observations(files['validated'])
+    reconciled, frame = _g4_observations(files['reconciled']), yaml.safe_load(files['frame'].read_text())
+    target = (record.get('target') or {}).get('object_id')
+    events = {e['stage']: int(e['timestamp'] * 1e9) for e in summary.get('stage_events') or [] if isinstance(e, dict)}
+    consumed = registry / f'{n}.consumed'
+    consumed_ns = int(consumed.read_text().strip()) if consumed.is_file() and consumed.read_text().strip().isdigit() else None
+    times = dict(measured=int(max(o['timestamp'] for o in measured.values()) * 1e9),
+                 rendered=(frame.get('source') or {}).get('capture_wall_ns'), authorised=record.get('created_wall_ns'),
+                 consumed=consumed_ns, moved=events.get('EXECUTE_APPROACH'),
+                 reconciled=int(max(o['timestamp'] for o in reconciled.values()) * 1e9))
+    order = [previous['reconciled'] if previous else 0] + list(times.values())
+    if any(not isinstance(t, int) for t in order) or any(a >= b for a, b in zip(order, order[1:])):
+        problems.append(f'cycle {n}: evidence out of order or untimed {times} (after previous reconcile '
+                        f"{previous['reconciled'] if previous else None})")
+    if not 0 <= (record.get('frame') or {}).get('age_s', -1) <= bound['perception']['max_age_s']:
+        problems.append(f'cycle {n}: the authorised frame was stale')
+    classes = {o.get('object_id'): o.get('class_id') for o in frame.get('objects') or []}
+    if classes.get(target) != (record.get('target') or {}).get('class_id'):
+        problems.append(f'cycle {n}: the target is not classified as its routed class in its own rendered frame')
+    if previous:      # nothing moved between the previous cycle's reconciliation and this cycle's observation
+        before = previous['reconciled_objects']
+        if set(before) != set(measured) or any(not _g4_unmoved(before[o], measured[o]) for o in before):
+            problems.append(f'cycle {n}: the world changed after the previous cycle was reconciled')
+    routed = next((b for b in bound['destinations'] if b['model'] == (record.get('destination') or {}).get('model')), None)
+    occupants = destination_occupants({'objects': list(validated.values())}, routed) if routed else None
+    if occupants is None or sorted(o['object_id'] for o in record.get('occupancy') or []) != occupants:
+        problems.append(f'cycle {n}: the authorised occupancy is not the measured content of the routed bin')
+    dims = {o['object_id']: o['dimensions_m'] for o in bound['world']['objects']}
+    if target not in reconciled or set(validated) != set(reconciled):
+        problems.append(f'cycle {n}: the reconcile measurement lacks objects')
+        return problems, None
+    if any(_g4_footprints_overlap(reconciled[target], reconciled[o], dims[target], dims[o]) for o in occupants or []):
+        problems.append(f'cycle {n}: the placed part overlaps an object already in the bin')
+    for oid in validated:
+        if oid != target and not _g4_unmoved(validated[oid], reconciled[oid]):
+            problems.append(f'cycle {n}: {oid} moved during the cycle')
+    final = (summary.get('full_cycle_physical_acceptance') or {}).get('final_pose')
+    if not final or any(v > tol for v, tol in zip(_g4_pose_delta(reconciled[target], final),
+                                                   (contract['placed_tolerance_m'], contract['placed_tolerance_rad']))):
+        problems.append(f'cycle {n}: the reconcile measurement does not find the part where the executor placed it')
+    guard = summary.get('pile_contact_certification') or {}
+    if guard.get('contacts') != [] or guard.get('rejected') != [] or not guard.get('checked_samples'):
+        problems.append(f'cycle {n}: unpermitted contact or no contact-guard samples')
+    results = summary.get('execution_results') or []
+    if len(results) != 9 or any(r.get('code') != 1 or r.get('action_status') != 4 for r in results):
+        problems.append(f'cycle {n}: not every motion stage completed successfully')
+    if summary.get('shutdown_clean') is not True or summary.get('prevalidation_left_live_scene_unchanged') is not True:
+        problems.append(f'cycle {n}: the executor did not shut down cleanly or prevalidation changed the live scene')
+    if re.search(r'"stage": "EXECUTE_', files['plan_log'].read_text(errors='replace')):
+        problems.append(f'cycle {n}: the plan-only resolve executed motion')
+    facts = dict(times, placed=target, reconciled_objects=reconciled, window=(min(events.values()), max(events.values())),
+                 attach=events.get('ATTACH'), detach=events.get('DETACH'), home=events.get('EXECUTE_HOME'))
+    return problems, facts
+
+
+def _g4_goals(log):
+    """[(accepted ns, controller)] of every accepted controller goal in a launch log."""
+    return [(int(float(t) * 1e9), controller) for t, controller in G4_GOAL_LOG.findall(log)]
+
+
+def _g4_in(t, window):
+    start, end = window
+    return (start - int(G4_QUALIFICATION_CONTRACT['goal_window_margin_s'] * 1e9) <= t <=
+            end + int(G4_QUALIFICATION_CONTRACT['goal_window_end_s'] * 1e9))
+
+
+def _g4_log_problems(run, facts, windows):
+    """Every accepted controller goal inside an executed cycle's stage window (each completed cycle: its 7 arm goals),
+    and no ERROR line except one late re-sent detach per completed cycle, after its home stage and for its own part."""
+    log = (run / 'session/launch.log').read_text(errors='replace')
+    goals = _g4_goals(log)
+    problems = [f'controller goal at {t} outside every executed cycle' for t, _ in goals
+                if not any(_g4_in(t, w) for w in windows)]
+    for n, fact in facts.items():
+        arm = [t for t, controller in goals if controller == 'ur5_arm' and _g4_in(t, fact['window'])]
+        if len(arm) != 7:
+            problems.append(f'cycle {n}: {len(arm)} arm controller goals, not 7')
+    late = [(int(float(t) * 1e9), body) for t, body in G4_LATE_DETACH_LOG.findall(log)]
+    errors = sum(1 for line in log.splitlines() if '[ERROR]' in line)
+    if errors != len(late):
+        problems.append(f'{errors - len(late)} unexpected ERROR line(s) in the launch log')
+    ordered = sorted(facts.items())
+    for t, body in late:
+        owner = [n for i, (n, f) in enumerate(ordered) if f['home'] and t > f['home'] and
+                 (i + 1 == len(ordered) or t < ordered[i + 1][1]['window'][0]) and body == 'runtime::' + f['placed']]
+        if not owner:
+            problems.append(f'a missing-attachment error at {t} is not the late re-sent detach of a completed cycle')
+    for n, f in facts.items():
+        if sum(1 for t, body in late if f['home'] and t > f['home'] and body == 'runtime::' + f['placed']) > 1:
+            problems.append(f'cycle {n}: more than one late detach error')
+    return problems
+
+
+def _g4_tracking_bound(tracking):
+    """Whether ``tracking`` is this checkout's g4_tracking_evidence.session_tracking (a G4 control source); the verifier
+    never imports it (the executor imports this module), so the caller hands it in and it is checked here."""
+    import sys
+    module, source = sys.modules.get('g4_tracking_evidence'), (REPO / 'scripts/g4_tracking_evidence.py').resolve()
+    code = getattr(tracking, '__code__', None)
+    return (module is not None and tracking is getattr(module, 'session_tracking', None) and
+            Path(getattr(module, '__file__', '') or '').resolve() == source and code is not None and
+            Path(code.co_filename).resolve() == source)
+
+
+def _g4_tracking_problems(measured, completed):
+    """Problems of a numeric tracking result for the completed cycles: its session-level problems and those of a
+    completed cycle (a cancelled or refused cycle's stream is judged by its own acceptance, not here), and for each
+    completed cycle every arm stage measured with a finite deviation and every free-space stage within its allowance."""
+    import math
+    problems = [p for p in measured.get('problems') or []
+                if not re.match(r'cycle \d+: ', p) or int(p.split(':')[0].split()[1]) in completed]
+    for n in completed:
+        stages = ((measured.get('cycles') or {}).get(n) or {}).get('stages') or {}
+        if set(stages) != set(G4_TRACKED_STAGES):
+            problems.append(f'cycle {n}: numeric tracking does not cover every arm stage ({sorted(stages)})')
+            continue
+        for stage, found in stages.items():
+            if not isinstance(found.get('max_deviation_m'), (int, float)) or not math.isfinite(found['max_deviation_m']):
+                problems.append(f'cycle {n}: {stage} has no finite tracking deviation')
+            if stage in G4_FREE_STAGES and found.get('within_allowance') is not True:
+                problems.append(f'cycle {n}: {stage} is not within its tracking allowance')
+    return problems
+
+
+def _g4_session_raw(run, granted, completed, bound, repo, tracking, trace):
+    """Raw-evidence problems of a trial run's completed cycles and its log, plus the numeric tracking evidence."""
+    report, record, registry = _g4_run_files(run)
+    problems = _g4_run_problems(run, report, record, registry, granted)
+    facts, previous = {}, None
+    for cycle in completed:
+        n = int(cycle['cycle'])
+        d = run / 'session/cycles' / f'{n:03d}'
+        found, fact = _g4_cycle_raw(run, n, json.loads((d / 'g4-cycle.json').read_text()),
+                                    json.loads((d / 'execute/summary.json').read_text()), bound, registry, previous)
+        problems += found
+        if fact is None:
+            return problems, None
+        facts[n], previous = fact, fact
+    # Objects never targeted stay where the session first measured them, in every measurement it took.
+    targeted = {f['placed'] for f in facts.values()}
+    first = _g4_observations(run / 'session/cycles/001/measure/observations.yaml')
+    for path in sorted((run / 'session/cycles').glob('*/*/observations.yaml')):
+        seen = _g4_observations(path)
+        for oid in set(first) - targeted:
+            if oid not in seen or not _g4_unmoved(first[oid], seen[oid]):
+                problems.append(f'{oid} (never a target) moved or vanished ({path.relative_to(run)})')
+    windows = []
+    for cycle in granted:
+        summary = run / 'session/cycles' / f"{int(cycle['cycle']):03d}" / 'execute/summary.json'
+        if summary.is_file():
+            events = [int(e['timestamp'] * 1e9) for e in json.loads(summary.read_text()).get('stage_events') or []]
+            windows.append((min(events), max(events)))
+    problems += _g4_log_problems(run, facts, windows)
+    if not _g4_tracking_bound(tracking):
+        return problems + ['numeric tracking is not this checkout\'s g4_tracking_evidence.session_tracking'], \
+            dict(facts=facts, tracking=None)
+    measured = tracking(run, trace or report.get('planning_trace') or str(run) + '.trace')
+    return problems + _g4_tracking_problems(measured, list(facts)), dict(facts=facts, tracking=measured)
+
+
+def _g4_motion_signs(run, report, moved_cycles=()):
+    """Evidence that a run moved beyond ``moved_cycles``, independent of the executor's own execution_attempted flag:
+    the runner's execute step, any accepted controller goal outside those cycles, or no launch log to tell (an
+    EXECUTE_ stage event alone is not motion: the executor logs it before checks that can still refuse)."""
+    signs, windows = [], []
+    for cycle in report.get('cycles') or []:
+        n = int(cycle.get('cycle') or 0)
+        summary = run / 'session/cycles' / f'{n:03d}' / 'execute/summary.json'
+        if n in moved_cycles and summary.is_file():
+            events = [int(e['timestamp'] * 1e9) for e in json.loads(summary.read_text()).get('stage_events') or []]
+            windows.append((min(events), max(events)))
+        elif ((cycle.get('steps') or {}).get('execute') or {}).get('execution_attempted') is True:
+            signs.append(f'cycle {n}: the runner recorded an execution attempt')
+    log = run / 'session/launch.log'
+    if not log.is_file():
+        signs.append('no launch log to show that nothing moved')
+    elif any(not any(_g4_in(t, w) for w in windows) for t, _ in _g4_goals(log.read_text(errors='replace'))):
+        signs.append('the launch log has accepted controller goals outside the moved cycles')
+    return signs
+
+
+def g4_session_evidence(run_dir, *, tracking, trace=None, repo=REPO):
+    """The full acceptance of one G4 trial run from its raw evidence: g4_trial_evidence, then run provenance, the
+    cycle registry, every completed cycle's measured world, perception, occupancy, placement, contact guard and
+    motion results, the controller goals and launch-log errors, and the numeric tracking of every arm stage (free
+    stages within their allowance). A moved run with any problem is FAILED; STRICT_PASS needs all of it; 'nothing
+    moved' must not be contradicted by any independent motion evidence. ``tracking`` must be this checkout's
+    g4_tracking_evidence.session_tracking (it needs ROS 2 message support; the executor, which imports this module,
+    never runs a verifier)."""
+    run = Path(run_dir)
+    ev = g4_trial_evidence(run, repo)
+    if ev['kind'] == 'NOT_A_TRIAL':
+        return ev
+    if ev['kind'] == 'PRE_MOTION_FAILURE':
+        try:
+            signs = _g4_motion_signs(run, json.loads((run / G4_RUN_REPORT).read_text()))
+        except Exception as exc:                   # noqa: BLE001
+            signs = [f'motion evidence unreadable: {exc!r}']
+        if signs:
+            ev.update(kind='FAILED', problems=ev['problems'] + ['"nothing moved" is contradicted: ' + '; '.join(signs)])
+        return ev
+    try:
+        report = json.loads((run / G4_RUN_REPORT).read_text())
+        granted = [c for c in report.get('cycles', []) if ((c.get('steps') or {}).get('authorise') or {}).get('granted')]
+        completed = [c for c in granted if c.get('outcome') == 'COMPLETED']
+        problems, found = _g4_session_raw(run, granted, completed, ev['binding'], repo, tracking, trace)
+    except Exception as exc:                       # noqa: BLE001 (malformed raw evidence is a judged failure)
+        problems, found = [f'raw evidence could not be judged: {exc!r}'], None
+    ev['tracking'] = (found or {}).get('tracking')
+    ev['facts'] = (found or {}).get('facts')
+    if problems:
+        ev['problems'] = ev['problems'] + problems
+        if any(c.get('moved') for c in ev['cycles']) or ev['kind'] == 'STRICT_PASS':
+            ev['kind'] = 'FAILED'
+    return ev
+
+
+def _g4_not_accepted(run, exc):
+    return dict(accepted=False, state='NOT_ACCEPTED', failed=[f'malformed evidence: {exc!r}'], checks={}, problems=[],
+                run=str(Path(run).resolve()), run_id=None, binding=None, planner=None, control=None, session_sha256=None)
+
+
+def g4_stop_after_cycle_evidence(run_dir, *, tracking, trace=None, repo=REPO):
+    """G4-S from the run's own evidence: SIGUSR1 to the runner latched during cycle 1's EXECUTE_TRANSFER, never
+    forwarded or superseded; cycle 1 completed strictly (g4_session_evidence) and was counted; the session ended
+    STOPPED before any further cycle was authorised; clean owned shutdown. Malformed evidence: NOT_ACCEPTED."""
+    run = Path(run_dir)
+    try:
+        return _g4_stop_after_cycle_evidence(run, tracking, trace, repo)
+    except Exception as exc:                       # noqa: BLE001
+        return _g4_not_accepted(run, exc)
+
+
+def _g4_stop_after_cycle_evidence(run, tracking, trace, repo):
+    ev = g4_session_evidence(run, tracking=tracking, trace=trace, repo=repo)
+    report, record, registry = _g4_run_files(run)
+    stop = report.get('stop_after_cycle') or {}
+    granted = [c for c in report.get('cycles', []) if ((c.get('steps') or {}).get('authorise') or {}).get('granted')]
+    first = run / 'session/cycles/001/execute/summary.json'
+    summary = json.loads(first.read_text()) if first.is_file() else {}
+    began = {e.get('stage'): e.get('timestamp') for e in summary.get('stage_events') or [] if isinstance(e, dict)}
+    transfer, place, requested = began.get('EXECUTE_TRANSFER'), began.get('EXECUTE_PLACE'), stop.get('requested_wall_ns')
+    shutdown = report.get('shutdown') or {}
+    checks = dict(
+        trial=record.get('state') == G4_AUTHORISED_TRIAL and (record.get('binding') or {}).get('max_cycles') == 2,
+        latched=(stop.get('signal') == 'SIGUSR1' and isinstance(requested, int) and stop.get('forwarded') is None and
+                 'acknowledgement_error' not in stop and 'superseded_by' not in stop and 'operator_cancel' not in report),
+        during_transfer=(stop.get('gate') == 'g4' and stop.get('phase') == 'execute' and
+                         stop.get('executor_stage') == 'EXECUTE_TRANSFER' and isinstance(requested, int) and
+                         isinstance(transfer, (int, float)) and isinstance(place, (int, float)) and
+                         transfer * 1e9 < requested < place * 1e9),
+        cycle_completed_strictly=(ev['kind'] == 'INCOMPLETE' and [(c['cycle'], c['moved'], c['verified'])
+                                                                  for c in ev['cycles']] == [(1, True, True)]),
+        counted=([c.get('outcome') for c in granted] == ['COMPLETED'] and
+                 ((report.get('ledger') or {}).get('counts') or {}).get('completed') == 1),
+        no_further_cycle=(len(granted) == 1 and not (run / 'session/cycles/002').exists() and registry.is_dir() and
+                          {p.name for p in registry.iterdir()} == {'1.issued', '1.consumed'}),
+        stopped=(report.get('status') == 'STOPPED' and report.get('result') == 'STOPPED_BY_OPERATOR' and
+                 (report.get('ledger') or {}).get('state') == 'STOPPED' and summary.get('failed_stage') is None and
+                 not summary.get('recovery_required')),
+        clean_shutdown=shutdown.get('clean') is True and not shutdown.get('surviving_owned_processes'),
+    )
+    failed = [name for name, ok in checks.items() if not ok]
+    return dict(accepted=not failed, state='STOPPED_AFTER_CYCLE' if not failed else 'NOT_ACCEPTED', failed=failed,
+                checks=checks, problems=[p for p in ev['problems'] if 'bounded cycles ran' not in p], run=ev['run'],
+                run_id=ev.get('run_id'), binding=ev.get('binding'), planner=ev.get('planner'), control=ev.get('control'),
+                session_sha256=(report.get('g4_session') or {}).get('sha256'), tracking=ev.get('tracking'))
+
+
+def g4_cancel_evidence(run_dir, repo=REPO, cycle=1):
+    """G4-C from the run's own evidence (``cycle``: the cancelled cycle; the counted G4-C is cycle 1, every earlier
+    cycle of another cancelled run must have completed): SIGTERM to the runner during the cycle's EXECUTE_TRANSFER,
+    forwarded to (not
+    killing) the executor; the executor summary bound to the authorised cycle (its record and session digests, target,
+    resolution, Stage-A prerequisites); simulator_execution.transfer_cancellation_acceptance recomputed from it and equal
+    to its recorded verdict (controller goal cancelled, measured stop, part still held, attachment kept, permissions
+    revoked, recovery required, no motion after the cancel); no unpermitted contact; the launch log with exactly the
+    cycle's four arm goals (approach, grasp, lift, the cancelled transfer) and its gripper close, nothing outside the
+    cycle and no ERROR line; the cycle authorised and consumed once and never counted; nothing further authorised;
+    clean provenance and owned shutdown. Malformed evidence: NOT_ACCEPTED."""
+    run = Path(run_dir)
+    try:
+        return _g4_cancel_evidence(run, repo, int(cycle))
+    except Exception as exc:                       # noqa: BLE001
+        return _g4_not_accepted(run, exc)
+
+
+def _g4_cancel_evidence(run, repo, n):
+    from simulator_execution import transfer_cancellation_acceptance
+    ev = g4_trial_evidence(run, repo)
+    report, record, registry = _g4_run_files(run)
+    granted = [c for c in report.get('cycles', []) if ((c.get('steps') or {}).get('authorise') or {}).get('granted')]
+    cancel = report.get('operator_cancel') or {}
+    child = cancel.get('child') or {}
+    cycle_dir = run / 'session/cycles' / f'{n:03d}'
+    summary = json.loads((cycle_dir / 'execute/summary.json').read_text())
+    cycle_record = json.loads((cycle_dir / 'g4-cycle.json').read_text())
+    verdict = transfer_cancellation_acceptance(summary)
+    guard = summary.get('pile_contact_certification') or {}
+    scope = summary.get('physics_scope') or {}
+    windows = {}
+    for c in granted:
+        executed = run / 'session/cycles' / f"{int(c['cycle']):03d}" / 'execute/summary.json'
+        if executed.is_file():
+            events = [int(e['timestamp'] * 1e9) for e in json.loads(executed.read_text()).get('stage_events') or []
+                      if isinstance(e, dict)]
+            windows[int(c['cycle'])] = (min(events), max(events))
+    window = windows.get(n)
+    log = (run / 'session/launch.log').read_text(errors='replace')
+    goals = _g4_goals(log)
+    late = [body for _, body in G4_LATE_DETACH_LOG.findall(log)]
+    earlier = [c for c in granted if int(c['cycle']) < n]
+    shutdown = report.get('shutdown') or {}
+    steps = (granted[-1].get('steps') if granted else None) or {}
+    checks = dict(
+        trial=record.get('state') == G4_AUTHORISED_TRIAL and (record.get('binding') or {}).get('max_cycles') == 2,
+        provenance=(ev['kind'] == 'CANCELLED' and not ev['problems'] and
+                    not _g4_run_problems(run, report, record, registry, granted)),
+        cancelled=(report.get('status') == 'CANCELLED' and cancel.get('signal') == 'SIGTERM' and
+                   'stop_after_cycle' not in report),
+        forwarded=(Path(str(child.get('command', ''))).name == 'perceived_object_grasp_execute.py' and
+                   child.get('forwarded') == 'SIGTERM' and child.get('killed') is False),
+        authorised_once=([int(c['cycle']) for c in granted] == list(range(1, n + 1)) and registry.is_dir() and
+                         {p.name for p in registry.iterdir()} == {f'{i}.{m}' for i in range(1, n + 1)
+                                                                  for m in ('issued', 'consumed')} and
+                         all(c.get('outcome') == 'COMPLETED' for c in earlier) and
+                         [(c['cycle'], c['verified']) for c in ev['cycles'] if c['moved'] and not c.get('cancelled')]
+                         == [(i, True) for i in range(1, n)]),
+        bound_to_cycle=(scope.get('cycle_sha256') == steps.get('authorise', {}).get('sha256') and
+                        scope.get('session_sha256') == (report.get('g4_session') or {}).get('sha256') and
+                        summary.get('selected_object_id') == 'runtime::' + str((cycle_record.get('target') or {}).get('object_id'))
+                        and summary.get('resolution_sha256') == (cycle_record.get('plan') or {}).get('resolution_sha256')
+                        and _g4_prerequisite_problem(summary, record.get('binding') or {}) is None),
+        transfer_cancellation_accepted=verdict['accepted'] and summary.get('transfer_cancellation') == verdict,
+        no_unpermitted_contact=(guard.get('contacts') == [] and guard.get('rejected') == [] and
+                                bool(guard.get('checked_samples'))),
+        controller_goals_in_cycle=(window is not None and
+                                   sum(1 for t, c in goals if c == 'ur5_arm' and _g4_in(t, window)) == 4 and
+                                   any(c == 'ur5_gripper' and _g4_in(t, window) for t, c in goals) and
+                                   all(any(_g4_in(t, w) for w in windows.values()) for t, _ in goals) and
+                                   sum(1 for line in log.splitlines() if '[ERROR]' in line) == len(late) and
+                                   len(set(late)) == len(late) and set(late) <= {'runtime::' + json.loads(
+                                       (run / 'session/cycles' / f"{int(c['cycle']):03d}" / 'g4-cycle.json').read_text()
+                                   )['target']['object_id'] for c in earlier}),
+        not_counted=(granted[-1].get('outcome') == 'CANCELLED' and int(granted[-1]['cycle']) == n and
+                     'verify' not in steps and 'reconcile' not in steps and
+                     ((report.get('ledger') or {}).get('counts') or {}).get('completed') == n - 1) if granted else False,
+        session_interrupted=((report.get('ledger') or {}).get('fault') or {}).get('code') == 'SESSION_INTERRUPTED',
+        clean_shutdown=shutdown.get('clean') is True and not shutdown.get('surviving_owned_processes'),
+    )
+    failed = [name for name, ok in checks.items() if not ok]
+    return dict(accepted=not failed, state='CANCELLED_HELD_STOPPED' if not failed else 'NOT_ACCEPTED', failed=failed,
+                checks=checks, verdict=verdict, problems=ev['problems'], run=ev['run'], run_id=ev.get('run_id'),
+                binding=ev.get('binding'), planner=ev.get('planner'), control=ev.get('control'),
+                session_sha256=(report.get('g4_session') or {}).get('sha256'))
+
+
+def g4_qualification_readiness(cell_dir, sessions, native, runtime, perception, *, stop_trial, cancel_trial,
+                               trial_roots, tracking, scan_roots=(), other_runs=(), planner=None, control=None,
+                               repo=REPO):
+    """Readiness of one exact G4 cell under G4_QUALIFICATION_CONTRACT, recomputed from raw evidence; it issues and
+    admits nothing. Counted: ``sessions`` (3 STRICT_PASS two-cycle sessions), ``stop_trial`` (G4-S) and ``cancel_trial``
+    (G4-C), all of this cell at the current planner and G4 control identity, the given native build, runtime and
+    rendered-EPD perception (g4_perception of the workspace), one shared binding, five distinct sessions.
+    Completeness: every listed run lies under a ``trial_roots`` production root; every authorised trial of this cell and
+    planner identity under those roots must be listed (unreadable evidence there blocks), and so must every such trial
+    with a runner report anywhere under ``scan_roots`` (a deliberately forged negative-test record without a runner
+    report is listed as ignored). A run whose identity cannot be recovered, a FAILED exact-identity run and a cancelled
+    exact-identity run whose cancel is not accepted all block. Broad scan: a record in a runner's session layout
+    (``<run>/session/g4-session.json`` with its launch log or cycle registry) is a real trial even without a report
+    (a killed runner); anything else is reported as an ignored negative-test record. Categories: counted, other_versions (another recovered
+    planner or G4 control identity: listed, never counted), reliability_findings (nothing moved), incomplete (stopped
+    with every moved cycle verified, or an accepted cancel: listed, not counted, not blocking), unmet (blocking)."""
+    contract = G4_QUALIFICATION_CONTRACT
+    current, current_control = planner or planner_identity(repo), control or g4_control_identity(repo)
     _, world = cell_world(cell_dir)
     files = {name: _sha256((Path(cell_dir) / name).read_bytes()) for name in QUALIFIED_CELL_FILES}
-    counted, unmet, reliability, incomplete, other_versions, seen, shared = [], [], [], [], [], set(), None
-    for run in runs:
-        ev = g4_trial_evidence(run, repo)
+    roots = [Path(r).resolve() for r in trial_roots]
+    unmet, other_versions, reliability, incomplete, counted, ignored, not_trials = [], [], [], [], {}, [], []
+    listed = [Path(r).resolve() for r in [*sessions, stop_trial, cancel_trial, *other_runs] if r is not None]
+    if len(set(listed)) != len(listed):
+        unmet.append('a run is listed more than once')
+    for run in listed:
+        if not any(run == root or root in run.parents for root in roots):
+            unmet.append(f'{run}: not under a production trial root')
+
+    def exact(found, role):
+        """Problems of a judged run against the exact cell and identities; None: another recovered version (listed)."""
+        bound = found.get('binding') or {}
+        if not bound or not found.get('planner') or not found.get('control'):
+            return [f"identity unrecoverable ({role}): {found.get('problems') or found.get('failed')}"]
+        if found.get('planner') != current or found.get('control') != current_control:
+            other_versions.append(dict(run=found['run'], role=role, planner=found.get('planner'),
+                                       control=found.get('control')))
+            return None
+        return [label for label, ok in (
+            ('native identity changed', bound.get('native') == native),
+            ('runtime identity changed', bound.get('runtime') == runtime),
+            ('perception identity changed', bound.get('perception') == perception),
+            ('another cell', {k: (bound.get('cell') or {}).get('files', {}).get(k) for k in QUALIFIED_CELL_FILES} == files),
+            ('another world', (bound.get('world') or {}).get('derived_sha256') == world['derived_sha256'])) if not ok]
+
+    def judge_listed(run, role):
+        """A listed run that is not counted evidence: not a trial, reliability, incomplete, another version, or
+        blocking. A cancel is judged where it happened: before its cycle moved (reliability, or incomplete after
+        verified cycles), during a transfer (the generalised G4-C judge of that cycle), during any other motion stage
+        (blocking: G5A defines the transfer cancel only, so no acceptance exists)."""
+        ev = g4_session_evidence(run, tracking=tracking, repo=repo)
+        if ev['kind'] == 'NOT_A_TRIAL':
+            not_trials.append(ev['run'])
+            return None
         if ev['kind'] == 'PRE_MOTION_FAILURE':
             reliability.append(dict(run=ev['run'], problems=ev['problems']))
-            continue
-        if (ev['planner'] is not None and ev['planner'] != current) or (
-                ev['control'] is not None and ev['control'] != current_control):
-            other_versions.append(dict(run=ev['run'], planner=ev['planner'], control=ev['control'], kind=ev['kind']))
-            continue
-        if ev['kind'] in ('INCOMPLETE', 'CANCELLED'):
-            incomplete.append(dict(run=ev['run'], kind=ev['kind'], problems=ev['problems']))
-            continue
-        if ev['kind'] != 'STRICT_PASS':
-            unmet.append(f"{ev['run']}: {ev['kind']}: {ev['problems']}")
-            continue
-        bound = ev['binding']
-        problems = [label for label, ok in (
-            ('native identity changed', bound['native'] == native), ('runtime identity changed', bound['runtime'] == runtime),
-            ('another cell', {k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files),
-            ('another world', bound['world']['derived_sha256'] == world['derived_sha256']),
-            ('geometry, robot, routing, perception or safeguards differ from the other trials',
-             shared is None or _g4_shared(bound) == shared),
-            ('the same trial session counted twice', ev['run_id'] not in seen)) if not ok]
-        if problems:
+            return None
+        problems = exact(ev, role)
+        if problems is None:
+            return None
+        if problems and problems[0].startswith('identity unrecoverable'):
             unmet.append(f"{ev['run']}: {problems}")
+            return None
+        if ev['kind'] == 'CANCELLED':
+            moved = [c for c in ev['cycles'] if c['moved'] and c.get('cancelled')]
+            if not moved:                              # cancelled before its cycle moved
+                verified = [c['cycle'] for c in ev['cycles'] if c['moved']]
+                signs = _g4_motion_signs(Path(run), json.loads((Path(run) / G4_RUN_REPORT).read_text()), verified)
+                if signs:
+                    unmet.append(f"{ev['run']}: a cancel before motion is contradicted: {signs}")
+                elif verified:
+                    incomplete.append(dict(run=ev['run'], kind='CANCELLED_BEFORE_MOTION', problems=ev['problems']))
+                else:
+                    reliability.append(dict(run=ev['run'], problems=['cancelled before anything moved']))
+                return None
+            n = moved[-1]['cycle']
+            summary = json.loads((Path(run) / 'session/cycles' / f'{n:03d}' / 'execute/summary.json').read_text())
+            if summary.get('failed_stage') != 'EXECUTE_TRANSFER':
+                unmet.append(f"{ev['run']}: a cancel during {summary.get('failed_stage')} of cycle {n} has no G4 "
+                             'acceptance rule (G5A defines the transfer cancel only)')
+                return None
+            cancelled = g4_cancel_evidence(run, repo=repo, cycle=n)
+            if not cancelled['accepted']:
+                unmet.append(f"{ev['run']}: a cancelled trial whose cancel is not accepted: {cancelled['failed']}")
+            else:
+                incomplete.append(dict(run=ev['run'], kind='CANCELLED', problems=ev['problems']))
+            return None
+        if ev['kind'] == 'INCOMPLETE':
+            incomplete.append(dict(run=ev['run'], kind=ev['kind'], problems=ev['problems']))
+            return None
+        return ev, problems
+
+    for run in sessions:
+        judged = judge_listed(run, 'session')
+        if judged is None:
             continue
-        shared = shared or _g4_shared(bound)
-        seen.add(ev['run_id'])
-        counted.append(ev['run'])
-    if len(counted) < contract['trial_sessions']:
-        unmet.append(f"{len(counted)} of {contract['trial_sessions']} accepted trial sessions")
-    listed = {str(Path(r).resolve()) for r in runs}
-    unlisted = []
-    for root in evidence_roots:
-        for session_path in sorted(Path(root).rglob('g4-session.json')):
-            run = session_path.parent.parent
-            try:
-                record = json.loads(session_path.read_text())
-                if record.get('state') != G4_AUTHORISED_TRIAL:
-                    continue                                       # plan-only sessions never moved
-                bound = record['binding']
-                same = (bound['world']['derived_sha256'] == world['derived_sha256'] and
-                        {k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files)   # this exact cell
-                report = json.loads((run / G4_RUN_REPORT).read_text())
-                software = _software(report, bound, repo)[0]
-            except (OSError, ValueError, KeyError, TypeError):
-                if str(run.resolve()) not in listed:
+        ev, problems = judged
+        if ev['kind'] != 'STRICT_PASS' or problems:
+            unmet.append(f"{ev['run']}: {ev['kind']}: {ev['problems'] + problems}")
+            continue
+        counted.setdefault('sessions', []).append(ev)
+    judged_roles = []
+    for role, run, judge in (('stop_after_cycle', stop_trial, g4_stop_after_cycle_evidence),
+                             ('cancel_during_transfer', cancel_trial, g4_cancel_evidence)):
+        if run is None:
+            unmet.append(f'{role}: no evidence')
+            continue
+        found = judge(run, repo=repo) if judge is g4_cancel_evidence else judge(run, tracking=tracking, repo=repo)
+        problems = exact(found, role)
+        if problems is None:
+            unmet.append(f'{role}: {run} is another software version')
+            continue
+        if not found['accepted'] or problems:
+            unmet.append(f"{role} {found['run']}: {found['failed'] + problems} {found['problems']}")
+            continue
+        counted[role] = found
+        judged_roles.append(found)
+    everyone = counted.get('sessions', []) + judged_roles
+    shared = None
+    for found in everyone:
+        mine = _g4_shared(found['binding'])
+        if shared is not None and mine != shared:
+            unmet.append(f"{found['run']}: geometry, robot, routing, perception or safeguards differ from the other trials")
+        shared = shared or mine
+    run_ids = [found.get('run_id') for found in everyone]
+    records = [_sha256((Path(found['run']) / 'session/g4-session.json').read_bytes()) for found in everyone]
+    if len(set(run_ids)) != len(run_ids) or len(set(records)) != len(records):
+        unmet.append('the same trial session counted twice (launch run id or session record)')
+    if len(counted.get('sessions', [])) < contract['trial_sessions']:
+        unmet.append(f"{len(counted.get('sessions', []))} of {contract['trial_sessions']} accepted trial sessions")
+    for run in other_runs:
+        judged = judge_listed(run, 'other')
+        if judged is not None and judged[0]['kind'] in ('FAILED', 'STRICT_PASS'):
+            unmet.append(f"{judged[0]['run']}: a {judged[0]['kind']} trial of the exact identities not counted as evidence")
+    listed_set, unlisted = {str(r) for r in listed}, []
+    for strict, root_set in ((True, roots), (False, [Path(r).resolve() for r in scan_roots])):
+        for root in root_set:
+            for session_path in sorted(root.rglob('g4-session.json')):
+                run = session_path.parent.parent
+                if str(run.resolve()) in listed_set:
+                    continue
+                if not strict and not _g4_runner_session(session_path.parent):
+                    ignored.append(str(session_path))              # not a runner's session: a negative-test record
+                    continue
+                try:
+                    record = json.loads(session_path.read_text())
+                    if record.get('state') != G4_AUTHORISED_TRIAL and not _g4_trial_signs(session_path.parent, record):
+                        continue                                   # genuinely plan-only: never moved
+                    report_path = run / G4_RUN_REPORT
+                    bound = record['binding']
+                    same = (bound['world']['derived_sha256'] == world['derived_sha256'] and
+                            {k: bound['cell']['files'].get(k) for k in QUALIFIED_CELL_FILES} == files)
+                    software = _software(json.loads(report_path.read_text()), bound, repo)[0]
+                except (OSError, ValueError, KeyError, TypeError, AttributeError):
                     unlisted.append(f'{run.resolve()} (unreadable trial evidence)')
-                continue
-            if same and software == current and str(run.resolve()) not in listed:
-                unlisted.append(str(run.resolve()))
+                    continue
+                if same and software == current and str(run.resolve()) not in unlisted:
+                    unlisted.append(str(run.resolve()))
     if unlisted:
-        unmet.append(f'unlisted trials of this software version: {unlisted}')
-    unmet.append(f"stop/cancel: {contract['stop_cancel']}")
+        unmet.append(f'unlisted trials of this cell and planner identity: {unlisted}')
     return dict(status='NOT_QUALIFIED' if unmet else 'QUALIFIED_READY', contract=contract, planner=current,
-                control=current_control,
-                world=world['derived_sha256'], counted=counted, unmet=unmet, reliability_findings=reliability,
-                incomplete=incomplete, other_versions=other_versions, unlisted=unlisted)
+                control=current_control, world=world['derived_sha256'],
+                counted=dict(sessions=[e['run'] for e in counted.get('sessions', [])],
+                             stop_after_cycle=(counted.get('stop_after_cycle') or {}).get('run'),
+                             cancel_during_transfer=(counted.get('cancel_during_transfer') or {}).get('run')),
+                unmet=unmet, reliability_findings=reliability, incomplete=incomplete, other_versions=other_versions,
+                unlisted=unlisted, ignored_negative_test_records=ignored, not_trials=not_trials,
+                admits='nothing: G4_AUTHORISED_SESSION stays refused (continuous production, G6)')
 
 
 # --- Qualification (offline; admits no motion) -------------------------------------------------------------------

@@ -1208,24 +1208,11 @@ def trial_run(t, root):
     return root
 
 
-def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(trial, tmp_path):
+def test_g4_trial_evidence_classifies_a_run_from_its_own_files(trial, tmp_path):
+    """The run-level judge under g4_session_evidence (readiness: the qualification contract tests below)."""
     run = trial_run(trial, tmp_path / 'runs/trial_1')
     ev = psq.g4_trial_evidence(run)
     assert ev['kind'] == 'STRICT_PASS' and [c['verified'] for c in ev['cycles']] == [True, True], ev['problems']
-    ready = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
-    assert ready['status'] == 'NOT_QUALIFIED' and ready['counted'] == [str(run.resolve())]
-    assert any('1 of 3 accepted trial sessions' in u for u in ready['unmet']) and any('stop/cancel' in u for u in ready['unmet'])
-    twice = psq.g4_qualification_readiness(trial['cell'], [run, run], NATIVE, RUNTIME, PLANNER, evidence_roots=[])
-    assert any('counted twice' in u for u in twice['unmet'])
-    assert any('native identity changed' in u for u in psq.g4_qualification_readiness(
-        trial['cell'], [run], dict(NATIVE, sha256='other'), RUNTIME, PLANNER, evidence_roots=[])['unmet'])
-    other = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, '0' * 64, evidence_roots=[])
-    assert other['other_versions'] and not other['counted']                              # listed, never counted
-    other = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, control='0' * 64,
-                                           evidence_roots=[])
-    assert other['other_versions'] and not other['counted']                              # other G4 control code
-    unlisted = psq.g4_qualification_readiness(trial['cell'], [], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
-    assert unlisted['unlisted'] == [str(run.resolve())]                                  # no cherry-picking
     summary = run / 'session/cycles/002/execute/summary.json'
     original = summary.read_text()
     data = json.loads(original)
@@ -1243,8 +1230,6 @@ def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(t
                                            cycles=report['cycles'][:1])))
     stopped = psq.g4_trial_evidence(run)                                                  # every moved cycle verified
     assert stopped['kind'] == 'INCOMPLETE'
-    lenient = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[])
-    assert lenient['incomplete'] and not any(str(run.resolve()) in u for u in lenient['unmet'])   # listed, not blocking
     report_path.write_text(json.dumps(dict(report, status='CANCELLED')))
     assert psq.g4_trial_evidence(run)['kind'] == 'CANCELLED'
     # A FAULT after motion blocks: the runner's reconcile found a neighbour moved after a verified executor PASS.
@@ -1254,8 +1239,6 @@ def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(t
     report_path.write_text(json.dumps(dict(faulted, status='FAULT', result=None, stop={'code': 'G4_WORLD_CHANGED'})))
     judged = psq.g4_trial_evidence(run)
     assert judged['kind'] == 'FAILED' and any('did not complete this cycle' in p for p in judged['problems'])
-    assert any(str(run.resolve()) in u for u in psq.g4_qualification_readiness(
-        trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[])['unmet'])     # it blocks readiness
     # A cancel never hides an earlier failed cycle.
     report_path.write_text(json.dumps(dict(faulted, status='CANCELLED')))
     assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
@@ -1287,15 +1270,6 @@ def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(t
     report_path.write_text(json.dumps(dict(report, cycles=[dict(cycle=None, steps=dict(authorise=dict(granted=True)))])))
     assert psq.g4_trial_evidence(run)['kind'] == 'FAILED'
     report_path.write_text(json.dumps(report))
-    other_cell = tmp_path / 'runs/other_cell'                                             # same world, another task
-    import shutil
-    shutil.copytree(run, other_cell)
-    record = json.loads((other_cell / 'session/g4-session.json').read_text())
-    record['binding']['cell']['files']['config/workcell_builder_task_intent.yaml'] = '0' * 64
-    (other_cell / 'session/g4-session.json').write_text(json.dumps(record))
-    scan = psq.g4_qualification_readiness(trial['cell'], [run], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
-    assert str(other_cell.resolve()) not in str(scan['unlisted'])
-    shutil.rmtree(other_cell)
     # A self-consistent cycle pair of another session (record, its digest in the report, the summary naming both)
     # is caught only by the session binding.
     cycle_two, summary_two = run / 'session/cycles/002/g4-cycle.json', run / 'session/cycles/002/execute/summary.json'
@@ -1310,6 +1284,601 @@ def test_g4_qualification_counts_only_strict_trial_evidence_and_issues_nothing(t
     report_path.write_text(json.dumps(report))
     judged = psq.g4_trial_evidence(run)
     assert judged['kind'] == 'FAILED' and any('another session' in p for p in judged['problems'])
-    (run / 'session/g4-session.json').write_text('{ truncated')                           # unreadable evidence blocks
-    broken = psq.g4_qualification_readiness(trial['cell'], [], NATIVE, RUNTIME, PLANNER, evidence_roots=[tmp_path / 'runs'])
-    assert any('unreadable trial evidence' in u for u in broken['unlisted'])
+
+
+# --- G4 qualification contract: complete runner-layout runs (synthetic clock; every record by the real authority) ------
+T0 = 1_800_000_000                                                       # synthetic wall clock (s) of the first cycle
+STAGE_AT = dict(PREFLIGHT=12, EXECUTE_APPROACH=20, EXECUTE_GRASP=30, EXECUTE_CLOSE_GRIPPER=40, ATTACH=45, EXECUTE_LIFT=50,
+                EXECUTE_TRANSFER=60, EXECUTE_PLACE=80, EXECUTE_OPEN_GRIPPER=90, DETACH=95, EXECUTE_RETREAT=100,
+                EXECUTE_HOME=110)
+ARM_GOALS_AT, GRIPPER_GOALS_AT = (20.5, 30.5, 50.5, 60.5, 80.5, 100.5, 110.5), (12.5, 40.5, 90.5)
+
+
+def tracked(*cycles, worst=0.001):
+    """A numeric tracking result covering every arm stage of ``cycles``, every free stage within its allowance."""
+    return dict(cycles={n: dict(stages={s: dict(max_deviation_m=worst, within_allowance=worst < 0.001 + 1e-12
+                                                if s in psq.G4_FREE_STAGES else None) for s in psq.G4_TRACKED_STAGES})
+                        for n in cycles}, problems=[])
+
+
+def no_tracking_problems(run, trace):
+    return tracked(1, 2)
+
+
+def realistic_tracking(run, trace):
+    """As session_tracking judges a run: every executed cycle (its stream exists), a cancelled or refused cycle with the
+    problem the real tool reports for it, a completed cycle with every stage measured within its allowance."""
+    run = Path(run)
+    outcome = {c['cycle']: c.get('outcome') for c in json.loads((run / psq.G4_RUN_REPORT).read_text())['cycles']}
+    executed = sorted(int(p.parent.parent.name) for p in run.glob('session/cycles/*/execute/summary.json'))
+    found = tracked(*[n for n in executed if outcome.get(n) == 'COMPLETED'])
+    found['problems'] = [f"cycle {n}: the executor's measurement run is not recorded consistently" for n in executed
+                         if outcome.get(n) != 'COMPLETED']
+    return found
+
+
+@pytest.fixture
+def stub_tracking(monkeypatch):
+    """The tests' tracking stubs stand for g4_tracking_evidence.session_tracking (its binding is tested separately)."""
+    monkeypatch.setattr(psq, '_g4_tracking_bound', lambda tracking: True)
+
+
+def write_yaml(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data))
+
+
+def g4_full_run(cell, root, monkeypatch, *, run_id, kind='session', placed_x=(-0.03, 0.03), edit_cycle=None, settle_m=0.0,
+                cancel_cycle=1):
+    """One G4 trial run in the runner's layout, every record written by the real authority at a synthetic clock:
+    kind 'session' (two completed cycles), 'stop' (G4-S: cycle 1 completed, stopped at its transfer) or 'cancel'
+    (G4-C: cycle 1 cancelled in its transfer; the G5A verdict is stubbed by the test)."""
+    import math
+    clock = dict(ns=T0 * 10 ** 9)
+    monkeypatch.setattr(psq, 'time', type('Clock', (), dict(time_ns=staticmethod(lambda: clock['ns']),
+                                                         time=staticmethod(lambda: clock['ns'] / 1e9)))())
+    fake_processes(monkeypatch)
+    session = root / 'session'
+    launch(session, cell)
+    receipt = json.loads((session / 'runtime/receipt.json').read_text())
+    (session / 'runtime/receipt.json').write_text(json.dumps(dict(receipt, run_id=run_id)))
+    bound = g4_binding(cell, session)
+    session_path = session / 'g4-session.json'
+    session_sha = psq.g4_authorise_trial(session_path, bound, psq.process_identity(os.getpid()))
+    record = json.loads(session_path.read_text())
+    floor = routed(bound)
+    dims = {o['object_id']: o['dimensions_m'] for o in bound['world']['objects']}
+    world = {o['object_id']: dict(xyz=list(o['spawn_pose'][:3]), rpy=list(o['spawn_pose'][3:])) for o in bound['world']['objects']}
+    plan = (['cup_1', 'cup_2'] if kind == 'session' or (kind == 'cancel' and cancel_cycle == 2) else
+            [] if kind == 'cancel_pre' else ['cup_1'])
+    log, cycles, previous, executed = [], [], None, []
+    for n, target in enumerate(plan, 1):
+        base = T0 + 200 * (n - 1)
+        d = session / 'cycles' / f'{n:03d}'
+        objects = lambda ts: [dict(object_id=oid, class_id='unperceived', confidence=None, timestamp=ts,
+                                   dimensions=dims[oid], pose=dict(frame_id='world', xyz=list(p['xyz']), rpy=list(p['rpy'])))
+                              for oid, p in sorted(world.items())]
+        write_yaml(d / 'measure/observations.yaml', dict(objects=objects(base + 1.0)))
+        in_bin = psq.destination_occupants({'objects': objects(base + 1.0)}, floor)
+        frame = dict(schema_version='detected_objects/v1', source=dict(
+            producer='simulator_render', world_revision=f'rev-{n}', capture_wall_ns=int((base + 2) * 1e9)),
+            objects=[dict(object_id=oid, class_id='cup' if oid.startswith('cup') and oid not in in_bin else 'unperceived')
+                     for oid in sorted(world)])
+        write_yaml(d / 'frame/frame.yaml', frame)
+        frame_sha = hashlib.sha256((d / 'frame/frame.yaml').read_bytes()).hexdigest()
+        validated = objects(base + 3.0)
+        for o in validated:
+            o['class_id'] = next(f['class_id'] for f in frame['objects'] if f['object_id'] == o['object_id'])
+        write_yaml(d / 'validate/observations.yaml', dict(
+            schema_version='detected_objects/v1', simulator_receipt_sha256=bound['session']['receipt_sha256'],
+            perception_binding=dict(perception_sha256=frame_sha, bindings={o['object_id']: dict(class_id=o['class_id'])
+                                                                           for o in validated}), objects=validated))
+        (d / 'resolve').mkdir(parents=True)
+        (d / 'resolve/summary.json').write_text(json.dumps(dict(
+            result='PLAN_ONLY', execution_attempted=False, selected_object_id='runtime::' + target,
+            batch_target_object_id='runtime::' + target, resolution_sha256=f'res-{n}',
+            physics_pads=dict(allowance_m={'transfer': 0.015}), selected_extraction_intent=dict(candidate_id='top_2f::000'),
+            physical_destination_walls=dict(selected_destination=dict(model=floor['model'])),
+            task_intent_resolution=dict(resolution_sha256=f'res-{n}', grasp_resolution=dict(selected_candidate_id='top_2f::000'),
+                                        place_resolution=dict(route=dict(class_id='cup', region_ref='default_drop_zone',
+                                                                         asset_ref='target_bin_default'))))))
+        (d / 'resolve/executor.log').write_text('{"stage": "PREPLAN_APPROACH"}\n')
+        clock['ns'] = int((base + 10) * 1e9)
+        cycle_path = d / 'g4-cycle.json'
+        sha = psq.g4_authorise_cycle(
+            cycle_path, session_path, session_sha, current=bound, cycle=n, target=dict(object_id=target, class_id='cup'),
+            destination='default_drop_zone', frame_path=d / 'frame/frame.yaml', observations_path=d / 'validate/observations.yaml',
+            plan_path=d / 'resolve/summary.json', occupancy=in_bin, previous=previous)
+        clock['ns'] = int((base + 11) * 1e9)
+        psq.g4_consume_cycle(session_path, session_sha, n)
+        cancelled = kind == 'cancel' and n == cancel_cycle
+        x = floor['floor_xyz'][0] + placed_x[n - 1]
+        final = [x, floor['floor_xyz'][1], floor['floor_z'] + 0.0125, 0.0, 0.0, 0.0, 1.0]
+        events = {s: base + at for s, at in STAGE_AT.items() if not cancelled or at <= STAGE_AT['EXECUTE_TRANSFER']}
+
+        def finish(summary):
+            summary.update(stage_events=[dict(stage=s, timestamp=t) for s, t in sorted(events.items(), key=lambda e: e[1])],
+                           pile_contact_certification=dict(contacts=[], rejected=[], checked_samples=1000, frozen=True),
+                           execution_results=[dict(stage=s, code=1, action_status=4) for s in psq.FULL_CYCLE_STAGES
+                                              if s.startswith('EXECUTE_')], shutdown_clean=True,
+                           prevalidation_left_live_scene_unchanged=True)
+            summary['full_cycle_physical_acceptance']['final_pose'] = final
+            if cancelled:
+                verdict = dict(accepted=True, state='RECOVERY_REQUIRED_HELD_STOPPED', failed=[], checks={})
+                summary.update(result='CANCELLED', failed_stage='EXECUTE_TRANSFER', recovery_required=True,
+                               transfer_cancellation=verdict)
+        summary_path = executed_summary(dict(bound=bound), cycle_path, sha, edit=finish)
+        (d / 'execute').mkdir()
+        summary_path.rename(d / 'execute/summary.json')
+        log += [f'[python3-3] [INFO] [{base + t:.6f}] [ur5_arm_controller]: Accepted new action goal' for t in ARM_GOALS_AT
+                if not cancelled or t < 61] + [
+                f'[python3-3] [INFO] [{base + t:.6f}] [ur5_gripper_controller]: Accepted new action goal'
+                for t in GRIPPER_GOALS_AT if not cancelled or t < 61]
+        steps = dict(authorise=dict(granted=True, sha256=sha), execute=dict(result='CANCELLED' if cancelled else 'PASS',
+                                                                            execution_attempted=True))
+        if cancelled:
+            cycles.append(dict(cycle=n, outcome='CANCELLED', steps=steps))
+            break
+        log.append(f"[move_group-5] [ERROR] [{base + 118:.6f}] [moveit_robot_state.robot_state]: Attached body "
+                   f"'runtime::{target}' not found")
+        world[target] = dict(xyz=[final[0] + settle_m] + final[1:3], rpy=[0.0, 0.0, 0.0])   # settled after the executor
+        write_yaml(d / 'reconcile/observations.yaml', dict(objects=objects(base + 130.0)))
+        steps.update(verify=dict(verified=True), reconcile=dict(others={'max_position_delta_m': 0.0}))
+        cycles.append(dict(cycle=n, outcome='COMPLETED', steps=steps))
+        previous = dict(path=cycle_path, sha256=sha, summary_path=d / 'execute/summary.json')
+        executed.append(n)
+        if edit_cycle:
+            edit_cycle(n, d)
+    (session / 'launch.log').write_text('\n'.join(log) + '\n')
+    completed = len(executed)
+    report = dict(schema='workcell_g4_sorting_run/v1', scope='G4_TRIAL_NOT_QUALIFIED', cycles=cycles,
+                  preflight=dict(repo_head=HEAD, repo_dirty=False, start_repo_head=HEAD, loaded_g4_control=CONTROL),
+                  shutdown=dict(clean=True, surviving_owned_processes=[]), runner=record['issuer'], planning_trace=None,
+                  g4_session=dict(path=str(session_path), sha256=session_sha),
+                  ledger=dict(state='COMPLETED', fault=None, counts=dict(completed=completed)))
+    if kind == 'session':
+        report.update(status='PASS', result='MAX_CYCLES')
+    elif kind == 'stop':
+        report.update(status='STOPPED', result='STOPPED_BY_OPERATOR', ledger=dict(
+            state='STOPPED', fault=None, counts=dict(completed=1)), stop_after_cycle=dict(
+            signal='SIGUSR1', requested_wall_ns=int((T0 + 65) * 1e9), state='STOPPING', gate='g4', phase='execute',
+            executor_stage='EXECUTE_TRANSFER', forwarded=None, repeated=0))
+    else:
+        if kind == 'cancel_pre':                                 # SIGTERM while cycle 1 was still planning
+            report['cycles'] = [dict(cycle=1, outcome='CANCELLED', steps=dict(observe=dict(max_position_delta_m=0.0)))]
+        report.update(status='CANCELLED', operator_cancel=dict(signal='SIGTERM', child=dict(
+            command='/ws/scripts/perceived_object_grasp_execute.py', pid=1, forwarded='SIGTERM', grace_s=90, killed=False)),
+            ledger=dict(state='FAULT', fault=dict(code='SESSION_INTERRUPTED'), counts=dict(completed=completed)))
+    (root / psq.G4_RUN_REPORT).write_text(json.dumps(report))
+    return root
+
+
+def mutate(run, tmp_path, name, edit):
+    """A copy of ``run`` with one edit applied (the original stays intact)."""
+    import shutil
+    copy_ = tmp_path / 'mutants' / name
+    shutil.copytree(run, copy_)
+    edit(copy_)
+    return copy_
+
+
+def edit_json(path, change):
+    data = json.loads(path.read_text())
+    change(data)
+    path.write_text(json.dumps(data))
+
+
+def edit_yaml(path, change):
+    data = yaml.safe_load(path.read_text())
+    change(data)
+    path.write_text(yaml.safe_dump(data))
+
+
+def test_g4_session_evidence_accepts_a_complete_run_and_rejects_every_tamper(g4_cell, tmp_path, monkeypatch, stub_tracking):
+    run = g4_full_run(g4_cell, tmp_path / 'trials/s1', monkeypatch, run_id='run-s1')
+    ev = psq.g4_session_evidence(run, tracking=no_tracking_problems)
+    assert ev['kind'] == 'STRICT_PASS', ev['problems']
+    c1, c2 = run / 'session/cycles/001', run / 'session/cycles/002'
+    registry = next((run / 'session').glob('g4-cycles-*')).name
+
+    def cube_moved(r):                                   # an object never targeted is pushed during cycle 2
+        edit_yaml(r / 'session/cycles/002/reconcile/observations.yaml',
+                  lambda d: next(o for o in d['objects'] if o['object_id'] == 'cube_1')['pose']['xyz'].__setitem__(0, 0.9))
+
+    def log_line(line):
+        return lambda r: (r / 'session/launch.log').write_text((r / 'session/launch.log').read_text() + line + '\n')
+
+    cases = dict(
+        tampered_frame=(lambda r: (r / 'session/cycles/001/frame/frame.yaml').write_text(
+            (c1 / 'frame/frame.yaml').read_text() + '# edited\n'), 'differs from the one authorised'),
+        replayed_or_missing_consumption=(lambda r: (r / 'session' / registry / '2.consumed').unlink(), 'cycle registry'),
+        extra_authorisation=(lambda r: (r / 'session' / registry / '3.issued').write_text('x'), 'cycle registry'),
+        another_runner=(lambda r: edit_json(r / psq.G4_RUN_REPORT, lambda d: d['runner'].update(pid=d['runner']['pid'] + 1)),
+                        'not issued by the runner'),
+        head_moved_while_running=(lambda r: edit_json(r / psq.G4_RUN_REPORT,
+                                                      lambda d: d['preflight'].update(start_repo_head='0' * 40)),
+                                  'commit at runner start'),
+        wrong_order=(lambda r: edit_yaml(r / 'session/cycles/002/measure/observations.yaml',
+                                         lambda d: [o.update(timestamp=T0 + 100) for o in d['objects']]), 'out of order'),
+        not_classified=(lambda r: edit_yaml(r / 'session/cycles/002/frame/frame.yaml',
+                                            lambda d: next(o for o in d['objects'] if o['object_id'] == 'cup_2').update(
+                                                class_id='unperceived')), 'differs from the one authorised'),
+        overlapping_place=(lambda r: edit_yaml(r / 'session/cycles/002/reconcile/observations.yaml', lambda d: next(
+            o for o in d['objects'] if o['object_id'] == 'cup_2')['pose'].update(xyz=next(
+                o for o in d['objects'] if o['object_id'] == 'cup_1')['pose']['xyz'])), 'overlaps'),
+        bystander_moved=(cube_moved, 'moved during the cycle'),
+        unpermitted_contact=(lambda r: edit_json(r / 'session/cycles/001/execute/summary.json', lambda d: d[
+            'pile_contact_certification'].update(contacts=[{'a': 'robot', 'b': 'wall'}])), 'unpermitted contact'),
+        goal_outside_cycles=(log_line(f'[python3-3] [INFO] [{T0 + 150:.6f}] [ur5_arm_controller]: Accepted new action goal'),
+                             'outside every executed cycle'),
+        unexpected_error=(log_line(f'[move_group-5] [ERROR] [{T0 + 70:.6f}] [moveit_ros.plan_execution]: failed'),
+                          'unexpected ERROR'),
+        detach_error_during_motion=(log_line(f"[move_group-5] [ERROR] [{T0 + 70:.6f}] [moveit_robot_state.robot_state]: "
+                                             "Attached body 'runtime::cup_1' not found"), 'late re-sent detach'),
+        plan_only_moved=(lambda r: (r / 'session/cycles/002/resolve/executor.log').write_text('{"stage": "EXECUTE_APPROACH"}\n'),
+                         'plan-only resolve executed motion'),
+    )
+    for name, (edit, expected) in cases.items():
+        judged = psq.g4_session_evidence(mutate(run, tmp_path, name, edit), tracking=no_tracking_problems)
+        assert judged['kind'] == 'FAILED' and any(expected in p for p in judged['problems']), (name, judged['problems'])
+    exceeded = psq.g4_session_evidence(run, tracking=lambda r, t: dict(tracked(1, 2), problems=[
+        'cycle 2: TRANSFER: tracking deviation 16.00 mm exceeds its 15 mm allowance']))
+    assert exceeded['kind'] == 'FAILED'
+    untracked = psq.g4_session_evidence(run, tracking=lambda r, t: tracked(1))
+    assert untracked['kind'] == 'FAILED' and any('does not cover every arm stage' in p for p in untracked['problems'])
+    outside = psq.g4_session_evidence(run, tracking=lambda r, t: tracked(1, 2, worst=0.02))
+    assert outside['kind'] == 'FAILED' and any('not within its tracking allowance' in p for p in outside['problems'])
+    assert (c2 / 'g4-cycle.json').is_file()                                          # the original run is untouched
+    assert psq.g4_session_evidence(run, tracking=no_tracking_problems)['kind'] == 'STRICT_PASS'
+
+
+def test_g4_stop_after_cycle_acceptance(g4_cell, tmp_path, monkeypatch, stub_tracking):
+    run = g4_full_run(g4_cell, tmp_path / 'trials/stop', monkeypatch, run_id='run-stop', kind='stop')
+    found = psq.g4_stop_after_cycle_evidence(run, tracking=lambda r, t: tracked(1))
+    assert found['accepted'], (found['failed'], found['problems'])
+    registry = next((run / 'session').glob('g4-cycles-*')).name
+    for name, edit, failed in (
+            ('after_transfer', lambda r: edit_json(r / psq.G4_RUN_REPORT, lambda d: d['stop_after_cycle'].update(
+                requested_wall_ns=int((T0 + 85) * 1e9))), 'during_transfer'),
+            ('forwarded', lambda r: edit_json(r / psq.G4_RUN_REPORT, lambda d: d['stop_after_cycle'].update(
+                forwarded='SIGUSR1')), 'latched'),
+            ('cycle_2_authorised', lambda r: (r / 'session' / registry / '2.issued').write_text('x'), 'no_further_cycle'),
+            ('not_counted', lambda r: edit_json(r / psq.G4_RUN_REPORT, lambda d: d['ledger']['counts'].update(completed=0)),
+             'counted'),
+            ('unstrict_cycle', lambda r: edit_json(r / 'session/cycles/001/execute/summary.json', lambda d: d[
+                'pile_contact_certification'].update(rejected=['x'])), 'cycle_completed_strictly')):
+        judged = psq.g4_stop_after_cycle_evidence(mutate(run, tmp_path, name, edit), tracking=lambda r, t: tracked(1))
+        assert not judged['accepted'] and failed in judged['failed'], (name, judged['failed'])
+
+
+def test_g4_cancel_acceptance_never_counts_the_cancelled_cycle(g4_cell, tmp_path, monkeypatch):
+    import simulator_execution
+    verdict = dict(accepted=True, state='RECOVERY_REQUIRED_HELD_STOPPED', failed=[], checks={})
+    monkeypatch.setattr(simulator_execution, 'transfer_cancellation_acceptance', lambda summary: dict(verdict))
+    run = g4_full_run(g4_cell, tmp_path / 'trials/cancel', monkeypatch, run_id='run-cancel', kind='cancel')
+    found = psq.g4_cancel_evidence(run)
+    assert found['accepted'], (found['failed'], found['problems'])
+    assert psq.g4_trial_evidence(run)['kind'] == 'CANCELLED'                         # never a cycle outcome
+    registry = next((run / 'session').glob('g4-cycles-*')).name
+    for name, edit, failed in (
+            ('recorded_verdict_differs', lambda r: edit_json(r / 'session/cycles/001/execute/summary.json', lambda d: d[
+                'transfer_cancellation'].update(state='OTHER')), 'transfer_cancellation_accepted'),
+            ('killed_not_forwarded', lambda r: edit_json(r / psq.G4_RUN_REPORT, lambda d: d['operator_cancel'][
+                'child'].update(killed=True)), 'forwarded'),
+            ('counted', lambda r: edit_json(r / psq.G4_RUN_REPORT, lambda d: d['ledger']['counts'].update(completed=1)),
+             'not_counted'),
+            ('contact', lambda r: edit_json(r / 'session/cycles/001/execute/summary.json', lambda d: d[
+                'pile_contact_certification'].update(contacts=[{'a': 'robot', 'b': 'wall'}])), 'no_unpermitted_contact'),
+            ('second_authorisation', lambda r: (r / 'session' / registry / '2.issued').write_text('x'), 'authorised_once'),
+            ('goal_after_cancel', lambda r: (r / 'session/launch.log').write_text((r / 'session/launch.log').read_text() +
+                f'[python3-3] [INFO] [{T0 + 300:.6f}] [ur5_arm_controller]: Accepted new action goal\n'),
+             'controller_goals_in_cycle')):
+        judged = psq.g4_cancel_evidence(mutate(run, tmp_path, name, edit))
+        assert not judged['accepted'] and failed in judged['failed'], (name, judged['failed'])
+    monkeypatch.setattr(simulator_execution, 'transfer_cancellation_acceptance',
+                        lambda summary: dict(accepted=False, state='CANCELLATION_UNVERIFIED', failed=['part_still_held'],
+                                             checks={}))
+    assert 'transfer_cancellation_accepted' in psq.g4_cancel_evidence(run)['failed']
+
+
+def test_g4_qualification_readiness_needs_five_exact_sessions_and_complete_evidence(g4_cell, tmp_path, monkeypatch,
+                                                                                    stub_tracking):
+    import shutil
+    import simulator_execution
+    monkeypatch.setattr(simulator_execution, 'transfer_cancellation_acceptance',
+                        lambda summary: dict(accepted=True, state='RECOVERY_REQUIRED_HELD_STOPPED', failed=[], checks={}))
+    trials = tmp_path / 'trials'
+    sessions = [g4_full_run(g4_cell, trials / f's{i}', monkeypatch, run_id=f'run-s{i}') for i in (1, 2, 3)]
+    stop = g4_full_run(g4_cell, trials / 'stop', monkeypatch, run_id='run-stop', kind='stop')
+    cancel = g4_full_run(g4_cell, trials / 'cancel', monkeypatch, run_id='run-cancel', kind='cancel')
+    negative = tmp_path / 'plan_only/forged.probe'                       # a deliberately forged probe record
+    negative.mkdir(parents=True)
+    shutil.copy(sessions[0] / 'session/g4-session.json', negative / 'g4-session.json')
+
+    any_tracking = realistic_tracking
+
+    def ready(sessions_=sessions, stop_=stop, cancel_=cancel, roots=(trials,), other=(), control=CONTROL, scan=(),
+              perception=PERCEPTION):
+        return psq.g4_qualification_readiness(g4_cell, list(sessions_), NATIVE, RUNTIME, perception, stop_trial=stop_,
+                                              cancel_trial=cancel_, trial_roots=list(roots), other_runs=list(other),
+                                              scan_roots=list(scan), planner=PLANNER, control=control,
+                                              tracking=any_tracking)
+
+    result = ready()
+    assert result['status'] == 'QUALIFIED_READY', result['unmet']
+    assert len(result['counted']['sessions']) == 3 and result['counted']['stop_after_cycle'] and \
+        result['counted']['cancel_during_transfer'] and 'nothing' in result['admits']
+    assert ready(sessions_=sessions[:2])['status'] == 'NOT_QUALIFIED'                     # 2 of 3
+    assert any('stop_after_cycle: no evidence' in u for u in ready(stop_=None)['unmet'])
+    assert any('cancel_during_transfer' in u for u in ready(cancel_=stop)['unmet'])        # a stop is not a cancel
+    assert any('listed more than once' in u for u in ready(sessions_=[sessions[0], sessions[0], sessions[1]])['unmet'])
+    other_version = ready(control='0' * 64)                                    # the evidence is of another control version
+    assert other_version['status'] == 'NOT_QUALIFIED' and len(other_version['other_versions']) == 5
+    stray = g4_full_run(g4_cell, trials / 'stray', monkeypatch, run_id='run-stray')
+    unlisted = ready()
+    assert unlisted['status'] == 'NOT_QUALIFIED' and str(stray.resolve()) in str(unlisted['unlisted'])
+    edit_json(stray / psq.G4_RUN_REPORT, lambda d: d.update(status='FAULT', result=None))
+    blocked = ready(other=[stray])                                                         # a failed exact-identity trial
+    assert any('FAILED trial of the exact identities' in u for u in blocked['unmet'])
+    shutil.rmtree(stray)
+    outside = shutil.copytree(sessions[2], tmp_path / 'elsewhere/s3')
+    assert any('not under a production trial root' in u for u in ready(sessions_=[*sessions[:2], outside])['unmet'])
+    shutil.rmtree(tmp_path / 'elsewhere')
+    twin = shutil.copytree(sessions[0], trials / 's1_copy')                                # the same session twice
+    assert any('counted twice' in u for u in ready(sessions_=[sessions[0], twin, sessions[1]], other=[sessions[2]])['unmet'])
+    shutil.rmtree(twin)
+    assert any('native identity changed' in u for u in psq.g4_qualification_readiness(
+        g4_cell, sessions, dict(NATIVE, sha256='other'), RUNTIME, PERCEPTION, stop_trial=stop, cancel_trial=cancel,
+        trial_roots=[trials], planner=PLANNER, control=CONTROL, tracking=any_tracking)['unmet'])
+    assert any('perception identity changed' in u for u in ready(perception=dict(PERCEPTION, epd_runtime_sha256='d' * 64))['unmet'])
+    stopped = g4_full_run(g4_cell, trials / 'stopped', monkeypatch, run_id='run-stopped', kind='stop')
+    lenient = ready(other=[stopped])                              # an extra stopped run: listed, never counted, not blocking
+    assert lenient['status'] == 'QUALIFIED_READY' and lenient['incomplete']
+    other_cell = shutil.copytree(stopped, trials / 'other_cell')                  # the same world, another task: not ours
+    edit_json(other_cell / 'session/g4-session.json', lambda d: d['binding']['cell']['files'].update(
+        {'config/workcell_builder_task_intent.yaml': '0' * 64}))
+    assert str(other_cell.resolve()) not in str(ready(other=[stopped])['unlisted'])
+    (other_cell / 'session/g4-session.json').write_text('{ truncated')                    # unreadable evidence blocks
+    assert any('unreadable trial evidence' in u for u in ready(other=[stopped])['unlisted'])
+    shutil.rmtree(other_cell)
+    shutil.rmtree(stopped)
+    assert ready()['status'] == 'QUALIFIED_READY'                       # the forged probe outside the roots never counts
+    assert any('unreadable' in u or str(negative.parent) in u for u in ready(roots=(trials, tmp_path / 'plan_only'))['unmet'])
+
+
+def test_g4_review_findings_are_closed(g4_cell, tmp_path, monkeypatch, stub_tracking):
+    """Each adversarial finding of the qualification-contract review, as a regression test (the pre-review verifier
+    accepted or crashed on every one of these)."""
+    import shutil
+    import simulator_execution
+    verdict = dict(accepted=True, state='RECOVERY_REQUIRED_HELD_STOPPED', failed=[], checks={})
+    monkeypatch.setattr(simulator_execution, 'transfer_cancellation_acceptance', lambda summary: dict(verdict))
+    trials = tmp_path / 'trials'
+    sessions = [g4_full_run(g4_cell, trials / f's{i}', monkeypatch, run_id=f'run-s{i}') for i in (1, 2, 3)]
+    stop = g4_full_run(g4_cell, trials / 'stop', monkeypatch, run_id='run-stop', kind='stop')
+    cancel = g4_full_run(g4_cell, trials / 'cancel', monkeypatch, run_id='run-cancel', kind='cancel')
+
+    any_tracking = realistic_tracking
+
+    def ready(other=(), cancel_=cancel):
+        return psq.g4_qualification_readiness(g4_cell, sessions, NATIVE, RUNTIME, PERCEPTION, stop_trial=stop,
+                                              cancel_trial=cancel_, trial_roots=[trials], other_runs=list(other),
+                                              planner=PLANNER, control=CONTROL, tracking=any_tracking)
+    assert ready()['status'] == 'QUALIFIED_READY'
+    # A1 (HIGH): a listed run whose identity cannot be recovered blocks (a killed runner leaves no report).
+    killed = shutil.copytree(sessions[0], trials / 'killed')
+    (killed / psq.G4_RUN_REPORT).unlink()
+    assert any('identity unrecoverable' in u for u in ready(other=[killed])['unmet'])
+    shutil.rmtree(killed)
+    tampered = shutil.copytree(sessions[0], trials / 'tampered')
+    (tampered / 'session/g4-session.json').write_text((tampered / 'session/g4-session.json').read_text() + ' ')
+    assert any('identity unrecoverable' in u for u in ready(other=[tampered])['unmet'])
+    shutil.rmtree(tampered)
+    # A2: the cancel judge binds the executor summary to the authorised cycle and needs the cycle's own goals.
+    for name, edit, failed in (
+            ('foreign_summary', lambda r: edit_json(r / 'session/cycles/001/execute/summary.json', lambda d: d[
+                'physics_scope'].update(cycle_sha256='0' * 64)), 'bound_to_cycle'),
+            ('other_target', lambda r: edit_json(r / 'session/cycles/001/execute/summary.json', lambda d: d.update(
+                selected_object_id='runtime::cup_2')), 'bound_to_cycle'),
+            ('no_goals', lambda r: (r / 'session/launch.log').write_text(''), 'controller_goals_in_cycle'),
+            ('error_line', lambda r: (r / 'session/launch.log').write_text((r / 'session/launch.log').read_text() +
+                f'[move_group-5] [ERROR] [{T0 + 62:.6f}] [moveit]: x\n'), 'controller_goals_in_cycle')):
+        judged = psq.g4_cancel_evidence(mutate(cancel, tmp_path, name, edit))
+        assert not judged['accepted'] and failed in judged['failed'], (name, judged['failed'])
+    missing_log = mutate(cancel, tmp_path, 'missing_log', lambda r: (r / 'session/launch.log').unlink())
+    assert psq.g4_cancel_evidence(missing_log)['state'] == 'NOT_ACCEPTED'
+    # A3: a failed cancel attempt of the exact identities blocks (no retrying until one passes).
+    failed_cancel = shutil.copytree(cancel, trials / 'cancel_attempt_1')
+    edit_json(failed_cancel / 'session/cycles/001/execute/summary.json', lambda d: d['pile_contact_certification'].update(
+        contacts=[{'a': 'robot', 'b': 'wall'}]))
+    assert any('cancel is not accepted' in u for u in ready(other=[failed_cancel])['unmet'])
+    shutil.rmtree(failed_cancel)
+    # A4: "nothing moved" is cross-checked: a FAULT after motion with its execution flag edited never becomes reliability.
+    edited = shutil.copytree(sessions[0], tmp_path / 'edited')
+    for n in (1, 2):
+        edit_json(edited / f'session/cycles/{n:03d}/execute/summary.json', lambda d: d.update(execution_attempted=False))
+    edit_json(edited / psq.G4_RUN_REPORT, lambda d: d.update(status='FAULT', result=None, cycles=[
+        dict(c, outcome='G4_CYCLE_FAILED', steps=dict(c['steps'], execute=dict(execution_attempted=False))) for c in d['cycles']]))
+    assert psq.g4_trial_evidence(edited)['kind'] == 'PRE_MOTION_FAILURE'               # the run-level judge alone
+    judged = psq.g4_session_evidence(edited, tracking=any_tracking)
+    assert judged['kind'] == 'FAILED' and any('contradicted' in p for p in judged['problems'])
+    # A5: a part settling after the executor's last sample is judged against its reconciled pose (no false reject).
+    settled = g4_full_run(g4_cell, tmp_path / 'settled', monkeypatch, run_id='run-settled', settle_m=5e-5)
+    assert psq.g4_session_evidence(settled, tracking=any_tracking)['kind'] == 'STRICT_PASS'
+    # A7: malformed stop/cancel evidence is a verdict, never an exception.
+    for judge in (lambda r: psq.g4_stop_after_cycle_evidence(r, tracking=any_tracking), psq.g4_cancel_evidence):
+        broken = mutate(stop, tmp_path, f'truncated_{id(judge)}', lambda r: (r / psq.G4_RUN_REPORT).write_text('{ trunc'))
+        assert judge(broken)['state'] == 'NOT_ACCEPTED'
+    # A8: an object targeted later must not move between cycles (only the runner's report said it did not).
+    moved_later = mutate(sessions[0], tmp_path, 'moved_later', lambda r: edit_yaml(
+        r / 'session/cycles/002/measure/observations.yaml',
+        lambda d: next(o for o in d['objects'] if o['object_id'] == 'cup_2')['pose']['xyz'].__setitem__(0, 0.123)))
+    judged = psq.g4_session_evidence(moved_later, tracking=any_tracking)
+    assert judged['kind'] == 'FAILED' and any('world changed after the previous cycle' in p for p in judged['problems'])
+    # A9: the runner's own rotation metric (largest roll/pitch/yaw difference), and a home goal accepted 3 s late.
+    def tilt_cube(r):
+        edit_yaml(r / 'session/cycles/002/reconcile/observations.yaml', lambda d: next(
+            o for o in d['objects'] if o['object_id'] == 'cube_1')['pose'].update(rpy=[9e-6, 9e-6, 9e-6]))
+        log = r / 'session/launch.log'
+        log.write_text(log.read_text().replace(f'[{T0 + 110.5:.6f}] [ur5_arm_controller]',
+                                               f'[{T0 + 113.0:.6f}] [ur5_arm_controller]'))
+    assert psq.g4_session_evidence(mutate(sessions[0], tmp_path, 'tilt_late_home', tilt_cube),
+                                   tracking=any_tracking)['kind'] == 'STRICT_PASS'
+    # A10: an ERROR line without a numeric timestamp counts.
+    died = mutate(sessions[0], tmp_path, 'died', lambda r: (r / 'session/launch.log').write_text(
+        (r / 'session/launch.log').read_text() + '[ERROR] [move_group-5]: process has died [pid 1, exit code -6]\n'))
+    assert any('unexpected ERROR' in p for p in psq.g4_session_evidence(died, tracking=any_tracking)['problems'])
+    # Broad scan: a real trial with a runner report anywhere must be listed; a forged negative-test record is ignored.
+    elsewhere = tmp_path / 'elsewhere'
+    stray = shutil.copytree(sessions[0], elsewhere / 'stray_trial')
+    probe = elsewhere / 'forged.probe'
+    probe.mkdir()
+    shutil.copy(sessions[1] / 'session/g4-session.json', probe / 'g4-session.json')
+    scanned = psq.g4_qualification_readiness(g4_cell, sessions, NATIVE, RUNTIME, PERCEPTION, stop_trial=stop,
+                                             cancel_trial=cancel, trial_roots=[trials], scan_roots=[elsewhere],
+                                             planner=PLANNER, control=CONTROL, tracking=any_tracking)
+    assert str(stray.resolve()) in str(scanned['unlisted']) and scanned['ignored_negative_test_records']
+
+
+def test_g4_numeric_tracking_must_be_this_checkouts_session_tracking(g4_cell, tmp_path, monkeypatch):
+    """B1: the verifier refuses any tracking function other than g4_tracking_evidence.session_tracking."""
+    import g4_tracking_evidence
+    run = g4_full_run(g4_cell, tmp_path / 'trials/s1', monkeypatch, run_id='run-s1')
+    judged = psq.g4_session_evidence(run, tracking=no_tracking_problems)
+    assert judged['kind'] == 'FAILED' and any("not this checkout's g4_tracking_evidence" in p for p in judged['problems'])
+    assert psq._g4_tracking_bound(g4_tracking_evidence.session_tracking)
+    assert not psq._g4_tracking_bound(lambda run, trace: dict(cycles={}, problems=[]))
+
+
+def test_a_listed_source_missing_at_head_refuses_the_current_identity():
+    """B2: the current identity never silently drops a listed source; a historical revision keeps its recovery."""
+    sources = ('scripts/simulator_world.py', 'scripts/not_a_committed_source.py')
+    with pytest.raises(psq.PhysicsScopeRefused, match='not committed at HEAD'):
+        psq._source_identity(sources, 'G4 control', psq.REPO, None, require_all=True)
+    assert psq._source_identity(sources, 'G4 control', psq.REPO, HEAD, require_all=True)   # a recorded commit's recovery
+    assert psq._source_identity(sources, 'planner', psq.REPO, None)          # the G3C planner identity is unchanged
+
+
+def test_g4_retest_findings_are_closed(g4_cell, tmp_path, monkeypatch, stub_tracking):
+    """The defects the first fixes introduced, found by the reviewers' retest, as regression tests."""
+    import shutil
+    import simulator_execution
+    verdict = dict(accepted=True, state='RECOVERY_REQUIRED_HELD_STOPPED', failed=[], checks={})
+    monkeypatch.setattr(simulator_execution, 'transfer_cancellation_acceptance', lambda summary: dict(verdict))
+    trials = tmp_path / 'trials'
+    sessions = [g4_full_run(g4_cell, trials / f's{i}', monkeypatch, run_id=f'run-s{i}') for i in (1, 2, 3)]
+    stop = g4_full_run(g4_cell, trials / 'stop', monkeypatch, run_id='run-stop', kind='stop')
+    cancel = g4_full_run(g4_cell, trials / 'cancel', monkeypatch, run_id='run-cancel', kind='cancel')
+
+    def ready(other=(), scan=()):
+        return psq.g4_qualification_readiness(g4_cell, sessions, NATIVE, RUNTIME, PERCEPTION, stop_trial=stop,
+                                              cancel_trial=cancel, trial_roots=[trials], other_runs=list(other),
+                                              scan_roots=list(scan), planner=PLANNER, control=CONTROL,
+                                              tracking=realistic_tracking)
+    assert ready()['status'] == 'QUALIFIED_READY'
+    # N3: the real tool's problem for a cancelled cycle never fails an accepted cancel or a stopped run listed as other.
+    second_cancel = g4_full_run(g4_cell, trials / 'cancel_2', monkeypatch, run_id='run-cancel-2', kind='cancel')
+    second_stop = g4_full_run(g4_cell, trials / 'stop_2', monkeypatch, run_id='run-stop-2', kind='stop')
+    found = ready(other=[second_cancel, second_stop])
+    assert found['status'] == 'QUALIFIED_READY' and len(found['incomplete']) == 2, found['unmet']
+    # N1: a cancel is judged where it happened.
+    cycle_two = g4_full_run(g4_cell, trials / 'cancel_c2', monkeypatch, run_id='run-cancel-c2', kind='cancel', cancel_cycle=2)
+    assert psq.g4_cancel_evidence(cycle_two, cycle=2)['accepted']
+    assert not psq.g4_cancel_evidence(cycle_two)['accepted']                       # never the counted cycle-1 G4-C
+    pre = g4_full_run(g4_cell, trials / 'cancel_pre', monkeypatch, run_id='run-cancel-pre', kind='cancel_pre')
+    extras = [second_cancel, second_stop, cycle_two, pre]       # listed from here on (the completeness scan sees them)
+    found = ready(other=extras)
+    assert found['status'] == 'QUALIFIED_READY' and found['reliability_findings'], found['unmet']
+    approach = shutil.copytree(cancel, trials / 'cancel_approach')
+    edit_json(approach / 'session/cycles/001/execute/summary.json', lambda d: d.update(failed_stage='EXECUTE_APPROACH'))
+    assert any('no G4 acceptance rule' in u for u in ready(other=[*extras, approach])['unmet'])
+    shutil.rmtree(approach)
+    # N2: a runner's session without its report (a killed runner) anywhere under the scan root blocks; a probe does not.
+    elsewhere = tmp_path / 'elsewhere'
+    killed = shutil.copytree(sessions[0], elsewhere / 'killed')
+    (killed / psq.G4_RUN_REPORT).unlink()
+    probe = elsewhere / 'forged.probe'
+    probe.mkdir()
+    shutil.copy(sessions[1] / 'session/g4-session.json', probe / 'g4-session.json')
+    scanned = ready(other=extras, scan=[elsewhere])
+    assert any(str(killed.resolve()) in u and 'unreadable' in u for u in scanned['unlisted'])
+    assert scanned['ignored_negative_test_records'] == [str((probe / 'g4-session.json').resolve())]
+    shutil.rmtree(killed)
+    assert ready(other=extras, scan=[elsewhere])['status'] == 'QUALIFIED_READY'
+    # N4: a plan-only run listed as other is not a trial; an EXECUTE_ stage event alone is not motion; no log is.
+    plan_only = shutil.copytree(sessions[2], trials / 'plan_only_run')    # a genuine plan-only session's evidence:
+    edit_json(plan_only / psq.G4_RUN_REPORT, lambda d: d.update(scope='G4_PLAN_ONLY_NO_MOTION'))
+    edit_json(plan_only / 'session/g4-session.json', lambda d: [d.update(state=psq.G4_PLAN_ONLY, operation=psq.G4_OPERATION),
+                                                                d.pop('issuer'), d.pop('evidence_scope')])
+    shutil.rmtree(next((plan_only / 'session').glob('g4-cycles-*')))       # no cycle ever issued,
+    for cycle in (plan_only / 'session/cycles').iterdir():                   # recorded or executed,
+        (cycle / 'g4-cycle.json').unlink()
+        shutil.rmtree(cycle / 'execute')
+    (plan_only / 'session/commission-evidence.json').unlink()                # no trial commission evidence
+    (plan_only / 'session/launch.log').write_text('')                        # and no controller goal
+    found = ready(other=[*extras, plan_only])
+    assert found['status'] == 'QUALIFIED_READY' and found['not_trials'] == [str(plan_only.resolve())]
+    shutil.rmtree(plan_only)
+    refused = shutil.copytree(sessions[0], tmp_path / 'refused')
+    for n in (1, 2):
+        edit_json(refused / f'session/cycles/{n:03d}/execute/summary.json', lambda d: d.update(execution_attempted=False))
+    edit_json(refused / psq.G4_RUN_REPORT, lambda d: d.update(status='FAULT', result=None, cycles=[
+        dict(c, outcome='G4_EXECUTION_REFUSED', steps=dict(c['steps'], execute=dict(execution_attempted=False)))
+        for c in d['cycles']]))
+    (refused / 'session/launch.log').write_text('')                     # no controller goal: nothing moved
+    assert psq.g4_session_evidence(refused, tracking=realistic_tracking)['kind'] == 'PRE_MOTION_FAILURE'
+    (refused / 'session/launch.log').unlink()                           # nothing to tell: never "nothing moved"
+    assert psq.g4_session_evidence(refused, tracking=realistic_tracking)['kind'] == 'FAILED'
+    # B residual: a look-alike function with the right names is not the bound tracker.
+    def session_tracking(run, trace):
+        return tracked(1, 2)
+    session_tracking.__module__ = 'g4_tracking_evidence'
+    monkeypatch.undo()
+    assert not psq._g4_tracking_bound(session_tracking)
+
+
+def test_g4_final_retest_findings_are_closed(g4_cell, tmp_path, monkeypatch, stub_tracking):
+    """Reviewer A's final retest: a FAULTed trial relabelled plan-only is still a trial; the cancel judge allows a
+    missing late detach like the session judge; an unreadable record outside the runner layout is ignored."""
+    import shutil
+    import simulator_execution
+    verdict = dict(accepted=True, state='RECOVERY_REQUIRED_HELD_STOPPED', failed=[], checks={})
+    monkeypatch.setattr(simulator_execution, 'transfer_cancellation_acceptance', lambda summary: dict(verdict))
+    trials = tmp_path / 'trials'
+    sessions = [g4_full_run(g4_cell, trials / f's{i}', monkeypatch, run_id=f'run-s{i}') for i in (1, 2, 3)]
+    stop = g4_full_run(g4_cell, trials / 'stop', monkeypatch, run_id='run-stop', kind='stop')
+    cancel = g4_full_run(g4_cell, trials / 'cancel', monkeypatch, run_id='run-cancel', kind='cancel')
+
+    def ready(other=(), scan=()):
+        return psq.g4_qualification_readiness(g4_cell, sessions, NATIVE, RUNTIME, PERCEPTION, stop_trial=stop,
+                                              cancel_trial=cancel, trial_roots=[trials], other_runs=list(other),
+                                              scan_roots=list(scan), planner=PLANNER, control=CONTROL,
+                                              tracking=realistic_tracking)
+    assert ready()['status'] == 'QUALIFIED_READY'
+    faulted = shutil.copytree(sessions[0], trials / 'relabelled')
+    edit_json(faulted / psq.G4_RUN_REPORT, lambda d: d.update(scope='G4_PLAN_ONLY_NO_MOTION', status='FAULT'))
+    edit_json(faulted / 'session/g4-session.json', lambda d: d.update(state=psq.G4_PLAN_ONLY))
+    assert psq.g4_trial_evidence(faulted)['kind'] == 'FAILED'                # issuer, registry, goals: still a trial
+    assert ready()['status'] == 'NOT_QUALIFIED'                              # unlisted: the scan sees a trial
+    assert ready(other=[faulted])['status'] == 'NOT_QUALIFIED'               # listed: never "not a trial"
+    shutil.rmtree(faulted)
+    cycle_two = g4_full_run(g4_cell, trials / 'cancel_c2', monkeypatch, run_id='run-cancel-c2', kind='cancel', cancel_cycle=2)
+    log = cycle_two / 'session/launch.log'
+    log.write_text(''.join(line + '\n' for line in log.read_text().splitlines() if 'Attached body' not in line))
+    assert psq.g4_cancel_evidence(cycle_two, cycle=2)['accepted']          # zero late detaches, as the session judge
+    deep = shutil.copytree(sessions[1], trials / 'deep_relabel')           # four coordinated edits still leave a trial
+    edit_json(deep / psq.G4_RUN_REPORT, lambda d: d.update(scope='G4_PLAN_ONLY_NO_MOTION', status='FAULT'))
+    edit_json(deep / 'session/g4-session.json', lambda d: [d.update(state=psq.G4_PLAN_ONLY, operation=psq.G4_OPERATION),
+                                                           d.pop('issuer'), d.pop('evidence_scope')])
+    shutil.rmtree(next((deep / 'session').glob('g4-cycles-*')))
+    (deep / 'session/launch.log').unlink()
+    assert psq.g4_trial_evidence(deep)['kind'] == 'FAILED'                  # cycle records, executor runs, no log
+    assert ready()['status'] == 'NOT_QUALIFIED' and ready(other=[deep])['status'] == 'NOT_QUALIFIED'
+    shutil.move(str(deep), str(tmp_path / 'deep_relabel'))                  # outside the roots: the broad scan finds it
+    assert any('deep_relabel' in u for u in ready(scan=[tmp_path])['unlisted'])
+    shutil.rmtree(tmp_path / 'deep_relabel')
+    elsewhere = tmp_path / 'elsewhere/truncated.probe'
+    elsewhere.mkdir(parents=True)
+    (elsewhere / 'g4-session.json').write_text('{ truncated')
+    found = ready(other=[cycle_two], scan=[elsewhere.parent])
+    assert found['status'] == 'QUALIFIED_READY' and found['ignored_negative_test_records'], found['unmet']
