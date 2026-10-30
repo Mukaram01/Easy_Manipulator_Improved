@@ -121,6 +121,20 @@ def check_plan(summary, target, observations):
                 destination=(summary.get('physical_destination_walls') or {}).get('selected_destination'))
 
 
+def plan_refused(ledger, summary_path, returncode, evidence_dir):
+    """A target's plan-only resolve failed: nothing moved, so the ledger records the attempt by its own policy
+    (deterministic refusals and exhausted attempts reject the object, which stays an obstacle) and the session observes
+    again. Missing evidence, or evidence of motion, faults the session (CYCLE_EVIDENCE_MISSING / G4_PLAN_MOVED)."""
+    try:
+        summary = json.loads(Path(summary_path).read_text())
+    except (OSError, ValueError):
+        summary = None
+    if isinstance(summary, dict) and summary.get('execution_attempted') is not False:
+        ledger.active = None
+        raise G4Stop('G4_PLAN_MOVED', 'a plan-only resolve reports execution; the world is unverified')
+    return ledger.record_cycle(summary, returncode, [], evidence_dir)
+
+
 def verify_and_reconcile(ledger, cycle_path, cycle_sha256, summary, returncode, evidence_dir):
     """Verify an executed cycle against its own authorisation, then let the ledger count and reconcile it at the
     measured final pose. Returns (verification, ledger outcome). A cycle that moved without proof faults the session
@@ -402,11 +416,19 @@ def session(args, repo, workspace, report):
             stream(args, 'G4_PLAN', cycle=index, target=target['id'], motion=False)
             plan_summary = cycle_dir / 'resolve/summary.json'
             with StageForwarder(args, cycle_dir / 'resolve/executor.log', 'g4', 'resolve'):
-                run(stage_a.executor_command(repo, scene, receipt_path, observations_path, plan_summary,
-                                             args.segment_planning_time, resolve=True, search_timeout=args.search_timeout)
-                    + ['--target-object-id', target['id']],
-                    env=env, cwd=repo, log=cycle_dir / 'resolve/executor.log',
-                    timeout=args.search_timeout + 120 + stage_a.SERVICE_RETRY_ALLOWANCE_S)
+                planned_run = run(stage_a.executor_command(repo, scene, receipt_path, observations_path, plan_summary,
+                                                           args.segment_planning_time, resolve=True,
+                                                           search_timeout=args.search_timeout)
+                                  + ['--target-object-id', target['id']],
+                                  env=env, cwd=repo, log=cycle_dir / 'resolve/executor.log',
+                                  timeout=args.search_timeout + 120 + stage_a.SERVICE_RETRY_ALLOWANCE_S, check=False)
+            if planned_run.returncode != 0:
+                outcome = plan_refused(ledger, plan_summary, planned_run.returncode, cycle_dir)
+                record['steps']['plan'] = dict(refused=True, outcome=outcome,
+                                               failure=ledger.objects[target['id']]['attempts'][-1]['failure'])
+                record['outcome'] = 'PLAN_REFUSED'
+                emit({'cycle_outcome': 'PLAN_REFUSED'})
+                continue                                           # Observe again; the object stays an obstacle
             record['steps']['plan'] = check_plan(json.loads(plan_summary.read_text()), target, observations)
             # --- Validate: the planned-against geometry is still there; the frame is fresh --------------------
             stream(args, 'G4_VALIDATE', cycle=index, motion=False)
@@ -421,7 +443,7 @@ def session(args, repo, workspace, report):
                          if ledger.objects[o['id']].get('destination') == target['destination']]
             try:
                 cycle_sha = scope.g4_authorise_cycle(
-                    cycle_dir / 'g4-cycle.json', session_path, session_sha, cycle=ledger.active['cycle'], frame=frame_now,
+                    cycle_dir / 'g4-cycle.json', session_path, session_sha, cycle=previous['cycle'] + 1 if previous else 1, frame=frame_now,
                     target=dict(object_id=target['id'].split('::', 1)[-1], class_id=target['class_id']),
                     destination=target['destination'], occupancy=occupancy,
                     previous=previous, stop_latched=STOP_AFTER_CYCLE.record is not None)

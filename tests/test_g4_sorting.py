@@ -119,6 +119,30 @@ def test_an_unverified_cycle_never_reaches_the_ledger(tmp_path, tamper):
     assert s.counts()['completed'] == 0 and not s.objects[target['id']]['attempts']
 
 
+def test_a_refused_plan_is_a_motionless_ledger_attempt_and_the_session_continues(tmp_path):
+    s, target, _, _ = physical(tmp_path)
+    s.policy['max_attempts_per_object'] = 1
+    path = tmp_path / 'summary.json'
+    path.write_text(json.dumps(dict(result='FAIL', execution_attempted=False, failed_stage='PREPLAN_GRASP',
+                                    failure='SEARCH_BUDGET_EXHAUSTED: candidate search budget exhausted')))
+    assert g4.plan_refused(s, path, 1, tmp_path) == ss.REJECTED
+    assert s.objects[target['id']]['status'] == ss.REJECTED and s.counts()['completed'] == 0
+    assert s.next_target()['id'] != target['id']                                   # the next object, same session
+    assert any(o['id'] == target['id'] for o in s.occupied())                      # still an obstacle
+
+
+def test_a_refused_plan_without_evidence_or_with_motion_faults(tmp_path):
+    s, target, _, _ = physical(tmp_path)
+    with pytest.raises(ss.SortingFault, match='CYCLE_EVIDENCE_MISSING'):
+        g4.plan_refused(s, tmp_path / 'missing.json', 1, tmp_path)
+    s.begin_cycle(target)
+    path = tmp_path / 'moved.json'
+    path.write_text(json.dumps(dict(result='FAIL', execution_attempted=True)))
+    with pytest.raises(g4.G4Stop, match='G4_PLAN_MOVED'):
+        g4.plan_refused(s, path, 1, tmp_path)
+    assert s.counts()['completed'] == 0
+
+
 def test_a_plan_only_session_never_repeats_a_planned_object_and_counts_nothing():
     s = physical_session()
     batch(s, obj('cup-1', 'cup', 0.30, DIMS), obj('cup-2', 'cup', 0.40, DIMS), obj('box-1', 'box', 0.35, DIMS))
