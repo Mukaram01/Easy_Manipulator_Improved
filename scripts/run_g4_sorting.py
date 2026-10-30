@@ -116,7 +116,10 @@ def check_plan(summary, target, observations):
         problems.append('not a padded plan-only resolve')
     if problems:
         raise G4Stop('G4_PLAN_MISMATCH', '; '.join(problems))
-    return dict(route=route, physics_pads=summary['physics_pads'],
+    grasp = (summary.get('selected_extraction_intent') or {}).get('candidate_id')
+    import physics_scope_qualification as scope
+    return dict(route=route, physics_pads=summary['physics_pads'], grasp=grasp,
+                grasp_qualified=str(grasp).split('::', 1)[0] in scope.G4_QUALIFIED_GRASP_STRATEGIES,
                 stages=[p.get('stage') for p in summary.get('plan_metadata', [])],
                 destination=(summary.get('physical_destination_walls') or {}).get('selected_destination'))
 
@@ -445,7 +448,7 @@ def session(args, repo, workspace, report):
                 cycle_sha = scope.g4_authorise_cycle(
                     cycle_dir / 'g4-cycle.json', session_path, session_sha, cycle=previous['cycle'] + 1 if previous else 1, frame=frame_now,
                     target=dict(object_id=target['id'].split('::', 1)[-1], class_id=target['class_id']),
-                    destination=target['destination'], occupancy=occupancy,
+                    destination=target['destination'], occupancy=occupancy, grasp=record['steps']['plan']['grasp'],
                     previous=previous, stop_latched=STOP_AFTER_CYCLE.record is not None)
             except scope.PhysicsScopeRefused as refused:
                 record['steps']['authorise'] = dict(granted=False, refusal=str(refused))

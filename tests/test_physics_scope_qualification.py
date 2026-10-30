@@ -811,7 +811,7 @@ def test_a_g4_session_is_plan_only_and_g3c_never_admits_its_routed_multi_object_
     with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_PLAN_ONLY'):                 # so nothing may move
         psq.g4_authorise_cycle(tmp_path / 'c1.json', tmp_path / 'session.json', sha, cycle=1,
                                frame=dict(sha256='f', world_revision='r', age_s=1.0),
-                               target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone', occupancy=[])
+                               target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone', occupancy=[], grasp='top_2f::000')
     with pytest.raises(psq.PhysicsScopeRefused, match='one object into one destination, unrouted'):   # G3C stays narrow
         binding(session, g4_cell)
 
@@ -841,7 +841,7 @@ def test_a_claimed_authorised_g4_session_is_refused(g4_cell, tmp_path):
     path, sha = authorised_session(tmp_path, g4_binding(g4_cell, launch(tmp_path / 's', g4_cell)))
     with pytest.raises(psq.PhysicsScopeRefused, match='G4_SCOPE_NOT_QUALIFIED'):
         psq.g4_authorise_cycle(tmp_path / 'c1.json', path, sha, cycle=1, frame=dict(sha256='f', world_revision='r', age_s=1.0),
-                               target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone', occupancy=[])
+                               target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone', occupancy=[], grasp='top_2f::000')
     assert not (tmp_path / 'c1.json').exists()
 
 
@@ -853,7 +853,7 @@ def test_each_g4_cycle_is_chained_bounded_fresh_and_routed(g4_cell, tmp_path, mo
     cup = dict(object_id='cup_1', class_id='cup')
     cycle = lambda n, **kw: psq.g4_authorise_cycle(tmp_path / f'c{n}.json', kw.pop('session', path), kw.pop('sha', sha),
                                                    cycle=n, **{**dict(frame=fresh, target=cup, destination='default_drop_zone',
-                                                                      occupancy=[]), **kw})
+                                                                      occupancy=[], grasp='top_2f::000'), **kw})
     first = cycle(1)
     assert json.loads((tmp_path / 'c1.json').read_text())['session_sha256'] == sha and first
     previous = dict(cycle=1, verified=True, evidence_sha256='e1')
@@ -868,6 +868,8 @@ def test_each_g4_cycle_is_chained_bounded_fresh_and_routed(g4_cell, tmp_path, mo
                       (dict(previous=previous, target=dict(object_id='cube_1', class_id='unclassified')), 'NOT_ROUTED'),
                       (dict(previous=previous, destination='place_zone_b'), 'NOT_ROUTED'),
                       (dict(previous=previous, target=dict(object_id='ghost', class_id='cup')), 'TARGET_UNKNOWN'),
+                      (dict(previous=previous, grasp='finger_pinch_basic::000'), 'GRASP_UNQUALIFIED'),  # no contact evidence
+                      (dict(previous=previous, grasp=None), 'GRASP_UNQUALIFIED'),
                       (dict(previous=previous, sha='0' * 64), 'RECORD_CHANGED')):
         with pytest.raises(psq.PhysicsScopeRefused, match=match):
             cycle(2, **kw)
@@ -882,12 +884,13 @@ def test_a_g4_cycle_counts_only_from_verified_physical_evidence_of_its_target(g4
     record = tmp_path / 'c1.json'
     cycle_sha = psq.g4_authorise_cycle(record, path, sha, cycle=1, frame=dict(sha256='f', world_revision='r', age_s=1.0),
                                        target=dict(object_id='cup_1', class_id='cup'), destination='default_drop_zone',
-                                       occupancy=[])
+                                       occupancy=[], grasp='top_2f::000')
     floor = next(d for d in bound['destinations'] if d['source_item_id'] == 'target_bin_default')
     pose = [floor['floor_xyz'][0], floor['floor_xyz'][1], floor['floor_z'] + 0.0125, 0.0, 0.0, 0.0, 1.0]
     summary = dict(result='PASS', strict_retention_compliant=True, retention_policy='strict',
                    retention_findings={'findings': []}, stages=psq.FULL_CYCLE_STAGES, selected_object_id='runtime::cup_1',
                    release_evidence={'state': 'RELEASE_CONFIRMED', 'settled': True},
+                   selected_extraction_intent={'candidate_id': 'top_2f::000'},
                    full_cycle_physical_acceptance=dict(attached_ids=[], baseline_acm_restored=True, final_collision_valid=True,
                                                        final_pose=pose, placement={'error_to_planned_m': 0.0001}),
                    measured_reconciliation=dict(held=False, target='runtime::cup_1', acm_restored=True,
@@ -897,6 +900,8 @@ def test_a_g4_cycle_counts_only_from_verified_physical_evidence_of_its_target(g4
     assert good['verified'] and good['cycle'] == 1 and good['evidence_sha256']
     for edit, match in ((lambda s: s.update(selected_object_id='runtime::cup_2'), 'not the authorised target'),
                         (lambda s: s.update(result='FAIL'), 'not a strict full-cycle PASS'),
+                        (lambda s: s.update(selected_extraction_intent={'candidate_id': 'top_2f::001'}),
+                         'not the authorised grasp'),
                         (lambda s: s['measured_reconciliation'].update(held=True), 'detached and reconciled'),
                         (lambda s: s['full_cycle_physical_acceptance']['final_pose'].__setitem__(0, 0.0), 'not seated')):
         bad = copy.deepcopy(summary)

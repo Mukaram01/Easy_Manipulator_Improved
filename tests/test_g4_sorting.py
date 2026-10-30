@@ -79,10 +79,14 @@ def test_the_plan_must_be_the_targets_padded_plan_only_route():
 def cycle_record(tmp_path, target, cycle=1):
     data = (json.dumps(dict(schema='workcell_g4_sorting_scope/v1', state='G4_AUTHORISED_CYCLE', cycle=cycle,
                             target=dict(object_id=target['id'].split('::')[-1], class_id=target['class_id']),
-                            destination=target['destination'])) + '\n').encode()
+                            destination=target['destination'], grasp='top_2f::000')) + '\n').encode()
     path = tmp_path / 'g4-cycle.json'
     path.write_bytes(data)
     return path, hashlib.sha256(data).hexdigest()
+
+
+def summary_of(target, xyz):
+    return dict(physical_summary(target, xyz), selected_extraction_intent={'candidate_id': 'top_2f::000'})
 
 
 def physical(tmp_path):
@@ -97,23 +101,25 @@ def physical(tmp_path):
 def test_a_verified_cycle_counts_and_reconciles_at_the_measured_pose(tmp_path):
     s, target, path, sha = physical(tmp_path)
     measured = [0.581, 0.219, FLOOR_A['floor_z'] + DIMS[2] / 2]
-    verification, outcome = g4.verify_and_reconcile(s, path, sha, physical_summary(target, measured), 0, tmp_path)
+    verification, outcome = g4.verify_and_reconcile(s, path, sha, summary_of(target, measured), 0, tmp_path)
     assert verification['verified'] and outcome == ss.COMPLETED
     assert s.objects[target['id']]['pose'][:3] == measured and s.objects[target['id']]['measured'] is True
     assert s.next_target()['id'] != target['id']                                   # never picked again
 
 
-@pytest.mark.parametrize('tamper', ['record', 'target', 'unseated'])
+@pytest.mark.parametrize('tamper', ['record', 'target', 'unseated', 'grasp'])
 def test_an_unverified_cycle_never_reaches_the_ledger(tmp_path, tamper):
     s, target, path, sha = physical(tmp_path)
-    summary = physical_summary(target, [0.58, 0.22, FLOOR_A['floor_z'] + DIMS[2] / 2])
+    summary = summary_of(target, [0.58, 0.22, FLOOR_A['floor_z'] + DIMS[2] / 2])
     if tamper == 'record':
         sha = '0' * 64                                                             # not the authorisation it ran under
     elif tamper == 'target':
         other = dict(target, id='runtime::cup-2')
         path, sha = cycle_record(tmp_path, other)                                  # authorised for another object
-    else:
+    elif tamper == 'unseated':
         summary['full_cycle_physical_acceptance']['final_pose'][2] = 0.08          # not resting on the bound floor
+    else:
+        summary['selected_extraction_intent']['candidate_id'] = 'finger_pinch_basic::000'   # not the authorised grasp
     with pytest.raises(g4.G4Stop, match='G4_CYCLE_UNVERIFIED'):
         g4.verify_and_reconcile(s, path, sha, summary, 0, tmp_path)
     assert s.counts()['completed'] == 0 and not s.objects[target['id']]['attempts']

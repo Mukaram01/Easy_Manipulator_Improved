@@ -314,6 +314,10 @@ G4_OPERATION = {'gate': 'full-cycle', 'class_routing': True, 'continuous_sorting
 G4_PERCEPTION_KEYS = ('producer', 'source_type', 'epd_runtime_sha256', 'max_age_s')
 G4_SAFEGUARDS = {'contact_guard': True, 'retention_policy': 'strict', 'physics_pads': True, 'stop_after_cycle': 'SIGUSR1',
                  'cancel': 'SIGTERM'}
+# Grasps with contact evidence on the qualified body: every counted G3C trial (campaign 09c477e0, both bins) grasped with
+# top_2f (world quarter-turn top pinch). Other strategies (e.g. the object-aligned finger_pinch_basic a yawed part plans
+# with) have no contact or retention evidence, so a cycle planned with one is never authorised.
+G4_QUALIFIED_GRASP_STRATEGIES = ('top_2f',)
 G4_STOP_CONDITIONS = ('max_cycles reached', 'stop after cycle latched', 'operator cancel', 'unverified cycle',
                       'destination full or unroutable', 'no eligible object', 'stale or mismatched observation')
 
@@ -351,6 +355,7 @@ def g4_session_binding(*, cell_dir, receipt_path, native, runtime, perception, m
         robot={key: _required(receipt.get(key), key) for key in ROBOT_RECEIPT_KEYS},
         routing=dict(rules=rules, policy=routing_job_policy(intent)),
         perception=dict(perception), safeguards=dict(G4_SAFEGUARDS), stop_conditions=list(G4_STOP_CONDITIONS),
+        grasp_strategies=list(G4_QUALIFIED_GRASP_STRATEGIES),
         native=native, runtime=runtime, planner=planner or planner_identity(), max_cycles=max_cycles,
         session=dict(receipt_sha256=_sha256(receipt_bytes), run_id=_required(receipt.get('run_id'), 'run id')))
 
@@ -389,11 +394,12 @@ def _g4_session(path, sha256):
     return record
 
 
-def g4_authorise_cycle(path, session_path, session_sha256, *, cycle, frame, target, destination, occupancy,
+def g4_authorise_cycle(path, session_path, session_sha256, *, cycle, frame, target, destination, occupancy, grasp,
                        previous=None, stop_latched=False):
     """One cycle's record, chained to the session and to the previous cycle's verified evidence digest. ``frame`` is
     the observation it acts on ({sha256, world_revision, age_s}); ``target`` the EPD-classified object; ``destination``
-    its routed region; ``occupancy`` the measured objects already in that destination."""
+    its routed region; ``occupancy`` the measured objects already in that destination; ``grasp`` the planned grasp
+    candidate id (``strategy::index``)."""
     session = _g4_session(session_path, session_sha256)
     bound = session['binding']
     if session['state'] != G4_AUTHORISED_SESSION:
@@ -414,8 +420,11 @@ def g4_authorise_cycle(path, session_path, session_sha256, *, cycle, frame, targ
                                   'into this destination')
     if target.get('object_id') not in {o['object_id'] for o in bound['world']['objects']}:
         raise PhysicsScopeRefused('G4_TARGET_UNKNOWN: the target is not an object of the bound world')
+    if not isinstance(grasp, str) or grasp.split('::', 1)[0] not in bound['grasp_strategies']:
+        raise PhysicsScopeRefused(f'G4_GRASP_UNQUALIFIED: {grasp!r} has no contact evidence on the qualified body '
+                                  f"(qualified: {bound['grasp_strategies']})")
     record = dict(schema=G4_SCHEMA, state='G4_AUTHORISED_CYCLE', session_sha256=session_sha256, cycle=cycle,
-                  frame=dict(frame), target=dict(target), destination=destination, occupancy=list(occupancy),
+                  frame=dict(frame), target=dict(target), destination=destination, occupancy=list(occupancy), grasp=grasp,
                   previous_evidence_sha256=previous and previous['evidence_sha256'], created_wall_ns=time.time_ns())
     data = (json.dumps(record, indent=2, sort_keys=True) + '\n').encode()
     Path(path).write_bytes(data)
@@ -433,6 +442,8 @@ def g4_verify_cycle(cycle_path, cycle_sha256, summary, destination_floor, part):
     problems = physical_cycle_problems(summary, destination_floor, part)
     if summary.get('selected_object_id') != target:
         problems.append('the executed object is not the authorised target')
+    if not record.get('grasp') or (summary.get('selected_extraction_intent') or {}).get('candidate_id') != record['grasp']:
+        problems.append('the executed grasp is not the authorised grasp')
     reconciled = summary.get('measured_reconciliation') or {}
     if reconciled.get('held') is not False or reconciled.get('target') != target or not reconciled.get('acm_restored'):
         problems.append('target not measured, detached and reconciled')
