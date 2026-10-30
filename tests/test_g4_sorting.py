@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import math
 import sys
 from pathlib import Path
@@ -372,3 +373,37 @@ def test_a_shutdown_failure_never_hides_a_fault_and_any_latch_reports_stopped(tm
         g4.STOP_AFTER_CYCLE.__init__()
     report = json.loads((tmp_path / 'out' / g4.REPORT_NAME).read_text())
     assert report['status'] == status and (clean or report['shutdown_failure'])
+    assert report['runner']['pid'] == os.getpid() and 'planning_trace' in report       # the trial issuer, the trace
+
+
+@pytest.mark.parametrize('trace', [None, 'relative/trace', 'non-empty', 'a-file'])
+def test_a_trial_needs_its_own_absolute_planning_trace_before_anything_starts(tmp_path, monkeypatch, capsys, trace):
+    """C1: the certified trajectories are trial evidence, so a trial without a fresh absolute trace never starts."""
+    if trace == 'a-file':
+        trace = tmp_path / 'trace_file'
+        trace.write_text('x')
+    elif trace == 'non-empty':
+        trace = tmp_path / 'trace'
+        trace.mkdir()
+        (trace / 'certificate_1_0.result.txt').write_text('result 0\n')
+    if trace is None:
+        monkeypatch.delenv('WORKCELL_PLANNING_TRACE_DIR', raising=False)
+    else:
+        monkeypatch.setenv('WORKCELL_PLANNING_TRACE_DIR', str(trace))
+    with pytest.raises(SystemExit):
+        g4.main(['--scene-package', str(tmp_path), '--output', str(tmp_path / 'out'), '--authorise-g4-trial',
+                 '--prior-evidence', str(tmp_path), '--max-cycles', '2'])
+    assert 'WORKCELL_PLANNING_TRACE_DIR' in capsys.readouterr().err and not (tmp_path / 'out').exists()
+
+
+def test_a_runner_that_cannot_identify_itself_is_blocked_with_a_report(tmp_path, monkeypatch):
+    """C2: a failed /proc read is a BLOCKED report, never a runner crash without one."""
+    import physics_scope_qualification as psq
+
+    def unreadable(pid):
+        raise OSError('no /proc')
+    monkeypatch.setattr(psq, 'process_identity', unreadable)
+    monkeypatch.setattr(g4, 'session', lambda *a: 'MAX_CYCLES')
+    assert g4.main(['--scene-package', str(tmp_path), '--output', str(tmp_path / 'out')]) == 1
+    report = json.loads((tmp_path / 'out' / g4.REPORT_NAME).read_text())
+    assert report['status'] == 'BLOCKED' and 'no /proc' in report['failure'] and 'runner' not in report

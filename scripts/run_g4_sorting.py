@@ -269,6 +269,14 @@ def main(argv=None):
     repo, workspace = SCRIPTS.parent, SCRIPTS.parents[2]
     import physics_scope_qualification as scope
     import sorting_session  # noqa: F401  (every G4 control module is loaded before the snapshot below)
+    trace = os.environ.get('WORKCELL_PLANNING_TRACE_DIR')
+    if args.authorise_g4_trial:                          # a trial's certified trajectories are qualification evidence
+        if (not trace or not Path(trace).is_absolute() or (Path(trace).exists() and not Path(trace).is_dir()) or
+                (Path(trace).is_dir() and any(Path(trace).iterdir()))):
+            parser.error('--authorise-g4-trial needs WORKCELL_PLANNING_TRACE_DIR: an absolute, new or empty directory')
+        Path(trace).mkdir(parents=True, exist_ok=True)
+    # The launch and the executor run with cwd=repo: a relative trace (plan-only) is where they write it.
+    args.planning_trace = str((Path(trace) if Path(trace).is_absolute() else repo / trace).resolve()) if trace else None
     try:                                                 # the G4 control code (and commit) this process runs
         args.loaded_control = scope.g4_control_identity(repo)
         args.start_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
@@ -286,8 +294,10 @@ def main(argv=None):
     started = time.monotonic()
     report = dict(schema='workcell_g4_sorting_run/v1', status='BLOCKED',
                   scope='G4_TRIAL_NOT_QUALIFIED' if args.authorise_g4_trial else 'G4_PLAN_ONLY_NO_MOTION',
-                  started_wall_ns=time.time_ns(), argv=list(sys.argv[1:] if argv is None else argv), cycles=[])
+                  started_wall_ns=time.time_ns(), argv=list(sys.argv[1:] if argv is None else argv), cycles=[],
+                  planning_trace=args.planning_trace)                          # the certified trajectories
     try:
+        report['runner'] = scope.process_identity(os.getpid())                 # the issuer of a trial record
         report['result'] = session(args, repo, workspace, report)
         report['status'] = ('STOPPED' if report['result'] == 'STOPPED_BY_OPERATOR' or STOP_AFTER_CYCLE.record is not None
                             else 'PASS')
