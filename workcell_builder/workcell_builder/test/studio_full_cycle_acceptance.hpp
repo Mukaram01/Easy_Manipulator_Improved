@@ -2246,15 +2246,8 @@ public:
             window->show_workcells_home();
             require(window->open_home_scene_in_builder("suction_test", switching->target_path), "Home open failed");
           } else {
-            // select_scene_by_row accepts the displayed Home row and maps it to
-            // the browser index; use that mapping rather than assuming row order.
-            int row = -1;
-            for (int i = 0; window->dashboard_scene_table_ && i < window->dashboard_scene_table_->rowCount(); ++i) {
-              const auto * entry = window->dashboard_scene_table_->item(i, 0);
-              if (entry && entry->data(Qt::UserRole).toInt() == switching->target) row = i;
-            }
-            require(row >= 0, "target cell has no selectable row");
-            window->select_scene_by_row(row);
+            // Selecting a cell (as a Home row click does) switches cells by scene index.
+            require(window->select_scene_index(switching->target), "target cell could not be selected");
           }
           require(window->selected_scene_index_ == switching->target && !window->mate_active(),
             tag + ": switching cells did not cancel Mate");

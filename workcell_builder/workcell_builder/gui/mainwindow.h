@@ -230,8 +230,11 @@ private:
   void refresh_studio_home_scene_table();
   QString home_scene_id_at_row(int row) const;
   QString home_scene_path_at_row(int row) const;
+  QString selected_scene_home_identity() const;
   void refresh_selected_scene_details_card();
-  void select_scene_by_row(int row);
+  bool select_scene_index(int scene_index);
+  void show_selected_scene_validation_record();
+  void load_scene_builder_editor_for_selected_scene(const QString & source_action);
   void open_selected_scene_artifact(const QString & artifact);
   void delete_selected_scene();
   bool is_safe_scene_path_for_trash_move(const boost::filesystem::path & scene_path, QString * reason = nullptr) const;
@@ -610,8 +613,10 @@ private:
   QPushButton * full_screen_button_{ nullptr };
   QTextEdit * studio_log_{ nullptr };
   QTableWidget * dashboard_scene_table_{ nullptr };
-  QString home_selected_scene_id_;
-  QString home_selected_scene_path_;
+  // The cell whose canvas, hierarchy and Product View the Scene Builder holds; it is
+  // reloaded when the page is shown for another selected cell.
+  QString scene_builder_editor_scene_path_;
+  bool opening_scene_builder_{ false };
   QListWidget * dashboard_library_list_{ nullptr };
   QLineEdit * dashboard_library_search_{ nullptr };
   QComboBox * dashboard_library_status_filter_{ nullptr };

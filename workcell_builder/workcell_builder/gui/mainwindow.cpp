@@ -1914,28 +1914,13 @@ bool MainWindow::open_scene_builder_for_scene_index(
     return false;
   }
 
-  if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(
-      QString::fromStdString(scene_browser_result_.scenes[scene_index].scene_dir.string()))) return false;
-  if (!leave_cell_session_for(scene_index)) return false;
-
-  // Navigation happens before editor ownership changes. Home callbacks are
-  // therefore inactive before the canonical editor refresh begins.
+  // The cell becomes the selected cell first (unsaved-edit checks included), then the
+  // Scene Builder opens on it with exactly one editor load.
+  if (!select_scene_index(scene_index)) return false;
+  opening_scene_builder_ = true;
   show_studio_page(StudioPage::SceneBuilderPage);
-  cancel_mate_for_other_cell(scene_index);
-  selected_scene_index_ = scene_index;
-  try {
-    refresh_scene_builder_selection_state_ui();
-  } catch (const YAML::Exception & error) {
-    append_studio_log(
-      source_action + ": scene metadata warning: " + QString::fromStdString(error.what()),
-      workcell_builder::StudioLogSeverity::Warning, QStringLiteral("scene_metadata_parse"));
-    QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
-  } catch (const std::exception & error) {
-    append_studio_log(
-      source_action + ": scene metadata warning: " + QString::fromStdString(error.what()),
-      workcell_builder::StudioLogSeverity::Warning, QStringLiteral("scene_metadata_parse"));
-    QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
-  }
+  opening_scene_builder_ = false;
+  load_scene_builder_editor_for_selected_scene(source_action);
   visual_index_script_missing_reported_scene_key_.clear();
   visual_index_regen_failure_reported_scene_key_.clear();
   visual_index_regen_throttle_session_active_ = false;
@@ -3866,6 +3851,11 @@ void MainWindow::setup_studio_shell()
     // Inspector and both renderers, including a retained Product View page.
     apply_scene_selection(QString(), QStringLiteral("page_handoff"), true, false);
     if (idx == static_cast<int>(StudioPage::DashboardPage)) refresh_scene_browser_ui();
+    // Reached from the sidebar after Home selected another cell: never show or save
+    // the previous cell's canvas under the selected cell's name.
+    if (idx == static_cast<int>(StudioPage::SceneBuilderPage) && !opening_scene_builder_ &&
+      scene_builder_editor_scene_path_ != selected_scene_path())
+      load_scene_builder_editor_for_selected_scene(QStringLiteral("Scene Builder"));
   });
   show_studio_page(StudioPage::DashboardPage);
   connect(dashboard_scene_table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
@@ -3877,9 +3867,20 @@ void MainWindow::setup_studio_shell()
     if (!studio_pages_ ||
       studio_pages_->currentIndex() != static_cast<int>(StudioPage::DashboardPage)) return;
     const int row = dashboard_scene_table_ ? dashboard_scene_table_->currentRow() : -1;
-    home_selected_scene_id_ = home_scene_id_at_row(row);
-    home_selected_scene_path_ = home_scene_path_at_row(row);
-    const bool selected = !home_selected_scene_id_.isEmpty();
+    const QString scene_id = home_scene_id_at_row(row);
+    const int scene_index = scene_id.isEmpty() ? -1 : workcell_builder::find_scene_by_identity(scene_browser_result_,
+      fs::path(home_scene_path_at_row(row).toStdString()), scene_id.toStdString());
+    // The Home row is the selected cell for every page; the editor loads on Scene Builder.
+    const bool selected = scene_index >= 0 && select_scene_index(scene_index);
+    if (scene_index >= 0 && !selected) {
+      // Unsaved edits kept: Home goes back to the row of the cell that is still selected.
+      QTimer::singleShot(0, this, [this]() {
+        const QString identity = selected_scene_home_identity();
+        for (int r = 0; dashboard_scene_table_ && !identity.isEmpty() && r < dashboard_scene_table_->rowCount(); ++r)
+          if (home_scene_path_at_row(r) == identity) { dashboard_scene_table_->setCurrentCell(r, 0); break; }
+      });
+      return;
+    }
     if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(selected);
   });
   // The production Home shell filters the existing rows in place with one
@@ -3913,7 +3914,7 @@ void MainWindow::setup_studio_shell()
   connect_action(dashboard_plan_action_, [this](){ if (action_simulate_plan_preview_) action_simulate_plan_preview_->trigger(); });
   connect_action(dashboard_export_action_, [this](){ if (action_export_open_page_) action_export_open_page_->trigger(); });
   connect_action(dashboard_delete_action_, &MainWindow::delete_selected_scene);
-  connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ select_scene_by_row(row); if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
+  connect(existing_scene_table_, &QTableWidget::cellClicked, this, [this](int row, int col){ if (!select_scene_index(row)) return; if(col==2){open_scene_builder_for_selected_scene("Existing Scenes Open in Scene Builder");} else if(col==3){open_selected_scene_artifact("preview");} else if(col==4){open_selected_scene_artifact("smoke");} else if(col==5){QApplication::clipboard()->setText(selected_scene_launch_command()); append_studio_log("Copy Launch Command");}});
   connect_action(open_asset_folder_action, [this](){ open_selected_scene_artifact("asset_folder"); });
   connect_action(copy_asset_path_action, [this](){ QApplication::clipboard()->setText(selected_catalog_item_path()); });
   connect_action(import_asset_action, [this](){ append_studio_log("Import STL / OBJ / DAE: choose asset import flow from Asset Browser."); });
@@ -4494,7 +4495,11 @@ void MainWindow::generate_scene_package_for_selected_scene() {
       append_studio_log("Generate blocked: " + environment_task_editor_->blocker(false)); return;
     }
   }
-  if (selected_scene_index_ < 0) return;
+  if (selected_scene_index_ < 0) {
+    append_studio_log(QStringLiteral("Generate Scene Package blocked: no cell is selected."));
+    show_workflow_feedback("warning", QStringLiteral("Generate needs a cell: select one on Home first."));
+    return;
+  }
   QObject::disconnect(generated_refresh_connection_);
   const quint64 serial = ++generated_refresh_serial_;
   launch_artifacts_ready_ = false;
@@ -5414,20 +5419,13 @@ void MainWindow::refresh_studio_home_scene_table()
     }
   }
   bool restored_home_selection = false;
-  for (int row = 0; row < dashboard_scene_table_->rowCount(); ++row) {
-    const QString row_id = home_scene_id_at_row(row);
-    const QString row_path = home_scene_path_at_row(row);
-    if (!home_selected_scene_id_.isEmpty() && row_id == home_selected_scene_id_ &&
-      (home_selected_scene_path_.isEmpty() || row_path == home_selected_scene_path_))
-    {
+  const QString selected_identity = selected_scene_home_identity();
+  for (int row = 0; row < dashboard_scene_table_->rowCount() && !selected_identity.isEmpty(); ++row) {
+    if (home_scene_path_at_row(row) == selected_identity) {
       dashboard_scene_table_->setCurrentCell(row, 0);
       restored_home_selection = true;
       break;
     }
-  }
-  if (!restored_home_selection && !home_selected_scene_id_.isEmpty()) {
-    home_selected_scene_id_.clear();
-    home_selected_scene_path_.clear();
   }
   if (dashboard_empty_state_card_) dashboard_empty_state_card_->setVisible(dashboard_scene_table_->rowCount() == 0);
   if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(restored_home_selection);
@@ -5439,6 +5437,14 @@ QString MainWindow::home_scene_id_at_row(int row) const
   const QTableWidgetItem * item = dashboard_scene_table_->item(row, 0);
   if (!item) return QString();
   return item->toolTip().trimmed().isEmpty() ? item->text().trimmed() : item->toolTip().trimmed();
+}
+
+// The selected cell as Home rows identify it (UserRole + 42, the canonical scene path).
+QString MainWindow::selected_scene_home_identity() const
+{
+  if (!has_selected_scene()) return QString();
+  const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  return QDir::cleanPath(QString::fromStdString((s.canonical_scene_dir.empty() ? s.scene_dir : s.canonical_scene_dir).string()));
 }
 
 QString MainWindow::home_scene_path_at_row(int row) const
@@ -5540,18 +5546,25 @@ void MainWindow::delete_selected_scene()
   refresh_scene_browser_ui();
 }
 
-void MainWindow::select_scene_by_row(int row)
+// The one way a cell becomes the selected cell, from Home or a scene list. Generate,
+// Validation and Plan / Simulate act on this identity; the Scene Builder editor follows it
+// when that page is shown. Returns false, changing nothing, when the user keeps unsaved
+// edits in the current cell.
+bool MainWindow::select_scene_index(int scene_index)
 {
-  if (dashboard_scene_table_ && dashboard_scene_table_->item(row, 0) && dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).isValid()) row = dashboard_scene_table_->item(row, 0)->data(Qt::UserRole).toInt();
-  if (row < 0 || row >= (int)scene_browser_result_.scenes.size()) return;
+  if (scene_index < 0 || scene_index >= (int)scene_browser_result_.scenes.size()) return false;
+  if (scene_index == selected_scene_index_) return true;
   if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(
-      QString::fromStdString(scene_browser_result_.scenes[row].scene_dir.string()))) return;
-  if (!leave_cell_session_for(row)) return;
+      QString::fromStdString(scene_browser_result_.scenes[scene_index].scene_dir.string()))) return false;
+  if (!leave_cell_session_for(scene_index)) return false;
   const QString previous_scene_path = selected_scene_path();
   if (place_asset_armed_) set_canvas_interaction_mode(CanvasInteractionMode::Select);
-  cancel_mate_for_other_cell(row);
-  selected_scene_index_ = row;
+  cancel_mate_for_other_cell(scene_index);
+  selected_scene_index_ = scene_index;
   sync_selected_scene_state();
+  show_selected_scene_validation_record();
+  // The task belongs to the selected cell: Plan / Simulate readiness reads its input blocker.
+  refresh_task_intent_panel();
   refresh_selected_scene_metadata_panel();
   if (previous_scene_path != selected_scene_path()) {
     studio_log_issue_tracker_.set_scope(selected_scene_path().toStdString());
@@ -5569,14 +5582,42 @@ void MainWindow::select_scene_by_row(int row)
     visual_index_regen_throttle_session_active_ = false;
   }
   sync_selected_item_state();
-  const auto & s = scene_browser_result_.scenes[(size_t)row];
+  const auto & s = scene_browser_result_.scenes[(size_t)scene_index];
   refresh_scene_builder_selected_scene_ui();
   readiness_label_->setText("Preview/offline validation only\nNo robot motion commanded\nRuntime execution remains disabled unless explicitly enabled elsewhere\ncolcon build --symlink-install --packages-select "+QString::fromStdString(s.scene_name)+"\nsource install/setup.bash\n"+selected_scene_launch_command());
   refresh_preview_launch_ui();
   refresh_new_cell_checklist();
-  refresh_scene_builder_left_explorer();
   refresh_scene_bundle_export_panel();
   refresh_selected_scene_details_card();
+  const fs::path identity = s.canonical_scene_dir.empty() ? s.scene_dir : s.canonical_scene_dir;
+  QSettings().setValue(QStringLiteral("home/last_selected_scene_path"), QDir::cleanPath(QString::fromStdString(identity.string())));
+  append_studio_log(QStringLiteral("Selected cell: %1 (%2)").arg(selected_scene_name(), selected_scene_path()));
+  return true;
+}
+
+// The Validation page shows the selected cell's own recorded result, never another cell's.
+void MainWindow::show_selected_scene_validation_record()
+{
+  validation_state_.clear();
+  validation_state_detail_.clear();
+  QStringList blockers, warnings;
+  if (has_selected_scene()) {
+    const auto & s = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+    const auto content = workcell_builder::scene_content_readiness(s);
+    if (content.validation_report_present && content.validation_report_matches_inputs) {
+      QFile report(QString::fromStdString((s.scene_dir / "acceptance" / "generated_scene_acceptance.json").string()));
+      if (report.open(QIODevice::ReadOnly)) {
+        const QJsonObject json = QJsonDocument::fromJson(report.readAll()).object();
+        for (const QJsonValue & value : json.value(QStringLiteral("blockers")).toArray()) blockers << value.toString();
+        for (const QJsonValue & value : json.value(QStringLiteral("warnings")).toArray()) warnings << value.toString();
+      }
+      validation_state_ = content.validation_current ? QStringLiteral("passed") : QStringLiteral("failed");
+      validation_state_detail_ = QStringLiteral("recorded result for %1; still matches its authored files").arg(selected_scene_name());
+    } else if (!content.blocker.empty()) {
+      blockers << QString::fromStdString(content.blocker);
+    }
+  }
+  set_validation_lists(blockers, warnings);
 }
 
 void MainWindow::refresh_selected_scene_details_card()
@@ -8376,6 +8417,23 @@ void MainWindow::refresh_selected_scene_metadata_panel()
   refresh_duplicate_selected_action();
 }
 
+void MainWindow::load_scene_builder_editor_for_selected_scene(const QString & source_action)
+{
+  try {
+    refresh_scene_builder_selection_state_ui();
+  } catch (const YAML::Exception & error) {
+    append_studio_log(
+      source_action + ": scene metadata warning: " + QString::fromStdString(error.what()),
+      workcell_builder::StudioLogSeverity::Warning, QStringLiteral("scene_metadata_parse"));
+    QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
+  } catch (const std::exception & error) {
+    append_studio_log(
+      source_action + ": scene metadata warning: " + QString::fromStdString(error.what()),
+      workcell_builder::StudioLogSeverity::Warning, QStringLiteral("scene_metadata_parse"));
+    QMessageBox::warning(this, "Workcell Studio", "Scene metadata could not be fully parsed. Opened with warnings.");
+  }
+}
+
 void MainWindow::refresh_scene_builder_selection_state_ui()
 {
   sync_selected_scene_state();
@@ -8831,6 +8889,7 @@ void MainWindow::rebuild_digital_twin_canvas()
 void MainWindow::refresh_scene_builder_left_explorer()
 {
   sync_selected_scene_state();
+  scene_builder_editor_scene_path_ = selected_scene_path();
   rebuild_digital_twin_canvas();
   populate_scene_hierarchy();
   populate_asset_catalog();
@@ -11191,6 +11250,7 @@ bool MainWindow::leave_cell_session_for(int scene_index)
   selection_set_.clear();
   layout_dirty_ = false;
   validation_stale_ = false;  // in-session edits since the last validation belong to the old cell
+  launch_artifacts_ready_ = false;  // so does the last Generate result
   setWindowModified(false);
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);

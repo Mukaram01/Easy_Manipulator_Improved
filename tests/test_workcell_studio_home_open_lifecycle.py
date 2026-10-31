@@ -49,17 +49,21 @@ BROWSER_REFRESH = section(
 )
 
 
-def test_home_single_click_is_identity_only_and_never_loads_editor_state():
+def test_home_single_click_selects_the_cell_but_never_loads_editor_state():
     selection = section(
         SETUP,
         "connect(dashboard_scene_table_, &QTableWidget::itemSelectionChanged",
         "// The production Home shell filters",
     )
-    for required in ["home_selected_scene_id_", "home_selected_scene_path_", "setEnabled(selected)"]:
+    # The Home row is the one selected cell for Generate, Validation and Plan / Simulate.
+    for required in ["find_scene_by_identity", "select_scene_index(scene_index)", "setEnabled(selected)",
+                     "selected_scene_home_identity()", "setCurrentCell(r, 0)"]:
         assert required in selection
     for forbidden in [
-        "select_scene_by_row",
+        "home_selected_scene_id_",
         "refresh_scene_builder_selection_state_ui",
+        "load_scene_builder_editor_for_selected_scene",
+        "refresh_scene_builder_left_explorer",
         "populate_scene_hierarchy",
         "set_preview_context",
         "open_home_scene_in_builder",
@@ -71,14 +75,13 @@ def test_home_population_restores_stable_identity_with_signals_blocked():
     for required in [
         "QSignalBlocker table_blocker(dashboard_scene_table_)",
         "QSignalBlocker library_blocker(dashboard_library_list_)",
-        "home_selected_scene_id_",
-        "home_selected_scene_path_",
+        "home_scene_path_at_row(row) == selected_identity",
         "Qt::UserRole + 42",
     ]:
         assert required in HOME_POPULATION
     for forbidden in [
-        "selected_scene_index_",
-        "select_scene_by_row",
+        "select_scene_index",
+        "selected_scene_index_ =",
         "invokeMethod",
         'itemSelectionChanged"',
         "open_home_scene_in_builder",
@@ -97,7 +100,7 @@ def test_filter_sort_pin_and_inspector_refresh_are_home_ui_only():
         assert required in TARGET
     for forbidden in [
         "open_home_scene_in_builder",
-        "select_scene_by_row",
+        "select_scene_index",
         "refresh_scene_builder_selection_state_ui",
         "ScenePreviewWidget",
         "Scene3DViewportWidget",
@@ -149,11 +152,12 @@ def test_explicit_home_open_uses_captured_id_and_cannot_run_after_navigation():
 
 
 def test_one_open_request_has_one_canonical_editor_refresh():
-    assert CANONICAL_OPEN.count("refresh_scene_builder_selection_state_ui();") == 1
+    assert CANONICAL_OPEN.count("load_scene_builder_editor_for_selected_scene(source_action);") == 1
+    activate = CANONICAL_OPEN.index("select_scene_index(scene_index)")
+    guard = CANONICAL_OPEN.index("opening_scene_builder_ = true;")
     navigate = CANONICAL_OPEN.index("show_studio_page(StudioPage::SceneBuilderPage);")
-    activate = CANONICAL_OPEN.index("selected_scene_index_ = scene_index;")
-    refresh = CANONICAL_OPEN.index("refresh_scene_builder_selection_state_ui();")
-    assert navigate < activate < refresh
+    refresh = CANONICAL_OPEN.index("load_scene_builder_editor_for_selected_scene(source_action);")
+    assert activate < guard < navigate < refresh
     assert "refresh_scene_builder_left_explorer" not in CANONICAL_OPEN
     assert "populate_scene_hierarchy" not in CANONICAL_OPEN
     assert "set_preview_context" not in CANONICAL_OPEN
@@ -194,3 +198,21 @@ def test_internal_retry_uri_was_removed_in_favor_of_native_retry_button():
     assert "use Retry in the Product View toolbar" in SCENE_PREVIEW
     assert "EmbeddedProductViewState::Failed" in SCENE_PREVIEW
     assert 'QStringLiteral("user_retry")' in SCENE_PREVIEW
+
+
+def test_selected_cell_is_one_identity_scoped_per_cell_and_remembered():
+    core = section(MAINWINDOW, "bool MainWindow::select_scene_index(int scene_index)",
+                   "void MainWindow::show_selected_scene_validation_record()")
+    for required in ["confirm_scene_change", "leave_cell_session_for(scene_index)", "cancel_mate_for_other_cell(scene_index);",
+                     "show_selected_scene_validation_record();", "refresh_task_intent_panel();",
+                     "refresh_preview_launch_ui();",
+                     "home/last_selected_scene_path"]:
+        assert required in core
+    # Editor state (canvas, hierarchy, Product View) loads only when Scene Builder is shown.
+    for forbidden in ["refresh_scene_builder_left_explorer", "populate_scene_hierarchy", "set_preview_context"]:
+        assert forbidden not in core
+    record = section(MAINWINDOW, "void MainWindow::show_selected_scene_validation_record()",
+                     "void MainWindow::refresh_selected_scene_details_card()")
+    assert "validation_state_.clear();" in record and "scene_content_readiness" in record
+    assert "scene_builder_editor_scene_path_ != selected_scene_path()" in SETUP
+    assert "home/last_selected_scene_path" in TARGET
