@@ -168,7 +168,8 @@ void creation_chain(const QString & layout) {
   const auto repo = workspace.path() + "/src/easy_manipulation_deployment";
   QDir().mkpath(repo + "/scenes/existing"); QDir().mkpath(repo + "/assets");
   write(repo + "/scenes/existing/environment.yaml", "robot: {model: ur5}\n");
-  const auto output = layout == "custom" ? workspace.path() + "/custom output" : workspace.path() + "/src/scenes";
+  const auto output = layout == "custom" ? workspace.path() + "/custom output" :
+    layout == "canonical" ? repo + "/scenes" : workspace.path() + "/src/scenes";
   if (layout == "alias") boost::filesystem::create_directory_symlink(
     (repo + "/scenes").toStdString(), output.toStdString());
   else QDir().mkpath(output);
@@ -182,14 +183,26 @@ void creation_chain(const QString & layout) {
       if (label->text() == "Scene/package name") field->setText("created");
       if (label->text() == "Output scenes path") {
         EXPECT_EQ(field->text(), repo + "/scenes");
+        EXPECT_TRUE(field->isReadOnly());
         field->setText(output);
       }
     }
   for (auto * button : wizard.findChildren<QPushButton *>())
     if (button->text() == "Create and Open") button->click();
+  if (layout == "separate" || layout == "custom") {
+    // Cells live only in the repository's scenes folder: another folder is refused with the reason, never redirected.
+    EXPECT_FALSE(wizard.result().created);
+    EXPECT_FALSE(QFileInfo::exists(output + "/created"));
+    EXPECT_FALSE(QFileInfo::exists(repo + "/scenes/created"));
+    bool explained = false;
+    for (auto * label : wizard.findChildren<QLabel *>())
+      if (label->text().contains("is not supported") && label->text().contains(repo + "/scenes")) explained = true;
+    EXPECT_TRUE(explained);
+    return;
+  }
   ASSERT_TRUE(wizard.result().created);
   const auto scene = wizard.result().scene_dir;
-  EXPECT_EQ(scene, workcell_builder::canonical_scene_identity((output + "/created").toStdString()));
+  EXPECT_EQ(scene, workcell_builder::canonical_scene_identity((repo + "/scenes/created").toStdString()));
   EXPECT_TRUE(QFile::exists(QString::fromStdString(scene.string()) + "/config/workcell_builder_task_intent.yaml"));
   const auto saved = read(QString::fromStdString(scene.string()) + "/config/workcell_builder_task_intent.yaml");
   EXPECT_EQ(QJsonDocument::fromJson(saved).object().value("scene_package").toString().toStdString(), scene.string());
@@ -197,15 +210,9 @@ void creation_chain(const QString & layout) {
   for (auto * button : wizard.findChildren<QPushButton *>())
     if (button->text() == "Create and Open") button->click();
   EXPECT_EQ(saved, read(QString::fromStdString(scene.string()) + "/config/workcell_builder_task_intent.yaml"));
-  if (layout != "alias") {
-    QDir().mkpath(repo + "/scenes/created");
-    write(repo + "/scenes/created/environment.yaml", "robot: {model: other_robot}\n");
-  }
-  const auto home = workcell_builder::discover_workcell_studio_scenes(workspace.path().toStdString(),
-    layout == "custom" ? output.toStdString() : std::string());
-  EXPECT_EQ(home.scenes.size(), layout == "alias" ? 2U : 3U);
-  EXPECT_EQ(workcell_builder::find_scene_by_identity(home, {}, "created"),
-    layout == "alias" ? workcell_builder::find_scene_by_identity(home, scene) : -1);
+  const auto home = workcell_builder::discover_workcell_studio_scenes(workspace.path().toStdString(), std::string());
+  EXPECT_EQ(home.scenes.size(), 2U);
+  EXPECT_EQ(workcell_builder::find_scene_by_identity(home, {}, "created"), workcell_builder::find_scene_by_identity(home, scene));
   EXPECT_EQ(workcell_builder::find_scene_by_identity(home, "/missing/created", "created"), -1);
   const int index = workcell_builder::find_scene_by_identity(home, scene);
   ASSERT_GE(index, 0);
@@ -217,9 +224,11 @@ void creation_chain(const QString & layout) {
 }
 
 }
-TEST(TaskIntentEditor, CreateDiscoverOpenAcrossSeparateSceneRoots) { creation_chain("separate"); }
+
+TEST(TaskIntentEditor, CreateDiscoverOpenInRepositoryScenes) { creation_chain("canonical"); }
 TEST(TaskIntentEditor, CreateDiscoverOpenThroughNormalAlias) { creation_chain("alias"); }
-TEST(TaskIntentEditor, CreateDiscoverOpenThroughCustomOutput) { creation_chain("custom"); }
+TEST(TaskIntentEditor, SeparateSceneRootIsRefusedWithReason) { creation_chain("separate"); }
+TEST(TaskIntentEditor, CustomOutputIsRefusedWithReason) { creation_chain("custom"); }
 TEST(TaskIntentEditor, SaveFailureDoesNotPublishCellOrClaimCreation) {
   application(); QTemporaryDir workspace;
   write(workspace.path() + "/not_a_directory", "preserve me");
@@ -234,9 +243,10 @@ TEST(TaskIntentEditor, SaveFailureDoesNotPublishCellOrClaimCreation) {
     if (button->text() == "Create and Open") button->click();
   EXPECT_FALSE(wizard.result().created);
   EXPECT_EQ(read(workspace.path() + "/not_a_directory"), "preserve me");
+  // The path is outside the repository's scenes folder: refused, with the path named, before anything is written.
   bool save_error = false;
   for (auto * label : wizard.findChildren<QLabel *>())
-    if (label->text().contains("Save failed at") && label->text().contains("not_a_directory")) save_error = true;
+    if (label->text().contains("is not supported") && label->text().contains("not_a_directory")) save_error = true;
   EXPECT_TRUE(save_error);
 }
 TEST(TaskIntentEditor, TaskPersistenceFailureLeavesNoPartialScene) {

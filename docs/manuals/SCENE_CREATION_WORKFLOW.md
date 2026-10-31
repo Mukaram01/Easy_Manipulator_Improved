@@ -11,6 +11,18 @@ This manual documents the **current intended flow** for creating/importing/editi
 - `cell_definition/v1` describes intended cell/task contract.
 - No duplicate scene system is required.
 
+## Where cells are saved (Git policy)
+
+- **New cells:** New Cell saves every cell in the repository's `scenes/<name>/` folder. Workcell Builder lists, edits (3D Scene Builder), generates, validates and simulates cells there.
+  - **Other folders:** refused with the reason. They are never redirected.
+  - **Existing names:** blocked, never overwritten.
+  - **Older folders:** cells created in an earlier custom output folder stay listed.
+- **Not in Git:** new cells are **local to this PC**. Git ignores everything under `scenes/` except the curated reference library listed in `.gitignore`, so a new cell is never uploaded to GitHub and does not sync to other computers. To use it on another PC, copy its folder or export it.
+- **Scene-local assets:** a cell's own assets are saved inside it, for example the test-object visuals New Cell > Sorting copies, or the catalog meshes a layout Save copies to `assets/imported/catalog/`. The cell's generated package resolves them inside the cell, whether or not Git tracks them.
+- **Imported CAD:** the External Asset Import library (`workcell_builder/workcell_builder/assets/imported/`) is a local library and is ignored. Customer or proprietary CAD is never committed by default.
+- **Tracked:** the core library (`assets/`, robot/tool/environment descriptions, `catalog/`) and the reference scenes. A reference scene depends only on tracked files, so a GitHub checkout works without copying assets.
+- **Promoting a cell to a reference scene:** a deliberate review. Add its `!scenes/<name>/` line to `.gitignore`, make sure every asset it references is tracked and licensed, then commit it.
+
 ## Practical workflow (current)
 
 1. Open or create a workcell project.

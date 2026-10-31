@@ -50,8 +50,30 @@ tesseract_external/
 src/boost_plugin_loader/
 src/ros_industrial_cmake_boilerplate/
 
+# Workcell Studio scenes: cells created in Workcell Builder (New Cell) are local to this PC and Git-ignored.
+# Only the curated reference library below is tracked; add a scene here deliberately, with its licensed assets.
+# (docs/manuals/SCENE_CREATION_WORKFLOW.md, "Where cells are saved")
+scenes/*
+!scenes/supported_scenes.yaml
+# Reference scenes: canonical first/second scenes and the sorting reference.
+!scenes/ur5_2f_test/
+!scenes/suction_test/
+!scenes/ur5_2f_sorting_test/
+# Tracked capability scenes, still used by tests and the catalog; retirement candidates (decision pending).
+!scenes/ur5_2f_builder_pick_place_demo/
+!scenes/ur5_3f_test/
+!scenes/ur3_suction_test/
+!scenes/ur10_2f_test/
+!scenes/ur5_airpick4_test/
+
+# User-imported CAD (External Asset Import): a local library, never committed.
+workcell_builder/workcell_builder/assets/imported/*
+!workcell_builder/workcell_builder/assets/imported/.gitkeep
+
 # Workcell Studio generated scene cache/artifacts
 scenes/*/generated/
+# Builder build/launch session logs written into a scene
+scenes/*/preview_launch/
 # Runtime EPD readiness status written by epd_readiness_monitor_node.py
 scenes/*/preview/epd_detection_readiness.json
 !scenes/*/generated/.gitkeep
