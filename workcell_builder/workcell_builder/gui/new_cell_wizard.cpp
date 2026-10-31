@@ -214,7 +214,13 @@ void NewCellWizard::build_ui(){
  auto *s1=new QWidget(this); auto *f1=new QFormLayout(s1); display_name_=new QLineEdit(); scene_name_=new QLineEdit(); display_name_->setObjectName("newCellDisplayName"); scene_name_->setObjectName("newCellSceneName"); description_=new QTextEdit(); application_scenario_=new QComboBox(); application_scenario_->setObjectName("applicationScenarioCombo");
  const auto scenario_choices = load_industrial_scenario_choices(scenario_catalog_path());
  for (const auto &choice : scenario_choices) { application_scenario_->addItem(choice.label, choice.id); application_scenario_->setItemData(application_scenario_->count()-1, choice.category, Qt::UserRole+1); }
- output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Application / Scenario",application_scenario_); f1->addRow("Output scenes path",output_path_); mk_page(s1);
+ output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Application / Scenario",application_scenario_); f1->addRow("Output scenes path",output_path_);
+ // The only supported location; a cell kept elsewhere would not be discovered or editable in the 3D Scene Builder.
+ output_path_->setReadOnly(true);
+ auto *local_note=new QLabel("The cell is saved on this PC in the Workcell Studio scenes folder. New cells are not tracked by "
+   "Git: they are not uploaded to GitHub and do not sync to other computers. To use a cell on another PC, copy its folder "
+   "or export it.");
+ local_note->setObjectName("newCellLocalStorageNote"); f1->addRow("",local_note); mk_page(s1);
 
  auto *s2=new QWidget(this); auto *f2=new QFormLayout(s2); robot_family_=new QComboBox(); robot_family_->addItems({"Universal Robots / UR","Franka / Panda","Fanuc","ABB","Cartesian / Gantry","Delta","Custom / Placeholder"}); robot_=new QComboBox(); robot_base_link_=new QComboBox(); robot_tip_link_=new QComboBox(); robot_planning_group_=new QComboBox();
  for(auto*c:{robot_base_link_,robot_tip_link_,robot_planning_group_}) c->setEditable(true);
@@ -530,10 +536,25 @@ void NewCellWizard::refresh_environment_parent_options(){ pick_camera_->clear();
 void NewCellWizard::set_output_root(const QString & path) { if (!path.isEmpty()) output_path_->setText(path); }
 fs::path NewCellWizard::scenes_root_path() const {
  if (output_path_) return fs::absolute(fs::path(output_path_->text().trimmed().toStdString()));
+ return canonical_scenes_root();
+}
+fs::path NewCellWizard::canonical_scenes_root() const {
  const auto resolved = workcell_builder::resolve_scene_select_paths(Workcell{}, fs::path(workspace_root_.toStdString()));
  return resolved.success ? resolved.paths.scenes_path : fs::path(workspace_root_.toStdString()) / "src" / "scenes";
 }
-QString NewCellWizard::scene_name_error() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return "Scene/package name is required."; if(output_path_ && output_path_->text().trimmed().isEmpty()) return "Output scenes path is required."; if(!is_valid_package_name(n)) return "Use lowercase letters, numbers, underscores only; must start with a letter."; return ""; }
+QString NewCellWizard::scene_name_error() const {
+ const QString n=scene_name_->text().trimmed();
+ if(n.isEmpty()) return "Scene/package name is required.";
+ if(output_path_ && output_path_->text().trimmed().isEmpty()) return "Output scenes path is required.";
+ if(!is_valid_package_name(n)) return "Use lowercase letters, numbers, underscores only; must start with a letter.";
+ boost::system::error_code ec;
+ const fs::path chosen=fs::weakly_canonical(scenes_root_path(),ec), canonical=fs::weakly_canonical(canonical_scenes_root(),ec);
+ if(chosen!=canonical)
+   return QString("%1 is not supported. New cells are saved only in the Workcell Studio scenes folder %2, where Workcell "
+                  "Builder lists, edits, generates and validates them. To move a cell elsewhere, copy or export it.")
+     .arg(QString::fromStdString(scenes_root_path().string()), QString::fromStdString(canonical_scenes_root().string()));
+ return "";
+}
 QString NewCellWizard::scene_name_warning() const { const QString n=scene_name_->text().trimmed(); if(n.isEmpty()) return ""; const fs::path p=scenes_root_path()/n.toStdString(); if(fs::exists(p)) return "Warning: output folder already exists. Creation is blocked to avoid overwrite."; return ""; }
 
 void NewCellWizard::refresh_validation(){
