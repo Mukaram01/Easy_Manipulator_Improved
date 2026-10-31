@@ -30,8 +30,10 @@ def load_profile(profile_id):
     return profile, source
 
 
-def describe(profile_id):
+def describe(profile_id, scenario=None):
+    """The wizard rows of the profile; a scenario with a reviewed layout (``scenarios``) moves and adds rows."""
     profile, source = load_profile(profile_id)
+    layout = (profile.get('scenarios') or {}).get(scenario) or {}
     physical = source['environment']
     rows = []
     for key in ('support_surfaces', 'assets', 'task_zones'):
@@ -40,9 +42,75 @@ def describe(profile_id):
                 continue
             role = ('pick_source' if item['id'] == profile['pick_zone'] else
                     'place_target' if item['id'] == profile['place_asset'] else item.get('role', ''))
-            rows.append(dict(id=item['id'], asset_type=item['type'], role=role,
-                             pose=dict(xyz=item['pose_xyz'], rpy=item['pose_rpy'])))
-    return dict(profile, rows=rows, robot=source['robot'], tool=source['tool'])
+            pose = layout.get('poses', {}).get(item['id']) or dict(xyz=item['pose_xyz'], rpy=item['pose_rpy'])
+            rows.append(dict(id=item['id'], asset_type=item['type'], role=role, pose=dict(pose)))
+    for copy_id, spec in layout.get('copies', {}).items():
+        original = next(row for row in rows if row['id'] == spec['of'])
+        rows.append(dict(original, id=copy_id, pose=dict(spec['pose'])))
+    return dict(profile, rows=rows, robot=source['robot'], tool=source['tool'], scenario=layout)
+
+
+def restore_authored_bin_roles(environment):
+    """Older Builder Applies saved the hierarchy display alias 'place_target_bin' as a bin's authored role
+    (semantic_role_edit.hpp); a profile source still carrying it keeps its authored meaning, the target bin the
+    physics world and destinations bind to."""
+    for asset in environment.get('assets', []):
+        if asset.get('type') == 'target_bin' and asset.get('role') == 'place_target_bin':
+            asset['role'] = 'target_bin'
+
+
+def apply_scenario_layout(environment, layout):
+    """Move the reviewed scenario poses and add the copied destinations, each with its own placement region."""
+    from physical_destination import resolve_destination
+    assets = {a['id']: a for a in environment['assets']}
+    for asset_id, pose in layout.get('poses', {}).items():
+        assets[asset_id]['pose_xyz'], assets[asset_id]['pose_rpy'] = list(pose['xyz']), list(pose['rpy'])
+    for copy_id, spec in layout.get('copies', {}).items():
+        original = assets[spec['of']]
+        target = copy.deepcopy(original)
+        target.update(id=copy_id, layout_item_ref=copy_id, display_name=spec['display_name'], task_zone_ref=spec['region'],
+                      pose_xyz=list(spec['pose']['xyz']), pose_rpy=list(spec['pose']['rpy']))
+        zone = copy.deepcopy(next(z for z in environment['task_zones'] if z['id'] == original['task_zone_ref']))
+        zone.update(id=spec['region'], layout_item_ref=spec['region'], target_ref=copy_id,
+                    display_name=spec['region_display_name'])
+        environment['assets'].append(target)
+        environment['task_zones'].append(zone)
+    # Every destination region follows its (moved or copied) target from its target-local placement.
+    for zone in environment['task_zones']:
+        if zone.get('target_ref') and zone.get('placement_local'):
+            resolved = resolve_destination(environment, zone['id'], check_projection=False)
+            zone['pose_xyz'], zone['pose_rpy'] = resolved['pose_xyz'], resolved['pose_rpy']
+            resolve_destination(environment, zone['id'])
+
+
+def scenario_test_objects(scene, layout, rows):
+    """The wizard's test objects as qualified physics bodies, each with its authored appearance (render only)."""
+    body = layout['test_object']
+    size = [float(v) for v in body['dimensions']]
+    objects = []
+    for row in rows:
+        appearance_id = row.get('appearance')
+        appearance = layout['appearances'].get(appearance_id)
+        if appearance is None:
+            raise ValueError(f"test object {row.get('object_id')!r}: unknown appearance {appearance_id!r}")
+        pose = row['pose']
+        objects.append({'object_id': row['object_id'], 'class_id': 'unclassified', 'appearance': appearance_id,
+                        'material': body['material'], 'shape': 'box', 'dimensions': size,
+                        'pose': {'frame_id': 'world', 'xyz': [float(pose['xyz'][0]), float(pose['xyz'][1]), body['rest_z']],
+                                 'rpy': [0.0, 0.0, float(pose['rpy'][2])]}})
+        if appearance.get('mesh'):
+            # The visual mesh scaled per axis to fill the body, its base on the body's base.
+            mesh = ROOT / appearance['mesh']
+            shutil.copytree(mesh.parent, scene / 'assets/visuals' / mesh.parent.name, dirs_exist_ok=True)
+            bbox, centre = appearance['bbox'], appearance['centre_xy']
+            scale = [s / b for s, b in zip(size, bbox)]
+            objects[-1]['visual'] = {
+                'mesh': f'assets/visuals/{mesh.parent.name}/{mesh.name}', 'scale': scale,
+                'offset_xyz': [-centre[0] * scale[0], -centre[1] * scale[1], -size[2] / 2 - appearance['zmin'] * scale[2]],
+                'source': appearance['source'], 'license': appearance['license']}
+    if not objects or len({o['object_id'] for o in objects}) != len(objects):
+        raise ValueError('Sorting needs at least one test object, each with a unique ID')
+    return objects
 
 
 def apply_destination_regions(environment, regions):
@@ -83,7 +151,9 @@ def materialize(scene, profile_id, destination):
     if (studio['robot']['model'] != profile['robot_model'] or
             studio['tool']['model'] != profile['tool_model']):
         raise ValueError('Recommended physical profile does not match selected robot/tool')
-    expected = {row['id']: row for row in describe(profile_id)['rows']}
+    scenario_id = studio.get('scenario', {}).get('id')
+    layout = (profile.get('scenarios') or {}).get(scenario_id) or {}
+    expected = {row['id']: row for row in describe(profile_id, scenario_id)['rows']}
     selected = {row['id']: row for row in studio['environment_objects']}
     if selected.keys() != expected.keys():
         raise ValueError('Recommended profile assets changed; reselect Use Recommended Layout')
@@ -99,6 +169,7 @@ def materialize(scene, profile_id, destination):
             raise ValueError(f'Recommended asset {name} differs from its reviewed pose/asset binding; edit it in Studio after creation')
     for key in ('robot', 'tool', 'end_effector', 'environment', 'camera', 'safety'):
         authored[key] = copy.deepcopy(defaults[key])
+    restore_authored_bin_roles(authored['environment'])
     authored['schema_version'] = 'workcell_scene/v1'
     # Keep the display name and description the user typed in the wizard.
     wizard_scene = authored.get('scene') if isinstance(authored.get('scene'), dict) else {}
@@ -120,6 +191,7 @@ def materialize(scene, profile_id, destination):
     if defaults['end_effector'].get('capability'):
         authored['end_effector']['capability'] = defaults['end_effector']['capability']
     apply_destination_regions(authored['environment'], profile.get('destination_regions'))
+    apply_scenario_layout(authored['environment'], layout)
     camera = authored['camera']
     physical_camera = next(item for item in authored['environment']['assets'] if item['id'] == camera['camera_id'])
     camera['pose'] = physical_camera['pose_xyz'] + physical_camera['pose_rpy']
@@ -141,8 +213,19 @@ def materialize(scene, profile_id, destination):
         raise ValueError('Select the recommended physical destination bin')
     if studio['pick_zone']['object_source']['source_zone_ref'] != profile['pick_zone']:
         raise ValueError('Select the recommended pick region')
+    if layout and source['mode'] == 'manual_simulated':
+        source['manual_observations'] = scenario_test_objects(scene, layout, source.get('manual_observations') or [])
     write_preserving(scene / 'environment.yaml', authored)
-    intent = load_authoring(scene)['task_intent']
+    if layout:
+        # A sorting cell runs the reviewed Pick & Place cycle once per object; the Task Editor's class routing table
+        # chooses each object's destination. The wizard's mapping of that cycle is reused unchanged.
+        from task_intent_authoring import _wizard_intent
+        cycle = dict(studio, scenario=dict(studio['scenario'], id='static_table_pick_place'))
+        draft = _wizard_intent(scene, {**authored['environment'], 'workcell_studio': cycle,
+                                       'end_effector': authored['end_effector']})
+        intent = load_authoring(scene, draft=draft)['task_intent']
+    else:
+        intent = load_authoring(scene)['task_intent']
     intent['scene_package'] = str(destination)
     (scene / 'config/workcell_builder_task_intent.yaml').write_text(json.dumps(intent, indent=2) + '\n')
 
@@ -209,12 +292,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', required=True)
     parser.add_argument('--describe', action='store_true')
+    parser.add_argument('--scenario', help='with --describe: the New Cell scenario whose reviewed layout applies')
     parser.add_argument('--scene', type=Path)
     parser.add_argument('--destination', type=Path)
     args = parser.parse_args()
     try:
         if args.describe:
-            print(json.dumps(describe(args.profile)))
+            print(json.dumps(describe(args.profile, args.scenario)))
         else:
             materialize(args.scene, args.profile, args.destination)
     except Exception as exc:
