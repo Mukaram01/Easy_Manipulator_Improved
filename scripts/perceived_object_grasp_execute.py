@@ -2755,7 +2755,7 @@ def main():
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
-            from destination_binding import wall_object_ids, walls_scene_diff
+            from destination_binding import rim_z, wall_object_ids, walls_scene_diff
             from simulator_backend import digest
             receipt_bytes = Path(args.simulator_receipt).read_bytes()
             if digest(receipt_bytes) != summary['backend_identity']['receipt_sha256']:
@@ -2852,6 +2852,7 @@ def main():
                 for binding in destination_bindings:
                     apply(walls_scene_diff(binding))
                 contract['destination_floor_z'] = float(selected['floor_z'])
+                contract['destination_rim_z'] = rim_z(selected)          # free stages start and end above it
                 summary['physical_destination_walls'] = dict(
                     object_ids=[i for b in destination_bindings for i in wall_object_ids(b)],
                     walls=[w for b in destination_bindings for w in b['walls']],
@@ -2864,6 +2865,7 @@ def main():
                 apply(walls_scene_diff(destination_binding))
                 # Place seating is planned against the bound physical floor (full_cycle_preplanner.seated_destination).
                 contract['destination_floor_z'] = float(destination_binding['floor_z'])
+                contract['destination_rim_z'] = rim_z(destination_binding)
                 summary['physical_destination_walls'] = dict(object_ids=wall_object_ids(destination_binding),
                     walls=destination_binding['walls'], receipt_sha256=summary['backend_identity']['receipt_sha256'])
         if g4_cycle and g4_admission is None:
