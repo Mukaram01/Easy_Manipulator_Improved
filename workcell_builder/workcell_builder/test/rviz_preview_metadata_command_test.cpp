@@ -212,6 +212,45 @@ TEST(RvizPreviewMetadataCommandTest, PhysicsSortingSessionIsTheG4RunnerPlanOnlyN
   EXPECT_TRUE(workcell_builder::build_physics_plan_session_command(scene, "/tmp/ws", "/tmp/out", 226, "/tmp/c.json").isEmpty());
 }
 
+TEST(RvizPreviewMetadataCommandTest, BoundedMotionSessionStartsTheG4TrialOnlyAfterReadinessPasses)
+{
+  auto scene = runnable_scene();
+  scene.scene_name = "g4_cups";
+  scene.scene_dir = "/home/user/cells/g4_cups";
+  const QStringList runs{"--session", "/q/q_s1", "--session", "/q/q_s2", "--session", "/q/q_s3", "--stop", "/q/q_stop2",
+                         "--cancel", "/q/q_cancel", "--other", "/q/q_stop"};
+  const auto command = workcell_builder::build_physics_trial_session_command(scene, "/home/user/workcell_ws",
+    "/tmp/studio sorting/run", 226, 2, runs, "/tmp/studio sorting/run.admission.json");
+  // Readiness of this exact cell is recomputed in the same shell; the runner is exec'd only after it exits 0.
+  const auto readiness = command.indexOf("g4_qualification.py' readiness --cell '/home/user/cells/g4_cups' --session '/q/q_s1' "
+    "--session '/q/q_s2' --session '/q/q_s3' --stop '/q/q_stop2' --cancel '/q/q_cancel' --other '/q/q_stop' > "
+    "'/tmp/studio sorting/run.admission.json' && exec python3 ");
+  const auto runner = command.indexOf("run_g4_sorting.py' --scene-package '/home/user/cells/g4_cups' --output '/tmp/studio sorting/run' "
+    "--domain 226 --stream-status --authorise-g4-trial --prior-evidence \"$WORKCELL_STAGE_A_PRIOR_EVIDENCE\" --max-cycles 2");
+  EXPECT_GT(readiness, 0);
+  EXPECT_GT(runner, readiness);
+  EXPECT_TRUE(command.contains("test -n \"$WORKCELL_STAGE_A_PRIOR_EVIDENCE\" && "));
+  EXPECT_TRUE(command.contains("WORKCELL_PLANNING_TRACE_DIR='/tmp/studio sorting/run.trace' && "));
+  EXPECT_FALSE(command.contains("--plan-every-target"));
+  EXPECT_FALSE(command.contains("--control-file"));
+  EXPECT_FALSE(command.contains("use_fake_hardware:=false"));
+  const auto build = [&](int domain, int cycles, const QStringList & r, const QString & admission) {
+    return workcell_builder::build_physics_trial_session_command(scene, "/tmp/ws", "/tmp/out", domain, cycles, r, admission);
+  };
+  EXPECT_FALSE(build(226, 1, runs, "/tmp/a.json").isEmpty());
+  // Bounded: one or two cycles, never a continuous session.
+  EXPECT_TRUE(build(226, 0, runs, "/tmp/a.json").isEmpty());
+  EXPECT_TRUE(build(226, 3, runs, "/tmp/a.json").isEmpty());
+  // The contract's five counted sessions, and nothing else, may be named.
+  EXPECT_TRUE(build(226, 2, runs.mid(2), "/tmp/a.json").isEmpty());
+  EXPECT_TRUE(build(226, 2, QStringList(runs) << "--session" << "/q/q_s4", "/tmp/a.json").isEmpty());
+  EXPECT_TRUE(build(226, 2, QStringList(runs) << "--workspace" << "/elsewhere", "/tmp/a.json").isEmpty());
+  EXPECT_TRUE(build(226, 2, QStringList(runs) << "--other", "/tmp/a.json").isEmpty());
+  EXPECT_TRUE(build(180, 2, runs, "/tmp/a.json").isEmpty());
+  EXPECT_TRUE(build(226, 2, runs, "/tmp/out/a.json").isEmpty());
+  EXPECT_TRUE(build(226, 2, runs, "").isEmpty());
+}
+
 TEST(RvizPreviewMetadataCommandTest, PhysicsCycleRunsTheQualifiedRunnerOnTheSavedCellOnly)
 {
   auto scene = runnable_scene();

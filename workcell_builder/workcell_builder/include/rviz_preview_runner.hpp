@@ -2,6 +2,7 @@
 #define EASY_MANIPULATION_DEPLOYMENT__WORKCELL_BUILDER__WORKCELL_BUILDER__INCLUDE__RVIZ_PREVIEW_RUNNER_HPP_
 
 #include <QString>
+#include <QStringList>
 
 #include <boost/filesystem.hpp>
 
@@ -49,6 +50,16 @@ QString build_sorting_session_command(const WorkcellStudioSceneInfo & scene_info
 QString build_physics_plan_session_command(const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id,
   const QString & control_file);
+// G6: a bounded G4 sorting session WITH robot motion in Gazebo: the unchanged runner's trial
+// (--authorise-g4-trial --max-cycles 1..2 --prior-evidence <registered Stage-A acceptance>), started only after
+// g4_qualification.py readiness of this exact cell, recomputed from the raw evidence in the same shell, returned
+// QUALIFIED_READY (its verdict is written to admission_file; any other verdict ends the command before the runner
+// starts). qualification_runs are that readiness's run arguments (--session x3, --stop, --cancel, --other ...). The
+// certified trajectories go to output_dir + ".trace". Stop at cycle end is SIGUSR1 to the runner (G4-S); cancel is
+// SIGTERM (G4-C). Never continuous production: a trial is bounded to at most two cycles.
+QString build_physics_trial_session_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id, int max_cycles,
+  const QStringList & qualification_runs, const QString & admission_file);
 bool launch_command_is_safe(const QString & command, QString * reason = nullptr);
 QString build_shell_command(const QString & scene_pkg, const boost::filesystem::path & workspace_root);
 QString build_shell_command(const WorkcellStudioSceneInfo & scene_info, const boost::filesystem::path & workspace_root);

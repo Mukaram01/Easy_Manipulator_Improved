@@ -833,11 +833,17 @@ QWidget * OperatorHmiWindow::build_controls()
     sort_stop_button_ = new QPushButton("Stop", host);
     sort_stop_button_->setToolTip("Software stop at the end of the current cycle. This is not an emergency stop.");
     for (auto * button : {sort_pause_button_, sort_resume_button_, sort_stop_button_}) button->setObjectName("hmiSecondary");
+    sort_motion_button_ = new QPushButton("Start Sorting · Gazebo Motion (2 cycles)", host);
+    sort_motion_button_->setObjectName("hmiPrimary");
+    sort_motion_button_->setToolTip("A bounded sorting session in which the simulated robot moves in Gazebo (at most 2 cycles). "
+                                    "Admitted by Workcell Builder only for a G4-qualified cell; the real robot is not available.");
     connect(sort_start_button_, &QPushButton::clicked, this, [this]() { request_simulation("start_sorting"); });
+    connect(sort_motion_button_, &QPushButton::clicked, this, [this]() { request_simulation("start_sorting", true); });
     connect(sort_pause_button_, &QPushButton::clicked, this, [this]() { request_simulation("pause_sorting"); });
     connect(sort_resume_button_, &QPushButton::clicked, this, [this]() { request_simulation("resume_sorting"); });
     connect(sort_stop_button_, &QPushButton::clicked, this, [this]() { request_simulation("stop_sorting"); });
     body->addWidget(sort_start_button_);
+    body->addWidget(sort_motion_button_);
     for (auto * button : {sort_pause_button_, sort_resume_button_, sort_stop_button_}) row->addWidget(button);
     body->addLayout(row);
   }
@@ -1072,7 +1078,7 @@ QJsonObject OperatorHmiWindow::session_g4() const
 {
   const auto canonical = [](const QString & path) { const auto c = QFileInfo(path).canonicalFilePath(); return c.isEmpty() ? path : c; };
   const auto session = sim_status_.value("session").toObject();
-  if (session.isEmpty() || !session.value("plan_only").toBool() || scene_dir_.isEmpty() ||
+  if (session.isEmpty() || !(session.value("plan_only").toBool() || session.value("motion_trial").toBool()) || scene_dir_.isEmpty() ||
       canonical(session.value("scene_dir").toString()) != canonical(scene_dir_)) return {};
   return session.value("g4").toObject();
 }
@@ -1084,6 +1090,7 @@ void OperatorHmiWindow::render_monitoring()
   if (session_objects_) {
     // Identity and pose are Gazebo's measurement, the class is EPD's on the session's rendered frame, the decision is
     // the sorting ledger's and the plan is the executor's plan-only resolve. Nothing here is a count of sorted objects.
+    const bool trial = sim_status_.value("session").toObject().value("motion_trial").toBool();
     session_view_ = view_;
     session_view_.objects.clear();
     objects_->setRowCount(0);
@@ -1094,12 +1101,18 @@ void OperatorHmiWindow::render_monitoring()
       row.object_id = o.value("object_id").toString();
       row.class_id = o.value("class_id").toString();
       if (o.value("confidence").isDouble()) row.confidence = o.value("confidence").toDouble();
-      // Marked on the map: objects the ledger may still select or has planned (never an executed count).
-      row.accepted = plan.value("state").toString() == "PLANNED" || (plan.isEmpty() && o.value("status").toString() == "PENDING");
-      row.reason_code = plan.isEmpty() ? o.value("status").toString() : "PLAN_" + plan.value("state").toString();
-      row.reason = plan.isEmpty() ? o.value("reason").toString(o.value("status").toString())
-        : QString("Planned in cycle %1 → %2 (%3, grasp %4); not executed.").arg(plan.value("cycle").toInt())
-            .arg(plan.value("destination").toString(), plan.value("bin").toString(), plan.value("grasp").toString());
+      // Marked on the map: objects the ledger may still select, has planned or has counted. COMPLETED is the ledger's
+      // own count (after the runner verified and reconciled the cycle), never a plan or a motion alone.
+      const bool completed = o.value("status").toString() == "COMPLETED";
+      row.accepted = completed || plan.value("state").toString() == "PLANNED" || (plan.isEmpty() && o.value("status").toString() == "PENDING");
+      row.reason_code = completed ? QString("COMPLETED") : plan.isEmpty() ? o.value("status").toString() : "PLAN_" + plan.value("state").toString();
+      row.reason = completed
+        ? QString("Sorted in cycle %1 → %2: verified and reconciled by the runner, counted by the sorting ledger.")
+            .arg(plan.value("cycle").toInt()).arg(o.value("destination").toString())
+        : plan.isEmpty() ? o.value("reason").toString(o.value("status").toString())
+        : QString("Planned in cycle %1 → %2 (%3, grasp %4)%5").arg(plan.value("cycle").toInt())
+            .arg(plan.value("destination").toString(), plan.value("bin").toString(), plan.value("grasp").toString(),
+                 trial ? QString(".") : QString("; not executed."));
       const auto pose = o.value("pose").toArray(), size = o.value("dimensions").toArray();
       if (pose.size() >= 3 && size.size() >= 3) {
         for (int i = 0; i < 3; ++i) { row.xyz[i] = pose.at(i).toDouble(); row.dimensions[i] = size.at(i).toDouble(); }
@@ -1110,11 +1123,13 @@ void OperatorHmiWindow::render_monitoring()
       objects_->insertRow(r);
       const QStringList cells{row.object_id, row.class_id,
         row.confidence ? QString::number(*row.confidence, 'f', 2) : QString("—"),
-        plan.isEmpty() ? row.reason_code : QString("PLANNED → %1 · not executed").arg(plan.value("destination").toString())};
+        completed ? QString("COMPLETED → %1 · verified").arg(o.value("destination").toString())
+        : plan.isEmpty() ? row.reason_code
+        : QString("PLANNED → %1%2").arg(plan.value("destination").toString(), trial ? QString() : QString(" · not executed"))};
       for (int c = 0; c < cells.size(); ++c) {
         auto * cell = new QTableWidgetItem(cells.at(c));
         cell->setToolTip(row.reason);
-        if (c == 3) cell->setForeground(QColor(row.accepted ? studioTokens().info : studioTokens().textMuted));
+        if (c == 3) cell->setForeground(QColor(completed ? studioTokens().success : row.accepted ? studioTokens().info : studioTokens().textMuted));
         objects_->setItem(r, c, cell);
       }
     }
@@ -1131,8 +1146,11 @@ void OperatorHmiWindow::render_monitoring()
                 "synthetic · positions measured in Gazebo")
           .arg(studioTokens().info).arg(frame_cycle).arg(escaped(frame.value("camera_id").toString())));
     const auto motion = g4.value("motion").toObject();
-    object_detail_->setText(muted(QString("Plans are not executions: cycle authorisations granted %1, executed cycles %2, "
-                                          "controller goals %3. Select an object for its decision.")
+    object_detail_->setText(muted(QString(trial ? "COMPLETED is counted only after verification and reconciliation. Evidence of "
+                                                  "motion: cycle authorisations granted %1, executed cycles %2, controller goals %3. "
+                                                  "Select an object for its decision."
+                                                : "Plans are not executions: cycle authorisations granted %1, executed cycles %2, "
+                                                  "controller goals %3. Select an object for its decision.")
       .arg(motion.value("authorised_cycles").toInt()).arg(motion.value("executed_cycles").toInt())
       .arg(motion.value("controller_goals").toInt())));
     return;
@@ -1313,6 +1331,7 @@ void OperatorHmiWindow::write_status() const
     {"session_objects_shown", session_objects_},
     {"capabilities", sim_status_.value("readiness").toObject().value("capabilities")},
     {"sorting_start_enabled", sort_start_button_ && sort_start_button_->isEnabled()},
+    {"sorting_motion_enabled", sort_motion_button_ && sort_motion_button_->isEnabled()},
   };
   QSaveFile file(options_.status_out);
   if (file.open(QIODevice::WriteOnly)) {
@@ -1404,6 +1423,7 @@ void OperatorHmiWindow::render_simulation()
     state = state_text(escaped(session.value("state").toString()), tone) + "<br>" +
       muted(QString("%1 · %2 · session %3 · started %4 by %5").arg(session.value("kind").toString() == "physics" ? "Qualified physics simulation"
           : session.value("plan_only").toBool() ? "Physics sorting session, plan only (the robot does not move)"
+          : session.value("motion_trial").toBool() ? "Bounded Gazebo sorting session (G4 trial): the simulated robot moves"
           : session.value("kind").toString() == "sorting" ? "Sorting session, fake hardware" : "Fake-hardware plan only",
         session.value("process").toString(), session.value("session_id").toString().left(8), session.value("started").toString(),
         session.value("origin").toString()));
@@ -1484,6 +1504,9 @@ void OperatorHmiWindow::render_sorting()
     sort_state_->setText(state_text(escaped(state.isEmpty() ? QString("STARTING") : state), tone) + " " +
                          muted(sorting.value("state_reason").toString()) + (active ? QString() : "<br>" + muted("Session ended.")));
   }
+  if (here && active && session.value("stop_requested").toBool())
+    sort_state_->setText(sort_state_->text() + "<br>" + state_text("STOP REQUESTED", "warn") + " " +
+                         muted("The current cycle finishes under every guard and is verified; no further cycle starts."));
   QString reason;
   if (active) reason = "A session is running.";
   else if (view_.draft) reason = "A DRAFT task cannot run: save it in Workcell Builder.";
@@ -1493,19 +1516,35 @@ void OperatorHmiWindow::render_sorting()
     reason = "The saved task shown here is not the one the cell was generated from: Generate in Workcell Builder, then Refresh.";
   else if (waiting) reason = "Waiting for Workcell Builder to decide on the last request.";
   sort_start_button_->setEnabled(reason.isEmpty());
+  const auto admission = readiness.value("motion").toObject();
+  const QString motion_reason = !reason.isEmpty() ? reason : admission.value("admitted").toBool() ? QString()
+    : admission.value("blocker").toString("Robot motion is not admitted for this cell.");
+  sort_motion_button_->setEnabled(motion_reason.isEmpty());
+  sort_motion_button_->setToolTip(motion_reason.isEmpty()
+    ? "Bounded G4 sorting session in Gazebo, at most 2 cycles: the simulated robot moves. Workcell Builder recomputes the "
+      "cell's G4 qualification from the raw evidence before the runner starts." : motion_reason);
+  // A bounded G4 trial has no pause; Stop is its stop at cycle end and is available for the whole session.
+  const bool trial = here && session.value("motion_trial").toBool();
   const bool controllable = active && !sorting.isEmpty() && !waiting;
-  sort_pause_button_->setEnabled(controllable && state == "RUNNING");
-  sort_resume_button_->setEnabled(controllable && (state == "PAUSED" || state == "PAUSING"));
-  sort_stop_button_->setEnabled(controllable && (state == "RUNNING" || state == "PAUSING" || state == "PAUSED" || state == "READY"));
+  sort_pause_button_->setEnabled(controllable && !trial && state == "RUNNING");
+  sort_resume_button_->setEnabled(controllable && !trial && (state == "PAUSED" || state == "PAUSING"));
+  sort_stop_button_->setEnabled(trial ? active && !waiting && !session.value("cancel_requested").toBool() &&
+                                         !session.value("stop_requested").toBool()
+                                      : controllable && (state == "RUNNING" || state == "PAUSING" || state == "PAUSED" || state == "READY"));
   const bool plan_only = readiness.value("plan_only").toBool() || session.value("plan_only").toBool();
   sort_start_button_->setText(plan_only ? "Start Sorting · Plan Only" : "Start Sorting");
   sort_note_->setText(reason.isEmpty() || active
-    ? muted(plan_only
+    ? muted(trial
+        ? "Gazebo physics: the simulated robot picks, transports and places, at most 2 cycles. An object is counted only "
+          "after the runner verified and reconciled its cycle. Stop finishes the current cycle (not an emergency stop); "
+          "Cancel Simulation stops the motion under supervision. Real robot: not available."
+        : plan_only
         ? "Physics world (Gazebo): each cycle renders the cell, classifies it with EPD, routes and plans one object. Plan "
           "only: every cycle authorisation is refused, the robot never moves and nothing is counted as sorted. Pause and "
           "Stop act at the end of the current cycle; they are not an emergency stop. Real robot: LOCKED."
         : "MoveIt fake hardware: planning and kinematic execution only, no physics. Pause and Stop act at the end of the "
           "current cycle; they are not an emergency stop. Real robot: LOCKED.")
+      + (motion_reason.isEmpty() || trial ? QString() : "<br>" + muted("Gazebo motion: " + escaped(motion_reason)))
     : state_text("Start unavailable: ", "warn") + escaped(reason));
   if (sorting.isEmpty()) return;
   // Counts and the active object are the session's own (counted only from verified execution evidence).
@@ -1560,6 +1599,9 @@ void OperatorHmiWindow::render_sorting()
       if (!authorisation.isEmpty())
         line += " · " + (authorisation.value("granted").toBool() ? state_text("AUTHORISED", "warn")
                                                                  : muted("authorisation refused (" + authorisation.value("refusal").toString().section(':', 0, 0) + ")"));
+      if (c.value("executed").toBool()) line += " · executed";
+      if (!c.value("outcome").toString().isEmpty())
+        line += " · " + state_text(escaped(c.value("outcome").toString()), c.value("outcome").toString() == "COMPLETED" ? "ok" : "neutral");
       cycles << line;
     }
     const auto motion = g4.value("motion").toObject();
@@ -1593,7 +1635,7 @@ void OperatorHmiWindow::render_capabilities()
   capabilities_->setText(text);
 }
 
-void OperatorHmiWindow::request_simulation(const QString & action)
+void OperatorHmiWindow::request_simulation(const QString & action, bool motion)
 {
   if (!simulation_linked() || sim_waiting_for_ >= 0) return;
   const auto session = sim_status_.value("session").toObject();
@@ -1612,7 +1654,19 @@ void OperatorHmiWindow::request_simulation(const QString & action)
     }
   }
   const bool plan_only = sim_status_.value("readiness").toObject().value("sorting").toObject().value("plan_only").toBool();
-  if (action == "start_sorting" &&
+  if (motion &&
+      QMessageBox::question(this, "Start Sorting · Gazebo Motion",
+        QString("Start a BOUNDED sorting session of the saved cell \"%1\" in which the SIMULATED robot moves in Gazebo?\n\n"
+                "At most 2 cycles, one routed object each: rendered camera frame → EPD → routing → certified MoveIt plan → "
+                "grasp, lift, transport, place, release → re-observation. An object is counted only after it was verified "
+                "and reconciled.\n\nWorkcell Builder first recomputes this cell's G4 qualification from the raw evidence "
+                "(several minutes); any change refuses motion. Stop finishes the current cycle (not an emergency stop); "
+                "Cancel Simulation stops the motion under supervision.\nThe real robot is not available; this is not "
+                "production.").arg(view_.scene_name), QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+    log_event("info", "SORTING_REQUEST_DECLINED", "The operator did not confirm the Gazebo motion session.");
+    return;
+  }
+  if (action == "start_sorting" && !motion &&
       QMessageBox::question(this, plan_only ? "Start Sorting · Plan Only" : "Start Sorting",
         (plan_only
           ? QString("Plan the saved cell \"%1\" with its routing table, one object per cycle, until every routed object is "
@@ -1627,14 +1681,15 @@ void OperatorHmiWindow::request_simulation(const QString & action)
     log_event("info", "SORTING_REQUEST_DECLINED", "The operator did not confirm the sorting session.");
     return;
   }
-  const auto command = make_operator_command(++sim_command_id_, action, request_->control_token, scene_dir_,
+  auto command = make_operator_command(++sim_command_id_, action, request_->control_token, scene_dir_,
     view_.saved_intent_sha256, request_->revision, session.value("session_id").toString());
+  if (motion) { command["mode"] = "bounded_motion"; command["cycles"] = 2; }
   const QByteArray line = operator_command_line(command);
   std::fwrite(line.constData(), 1, static_cast<size_t>(line.size()), stdout);   // only the owning Builder reads this
   std::fflush(stdout);
   sim_waiting_for_ = sim_command_id_;
   if (action.endsWith("_sorting"))
-    log_event("info", "SORTING_" + action.section('_', 0, 0).toUpper() + "_REQUESTED",
+    log_event("info", "SORTING_" + action.section('_', 0, 0).toUpper() + (motion ? "_MOTION" : "") + "_REQUESTED",
       QString("Asked Workcell Builder to %1 the sorting session%2.").arg(action.section('_', 0, 0),
         action == "start_sorting" ? QString() : QString(" (applied at the end of the current cycle; not an emergency stop)")));
   else

@@ -86,7 +86,8 @@ private:
   bool simulation_linked() const;
   void check_simulation_status();
   void render_simulation();
-  void request_simulation(const QString & action);
+  // motion: the explicit, bounded G6 sorting mode (mode bounded_motion, 2 cycles); Workcell Builder decides admission.
+  void request_simulation(const QString & action, bool motion = false);
   void render_sorting();
   void render_capabilities();
   // The physics sorting session (plan only) of this cell from the Builder's status: its evidence view, else empty.
@@ -171,6 +172,7 @@ private:
   QLabel * sort_note_{nullptr};
   QLabel * sort_result_{nullptr};
   QPushButton * sort_start_button_{nullptr};
+  QPushButton * sort_motion_button_{nullptr};
   QPushButton * sort_pause_button_{nullptr};
   QPushButton * sort_resume_button_{nullptr};
   QPushButton * sort_stop_button_{nullptr};

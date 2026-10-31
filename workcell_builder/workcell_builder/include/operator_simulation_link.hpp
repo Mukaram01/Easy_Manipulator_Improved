@@ -93,6 +93,12 @@ inline OperatorCommandCheck check_operator_command(const QJsonObject & command, 
     if (state.session_active) return refuse("a session is already running; one simulation at a time");
     if (state.intent_sha256.isEmpty() || command.value("intent_sha256").toString() != state.intent_sha256)
       return refuse("the saved task shown in the HMI is not the one the cell was generated from; Save, Generate and Refresh");
+    // G6: robot motion is an explicit, bounded mode of start_sorting (the Builder still decides its admission).
+    const QString mode = command.value("mode").toString();
+    if (action == "start_sorting" && !mode.isEmpty() && mode != "plan_only" && mode != "bounded_motion")
+      return refuse("unknown sorting mode " + mode);
+    if (mode == "bounded_motion" && (action != "start_sorting" || command.value("cycles").toInt() < 1 || command.value("cycles").toInt() > 2))
+      return refuse("a bounded sorting session runs 1 or 2 cycles");
     return {true, {}};
   }
   if (action == "cancel_simulation") {
