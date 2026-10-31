@@ -61,6 +61,9 @@ SERVICE_RETRY_ALLOWANCE_S=220
 # steps, release, holds, service retries) may total ~2 ks after the search; the last-resort
 # subprocess kill must come after the executor's own cancellation, never before it.
 EXECUTION_GATE_MARGIN_S=2100
+# An operator stop (SIGTERM/SIGINT) is forwarded to the running child, whose own owned cancellation (controller goal
+# cancel, measured stop, reconciliation) must finish first; SIGKILL after this grace is a recorded last resort.
+OPERATOR_CANCEL_GRACE_S=90
 MODES=("full","targeted","fast","functional")
 # full-cycle needs passing cancel, telemetry, stationary and contact-release
 # evidence on the same binaries (executor --commission-evidence); the runner only
@@ -83,7 +86,7 @@ FAST_TEST_FILES=(
     "tests/test_grasp_capture.py","tests/test_grasp_recovery_boundary.py",
     "tests/test_grasp_recovery_runtime.py","tests/test_grasp_strategy_candidates.py",
     "tests/test_perceived_object_grasp_execute.py","tests/test_perceived_object_grasp_plan.py",
-    "tests/test_physical_destination.py","tests/test_pile_extraction.py",
+    "tests/test_physical_destination.py","tests/test_physics_scope_qualification.py","tests/test_pile_extraction.py",
     "tests/test_retention_cancel_fault.py","tests/test_runtime_pick_inputs.py",
     "tests/test_simulator_backend.py","tests/test_simulator_box_motion.py",
     "tests/test_simulator_execution.py","tests/test_stage_a1_finish_runner.py",
@@ -259,8 +262,24 @@ def stop_owned(process,log=None):
 def run(command,*,env,cwd,log,timeout,check=True):
     log=Path(log);log.parent.mkdir(parents=True,exist_ok=True)
     with log.open("w") as stream:
-        completed=subprocess.run([str(x) for x in command],cwd=cwd,env=env,
-            stdout=stream,stderr=subprocess.STDOUT,timeout=timeout,check=False)
+        process=subprocess.Popen([str(x) for x in command],cwd=cwd,env=env,stdout=stream,stderr=subprocess.STDOUT)
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill();process.wait();raise
+        except OperatorCancel as exc:
+            # subprocess.run would SIGKILL the child here and bypass its controller cancellation.
+            exc.child=dict(command=str(command[1]) if len(command)>1 else str(command[0]),pid=process.pid,
+                           forwarded="SIGTERM",grace_s=OPERATOR_CANCEL_GRACE_S,killed=False)
+            process.send_signal(signal.SIGTERM)
+            try:process.wait(timeout=OPERATOR_CANCEL_GRACE_S)
+            except subprocess.TimeoutExpired:
+                process.kill();process.wait();exc.child["killed"]=True
+            exc.child["returncode"]=process.returncode
+            raise
+        except BaseException:
+            process.kill();process.wait();raise
+        completed=subprocess.CompletedProcess(command,process.returncode)
     if check and completed.returncode:
         try:
             lines=log.read_text(errors="replace").splitlines()
@@ -461,15 +480,14 @@ class StageForwarder:
                 while True:
                     line=text.readline()
                     if not line.endswith("\n"):break
-                    self.offset=text.tell()
-                    try:event=json.loads(line)
-                    except ValueError:continue
-                    if isinstance(event,dict) and set(event)=={"stage"} and isinstance(event["stage"],str):
-                        stream(self.args,event["stage"],gate=self.gate,phase=self.phase,motion=event["stage"].startswith("EXECUTE_"))
+                    self.offset=text.tell();stage=executor_stage(line)
+                    if stage is not None:
+                        stream(self.args,stage,gate=self.gate,phase=self.phase,motion=stage.startswith("EXECUTE_"))
         except FileNotFoundError:
             pass
 
     def __enter__(self):
+        STOP_AFTER_CYCLE.active=(self.gate,self.phase,self.log)
         if getattr(self.args,"stream_status",False):
             def follow():
                 while not self.done.wait(self.poll_s):self.drain()
@@ -477,9 +495,17 @@ class StageForwarder:
         return self
 
     def __exit__(self,*exc):
+        STOP_AFTER_CYCLE.active=None
         if self.thread is not None:
             self.done.set();self.thread.join();self.drain()
         return False
+
+
+def executor_stage(line):
+    """The stage of one executor stdout line ({"stage": X}), else None."""
+    try:event=json.loads(line)
+    except ValueError:return None
+    return event["stage"] if isinstance(event,dict) and set(event)=={"stage"} and isinstance(event["stage"],str) else None
 
 
 class OperatorCancel(BaseException):
@@ -489,6 +515,36 @@ class OperatorCancel(BaseException):
 def cancel_on_signal(signum,frame):
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,signal.SIG_IGN)   # cleanup is never re-interrupted
     raise OperatorCancel(signal.Signals(signum).name)
+
+
+class StopAfterCycle:
+    """SIGUSR1 to the runner: the operator's Stop at Cycle End (G5B), the sorting session's software stop, not an
+    emergency stop. It is latched and acknowledged, never forwarded: the running cycle continues under every guard and
+    its own failure handling, and no further session starts. SIGTERM/SIGINT still cancel at once and take precedence."""
+    def __init__(self):self.args=self.active=self.record=None
+
+    def request(self,signum,frame):
+        requested=time.time_ns()
+        if self.record is not None:
+            self.record["repeated"]+=1;return
+        gate,phase,log=self.active or (None,None,None)
+        self.record=dict(signal=signal.Signals(signum).name,requested_wall_ns=requested,state="STOPPING",gate=gate,
+                         phase=phase,executor_stage=None,forwarded=None,repeated=0)
+        # Nothing may escape the handler: an exception inside run() would SIGKILL the running cycle.
+        try:
+            if log is not None and Path(log).is_file():   # the executor's own last stage line
+                lines=reversed(Path(log).read_text(errors="replace").splitlines())
+                self.record["executor_stage"]=next((s for s in map(executor_stage,lines) if s),None)
+            output=getattr(self.args,"output",None)
+            if output is not None and output.is_dir():
+                (output/"stop-after-cycle.json").write_text(json.dumps(self.record,indent=2)+"\n")
+            # os.write: a handler must not re-enter a buffered stream the main thread may be writing.
+            os.write(2,("stage-a1 stop after cycle latched: "+json.dumps(self.record)+"\n").encode())
+        except Exception as exc:
+            self.record["acknowledgement_error"]=repr(exc)
+
+
+STOP_AFTER_CYCLE=StopAfterCycle()
 
 
 CYCLE_RESULT_FIELDS=("result","failure","failed_stage","selected_object_id","selected_grasp_index","execution_attempted",
@@ -833,7 +889,7 @@ def prior_evidence(directory,build):
 
 
 def executor_command(repo,scene,receipt,observations,summary,planning_time,*,resolve=False,gate=None,evidence=None,search_timeout=300.,
-                     retention_policy=None):
+                     retention_policy=None,physics_scope=None):
     cmd=[sys.executable,str(repo/"scripts/perceived_object_grasp_execute.py"),
          "--scene-package",str(scene),"--backend","simulator","--simulator-receipt",str(receipt),
          "--detections",str(observations),"--timeout",str(search_timeout),"--segment-planning-time",str(planning_time),
@@ -845,6 +901,7 @@ def executor_command(repo,scene,receipt,observations,summary,planning_time,*,res
             if evidence is None:raise ValueError("full-cycle gate requires prerequisite evidence")
             cmd+=["--commission-evidence",str(evidence)]
             if retention_policy is not None:cmd+=["--retention-policy",retention_policy]
+            if physics_scope is not None:cmd+=["--physics-scope",str(physics_scope[0]),"--physics-scope-sha256",physics_scope[1]]
     return cmd
 
 
@@ -956,13 +1013,27 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
             if any(name not in prior for name in required):raise RuntimeError("full-cycle prerequisite evidence is incomplete")
             records=[json.loads(prior[name].read_text()) for name in required]
             evidence=session/"commission-evidence.json";evidence.write_text(json.dumps(records,indent=2)+"\n")
+        physics_scope=None
+        if getattr(args,"authorise_physics_trial",False):
+            # This session's plan was just re-proven without motion and the geometry re-measured: authorise exactly
+            # one guarded full-cycle into the task's bin, bound to everything it was planned against.
+            import physics_scope_qualification as scope_qualification
+            workspace=repo.parents[1]
+            binding=scope_qualification.scope_binding(cell_dir=scene,receipt_path=receipt,observations_path=observations,
+                native=scope_qualification.native_identity(workspace/"install/workcell_builder/share/workcell_builder/commission_execute_build.json"),
+                runtime=scope_qualification.runtime_identity(workspace),commission_evidence_path=evidence,
+                resolution_sha256=planned.get("resolution_sha256"))
+            scope_path=session/"physics-scope.json"
+            physics_scope=(scope_path,scope_qualification.authorise_trial(scope_path,binding))
+            report["physics_scope"]=dict(path=str(scope_path),sha256=physics_scope[1],state=scope_qualification.AUTHORISED_TRIAL,
+                                         destination=binding["destination"])
         gate_summary=session/f"{gate}/summary.json"
         stream(args,"EXECUTE_"+gate.upper().replace("-","_"),gate=gate,motion=True)
         functional=getattr(args,"mode","full")=="functional"
         with StageForwarder(args,session/f"{gate}/executor.log",gate,"execute"):
             run(executor_command(repo,scene,receipt,observations,gate_summary,args.segment_planning_time,
                     gate=gate,evidence=evidence,search_timeout=args.search_timeout,
-                    retention_policy="record" if functional else None),
+                    retention_policy="record" if functional else None,physics_scope=physics_scope),
                 env=env,cwd=repo,log=session/f"{gate}/executor.log",timeout=args.search_timeout+EXECUTION_GATE_MARGIN_S)
         result=json.loads(gate_summary.read_text());assert_gate(gate,result,capability_sha,args.moveit_overlay_identity,functional=functional)
         report.update(status="PASS",result=result["result"],selected_object_id=result.get("selected_object_id"),
@@ -970,6 +1041,15 @@ def one_session(args,repo,source_world,capability_sha,gate,index,prior):
         return gate_summary
     except Exception as exc:
         report["failure"]=str(exc);raise
+    except OperatorCancel as exc:
+        # The interrupted gate's own executor evidence decides what the stop achieved; nothing is assumed.
+        executed=session/f"{gate}/summary.json"
+        summary=json.loads(executed.read_text()) if executed.is_file() else {}
+        report["operator_cancel"]=dict(signal=str(exc),child=getattr(exc,"child",None),
+            executor_summary=str(executed) if executed.is_file() else None,
+            failed_stage=summary.get("failed_stage"),cancellation_confirmed=summary.get("cancellation_confirmed"),
+            recovery_required=summary.get("recovery_required"),transfer_cancellation=summary.get("transfer_cancellation"))
+        report["failure"]=f"cancelled by the operator ({exc})";raise
     finally:
         stream(args,"SIMULATOR_SHUTDOWN",gate=gate)
         report["shutdown"]=stop_owned(launch,session/"launch.log" if launch_log is not None else None)
@@ -1048,8 +1128,13 @@ def main(argv=None):
         help="targeted --gate full-cycle only: completed run whose passing cancel, telemetry, stationary and "
              "contact-release summaries are reused for a diagnostic transfer trial (never Stage-A acceptance)")
     parser.add_argument("--physical-destinations",choices=("task","all"),default="task",
-        help="with --scene-package: 'all' derives every authored target bin as a physics bin (R2.5B); plan-only, "
-             "allowed with --mode targeted --gate resolve only")
+        help="with --scene-package: 'all' derives every authored target bin as a physics bin (R2.5B); plan-only "
+             "with --mode targeted --gate resolve, or one authorised trial (--authorise-physics-trial)")
+    parser.add_argument("--authorise-physics-trial",action="store_true",
+        help="qualification runner only (never Builder/HMI): with --physical-destinations all, --mode targeted "
+             "--gate full-cycle and --prior-evidence of the registered Stage-A acceptance, authorise one guarded "
+             "full-cycle into the task's bin (workcell_physics_scope/v1 AUTHORISED_TRIAL); its evidence is "
+             "PHYSICS_SCOPE_TRIAL_NOT_QUALIFIED")
     parser.add_argument("--gil-watchdog-ms",type=float,
         help="opt-in executor diagnostic: dump every thread's stack when one holds the GIL this long")
     parser.add_argument("--gil-probe-ms",type=float,
@@ -1107,9 +1192,14 @@ def main(argv=None):
                              "evidence; give --prior-evidence")
         elif args.prior_evidence is not None and (args.mode!="targeted" or args.gate!="full-cycle"):
             parser.error("--prior-evidence applies to a targeted full-cycle or functional run only")
-    if args.physical_destinations!="task" and (args.scene_package is None or args.mode!="targeted" or args.gate!="resolve"):
+    if args.authorise_physics_trial and (args.physical_destinations!="all" or args.mode!="targeted" or
+                                         args.gate!="full-cycle" or args.prior_evidence is None):
+        parser.error("--authorise-physics-trial needs --physical-destinations all, --mode targeted --gate full-cycle "
+                     "and --prior-evidence")
+    if (args.physical_destinations!="task" and not args.authorise_physics_trial and
+            (args.scene_package is None or args.mode!="targeted" or args.gate!="resolve")):
         parser.error("--physical-destinations all is plan-only qualification: it needs --scene-package, --mode targeted "
-                     "and --gate resolve (multi-destination motion is not qualified)")
+                     "and --gate resolve (multi-destination motion needs --authorise-physics-trial)")
     if args.gil_watchdog_ms is not None:
         if args.mode=="fast":parser.error("the GIL watchdog observes executor sessions; fast mode runs none")
         if args.mode!="targeted" or args.gate not in GIL_WATCHDOG_GATES:
@@ -1134,7 +1224,8 @@ def main(argv=None):
              "invocation":invocation}
     if args.physical_destinations!="task":
         overall.update(physical_destinations=args.physical_destinations,
-                       scope="MULTI_DESTINATION_PLAN_ONLY_NOT_QUALIFIED_FOR_MOTION")
+                       scope="PHYSICS_SCOPE_TRIAL_NOT_QUALIFIED" if args.authorise_physics_trial
+                       else "MULTI_DESTINATION_PLAN_ONLY_NOT_QUALIFIED_FOR_MOTION")
     print("stage-a1 settings: "+", ".join(f"{key}={value}{' (default)' if key in invocation['defaulted'] else ''}"
                                           for key,value in invocation["effective"].items()),file=sys.stderr,flush=True)
     if args.mode=="full":overall["through"]=args.through
@@ -1143,6 +1234,8 @@ def main(argv=None):
         overall.update(gate=args.gate,cancellation_qualified_this_run=False)
     if args.gil_watchdog_ms is not None:overall["gil_watchdog_ms"]=args.gil_watchdog_ms
     for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,cancel_on_signal)
+    STOP_AFTER_CYCLE.__init__();STOP_AFTER_CYCLE.args=args
+    signal.signal(signal.SIGUSR1,STOP_AFTER_CYCLE.request)
     try:
         if args.gil_probe_ms is not None:
             overall["gil_probe"]=dict(build_gil_probe(repo,args.output),threshold_ms=args.gil_probe_ms,
@@ -1193,6 +1286,13 @@ def main(argv=None):
                 source_world_git_blob=SOURCE_WORLDS[args.world_profile][1],source_world_sha256=sha256(source_world))
         prior={}
         if args.prior_evidence is not None:
+            if args.authorise_physics_trial:
+                # A trial reuses only the prerequisite trials of the workspace's registered Stage-A acceptance.
+                from qualified_physics_runtime import load as load_qualified_runtime
+                registered=Path(load_qualified_runtime(workspace)["stage_a_acceptance"]["evidence"]).resolve()
+                if Path(args.prior_evidence).resolve()!=registered:
+                    raise RuntimeError(f"PHYSICS_SCOPE_EVIDENCE_UNREGISTERED: a physics trial reuses the registered "
+                                       f"Stage-A acceptance {registered} only")
             prior=prior_evidence(args.prior_evidence,build)
             overall["prior_evidence"]={gate:str(path) for gate,path in prior.items()}
         # A targeted gate keeps its full-run session index, so it gets the same
@@ -1202,6 +1302,7 @@ def main(argv=None):
             list(enumerate(GATES[:GATES.index(args.through)+1],1))
         last=selected[-1][1]
         for index,gate in selected:
+            if STOP_AFTER_CYCLE.record is not None:break     # Stop at Cycle End: never start another cycle
             began=time.monotonic()
             try:
                 path=one_session(args,repo,source_world,build["sha256"],gate,index,prior)
@@ -1213,7 +1314,7 @@ def main(argv=None):
                 if session_report.is_file():
                     failed["session_report"]=str(session_report.relative_to(args.output))
                     recorded=json.loads(session_report.read_text())
-                    for key in ("shutdown","shutdown_failure","moveit_overlay","bridge_overlay"):
+                    for key in ("shutdown","shutdown_failure","moveit_overlay","bridge_overlay","operator_cancel"):
                         if key in recorded:failed[key]=recorded[key]
                 overall["gates"][gate]=failed
                 if args.mode=="functional":
@@ -1227,18 +1328,27 @@ def main(argv=None):
                                                      "duration_s":round(time.monotonic()-began,1),
                                                      "end_effector_hold":(json.loads(path.read_text()).get("end_effector_hold") or {}).get("profile")}
             overall["status"]="PASS" if gate==last else "IN_PROGRESS"
+        stop=STOP_AFTER_CYCLE.record
+        if stop is not None:
+            remaining=[gate for _,gate in selected if gate not in overall["gates"]]
+            stop.update(state="STOPPED",stopped_wall_ns=time.time_ns(),completed_gates=list(overall["gates"]),
+                        gates_not_started=remaining)
+            if remaining:overall["status"]="STOPPED"
         # Stage-A acceptance is the reference cell's qualification; an authored cell reports its own cycle.
         overall["stage_a_acceptance"]=(not args.authored_cell and args.mode=="full" and args.through=="full-cycle"
                                        and overall["status"]=="PASS")
-        return 0
+        return 4 if overall["status"]=="STOPPED" else 0
     except Exception as exc:
         overall["status"]="BLOCKED";overall["failure"]=str(exc);return 1
     except OperatorCancel as exc:
-        overall["status"]="CANCELLED";overall["failure"]=f"cancelled by the operator ({exc})";return 3
+        overall["status"]="CANCELLED";overall["failure"]=f"cancelled by the operator ({exc})"
+        if STOP_AFTER_CYCLE.record is not None:STOP_AFTER_CYCLE.record["superseded_by"]=str(exc)   # cancel takes precedence
+        return 3
     except BaseException as exc:
         overall["status"]="BLOCKED";overall["failure"]=f"interrupted: {type(exc).__name__}";raise
     finally:
         overall["finished_wall_ns"]=time.time_ns();overall["duration_s"]=round(time.monotonic()-started,1)
+        if STOP_AFTER_CYCLE.record is not None:overall["stop_after_cycle"]=STOP_AFTER_CYCLE.record
         (args.output/REPORT_NAMES[args.mode]).write_text(json.dumps(overall,indent=2)+"\n")
         if getattr(args,"stream_status",False):
             print(json.dumps({"event":"cycle_result","summary":cycle_result(overall,args.output)}),flush=True)

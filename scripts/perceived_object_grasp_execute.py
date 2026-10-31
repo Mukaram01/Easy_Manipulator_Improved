@@ -1577,6 +1577,10 @@ def main():
     parser.add_argument('--backend', choices=('fake', 'simulator'), default='fake')
     parser.add_argument('--simulator-commission', choices=('cancel', 'telemetry', 'stationary', 'contact-release', 'full-cycle'), help='Explicit bounded simulator trial; ordinary execution remains blocked')
     parser.add_argument('--commission-evidence', type=Path, help='Passing measured trial and cancellation evidence required for full-cycle')
+    parser.add_argument('--physics-scope', type=Path,
+                        help='workcell_physics_scope/v1 trial record (qualification runner only): the one destination bin '
+                             'a multi-destination full-cycle may place into')
+    parser.add_argument('--physics-scope-sha256', help='sha256 of --physics-scope as authorised')
     parser.add_argument('--retention-policy', choices=('strict', 'record'), default='strict',
                         help='full-cycle only: record keeps the unchanged retention limits but records exceedances as '
                              'task-quality findings instead of aborting (functional validation, never Stage-A acceptance)')
@@ -1631,6 +1635,8 @@ def main():
     # Keep the context alive until bounded cancellation/recovery has finished.
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     def interrupted(signum, frame):
+        # The owned cancellation that follows is never re-interrupted (as the runner's own cleanup).
+        for sig in (signal.SIGINT, signal.SIGTERM):signal.signal(sig, signal.SIG_IGN)
         raise KeyboardInterrupt(f'interrupted by signal {signum}')
     signal.signal(signal.SIGINT, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
@@ -1716,7 +1722,12 @@ def main():
             trajectory_evidence=message_to_ordereddict(goal.trajectory)
         if not client.wait_for_server(timeout_sec=5):
             raise RuntimeError('MoveIt action unavailable')
-        if controlled_cancel and controller_audit:controller_audit.arm()
+        # A scoped multi-destination trial audits every owned arm goal, so any interruption (an operator SIGTERM
+        # included) proves which controller goal was cancelled and that it ended CANCELED.
+        audited=bool(controller_audit is not None and client is execute_client and
+                     (controlled_cancel or summary.get('physics_scope') is not None) and
+                     set(contract['home_joint_names']).issubset(goal.trajectory.joint_trajectory.joint_names))
+        if audited:controller_audit.arm()
         if client is execute_client:
             # Owned motion starts: a stop measured before it can never certify the
             # state after it, interrupted or not (Trial 33); only a later stop may.
@@ -1772,6 +1783,12 @@ def main():
                     measurements.joints(accepted_sample),contract['home_joint_names'],
                     accepted_monotonic_raw_ns=summary['owned_execution_goal']['monotonic_raw_ns'])
                 summary['cancellation_motion']=motion_trial.evidence
+            elif audited:
+                from simulator_execution import CancellationMotion
+                accepted_sample=measurements.fresh()
+                motion_trial=CancellationMotion(bytes(owned_uuid).hex(),accepted_sample,
+                    measurements.joints(accepted_sample),contract['home_joint_names'],
+                    accepted_monotonic_raw_ns=summary['owned_execution_goal']['monotonic_raw_ns'])
             if execution_monitor is None:
                 rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
             else:
@@ -1823,11 +1840,16 @@ def main():
                         wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),monotonic_raw_ns=measurement_clock.now_ns())
                     try:
                         summary['cancel_measurement']=measurements.fresh()
+                        if audited and not controlled_cancel:
+                            # Movement of the interrupted goal, from the same fresh measurement.
+                            summary['cancellation_movement_verified']=motion_trial.observe(
+                                summary['cancel_measurement'],measurements.joints(summary['cancel_measurement']))
+                            summary['cancellation_motion']=motion_trial.evidence
                     except RuntimeError as exc:
                         # Lost evidence must fail acceptance, never prevent the
                         # owned stop request that makes the failure safe.
                         summary['cancel_measurement_error']=str(exc)
-                    if controlled_cancel and controller_audit:
+                    if audited:
                         try:controller_audit.before_cancel()
                         except Exception as exc:summary['controller_audit_failure']=str(exc)
                     summary['cancellation_request'].update(wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns(),
@@ -1850,12 +1872,12 @@ def main():
                         moveit_code=future.result().result.error_code.val if ended else None,
                         wall_ns=time.time_ns(),monotonic_ns=time.monotonic_ns())
                     controller_ok=True
-                    if controlled_cancel and controller_audit:
+                    if audited:
                         try:summary['controller_cancellation']=controller_audit.collect()
                         except Exception as exc:
                             controller_ok=False;summary['controller_audit_failure']=str(exc)
                         summary['controller_status_events']=controller_audit.events
-                    return ended and controller_ok and (not controlled_cancel or future.result().status==5)
+                    return ended and controller_ok and (not audited or future.result().status==5)
                 def stopped():
                     summary['motion_stop_verified']=wait_stopped()
                     return summary['motion_stop_verified']
@@ -1896,7 +1918,13 @@ def main():
                                            response.result.error_code.val,time.time_ns(),measurement_clock.now_ns())
             summary['owned_open_goal']=copy.deepcopy(contact_guard.release_goal)
         return response.result
-    def wait_stopped(monitor_contacts=False):
+    def stop_proves_hold():
+        # A scoped trial stopped with the part held checks every stop sample through the guard: the hold is proved
+        # across the stop, and the guard's held-part check needs that unbroken sample sequence (G5A).
+        return bool(summary.get('physics_scope') is not None and contact_guard is not None and contact_guard.held
+                    and contact_guard.phase not in ('opening','released') and recovery is None)
+    def wait_stopped(monitor_contacts=None):
+        if monitor_contacts is None:monitor_contacts=stop_proves_hold()
         from simulator_execution import StopWindow
         names={j.get('name') for control in measurements.robot.findall('ros2_control') for j in control.findall('joint')}
         window=StopWindow(names)
@@ -2028,7 +2056,7 @@ def main():
         if contact_guard.held and contact_guard.phase not in ('opening','released'):
             try:
                 s=contact_guard.checked_current();p=measurements.object_pose(s,contact_guard.name);held=True
-            except RuntimeError:pass
+            except RuntimeError as exc:summary['held_check_failure']=str(exc)   # never a silent 'not held'
         if held:
             from simulator_execution import measured_attachment
             reconciliation=measured_attachment(original,contract,measurements,s)
@@ -2431,6 +2459,17 @@ def main():
         goal_msg.planning_options.replan = False
         goal_msg.planning_options.look_around = False
         goal_msg.planning_options.planning_scene_diff = copy.deepcopy(view)
+        from simulation_collision import PHYSICS_PAD_ALLOWANCE_M, physics_pad_scene
+        if physics_pads is not None and name in PHYSICS_PAD_ALLOWANCE_M:
+            # Free-space motion is planned and certified against the fingertip boxes Gazebo simulates, plus the
+            # stage's tracking allowance (planning only: the view, live scene and contact stages are unchanged).
+            padded = physics_pad_scene(view, physics_pads[0], physics_pads[1], PHYSICS_PAD_ALLOWANCE_M[name])
+            goal_msg.planning_options.planning_scene_diff = padded
+            # The request's full start state replaces the scene's attached bodies, and OMPL, TOTG and the certificate
+            # build every waypoint from it: the pads must ride on the start state too (G3C campaign 8a5d80d2 had them
+            # only in the scene diff, so no trajectory state carried them).
+            goal_msg.request.start_state = copy.deepcopy(padded.robot_state)
+            goal_msg.request.start_state.is_diff = False
         if closure_clearance is not None:
             from closure_clearance import expanded_closure_scene
             goal_msg.planning_options.planning_scene_diff = expanded_closure_scene(
@@ -2487,6 +2526,8 @@ def main():
                         planning_time=result.planning_time, points=len(trajectory.joint_trajectory.points),
                         allowed_planning_time=planning_time, planning_attempts=planning_attempts,
                         max_velocity_scaling_factor=motion_scaling, max_acceleration_scaling_factor=motion_scaling,
+                        **({'physics_pad_allowance_m': PHYSICS_PAD_ALLOWANCE_M[name]}
+                           if physics_pads is not None and name in PHYSICS_PAD_ALLOWANCE_M else {}),
                         **({'closure_clearance':copy.deepcopy(closure_clearance),
                             'closure_planning_scene_sha256':closure_scene_sha256}
                            if closure_clearance is not None else {}),
@@ -2670,6 +2711,8 @@ def main():
             # A later sorting cycle finds every object already reconciled in the scene; the in-motion guard still
             # needs one completed PlanningScene exchange before owned execution, so make it with an empty diff.
             apply(PlanningScene(is_diff=True))
+        scoped_destination = None       # the one bin a verified physics scope admits in a multi-destination world
+        physics_pads = None             # the receipt-bound fingertip boxes Gazebo simulates (simulation_collision)
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
@@ -2679,22 +2722,51 @@ def main():
             if digest(receipt_bytes) != summary['backend_identity']['receipt_sha256']:
                 raise RuntimeError('simulator receipt changed after identity verification')
             receipt_record = json.loads(receipt_bytes)
+            if receipt_record.get('simulator_collision_primitives') is not None:
+                physics_pads = (receipt_record['simulator_collision_primitives'],
+                                {link.get('name') for link in ET.fromstring(params[2].string_value).findall('link')})
+                from simulation_collision import PHYSICS_PAD_ALLOWANCE_M
+                summary['physics_pads'] = dict(allowance_m=dict(PHYSICS_PAD_ALLOWANCE_M),
+                    links=[record['link'] for record in physics_pads[0]['links']],
+                    boxes=sum(len(record['boxes']) for record in physics_pads[0]['links']))
             destination_binding = receipt_record.get('destination_geometry_binding')
             destination_bindings = receipt_record.get('destination_geometry_bindings')
             if destination_bindings:
-                # R2.5B multi-destination world: plan-only until a multi-destination physics scope is qualified.
-                # Its contact guard binds no destination floor, so motion is refused before any planning.
-                if args.start:
-                    raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: the simulator world has '
-                                       f'{len(destination_bindings)} physical destination bins; motion is not qualified '
-                                       'in it (plan-only)')
+                # R2.5B multi-destination world: plan-only unless a verified physics scope authorises this one
+                # full-cycle into the task's bin. Motion is refused before any planning otherwise.
                 if destination_binding is not None or intent is None:
                     raise RuntimeError('ambiguous simulator destination binding')
                 from destination_binding import select_destination_binding
+                selected = select_destination_binding(destination_bindings, intent['place']['target']['asset_ref'])
+                if args.start:
+                    if args.physics_scope is None or args.simulator_commission != 'full-cycle':
+                        raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: the simulator world has '
+                                           f'{len(destination_bindings)} physical destination bins; motion is not '
+                                           'qualified in it without an authorised physics scope (plan-only)')
+                    if args.retention_policy != 'strict':
+                        raise RuntimeError('PHYSICS_SCOPE_UNSUPPORTED: an authorised trial runs the strict retention '
+                                           'policy only')
+                    import physics_scope_qualification as scope_qualification
+                    from ament_index_python.packages import get_package_prefix
+                    workspace = Path(__file__).resolve().parents[3]
+                    scope_record = scope_qualification.verify_trial(args.physics_scope, args.physics_scope_sha256,
+                        scope_qualification.scope_binding(
+                            cell_dir=package, receipt_path=args.simulator_receipt, observations_path=args.detections,
+                            native=scope_qualification.native_identity(Path(get_package_prefix('workcell_builder')) /
+                                'share/workcell_builder/commission_execute_build.json'),
+                            runtime=scope_qualification.runtime_identity(workspace),
+                            commission_evidence_path=args.commission_evidence,
+                            resolution_sha256=(expected_resolution or {}).get('resolution_sha256')))
+                    if scope_record['binding']['destination']['model'] != selected['model']:
+                        raise RuntimeError('PHYSICS_SCOPE_MISMATCH: the authorised bin is not the task\'s bin')
+                    scoped_destination = selected
+                    summary['physics_scope'] = dict(path=str(Path(args.physics_scope).resolve()),
+                        sha256=args.physics_scope_sha256, state=scope_record['state'],
+                        evidence_scope=scope_qualification.TRIAL_EVIDENCE_SCOPE,
+                        destination=scope_record['binding']['destination'])
                 # Every bin is an obstacle; the task's own bin sets the seating floor.
                 for binding in destination_bindings:
                     apply(walls_scene_diff(binding))
-                selected = select_destination_binding(destination_bindings, intent['place']['target']['asset_ref'])
                 contract['destination_floor_z'] = float(selected['floor_z'])
                 summary['physical_destination_walls'] = dict(
                     object_ids=[i for b in destination_bindings for i in wall_object_ids(b)],
@@ -3061,7 +3133,8 @@ def main():
                     args.commission_evidence,summary['commissioning_capability'])
             support=next((s['metadata']['initial_support_contact'] for s in cycle['steps'] if s.get('metadata',{}).get('initial_support_contact')),None)
             selected=next(o for o in objects if o['id']==selected_id)
-            contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,contract['tool_link'])
+            contact_guard=ContactGuard(measurements,selected_id,selected['dimensions'],contract['allowed_touch_links'],support,baseline,
+                                       contract['tool_link'],destination_binding=scoped_destination)
             contact_guard.hold_profile=hold_profile
             if args.retention_policy!='strict' and args.simulator_commission!='full-cycle':
                 raise RuntimeError('a recorded retention policy applies to the full-cycle functional validation only')
@@ -3087,7 +3160,7 @@ def main():
             contact_guard.validate_current=measured_fcl
             cross_check_gate.cross_check=contact_guard.drain   # physical checks on any backlog, then the cross-check
             execution_monitor=contact_guard.drain
-            if args.simulator_commission=='cancel':
+            if args.simulator_commission=='cancel' or summary.get('physics_scope') is not None:
                 from simulator_execution import ControllerCancellationAudit
                 controller_audit=ControllerCancellationAudit(node,motion_controllers,contract['home_joint_names'])
                 until=time.monotonic()+.2
@@ -3391,6 +3464,11 @@ def main():
             planned_pose=pose_values(planned.pose) if planned is not None else None
             destination_pose=list(destination["pose_xyz"])+_PLANNER.quaternion_from_rpy(destination["pose_rpy"])
             quaternion_angle=lambda a,b:2*math.acos(min(1.,abs(sum(x*y for x,y in zip(a[3:],b[3:])))))
+            if summary.get('physics_scope') is not None:
+                # The authorised record must be unchanged for the whole operation.
+                from simulator_backend import digest
+                if digest(Path(args.physics_scope).read_bytes()) != args.physics_scope_sha256:
+                    raise RuntimeError('PHYSICS_SCOPE_RECORD_CHANGED during the operation')
             summary.update(result='PASS' if summary['strict_retention_compliant'] else 'FUNCTIONAL_PASS',
                 full_cycle_execution_success=True,
                 full_cycle_physical_acceptance=dict(final_pose=final_pose,
@@ -3471,6 +3549,10 @@ def main():
             except Exception as recovery_error:
                 summary['recovery_inspection_failure'] = str(recovery_error)
                 if recovery is not None:recovery.block('RECOVERY_CLEANUP_FAILED',str(recovery_error))
+        if summary.get('physics_scope') is not None and summary.get('failed_stage')=='EXECUTE_TRANSFER':
+            # G5A: what an interrupted scoped transfer left behind, judged from this run's own evidence.
+            from simulator_execution import transfer_cancellation_acceptance
+            summary['transfer_cancellation']=transfer_cancellation_acceptance(summary)
         if args.simulator_commission=='cancel' and summary.get('failure')=='CONTROLLED_CANCELLATION':
             try:
                 from simulator_execution import require_cancellation_acceptance

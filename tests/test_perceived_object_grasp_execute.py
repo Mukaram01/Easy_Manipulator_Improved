@@ -128,7 +128,7 @@ def test_plan_segment_timeout_retry_reuses_identical_private_request():
 
     summary = {}
     context = dict(
-        vars(MODULE),
+        vars(MODULE), physics_pads=None,
         copy=copy, time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
         stage=lambda name: None, deadline=time.monotonic()+10,
         contract={'planning_group':'arm_group','home_joint_names':['arm'],'tool_link':'tcp'},
@@ -186,7 +186,7 @@ def test_plan_segment_discovery_policy_does_not_retry_before_other_candidates():
     }
     summary = {}
     context = dict(
-        vars(MODULE),
+        vars(MODULE), physics_pads=None,
         copy=copy, time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
         stage=lambda name: None, deadline=time.monotonic()+10, contract=contract,
         args=SimpleNamespace(segment_planning_time=3.), mimics=[], initial=initial,
@@ -221,7 +221,7 @@ def test_plan_segment_candidate_wall_deadline_is_not_misreported_as_global_budge
         '_candidate_wall_deadline':time.monotonic() - 0.001,
     }
     context = dict(
-        vars(MODULE), time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
+        vars(MODULE), physics_pads=None, time=time, MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup,
         stage=lambda name: None, deadline=global_deadline, contract=contract,
         args=SimpleNamespace(segment_planning_time=3.), mimics=[], initial=PlanningScene(),
         summary={},
@@ -661,7 +661,7 @@ def test_bound_approach_rechecks_ik_without_replacing_fresh_planning_start(chang
     tree=ast.parse(SCRIPT.read_text())
     main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
     segment=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='plan_segment')
-    context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
+    context=dict(vars(MODULE), physics_pads=None,copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
         MoveGroup=MoveGroup,stage=lambda name:None,deadline=time.monotonic()+10,contract=contract,
         args=SimpleNamespace(segment_planning_time=3.),mimics=[('follower','leader',-1.,0.)],initial=initial,
         ik_joints={},ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,
@@ -730,7 +730,7 @@ def transfer_segment_fixture():
             planned_trajectory=trajectory,planning_time=.1)
     tree=ast.parse(SCRIPT.read_text());main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
     segment=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='plan_segment')
-    context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
+    context=dict(vars(MODULE), physics_pads=None,copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,GetPositionIK=GetPositionIK,
         MoveGroup=MoveGroup,stage=lambda name:None,deadline=time.monotonic()+10,contract=contract,
         args=SimpleNamespace(segment_planning_time=3.),mimics=[('follower','leader',-1.,0.)],initial=initial,
         ik_joints={},ik_client=object(),plan_client=object(),call=solve,action=plan,trace=lambda *args:None,summary={},
@@ -966,7 +966,7 @@ def test_unknown_plan_acceptance_stops_search_and_cancels_late_acceptance():
     callbacks=[];cancelled=[]
     sent=SimpleNamespace(done=lambda:False,add_done_callback=callbacks.append)
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
-    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
+    context=dict(vars(MODULE), physics_pads=None,cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
         controller_audit=None,node=object(),summary={},
         rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
@@ -990,7 +990,7 @@ def test_accepted_plan_without_result_future_stops_search():
         cancel_goal_async=lambda:cancelled.append(True))
     sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
-    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
+    context=dict(vars(MODULE), physics_pads=None,cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
         controller_audit=None,node=object(),summary={},
         rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
@@ -1094,7 +1094,7 @@ def test_measured_fcl_preserves_first_rejected_query_before_cancellation(with_co
         requests.append(copy.deepcopy(request))
         return SimpleNamespace(done=lambda: True, result=lambda: response)
     summary = {'last_measured_collision_check': {'sim_ns': 69387000000, 'valid': True, 'contacts': 0}}
-    context = dict(vars(MODULE), cross_check_gate=MODULE.PlanningCrossCheckGate({}), copy=copy,
+    context = dict(vars(MODULE), physics_pads=None, cross_check_gate=MODULE.PlanningCrossCheckGate({}), copy=copy,
         measurements=SimpleNamespace(fresh=lambda: sample, joints=lambda s: s['joints']),
         initial=PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'], position=[0.0]))),
         contact_guard=SimpleNamespace(planning_attached=False, held=False, phase='approach',
@@ -1141,7 +1141,7 @@ def test_owned_execution_evidence_preserves_exact_command_trajectory():
     sent = SimpleNamespace(done=lambda: True, result=lambda: handle)
     client = SimpleNamespace(wait_for_server=lambda **kw: True, send_goal_async=lambda g: sent)
     summary = {'current_stage': 'EXECUTE_APPROACH'}
-    context = dict(vars(MODULE), summary=summary, controlled_cancel=False, controller_audit=None,
+    context = dict(vars(MODULE), physics_pads=None, summary=summary, controlled_cancel=False, controller_audit=None,
         cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=client, measurements=None, execution_monitor=None, node=object(),
         apply_client=(scene:=object()), exchanged_clients={scene},
         rclpy=SimpleNamespace(spin_until_future_complete=lambda *a, **kw: None))
@@ -1167,7 +1167,7 @@ def test_trajectory_serialization_failure_occurs_before_goal_submission(monkeypa
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=send)
     def broken(message):raise RuntimeError('serialization failed')
     monkeypatch.setattr(convert,'message_to_ordereddict',broken)
-    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=client,controlled_cancel=False,controller_audit=None,apply_client=(scene:=object()),exchanged_clients={scene},
+    context=dict(vars(MODULE), physics_pads=None,cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=client,controlled_cancel=False,controller_audit=None,apply_client=(scene:=object()),exchanged_clients={scene},
                  node=object(),summary={},rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-owned-action>','exec'),context)
     with pytest.raises(RuntimeError,match='serialization failed'):
@@ -1202,7 +1202,7 @@ def test_physical_carried_phases_use_conservative_scaling_without_changing_reque
         goals.append(copy.deepcopy(goal))
         return MoveGroup.Result(error_code=MoveItErrorCodes(val=1),trajectory_start=copy.deepcopy(initial.robot_state),
                                 planned_trajectory=trajectory,planning_time=.1)
-    context=dict(vars(MODULE),copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,MoveGroup=MoveGroup,
+    context=dict(vars(MODULE), physics_pads=None,copy=copy,time=time,MotionPlanRequest=MotionPlanRequest,MoveGroup=MoveGroup,
         stage=lambda name:None,deadline=time.monotonic()+10,contract={'planning_group':'arm_group','home_joint_names':['arm'],'tool_link':'tcp'},
         args=SimpleNamespace(backend=backend,segment_planning_time=3.),mimics=[],initial=initial,
         plan_client=object(),action=action,trace=lambda *a:None,summary={},
@@ -1342,7 +1342,7 @@ def test_plan_only_action_does_not_read_cancellation_motion_measurement():
     sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
     client=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
     def unexpected():raise AssertionError('PLAN_ONLY has no cancellation motion start')
-    context=dict(vars(MODULE),cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
+    context=dict(vars(MODULE), physics_pads=None,cross_check_gate=MODULE.PlanningCrossCheckGate({}),execute_client=object(),plan_client=client,controlled_cancel=False,
         controller_audit=None,node=object(),summary={},measurements=SimpleNamespace(fresh=unexpected),
         execution_monitor=None,rclpy=SimpleNamespace(spin_until_future_complete=lambda *a,**kw:None))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-plan-action>','exec'),context)
@@ -1621,7 +1621,7 @@ def test_executor_service_calls_use_the_first_reply_retry_and_record_retries_in_
     boundary=next(n for n in main.body if isinstance(n,ast.FunctionDef) and n.name=='action')
     def refuse(**kw):raise AssertionError('goal path reached before the exchange check')
     client=SimpleNamespace(wait_for_server=refuse,send_goal_async=refuse)
-    context=dict(vars(MODULE),execute_client=client,apply_client=object(),exchanged_clients=set(),summary={},cross_check_gate=MODULE.PlanningCrossCheckGate({}))
+    context=dict(vars(MODULE), physics_pads=None,execute_client=client,apply_client=object(),exchanged_clients=set(),summary={},cross_check_gate=MODULE.PlanningCrossCheckGate({}))
     exec(compile(ast.Module(body=[boundary],type_ignores=[]),'<actual-exchange-check>','exec'),context)
     from moveit_msgs.action import ExecuteTrajectory
     goal=ExecuteTrajectory.Goal()
@@ -1762,7 +1762,7 @@ def test_executor_defers_the_fcl_cross_check_during_planning_goals_and_clears_it
     sent=SimpleNamespace(done=lambda:True,result=lambda:handle)
     plan=SimpleNamespace(wait_for_server=lambda **kw:True,send_goal_async=lambda goal:sent)
     def monitor():ticks[0]+=1;seen.append(gate.planning)
-    context=dict(vars(MODULE),plan_client=plan,execute_client=object(),controlled_cancel=False,controller_audit=None,
+    context=dict(vars(MODULE), physics_pads=None,plan_client=plan,execute_client=object(),controlled_cancel=False,controller_audit=None,
                  summary={},node=None,measurements=None,cross_check_gate=gate,execution_monitor=monitor,
                  rclpy=SimpleNamespace(spin_once=lambda *a,**k:None,spin_until_future_complete=lambda *a,**k:None),time=__import__('time'))
     exec(compile(_action_closure(),'<actual-planning-gate>','exec'),context)
@@ -1781,7 +1781,7 @@ def test_real_action_refuses_an_execute_goal_whose_deferred_cross_check_does_not
     gate.cross_check=rejecting if outcome=='rejecting' else silent
     def refuse(**kw):raise AssertionError('goal path reached with a pending deferred cross-check')
     client=SimpleNamespace(wait_for_server=refuse,send_goal_async=refuse)
-    context=dict(vars(MODULE),execute_client=client,apply_client=(scene:=object()),exchanged_clients={scene},summary={},
+    context=dict(vars(MODULE), physics_pads=None,execute_client=client,apply_client=(scene:=object()),exchanged_clients={scene},summary={},
                  cross_check_gate=gate,controlled_cancel=False,controller_audit=None,node=None,measurements=None,execution_monitor=None)
     exec(compile(_action_closure(),'<actual-execute-refusal>','exec'),context)
     message='unpermitted measured contact' if outcome=='rejecting' else 'did not pass before execution'
@@ -1803,7 +1803,7 @@ def test_real_measured_fcl_returns_before_any_scene_or_validity_traffic_while_pl
     sample={'sim_ns':69389000000,'iteration':69389,'wall_ns':1000,'joints':{'arm':[0.2,0.0]}}
     summary={'current_stage':'COMMISSION_RELEASE'}; gate=MODULE.PlanningCrossCheckGate(summary); traffic=[]
     def refuse(*a,**k):traffic.append(a);raise AssertionError('MoveIt traffic during planning')
-    context=dict(vars(MODULE),cross_check_gate=gate,copy=copy,contract={'home_joint_names':['arm']},
+    context=dict(vars(MODULE), physics_pads=None,cross_check_gate=gate,copy=copy,contract={'home_joint_names':['arm']},
         measurements=SimpleNamespace(fresh=lambda:sample,joints=lambda s:s['joints']),
         initial=PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'],position=[0.0]))),
         contact_guard=SimpleNamespace(planning_attached=False,held=True,phase='lift',separation=None,predicate=None,pile_objects={}),
@@ -1975,3 +1975,51 @@ def test_wait_for_baseline_does_not_add_a_legacy_gripper_to_an_authored_home_sta
         name=['arm', 'authored_tool'], position=[0., .2])))
     assert MODULE.wait_for_robot_baseline(lambda: scene, {'arm': 0., 'authored_tool': .2}, timeout=0.) is scene
     assert MODULE.wait_for_robot_baseline(lambda: scene, {'arm': 0.}, timeout=0., release={'authored_tool': .2}) is scene
+
+
+@pytest.mark.parametrize('stage,padded', [('PREPLAN_HOME', True), ('PREPLAN_APPROACH', True), ('PREPLAN_GRASP', False)])
+def test_free_space_requests_carry_the_physics_pads_on_their_start_state(stage, padded):
+    """G3C: MoveGroup's full start state replaces the scene's attached bodies, and OMPL, TOTG and the controller-interval
+    certificate build every waypoint from it. Pads only in the scene diff (campaign 8a5d80d2) were never checked."""
+    import ast
+    import copy
+    import time
+    from moveit_msgs.action import MoveGroup
+    from moveit_msgs.msg import (Constraints, JointConstraint, MotionPlanRequest, MoveItErrorCodes, PlanningScene,
+                                 RobotState, RobotTrajectory)
+    from sensor_msgs.msg import JointState
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+    main = next(n for n in ast.parse(SCRIPT.read_text()).body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    segment = next(n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'plan_segment')
+    view = PlanningScene(robot_state=RobotState(joint_state=JointState(name=['arm'], position=[0.0])))
+    original = copy.deepcopy(view)
+    trajectory = RobotTrajectory(joint_trajectory=JointTrajectory(joint_names=['arm'], points=[
+        JointTrajectoryPoint(positions=[0.0]), JointTrajectoryPoint(positions=[0.5])]))
+    goals = []
+    def action(client, goal, timeout):
+        goals.append(copy.deepcopy(goal))
+        return MoveGroup.Result(error_code=MoveItErrorCodes(val=1), trajectory_start=copy.deepcopy(goal.request.start_state),
+                                planned_trajectory=trajectory, planning_time=.1)
+    primitives = dict(links=[dict(link=f'gripper_finger{i}_finger_tip_link', boxes=[
+        dict(box_size_m=[0.02, 0.03, 0.015], pose=[0.0] * 6)]) for i in (1, 2)])
+    links = {'base_link', 'gripper_finger1_finger_tip_link', 'gripper_finger2_finger_tip_link'}
+    context = dict(vars(MODULE), physics_pads=(primitives, links), copy=copy, time=time,
+        MotionPlanRequest=MotionPlanRequest, MoveGroup=MoveGroup, stage=lambda name: None, deadline=time.monotonic() + 10,
+        contract={'planning_group': 'arm_group', 'home_joint_names': ['arm'], 'tool_link': 'tcp'},
+        args=SimpleNamespace(segment_planning_time=3., backend='simulator'), mimics=[], initial=view,
+        plan_client=object(), action=action, trace=lambda *args: None, summary={},
+        joint_constraints=lambda values: Constraints(joint_constraints=[JointConstraint(
+            joint_name=n, position=v, tolerance_above=.0001, tolerance_below=.0001, weight=1.) for n, v in values.items()]))
+    exec(compile(ast.Module(body=[segment], type_ignores=[]), '<plan-segment-physics-pads>', 'exec'), context)
+    result = context['plan_segment'](view, stage, {'arm': 0.5}, group='arm_group')
+    sent = goals[-1]
+    pads = lambda state: sorted(b.object.id for b in state.attached_collision_objects if b.object.id.startswith('physics_pad::'))
+    expected = ['physics_pad::gripper_finger1_finger_tip_link_box0', 'physics_pad::gripper_finger2_finger_tip_link_box0']
+    assert pads(sent.request.start_state) == (expected if padded else [])           # what OMPL/TOTG/certificate use
+    assert pads(sent.planning_options.planning_scene_diff.robot_state) == (expected if padded else [])
+    assert sent.request.start_state.is_diff is False
+    assert view == original and pads(result['before'].robot_state) == pads(result['after'].robot_state) == []
+    assert result['metadata'].get('physics_pad_allowance_m') == (MODULE_PAD.get(stage) if padded else None)
+
+
+MODULE_PAD = __import__('simulation_collision').PHYSICS_PAD_ALLOWANCE_M

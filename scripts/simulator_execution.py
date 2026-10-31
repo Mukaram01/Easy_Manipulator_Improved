@@ -451,6 +451,44 @@ def require_cancellation_acceptance(summary):
         raise RuntimeError('CANCELLATION_TRIAL_UNVERIFIED: movement, owned cancellation, stop or alive cleanup missing')
 
 
+# G5A: an owned transfer goal of a scoped multi-destination trial cancelled while the part is held. The only accepted
+# end state is RECOVERY_REQUIRED with the part still held: nothing is released, detached, placed or homed automatically.
+TRANSFER_CANCELLATION_STATE='RECOVERY_REQUIRED_HELD_STOPPED'
+STAGES_BEFORE_TRANSFER=('EXECUTE_APPROACH','EXECUTE_GRASP','EXECUTE_CLOSE_GRIPPER','EXECUTE_LIFT')
+
+
+def transfer_cancellation_acceptance(summary):
+    """{accepted, state, failed, checks}: every G5A item judged from the executor's own recorded evidence."""
+    goal=summary.get('owned_execution_goal') or {};request=summary.get('cancellation_request') or {}
+    reconciliation=summary.get('measured_reconciliation') or {};recovery=summary.get('recovery_scene') or {}
+    target=summary.get('selected_object_id')
+    try:validate_controller_cancellation(summary.get('controller_cancellation') or {});controller=True
+    except RuntimeError:controller=False
+    checks=dict(
+        transfer_goal=(goal.get('stage')=='EXECUTE_TRANSFER' and goal.get('accepted') is True and
+                       summary.get('failed_stage')=='EXECUTE_TRANSFER'),
+        request_reached_owned_goal=bool(request.get('uuid')) and request.get('uuid')==goal.get('uuid'),
+        cancel_acknowledged=summary.get('cancellation_accepted') is True,
+        action_canceled=summary.get('interrupted_action_terminal_status')==5,
+        controller_goal_canceled=controller and not summary.get('controller_audit_failure'),
+        moving_when_cancelled=(summary.get('cancellation_movement_verified') is True and
+                               bool((summary.get('cancellation_motion') or {}).get('movement'))),
+        fresh_cancel_measurement=bool(summary.get('cancel_measurement')) and not summary.get('cancel_measurement_error'),
+        measured_stop=(summary.get('motion_stop_verified') is True and
+                       (summary.get('stopped_window') or {}).get('duration_sim_ns',0)>=300000000),
+        cancellation_confirmed=summary.get('cancellation_confirmed') is True and not summary.get('cancellation_failure'),
+        part_still_held=(reconciliation.get('held') is True and reconciliation.get('target')==target and
+                         reconciliation.get('measured_geometry_matches') is True and not summary.get('grasp_recovery')),
+        attachment_kept=recovery.get('attached_ids')==[target],
+        temporary_permissions_revoked=reconciliation.get('acm_restored') is True and recovery.get('contact_acm_restored') is True,
+        recovery_inspected=not summary.get('recovery_inspection_failure'),
+        no_motion_after_cancel=all(r.get('stage') in STAGES_BEFORE_TRANSFER for r in summary.get('execution_results') or []),
+        recovery_required=summary.get('recovery_required') is True and summary.get('result')!='PASS')
+    failed=[name for name,ok in checks.items() if not ok]
+    return dict(accepted=not failed,state=TRANSFER_CANCELLATION_STATE if not failed else 'CANCELLATION_UNVERIFIED',
+                failed=failed,checks=checks)
+
+
 class ProcessStallWatch:
     """Diagnostic only. Samples this process's kernel scheduler, page-fault and
     swap counters so a freshness failure can be attributed to CPU starvation,
@@ -1070,10 +1108,17 @@ DESTINATION_PHASES=('place','opening','released')
 
 
 class ContactGuard:
-    def __init__(self,measurements,object_id,dimensions,touch_links,support,baseline,tool):
-        if (getattr(measurements,'receipt',None) or {}).get('destination_geometry_bindings'):
-            # R2.5B multi-destination worlds are plan-only: no physical guard is armed in them.
-            raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: no contact guard for several destination bins')
+    def __init__(self,measurements,object_id,dimensions,touch_links,support,baseline,tool,destination_binding=None):
+        receipt=getattr(measurements,'receipt',None) or {}
+        if receipt.get('destination_geometry_bindings'):
+            # A multi-destination world arms a guard only for the one bin a verified physics scope selected
+            # (physics_scope_qualification); every other bin stays an unpermitted obstacle.
+            if destination_binding is None or destination_binding not in receipt['destination_geometry_bindings']:
+                raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: no contact guard for several destination bins')
+        elif destination_binding is not None:
+            raise RuntimeError('a single-destination world binds its destination floor in the receipt')
+        else:destination_binding=receipt.get('destination_geometry_binding')
+        self.destination_binding=destination_binding
         from ament_index_python.packages import get_package_prefix
         library=ctypes.CDLL(str(Path(get_package_prefix('workcell_builder'))/'lib/libworkcell_support_contact.so'))
         self.predicate=library.workcell_support_contact_valid
@@ -1086,7 +1131,7 @@ class ContactGuard:
         # certified floor, never by a planning-scene allowance: refuse an ACM that would
         # let `(a,b) in self.allowed` admit a finger/support contact.
         # The destination floor (receipt binding) is admitted the same way during place/opening/released.
-        binding=(getattr(measurements,'receipt',None) or {}).get('destination_geometry_binding')
+        binding=destination_binding
         self.destination=(dict(object_id=object_id,support_id=binding['object_id'],floor_z=float(binding['floor_z']))
                           if binding and binding.get('object_id') and binding.get('floor_z') is not None else None)
         for bound in (support,self.destination):
@@ -1296,8 +1341,10 @@ class ContactGuard:
         # The bound support's physics model carries the planning identity recorded in the
         # receipt (sparse world: model pick_support, collision object support_surface_table).
         # Only the exact bound link/collision maps; other geometry of that model stays unmapped.
-        for key in ('support_geometry_binding','destination_geometry_binding'):
-            binding=self.m.receipt.get(key)
+        # A multi-destination world maps only the bin its verified scope armed; a one-bin world its receipt binding.
+        destination=(self.destination_binding if self.m.receipt.get('destination_geometry_bindings')
+                     else self.m.receipt.get('destination_geometry_binding'))
+        for binding in (self.m.receipt.get('support_geometry_binding'),destination):
             if (binding and binding.get('object_id') and len(fields)==4 and
                     fields[1:4]==[binding.get('model'),binding.get('link'),binding.get('collision')]):
                 return binding['object_id']

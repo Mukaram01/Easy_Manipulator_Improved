@@ -113,18 +113,94 @@ def test_multi_destination_world_arms_no_physical_guard():
         ContactGuard(Measurements(), 'runtime::part', [0.03] * 3, [], None, None, 'tool0')
 
 
+@pytest.mark.parametrize('cell,asset', [('a', 'target_bin_default'), ('b', 'target_bin_b')])
+def test_a_scoped_guard_admits_only_its_own_bin_floor(cells, tmp_path, cell, asset):
+    """G3A/G3B: the guard armed for one bin maps only that bin's exact floor collision to it; its walls and every
+    collision of the other bin stay unpermitted physical obstacles, and a substituted binding is refused."""
+    from simulator_execution import ContactGuard
+    text, _ = sw.derive_world(cells[cell], physical_destinations='all')
+    db.augment_spec(spec_for(tmp_path, text), cells[cell] / 'config/moveit_collision_objects.yaml', True)
+    bindings = json.loads((tmp_path / 'sim/spec.json').read_text())['destination_geometry_bindings']
+    selected = db.select_destination_binding(bindings, asset)
+    other = next(b for b in bindings if b is not selected)
+
+    class Measurements:
+        receipt = {'world': 'a0', 'model': 'workcell_robot', 'destination_geometry_bindings': bindings,
+                   'destination_geometry_binding': None}
+
+    class Baseline:
+        entry_names, entry_values = [], []
+    guard = ContactGuard(Measurements(), 'runtime::part_04', [0.025] * 3, [], None, Baseline(), 'tool0',
+                         destination_binding=selected)
+    assert guard.destination == dict(object_id='runtime::part_04', support_id='workcell::' + asset,
+                                     floor_z=float(selected['floor_z']))
+    assert guard.identity(f"a0::{selected['model']}::bin_link::floor") == 'workcell::' + asset
+    assert guard.identity(f"a0::{selected['model']}::bin_link::wall_x_plus") == 'workcell::' + selected['model']
+    assert guard.identity(f"a0::{other['model']}::bin_link::floor") == 'workcell::' + other['model']
+    # A binding that is not one of the launched bins (or none) arms nothing. Which launched bin is armed is decided
+    # by the verified scope: the executor passes only the scope-verified bin (test below).
+    for substitute in (dict(selected, floor_z=0.5), dict(selected, collision='wall_x_plus'), None):
+        with pytest.raises(RuntimeError, match='MULTI_DESTINATION_PHYSICS_UNQUALIFIED'):
+            ContactGuard(Measurements(), 'runtime::part_04', [0.025] * 3, [], None, Baseline(), 'tool0',
+                         destination_binding=substitute)
+
+    class OneBin:
+        receipt = {'world': 'a0', 'model': 'workcell_robot', 'destination_geometry_binding': selected}
+    with pytest.raises(RuntimeError, match='single-destination world binds its destination floor in the receipt'):
+        ContactGuard(OneBin(), 'runtime::part_04', [0.025] * 3, [], None, Baseline(), 'tool0', destination_binding=selected)
+
+
 def test_executor_refuses_motion_in_a_multi_destination_world():
     source = (ROOT / 'scripts/perceived_object_grasp_execute.py').read_text()
     block = source[source.index("destination_bindings = receipt_record.get('destination_geometry_bindings')"):]
     block = block[:block.index('elif destination_binding is not None:')]
     assert block.index('if args.start:') < block.index('MULTI_DESTINATION_PHYSICS_UNQUALIFIED') < block.index('apply(')
+    # Only an authorised full-cycle with a verified scope passes the refusal; nothing else in the block moves.
+    assert "args.physics_scope is None or args.simulator_commission != 'full-cycle'" in block
+    assert block.index('verify_trial(') < block.index('scoped_destination = selected') < block.index('apply(')
+    assert "scope_record['binding']['destination']['model'] != selected['model']" in block
+    assert source.count('destination_binding=scoped_destination') == 1   # the guard arms the scope-verified bin only
+    assert block.index('verify_trial(') > block.index("args.retention_policy != 'strict'")   # strict retention only
+    assert 'verify_qualified_scope' not in source        # the executor has no qualified-scope admission path
+
+
+def test_scoped_trials_audit_every_owned_arm_goal_and_cancellation_is_never_reinterrupted():
+    """G5A: in a scoped trial any interruption of an owned arm goal (an operator SIGTERM included) is cancelled through
+    the owned goal with the controller audit armed, must end CANCELED, and a second signal cannot cut it short."""
+    source = (ROOT / 'scripts/perceived_object_grasp_execute.py').read_text()
+    assert "(controlled_cancel or summary.get('physics_scope') is not None)" in source
+    assert "if args.simulator_commission=='cancel' or summary.get('physics_scope') is not None:" in source
+    assert 'if audited:controller_audit.arm()' in source and source.count('                    if audited:\n') == 2
+    assert "(not audited or future.result().status==5)" in source
+    handler = source[source.index('def interrupted(signum, frame):'):]
+    assert handler.index('signal.SIG_IGN') < handler.index('raise KeyboardInterrupt')
+    assert "summary['transfer_cancellation']=transfer_cancellation_acceptance(summary)" in source
+    # G5A trial 1 (log/qualification/g5a/trial): the cancellation stop drained ~590 samples unchecked, so the guard's
+    # held-part sequence check refused the next sample and the held part was reconciled as free. A scoped held stop
+    # now checks every stop sample, and a failed hold check is recorded, never silently treated as 'not held'.
+    assert 'if monitor_contacts is None:monitor_contacts=stop_proves_hold()' in source   # every default stop wait
+    guard_stop = source[source.index('def stop_proves_hold():'):source.index('def wait_stopped(')]
+    assert "summary.get('physics_scope') is not None" in guard_stop and 'recovery is None' in guard_stop
+    assert "except RuntimeError as exc:summary['held_check_failure']=str(exc)" in source
 
 
 @pytest.mark.parametrize('extra', [[], ['--mode', 'targeted', '--gate', 'full-cycle', '--prior-evidence', 'x'],
-                                   ['--mode', 'full']])
+                                   ['--mode', 'full'],
+                                   ['--mode', 'targeted', '--gate', 'resolve', '--authorise-physics-trial'],
+                                   ['--mode', 'targeted', '--gate', 'full-cycle', '--authorise-physics-trial'],
+                                   ['--mode', 'full', '--authorise-physics-trial', '--prior-evidence', 'x']])
 def test_runner_allows_all_physical_destinations_for_plan_only_resolve_only(tmp_path, extra):
     import run_stage_a1_finish
     argv = ['--output', str(tmp_path / 'out'), '--physical-destinations', 'all', '--scene-package', str(tmp_path), *extra]
     with pytest.raises(SystemExit) as exc:
+        run_stage_a1_finish.main(argv)
+    assert exc.value.code == 2 and not (tmp_path / 'out').exists()
+
+
+def test_runner_authorises_a_trial_for_the_task_world_only(tmp_path):
+    import run_stage_a1_finish
+    argv = ['--output', str(tmp_path / 'out'), '--scene-package', str(tmp_path), '--mode', 'targeted', '--gate',
+            'full-cycle', '--prior-evidence', 'x', '--authorise-physics-trial']
+    with pytest.raises(SystemExit) as exc:          # a one-bin (task) world has nothing to authorise
         run_stage_a1_finish.main(argv)
     assert exc.value.code == 2 and not (tmp_path / 'out').exists()

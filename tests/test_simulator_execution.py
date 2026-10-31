@@ -1890,3 +1890,54 @@ def test_measured_object_poses_are_floats_for_ros_messages():
     pose = Pose()
     (pose.position.x, pose.position.y, pose.position.z, pose.orientation.x, pose.orientation.y,
      pose.orientation.z, pose.orientation.w) = values
+
+
+def g5a_summary():
+    """An interrupted scoped transfer as the executor records it when cancellation is fully verified."""
+    uuid='ab'*16
+    return dict(result='FAIL',failed_stage='EXECUTE_TRANSFER',recovery_required=True,selected_object_id='runtime::part_04',
+        owned_execution_goal=dict(uuid=uuid,accepted=True,stage='EXECUTE_TRANSFER'),
+        cancellation_request=dict(uuid=uuid),cancellation_accepted=True,interrupted_action_terminal_status=5,
+        controller_cancellation={'ur5_arm_controller':dict(uuid='cd'*16,executing_before_cancel=True,status=5,result_wall_ns=1)},
+        cancellation_movement_verified=True,cancellation_motion=dict(movement={'iteration':12}),
+        cancel_measurement={'iteration':12},motion_stop_verified=True,stopped_window=dict(duration_sim_ns=300000000),
+        cancellation_confirmed=True,
+        measured_reconciliation=dict(held=True,target='runtime::part_04',measured_geometry_matches=True,acm_restored=True),
+        recovery_scene=dict(attached_ids=['runtime::part_04'],contact_acm_restored=True),
+        execution_results=[dict(stage=s) for s in ('EXECUTE_APPROACH','EXECUTE_GRASP','EXECUTE_CLOSE_GRIPPER','EXECUTE_LIFT')])
+
+
+def test_transfer_cancellation_is_accepted_only_as_recovery_required_with_the_part_held():
+    from simulator_execution import transfer_cancellation_acceptance
+    accepted=transfer_cancellation_acceptance(g5a_summary())
+    assert accepted['accepted'] and accepted['state']=='RECOVERY_REQUIRED_HELD_STOPPED' and accepted['failed']==[]
+
+
+@pytest.mark.parametrize('case,edit,failed',[
+    ('lost acknowledgement',lambda s:s.update(cancellation_accepted=False),'cancel_acknowledged'),
+    ('cancellation timeout',lambda s:s.update(interrupted_action_terminal_status=None),'action_canceled'),
+    ('goal ended normally',lambda s:s.update(interrupted_action_terminal_status=4),'action_canceled'),
+    ('unknown controller state',lambda s:s.update(controller_cancellation={}),'controller_goal_canceled'),
+    ('controller audit failed',lambda s:s.update(controller_audit_failure='ambiguous/missing active controller goal'),
+     'controller_goal_canceled'),
+    ('controller goal not canceled',lambda s:s['controller_cancellation']['ur5_arm_controller'].update(status=4),
+     'controller_goal_canceled'),
+    ('stale feedback at the request',lambda s:s.update(cancel_measurement_error='stale measurement'),'fresh_cancel_measurement'),
+    ('stop not measured',lambda s:s.update(motion_stop_verified=False),'measured_stop'),
+    ('stop window too short',lambda s:s.update(stopped_window=dict(duration_sim_ns=200000000)),'measured_stop'),
+    ('another goal cancelled',lambda s:s['cancellation_request'].update(uuid='ef'*16),'request_reached_owned_goal'),
+    ('not during transfer',lambda s:s['owned_execution_goal'].update(stage='EXECUTE_PLACE'),'transfer_goal'),
+    ('arm was not moving',lambda s:s.update(cancellation_movement_verified=False),'moving_when_cancelled'),
+    ('part lost',lambda s:s['measured_reconciliation'].update(held=False),'part_still_held'),
+    ('incomplete reconciliation',lambda s:s['measured_reconciliation'].update(measured_geometry_matches=False),'part_still_held'),
+    ('silently detached',lambda s:s['recovery_scene'].update(attached_ids=[]),'attachment_kept'),
+    ('permissions left granted',lambda s:s['recovery_scene'].update(contact_acm_restored=False),'temporary_permissions_revoked'),
+    ('motion after cancel',lambda s:s['execution_results'].append(dict(stage='EXECUTE_HOME')),'no_motion_after_cancel'),
+    ('claimed completion',lambda s:s.update(result='PASS'),'recovery_required'),
+    ('cancellation failed',lambda s:s.update(cancellation_failure='CANCELLATION_UNCONFIRMED'),'cancellation_confirmed'),
+])
+def test_transfer_cancellation_fails_closed(case,edit,failed):
+    from simulator_execution import transfer_cancellation_acceptance
+    summary=g5a_summary();edit(summary)
+    verdict=transfer_cancellation_acceptance(summary)
+    assert not verdict['accepted'] and verdict['state']=='CANCELLATION_UNVERIFIED' and failed in verdict['failed'],case

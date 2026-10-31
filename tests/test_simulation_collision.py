@@ -153,3 +153,104 @@ def test_the_launch_binds_the_physics_model_after_derivation_in_the_simulator_br
     # MoveIt's robot_description is the URDF prepare() returned, before the physics-only binding.
     assert simulator.index('robot_description_config, controllers_config_path, simulator_spec = simulator_backend.prepare(') < \
         simulator.index('simulation_collision.bind_native_model(')
+
+
+# --- G3C: free-space planning against the physics boxes (planning only) --------------------------------------------
+PRIMITIVES = dict(links=[dict(link=f'gripper_finger{i}_finger_tip_link', boxes=[
+    dict(box_size_m=[0.0199, 0.0299, 0.015], pose=[-0.0026, -0.009, 0.0, 0.0, 0.0, 0.0]),
+    dict(box_size_m=[0.0396, 0.0146, 0.022], pose=[0.0247, 0.0005, 0.0, 0.0, 0.0, 0.3])]) for i in (1, 2)])
+ROBOT = {'base_link', 'tool0', 'gripper_base_link', 'gripper_finger1_finger_tip_link', 'gripper_finger2_finger_tip_link'}
+
+
+def view_scene():
+    """A retreat-like view: the placed part is an allowed contact of the fingertips; the bin wall is not."""
+    from moveit_msgs.msg import AllowedCollisionEntry, AttachedCollisionObject, CollisionObject, PlanningScene
+    scene = PlanningScene()
+    names = ['gripper_finger1_finger_tip_link', 'gripper_finger2_finger_tip_link', 'runtime::part_04', 'bin_wall']
+    allowed = {('gripper_finger1_finger_tip_link', 'runtime::part_04'), ('gripper_finger2_finger_tip_link', 'runtime::part_04')}
+    scene.allowed_collision_matrix.entry_names = names
+    scene.allowed_collision_matrix.entry_values = [AllowedCollisionEntry(enabled=[(a, b) in allowed or (b, a) in allowed
+                                                                                  for b in names]) for a in names]
+    carried = AttachedCollisionObject(link_name='tool0', touch_links=['gripper_finger1_finger_tip_link'])
+    carried.object = CollisionObject(id='runtime::held')
+    scene.robot_state.attached_collision_objects = [carried]
+    return scene
+
+
+def acm(scene):
+    names = list(scene.allowed_collision_matrix.entry_names)
+    return lambda a, b: scene.allowed_collision_matrix.entry_values[names.index(a)].enabled[names.index(b)]
+
+
+def test_physics_pads_are_the_bound_boxes_inflated_by_the_allowance_and_inherit_only_their_links_contacts():
+    view = view_scene()
+    original = copy.deepcopy(view)
+    scene = sc.physics_pad_scene(view, PRIMITIVES, ROBOT, 0.015)
+    assert view == original                                                       # the view (and live scene) unchanged
+    pads = {b.object.id: b for b in scene.robot_state.attached_collision_objects if b.object.id.startswith(sc.PAD_PREFIX)}
+    assert len(pads) == 4 and all(len(b.object.primitives) == 1 for b in pads.values())   # one box per body
+    body = pads['physics_pad::gripper_finger2_finger_tip_link_box1']
+    assert body.link_name == body.object.header.frame_id == 'gripper_finger2_finger_tip_link'
+    assert list(body.object.primitives[0].dimensions) == pytest.approx([0.0396 + 0.03, 0.0146 + 0.03, 0.022 + 0.03])
+    pose = body.object.primitive_poses[0]
+    assert [pose.position.x, pose.position.y, pose.position.z] == pytest.approx([0.0247, 0.0005, 0.0])
+    assert [pose.orientation.z, pose.orientation.w] == pytest.approx([math.sin(0.15), math.cos(0.15)])
+    assert set(body.touch_links) == ROBOT                                         # Gazebo has no robot self-collision
+    allowed = acm(scene)
+    for pad in pads:
+        assert allowed(pad, 'runtime::part_04')                                   # the link's own allowed contact
+        assert not allowed(pad, 'bin_wall')                                       # never a new allowance to the world
+        assert all(allowed(pad, other) for other in pads if other != pad)         # robot-internal
+    assert allowed('physics_pad::gripper_finger1_finger_tip_link_box0', 'runtime::held')        # held by its link
+    assert not allowed('physics_pad::gripper_finger2_finger_tip_link_box0', 'runtime::held')    # not a touch link
+    old = acm(original)                                                           # existing entries never change
+    for a in original.allowed_collision_matrix.entry_names:
+        for b in original.allowed_collision_matrix.entry_names:
+            assert allowed(a, b) == old(a, b)
+    exact = sc.physics_pad_scene(view, PRIMITIVES, ROBOT, 0.)
+    assert list(exact.robot_state.attached_collision_objects[-1].object.primitives[0].dimensions) == [0.0396, 0.0146, 0.022]
+
+
+@pytest.mark.parametrize('primitives,allowance,match', [
+    (PRIMITIVES, -0.001, 'non-negative'), (PRIMITIVES, float('nan'), 'non-negative'),
+    (dict(links=[]), 0.015, 'no bound physics boxes'), (None, 0.015, 'no bound physics boxes'),
+    (dict(links=[dict(link='other_link', boxes=PRIMITIVES['links'][0]['boxes'])]), 0.015, 'unknown link'),
+    (dict(links=[dict(link='gripper_finger1_finger_tip_link', boxes=[dict(box_size_m=[0.01, 0., 0.01], pose=[0.] * 6)])]),
+     0.015, 'invalid bound physics box'),
+    (dict(links=[dict(link='gripper_finger1_finger_tip_link', boxes=[dict(box_size_m=[0.01] * 3, pose=[0.] * 5)])]),
+     0.015, 'invalid bound physics box'),
+])
+def test_missing_or_invalid_physics_boxes_refuse_planning(primitives, allowance, match):
+    with pytest.raises(sc.SimulationCollisionError, match=match):
+        sc.physics_pad_scene(view_scene(), primitives, ROBOT, allowance)
+    padded = sc.physics_pad_scene(view_scene(), PRIMITIVES, ROBOT, 0.015)
+    with pytest.raises(sc.SimulationCollisionError, match='already carries'):
+        sc.physics_pad_scene(padded, PRIMITIVES, ROBOT, 0.015)
+
+
+def test_only_free_space_stages_plan_against_the_physics_pads_with_their_measured_allowances():
+    assert sc.PHYSICS_PAD_ALLOWANCE_M == {'PREPLAN_APPROACH': 0.015, 'PREPLAN_TRANSFER': 0.015, 'PREPLAN_HOME': 0.015,
+                                          'PREPLAN_RETREAT': 0.001}
+    # Intentional contact stages keep their exact planning geometry and allowances.
+    assert not {'PREPLAN_GRASP', 'PREPLAN_CLOSE_GRIPPER', 'PREPLAN_LIFT', 'PREPLAN_PLACE', 'PREPLAN_OPEN_GRIPPER'} & set(
+        sc.PHYSICS_PAD_ALLOWANCE_M)
+    source = (REPO/'scripts/perceived_object_grasp_execute.py').read_text()
+    assert source.count('physics_pad_scene(') == 1 and source.count('physics_pads = None') == 1
+    plan = source[source.index('    def plan_segment('):source.index('    def plan_segment(') + 30000]
+    assert ("if physics_pads is not None and name in PHYSICS_PAD_ALLOWANCE_M:\n"
+            in plan[:plan.index('if closure_clearance is not None:\n            from closure_clearance')])
+    # Only the planning request carries the pads: before/after views are taken from the unpadded view.
+    assert 'before = copy.deepcopy(view)' in plan and 'after = copy.deepcopy(view)' in plan
+    assert "receipt_record.get('simulator_collision_primitives')" in source        # from the verified receipt only
+
+
+def test_free_space_corners_are_blended_by_time_parameterisation():
+    """G3C: path_tolerance 0.0 (the UR5 package's value) left OMPL corners unblended; the controller's quintic then
+    implied up to 18.5 rad/s^2 (limit 3.15) and the arm cut corners by 14 mm. The launch sets a positive blend after
+    merging the robot package's OMPL settings, ahead of the adapter that certifies the time-parameterised spline."""
+    source = (REPO/'scenes/ur5_2f_test/launch/demo.launch.py').read_text()
+    assert 'TOTG_PATH_TOLERANCE = 0.01' in source
+    merged = source.index('ompl_planning_pipeline_config["ompl"].update(ompl_planning_yaml)')
+    assert source.index('ompl_planning_pipeline_config["ompl"]["path_tolerance"] = TOTG_PATH_TOLERANCE') > merged
+    adapters = source[source.index('"request_adapters"'):merged]
+    assert adapters.index('workcell/StraightCartesianPath') < adapters.index('AddTimeOptimalParameterization')

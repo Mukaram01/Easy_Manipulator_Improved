@@ -1384,3 +1384,159 @@ def test_saved_cell_rejects_a_cli_policy_override_before_creating_a_session(tmp_
     assert exc.value.code == 2
     assert 'saved cell' in capsys.readouterr().err
     assert not output.exists()
+
+
+CHILD='''import signal,sys,time
+from pathlib import Path
+marker=Path(sys.argv[1])
+def stop(signum,frame):
+    marker.write_text("cancelled-by-owner");sys.exit(7)
+if sys.argv[2]=="cancel":signal.signal(signal.SIGTERM,stop)
+else:signal.signal(signal.SIGTERM,signal.SIG_IGN)
+marker.write_text("running")
+time.sleep(30)
+'''
+
+
+@pytest.mark.parametrize('behaviour',['cancel','ignore'])
+def test_operator_stop_reaches_the_owned_child_before_any_kill(tmp_path,monkeypatch,behaviour):
+    """G5A: the runner forwards an operator stop to the running executor, waits for its own cancellation, and SIGKILLs
+    only as a recorded last resort (subprocess.run would SIGKILL at once and bypass controller cancellation)."""
+    import os,signal,sys,threading,time
+    monkeypatch.setattr(MODULE,'OPERATOR_CANCEL_GRACE_S',2)
+    child=tmp_path/'child.py';child.write_text(CHILD);marker=tmp_path/'marker'
+    previous=signal.signal(signal.SIGUSR1,MODULE.cancel_on_signal)
+    def operator_stop():
+        while not marker.is_file() or marker.read_text()!='running':time.sleep(.02)
+        os.kill(os.getpid(),signal.SIGUSR1)
+    threading.Thread(target=operator_stop,daemon=True).start()
+    try:
+        with pytest.raises(MODULE.OperatorCancel) as stopped:
+            MODULE.run([sys.executable,child,marker,behaviour],env=dict(os.environ),cwd=tmp_path,log=tmp_path/'log',timeout=20)
+    finally:
+        for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,signal.default_int_handler if sig==signal.SIGINT else signal.SIG_DFL)
+        signal.signal(signal.SIGUSR1,previous)
+    record=stopped.value.child
+    assert record['forwarded']=='SIGTERM' and record['grace_s']==2
+    if behaviour=='cancel':
+        assert marker.read_text()=='cancelled-by-owner' and record['killed'] is False and record['returncode']==7
+    else:
+        assert marker.read_text()=='running' and record['killed'] is True and record['returncode']==-signal.SIGKILL
+
+
+FINISHING_CHILD='''import json,signal,sys,time
+from pathlib import Path
+marker=Path(sys.argv[1])
+def signalled(signum,frame):
+    marker.write_text("signalled:"+signal.Signals(signum).name);sys.exit(7)
+for sig in (signal.SIGTERM,signal.SIGUSR1):signal.signal(sig,signalled)
+print(json.dumps({"stage":"EXECUTE_LIFT"}));print("telemetry line");print(json.dumps({"stage":"EXECUTE_TRANSFER"}),flush=True)
+marker.write_text("running")
+time.sleep(float(sys.argv[2]))
+marker.write_text("completed")
+'''
+
+
+def stop_requested(marker,*signals):
+    """The operator: once the child is running, signal this (runner) process only."""
+    import os,threading,time
+    def operator():
+        while not marker.is_file() or marker.read_text()!='running':time.sleep(.02)
+        for sig in signals:os.kill(os.getpid(),sig);time.sleep(.2)
+    threading.Thread(target=operator,daemon=True).start()
+
+
+def test_stop_after_cycle_is_latched_and_acknowledged_but_never_reaches_the_running_cycle(tmp_path,capfd):
+    """G5B: SIGUSR1 (Stop at Cycle End) latches with the executor's own current stage; the running child is not
+    signalled and completes (only SIGTERM/SIGINT cancel)."""
+    import argparse,os,signal,sys
+    child=tmp_path/'child.py';child.write_text(FINISHING_CHILD);marker=tmp_path/'marker';log=tmp_path/'executor.log'
+    MODULE.STOP_AFTER_CYCLE.__init__();MODULE.STOP_AFTER_CYCLE.args=argparse.Namespace(output=tmp_path)
+    previous=signal.signal(signal.SIGUSR1,MODULE.STOP_AFTER_CYCLE.request)
+    stop_requested(marker,signal.SIGUSR1,signal.SIGUSR1)
+    try:
+        with MODULE.StageForwarder(argparse.Namespace(),log,'full-cycle','execute'):
+            completed=MODULE.run([sys.executable,child,marker,'1.5'],env=dict(os.environ),cwd=tmp_path,log=log,timeout=20)
+    finally:
+        signal.signal(signal.SIGUSR1,previous)
+    record=MODULE.STOP_AFTER_CYCLE.record
+    assert completed.returncode==0 and marker.read_text()=='completed'          # the cycle was never interrupted
+    assert record['signal']=='SIGUSR1' and record['state']=='STOPPING' and record['forwarded'] is None
+    assert (record['gate'],record['phase'],record['executor_stage'])==('full-cycle','execute','EXECUTE_TRANSFER')
+    assert record['repeated']==1 and isinstance(record['requested_wall_ns'],int) and 'acknowledgement_error' not in record
+    latched=json.loads((tmp_path/'stop-after-cycle.json').read_text())
+    assert latched['requested_wall_ns']==record['requested_wall_ns'] and latched['repeated']==0   # written at the latch
+    assert 'stage-a1 stop after cycle latched' in capfd.readouterr().err
+    assert MODULE.STOP_AFTER_CYCLE.active is None
+
+
+def test_operator_cancel_still_takes_precedence_over_a_latched_stop_after_cycle(tmp_path):
+    """G5A unchanged: SIGTERM after a Stop at Cycle End is forwarded to the running child at once."""
+    import argparse,os,signal,sys
+    child=tmp_path/'child.py';child.write_text(FINISHING_CHILD);marker=tmp_path/'marker';log=tmp_path/'executor.log'
+    MODULE.STOP_AFTER_CYCLE.__init__();MODULE.STOP_AFTER_CYCLE.args=argparse.Namespace(output=tmp_path)
+    previous=signal.signal(signal.SIGUSR1,MODULE.STOP_AFTER_CYCLE.request)
+    signal.signal(signal.SIGTERM,MODULE.cancel_on_signal)
+    stop_requested(marker,signal.SIGUSR1,signal.SIGTERM)
+    try:
+        with pytest.raises(MODULE.OperatorCancel) as stopped:
+            with MODULE.StageForwarder(argparse.Namespace(),log,'full-cycle','execute'):
+                MODULE.run([sys.executable,child,marker,'20'],env=dict(os.environ),cwd=tmp_path,log=log,timeout=30)
+    finally:
+        for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,signal.default_int_handler if sig==signal.SIGINT else signal.SIG_DFL)
+        signal.signal(signal.SIGUSR1,previous)
+    assert MODULE.STOP_AFTER_CYCLE.record['state']=='STOPPING'
+    assert stopped.value.child['forwarded']=='SIGTERM' and stopped.value.child['killed'] is False
+    assert marker.read_text()=='signalled:SIGTERM' and stopped.value.child['returncode']==7
+
+
+def stopping_sessions(monkeypatch,stop_during,then=None):
+    """Sessions that receive the operator's SIGUSR1 (and optionally a later signal) while `stop_during` runs."""
+    import os,signal
+    seen=[]
+    def session(args,repo,world,sha,gate,index,prior):
+        seen.append(gate)
+        directory=args.output/f'{index:02d}-{gate}';directory.mkdir()
+        (directory/'session-report.json').write_text(json.dumps({'gate':gate,'status':'PASS','shutdown':{'clean':True}}))
+        if gate==stop_during:
+            os.kill(os.getpid(),signal.SIGUSR1)
+            if then is not None:os.kill(os.getpid(),then)
+        path=directory/'summary.json';path.write_text('{}');return path
+    monkeypatch.setattr(MODULE,'one_session',session)
+    return seen
+
+
+@pytest.fixture
+def restored_signals():
+    import signal
+    saved={sig:signal.getsignal(sig) for sig in (signal.SIGTERM,signal.SIGINT,signal.SIGUSR1)}
+    yield
+    for sig,handler in saved.items():signal.signal(sig,handler)
+
+
+def test_stop_after_cycle_finishes_the_current_session_and_starts_no_other(tmp_path,monkeypatch,stubbed_preflight,restored_signals):
+    seen=stopping_sessions(monkeypatch,'cancel');output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--through','telemetry'])==4
+    assert seen==['resolve','cancel']                                    # telemetry is never started
+    report=json.loads((output/'stage-a1-final-report.json').read_text())
+    stop=report['stop_after_cycle']
+    assert report['status']=='STOPPED' and report['stage_a_acceptance'] is False
+    assert stop['state']=='STOPPED' and stop['completed_gates']==['resolve','cancel'] and stop['gates_not_started']==['telemetry']
+    assert stop['requested_wall_ns']<=stop['stopped_wall_ns'] and stop['forwarded'] is None
+
+
+def test_stop_after_cycle_in_the_last_session_lets_it_pass(tmp_path,monkeypatch,stubbed_preflight,restored_signals):
+    stopping_sessions(monkeypatch,'cancel');output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--mode','targeted','--gate','cancel'])==0
+    report=json.loads((output/'stage-a1-targeted-report.json').read_text())
+    assert report['status']=='PASS' and report['stop_after_cycle']['state']=='STOPPED'
+    assert report['stop_after_cycle']['gates_not_started']==[]
+
+
+def test_operator_cancel_supersedes_a_latched_stop_after_cycle(tmp_path,monkeypatch,stubbed_preflight,restored_signals):
+    import signal
+    seen=stopping_sessions(monkeypatch,'cancel',then=signal.SIGTERM);output=tmp_path/'evidence'
+    assert MODULE.main(['--output',str(output),'--through','telemetry'])==3
+    report=json.loads((output/'stage-a1-final-report.json').read_text())
+    assert seen==['resolve','cancel'] and report['status']=='CANCELLED'
+    assert report['stop_after_cycle']['state']=='STOPPING' and report['stop_after_cycle']['superseded_by']=='SIGTERM'

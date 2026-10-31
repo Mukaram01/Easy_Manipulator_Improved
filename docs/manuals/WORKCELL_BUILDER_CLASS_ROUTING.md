@@ -144,6 +144,30 @@ The qualified Stage-A world covers one object, one destination and one cycle. Th
 - **Runner:** it accepts `--physical-destinations all` only for `--mode targeted --gate resolve`.
 - **One-bin cells:** worlds, receipts and wall ids are unchanged.
 
+**One authorised trial into one bin (G3A, `workcell_physics_scope/v1`).**
+- **Default:** a multi-bin world stays plan-only.
+- **The only exception:** the CLI qualification runner may authorise one guarded full-cycle into the task's bin:
+  `run_stage_a1_finish.py --scene-package <cell> --mode targeted --gate full-cycle --physical-destinations all --authorise-physics-trial --prior-evidence <registered Stage-A acceptance>`.
+- **When it is written:** the runner writes an `AUTHORISED_TRIAL` record after the session's plan-only resolve and revalidate pass and the geometry is re-measured.
+- **What the record binds:**
+  - the cell's authored and generated files;
+  - the derived world (every launched bin and object model must equal it);
+  - every bin binding and the selected bin;
+  - the support binding;
+  - the robot, URDF, controller and hold-profile identities;
+  - the native libraries and bound sources, proved on disk;
+  - the registered runtime and its Stage-A evidence;
+  - the prerequisite-trial evidence;
+  - the revalidated plan;
+  - the session receipt;
+  - an empty destination.
+- **What it allows:** fixed in code as one full-cycle, one object, one destination, with no routing, no sorting and no real hardware.
+- **Executor:** recomputes every binding before planning. It arms the contact guard on that bin's floor only, so every other bin and the selected bin's walls stay unpermitted contacts. It checks the record again before reporting a physical result.
+- **Refusal:** any missing, changed or substituted binding, an occupied bin, or an unsupported state.
+- **Earlier success:** not required. The prerequisite Stage-A trials are reused, from the same build, through `require_trial_evidence`.
+- **Evidence label:** `PHYSICS_SCOPE_TRIAL_NOT_QUALIFIED`.
+- **Not yet available:** a qualified scope that binds a strict trial PASS (and would admit the Builder or HMI) is not produced or accepted. The Builder and HMI never authorise a trial.
+
 ### Limits
 - **Fake hardware only:** planning and kinematic execution on mock controllers. There is no contact, retention or settling evidence.
 - **Continuous mode:** its only frame source is the session's own simulator-rendered EPD frame (R2.5A). There is no live camera source, so a live continuous session is still refused (`CONTINUOUS_SOURCE_UNAVAILABLE`).
