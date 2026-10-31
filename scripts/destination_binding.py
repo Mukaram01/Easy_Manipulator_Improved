@@ -195,6 +195,18 @@ def wall_object_ids(binding):
     return [prefix + wall['collision'] for wall in (binding or {}).get('walls') or []]
 
 
+def rim_z(binding):
+    """World height of the bound destination's highest wall top (its rim), from the same bound walls planning and the
+    simulator use; fails closed without walls."""
+    walls = (binding or {}).get('walls')
+    if not isinstance(walls, list) or not walls:
+        raise ValueError('destination binding carries no physics walls')
+    tops = [float(wall['xyz'][2]) + float(wall['size_m'][2]) / 2 for wall in walls]
+    if not all(math.isfinite(top) for top in tops):
+        raise ValueError('invalid bound destination wall height')
+    return max(tops)
+
+
 def walls_scene_diff(binding):
     """The bound physics walls as ADD collision objects, one world-frame BOX each.
 
