@@ -18,8 +18,12 @@ This manual documents the **current intended flow** for creating/importing/editi
   - **Existing names:** blocked, never overwritten.
   - **Older folders:** cells created in an earlier custom output folder stay listed.
 - **Not in Git:** new cells are **local to this PC**. Git ignores everything under `scenes/` except the curated reference library listed in `.gitignore`, so a new cell is never uploaded to GitHub and does not sync to other computers. To use it on another PC, copy its folder or export it.
-- **Scene-local assets:** a cell's own assets are saved inside it, for example the test-object visuals New Cell > Sorting copies, or the catalog meshes a layout Save copies to `assets/imported/catalog/`. The cell's generated package resolves them inside the cell, whether or not Git tracks them.
-- **Imported CAD:** the External Asset Import library (`workcell_builder/workcell_builder/assets/imported/`) is a local library and is ignored. Customer or proprietary CAD is never committed by default.
+- **Scene-local assets:** a cell's own assets are saved inside it, and its generated package resolves them inside the cell, whether or not Git tracks them. Examples:
+  - the test-object visuals that New Cell > Sorting copies;
+  - meshes that Save copies when an asset is placed: imported CAD goes to `assets/imported/catalog/`, and meshes from the tracked repository library go to `assets/library/`.
+- **Imported CAD:** Import Mesh adds a mesh to this PC's imported-asset library (`workcell_builder/workcell_builder/assets/imported/`). The library holds the files and their one catalog, `imported_environment_assets.json`, and Git ignores both, so customer or proprietary CAD is never committed by default. Every cell's Asset Library lists the library, and Save copies a placed mesh into the cell's `assets/imported/`.
+  - **Ignored in every scene:** Git ignores `assets/imported/` in every scene, reference scenes included.
+  - **Reference scenes:** a reference scene that uses an imported part shows a `Not portable` validation warning until the part is promoted with licence approval (`WORKCELL_EXTERNAL_ASSET_IMPORT_WIZARD.md`). See `WORKCELL_EXTERNAL_ASSET_IMPORT_WIZARD.md`.
 - **Tracked:** the core library (`assets/`, robot/tool/environment descriptions, `catalog/`) and the reference scenes. A reference scene depends only on tracked files, so a GitHub checkout works without copying assets.
 - **Promoting a cell to a reference scene:** a deliberate review. Add its `!scenes/<name>/` line to `.gitignore`, make sure every asset it references is tracked and licensed, then commit it.
 

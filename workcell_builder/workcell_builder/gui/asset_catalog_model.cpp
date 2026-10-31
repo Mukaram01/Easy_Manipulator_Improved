@@ -357,7 +357,7 @@ AssetCatalogEntry make_seed(
 
 std::string asset_provenance(const AssetCatalogEntry & entry)
 {
-  return entry.source == "scene_imported_asset" ? "imported" : "built_in";
+  return entry.source == "scene_imported_asset" || entry.source == "local_imported_asset" ? "imported" : "built_in";
 }
 
 std::string asset_display_name(const AssetCatalogEntry & entry)
@@ -501,7 +501,8 @@ std::vector<size_t> filter_recent_asset_catalog(
 AssetCatalogModel discover_asset_catalog(
   const std::string & workspace_root,
   const std::string & repo_root,
-  const std::string & scene_catalog_root)
+  const std::string & scene_catalog_root,
+  const std::vector<AssetCatalogEntry> & library_imports)
 {
   AssetCatalogModel model;
   std::vector<RankedAsset> candidates;
@@ -601,6 +602,20 @@ AssetCatalogModel discover_asset_catalog(
       candidate.entry.discovered_files = {imported.source_path};
       candidates.push_back(candidate);
     }
+  }
+
+  // Imports from this PC's imported-asset library serve every cell. The caller
+  // reads its catalog from disk for each discovery, so imports survive a restart.
+  for (const auto & imported : library_imports) {
+    RankedAsset candidate;
+    candidate.rank = -100;
+    candidate.entry = imported;
+    candidate.entry.category = "Imported";
+    candidate.entry.source = "local_imported_asset";
+    if (candidate.entry.role_hints.empty()) candidate.entry.role_hints = {"object"};
+    candidate.entry.icon_key = "🧱";
+    candidate.entry.discovered_files = {candidate.entry.path};
+    candidates.push_back(candidate);
   }
 
   std::sort(

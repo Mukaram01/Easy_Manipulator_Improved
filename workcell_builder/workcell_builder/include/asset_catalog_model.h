@@ -60,5 +60,6 @@ struct AssetCatalogModel
 AssetCatalogModel discover_asset_catalog(
   const std::string & workspace_root,
   const std::string & repo_root,
-  const std::string & scene_catalog_root = std::string());
+  const std::string & scene_catalog_root = std::string(),
+  const std::vector<AssetCatalogEntry> & library_imports = {});
 bool export_asset_catalog_report(const AssetCatalogModel & model, const std::string & output_dir, std::string * json_path, std::string * html_path, std::string * error);
