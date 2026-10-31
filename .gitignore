@@ -65,6 +65,11 @@ scenes/*
 !scenes/ur3_suction_test/
 !scenes/ur10_2f_test/
 !scenes/ur5_airpick4_test/
+# Imported CAD in any scene, reference scenes included, stays on this PC. Save copies placed imports into the cell's
+# assets/imported/; tracked library meshes go to assets/library/. Files already tracked stay tracked. A reference
+# scene commits an imported part only by deliberate, licence-approved promotion (git add -f; see
+# docs/manuals/WORKCELL_EXTERNAL_ASSET_IMPORT_WIZARD.md, "Promoting an imported part into a reference scene").
+scenes/*/assets/imported/
 
 # User-imported CAD and its catalog (Asset Library > Import Mesh): this PC's local library, never committed.
 workcell_builder/workcell_builder/assets/imported/*

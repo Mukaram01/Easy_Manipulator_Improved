@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, re
+import argparse, json, re, subprocess
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +58,40 @@ def authored_input_fingerprint(scene: Path) -> str:
         update(path.read_bytes())
         update(b"\0")
     return f"{digest:016x}"
+
+
+def local_only_meshes(scene: Path) -> list[str]:
+    """Scene-relative meshes that a Git-tracked scene uses but Git ignores and does not track. Such a scene
+    works on this PC and is broken in any other checkout. Empty for untracked cells or outside a checkout."""
+    def git(*args):
+        try:
+            return subprocess.run(['git', '-C', str(scene), *args], capture_output=True, text=True, timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            return None
+    tracked = git('ls-files', '--error-unmatch', 'environment.yaml')
+    if tracked is None or tracked.returncode != 0:
+        return []
+    paths = set()
+    def walk(node):
+        if isinstance(node, dict):
+            mesh = node.get('mesh')
+            for value in (mesh.get('path') if isinstance(mesh, dict) else mesh, node.get('mesh_path'), node.get('collision_mesh')):
+                if (isinstance(value, str) and value and '://' not in value and not Path(value).is_absolute()
+                        and (scene / value).is_file()):
+                    paths.add(Path(value).as_posix())
+            for value in node.values(): walk(value)
+        elif isinstance(node, list):
+            for value in node: walk(value)
+    walk(_load_yaml(scene / 'environment.yaml'))
+    if not paths:
+        return []
+    listed = git('ls-files', '--', *sorted(paths))
+    ignored = git('check-ignore', '--', *sorted(paths))
+    if listed is None or ignored is None:
+        return []
+    return sorted((paths & set(ignored.stdout.splitlines())) - set(listed.stdout.splitlines()))
+
+
 def validate(scene:Path)->dict[str,Any]:
     checks=[]; blockers=[]; warnings=[]
     req=["package.xml","CMakeLists.txt","environment.yaml","scene_manifest.yaml","config/task_recipe.yaml","config/workcell_builder_task_intent.yaml"]
@@ -145,6 +179,10 @@ def validate(scene:Path)->dict[str,Any]:
     elif blockers: status=STATUS_BLOCKED
     elif warnings: status=STATUS_WARN
     else: status=STATUS_PASS
+    # Portability is advisory: the scene still generates and runs on this PC, so the verdict is unchanged.
+    warnings.extend(f"Not portable: this Git-tracked scene uses {path}, which Git ignores (imported CAD stays on this PC), "
+                    f"so other checkouts lack it. Commit it only after licence approval: git add -f scenes/{scene.name}/{path} "
+                    "(WORKCELL_EXTERNAL_ASSET_IMPORT_WIZARD.md, Promoting an imported part)." for path in local_only_meshes(scene))
 
     acceptance={
         "scene_name":scene.name,"scene_path":str(scene),"status":status,"checks":checks,

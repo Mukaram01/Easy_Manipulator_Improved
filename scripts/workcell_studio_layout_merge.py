@@ -10,8 +10,35 @@ import hashlib
 import shutil
 import struct
 import math
+import os
 from authored_yaml import write_preserving
 from asset_mounting import validate_physical, validate, RELATION_FIELDS
+
+REPOSITORY = Path(__file__).resolve().parents[1]
+IMPORTED_LIBRARY = REPOSITORY / 'workcell_builder/workcell_builder/assets/imported'
+TRACKED_LIBRARIES = (REPOSITORY / 'assets', REPOSITORY / 'workcell_builder/workcell_builder/assets')
+
+
+def _inside(path: Path, root: Path) -> bool:
+    # samefile, not string prefixes: the runtime view reaches this repository by another path.
+    for parent in path.parents:
+        try:
+            if os.path.samefile(parent, root):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _scene_copy_folder(source: Path) -> Path:
+    """Where Save copies a placed catalog mesh in the cell. Only the repository's tracked asset
+    library goes to assets/library/, which a reference scene can commit; imported CAD (the local
+    imported-asset library, or any file outside the repository) goes to assets/imported/catalog/,
+    which Git ignores in every scene."""
+    if not _inside(source, IMPORTED_LIBRARY) and any(_inside(source, root) for root in TRACKED_LIBRARIES):
+        return Path('assets/library')
+    return Path('assets/imported/catalog')
+
 
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
@@ -92,16 +119,17 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
             source = Path(str(mesh.get('path', '')))
             if not source.is_absolute():
                 continue
-            suffix = source.suffix.lower()
-            if not source.is_file() or suffix not in ('.stl', '.obj', '.dae'):
-                raise ValueError(f"asset {item['id']}: catalog mesh must be an existing STL, OBJ or DAE file")
+            if not source.is_file():
+                raise ValueError(f"asset {item['id']}: catalog mesh {source} does not exist")
+            if source.suffix.lower() != '.stl':
+                # Collision geometry is read from STL only (generate_moveit_collision_manifest).
+                raise ValueError(f"asset {item['id']}: only STL meshes can be placed in a cell, because collision "
+                                 f"geometry is read from STL; convert {source.name} to STL and import it again")
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
-            relative = Path('assets/imported/catalog') / (digest[:16] + suffix)
+            relative = _scene_copy_folder(source) / (digest[:16] + '.stl')
             destination = scene_dir / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            if not destination.exists() and suffix != '.stl':
-                shutil.copy2(source, destination)
-            elif not destination.exists():
+            if not destination.exists():
                 data = source.read_bytes()
                 count = struct.unpack_from('<I', data, 80)[0] if len(data) >= 84 else 0
                 if count and 84 + 50 * count == len(data):
