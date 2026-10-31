@@ -53,13 +53,17 @@ fi
 
 WS="${WS:-$WORKSPACE_ROOT}"
 SRC_DIR="$WORKSPACE_ROOT/src"
-BACKUP_DIR="$WORKSPACE_ROOT/trajopt_DISABLED_BACKUP"
+# Keep dependency source snapshots inside src; never recreate a root-level backup.
+BACKUP_DIR="$SRC_DIR/.runtime-sources/trajopt"
 ORIG_DIR="$BACKUP_DIR/original"
 LEGACY_ASSET_SYMLINKS_REMOVED=()
 
 if [ ! -d "$SRC_DIR" ]; then
   exit 0
 fi
+
+mkdir -p "$SRC_DIR/.runtime-sources"
+touch "$SRC_DIR/.runtime-sources/COLCON_IGNORE"
 
 path_exists() {
   local path="$1"

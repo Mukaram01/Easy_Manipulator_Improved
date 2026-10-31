@@ -14,6 +14,17 @@ Use it to keep development aligned with the evidence-driven Workcell Studio road
 
 Do not measure progress by PR count, test count, or the amount of scaffolding added. Measure progress by user-visible acceptance evidence for the canonical Workcell Studio workflow.
 
+## Workspace layout and generated output
+
+The normal workspace root contains exactly `src/`, `build/`, `install/` and `log/`, including hidden entries. Never create new milestone, experiment, trial, evidence, backup or nested-workspace directories at that root.
+
+- Put persistent evidence and logs under the existing `log/` hierarchy; disposable scratch belongs under `/tmp`.
+- Reuse canonical source/build/install trees. Dependency source snapshots belong under `src/.runtime-sources/` with `COLCON_IGNORE`; do not recreate `trajopt_DISABLED_BACKUP` at the root.
+- On LENLEG, source is consolidated on canonical main. The qualified G6 deployment is stored beneath `install/qualified-runtime` and `log/runtime/qualified-g6`. Its original absolute paths are provided only inside its private, unprivileged runtime view; they are not host-root aliases.
+- Use the installed Builder/HMI entrypoints or `workcell-builder`, `workcell-operator-hmi` and `workcell-qualified check` after sourcing `install/setup.bash`. See the workstation's `log/WORKSPACE_LAYOUT.md` for qualified CLI commands and entrypoint refresh after a package reinstall.
+- Preserve qualification records, raw evidence, native/source identities, user edits and the migration map. Never rewrite a record or loosen a gate to make relocated data appear qualified.
+- The recorded LENLEG G4/G6 bounded Gazebo qualification is not a request to repeat physics campaigns for housekeeping. Real hardware and continuous production remain locked. A different cell or changed qualification-bound source/library is not automatically qualified.
+
 ## Project identity
 
 This repository is the primary Workcell Studio / Easy Manipulation Deployment workspace.
