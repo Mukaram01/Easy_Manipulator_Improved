@@ -2090,8 +2090,9 @@ void MainWindow::open_new_scene_creation_flow()
     return;
   }
   if (environment_task_editor_ && !environment_task_editor_->confirm_scene_change(QString())) return;
+  // New cells go only to the repository's scenes folder (the wizard's default). An older remembered output folder is
+  // still searched by the Scene Library, so cells created there stay listed.
   NewCellWizard wizard(workspace_root, this);
-  wizard.set_output_root(QSettings().value("startup/last_scene_output_root").toString());
   if (wizard.exec() != QDialog::Accepted) {
     append_studio_log("New Cell Wizard cancelled.");
     return;
@@ -2102,7 +2103,6 @@ void MainWindow::open_new_scene_creation_flow()
   }
   append_studio_log(QString("New Cell Wizard: created '%1' (fake hardware default / real robot locked).")
     .arg(created.scene_name));
-  QSettings().setValue("startup/last_scene_output_root", QString::fromStdString(created.scene_dir.parent_path().string()));
   refresh_scene_browser_ui();
   const int index = workcell_builder::find_scene_by_identity(scene_browser_result_, created.scene_dir);
   if (index < 0 || (created.open_in_scene_builder && !open_scene_builder_for_scene_index(index, "New Cell Wizard"))) {

@@ -120,6 +120,8 @@ private:
   QString scene_name_error() const;
   QString scene_name_warning() const;
   boost::filesystem::path scenes_root_path() const;
+  // The repository's scenes folder: the only place New Cell creates cells (Scene Library, 3D Scene Builder).
+  boost::filesystem::path canonical_scenes_root() const;
 
   NewCellWizardResult result_;
   QString workspace_root_;
