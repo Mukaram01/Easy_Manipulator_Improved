@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QTableWidget>
 #include <QLabel>
 #include <QListWidget>
 #include <QMap>
@@ -182,6 +183,12 @@ TEST(NewCellWizard, ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview)
   EXPECT_TRUE(derived_task_scenario->text().contains("multi_bin_sorting_cell"));
   EXPECT_TRUE(wizard.review_text().contains("Sorting"));
   EXPECT_TRUE(wizard.review_text().contains("multi_bin_sorting_cell"));
+  // Sorting is configured: the Pick & Place cycle per object, the reviewed two-bin layout and its test objects.
+  EXPECT_TRUE(wizard.pick_place_configuration_available());
+  auto *test_objects = wizard.findChild<QTableWidget *>("testObjectsTable");
+  ASSERT_NE(test_objects, nullptr);
+  EXPECT_EQ(test_objects->rowCount(), 3);
+  EXPECT_TRUE(wizard.review_text().contains("READY"));
 
   EXPECT_EQ(wizard.findChildren<QComboBox *>("taskFamilyCombo").size(), 0);
   EXPECT_EQ(scenario_combo->currentData().toString(), wizard.selected_scenario_id());

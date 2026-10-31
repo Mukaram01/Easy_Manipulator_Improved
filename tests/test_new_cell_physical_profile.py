@@ -15,11 +15,11 @@ from task_intent_v2 import normalized_intent_hash
 from physical_destination import resolve_destination
 
 
-def wizard_input(scene):
-    profile = describe('ur5_2f_workbench')
+def wizard_input(scene, scenario='static_table_pick_place', objects=None):
+    profile = describe('ur5_2f_workbench', scenario)
     robot, tool = profile['robot'], profile['tool']
     studio = {
-        'scenario': {'id': 'static_table_pick_place'},
+        'scenario': {'id': scenario},
         'robot': {'model': profile['robot_model'], 'base': robot['base_frame'],
                   'tip': robot['tool_mount_link'], 'planning_group': robot['planning_group']},
         'tool': {'model': profile['tool_model'], 'tcp': tool['grasp_frame']},
@@ -27,7 +27,8 @@ def wizard_input(scene):
                    'tool_mount_pose': {'xyz': tool['mount_pose_xyz'], 'rpy': tool['mount_pose_rpy']}},
         'environment_objects': [dict(row, parent_object='world', parent_link='world', child_link=row['id'], joint_type='fixed', semantic_role=row['role']) for row in profile['rows']],
         'pick_zone': {'pick_object_source': profile['pick_zone'],
-                      'object_source': {'mode': 'manual_simulated', 'source_zone_ref': profile['pick_zone']}},
+                      'object_source': {'mode': 'manual_simulated', 'source_zone_ref': profile['pick_zone'],
+                                        **({'manual_observations': objects} if objects is not None else {})}},
         'place_zone': {'target': profile['place_asset']},
         'task_intent': {'grasp_strategy': 'auto'},
     }
@@ -42,6 +43,36 @@ def test_reviewed_profile_uses_physical_definitions_not_reference_task():
     assert any(row['id'] == profile['place_asset'] for row in ui['rows'])
     assert resolve_destination(source['environment'], profile['place_region'])['target_id'] == profile['place_asset']
     assert 'task' not in ui
+
+
+def test_sorting_cell_has_two_bins_camera_and_camera_visible_test_objects(tmp_path):
+    """New Cell > Sorting: the reviewed two-bin layout, the test objects the camera can classify, and a cycle task."""
+    from simulator_world import derive_world
+    layout = describe('ur5_2f_workbench', 'multi_bin_sorting_cell')['scenario']
+    objects = [{'object_id': row['object_id'], 'appearance': row['appearance'],
+                'pose': {'frame_id': 'world', 'xyz': [*row['xy'], 0.0], 'rpy': [0.0, 0.0, 0.0]}}
+               for row in layout['test_objects']]
+    scene, destination = tmp_path / 'staging' / 'sorting_cell', tmp_path / 'sorting_cell'
+    wizard_input(scene, 'multi_bin_sorting_cell', objects)
+    materialize(scene, 'ur5_2f_workbench', destination)
+    env = yaml.safe_load((scene / 'environment.yaml').read_text())
+    physical = env['environment']
+    assert resolve_destination(physical, 'default_drop_zone')['target_pose_xyz'] == [0.58, 0.22, 0.1]
+    bin_b = resolve_destination(physical, 'place_zone_b')
+    assert bin_b['target_id'] == 'target_bin_b' and bin_b['target_pose_xyz'] == [0.25, 0.26, 0.1]
+    assert env['camera']['pose'] == [0.44, -0.62, 0.17, 0.0, 0.40, 1.5707963267948966]
+    rows = env['workcell_studio']['pick_zone']['object_source']['manual_observations']
+    assert [(o['object_id'], o['class_id'], o['dimensions'], o['pose']['xyz'][2]) for o in rows] == [
+        ('cup_1', 'unclassified', [0.025] * 3, 0.013), ('cup_2', 'unclassified', [0.025] * 3, 0.013),
+        ('block_1', 'unclassified', [0.025] * 3, 0.013)]
+    assert (scene / rows[0]['visual']['mesh']).is_file() and 'visual' not in rows[2]
+    intent = json.loads((scene / 'config/workcell_builder_task_intent.yaml').read_text())
+    assert intent['place']['target'] == {'asset_ref': 'target_bin_default', 'region_ref': 'default_drop_zone'}
+    assert {r['id'] for r in yaml.safe_load((scene / 'layout/workcell_studio_layout.yaml').read_text())['items']} >= {
+        'target_bin_b', 'place_zone_b'}
+    _, report = derive_world(scene, physical_destinations='all')
+    assert {d['asset_ref'] for d in report['destinations']} == {'target_bin_default', 'target_bin_b'}
+    assert [o['object_id'] for o in report['objects']] == ['cup_1', 'cup_2', 'block_1']
 
 
 def test_existing_destination_is_never_overwritten(tmp_path):
@@ -112,8 +143,9 @@ def test_real_humble_creation_and_regeneration_preserve_physical_truth(tmp_path)
     profile, reviewed = load_profile('ur5_2f_workbench')
     authored = yaml.safe_load((destination / 'environment.yaml').read_text())
     # Identical to the reviewed environment except the destination regions measured down to the bin floor.
-    from instantiate_workcell_studio_profile import apply_destination_regions
+    from instantiate_workcell_studio_profile import apply_destination_regions, restore_authored_bin_roles
     expected = copy.deepcopy(reviewed['environment'])
+    restore_authored_bin_roles(expected)
     apply_destination_regions(expected, profile['destination_regions'])
     assert authored['environment'] == expected and expected != reviewed['environment']
     # The selected tool keeps its reviewed catalog capability (the qualified simulator binds its hold profile).

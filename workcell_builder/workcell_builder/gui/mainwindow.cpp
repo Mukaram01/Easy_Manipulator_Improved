@@ -3855,6 +3855,11 @@ void MainWindow::setup_studio_shell()
   };
 
   connect(studio_nav_, &QListWidget::currentRowChanged, this, [this](int idx){ if(idx>=0 && idx<studio_pages_->count()) studio_pages_->setCurrentIndex(idx);});
+  // The shell sidebar sets the page index directly: every way onto Plan / Simulate shows the saved cell's current
+  // gates (e.g. a validation run on the Validation page since the page was last shown).
+  connect(studio_pages_, &QStackedWidget::currentChanged, this, [this](int idx){
+    if (idx == static_cast<int>(StudioPage::PlanSimulatePage)) refresh_preview_launch_ui();
+  });
   connect(studio_pages_, &QStackedWidget::currentChanged, this, [this](int idx) {
     // A page handoff clears selection through the same owner as hierarchy,
     // Inspector and both renderers, including a retained Product View page.

@@ -222,6 +222,12 @@ The G4 runner's plan-only session is the Builder's and the HMI's sorting session
 
 **Which cells.** A class-routed task saved with the physics simulator backend and live EPD on the simulated RGB-D camera, with no saved capture (Task Editor: Perception *Live*, camera *Simulated RGB-D (Gazebo + EPD)*, routing table, Run *Qualified physics simulation*). The cell must be saved, generated and validated.
 
+**Creating one.** In **New Cell**, choose *Sorting* with UR5 and robotiq_85.
+- **Layout:** the reviewed two-bin layout (`catalog/workcell_studio_profiles/ur5_2f_workbench.yaml`, `scenarios.multi_bin_sorting_cell`). It contains the source area, Bin A (`default_drop_zone`), Bin B with its own region (`place_zone_b`), and the cell camera 0.29 m in front of the object row.
+- **Simulated Test Objects:** each row is the qualified 25 mm test block. Its *appearance* (`assets/test_object_visuals`) only changes what the camera renders; the class always comes from EPD.
+- **Task:** the wizard creates the Pick & Place cycle. The routing, live EPD and physics backend are set afterwards in the Task Editor, as above.
+- **Motion:** a new cell is never G4-qualified, so robot motion stays locked.
+
 **Starting it.**
 - **Workcell Builder:** Plan / Simulate → **Start Sorting · Plan Only (Physics)**; **Pause**, **Resume** and **Stop at Cycle End** work as for fake-hardware sessions.
 - **Operator HMI:** the **Sorting session** card → **Start Sorting · Plan Only**. The confirmation states the backend and that the robot never moves. Workcell Builder decides, owns and runs the session.

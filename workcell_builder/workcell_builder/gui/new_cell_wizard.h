@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QJsonObject>
 #include <QList>
 #include <QStringList>
 #include <boost/filesystem.hpp>
@@ -54,6 +55,9 @@ public:
   static QStringList load_qualified_physics_materials(const QString &catalog_path);
   QString selected_scenario_id() const;
   bool select_scenario_by_id(const QString &scenario_id);
+  // Scenarios the wizard configures into a runnable cell: Pick & Place, and Sorting (its reviewed two-bin layout).
+  bool configured_scenario() const;
+  bool sorting_scenario() const;
   QString review_text() const;
   bool pick_place_configuration_available() const;
   QString selected_object_source_id() const;
@@ -86,6 +90,8 @@ private:
   void apply_scenario_defaults();
   void refresh_scenario_ui();
   void refresh_object_source_ui();
+  void add_test_object_row(const QString &id, const QString &appearance, double x, double y, double yaw_deg);
+  QStringList test_object_blockers() const;
   QString scenario_catalog_path() const;
   QString qualified_physics_catalog_path() const;
   QString selected_scenario_category() const;
@@ -188,6 +194,9 @@ private:
   QDoubleSpinBox *minimum_confidence_{nullptr};
   QLabel *dynamic_object_notice_{nullptr};
   QGroupBox *manual_object_card_{nullptr};
+  QGroupBox *test_objects_card_{nullptr};
+  QTableWidget *test_objects_table_{nullptr};
+  QJsonObject scenario_layout_;
   QLineEdit *manual_object_id_{nullptr};
   QComboBox *manual_object_shape_{nullptr};
   QLineEdit *manual_object_class_{nullptr};

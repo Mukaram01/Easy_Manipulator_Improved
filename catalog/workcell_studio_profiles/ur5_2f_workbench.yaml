@@ -41,3 +41,37 @@ destination_regions:
   zones:
     default_drop_zone: {pose_xyz: [0.0, 0.0, -0.0235], dimensions: [0.2, 0.1, 0.187]}
     place_zone_default: {pose_xyz: [0.0, 0.0, -0.0235], dimensions: [0.2, 0.1, 0.187]}
+# New Cell > Sorting (multi_bin_sorting_cell): the reviewed two-bin layout and simulated test objects of the
+# perception-backed sorting cells (R2.5B two-bin world, G4/G6 plan-only and bounded sessions, 2026-10-29..31).
+# Bin A moves aside for Bin B, a copy of Bin A with its own placement region; the cell camera looks at the object
+# row from 0.29 m (EPD classified nothing from 0.45 m). Every test object is the qualified physics body, a 25 mm
+# qualified_test_polymer cube resting 0.5 mm above the support top (z 0); its appearance is only what the camera
+# renders. Classes always come from EPD, never from the authored object.
+scenarios:
+  multi_bin_sorting_cell:
+    poses:
+      target_bin_default: {xyz: [0.58, 0.22, 0.1], rpy: [0.0, 0.0, 0.0]}
+      realsense_overhead: {xyz: [0.44, -0.62, 0.17], rpy: [0.0, 0.40, 1.5707963267948966]}
+    copies:
+      target_bin_b:
+        of: target_bin_default
+        display_name: Destination Bin B
+        region: place_zone_b
+        region_display_name: Bin B placement
+        pose: {xyz: [0.25, 0.26, 0.1], rpy: [0.0, 0.0, 0.0]}
+    test_object: {material: qualified_test_polymer, dimensions: [0.025, 0.025, 0.025], rest_z: 0.013}
+    appearances:
+      cup:
+        label: Cup (coffee mug)
+        mesh: assets/test_object_visuals/mug_ace/model.obj
+        bbox: [0.0816, 0.0816, 0.1349]
+        centre_xy: [-0.0176, -0.0007]
+        zmin: 0.0
+        source: 'Google Scanned Objects: ACE_Coffee_Mug_Kristen_16_oz_cup (Gazebo Fuel)'
+        license: CC-BY-4.0
+      plain_block: {label: Plain test block}
+    # G4-E1 layout: EPD classifies a lone cup at x 0.32-0.40 in front of this camera; a handle facing away (yaw 90).
+    test_objects:
+      - {object_id: cup_1, appearance: cup, xy: [0.32, -0.33], yaw_deg: 90.0}
+      - {object_id: cup_2, appearance: cup, xy: [0.40, -0.33], yaw_deg: 90.0}
+      - {object_id: block_1, appearance: plain_block, xy: [0.50, -0.27], yaw_deg: 0.0}

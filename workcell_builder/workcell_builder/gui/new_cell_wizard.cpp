@@ -38,6 +38,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QtMath>
 #include <iomanip>
 #include "scene_select_paths.h"
 #include <regex>
@@ -150,6 +151,8 @@ QString NewCellWizard::qualified_physics_catalog_path() const {
 QString NewCellWizard::selected_scenario_id() const { return application_scenario_ ? application_scenario_->currentData(Qt::UserRole).toString() : QString(); }
 QString NewCellWizard::selected_scenario_category() const { return application_scenario_ ? application_scenario_->currentData(Qt::UserRole + 1).toString() : QString(); }
 QString NewCellWizard::selected_scenario_label() const { return application_scenario_ ? application_scenario_->currentText() : QString(); }
+bool NewCellWizard::sorting_scenario() const { return selected_scenario_id() == "multi_bin_sorting_cell"; }
+bool NewCellWizard::configured_scenario() const { return selected_scenario_id() == "static_table_pick_place" || sorting_scenario(); }
 bool NewCellWizard::select_scenario_by_id(const QString &scenario_id) {
   if (!application_scenario_) return false;
   const int index = application_scenario_->findData(scenario_id, Qt::UserRole);
@@ -253,11 +256,18 @@ void NewCellWizard::build_ui(){
  pick_source_=new QComboBox(); pick_zone_frame_=new QComboBox(); pick_zone_frame_->addItems({"camera frame","source object frame","world"}); pick_zone_frame_->setEditable(true);
  pick_config_card_=new QGroupBox("Pick Configuration",s5); auto *pick_form=new QFormLayout(pick_config_card_); pick_form->addRow("Object source",object_source_mode_); pick_form->addRow("Perception binding",perception_binding_); pick_form->addRow("Required class / filter",required_object_class_); pick_form->addRow("Minimum confidence",minimum_confidence_); pick_form->addRow("Pick zone source",pick_zone_source_); pick_form->addRow("Camera",pick_camera_); pick_form->addRow("Source zone / object",pick_source_); pick_form->addRow("Zone frame",pick_zone_frame_); pick_form->addRow(dynamic_object_notice_); pick_form->addRow(new QLabel("The source zone says where to search. Runtime perception owns the observed object's identity, pose, dimensions, shape, and confidence."));
  manual_object_card_=new QGroupBox("Manual / Simulated Object Fallback",s5); manual_object_card_->setObjectName("manualObjectCard"); auto *manual_form=new QFormLayout(manual_object_card_); manual_object_id_=new QLineEdit("manual_object_01"); manual_object_id_->setObjectName("manualObjectId"); manual_object_shape_=new QComboBox(); manual_object_shape_->addItems({"box","cylinder","sphere"}); manual_object_x_=mk_pose_spin(3," m","Manual object X dimension"); manual_object_y_=mk_pose_spin(3," m","Manual object Y dimension"); manual_object_z_=mk_pose_spin(3," m","Manual object Z dimension"); manual_object_x_->setObjectName("manualObjectDimensionX"); manual_object_y_->setObjectName("manualObjectDimensionY"); manual_object_z_->setObjectName("manualObjectDimensionZ"); manual_object_x_->setRange(0.0,1000.0); manual_object_y_->setRange(0.0,1000.0); manual_object_z_->setRange(0.0,1000.0); manual_object_x_->setValue(0.05); manual_object_y_->setValue(0.05); manual_object_z_->setValue(0.05); manual_object_frame_=new QLineEdit("world"); manual_object_frame_->setObjectName("manualObjectFrame"); manual_pose_x_=mk_pose_spin(3," m","Manual object pose X"); manual_pose_y_=mk_pose_spin(3," m","Manual object pose Y"); manual_pose_z_=mk_pose_spin(3," m","Manual object pose Z"); auto *manual_dims=new QWidget(); auto *manual_dims_layout=new QHBoxLayout(manual_dims); manual_dims_layout->setContentsMargins(0,0,0,0); manual_dims_layout->addWidget(manual_object_x_); manual_dims_layout->addWidget(manual_object_y_); manual_dims_layout->addWidget(manual_object_z_); auto *manual_pose=new QWidget(); auto *manual_pose_layout=new QHBoxLayout(manual_pose); manual_pose_layout->setContentsMargins(0,0,0,0); manual_pose_layout->addWidget(manual_pose_x_); manual_pose_layout->addWidget(manual_pose_y_); manual_pose_layout->addWidget(manual_pose_z_); manual_object_class_=new QLineEdit(); manual_object_class_->setObjectName("manualObjectClass"); manual_object_class_->setPlaceholderText("e.g. part (used by the task class filter)"); manual_object_material_=new QComboBox(); manual_object_material_->setObjectName("manualObjectMaterial"); manual_object_material_->addItem("Not physics-simulated", QString()); for(const QString &material: load_qualified_physics_materials(qualified_physics_catalog_path())) manual_object_material_->addItem(material, material); manual_object_material_->setToolTip("Qualified physics material. Without one the cell can be planned but not run in the physics simulation."); manual_form->addRow("Object ID / name",manual_object_id_); manual_form->addRow("Object class",manual_object_class_); manual_form->addRow("Primitive shape",manual_object_shape_); manual_form->addRow("Physics material",manual_object_material_); manual_form->addRow("Dimensions X / Y / Z",manual_dims); manual_form->addRow("Pose frame",manual_object_frame_); manual_form->addRow("Pose X / Y / Z",manual_pose);
+ // Sorting: the cell's simulated objects. Each is the qualified physics test block; its appearance is only what the
+ // cell camera renders, and the class always comes from perception (EPD).
+ test_objects_card_=new QGroupBox("Simulated Test Objects",s5); test_objects_card_->setObjectName("testObjectsCard"); auto *test_objects_layout=new QVBoxLayout(test_objects_card_);
+ test_objects_table_=new QTableWidget(0,5,test_objects_card_); test_objects_table_->setObjectName("testObjectsTable"); test_objects_table_->setHorizontalHeaderLabels({"Object ID","Appearance","X (m)","Y (m)","Yaw (deg)"}); test_objects_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch); test_objects_table_->setMinimumHeight(160);
+ auto *test_object_buttons=new QHBoxLayout(); auto *add_test_object=new QPushButton("Add Object"); auto *remove_test_object=new QPushButton("Remove Object"); test_object_buttons->addWidget(add_test_object); test_object_buttons->addWidget(remove_test_object); test_object_buttons->addStretch(1);
+ test_objects_layout->addWidget(new QLabel("Each object is the qualified 25 mm physics test block resting on the table. Its appearance is what the cell camera renders; the class always comes from perception (EPD)."));
+ test_objects_layout->addWidget(test_objects_table_); test_objects_layout->addLayout(test_object_buttons);
  place_target_=new QComboBox(); place_target_->setEditable(true); place_frame_link_=new QComboBox(); place_frame_link_->setEditable(true); placement_mode_=new QComboBox(); placement_mode_->addItems({"top_of_surface","inside_bin","fixture_alignment","conveyor_dropoff","manual_pose"}); placement_alignment_=new QComboBox(); placement_alignment_->addItems({"none","fixed_yaw","match_object_orientation","feature_based"});
  place_config_card_=new QGroupBox("Place Configuration",s5); auto *place_form=new QFormLayout(place_config_card_); place_form->addRow("Place target",place_target_); place_form->addRow("Place frame/link",place_frame_link_); place_form->addRow("Placement mode",placement_mode_); place_form->addRow("Alignment",placement_alignment_);
  grasp_strategy_=new QComboBox(); grasp_strategy_->addItems({"auto","top_down_2f","suction_top","side_grasp_placeholder"}); approach_axis_=new QComboBox(); approach_axis_->addItems({"z_down","z_up","x_forward","y_left"}); release_strategy_=new QComboBox(); release_strategy_->addItems({"open_gripper","vacuum_off","none/scaffold"}); approach_distance_=mk_pose_spin(3," m","Approach distance"); retreat_distance_=mk_pose_spin(3," m","Retreat distance"); approach_distance_->setValue(0.10); retreat_distance_->setValue(0.10); task_warning_=new QLabel(); task_warning_->setWordWrap(true); task_readiness_label_=new QLabel(); task_readiness_label_->setWordWrap(true);
  grasp_motion_card_=new QGroupBox("Grasp and Motion Intent",s5); auto *grasp_form=new QFormLayout(grasp_motion_card_); grasp_form->addRow("Grasp strategy",grasp_strategy_); grasp_form->addRow("Approach axis",approach_axis_); grasp_form->addRow("Release strategy",release_strategy_); grasp_form->addRow("Approach distance",approach_distance_); grasp_form->addRow("Retreat distance",retreat_distance_); grasp_form->addRow("Readiness",task_readiness_label_); grasp_form->addRow("Warnings / blockers",task_warning_);
- v5->addWidget(task_template_card); v5->addWidget(pick_config_card_); v5->addWidget(manual_object_card_); v5->addWidget(place_config_card_); v5->addWidget(grasp_motion_card_); mk_page(s5);
+ v5->addWidget(task_template_card); v5->addWidget(pick_config_card_); v5->addWidget(manual_object_card_); v5->addWidget(test_objects_card_); v5->addWidget(place_config_card_); v5->addWidget(grasp_motion_card_); mk_page(s5);
 
  auto *s6=new QWidget(this); auto *v6=new QVBoxLayout(s6); summary_=new QLabel(); summary_->setWordWrap(true); summary_->setFrameShape(QFrame::StyledPanel); v6->addWidget(summary_); mk_page(s6);
 
@@ -270,7 +280,10 @@ void NewCellWizard::build_ui(){
  connect(rec,&QPushButton::clicked,this,&NewCellWizard::apply_recommended_environment_layout);
  connect(clear,&QPushButton::clicked,this,[this]{recommended_profile_.clear(); env_objects_table_->setRowCount(0); refresh_environment_parent_options(); refresh_summary();});
  connect(env_edit_selected_button_,&QPushButton::clicked,this,&NewCellWizard::refresh_summary);
- connect(application_scenario_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){apply_scenario_defaults(); refresh_scenario_ui(); refresh_validation();});
+ connect(application_scenario_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){if(!recommended_profile_.isEmpty()) apply_recommended_environment_layout(); apply_scenario_defaults(); refresh_scenario_ui(); refresh_validation();});
+ connect(add_test_object,&QPushButton::clicked,this,[this]{ add_test_object_row(QString("object_%1").arg(test_objects_table_->rowCount()+1),"cup",0.36,-0.33,90.0); refresh_validation(); });
+ connect(remove_test_object,&QPushButton::clicked,this,[this]{ if(test_objects_table_->currentRow()>=0) test_objects_table_->removeRow(test_objects_table_->currentRow()); refresh_validation(); });
+ connect(test_objects_table_,&QTableWidget::itemChanged,this,[this](QTableWidgetItem*){ refresh_validation(); });
  connect(object_source_mode_,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int){refresh_object_source_ui(); refresh_validation();});
  for(auto *spin:{manual_object_x_,manual_object_y_,manual_object_z_}) connect(spin,QOverload<double>::of(&QDoubleSpinBox::valueChanged),this,[this](double){refresh_validation();});
  connect(manual_object_id_,&QLineEdit::textChanged,this,[this](const QString&){refresh_validation();}); connect(manual_object_frame_,&QLineEdit::textChanged,this,[this](const QString&){refresh_validation();});
@@ -404,7 +417,9 @@ void NewCellWizard::apply_recommended_environment_layout(){
  recommended_profile_.clear();
  recommended_profile_error_.clear();
  QProcess profile;
- profile.start("python3", {profile_helper_path(), "--profile", "ur5_2f_workbench", "--describe"});
+ QStringList describe{profile_helper_path(), "--profile", "ur5_2f_workbench", "--describe"};
+ if(sorting_scenario()) describe << "--scenario" << selected_scenario_id();
+ profile.start("python3", describe);
  if (profile.waitForFinished(30000) && profile.exitCode()==0) {
    const auto defaults=QJsonDocument::fromJson(profile.readAllStandardOutput()).object();
    if(defaults.value("robot_model").toString()==robot_->currentText() && defaults.value("tool_model").toString()==ee_->currentText()) {
@@ -431,6 +446,12 @@ void NewCellWizard::apply_recommended_environment_layout(){
      pick_source_->setCurrentText(defaults.value("pick_zone").toString());
      place_target_->setCurrentText(defaults.value("place_asset").toString());
      placement_mode_->setCurrentText("inside_bin");
+     scenario_layout_=defaults.value("scenario").toObject();
+     test_objects_table_->setRowCount(0);
+     for(const auto &value : scenario_layout_.value("test_objects").toArray()) {
+       const auto row=value.toObject(); const auto xy=row.value("xy").toArray();
+       add_test_object_row(row.value("object_id").toString(), row.value("appearance").toString(), xy.at(0).toDouble(), xy.at(1).toDouble(), row.value("yaw_deg").toDouble());
+     }
      refresh_summary(); return;
    }
  } else {
@@ -456,19 +477,26 @@ void NewCellWizard::apply_scenario_defaults(){
 }
 
 void NewCellWizard::refresh_scenario_ui(){
- const bool pick_place = selected_scenario_id()=="static_table_pick_place";
+ const bool configured = configured_scenario();
+ const bool manual = selected_object_source_id()=="manual_simulated";
  task_scenario_->setText(QString("%1 (%2)").arg(selected_scenario_label(), selected_scenario_id()));
- scenario_configuration_notice_->setText(pick_place ? QString() : QStringLiteral("Scenario configuration coming in next implementation phase"));
- pick_config_card_->setVisible(pick_place);
- place_config_card_->setVisible(pick_place);
- grasp_motion_card_->setVisible(pick_place);
- manual_object_card_->setVisible(pick_place && selected_object_source_id()=="manual_simulated");
+ scenario_configuration_notice_->setText(sorting_scenario()
+   ? QStringLiteral("Sorting: every object the cell camera classifies runs the Pick & Place cycle below, into the destination its "
+                    "class is routed to. The reviewed layout adds Destination Bin B with its own placement region. After "
+                    "creating the cell, route classes to bins in Scene Builder > Task > Where > Route by class.")
+   : configured ? QString() : QStringLiteral("Scenario configuration coming in next implementation phase"));
+ pick_config_card_->setVisible(configured);
+ place_config_card_->setVisible(configured);
+ grasp_motion_card_->setVisible(configured);
+ manual_object_card_->setVisible(configured && !sorting_scenario() && manual);
+ test_objects_card_->setVisible(sorting_scenario() && manual);
 }
 
 void NewCellWizard::refresh_object_source_ui(){
  const bool manual=selected_object_source_id()=="manual_simulated";
  const bool replay=selected_object_source_id()=="recorded_perception";
  manual_object_card_->setVisible(manual && selected_scenario_id()=="static_table_pick_place");
+ test_objects_card_->setVisible(manual && sorting_scenario());
  perception_binding_->setVisible(!manual); minimum_confidence_->setVisible(!manual); required_object_class_->setVisible(!manual);
  if(replay && perception_binding_->text()=="/easy_perception_deployment/epd_localize_output") perception_binding_->setText("generated/detected_objects_replay.yaml");
  else if(!replay && !manual && perception_binding_->text()=="generated/detected_objects_replay.yaml") perception_binding_->setText("/easy_perception_deployment/epd_localize_output");
@@ -488,9 +516,11 @@ QStringList NewCellWizard::readiness_warnings() const{
 QStringList NewCellWizard::readiness_blockers() const{
  QStringList blockers;
  if(!recommended_profile_error_.isEmpty()) blockers << recommended_profile_error_;
- if(selected_scenario_id()!="static_table_pick_place") return blockers;
+ if(!configured_scenario()) return blockers;
+ if(sorting_scenario() && recommended_profile_.isEmpty()) blockers<<"Sorting uses the reviewed UR5 + Robotiq 85 two-bin layout: select UR5 and robotiq_85, then Environment > Use Recommended Layout.";
  if(pick_source_->currentText().isEmpty()) blockers<<"Pick object source is required.";
- if(selected_object_source_id()=="manual_simulated" && !manual_object_geometry_valid()) blockers<<"Manual / simulated object requires an ID, frame, and positive primitive dimensions.";
+ if(selected_object_source_id()=="manual_simulated" && sorting_scenario()) blockers<<test_object_blockers();
+ else if(selected_object_source_id()=="manual_simulated" && !manual_object_geometry_valid()) blockers<<"Manual / simulated object requires an ID, frame, and positive primitive dimensions.";
  if(selected_object_source_id()!="manual_simulated" && perception_binding_->text().trimmed().isEmpty()) blockers<<"Perception binding is required for live or recorded object sources.";
  if(place_target_->currentText().isEmpty()) blockers<<"Place target is required for Pick & Place.";
  return blockers;
@@ -510,7 +540,7 @@ void NewCellWizard::refresh_validation(){
  const int row=steps_->currentRow(); const QString err=scene_name_error(); scene_error_->setText(err); scene_warning_->setText(scene_name_warning());
  const bool name_valid=err.isEmpty()&&scene_name_warning().isEmpty(); back_->setEnabled(row>0); next_->setEnabled(row<5&&(row!=0||name_valid));
  const auto blockers=readiness_blockers(); const auto warnings=readiness_warnings();
- QString readiness=selected_scenario_id()=="static_table_pick_place"?"READY":"AUTHORING ONLY"; if(!blockers.isEmpty()) readiness="BLOCKED"; else if(!warnings.isEmpty() && selected_scenario_id()=="static_table_pick_place") readiness="WARNINGS";
+ QString readiness=configured_scenario()?"READY":"AUTHORING ONLY"; if(!blockers.isEmpty()) readiness="BLOCKED"; else if(!warnings.isEmpty() && configured_scenario()) readiness="WARNINGS";
  task_readiness_label_->setText(readiness);
  task_warning_->setText((blockers+warnings).join("\n"));
  create_->setEnabled(name_valid && recommended_profile_error_.isEmpty()); create_open_->setEnabled(name_valid && recommended_profile_error_.isEmpty());
@@ -551,7 +581,8 @@ bool NewCellWizard::create_scene_scaffold(bool open_in_builder){
  auto pose_number=[](QDoubleSpinBox *spin){ return spin->value(); };
 
  const QString warning_text=task_warning_->text().trimmed();
- const bool pick_place_scenario=selected_scenario_id()=="static_table_pick_place";
+ const bool pick_place_scenario=configured_scenario();   // Pick & Place, or Sorting (the same cycle per object)
+ if(sorting_scenario() && !readiness_blockers().isEmpty()) return fail(readiness_blockers().join(" "));
  const bool place_target_missing=pick_place_scenario && place_target_->currentText().trimmed().isEmpty();
  const bool unknown_links=warning_text.contains("unknown");
  QString readiness=pick_place_scenario?"READY":"AUTHORING_ONLY";
@@ -667,6 +698,19 @@ out<<"workcell_studio:\n";
    out<<"      perception_binding: "<<yaml_scalar(perception_binding_->text().trimmed())<<"\n";
    out<<"      required_class: "<<yaml_scalar(required_object_class_->text().trimmed())<<"\n";
    out<<"      minimum_confidence: "<<minimum_confidence_->value()<<"\n";
+  } else if(sorting_scenario()) {
+   // Height, size and material are the qualified test block's (the profile helper completes each body).
+   out<<"      manual_observations:\n";
+   for(int r=0;r<test_objects_table_->rowCount();++r){
+    auto number=[this,r](int c){ return test_objects_table_->item(r,c)->text().trimmed().toDouble(); };
+    auto *look=qobject_cast<QComboBox*>(test_objects_table_->cellWidget(r,1));
+    out<<"        - object_id: "<<yaml_scalar(test_objects_table_->item(r,0)->text().trimmed())<<"\n";
+    out<<"          appearance: "<<yaml_scalar(look ? look->currentData().toString() : QString())<<"\n";
+    out<<"          pose:\n";
+    out<<"            frame_id: 'world'\n";
+    out<<"            xyz: ["<<number(2)<<", "<<number(3)<<", 0]\n";
+    out<<"            rpy: [0, 0, "<<qDegreesToRadians(number(4))<<"]\n";
+   }
   } else {
    out<<"      manual_observation:\n";
    out<<"        object_id: "<<yaml_scalar(manual_object_id_->text().trimmed())<<"\n";
@@ -742,4 +786,35 @@ out<<"workcell_studio:\n";
  fs::rename(scene_dir, destination, ec);
  if(ec) return fail(QString::fromStdString(ec.message()));
  result_.created=true; result_.open_in_scene_builder=open_in_builder; result_.scene_name=scene_name_->text().trimmed(); result_.scene_dir=destination; return true;
+}
+
+void NewCellWizard::add_test_object_row(const QString &id, const QString &appearance, double x, double y, double yaw_deg){
+ const QSignalBlocker block(test_objects_table_);
+ const int r=test_objects_table_->rowCount(); test_objects_table_->insertRow(r);
+ test_objects_table_->setItem(r,0,new QTableWidgetItem(id));
+ auto *look=new QComboBox(test_objects_table_);
+ const auto appearances=scenario_layout_.value("appearances").toObject();
+ for(auto it=appearances.begin(); it!=appearances.end(); ++it) look->addItem(it.value().toObject().value("label").toString(it.key()), it.key());
+ look->setCurrentIndex(std::max(0, look->findData(appearance)));
+ test_objects_table_->setCellWidget(r,1,look);
+ test_objects_table_->setItem(r,2,new QTableWidgetItem(QString::number(x,'f',3)));
+ test_objects_table_->setItem(r,3,new QTableWidgetItem(QString::number(y,'f',3)));
+ test_objects_table_->setItem(r,4,new QTableWidgetItem(QString::number(yaw_deg,'f',1)));
+}
+
+QStringList NewCellWizard::test_object_blockers() const{
+ QStringList blockers; QSet<QString> ids;
+ static const QRegularExpression id_re("^[A-Za-z][A-Za-z0-9_]*$");
+ if(test_objects_table_->rowCount()==0) blockers<<"Sorting needs at least one simulated test object (Add Object).";
+ for(int r=0;r<test_objects_table_->rowCount();++r){
+   auto text=[this,r](int c){ auto *item=test_objects_table_->item(r,c); return item ? item->text().trimmed() : QString(); };
+   const QString id=text(0);
+   if(!id_re.match(id).hasMatch() || ids.contains(id)) blockers<<QString("Test object %1: use a unique ID of letters, digits and underscores.").arg(r+1);
+   ids.insert(id);
+   for(int c=2;c<5;++c){
+     bool ok=false; text(c).toDouble(&ok);
+     if(!ok){ blockers<<QString("Test object %1: %2 must be a number.").arg(id.isEmpty()?QString::number(r+1):id, test_objects_table_->horizontalHeaderItem(c)->text()); break; }
+   }
+ }
+ return blockers;
 }
