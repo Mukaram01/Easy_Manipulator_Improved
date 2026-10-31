@@ -114,6 +114,7 @@ OperatorPreviewView parse_operator_preview(const QJsonObject & projection, bool 
   view.capabilities = strings(tool.value("capabilities"));
   view.camera = cell.value("camera").toObject().value("id").toString();
   view.perception_mode = cell.value("perception").toObject().value("mode").toString();
+  view.camera_source = cell.value("perception").toObject().value("camera_source").toString();
   view.perception_contract = cell.value("perception").toObject().value("contract").toString();
 
   const auto task = projection.value("task").toObject();

@@ -68,26 +68,42 @@ def _event(events: list, level: str, code: str, message: str, **detail: Any) -> 
                    "detail": {k: v for k, v in detail.items() if v is not None}})
 
 
-def _cell(scene: Path, environment: dict[str, Any]) -> dict[str, Any]:
+def _cell(scene: Path, environment: dict[str, Any], document: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Robot, tool, camera and perception as the saved cell declares them: the scene manifest first, then the
+    environment document (Create New Cell keeps its tool and camera at the top level of environment.yaml)."""
     from task_intent_v2 import TOOL_CAPABILITY_MAP
     manifest = _load_mapping(scene / "scene_manifest.yaml") or {}
+    document = document or {}
     robot = manifest.get("robot") or {}
     tool = manifest.get("end_effector") or {}
-    env_tool = environment.get("end_effector") or environment.get("tool") or {}
+    env_tool = (environment.get("end_effector") or environment.get("tool") or document.get("end_effector")
+                or document.get("tool") or {})
     tool_id = (env_tool.get("id") or env_tool.get("name")) if isinstance(env_tool, dict) else env_tool
     tool_id = tool_id or tool.get("model")
-    camera = manifest.get("camera") or {}
+    camera = manifest.get("camera") or (document.get("camera") if isinstance(document.get("camera"), dict) else {})
     perception = manifest.get("perception") or {}
     return {
         "robot": {"model": robot.get("model"), "planning_group": robot.get("planning_group")},
         "end_effector": {
-            "model": tool.get("model") or tool_id, "type": tool.get("type"),
+            "model": tool.get("model") or tool_id,
+            "type": tool.get("type") or (env_tool.get("type") if isinstance(env_tool, dict) else None),
             "capabilities": sorted(TOOL_CAPABILITY_MAP.get(str(tool_id), set())),
         },
         "camera": {"id": camera.get("camera_id"), "enabled": camera.get("enabled")},
         "perception": {"mode": perception.get("mode"),
                        "contract": perception.get("normalized_output_contract")},
     }
+
+
+def _session_observed(intent: dict[str, Any]) -> bool:
+    """A sorting session observes the cell itself each cycle (rendered frames classified by EPD)."""
+    from task_intent_v2 import freshness_source_type, session_rendered_perception
+    return (freshness_source_type(intent) == "rendered_perception_in_simulation"
+            or session_rendered_perception(intent))
+
+
+def selection_ref(intent: dict[str, Any]) -> str | None:
+    return ((intent.get("pick") or {}).get("selection") or {}).get("source_ref")
 
 
 def _zone_geometry(environment: dict[str, Any], zone_id: str | None) -> dict[str, Any] | None:
@@ -203,7 +219,7 @@ def project(scene: Path, draft: dict[str, Any] | None = None, *, evaluate_input:
 
     document = _load_mapping(scene / "environment.yaml") or {}
     environment = document.get("environment", document)
-    out["cell"] = _cell(scene, environment)
+    out["cell"] = _cell(scene, environment, document)
     raw = _load_mapping(intent_path) if intent_path.is_file() else None
     out["revision"]["intent_file_schema"] = (raw or {}).get("schema")
     summary = scene / "generated/generated_workcell_summary.json"
@@ -236,7 +252,15 @@ def project(scene: Path, draft: dict[str, Any] | None = None, *, evaluate_input:
     if not intent_path.is_file() and draft is None:
         _event(events, "warning", "TASK_INTENT_NOT_SAVED",
                "No saved task intent; showing the Builder's proposed default. Save the task in Builder.")
+    session_observed = bool(intent) and _session_observed(intent)
     if intent:
+        binding = intent.get("perception") or {}
+        if binding.get("mode"):
+            out["cell"]["perception"] = {
+                "mode": binding.get("mode"), "camera_source": binding.get("camera_source"),
+                "contract": out["cell"]["perception"].get("contract") or selection_ref(intent),
+                "producer": "simulator_render" if session_observed else None,
+                "epd_runtime_registered": (SCRIPT_DIR.parents[2] / "workcell_perception_runtime.json").is_file()}
         selection = intent.get("pick", {}).get("selection", {})
         filters = selection.get("object_filter", {}) or {}
         place = intent.get("place", {})
@@ -273,7 +297,11 @@ def project(scene: Path, draft: dict[str, Any] | None = None, *, evaluate_input:
                f"Task {out['task']['id']} ({out['task']['type']}) from the "
                f"{'unsaved draft' if draft is not None else 'saved task intent'}.",
                target_class=filters.get("class_id"), pick_zone=selection.get("zone_ref"))
-        if not filters.get("class_id"):
+        if rules and (intent.get("routing") or {}).get("mode") == "class":
+            _event(events, "info", "ROUTING_SELECTS",
+                   "The routing table decides which classes are picked and where each goes.",
+                   rules=len(rules))
+        elif not filters.get("class_id"):
             _event(events, "warning", "TARGET_CLASS_UNSET",
                    "No target class: any object in the pick zone matching the other filters is eligible.")
         if report.get("resolved_destination"):
@@ -302,13 +330,24 @@ def project(scene: Path, draft: dict[str, Any] | None = None, *, evaluate_input:
         except Exception as exc:  # noqa: BLE001 - corrupt evidence is reported, not hidden
             out["resolution"] = {"status": "BLOCKED", "primary_code": "RESOLUTION_REJECTED",
                                  "reason": str(exc), "diagnostics": []}
-        level = "info" if out["resolution"]["status"] in ("READY", "WARNING") else "warning"
+        if session_observed and out["resolution"]["status"] not in ("READY", "WARNING"):
+            # The sorting session resolves each selected object in its own cycle from that cycle's frame.
+            out["resolution"] = {"status": "PER_CYCLE", "primary_code": "SESSION_RESOLVED_PER_CYCLE",
+                                 "reason": "The sorting session plans each selected object in its own cycle, from that "
+                                           "cycle's rendered and EPD-classified frame.",
+                                 "diagnostics": out["resolution"]["diagnostics"]}
+        level = "info" if out["resolution"]["status"] in ("READY", "WARNING", "PER_CYCLE") else "warning"
         _event(events, level, "TASK_RESOLUTION_" + str(out["resolution"]["status"]),
                out["resolution"]["reason"] or "Task resolution status.",
                primary_code=out["resolution"]["primary_code"])
 
     planning_input = report.get("planning_input")
-    if planning_input:
+    if session_observed:
+        out["input"] = {"kind": "session", "path": None, "blocker": None, "producer": "simulator_render"}
+        _event(events, "info", "INPUT_SESSION_RENDERED",
+               "Task input: each sorting cycle renders the cell with its camera and classifies the frame with EPD "
+               "(simulator-rendered, synthetic). There is no saved input to replay.")
+    elif planning_input:
         kind = "replay" if planning_input.get("replay") else "live"
         out["input"] = {"kind": kind, "path": planning_input.get("path"), "blocker": None}
         _event(events, "info", "INPUT_REPLAY_BOUND" if kind == "replay" else "INPUT_LIVE_BOUND",

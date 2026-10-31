@@ -73,6 +73,7 @@ struct OperatorPreviewView
   QString tool_type;
   QStringList capabilities;
   QString camera;
+  QString camera_source;  // e.g. simulated_rgbd (the task's perception binding)
   QString perception_mode;
   QString perception_contract;
 
@@ -105,7 +106,7 @@ struct OperatorPreviewView
   std::optional<double> offline_validation_modified;
   std::optional<bool> offline_validation_current;
 
-  QString input_kind;  // replay | live | unavailable
+  QString input_kind;  // replay | live | session (observed per cycle by its sorting session) | unavailable
   QString input_path;
   QString input_blocker;
 

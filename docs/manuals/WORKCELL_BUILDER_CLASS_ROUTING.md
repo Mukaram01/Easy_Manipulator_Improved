@@ -216,3 +216,69 @@ The qualified Stage-A world covers one object, one destination and one cycle. Th
 - **Fake hardware only:** planning and kinematic execution on mock controllers. There is no contact, retention or settling evidence.
 - **Continuous mode:** its only frame source is the session's own simulator-rendered EPD frame (R2.5A). There is no live camera source, so a live continuous session is still refused (`CONTINUOUS_SOURCE_UNAVAILABLE`).
 - **Conveyors:** no conveyor tracking or production batching.
+
+## Physics sorting, plan only, from Workcell Builder and the Operator HMI (G6)
+The G4 runner's plan-only session is the Builder's and the HMI's sorting session for a physics cell. Nothing in this path can move the robot.
+
+**Which cells.** A class-routed task saved with the physics simulator backend and live EPD on the simulated RGB-D camera, with no saved capture (Task Editor: Perception *Live*, camera *Simulated RGB-D (Gazebo + EPD)*, routing table, Run *Qualified physics simulation*). The cell must be saved, generated and validated.
+
+**Starting it.**
+- **Workcell Builder:** Plan / Simulate → **Start Sorting · Plan Only (Physics)**; **Pause**, **Resume** and **Stop at Cycle End** work as for fake-hardware sessions.
+- **Operator HMI:** the **Sorting session** card → **Start Sorting · Plan Only**. The confirmation states the backend and that the robot never moves. Workcell Builder decides, owns and runs the session.
+
+**What runs.** `run_g4_sorting.py --scene-package <cell> --output <log/studio_sorting/<id>> --domain <220..232> --plan-every-target --stream-status --control-file <id>.control.json`, in the workspace's qualified runtime environment.
+- The command never carries `--authorise-g4-trial`, `--prior-evidence` or `--max-cycles`, so the session record is `G4_PLAN_ONLY`.
+- Every cycle: measure the world in Gazebo, render it with the cell camera, classify the frame with EPD, select the next routed object, plan it with MoveIt (padded, plan-only resolve). The authorisation is then refused (`G4_SCOPE_PLAN_ONLY`), and the next routed object is planned.
+- The session ends `BATCH_COMPLETE` when every routed object has a plan, or `STOPPED` at a cycle boundary after Stop. **Stop Simulation** cancels it (supervised cleanup).
+
+**What is shown, and from where.**
+- **Source:** `scripts/g4_session_view.py` reads the session's own evidence files and nothing else:
+  - the ledger (`sorting_session.json`);
+  - each cycle's rendered frame, EPD classes bound to the measured objects, and the plan-only resolve summary;
+  - the runner report at the end.
+- **Plan / Simulate monitor:** every object with its EPD class, confidence and decision (planned → region, grasp, cycle, *not executed*), and the evidence of motion:
+  - granted cycle authorisations;
+  - executed cycles;
+  - controller goals in the launch log.
+- **HMI:** the *Detected objects* table and the top view show the session's objects (Gazebo poses, EPD classes, plans). The *Sorting session* card lists each cycle's EPD result, plan and refused authorisation.
+- **Counts:** the ledger's own. A plan is never counted as a sorted object: *completed* stays 0.
+- **Viewers:** **Open RViz** and **Open Gazebo** attach to the session's receipt-bound simulator and MoveIt (read-only).
+
+**Capabilities (Plan / Simulate "What this cell can do" and the HMI Production card).** Each row is the Builder's own gate for the selected cell:
+
+| Capability | Status for a physics sorting cell |
+|---|---|
+| Physics simulation, one pick-and-place cycle | BLOCKED (`TASK_ROUTING_PHYSICS_UNQUALIFIED`); QUALIFIED only for a Stage-A scope cell |
+| Physics sorting, plan only | EXPERIMENTAL (available) |
+| Physics sorting with robot motion, bounded (Gazebo) | QUALIFIED only for a cell byte-identical to a G4-qualified cell (below); otherwise LOCKED with the reason |
+| Continuous production sorting | LOCKED: G4 qualifies bounded sessions only |
+| Sorting on MoveIt fake hardware | UNAVAILABLE (the task selects the physics simulator) |
+| Real robot | UNAVAILABLE |
+
+**Task Editor.** A session-observed task is *Authoring valid*. Plan Saved Task still needs a recorded input, and the editor says so instead of marking the task blocked.
+
+## Bounded Gazebo sorting with robot motion (G6 admission)
+A G4-qualified cell may run a **bounded** sorting session in which the simulated robot really picks, transports and places in Gazebo. It reuses the unchanged G4 runner, its trial authority, executor, ledger, EPD, MoveIt, controllers and stop/cancel mechanisms. Continuous production and the real robot stay unavailable.
+
+**Admission (all must hold, or motion is refused):**
+- **A recorded qualification:** the workspace holds a G4 readiness record, `log/qualification/g4/qualification/g4_readiness_runs.json`, written by the campaign's `write_readiness_record.py` with status `QUALIFIED_READY`.
+- **The same cell, byte for byte:** the selected cell's seven qualified files (`physics_scope_qualification.QUALIFIED_CELL_FILES`) are byte-identical to the qualified cell's. Any edit or regeneration of them locks motion.
+- **A fresh verdict before motion:** at Start, the launched shell first recomputes `g4_qualification.py readiness` for this exact cell from the raw evidence (identities, native build, runtime, perception, completeness of every trial). This takes several minutes. Only exit 0 (`QUALIFIED_READY`) `exec`s the runner; otherwise nothing starts, and the verdict (`<id>.admission.json`) is shown.
+- **Per cycle:** the runner's own guards still decide every cycle: fresh rendered frame, EPD class, routing, certified plan, authorisation, contact guard, verification and reconciliation. A stale frame, an unsafe plan or missing evidence refuses or faults the cycle.
+
+**Starting it.**
+- **Workcell Builder:** Plan / Simulate → **Start Sorting · Gazebo Motion (2 cycles)** (confirmation required).
+- **Operator HMI:** **Sorting session** → **Start Sorting · Gazebo Motion (2 cycles)** (confirmation required; the request carries `mode: bounded_motion, cycles: 2`, and the Builder re-checks admission).
+- **The command:** `g4_qualification.py readiness … && exec run_g4_sorting.py --scene-package <cell> --output <log/studio_sorting/<id>> --domain <220..232> --stream-status --authorise-g4-trial --prior-evidence "$WORKCELL_STAGE_A_PRIOR_EVIDENCE" --max-cycles 2`, with `WORKCELL_PLANNING_TRACE_DIR=<id>.trace` (the certified trajectories).
+
+**Stopping it.**
+- **Stop / Stop at Cycle End:** SIGUSR1 to the runner, the G4-S mechanism. The running cycle finishes under every guard and is verified; no further cycle starts. It is not an emergency stop. Before the runner has started (admission still running), Stop cancels the start instead.
+- **Cancel Simulation / Stop Simulation:** SIGTERM, the G4-C mechanism. It is forwarded to the executor, which cancels the motion under supervision. The cycle is never counted.
+- There is no pause in a bounded session.
+
+**What is shown.**
+- **Source:** the same `g4_session_view.py` evidence view as plan-only sessions.
+- **Objects:** an object reads **COMPLETED → destination · verified** only when the ledger counted it, after the runner verified and reconciled its cycle.
+- **Cycles:** per cycle, the HMI shows the EPD result, the plan, the granted authorisation, *executed* and the outcome.
+- **Motion evidence:** granted authorisations, executed cycles and controller goals.
+- **Where outputs go:** `cad_ws/log/studio_sorting/`, outside the qualification evidence roots. They are operating runs, not qualification trials.

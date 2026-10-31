@@ -209,6 +209,61 @@ QString build_sorting_session_command(const WorkcellStudioSceneInfo & scene_info
     .arg(domain_id).arg(quote(output_dir), quote(control_file), quote(QString::fromStdString(scene_info.scene_dir.string())));
 }
 
+QString build_physics_plan_session_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id,
+  const QString & control_file)
+{
+  // The runner's own ranges: 1..232, never the render domains 170..219.
+  if (scene_info.scene_name.empty() || scene_info.scene_dir.empty() || output_dir.isEmpty() || control_file.isEmpty() ||
+      domain_id < 1 || domain_id > 232 || (domain_id >= 170 && domain_id <= 219) ||
+      control_file.startsWith(output_dir + "/")) return {};
+  const auto quote = [](QString value) { return "'" + value.replace("'", "'\\''") + "'"; };
+  const auto scripts = boost::filesystem::path(
+    preview_group_supervisor_path(scene_info, workspace_root).toStdString()).parent_path();
+  // The qualified runtime's environment, as for the physics cycle. No trial authority: no --authorise-g4-trial and no
+  // --prior-evidence, so the session record is G4_PLAN_ONLY and every cycle authorisation is refused.
+  return QString("eval \"$(python3 %1 env)\" && export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 && "
+    "exec python3 %2 --scene-package %3 --output %4 --domain %5 --plan-every-target --stream-status --control-file %6")
+    .arg(quote(QString::fromStdString((scripts / "qualified_physics_runtime.py").string())),
+      quote(QString::fromStdString((scripts / "run_g4_sorting.py").string())),
+      quote(QString::fromStdString(scene_info.scene_dir.string())), quote(output_dir))
+    .arg(domain_id).arg(quote(control_file));
+}
+
+QString build_physics_trial_session_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id, int max_cycles,
+  const QStringList & qualification_runs, const QString & admission_file)
+{
+  if (scene_info.scene_name.empty() || scene_info.scene_dir.empty() || output_dir.isEmpty() || admission_file.isEmpty() ||
+      domain_id < 1 || domain_id > 232 || (domain_id >= 170 && domain_id <= 219) || max_cycles < 1 || max_cycles > 2 ||
+      admission_file.startsWith(output_dir + "/") || qualification_runs.size() % 2) return {};
+  int sessions = 0, stops = 0, cancels = 0;
+  for (int i = 0; i < qualification_runs.size(); i += 2) {
+    const auto & flag = qualification_runs.at(i);
+    if (qualification_runs.at(i + 1).isEmpty()) return {};
+    if (flag == "--session") ++sessions;
+    else if (flag == "--stop") ++stops;
+    else if (flag == "--cancel") ++cancels;
+    else if (flag != "--other") return {};
+  }
+  if (sessions != 3 || stops != 1 || cancels != 1) return {};       // the G4 contract's five counted sessions
+  const auto quote = [](QString value) { return "'" + value.replace("'", "'\\''") + "'"; };
+  const auto scripts = boost::filesystem::path(
+    preview_group_supervisor_path(scene_info, workspace_root).toStdString()).parent_path();
+  const auto script = [&](const char * name) { return quote(QString::fromStdString((scripts / name).string())); };
+  QStringList runs;
+  for (const auto & item : qualification_runs) runs << (item.startsWith("--") ? item : quote(item));
+  const QString scene = quote(QString::fromStdString(scene_info.scene_dir.string()));
+  return QString("eval \"$(python3 %1 env)\" && test -n \"$WORKCELL_STAGE_A_PRIOR_EVIDENCE\" && "
+    "export ROS_LOCALHOST_ONLY=1 RCUTILS_COLORIZED_OUTPUT=0 WORKCELL_PLANNING_TRACE_DIR=%2 && "
+    "python3 %3 readiness --cell %4 %5 > %6 && "
+    "exec python3 %7 --scene-package %4 --output %8 --domain %9 --stream-status --authorise-g4-trial "
+    "--prior-evidence \"$WORKCELL_STAGE_A_PRIOR_EVIDENCE\" --max-cycles %10")
+    .arg(script("qualified_physics_runtime.py"), quote(output_dir + ".trace"), script("g4_qualification.py"), scene,
+         runs.join(' '), quote(admission_file), script("run_g4_sorting.py"), quote(output_dir))
+    .arg(domain_id).arg(max_cycles);
+}
+
 QString build_physics_cycle_command(const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root, const QString & output_dir)
 {

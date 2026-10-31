@@ -109,3 +109,20 @@ TEST(OperatorSimulationLink, SortingIsStartedLikeASimulationAndControlledOnlyInI
   start["intent_sha256"] = "sha-saved";
   EXPECT_FALSE(check_operator_command(start, f.state).accepted);                        // one session at a time
 }
+
+TEST(OperatorSimulationLink, RobotMotionIsAnExplicitBoundedSortingMode)
+{
+  Fixture f;
+  auto start = f.run(); start["action"] = "start_sorting";
+  EXPECT_TRUE(check_operator_command(start, f.state).accepted);                      // plan only is the default mode
+  start["mode"] = "plan_only";
+  EXPECT_TRUE(check_operator_command(start, f.state).accepted);
+  start["mode"] = "bounded_motion";
+  EXPECT_FALSE(check_operator_command(start, f.state).accepted);                     // the bound must be explicit
+  for (const int cycles : {1, 2}) { start["cycles"] = cycles; EXPECT_TRUE(check_operator_command(start, f.state).accepted); }
+  for (const int cycles : {0, 3, 100}) { start["cycles"] = cycles; EXPECT_FALSE(check_operator_command(start, f.state).accepted); }
+  start["mode"] = "continuous";
+  EXPECT_FALSE(check_operator_command(start, f.state).accepted);
+  auto simulate = f.run(); simulate["mode"] = "bounded_motion"; simulate["cycles"] = 1;
+  EXPECT_FALSE(check_operator_command(simulate, f.state).accepted);                  // motion mode belongs to sorting only
+}

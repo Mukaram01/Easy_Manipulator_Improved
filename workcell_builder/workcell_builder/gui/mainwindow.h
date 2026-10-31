@@ -127,10 +127,29 @@ private slots:
   void run_physics_cycle();
   void start_physics_cycle(bool operator_confirmed);
   // R2.4 sorting session (fake hardware): start, and operator pause/resume/stop at cycle boundaries.
-  void run_sorting_session(bool operator_requested = false);
+  void run_sorting_session(bool operator_requested = false, int motion_cycles = 0);
   bool request_sorting_command(const QString & command, QString * error = nullptr);
   QString sorting_blocker() const;
   QString sorting_status_html() const;
+  // G6: a class-routed task bound to live EPD on the simulated RGB-D camera in the physics simulator sorts as a G4
+  // plan-only session (run_g4_sorting.py without trial authority): Gazebo, rendered EPD frames, routing and MoveIt
+  // plans per object; every cycle authorisation is refused (G4_SCOPE_PLAN_ONLY), so the robot never moves.
+  bool selected_task_is_physics_sorting() const;
+  // With motion_cycles 1..2 the same runner session is the bounded G4 trial (the simulated robot moves), admitted only
+  // for a cell whose G4 qualification readiness is QUALIFIED_READY: recomputed from the raw evidence in the launched
+  // shell before the runner starts (build_physics_trial_session_command). Continuous production stays refused.
+  void start_physics_plan_session(bool operator_requested, int motion_cycles = 0);
+  // The workspace's recorded G4 readiness (log/qualification/g4/qualification/g4_readiness_runs.json): its run
+  // arguments, and whether it names the selected cell byte for byte. Display and gating input only; the binding
+  // verdict is the readiness recomputed at Start.
+  QJsonObject g4_readiness_record() const;
+  QStringList g4_qualification_runs() const;
+  QString motion_blocker() const;
+  void refresh_g4_view();
+  QJsonObject g4_cycle_result() const;
+  // What the selected cell can do from Builder/HMI, each QUALIFIED / EXPERIMENTAL / BLOCKED / UNAVAILABLE / LOCKED
+  // with its reason (shown on Plan / Simulate and in the Operator HMI).
+  QJsonArray capability_matrix() const;
   void handle_operator_command(const QJsonObject & command);
   void publish_operator_simulation_status();
   QJsonObject operator_simulation_readiness() const;
@@ -912,6 +931,13 @@ private:
   QJsonObject sorting_status_;            // the runner's latest {"event": "sorting"} status, never inferred
   QString sorting_control_path_;
   QJsonArray sorting_commands_;
+  bool g4_plan_mode_{ false };            // the session is a G4 runner session (plan only, or a bounded trial)
+  bool g4_trial_mode_{ false };           // that session is the bounded G4 trial: the simulated robot moves
+  QPushButton * run_motion_sorting_button_{ nullptr };
+  QJsonObject g4_view_;                   // g4_session_view.py of that session: its evidence files only
+  QProcess * g4_view_process_{ nullptr };
+  bool g4_view_again_{ false };           // another read was requested while one ran
+  QTextBrowser * capability_label_{ nullptr };   // capability_matrix() on Plan / Simulate
   QPushButton * run_sorting_button_{ nullptr };
   QPushButton * pause_sorting_button_{ nullptr };
   QPushButton * resume_sorting_button_{ nullptr };
@@ -953,6 +979,8 @@ private:
     qint64 runner_pid{ -1 };
     int exit_code{ 0 };
     bool crashed{ false };
+    bool physics_plan{ false };        // a G4 physics sorting session, plan only (the robot never moves)
+    bool physics_trial{ false };       // a bounded G4 trial in Gazebo: the simulated robot moves (at most 2 cycles)
     workcell_builder::MonitorTimeline timeline;
   };
   RuntimeMonitorSession monitor_;
@@ -961,7 +989,9 @@ private:
   void refresh_monitor();
   QJsonObject monitor_snapshot() const;
   QJsonObject last_operator_command_;   // the HMI's last simulation request and the Builder's decision
-  struct SavedTaskSummary { QString backend, pick, destination, placement; QStringList exclude, routes; };
+  QString operator_preview_published_key_;   // operator_preview_key() of the request the HMI was last sent
+  QString operator_preview_key(const workcell_builder::OperatorPreviewRequest & request) const;
+  struct SavedTaskSummary { QString backend, pick, destination, placement, perception, camera_source; QStringList exclude, routes; };
   SavedTaskSummary saved_task_summary(const QString & scene_dir) const;
   int plan_cycle_domain_{ -1 };       // ROS domain of the running Plan Saved Task session, else -1
   bool plan_cycle_rviz_{ false };     // that session already launched its own RViz

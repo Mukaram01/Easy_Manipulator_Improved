@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -128,3 +129,43 @@ def test_cli_accepts_a_draft_on_stdin():
         [sys.executable, str(SCRIPTS / "operator_preview_projection.py"), "--scene", str(SCENE), "--draft-stdin"],
         input="{not json", capture_output=True, text=True)
     assert bad.returncode == 2 and "DRAFT_INVALID" in bad.stdout
+
+
+def _session_sorting_draft():
+    """A class-routed task observed by its own physics sorting session (G4): simulated RGB-D camera, live EPD."""
+    draft = _saved_intent()
+    draft["perception"] = {"mode": "live_epd", "replay_path": "", "camera_source": "simulated_rgbd"}
+    draft["safety"] = dict(draft.get("safety") or {}, execution_backend="simulator", require_fake_hardware=False,
+                           real_hardware_enabled=False)
+    draft["pick"]["selection"].update(source_type="perception", source_ref="detected_objects/v1")
+    draft["pick"]["selection"]["object_filter"]["class_id"] = ""
+    draft["routing"] = {"mode": "class", "unrouted_policy": "leave_in_place", "max_attempts_per_object": 1,
+                        "rules": [{"id": "cups", "when": {"attribute": "class", "equals": "cup"},
+                                   "destination": draft["place"]["target"]["region_ref"], "enabled": True}]}
+    return draft
+
+
+def test_a_session_observed_task_has_per_cycle_input_and_resolution_not_a_missing_replay():
+    view = project(SCENE, _session_sorting_draft())
+    assert view["input"] == {"kind": "session", "path": None, "blocker": None, "producer": "simulator_render"}
+    assert view["resolution"]["status"] == "PER_CYCLE"
+    assert view["cell"]["perception"]["mode"] == "live_epd"
+    assert view["cell"]["perception"]["camera_source"] == "simulated_rgbd"
+    codes = {event["code"] for event in view["events"]}
+    assert {"INPUT_SESSION_RENDERED", "ROUTING_SELECTS"} <= codes
+    assert not codes & {"PERCEPTION_INPUT_UNAVAILABLE", "TARGET_CLASS_UNSET"}
+    assert view["execution"]["motion_authorised"] is False
+
+
+def test_tool_and_camera_fall_back_to_the_environment_document(scene_copy):
+    manifest = yaml.safe_load((scene_copy / "scene_manifest.yaml").read_text())
+    manifest.pop("camera", None)
+    manifest["end_effector"] = {"type": "finger"}
+    (scene_copy / "scene_manifest.yaml").write_text(yaml.safe_dump(manifest))
+    document = yaml.safe_load((scene_copy / "environment.yaml").read_text())
+    document["camera"] = {"enabled": True, "camera_id": "cell_camera"}
+    document["end_effector"] = {"id": "robotiq_85_gripper", "type": "finger"}
+    (scene_copy / "environment.yaml").write_text(yaml.safe_dump(document))
+    cell = project(scene_copy)["cell"]
+    assert cell["camera"] == {"id": "cell_camera", "enabled": True}
+    assert cell["end_effector"]["model"] == "robotiq_85_gripper" and cell["end_effector"]["type"] == "finger"

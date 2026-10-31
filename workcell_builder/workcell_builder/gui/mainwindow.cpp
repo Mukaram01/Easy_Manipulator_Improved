@@ -45,6 +45,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QCryptographicHash>
+#include <signal.h>
 #include <QSaveFile>
 #include <QFileInfo>
 #include <QFrame>
@@ -1420,6 +1421,15 @@ static SceneTaskIntentSummary load_scene_task_intent_summary(const fs::path & sc
     s.retreat_axis = scalar_path(root, {"pick", "grasp", "lift", "axis"});
     s.retreat_distance = scalar_path(root, {"pick", "grasp", "lift", "distance_m"});
     s.orientation_mode = scalar_path(root, {"pick", "grasp", "orientation", "mode"});
+    // v2 keeps the perception binding in the task; the cell's camera and tool are the saved environment's.
+    const QString mode = scalar_path(root, {"perception", "mode"}), source = scalar_path(root, {"perception", "camera_source"});
+    if (mode != "unknown") s.perception_mode = source == "unknown" ? mode : mode + " · " + source;
+    YAML::Node environment;
+    if (read_yaml(scene_dir / "environment.yaml", &environment)) {
+      s.camera_id = scalar_path(environment, {"camera", "camera_id"});
+      s.tool_id = scalar_path(environment, {"end_effector", "id"});
+      if (s.tool_id == "unknown") s.tool_id = scalar_path(environment, {"tool", "id"});
+    }
     s.status = "AUTHORED_V2";
     return s;
   }
@@ -3675,6 +3685,11 @@ void MainWindow::setup_studio_shell()
   preview_scene_label_ = new QLabel("<b>Selected Scene</b><br/>scene name: none"); preview_scene_label_->setObjectName("studioCard"); preview_scene_label_->setWordWrap(true); pl->addWidget(preview_scene_label_);
   preview_status_label_ = new QLabel("<b>Readiness Gate</b><br/>BLOCKED_MISSING_SCENE"); preview_status_label_->setObjectName("studioCard"); preview_status_label_->setWordWrap(true); pl->addWidget(preview_status_label_);
   preview_safety_label_ = new QLabel("<b>Status</b><br/>Mode: Plan / Simulate | Hardware: fake by default | Simulation motion: allowed with fake hardware | Real robot motion: locked | Real hardware execution requires explicit guarded setup and is not launched from this mode."); preview_safety_label_->setObjectName("studioCard"); preview_safety_label_->setWordWrap(true); pl->addWidget(preview_safety_label_);
+  {
+    auto * capabilities = new QTextBrowser(preview); capabilities->setObjectName("capabilityMatrix"); capabilities->setOpenLinks(false);
+    capabilities->setFixedHeight(150); capabilities->setProperty("studioFixedHeight", true);
+    capability_label_ = capabilities; pl->addWidget(capabilities);
+  }
   cycle_status_label_ = new QLabel("Input: Replay / Commissioning Fixture<br/>Ready to run the complete pick/place cycle.", preview);
   cycle_status_label_->setObjectName("cycleStatus"); cycle_status_label_->setWordWrap(true); pl->addWidget(cycle_status_label_);
   // One scrollable read-only view: word-wrapped labels on this stacked page do not grow with their text.
@@ -3700,14 +3715,28 @@ void MainWindow::setup_studio_shell()
     // R2.4: continuous class-routed sorting of the saved cell on MoveIt fake hardware, one object per cycle.
     // Added directly to the page: polishConsolePage groups consecutive buttons into one action bar.
     run_sorting_button_ = new QPushButton("Start Sorting (Fake Hardware)", preview); run_sorting_button_->setObjectName("runSortingSession");
+    // G6: bounded G4 sorting with robot motion in Gazebo, a separate explicit action (never the default).
+    run_motion_sorting_button_ = new QPushButton("Start Sorting · Gazebo Motion (2 cycles)", preview);
+    run_motion_sorting_button_->setObjectName("runMotionSortingSession");
     pause_sorting_button_ = new QPushButton("Pause", preview); pause_sorting_button_->setObjectName("pauseSortingSession");
     resume_sorting_button_ = new QPushButton("Resume", preview); resume_sorting_button_->setObjectName("resumeSortingSession");
     stop_sorting_button_ = new QPushButton("Stop at Cycle End", preview); stop_sorting_button_->setObjectName("stopSortingSession");
     stop_sorting_button_->setToolTip("Software stop honoured at the next cycle boundary (robot home, nothing held). Not an emergency stop.");
-    for (auto * button : {run_sorting_button_, pause_sorting_button_, resume_sorting_button_, stop_sorting_button_}) pl->addWidget(button);
+    for (auto * button : {run_sorting_button_, run_motion_sorting_button_, pause_sorting_button_, resume_sorting_button_, stop_sorting_button_})
+      pl->addWidget(button);
     sorting_state_label_ = new QLabel(preview); sorting_state_label_->setObjectName("sortingSessionState"); sorting_state_label_->setWordWrap(true);
     pl->addWidget(sorting_state_label_);
     connect(run_sorting_button_, &QPushButton::clicked, this, [this] { run_sorting_session(false); });
+    connect(run_motion_sorting_button_, &QPushButton::clicked, this, [this] {
+      if (QMessageBox::question(this, "Start Sorting · Gazebo Motion",
+            "Start a bounded sorting session in which the SIMULATED robot moves in Gazebo?\n\n"
+            "At most 2 cycles (one object each): rendered camera frame → EPD → routing → certified MoveIt plan → grasp, "
+            "lift, place, release → re-observation; an object is counted only after it was verified and reconciled.\n\n"
+            "Before anything starts, the cell's G4 qualification is recomputed from the raw evidence (several minutes); "
+            "any change to the cell, code or runtime refuses motion. Stop at Cycle End finishes the current cycle; Stop "
+            "Simulation cancels the motion under supervision. The real robot is not available.") == QMessageBox::Yes)
+        run_sorting_session(false, 2);
+    });
     connect(pause_sorting_button_, &QPushButton::clicked, this, [this] { request_sorting_command("pause"); });
     connect(resume_sorting_button_, &QPushButton::clicked, this, [this] { request_sorting_command("resume"); });
     connect(stop_sorting_button_, &QPushButton::clicked, this, [this] { request_sorting_command("stop"); });
@@ -6351,20 +6380,53 @@ void MainWindow::refresh_preview_launch_ui()
   }
   if (full_cycle_mode_ && busy && run_build_button_) run_build_button_->setEnabled(false);
   if (run_sorting_button_) {
+    // A physics sorting task runs plan only and observes the cell itself (no saved input, like a physics cycle).
+    const bool physics_sorting = has_scene && selected_task_is_physics_sorting();
+    const auto sort_ready = physics_sorting ? selected_scene_readiness(false) : current;
+    if (physics_sorting) blockers = sort_ready.blockers;
+    run_sorting_button_->setText(physics_sorting ? "Start Sorting · Plan Only (Physics)" : "Start Sorting (Fake Hardware)");
     const auto sort_blocker = sorting_blocker();
-    const bool can_start = has_scene && current.ready && blockers.isEmpty() && !busy && sort_blocker.isEmpty();
+    const bool can_start = has_scene && sort_ready.ready && blockers.isEmpty() && !busy && sort_blocker.isEmpty();
     run_sorting_button_->setEnabled(can_start);
-    run_sorting_button_->setToolTip(can_start ? "Sorts every eligible object of the saved routing table, one cycle each, on fake hardware."
+    run_sorting_button_->setToolTip(can_start ? (physics_sorting
+        ? "Gazebo world, simulator-rendered camera frames classified by EPD, routing and a MoveIt plan per object. "
+          "Plan only: every cycle authorisation is refused and the robot never moves."
+        : "Sorts every eligible object of the saved routing table, one cycle each, on fake hardware.")
                                               : (!sort_blocker.isEmpty() ? sort_blocker : busy ? QString("A session is running.") : blockers.join("\n")));
+    const QString motion = physics_sorting ? motion_blocker() : QString("Needs a G4-qualified physics sorting cell.");
+    const bool can_move = has_scene && physics_sorting && sort_ready.ready && blockers.isEmpty() && !busy && sort_blocker.isEmpty() &&
+                          motion.isEmpty();
+    run_motion_sorting_button_->setVisible(physics_sorting);
+    run_motion_sorting_button_->setEnabled(can_move);
+    run_motion_sorting_button_->setToolTip(can_move
+      ? "Bounded G4 trial in Gazebo (at most 2 cycles): the simulated robot picks, transports and places. The cell's G4 "
+        "qualification is recomputed from the raw evidence before the runner starts."
+      : (!motion.isEmpty() ? motion : !sort_blocker.isEmpty() ? sort_blocker : busy ? QString("A session is running.") : blockers.join("\n")));
     const QString state = sorting_mode_ && busy ? sorting_status_.value("state").toString() : QString();
-    pause_sorting_button_->setEnabled(state == "RUNNING");
-    resume_sorting_button_->setEnabled(state == "PAUSED" || state == "PAUSING");
-    stop_sorting_button_->setEnabled(state == "RUNNING" || state == "PAUSING" || state == "PAUSED" || state == "READY");
+    // A bounded G4 trial has no pause; its Stop is the G4-S stop at cycle end (SIGUSR1 to the runner).
+    pause_sorting_button_->setEnabled(state == "RUNNING" && !g4_trial_mode_);
+    resume_sorting_button_->setEnabled((state == "PAUSED" || state == "PAUSING") && !g4_trial_mode_);
+    stop_sorting_button_->setEnabled(g4_trial_mode_ ? busy && !preview_stop_requested_ && sorting_commands_.isEmpty()
+      : (state == "RUNNING" || state == "PAUSING" || state == "PAUSED" || state == "READY"));
     const QString start_blocker = !sort_blocker.isEmpty() ? sort_blocker : busy ? QString("a session is running")
-      : !has_scene || !current.ready || !blockers.isEmpty() ? (blockers.isEmpty() ? current.blockers.join("; ") : blockers.first()) : QString();
+      : !has_scene || !sort_ready.ready || !blockers.isEmpty() ? (blockers.isEmpty() ? sort_ready.blockers.join("; ") : blockers.first()) : QString();
     sorting_state_label_->setText(sorting_status_html().isEmpty()
-      ? (start_blocker.isEmpty() ? QString("<b>Sorting session</b>: ready to start (fake hardware)") : "<b>Sorting session</b>: " + start_blocker.toHtmlEscaped())
+      ? (start_blocker.isEmpty() ? QString("<b>Sorting session</b>: ready to start (%1)").arg(physics_sorting
+            ? "physics world, plan only — the robot does not move" : "fake hardware")
+                                 : "<b>Sorting session</b>: " + start_blocker.toHtmlEscaped())
       : sorting_status_html());
+  }
+  if (capability_label_) {
+    QString html = "<b>What this cell can do</b><table cellspacing='0' cellpadding='2'>";
+    for (const auto & item : capability_matrix()) {
+      const auto row = item.toObject();
+      const QString status = row.value("status").toString();
+      const QString colour = status == "QUALIFIED" ? "#2e9e5b" : status == "EXPERIMENTAL" ? "#3b82c4"
+                           : status == "LOCKED" || status == "BLOCKED" ? "#c4643b" : "#8a8f98";
+      html += QString("<tr><td><b style='color:%1'>%2</b></td><td><b>%3</b> — %4</td></tr>").arg(colour, status,
+        row.value("title").toString().toHtmlEscaped(), row.value("detail").toString().toHtmlEscaped());
+    }
+    capability_label_->setHtml(html + "</table>");
   }
   if (cycle_rviz_box_) cycle_rviz_box_->setEnabled(!busy);
   if (stop_preview_button_) { stop_preview_button_->setVisible(busy); stop_preview_button_->setEnabled(busy && !preview_stop_requested_); }
@@ -6824,8 +6886,12 @@ void MainWindow::consume_cycle_output(const QString & output)
       QString friendly = stage.toLower(); friendly.replace('_', ' ');
       const bool physics = event.value("source").toString() == "qualified_physics_simulator" && event.value("live").toBool();
       cycle_status_label_->setText("<b>" + friendly.toHtmlEscaped() + "</b><br/>" +
-        (physics ? QString("Live qualified physics simulation") + (event.value("motion").toBool() ? " · Simulated robot moving" : "")
-                 : QString("Replay · Fake hardware only")) + " · Real robot motion: locked");
+        (g4_trial_mode_ ? QString("Physics world (Gazebo) · bounded G4 sorting session") +
+                            (stage.startsWith("EXECUTE_") ? " · Simulated robot moving" : "")
+         : g4_plan_mode_ ? QString("Physics world (Gazebo) · plan only, the simulated robot does not move")
+         : physics ? QString("Live qualified physics simulation") + (event.value("motion").toBool() ? " · Simulated robot moving" : "")
+                   : QString("Replay · Fake hardware only")) + " · Real robot motion: locked");
+      if (g4_plan_mode_ && stage.startsWith("G4_")) refresh_g4_view();
       cycle_status_label_->setProperty("backendStage", stage);
       if (physics_cycle_mode_ && physics && stage != "SIMULATOR_SHUTDOWN")
         set_physics_state(stage.startsWith("EXECUTE_") ? "RUNNING" : "PLANNING",
@@ -6837,6 +6903,7 @@ void MainWindow::consume_cycle_output(const QString & output)
       sorting_status_ = event.value("status").toObject();
       if (!event.value("cycle_outcome").toString().isEmpty())
         monitor_.timeline = workcell_builder::MonitorTimeline();      // each sorting cycle has its own stages
+      if (g4_plan_mode_) refresh_g4_view();
       refresh_preview_launch_ui();
     }
   }
@@ -6845,6 +6912,36 @@ void MainWindow::consume_cycle_output(const QString & output)
 
 void MainWindow::show_cycle_result(const QJsonObject & result)
 {
+  if (result.value("g4_trial").toBool()) {
+    // Completed means verified and reconciled by the runner, then counted by its ledger: never a plan or a motion alone.
+    const bool pass = result.value("result").toString() == "PASS";
+    cycle_status_label_->setText(QString("<b>%1</b> · Gazebo sorting session (bounded G4 trial) · %2 %3"
+        "<br/>Cycle authorisations granted %4 · executed %5 · completed (verified, reconciled, counted) <b>%6</b>"
+        "<br/>Shutdown: %7 · Gazebo physics, simulated robot · Real robot: not available%8")
+      .arg(pass ? "ENDED" : result.value("result").toString(), result.value("status").toString().toHtmlEscaped(),
+           result.value("session_result").toString().toHtmlEscaped())
+      .arg(result.value("authorised").toInt()).arg(result.value("executed").toInt())
+      .arg(result.value("counts").toObject().value("completed").toInt())
+      .arg(result.value("shutdown_clean").toBool() ? "clean" : "UNCLEAN",
+           result.value("failure").toString().isEmpty() ? QString() : "<br/>" + result.value("failure").toString().toHtmlEscaped()));
+    refresh_monitor();
+    return;
+  }
+  if (result.value("g4_plan_only").toBool()) {
+    // A plan is never a sorted object: the ledger's counts stay those of verified execution (none here).
+    const bool pass = result.value("result").toString() == "PASS";
+    cycle_status_label_->setText(QString("<b>%1</b> · Physics sorting session (plan only) · %2 %3"
+        "<br/>Planned %4 object(s) · plan refused %5 · cycle authorisations granted %6 · executed %7 · completed (counted) %8"
+        "<br/>Shutdown: %9 · Gazebo + MoveIt + EPD · the robot never moved · Real robot motion: locked%10")
+      .arg(pass ? "ENDED" : result.value("result").toString(), result.value("status").toString().toHtmlEscaped(),
+           result.value("session_result").toString().toHtmlEscaped())
+      .arg(result.value("planned").toInt()).arg(result.value("plan_refused").toInt()).arg(result.value("authorised").toInt())
+      .arg(result.value("executed").toInt()).arg(result.value("counts").toObject().value("completed").toInt())
+      .arg(result.value("shutdown_clean").toBool() ? "clean" : "UNCLEAN",
+           result.value("failure").toString().isEmpty() ? QString() : "<br/>Stopped: " + result.value("failure").toString().toHtmlEscaped()));
+    refresh_monitor();
+    return;
+  }
   if (result.contains("sorting_session") || result.contains("sorting_status")) {
     // A sorting session's result is its session report: each completed object was verified in its own cycle.
     const auto status = result.value("sorting_status").toObject();
@@ -6958,6 +7055,8 @@ MainWindow::SavedTaskSummary MainWindow::saved_task_summary(const QString & scen
       for (const auto & item : filter["exclude_class_ids"]) summary.exclude << QString::fromStdString(item.as<std::string>());
     summary.destination = text(task["place"]["target"]["asset_ref"]) + " / " + text(task["place"]["target"]["region_ref"]);
     summary.placement = text(task["place"]["placement"]["policy"]);
+    summary.perception = text(task["perception"]["mode"]);
+    summary.camera_source = text(task["perception"]["camera_source"]);
     if (text(task["routing"]["mode"]) == "class" && task["routing"]["rules"].IsSequence())   // class routing
       for (const auto & rule : task["routing"]["rules"])
         summary.routes << text(rule["when"]["equals"]) + " → " + text(rule["destination"]);
@@ -7003,7 +7102,12 @@ QJsonObject MainWindow::monitor_snapshot() const
   if (!finished) {
     if (monitor_.cancel_requested.isValid()) { code = "CANCELLING"; state = "CANCELLING — cleanup in progress (unconfirmed)"; }
     else if (physics) { code = "RUNNING"; state = t.last_motion ? "RUNNING — simulated robot moving" : "RUNNING — no motion (" + (t.current.isEmpty() ? QString("starting") : t.current.toLower()) + ")"; }
-    else if (monitor_.kind == "sorting") { code = sorting_status_.value("state").toString("STARTING"); state = "SORTING " + code + " — fake hardware, mock controllers"; }
+    else if (monitor_.kind == "sorting") {
+      code = sorting_status_.value("state").toString("STARTING");
+      state = "SORTING " + code + (monitor_.physics_plan ? QString(" — physics world, plan only; the robot does not move")
+                                   : monitor_.physics_trial ? QString(" — physics world (Gazebo), bounded G4 session; the simulated robot moves")
+                                                            : QString(" — fake hardware, mock controllers"));
+    }
     else { code = "RUNNING"; state = "RUNNING — planning on fake hardware, no motion"; }
   } else if (monitor_.kind == "sorting") {
     code = sorting_status_.value("state").toString(result == "PASS" ? "STOPPED" : "FAULT");
@@ -7022,6 +7126,11 @@ QJsonObject MainWindow::monitor_snapshot() const
   if (monitor_.cancel_requested.isValid()) process += " · cancel requested " + monitor_.cancel_requested.toString("HH:mm:ss");
   QString robot;
   if (finished) robot = "stopped (session ended)";
+  else if (monitor_.kind == "sorting" && monitor_.physics_plan)
+    robot = "simulated robot at rest — plan only (every cycle authorisation is refused: G4_SCOPE_PLAN_ONLY)";
+  else if (monitor_.kind == "sorting" && monitor_.physics_trial)
+    robot = t.last_motion ? "simulated robot executing " + t.last_stage
+                          : "simulated robot at rest (" + (t.current.isEmpty() ? QString("between cycles") : t.current.toLower()) + ")";
   else if (monitor_.kind == "sorting") robot = t.last_motion ? "fake-hardware robot executing " + t.last_stage : "no motion (" + (t.current.isEmpty() ? QString("between cycles") : t.current.toLower()) + ")";
   else if (!physics) robot = "no motion — plan only";
   else robot = t.last_motion ? "simulated robot executing " + t.last_stage : "no motion";
@@ -7037,14 +7146,20 @@ QJsonObject MainWindow::monitor_snapshot() const
     {"cell", monitor_.cell}, {"scene_dir", monitor_.scene_dir}, {"task", monitor_.task}, {"backend", monitor_.backend},
     {"started", monitor_.started.toString("HH:mm:ss")}, {"active", !finished}, {"state", state}, {"state_code", code},
     // A sorting session executes on mock controllers: its executed stages are shown, never as plan-only.
-    {"process", process}, {"timeline_html", t.html(physics || monitor_.kind == "sorting", finished)},
+    {"process", process}, {"timeline_html", t.html(physics || (monitor_.kind == "sorting" && !monitor_.physics_plan), finished)},
     {"last_event", t.last_stage.isEmpty() ? QString("none yet") :
       QString("%1%2 at %3 (%4)").arg(t.last_stage, t.last_phase.isEmpty() ? QString() : " · " + t.last_phase, t.last_time.toString("HH:mm:ss.zzz"),
-                                     physics ? QString("live qualified physics runner") : QString("fake-hardware executor"))},
+                                     physics ? QString("live qualified physics runner")
+                                     : monitor_.physics_plan ? QString("physics plan-only runner")
+                                     : monitor_.physics_trial ? QString("bounded G4 trial runner") : QString("fake-hardware executor"))},
     {"robot", robot}, {"gripper", gripper},
     {"selected_object", cycle_result_.value("selected_object_id").toString(finished ? "Not available" : "pending resolution")},
     {"rejected", rejected}, {"cancel_requested", monitor_.cancel_requested.isValid()}, {"evidence", monitor_.output}};
   if (monitor_.kind == "sorting") snapshot["sorting"] = sorting_status_;
+  snapshot["plan_only"] = monitor_.physics_plan;
+  snapshot["motion_trial"] = monitor_.physics_trial;
+  snapshot["stop_requested"] = monitor_.physics_trial && !sorting_commands_.isEmpty();   // the G4-S stop was sent
+  if (monitor_.physics_plan || monitor_.physics_trial) snapshot["g4"] = g4_view_;   // its evidence view (g4_session_view.py)
   if (finished && monitor_.kind == "sorting") {
     const auto fault = sorting_status_.value("fault").toObject();
     if (!fault.isEmpty() || result != "PASS") {
@@ -7101,11 +7216,53 @@ QString MainWindow::sorting_blocker() const
   if (!has_selected_scene()) return "Select a saved cell.";
   const auto task = saved_task_summary(selected_scene_path());
   if (task.routes.isEmpty()) return "The saved task has no class routing table (Task > Where > Route by class).";
-  if (task.backend != "fake")
-    return "SORTING_PHYSICS_UNQUALIFIED: sorting sessions run on MoveIt fake hardware; no multi-object, multi-destination "
-           "physics world is qualified. Select fake hardware in Task > Run.";
+  if (task.backend != "fake" && !selected_task_is_physics_sorting())
+    return "SORTING_PHYSICS_UNQUALIFIED: in the physics simulator a sorting session runs plan only and observes the cell "
+           "itself: bind live EPD to the simulated RGB-D camera (Task > Perception), or select fake hardware in Task > Run.";
   if (layout_dirty_ || (environment_task_editor_ && environment_task_editor_->dirty())) return "Save the cell first: it has unsaved changes.";
   return {};
+}
+
+QJsonArray MainWindow::capability_matrix() const
+{
+  // Every status is the Builder's own gate for that action on the saved cell; nothing here can enable motion.
+  QJsonArray rows;
+  const auto row = [&rows](const QString & id, const QString & title, const QString & status, const QString & detail) {
+    rows.append(QJsonObject{{"id", id}, {"title", title}, {"status", status}, {"detail", detail}});
+  };
+  if (!has_selected_scene()) return rows;
+  const auto task = saved_task_summary(selected_scene_path());
+  const bool routed = !task.routes.isEmpty();
+  const bool physics_sorting = selected_task_is_physics_sorting();
+  const QString physics = task.backend == "simulator" ? physics_cycle_blocker()
+                                                       : QString("The saved task selects MoveIt fake hardware (Task > Run).");
+  row("physics_cycle", "Physics simulation, one pick-and-place cycle", physics.isEmpty() ? "QUALIFIED" : "BLOCKED",
+      physics.isEmpty() ? "Qualified Stage-A scope in Gazebo: one object into one destination, one cycle "
+                          "(Run Physics Simulation Cycle)." : physics);
+  const QString plan = physics_sorting ? sorting_blocker() : QString();
+  row("physics_sorting_plan", "Physics sorting, plan only", !physics_sorting ? "UNAVAILABLE" : plan.isEmpty() ? "EXPERIMENTAL" : "BLOCKED",
+      !physics_sorting ? QString("Needs a class-routed task with live EPD on the simulated RGB-D camera in the physics simulator "
+                                 "(Task Editor).")
+      : plan.isEmpty() ? QString("Gazebo world, simulator-rendered frames classified by EPD, routing and a MoveIt plan per "
+                                 "object. The robot never moves and nothing is counted as sorted.") : plan);
+  const QString motion = physics_sorting ? motion_blocker() : QString("Needs a class-routed physics sorting cell.");
+  const auto record = g4_readiness_record();
+  row("physics_sorting_motion", "Physics sorting with robot motion, bounded (Gazebo)", motion.isEmpty() ? "QUALIFIED" : "LOCKED",
+      motion.isEmpty() ? QString("G4 qualification of this exact cell: %1 at %2 (planner %3, G4 control %4). At most 2 cycles "
+                                 "per session; the qualification is recomputed from the raw evidence before the runner starts; "
+                                 "Stop at cycle end and Cancel are the qualified G4-S / G4-C mechanisms.")
+                           .arg(record.value("status").toString(), record.value("at").toString(),
+                                record.value("planner").toString().left(10), record.value("control").toString().left(10))
+                       : motion);
+  row("continuous_sorting", "Continuous production sorting", "LOCKED",
+      "Not admitted: G4 qualifies bounded sessions only (G4_AUTHORISED_SESSION stays refused).");
+  const QString fake = task.backend == "fake" && routed ? sorting_blocker() : QString();
+  row("fake_sorting", "Sorting on MoveIt fake hardware", task.backend != "fake" || !routed ? "UNAVAILABLE" : fake.isEmpty() ? "EXPERIMENTAL" : "BLOCKED",
+      !routed ? QString("Needs a class routing table (Task > Where > Route by class).")
+      : task.backend != "fake" ? QString("The saved task selects the physics simulator (Task > Run).")
+      : fake.isEmpty() ? QString("Kinematic execution on mock controllers; no physics, contact or retention evidence.") : fake);
+  row("real_hardware", "Real robot", "UNAVAILABLE", "Not supported in this release: Workcell Studio launches no hardware interface.");
+  return rows;
 }
 
 QString MainWindow::sorting_status_html() const
@@ -7148,12 +7305,191 @@ QString MainWindow::sorting_status_html() const
     text += QString("<br/><b>FAULT %1</b>: %2%3").arg(e(fault.value("code").toString()), e(fault.value("reason").toString()),
       d.action.isEmpty() ? QString() : "<br/>What to do: " + e(d.action));
   }
+  if ((monitor_.physics_plan || monitor_.physics_trial) && !g4_view_.isEmpty()) {
+    QStringList rows;
+    for (const auto & item : g4_view_.value("objects").toArray()) {
+      const auto o = item.toObject();
+      const auto plan = o.value("plan").toObject();
+      const QString confidence = o.value("confidence").isDouble() ? QString(" %1").arg(o.value("confidence").toDouble(), 0, 'f', 2) : QString();
+      const bool completed = o.value("status").toString() == "COMPLETED";      // the ledger's count: verified, reconciled
+      rows << QString("%1 · %2%3 · %4").arg(e(o.value("object_id").toString()), e(o.value("class_id").toString()), confidence,
+        completed ? QString("<b>COMPLETED</b> → %1 (cycle %2, verified and reconciled)").arg(e(o.value("destination").toString()))
+                      .arg(plan.value("cycle").toInt())
+        : plan.isEmpty() ? e(o.value("status").toString() + (o.value("reason").toString().isEmpty() ? QString() : ": " + o.value("reason").toString()))
+        : QString("<b>%1</b> → %2 (%3), cycle %4%5").arg(e(plan.value("state").toString()), e(plan.value("destination").toString()),
+            e(plan.value("grasp").toString())).arg(plan.value("cycle").toInt())
+            .arg(monitor_.physics_trial ? QString() : QString(", not executed")));
+    }
+    const auto motion = g4_view_.value("motion").toObject();
+    text += "<br/><b>Objects (EPD class, plan)</b><br/>" + (rows.isEmpty() ? QString("none observed yet") : rows.join("<br/>"));
+    text += QString("<br/>Evidence of motion: cycle authorisations granted %1 · executed cycles %2 · controller goals %3")
+      .arg(motion.value("authorised_cycles").toInt()).arg(motion.value("executed_cycles").toInt()).arg(motion.value("controller_goals").toInt());
+  }
   text += "<br/>" + e(sorting_status_.value("execution").toString()) + " · " + e(sorting_status_.value("stop_semantics").toString());
   return text;
 }
 
-void MainWindow::run_sorting_session(bool operator_requested)
+bool MainWindow::selected_task_is_physics_sorting() const
 {
+  if (!has_selected_scene()) return false;
+  const auto task = saved_task_summary(selected_scene_path());
+  return task.backend == "simulator" && !task.routes.isEmpty() && task.perception == "live_epd" &&
+         task.camera_source == "simulated_rgbd";
+}
+
+void MainWindow::start_physics_plan_session(bool operator_requested, int motion_cycles)
+{
+  if (!has_selected_scene() || preview_process_->state() != QProcess::NotRunning) return;
+  // The session renders and classifies the cell itself: no saved task input is required (as for a physics cycle).
+  if (!sorting_blocker().isEmpty() || !selected_scene_readiness(false).ready) { refresh_preview_launch_ui(); return; }
+  const bool trial = motion_cycles > 0;
+  if (trial && (motion_cycles > 2 || !motion_blocker().isEmpty())) { refresh_preview_launch_ui(); return; }
+  active_preview_scene_ = scene_browser_result_.scenes[(size_t)selected_scene_index_];
+  begin_monitor("sorting");
+  monitor_.physics_plan = !trial;
+  monitor_.physics_trial = trial;
+  monitor_.backend = trial
+    ? QString("Gazebo Fortress physics world — bounded G4 sorting session (at most %1 cycle(s)): the SIMULATED robot "
+              "moves; G4 qualification recomputed before start; real robot not available").arg(motion_cycles)
+    : QString("Gazebo Fortress physics world — G4 sorting session, PLAN ONLY (every cycle authorisation is "
+              "refused; the robot never moves)");
+  if (operator_requested) monitor_.origin = "Operator HMI";
+  sorting_status_ = QJsonObject(); sorting_commands_ = QJsonArray(); g4_view_ = QJsonObject();
+  const QString root = detect_workspace_root() + "/log/studio_sorting";
+  const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+  QDir().mkpath(root);
+  cycle_output_dir_ = root + "/" + id;                        // the runner creates it (and refuses an existing one)
+  sorting_control_path_ = root + "/" + id + ".control.json";
+  const int domain = QRandomGenerator::global()->bounded(220, 233);   // outside the render domains 170..219
+  viewer_status_.clear();
+  if (trial) sorting_control_path_.clear();               // the trial's stop is SIGUSR1 (G4-S), not a control file
+  active_preview_command_ = trial
+    ? workcell_builder::build_physics_trial_session_command(active_preview_scene_, detect_workspace_root().toStdString(),
+        cycle_output_dir_, domain, motion_cycles, g4_qualification_runs(), root + "/" + id + ".admission.json")
+    : workcell_builder::build_physics_plan_session_command(active_preview_scene_,
+        detect_workspace_root().toStdString(), cycle_output_dir_, domain, sorting_control_path_);
+  if (active_preview_command_.isEmpty()) { monitor_ = RuntimeMonitorSession(); refresh_monitor(); return; }
+  sorting_mode_ = true; g4_plan_mode_ = true; g4_trial_mode_ = trial; full_cycle_mode_ = true; preview_stop_requested_ = false;
+  cycle_result_ = QJsonObject(); cycle_stdout_buffer_.clear();
+  monitor_.output = cycle_output_dir_;
+  cycle_status_label_->setText(trial
+    ? QString("Checking the cell's G4 qualification from the raw evidence, then starting the bounded sorting session…"
+              "<br/>Gazebo + MoveIt + EPD · the simulated robot will move · Real robot: not available")
+    : QString("Starting the physics sorting session (plan only)…<br/>Gazebo + MoveIt + EPD · the robot "
+              "does not move · Real robot motion: locked"));
+  append_studio_log(QString("Physics sorting session (%1): ").arg(trial ? "bounded G4 trial, robot motion" : "plan only") +
+                    active_preview_command_);
+  set_preview_state("PREVIEW_LAUNCHING");
+  preview_process_->start("/bin/bash", {"-lc", active_preview_command_});
+  refresh_preview_launch_ui(); refresh_monitor();
+}
+
+QJsonObject MainWindow::g4_readiness_record() const
+{
+  // Written after the G4 campaign; it lists the runs and the verdict, and the qualified cell files' SHA-256. Whether
+  // it names the selected cell is decided here byte for byte. Its verdict is display only: Start recomputes it.
+  QFile file(QFileInfo(detect_workspace_root()).dir().filePath("log/qualification/g4/qualification/g4_readiness_runs.json"));
+  if (!file.open(QIODevice::ReadOnly)) return {};
+  auto record = QJsonDocument::fromJson(file.readAll()).object();
+  const auto files = record.value("cell_files").toObject();
+  bool same = has_selected_scene() && !files.isEmpty();
+  for (auto it = files.begin(); same && it != files.end(); ++it) {
+    QFile cell_file(selected_scene_path() + "/" + it.key());
+    same = cell_file.open(QIODevice::ReadOnly) &&
+      QString::fromLatin1(QCryptographicHash::hash(cell_file.readAll(), QCryptographicHash::Sha256).toHex()) == it.value().toString();
+  }
+  record["selected_cell_matches"] = same;
+  return record;
+}
+
+QStringList MainWindow::g4_qualification_runs() const
+{
+  const auto runs = g4_readiness_record().value("runs").toObject();
+  QStringList args;
+  for (const auto & item : runs.value("sessions").toArray()) args << "--session" << item.toString();
+  if (runs.contains("stop")) args << "--stop" << runs.value("stop").toString();
+  if (runs.contains("cancel")) args << "--cancel" << runs.value("cancel").toString();
+  for (const auto & item : runs.value("other").toArray()) args << "--other" << item.toString();
+  return args;
+}
+
+QString MainWindow::motion_blocker() const
+{
+  const auto record = g4_readiness_record();
+  if (record.isEmpty()) return "No G4 qualification is recorded in this workspace: robot motion stays locked.";
+  if (record.value("status").toString() != "QUALIFIED_READY")
+    return "The recorded G4 qualification is " + record.value("status").toString("unknown") + ": robot motion stays locked.";
+  if (!record.value("selected_cell_matches").toBool())
+    return "This cell is not byte-identical to the G4-qualified cell (" + record.value("cell").toString() +
+           "): any change to the qualified configuration locks robot motion.";
+  return {};
+}
+
+void MainWindow::refresh_g4_view()
+{
+  // The session's own evidence files, read by g4_session_view.py (one read at a time; nothing is derived here).
+  if (monitor_.output.isEmpty() || !(monitor_.physics_plan || monitor_.physics_trial)) return;
+  if (g4_view_process_) { g4_view_again_ = true; return; }
+  QString script;
+  if (!helper_script_exists("g4_session_view.py", &script)) return;
+  const QString run = monitor_.output;
+  g4_view_process_ = new QProcess(this);
+  connect(g4_view_process_, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+          [this, run](int code, QProcess::ExitStatus status) {
+    const auto document = QJsonDocument::fromJson(g4_view_process_->readAllStandardOutput());
+    g4_view_process_->deleteLater(); g4_view_process_ = nullptr;
+    if (run != monitor_.output) return;                       // another session started meanwhile
+    if (status == QProcess::NormalExit && code == 0 && document.isObject()) g4_view_ = document.object();
+    if (g4_view_again_) { g4_view_again_ = false; refresh_g4_view(); return; }
+    refresh_preview_launch_ui(); refresh_monitor();
+  });
+  g4_view_process_->start("python3", {script, run});
+}
+
+QJsonObject MainWindow::g4_cycle_result() const
+{
+  // The runner's report (written at its end) is the result; a missing or unreadable report is never a PASS.
+  QFile file(cycle_output_dir_ + "/g4-sorting-report.json");
+  const auto report = file.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(file.readAll()).object() : QJsonObject();
+  const QString kind = g4_trial_mode_ ? "g4_trial" : "g4_plan_only";
+  if (report.isEmpty()) {
+    // A trial whose admission refused it never started the runner: the readiness verdict says why.
+    QFile admission(cycle_output_dir_ + ".admission.json");
+    const QString text = g4_trial_mode_ && admission.open(QIODevice::ReadOnly) ? QString::fromUtf8(admission.readAll()) : QString();
+    const auto verdict = QJsonDocument::fromJson(text.left(text.lastIndexOf('}') + 1).toUtf8()).object();
+    QStringList unmet;
+    for (const auto & item : verdict.value("unmet").toArray()) unmet << item.toString();
+    return QJsonObject{{"result", "FAIL"}, {kind, true}, {"shutdown_clean", false},
+                       {"failure", !verdict.isEmpty()
+                          ? QString("MOTION REFUSED, nothing started: G4 qualification of this cell is %1 (%2).")
+                              .arg(verdict.value("status").toString(), unmet.join("; "))
+                          : QString("The physics sorting runner ended without its report (g4-sorting-report.json).")}};
+  }
+  const QString status = report.value("status").toString(), result = report.value("result").toString();
+  int planned = 0, refused = 0, executed = 0, granted = 0;
+  for (const auto & item : report.value("cycles").toArray()) {
+    const auto steps = item.toObject().value("steps").toObject();
+    if (steps.contains("plan")) (steps.value("plan").toObject().value("refused").toBool() ? refused : planned) += 1;
+    if (steps.contains("execute")) executed += 1;
+    if (steps.value("authorise").toObject().value("granted").toBool()) granted += 1;
+  }
+  const auto stop = report.value("stop").toObject();
+  // A session that ran to its end, or that the operator stopped at a cycle boundary, ended as requested.
+  const bool ended = status == "PASS" || (status == "STOPPED" && result == "STOPPED_BY_OPERATOR" && stop.isEmpty());
+  QJsonObject out{{kind, true}, {"result", ended ? "PASS" : status == "CANCELLED" ? "CANCELLED" : "FAIL"},
+    {"status", status}, {"session_result", result}, {"scope", report.value("scope")},
+    {"shutdown_clean", report.value("shutdown").toObject().value("clean").toBool()},
+    {"planned", planned}, {"plan_refused", refused}, {"executed", executed}, {"authorised", granted},
+    {"counts", report.value("counts")}, {"duration_s", report.value("duration_s")}};
+  if (!stop.isEmpty()) out["failure"] = stop.value("code").toString() + ": " + stop.value("reason").toString();
+  else if (report.contains("failure")) out["failure"] = report.value("failure").toString();
+  return out;
+}
+
+void MainWindow::run_sorting_session(bool operator_requested, int motion_cycles)
+{
+  if (selected_task_is_physics_sorting()) { start_physics_plan_session(operator_requested, motion_cycles); return; }
+  if (motion_cycles > 0) return;                           // robot motion exists only as the bounded G4 trial
   if (!selected_scene_readiness().ready || !has_selected_scene() || preview_process_->state() != QProcess::NotRunning) return;
   if (!sorting_blocker().isEmpty()) { refresh_preview_launch_ui(); return; }
   begin_monitor("sorting");
@@ -7176,6 +7512,22 @@ bool MainWindow::request_sorting_command(const QString & command, QString * erro
 {
   // Operator commands go to the running session's control file; the session applies them at cycle boundaries.
   const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
+  if (g4_trial_mode_ && busy) {
+    // The bounded G4 trial: Stop is the qualified G4-S stop at cycle end, SIGUSR1 to the runner itself (the running
+    // cycle finishes under every guard and is verified; no further cycle starts). Before the runner reports its first
+    // stage it may still be checking its admission and has moved nothing: Stop then cancels the start.
+    if (command != "stop") { if (error) *error = "a bounded G4 session has no pause; Stop ends it at the end of the current cycle"; return false; }
+    if (preview_stop_requested_ || sorting_commands_.size()) { if (error) *error = "stop was already requested"; return false; }
+    const qint64 pid = preview_process_->processId();
+    sorting_commands_.append(QJsonObject{{"seq", 1}, {"command", "stop"}, {"at", QDateTime::currentDateTime().toString(Qt::ISODate)}});
+    if (monitor_.runner_pid > 0 && monitor_.runner_pid == pid && ::kill(static_cast<pid_t>(pid), SIGUSR1) == 0) {
+      append_studio_log(QString("Bounded G4 session: stop at cycle end requested (SIGUSR1 to runner pid %1)").arg(pid));
+      return true;
+    }
+    append_studio_log("Bounded G4 session: stopped before the runner started (nothing moved)");
+    stop_preview_process();
+    return true;
+  }
   if (!sorting_mode_ || !busy || sorting_control_path_.isEmpty()) { if (error) *error = "no sorting session is running"; return false; }
   sorting_commands_.append(QJsonObject{{"seq", sorting_commands_.size() + 1}, {"command", command},
                                        {"at", QDateTime::currentDateTime().toString(Qt::ISODate)}});
@@ -7191,7 +7543,7 @@ void MainWindow::refresh_viewer_controls()
 {
   if (!open_rviz_button_) return;
   const bool busy = preview_process_ && preview_process_->state() != QProcess::NotRunning;
-  const bool physics_session = busy && physics_cycle_mode_;
+  const bool physics_session = busy && (physics_cycle_mode_ || g4_plan_mode_);
   const bool plan_session = busy && full_cycle_mode_ && !physics_cycle_mode_ && plan_cycle_domain_ > 0;
   const bool rviz_open = rviz_viewer_ && rviz_viewer_->state() != QProcess::NotRunning;
   const bool gazebo_open = gazebo_viewer_ && gazebo_viewer_->state() != QProcess::NotRunning;
@@ -7256,7 +7608,7 @@ void MainWindow::open_viewer(const QString & kind)
   const auto quote = [](QString value) { return "'" + value.replace("'", "'\\''") + "'"; };
   QStringList args{kind};
   if (kind == "rviz") {
-    args << (physics_cycle_mode_ ? QString("--cycle-output %1").arg(quote(cycle_output_dir_)) : QString("--domain %1").arg(plan_cycle_domain_))
+    args << (physics_cycle_mode_ || g4_plan_mode_ ? QString("--cycle-output %1").arg(quote(cycle_output_dir_)) : QString("--domain %1").arg(plan_cycle_domain_))
          << "--rviz-config" << quote(QString::fromStdString((active_preview_scene_.scene_dir / "launch" / "demo.rviz").string()));
   } else {
     args << "--cycle-output" << quote(cycle_output_dir_);
@@ -7334,12 +7686,14 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
   if (completed_stage != "BUILD_RUNNING" && completed_stage != "PACKAGE_CHECK_RUNNING") { close_viewers(); plan_cycle_domain_ = -1; }
   if (full_cycle_mode_ && (completed_stage == "PREVIEW_RUNNING" || completed_stage == "PREVIEW_LAUNCHING" || preview_stop_requested_)) {
     handle_preview_stdout();
+    if (g4_plan_mode_) cycle_result_ = g4_cycle_result();
     if (!monitor_.kind.isEmpty() && !monitor_.finished.isValid()) {
       monitor_.finished = QDateTime::currentDateTime();
       monitor_.exit_code = exit_code; monitor_.crashed = exit_status != QProcess::NormalExit;
       auto & timeline = monitor_.timeline;
       const QString result = cycle_result_.value("result").toString();
-      if (result == "PASS") timeline.reach("Verification");                  // the runner verified its own result
+      // The runner verified its own result; a plan-only session executed nothing to verify.
+      if (result == "PASS" && !monitor_.physics_plan) timeline.reach("Verification");
       if (result != "PASS" && result != "CANCELLED" && timeline.failed.isEmpty()) {
         const auto at = workcell_builder::monitor_category(cycle_result_.value("failed_stage").toString(), timeline.executing);
         timeline.failed = at.isEmpty() ? timeline.current : at;
@@ -7347,13 +7701,16 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
       const auto shutdown = cycle_result_.value("session_shutdown").toObject();
       if (cycle_result_.value("shutdown_clean").toBool() || shutdown.value("clean").toBool()) timeline.reach("Shutdown");
     }
-    const bool pass = exit_status == QProcess::NormalExit && exit_code == 0 && !preview_stop_requested_ &&
+    // A G4 session the operator stopped at a cycle boundary exits 4 (STOPPED) and ended as requested.
+    const bool pass = exit_status == QProcess::NormalExit && (exit_code == 0 || (g4_plan_mode_ && exit_code == 4)) &&
+      !preview_stop_requested_ &&
       cycle_result_.value("result").toString() == "PASS" &&
       (sorting_mode_ || cycle_result_.value("full_cycle_plan_success").toBool()) &&
       cycle_result_.value("shutdown_clean").toBool() &&
       (!physics_cycle_mode_ || cycle_result_.value("full_cycle_execution_success").toBool());
     const bool physics_run = physics_cycle_mode_;
-    const bool cancelled = physics_run && (preview_stop_requested_ || cycle_result_.value("result").toString() == "CANCELLED");
+    const bool cancelled = (physics_run || g4_plan_mode_) &&
+      (preview_stop_requested_ || cycle_result_.value("result").toString() == "CANCELLED");
     if (!pass) {
       cycle_result_["result"] = cancelled ? "CANCELLED" : "FAIL";
       if (cancelled && !cycle_result_.contains("cancellation_confirmed")) cycle_result_["cancellation_confirmed"] = false;
@@ -7368,6 +7725,7 @@ void MainWindow::handle_preview_finished(int exit_code, QProcess::ExitStatus exi
     physics_cycle_mode_ = false;
     const bool sorting_run = sorting_mode_;
     sorting_mode_ = false;
+    if (g4_plan_mode_) { g4_plan_mode_ = false; g4_trial_mode_ = false; refresh_g4_view(); }   // the final view includes the report
     set_preview_state(pass ? "CYCLE_PASS" : "CYCLE_FAILED");
     preview_running_scene_key_.clear();
     // A physics run copies the saved cell; it never resolves into it, so nothing is regenerated.
@@ -7524,6 +7882,7 @@ void MainWindow::open_operator_preview()
     QMessageBox::warning(this, "Operator Preview", error);
     return;
   }
+  operator_preview_published_key_ = operator_preview_key(request);
   publish_operator_simulation_status();
   append_studio_log(QString("Operator Preview shows the %1 task of %2%3.")
     .arg(request.task_dirty ? "unsaved draft" : "saved", request.scene_name,
@@ -7550,8 +7909,9 @@ QJsonObject MainWindow::operator_simulation_readiness() const
   // Sorting (R2.4, fake hardware) has its own gates: a saved routing table and the fake backend.
   QString sorting = preview_process_ && preview_process_->state() != QProcess::NotRunning ? QString("A session is running in Workcell Builder.")
                                                                                           : sorting_blocker();
+  const bool physics_sorting = selected_task_is_physics_sorting();
   if (sorting.isEmpty()) {
-    const auto readiness = selected_scene_readiness();
+    const auto readiness = selected_scene_readiness(!physics_sorting);     // a physics session observes the cell itself
     if (!readiness.ready) sorting = readiness.blockers.isEmpty() ? QString("Generate and Validate the saved cell first.") : readiness.blockers.join("; ");
   }
   if (sorting.isEmpty() && intent.isEmpty()) sorting = "The cell has no generated task: Generate it in Workcell Builder.";
@@ -7559,7 +7919,12 @@ QJsonObject MainWindow::operator_simulation_readiness() const
     {"blocker", blocker.isEmpty() && intent.isEmpty() ? QString("The cell has no generated task: Generate it in Workcell Builder.") : blocker},
     {"action", blocker.isEmpty() || d.code == "UNCLASSIFIED" ? QString() : d.action},
     {"backend", physics_preflight().value("backend").toString()}, {"intent_sha256", intent},
-    {"sorting", QJsonObject{{"ready", sorting.isEmpty()}, {"blocker", sorting}}}};
+    {"sorting", QJsonObject{{"ready", sorting.isEmpty()}, {"blocker", sorting}, {"plan_only", physics_sorting},
+      {"motion", QJsonObject{{"admitted", sorting.isEmpty() && physics_sorting && motion_blocker().isEmpty()},
+                             {"blocker", !physics_sorting ? QString("Needs a G4-qualified physics sorting cell.")
+                                         : !sorting.isEmpty() ? sorting : motion_blocker()},
+                             {"max_cycles", 2}}}}},
+    {"capabilities", capability_matrix()}};
 }
 
 void MainWindow::publish_operator_simulation_status()
@@ -7593,6 +7958,10 @@ void MainWindow::handle_operator_command(const QJsonObject & command)
     check = {false, readiness.value("blocker").toString()};
   if (check.accepted && action == "start_sorting" && !readiness.value("sorting").toObject().value("ready").toBool())
     check = {false, readiness.value("sorting").toObject().value("blocker").toString()};
+  const bool motion_requested = command.value("mode").toString() == "bounded_motion";
+  const auto motion = readiness.value("sorting").toObject().value("motion").toObject();
+  if (check.accepted && action == "start_sorting" && motion_requested && !motion.value("admitted").toBool())
+    check = {false, "robot motion is not admitted: " + motion.value("blocker").toString()};
   if (check.accepted && action == "run_simulation" && (layout_dirty_ || (environment_task_editor_ && environment_task_editor_->dirty())))
     check = {false, "Workcell Builder has unsaved edits; only a saved, generated task may run"};
   last_operator_command_ = QJsonObject{{"id", command.value("id").toInt()}, {"action", action},
@@ -7607,7 +7976,7 @@ void MainWindow::handle_operator_command(const QJsonObject & command)
   } else if (check.accepted && action == "cancel_simulation") {
     stop_preview_process();             // the existing supervised cancellation (not an emergency stop)
   } else if (check.accepted && action == "start_sorting") {
-    run_sorting_session(true);
+    run_sorting_session(true, motion_requested ? command.value("cycles").toInt() : 0);
     if (!sorting_mode_) { last_operator_command_["accepted"] = false; last_operator_command_["reason"] = "Workcell Builder could not start the session."; }
   } else if (check.accepted && action.endsWith("_sorting")) {
     QString error;
@@ -7630,6 +7999,17 @@ workcell_builder::OperatorPreviewLauncher * MainWindow::ensure_operator_preview_
   return operator_preview_launcher_;
 }
 
+QString MainWindow::operator_preview_key(const workcell_builder::OperatorPreviewRequest & request) const
+{
+  // What the HMI projects: the cell, the unsaved state and the saved files it reads.
+  QStringList key{request.scene_dir, request.task_dirty ? "draft" : "saved", request.layout_dirty ? "layout-dirty" : "layout-saved",
+    QString::fromUtf8(QJsonDocument(request.task_draft).toJson(QJsonDocument::Compact))};
+  for (const char * relative : {"environment.yaml", "config/workcell_builder_task_intent.yaml",
+                                "layout/workcell_studio_layout.yaml", "cell_definition.yaml"})
+    key << QString::number(QFileInfo(request.scene_dir + "/" + relative).lastModified().toMSecsSinceEpoch());
+  return key.join('|');
+}
+
 void MainWindow::schedule_operator_preview_update()
 {
   if (!operator_preview_launcher_ || !operator_preview_launcher_->running()) return;
@@ -7639,7 +8019,13 @@ void MainWindow::schedule_operator_preview_update()
     operator_preview_update_timer_->setInterval(400);
     connect(operator_preview_update_timer_, &QTimer::timeout, this, [this]() {
       if (operator_preview_launcher_ && has_selected_scene()) {
-        operator_preview_launcher_->publish_update(operator_preview_request());
+        // Page navigation re-syncs the selection: publish only when something the HMI shows has changed, so the
+        // operator is never told of "newer engineering state" that does not exist.
+        const auto request = operator_preview_request();
+        const QString key = operator_preview_key(request);
+        if (key == operator_preview_published_key_) return;
+        operator_preview_published_key_ = key;
+        operator_preview_launcher_->publish_update(request);
       }
     });
   }

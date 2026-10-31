@@ -86,8 +86,12 @@ private:
   bool simulation_linked() const;
   void check_simulation_status();
   void render_simulation();
-  void request_simulation(const QString & action);
+  // motion: the explicit, bounded G6 sorting mode (mode bounded_motion, 2 cycles); Workcell Builder decides admission.
+  void request_simulation(const QString & action, bool motion = false);
   void render_sorting();
+  void render_capabilities();
+  // The physics sorting session (plan only) of this cell from the Builder's status: its evidence view, else empty.
+  QJsonObject session_g4() const;
 
   OperatorHmiOptions options_;
   std::optional<OperatorPreviewRequest> request_;
@@ -113,6 +117,8 @@ private:
   int last_command_{0};
   QJsonArray command_results_;
   QJsonObject sim_status_;             // the Builder's operator_simulation_status.json
+  OperatorPreviewView session_view_;   // view_ with the objects of this cell's physics sorting session
+  bool session_objects_{false};        // the map and the objects table show session_view_
   int sim_command_id_{0};
   int sim_waiting_for_{-1};            // a request sent and not yet decided by the Builder
   QString sim_last_code_, sim_last_event_, sim_last_session_;
@@ -155,6 +161,7 @@ private:
   QLabel * results_summary_{nullptr};
   QPushButton * start_button_{nullptr};
   QLabel * production_blockers_{nullptr};
+  QLabel * capabilities_{nullptr};
   QLabel * sim_state_{nullptr};
   QPushButton * sim_run_button_{nullptr};
   QPushButton * sim_cancel_button_{nullptr};
@@ -165,6 +172,7 @@ private:
   QLabel * sort_note_{nullptr};
   QLabel * sort_result_{nullptr};
   QPushButton * sort_start_button_{nullptr};
+  QPushButton * sort_motion_button_{nullptr};
   QPushButton * sort_pause_button_{nullptr};
   QPushButton * sort_resume_button_{nullptr};
   QPushButton * sort_stop_button_{nullptr};
