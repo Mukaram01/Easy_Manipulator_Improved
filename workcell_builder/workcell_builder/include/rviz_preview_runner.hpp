@@ -42,6 +42,13 @@ QString build_full_cycle_command(const WorkcellStudioSceneInfo & scene_info,
 QString build_sorting_session_command(const WorkcellStudioSceneInfo & scene_info,
   const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id,
   const QString & control_file);
+// G6: a G4 physics sorting session of the saved cell, PLAN ONLY (run_g4_sorting.py --plan-every-target, never
+// --authorise-g4-trial): one Gazebo + MoveIt launch, simulator-rendered EPD frames, routing and a plan per object;
+// the runner refuses every cycle authorisation, so nothing moves. Operator pause/resume/stop go to control_file,
+// which must lie outside output_dir (the runner creates output_dir itself and refuses an existing one).
+QString build_physics_plan_session_command(const WorkcellStudioSceneInfo & scene_info,
+  const boost::filesystem::path & workspace_root, const QString & output_dir, int domain_id,
+  const QString & control_file);
 bool launch_command_is_safe(const QString & command, QString * reason = nullptr);
 QString build_shell_command(const QString & scene_pkg, const boost::filesystem::path & workspace_root);
 QString build_shell_command(const WorkcellStudioSceneInfo & scene_info, const boost::filesystem::path & workspace_root);

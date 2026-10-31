@@ -867,13 +867,24 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
   QStringList messages; for (const auto & value : report["errors"].toArray()) messages << value.toString();
   error_ = messages.join("\n");
   input_blocker_ = report["planning_input_blocker"].toString();
-  if (!input_blocker_.isEmpty()) messages << input_blocker_;
+  // A class-routed task bound to live EPD on the simulated camera (no saved capture) is observed by its own sorting
+  // session every cycle: the missing saved input blocks Plan Saved Task only (blocker(true) keeps it), not the task.
+  const auto intent = report["task_intent"].toObject();
+  const auto binding = intent["perception"].toObject();
+  const auto routing = intent["routing"].toObject();
+  const bool session_observed = binding["mode"].toString() == "live_epd" && binding["camera_source"].toString() == "simulated_rgbd" &&
+    binding["replay_path"].toString().isEmpty() && routing["mode"].toString() == "class" && !routing["rules"].toArray().isEmpty();
+  if (!input_blocker_.isEmpty())
+    messages << (session_observed ? "Input: each sorting cycle renders the cell with its camera and classifies the frame with "
+                                    "EPD (Plan / Simulate > Start Sorting). Plan Saved Task needs a recorded input: " + input_blocker_
+                                  : input_blocker_);
   for (const auto & value : report["warnings"].toArray()) messages << value.toString();
   const auto destination = report["resolved_destination"].toObject();
   if (!destination.isEmpty()) {
     messages << "Resolved destination in world (m): " + json_value(destination["pose_xyz"]);
   }
-  const auto status = (error_.isEmpty() && input_blocker_.isEmpty()) ? (report["warnings"].toArray().isEmpty() ? "Authoring valid" : "WARNING") : "BLOCKED";
+  const auto status = (error_.isEmpty() && (input_blocker_.isEmpty() || session_observed))
+    ? (report["warnings"].toArray().isEmpty() ? "Authoring valid" : "WARNING") : "BLOCKED";
   status_->setText(QString("%1%2\n%3\nIntent hash: %4\nPlanning still requires complete-cycle validation.")
     .arg(status, dirty_ ? " — unsaved" : "", messages.join("\n"), report["normalized_intent_sha256"].toString("unavailable")));
   if (report.contains("sequence_review")) apply_sequence_review(report["sequence_review"].toObject());

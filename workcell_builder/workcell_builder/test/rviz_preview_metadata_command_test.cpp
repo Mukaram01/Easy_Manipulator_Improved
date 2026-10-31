@@ -187,6 +187,31 @@ TEST(RvizPreviewMetadataCommandTest, SortingSessionUsesTheSameSupervisorOnFakeHa
   EXPECT_TRUE(workcell_builder::build_sorting_session_command(scene, "/tmp/ws", "/tmp/out", 77, "/tmp/c.json").isEmpty());
 }
 
+TEST(RvizPreviewMetadataCommandTest, PhysicsSortingSessionIsTheG4RunnerPlanOnlyNeverATrial)
+{
+  auto scene = runnable_scene();
+  scene.scene_name = "g6_cups";
+  scene.scene_dir = "/home/user/cells/g6_cups";
+  const auto command = workcell_builder::build_physics_plan_session_command(scene, "/home/user/workcell_ws",
+    "/tmp/studio sorting/run", 226, "/tmp/studio sorting/run.control.json");
+  EXPECT_TRUE(command.startsWith("eval \"$(python3 '"));
+  EXPECT_TRUE(command.contains("qualified_physics_runtime.py' env)\" && "));
+  EXPECT_TRUE(command.contains("run_g4_sorting.py' --scene-package '/home/user/cells/g6_cups' --output '/tmp/studio sorting/run'"));
+  EXPECT_TRUE(command.contains("--domain 226 --plan-every-target --stream-status --control-file '/tmp/studio sorting/run.control.json'"));
+  // No trial authority can be expressed from the Builder: the session record is G4_PLAN_ONLY.
+  EXPECT_FALSE(command.contains("--authorise-g4-trial"));
+  EXPECT_FALSE(command.contains("--prior-evidence"));
+  EXPECT_FALSE(command.contains("--max-cycles"));
+  EXPECT_FALSE(command.contains("use_fake_hardware:=false"));
+  // The runner creates the output itself (the control file may not live in it) and owns domains outside 170..219.
+  EXPECT_TRUE(workcell_builder::build_physics_plan_session_command(scene, "/tmp/ws", "/tmp/out", 226, "/tmp/out/c.json").isEmpty());
+  EXPECT_TRUE(workcell_builder::build_physics_plan_session_command(scene, "/tmp/ws", "/tmp/out", 180, "/tmp/c.json").isEmpty());
+  EXPECT_TRUE(workcell_builder::build_physics_plan_session_command(scene, "/tmp/ws", "/tmp/out", 233, "/tmp/c.json").isEmpty());
+  EXPECT_TRUE(workcell_builder::build_physics_plan_session_command(scene, "/tmp/ws", "/tmp/out", 226, "").isEmpty());
+  scene.scene_dir.clear();
+  EXPECT_TRUE(workcell_builder::build_physics_plan_session_command(scene, "/tmp/ws", "/tmp/out", 226, "/tmp/c.json").isEmpty());
+}
+
 TEST(RvizPreviewMetadataCommandTest, PhysicsCycleRunsTheQualifiedRunnerOnTheSavedCellOnly)
 {
   auto scene = runnable_scene();
