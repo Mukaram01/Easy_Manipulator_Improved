@@ -510,32 +510,26 @@ def call_service(node, client, request, *, spin, exchanged, attempts=SERVICE_ATT
     raise RuntimeError(f'service timeout: {client.srv_name}' + (f' ({budget} attempts)' if budget > 1 else ''))
 
 
-# Generation-2 threshold during owned execution: the default 10 ran a full pass every ~8 s
-# of Trial 20's execution; 100 leaves one or two per cycle. Generations 0 and 1 keep their
-# running values.
-GC_EXECUTION_GENERATION_2_THRESHOLD = 100
+def freeze_planning_heap(collector=gc):
+    """Move the planning-phase heap out of the cyclic collector, then stop automatic collection, before owned execution.
 
-
-def freeze_planning_heap(collector=gc, generation_2=GC_EXECUTION_GENERATION_2_THRESHOLD):
-    """Move the planning-phase heap out of the cyclic collector before owned execution.
-
-    The executor's own stall watch recorded generation-2 passes of 40-121 ms that collected
-    nothing yet held the GIL while the 1 kHz measurement subscription had to run; one such
-    pass preceded Trial 20's stale measurement in the transfer. One full collection, then
-    freezing the surviving planning objects (~60 ms of each pass), removes that heap from
-    every later pass, and the raised generation-2 threshold makes those passes rare. They
-    are not eliminated: the evidence writer's queued samples are allocated after the freeze
-    and a pass landing on a transfer backlog can still take some tens of milliseconds. No
-    measurement, guard or freshness rule is touched; the evidence is returned for the summary.
+    The executor's own stall watch recorded generation-2 passes that collected nothing yet held the GIL while the
+    measurement subscription had to run; one preceded Trial 20's stale measurement in the transfer. One full collection
+    and freezing the surviving planning objects removed that heap from later passes, but passes over the heap allocated
+    during execution still grew within every executed G4 cycle (q_s1..q_stop2: 18 ms rising to 138-261 ms, each
+    collecting at most 168 objects), and G4-S q_stop2's 261 ms pass in EXECUTE_TRANSFER exceeded the 0.25 s measurement
+    freshness bound (SIMULATOR_TELEMETRY_INVALID). Automatic collection therefore stays off for the rest of this
+    short-lived cycle executor: reference counting still frees every acyclic object, and the few cyclic objects of one
+    cycle are released when it exits. No measurement, guard or freshness rule is touched; the evidence is returned for
+    the summary.
     """
-    before = collector.get_threshold()
     started = time.time_ns()
     collected = collector.collect()
     collect_ns = time.time_ns() - started
     collector.freeze()
-    collector.set_threshold(before[0], before[1], generation_2)
+    collector.disable()
     return dict(start_wall_ns=started, collect_ns=collect_ns, wall_ns=time.time_ns(), collected=collected,
-                frozen=collector.get_freeze_count(), thresholds_before=list(before), thresholds_after=list(collector.get_threshold()))
+                frozen=collector.get_freeze_count(), automatic_collection=collector.isenabled())
 
 
 class PlanningCrossCheckGate:

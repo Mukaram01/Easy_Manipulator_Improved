@@ -1665,24 +1665,23 @@ def test_executor_service_calls_use_the_first_reply_retry_and_record_retries_in_
 class _Collector:
     """gc stand-in that records the order of calls."""
     def __init__(self):
-        self.calls=[]; self.threshold=(700,10,10); self.frozen=0
+        self.calls=[]; self.threshold=(700,10,10); self.frozen=0; self.enabled=True
     def get_threshold(self):return self.threshold
     def collect(self):self.calls.append('collect');return 17
     def freeze(self):self.calls.append('freeze');self.frozen=4321
     def get_freeze_count(self):return self.frozen
     def set_threshold(self,*t):self.calls.append(('set_threshold',t));self.threshold=t
+    def disable(self):self.calls.append('disable');self.enabled=False
+    def isenabled(self):return self.enabled
 
 
-def test_freeze_planning_heap_collects_then_freezes_then_raises_only_the_generation_2_threshold():
+def test_freeze_planning_heap_collects_then_freezes_then_stops_automatic_collection():
     collector=_Collector()
     evidence=MODULE.freeze_planning_heap(collector)
-    assert collector.calls==['collect','freeze',('set_threshold',(700,10,100))]   # a full pass first, so no garbage is frozen
-    assert evidence['collected']==17 and evidence['frozen']==4321
+    assert collector.calls==['collect','freeze','disable']          # a full pass first, so no garbage is frozen
+    assert evidence['collected']==17 and evidence['frozen']==4321 and evidence['automatic_collection'] is False
     assert evidence['start_wall_ns']<=evidence['wall_ns'] and evidence['collect_ns']>=0   # the boundary pass is identifiable in the timing evidence
-    assert evidence['thresholds_before']==[700,10,10] and evidence['thresholds_after']==[700,10,100]
-    collector=_Collector(); collector.threshold=(500,7,10)
-    assert MODULE.freeze_planning_heap(collector)['thresholds_after']==[500,7,100]   # young generations keep their running values
-    assert MODULE.GC_EXECUTION_GENERATION_2_THRESHOLD==100
+    assert collector.threshold==(700,10,10)                          # thresholds untouched: no pass runs during execution
 
 
 def test_freeze_planning_heap_works_on_the_real_collector_and_is_reversible_for_the_test():
@@ -1691,10 +1690,11 @@ def test_freeze_planning_heap_works_on_the_real_collector_and_is_reversible_for_
     try:
         evidence=MODULE.freeze_planning_heap()
         assert gc.get_freeze_count()>frozen_before and evidence['frozen']==gc.get_freeze_count()
-        assert gc.get_threshold()==(before[0],before[1],100) and gc.isenabled()  # the collector stays enabled
+        assert not gc.isenabled() and evidence['automatic_collection'] is False
+        assert gc.get_threshold()==before
     finally:
-        gc.unfreeze(); gc.set_threshold(*before)
-    assert gc.get_freeze_count()==frozen_before and gc.get_threshold()==before
+        gc.enable(); gc.unfreeze()
+    assert gc.get_freeze_count()==frozen_before and gc.isenabled()
 
 
 def test_executor_freezes_the_planning_heap_only_with_live_telemetry_and_before_the_first_executed_step():
