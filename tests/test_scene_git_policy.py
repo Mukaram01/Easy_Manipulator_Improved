@@ -26,6 +26,13 @@ def test_new_user_cells_and_their_assets_are_ignored():
     assert not ignored('workcell_builder/workcell_builder/assets/imported/.gitkeep')
 
 
+def test_imported_asset_catalog_is_local_and_its_bootstrap_stays_tracked():
+    library = 'workcell_builder/workcell_builder/assets/imported/'
+    for local in ['imported_environment_assets.json', '.customer_part.stl.importing', '.catalog.x1y2.json']:
+        assert ignored(library + local), local
+    assert not ignored('workcell_builder/workcell_builder/config/asset_profiles/imported_environment_assets.json')
+
+
 def test_every_tracked_scene_keeps_its_future_source_changes_trackable():
     tracked = subprocess.run(['git', 'ls-files', 'scenes'], cwd=ROOT, capture_output=True, text=True,
                              check=True).stdout.split()

@@ -12,6 +12,30 @@ VALID_STATUS={'COMPATIBLE','COMPATIBLE_WITH_WARNINGS','UNKNOWN_COMPATIBILITY','I
 VALID_ENV_CATEGORIES={"Tables / Workbenches","Bins / Trays / Totes","Conveyors","Fixtures","Safety / Fencing","Camera Mounts","Robot Bases","Pick Objects","Custom / Imported"}
 MAX_ASSET_BYTES=2*1024*1024
 SUSPICIOUS_LICENSE={"proprietary","vendor_only","restricted","unknown_vendor"}
+# Imported CAD and its one catalog stay on this PC (Git-ignored). The tracked
+# config/asset_profiles copy is a read-only legacy bootstrap, adopted by the first import.
+IMPORTED_LIBRARY='workcell_builder/workcell_builder/assets/imported'
+IMPORTED_CATALOG=IMPORTED_LIBRARY+'/imported_environment_assets.json'
+LEGACY_IMPORTED_CATALOG='workcell_builder/workcell_builder/config/asset_profiles/imported_environment_assets.json'
+IMPORTED_EXT={'.stl','.obj','.dae','.urdf','.xacro'}
+
+
+def load_imported_catalog(root: Path):
+    """Return (catalog path read, asset list). Objects the old importer appended after the
+    array are recovered; anything else that is not a JSON array raises ValueError."""
+    path=root/IMPORTED_CATALOG
+    if not path.exists():
+        path=root/LEGACY_IMPORTED_CATALOG
+        if not path.exists(): return root/IMPORTED_CATALOG, []
+    text=path.read_text(encoding='utf-8'); decoder=json.JSONDecoder(); assets=[]; i=0
+    while True:
+        while i<len(text) and text[i].isspace(): i+=1
+        if i==len(text): break
+        value,i=decoder.raw_decode(text,i)
+        if isinstance(value,dict): assets.append(value)
+        elif isinstance(value,list) and all(isinstance(x,dict) for x in value): assets.extend(value)
+        else: raise ValueError(f'{path}: not a JSON array of assets')
+    return path, assets
 
 
 def _load_jsons(d: Path):
@@ -37,7 +61,6 @@ def main()->int:
     croot=root/'workcell_builder/workcell_builder/config'
     robots_d=croot/'compatibility_profiles/robots'; tools_d=croot/'compatibility_profiles/tools'; pairs_d=croot/'compatibility_profiles/pairs'; cams_d=croot/'camera_profiles'
     assets_d=croot/'asset_profiles/environment_assets.json'
-    imported_assets_d=croot/'asset_profiles/imported_environment_assets.json'
     blockers=[]; warns=[]
     for d in [robots_d,tools_d,pairs_d,cams_d]:
         if not d.exists(): blockers.append(f'missing directory: {d.relative_to(root)}')
@@ -108,35 +131,35 @@ def main()->int:
         except Exception: blockers.append('environment_assets.json parse error')
 
 
-    if imported_assets_d.exists():
-        try:
-            arr=json.loads(imported_assets_d.read_text(encoding='utf-8'))
-            seen=set()
-            for i,aobj in enumerate(arr if isinstance(arr,list) else []):
-                where=f'imported_environment_assets[{i}]'
-                _req(aobj,['asset_id','label','category','asset_type','default_dimensions_m','default_pose','default_z_hint','license','source_note'],blockers,where)
-                aid=str(aobj.get('asset_id',''))
-                if aid in seen: blockers.append(f'{where}: duplicate asset_id {aid}')
-                seen.add(aid)
-                if aid: _safe(aid,blockers,where)
-                pth=aobj.get('mesh_path') or aobj.get('urdf_path')
-                if not pth: blockers.append(f'{where}: missing mesh_path/urdf_path')
-                else:
-                    sp=str(pth)
-                    if sp.startswith('/'): blockers.append(f'{where}: absolute mesh_path forbidden')
-                    if '..' in sp: blockers.append(f'{where}: path traversal forbidden')
-                    ext=Path(sp).suffix.lower()
-                    if ext not in {'.stl','.urdf','.xacro'}: blockers.append(f'{where}: unsupported extension {ext}')
-                    fp=root/sp
-                    if not fp.exists(): blockers.append(f'{where}: missing imported file {sp}')
-                    elif fp.is_symlink(): blockers.append(f'{where}: symlink not allowed')
-                dims=aobj.get('default_dimensions_m',[])
-                if not (isinstance(dims,list) and len(dims)==3 and all(isinstance(x,(int,float)) and x>0 for x in dims)): blockers.append(f'{where}: invalid default_dimensions_m')
-                pose=aobj.get('default_pose',[])
-                if not (isinstance(pose,list) and len(pose)==6 and all(isinstance(x,(int,float)) for x in pose)): blockers.append(f'{where}: invalid default_pose')
-                if not str(aobj.get('license','')).strip() or not str(aobj.get('source_note','')).strip(): blockers.append(f'{where}: license/source note required')
-        except Exception:
-            blockers.append('imported_environment_assets.json parse error')
+    try:
+        _,arr=load_imported_catalog(root)
+        seen=set()
+        for i,aobj in enumerate(arr):
+            where=f'imported_environment_assets[{i}]'
+            _req(aobj,['asset_id','label','category','asset_type','default_dimensions_m','default_pose','default_z_hint','license','source_note'],blockers,where)
+            aid=str(aobj.get('asset_id',''))
+            if aid in seen: blockers.append(f'{where}: duplicate asset_id {aid}')
+            seen.add(aid)
+            if aid: _safe(aid,blockers,where)
+            pth=aobj.get('mesh_path') or aobj.get('urdf_path')
+            if not pth: blockers.append(f'{where}: missing mesh_path/urdf_path')
+            else:
+                sp=str(pth)
+                if sp.startswith('/'): blockers.append(f'{where}: absolute mesh_path forbidden')
+                if '..' in sp: blockers.append(f'{where}: path traversal forbidden')
+                ext=Path(sp).suffix.lower()
+                if ext not in IMPORTED_EXT: blockers.append(f'{where}: unsupported extension {ext}')
+                if not sp.startswith(IMPORTED_LIBRARY+'/'): blockers.append(f'{where}: imported file outside {IMPORTED_LIBRARY}')
+                fp=root/sp
+                if not fp.exists(): blockers.append(f'{where}: missing imported file {sp}')
+                elif fp.is_symlink(): blockers.append(f'{where}: symlink not allowed')
+            dims=aobj.get('default_dimensions_m',[])
+            if not (isinstance(dims,list) and len(dims)==3 and all(isinstance(x,(int,float)) and x>0 for x in dims)): blockers.append(f'{where}: invalid default_dimensions_m')
+            pose=aobj.get('default_pose',[])
+            if not (isinstance(pose,list) and len(pose)==6 and all(isinstance(x,(int,float)) for x in pose)): blockers.append(f'{where}: invalid default_pose')
+            if not str(aobj.get('license','')).strip() or not str(aobj.get('source_note','')).strip(): blockers.append(f'{where}: license/source note required')
+    except Exception as e:
+        blockers.append(f'imported_environment_assets.json parse error: {e}')
 
     if blockers: print(FAIL)
     elif warns or a.strict: print(WARN if warns else PASS)

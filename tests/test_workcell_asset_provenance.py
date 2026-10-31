@@ -47,8 +47,8 @@ def test_layout_serializer_normalizes_scene_local_absolute_mesh_paths():
     assert 'portable_mesh_path.indexOf(QStringLiteral("/scenes/"))' in cpp
     assert 'portable_mesh_path.indexOf(QStringLiteral("/assets/")' in cpp
     assert "state.mesh_path = portable_mesh_path.toStdString()" in cpp
-    assert 'asset["staged_relative_path"]' in cpp
-    assert 'asset["source_sha256"]' in cpp
-    assert 'asset["imported_at_utc"]' in cpp
+    library = (ROOT / "workcell_builder/workcell_builder/src_external_asset_importer.cpp").read_text(encoding="utf-8")
+    assert 'entry.insert("source_sha256"' in library
+    assert 'entry.insert("imported_at_utc"' in library
     assert 'root["scene_path"] = "."' in cpp
     assert 'item["scene_path"] = "."' in cpp

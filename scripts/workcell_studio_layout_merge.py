@@ -92,13 +92,16 @@ def merge(scene_dir: Path, deleted_item_ids: list[str] | None = None, *, save_au
             source = Path(str(mesh.get('path', '')))
             if not source.is_absolute():
                 continue
-            if not source.is_file() or source.suffix.lower() != '.stl':
-                raise ValueError(f"asset {item['id']}: catalog mesh must be an existing STL; use Import Mesh for other formats")
+            suffix = source.suffix.lower()
+            if not source.is_file() or suffix not in ('.stl', '.obj', '.dae'):
+                raise ValueError(f"asset {item['id']}: catalog mesh must be an existing STL, OBJ or DAE file")
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
-            relative = Path('assets/imported/catalog') / (digest[:16] + '.stl')
+            relative = Path('assets/imported/catalog') / (digest[:16] + suffix)
             destination = scene_dir / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            if not destination.exists():
+            if not destination.exists() and suffix != '.stl':
+                shutil.copy2(source, destination)
+            elif not destination.exists():
                 data = source.read_bytes()
                 count = struct.unpack_from('<I', data, 80)[0] if len(data) >= 84 else 0
                 if count and 84 + 50 * count == len(data):

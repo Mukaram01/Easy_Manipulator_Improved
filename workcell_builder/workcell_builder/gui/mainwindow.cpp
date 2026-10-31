@@ -37,6 +37,7 @@
 #include "visual_mesh_source_resolver.hpp"
 #include "workcell_warning_once.hpp"
 #include "include/asset_catalog_model.h"
+#include "external_asset_importer.hpp"
 #include <optional>
 #include <QXmlStreamReader>
 #include <QFileDialog>
@@ -2429,7 +2430,7 @@ void MainWindow::setup_studio_shell()
   import_asset_button->setText(QStringLiteral("+"));
   import_asset_button->setAccessibleName(QStringLiteral("Import Asset"));
   import_asset_button->setFixedWidth(34);
-  import_asset_button->setToolTip("Import an STL, OBJ, or DAE mesh into the active scene's authored Asset Library.");
+  import_asset_button->setToolTip("Import an STL, OBJ, or DAE mesh into this PC's Asset Library (not tracked by Git). Placing it copies it into the cell.");
   discovery_strip->addWidget(import_asset_button);
   catalog_layout->addLayout(discovery_strip);
   asset_filter_combo_ = new QComboBox(catalog_card);
@@ -16253,15 +16254,6 @@ QString safe_import_mesh_stem(const QString & name)
   return stem;
 }
 
-QString imported_mesh_sha256(const QString & path)
-{
-  QFile source(path);
-  if (!source.open(QIODevice::ReadOnly)) return QString();
-  QCryptographicHash hash(QCryptographicHash::Sha256);
-  while (!source.atEnd()) hash.addData(source.read(1024 * 1024));
-  return QString::fromLatin1(hash.result().toHex());
-}
-
 struct ImportedMeshInspection
 {
   bool available{ false };
@@ -16350,26 +16342,6 @@ ImportedMeshInspection inspect_import_mesh_geometry(const QString & path)
   return out;
 }
 
-YAML::Node mesh_import_vector_node(const std::array<double, 3> & values)
-{
-  YAML::Node node(YAML::NodeType::Sequence);
-  for (const double value : values) node.push_back(value);
-  return node;
-}
-
-QString scene_imported_asset_id(const fs::path & asset_path)
-{
-  return QStringLiteral("imported_%1").arg(
-    QString::fromStdString(asset_path.stem().string()));
-}
-
-bool same_file_bytes(const QString & a, const QString & b)
-{
-  QFile fa(a), fb(b);
-  if (!fa.open(QIODevice::ReadOnly) || !fb.open(QIODevice::ReadOnly) || fa.size() != fb.size()) return false;
-  while (!fa.atEnd()) if (fa.read(65536) != fb.read(65536)) return false;
-  return true;
-}
 }  // namespace
 
 void MainWindow::populate_asset_catalog()
@@ -16387,9 +16359,23 @@ void MainWindow::populate_asset_catalog()
   const std::string scene_catalog_root = has_selected_scene()
     ? (fs::path(selected_scene_path().toStdString()) / "assets" / "imported").string()
     : std::string();
+  const auto library = workcell_builder::load_imported_asset_catalog(repo_root.string());
+  if (!library.ok) append_studio_log(QString("Imported asset library unavailable: %1").arg(QString::fromStdString(library.error)));
+  std::vector<::AssetCatalogEntry> library_imports;
+  for (const auto & imported : library.entries) {
+    ::AssetCatalogEntry entry;
+    entry.id = imported.asset_id;
+    entry.display_name = imported.label;
+    entry.path = imported.available ? imported.resolved_mesh_path : imported.mesh_path;
+    entry.scale = imported.unit_scale_to_m;
+    entry.readiness = imported.available ? "PREVIEW_ONLY" : "INCOMPLETE";
+    entry.can_add_to_scene = imported.available;
+    if (!imported.problem.empty()) entry.blockers.push_back(imported.problem);
+    library_imports.push_back(entry);
+  }
   const auto model = discover_asset_catalog(
     QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT")).toStdString(),
-    repo_root.string(), scene_catalog_root);
+    repo_root.string(), scene_catalog_root, library_imports);
 
   auto append_catalog_entry = [this](const ::AssetCatalogEntry & source_entry) {
     MainWindow::AssetCatalogEntry ui_entry;
@@ -16457,10 +16443,6 @@ void MainWindow::populate_asset_catalog()
 
 void MainWindow::import_stl_to_asset_library()
 {
-  if (!has_selected_scene()) {
-    QMessageBox::warning(this, "Import Mesh", "Open an editable scene before importing a mesh asset.");
-    return;
-  }
   const QString source = QFileDialog::getOpenFileName(
     this, "Import Mesh", QDir::homePath(),
     "Supported meshes (*.stl *.STL *.obj *.OBJ *.dae *.DAE);;STL (*.stl *.STL);;OBJ (*.obj *.OBJ);;COLLADA (*.dae *.DAE)");
@@ -16477,10 +16459,7 @@ void MainWindow::import_stl_to_asset_library()
   const double scale = units == "millimetres" ? 0.001 : (units == "centimetres" ? 0.01 : 1.0);
   const QString stem = safe_import_mesh_stem(source);
   if (stem.isEmpty()) { QMessageBox::warning(this, "Import Mesh", "Cannot import mesh: safe destination filename would be empty."); return; }
-  const QString extension = QFileInfo(source).suffix().toLower();
   const QString format = import_mesh_format_label(source);
-  const QString source_hash = imported_mesh_sha256(source);
-  if (source_hash.isEmpty()) { QMessageBox::warning(this, "Import Mesh", "Cannot hash the selected source file."); return; }
   const ImportedMeshInspection inspection = inspect_import_mesh_geometry(source);
   if (inspection.available && !inspection.valid) {
     QMessageBox::warning(this, "Import Mesh", QString("Cannot import %1: %2.").arg(source, inspection.error));
@@ -16509,24 +16488,16 @@ void MainWindow::import_stl_to_asset_library()
     }
   }
 
-  const fs::path scene_dir = fs::path(selected_scene_path().toStdString());
-  const fs::path asset_root = scene_dir / "assets" / "imported";
-  boost::system::error_code ec;
-  fs::create_directories(asset_root, ec);
-  if (ec) { QMessageBox::warning(this, "Import Mesh", QString("Cannot create scene asset directory %1: %2").arg(QString::fromStdString(asset_root.string()), QString::fromStdString(ec.message()))); return; }
-  const fs::path root_canon = fs::canonical(asset_root, ec);
-  if (ec) { QMessageBox::warning(this, "Import Mesh", "Cannot validate scene asset directory safety."); return; }
-  fs::path dest = root_canon / (stem.toStdString() + "." + extension.toStdString());
-  const fs::path source_canon = fs::canonical(fs::path(source.toStdString()), ec);
-  if (ec || !fs::is_regular_file(source_canon, ec)) { QMessageBox::warning(this, "Import Mesh", "Source is not a readable regular file."); return; }
-  const std::string root_str = root_canon.string() + fs::path::preferred_separator;
-  auto inside_root = [&](const fs::path & p){ const std::string v = p.string(); return v == root_canon.string() || v.rfind(root_str, 0) == 0; };
-  for (int suffix = 0; fs::exists(dest, ec); ++suffix) {
-    if (same_file_bytes(QString::fromStdString(source_canon.string()), QString::fromStdString(dest.string()))) break;
-    dest = root_canon / QString("%1_%2.%3").arg(stem).arg(suffix + 1).arg(extension).toStdString();
+  // Imports go to this PC's imported-asset library, never into a cell or a
+  // tracked folder: placing an asset copies it into the cell on Save.
+  const QString workspace_root = QString::fromLocal8Bit(qgetenv("WORKCELL_WORKSPACE_ROOT"));
+  const QString repo_root = resolve_workcell_studio_repo_root(has_selected_scene()
+    ? fs::path(selected_scene_path().toStdString())
+    : fs::path((workspace_root + QStringLiteral("/src/easy_manipulation_deployment/scenes")).toStdString()));
+  if (repo_root.isEmpty()) {
+    QMessageBox::warning(this, "Import Mesh", "Cannot import mesh: the Workcell Studio repository was not found.");
+    return;
   }
-  if (!inside_root(dest)) { QMessageBox::warning(this, "Import Mesh", "Unsafe destination escaped the scene asset directory."); return; }
-  const QString rel = QDir(QString::fromStdString(scene_dir.string())).relativeFilePath(QString::fromStdString(dest.string()));
   const QString geometry_summary = inspection.valid
     ? QString("Geometry: %1 vertices / %2 faces\nBounds after unit conversion: %3 × %4 × %5 m\nOrigin to bounds centre: [%6, %7, %8] m\n")
       .arg(inspection.vertex_count).arg(inspection.face_count)
@@ -16536,69 +16507,43 @@ void MainWindow::import_stl_to_asset_library()
     : QString("Geometry bounds: deferred (%1)\n").arg(inspection.error);
   const QString summary = QString(
     "Display name: %1\nFormat: %2\nFilename: %3\nSource units: %4\nScale to metres: %5\n"
-    "%6Origin policy: preserve mesh-local origin\nBounds check: %7\nDestination: %8")
+    "%6Origin policy: preserve mesh-local origin\nBounds check: %7\n"
+    "Destination: this PC's imported-asset library (not tracked by Git; placing it copies it into the cell)")
     .arg(stem, format, QFileInfo(source).fileName(), import_unit_label(scale), QString::number(scale, 'g', 6),
-      geometry_summary, inspection.valid ? QStringLiteral("validated before import") : QStringLiteral("required when Product View loads"), rel);
+      geometry_summary, inspection.valid ? QStringLiteral("validated before import") : QStringLiteral("required when Product View loads"));
   if (QMessageBox::question(this, "Confirm Mesh Import", summary) != QMessageBox::Yes) return;
+  const QString licence = QInputDialog::getText(
+    this, "Import Mesh Licence", "Licence or owner of this geometry (kept with the asset):",
+    QLineEdit::Normal, QString(), &ok).trimmed();
+  if (!ok) return;
 
-  const bool preexisting = fs::exists(dest, ec);
-  const QString asset_id = scene_imported_asset_id(dest);
-  if (!preexisting) {
-    const fs::path tmp = dest.string() + ".tmp";
-    fs::copy_file(source_canon, tmp, fs::copy_option::fail_if_exists, ec);
-    if (ec) { QMessageBox::warning(this, "Import Mesh", QString("Copy failed: %1").arg(QString::fromStdString(ec.message()))); return; }
-    fs::rename(tmp, dest, ec);
-    if (ec) { fs::remove(tmp); QMessageBox::warning(this, "Import Mesh", QString("Copy finalize failed: %1").arg(QString::fromStdString(ec.message()))); return; }
+  QJsonObject metadata{
+    {"label", stem}, {"category", "Custom / Imported"}, {"asset_type", "custom"},
+    {"source_units", units}, {"unit_scale_to_m", scale},
+    {"mesh_origin_policy", "preserve_file_origin"},
+    {"bounds_validation", inspection.valid ? "validated_at_import" : "required_on_product_view_load"},
+    {"geometry_inspection_backend", inspection.available ? "assimp" : "unavailable"},
+    {"geometry_vertex_count", static_cast<double>(inspection.vertex_count)},
+    {"geometry_face_count", static_cast<double>(inspection.face_count)},
+    {"license", licence.isEmpty() ? QStringLiteral("not specified") : licence}};
+  if (inspection.valid) {
+    auto json_vector = [](const std::array<double, 3> & values) { return QJsonArray{values[0], values[1], values[2]}; };
+    metadata.insert("source_bounds", QJsonObject{
+      {"minimum", json_vector(inspection.minimum)}, {"maximum", json_vector(inspection.maximum)},
+      {"dimensions", json_vector(raw_dimensions)}});
+    metadata.insert("default_dimensions_m", json_vector(dimensions_metres));
+    metadata.insert("origin_to_bounds_center_m", json_vector(origin_to_bounds_center_metres));
   }
-  try {
-    const fs::path manifest = asset_root / "asset_manifest.yaml";
-    YAML::Node root;
-    if (fs::exists(manifest)) root = YAML::LoadFile(manifest.string());
-    if (!root["assets"] || !root["assets"].IsSequence()) root["assets"] = YAML::Node(YAML::NodeType::Sequence);
-    YAML::Node asset;
-    asset["id"] = asset_id.toStdString();
-    asset["display_name"] = QString::fromStdString(dest.stem().string()).toStdString();
-    asset["path"] = fs::relative(dest, asset_root, ec).string();
-    asset["staged_relative_path"] = fs::relative(dest, asset_root, ec).string();
-    asset["catalog_id"] = asset_id.toStdString();
-    asset["category"] = "Imported";
-    asset["visual_type"] = extension.toStdString();
-    asset["scale"] = scale;
-    asset["source_units"] = units.toStdString();
-    asset["unit_scale_to_m"] = scale;
-    asset["mesh_origin_policy"] = "preserve_file_origin";
-    asset["bounds_validation"] = inspection.valid ? "validated_at_import" : "required_on_product_view_load";
-    asset["geometry_inspection_backend"] = inspection.available ? "assimp" : "unavailable";
-    asset["geometry_vertex_count"] = static_cast<unsigned long long>(inspection.vertex_count);
-    asset["geometry_face_count"] = static_cast<unsigned long long>(inspection.face_count);
-    if (inspection.valid) {
-      YAML::Node raw_bounds;
-      raw_bounds["minimum"] = mesh_import_vector_node(inspection.minimum);
-      raw_bounds["maximum"] = mesh_import_vector_node(inspection.maximum);
-      raw_bounds["dimensions"] = mesh_import_vector_node(raw_dimensions);
-      asset["source_bounds"] = raw_bounds;
-      asset["dimensions_m"] = mesh_import_vector_node(dimensions_metres);
-      asset["origin_to_bounds_center_m"] = mesh_import_vector_node(origin_to_bounds_center_metres);
-    }
-    asset["original_filename"] = QFileInfo(source).fileName().toStdString();
-    asset["source_sha256"] = source_hash.toStdString();
-    asset["imported_at_utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
-    asset["import_contract_version"] = "workcell_studio_mesh_import/v2";
-    YAML::Node updated_assets(YAML::NodeType::Sequence);
-    for (const auto & existing : root["assets"]) {
-      if (!existing.IsMap() || !existing["id"] || existing["id"].as<std::string>() != asset_id.toStdString())
-        updated_assets.push_back(existing);
-    }
-    updated_assets.push_back(asset);
-    root["assets"] = updated_assets;
-    std::ofstream out(manifest.string());
-    if (!out) throw std::runtime_error("failed opening asset manifest for write");
-    out << root;
-  } catch (const std::exception & e) {
-    if (!preexisting) fs::remove(dest);
-    QMessageBox::warning(this, "Import Mesh", QString("Catalog write failed; copied file was rolled back: %1").arg(e.what()));
+  const auto published = workcell_builder::publish_imported_asset(
+    repo_root.toStdString(), source.toStdString(), stem.toStdString(), metadata);
+  if (!published.ok) {
+    QMessageBox::warning(this, "Import Mesh", QString("Cannot import %1: %2.").arg(source, QString::fromStdString(published.error)));
     return;
   }
+  const QString asset_id = QString::fromStdString(published.asset_id);
+  append_studio_log(QString("Imported mesh %1 the local asset library: id=%2 path=%3")
+    .arg(published.reused ? QStringLiteral("already in") : QStringLiteral("added to"), asset_id,
+      QString::fromStdString(published.mesh_path)));
   // Catalog entries are about to be replaced. Invalidate every placement identity
   // derived from the old catalog first so a delayed canvas/Web3D event cannot place it.
   clear_armed_asset_placement();

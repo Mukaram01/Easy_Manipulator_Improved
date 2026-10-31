@@ -165,8 +165,9 @@ def test_catalog_identity_b_flows_to_one_editable_layout_item_and_refreshes_prod
         'void MainWindow::import_stl_to_asset_library()',
         'void MainWindow::open_add_asset_dialog()',
     )
-    assert 'scene_dir / "assets" / "imported"' in imported
-    assert 'stem.toStdString() + "." + extension.toStdString()' in imported
+    # Imports publish to this PC's imported-asset library, never into the open cell.
+    assert 'workcell_builder::publish_imported_asset(' in imported
+    assert 'scene_dir' not in imported
 
 
 def test_a7_mesh_import_has_explicit_units_format_preflight_and_portable_metadata():
@@ -211,10 +212,9 @@ def test_a7_mesh_import_has_explicit_units_format_preflight_and_portable_metadat
         'source_bounds',
         'dimensions_m',
         'origin_to_bounds_center_m',
-        'original_filename',
-        'source_sha256',
-        'workcell_studio_mesh_import/v2',
+        'license',
     ]:
         assert metadata in imported
-    assert 'updated_assets' in imported
-    assert 'existing["id"].as<std::string>() != asset_id.toStdString()' in imported
+    library = Path('workcell_builder/workcell_builder/src_external_asset_importer.cpp').read_text(encoding='utf-8')
+    for metadata in ['original_filename', 'source_sha256', 'workcell_studio_mesh_import/v3']:
+        assert metadata in library

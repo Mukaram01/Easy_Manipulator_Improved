@@ -391,3 +391,39 @@ TEST(AssetCatalogDiscovery, IdenticalGeometryFromTwoPackagesIsListedOnce)
   EXPECT_EQ(tables, 1);
   EXPECT_TRUE(block_listed);
 }
+
+TEST(AssetLibraryModel, LocalLibraryImportsAreListedAsImportedInEveryCell)
+{
+  const fs::path repo = make_tmp_dir("library_repo");
+  const fs::path ws = make_tmp_dir("library_ws");
+  const fs::path mesh = repo / "workcell_builder/workcell_builder/assets/imported/customer_part.stl";
+  write_text(mesh, "solid part\nendsolid part\n");
+  AssetCatalogEntry imported;
+  imported.id = "imported_customer_part";
+  imported.display_name = "customer_part";
+  imported.path = mesh.string();
+  imported.scale = 0.001;
+  imported.can_add_to_scene = true;
+  AssetCatalogEntry missing;
+  missing.id = "imported_gone";
+  missing.path = "workcell_builder/workcell_builder/assets/imported/gone.stl";
+  missing.blockers = {"the imported mesh file is missing"};
+
+  // No cell is open: the library is not scene-owned.
+  const AssetCatalogModel model = discover_asset_catalog(ws.string(), repo.string(), std::string(), {imported, missing});
+  const auto listed = std::find_if(model.assets.begin(), model.assets.end(), [](const auto & e) {
+    return e.id == "imported_customer_part";
+  });
+  ASSERT_NE(listed, model.assets.end());
+  EXPECT_EQ(listed->path, mesh.string());
+  EXPECT_DOUBLE_EQ(listed->scale, 0.001);
+  EXPECT_TRUE(listed->can_add_to_scene);
+  EXPECT_EQ(asset_provenance(*listed), "imported");
+  EXPECT_EQ(listed->category, "Imported");
+  const auto gone = std::find_if(model.assets.begin(), model.assets.end(), [](const auto & e) {
+    return e.id == "imported_gone";
+  });
+  ASSERT_NE(gone, model.assets.end());
+  EXPECT_FALSE(gone->can_add_to_scene);
+  EXPECT_EQ(gone->blockers.front(), "the imported mesh file is missing");
+}
