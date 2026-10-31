@@ -2017,3 +2017,50 @@ def test_the_destination_approach_waypoint_raises_only_the_transfer_end():
     kwargs, raised = transport_fixture(keep_level(destination_approach_height_m=0.3))
     assert preplan_full_cycle(**kwargs).success
     assert raised[0]['z'] - legacy[0]['z'] == pytest.approx(0.3 - 0.15)      # fixture place approach is 0.15 m
+
+
+# A walled destination: the free TRANSFER ends, and HOME starts, above the bound rim; the straight PLACE descent and
+# RETREAT span the cavity (G4 r_stop/r_stop2: refused HOME paths clipped the rim from inside the bin).
+@pytest.mark.parametrize('floor_z,rim_z,expected', [(None, None, None), (.2, .4, .215), (.2, .21, None)])
+def test_free_stages_border_a_walled_destination_above_its_rim(floor_z, rim_z, expected):
+    from full_cycle_preplanner import preplan_full_cycle
+    heights = {}
+    for case in ('authored', 'rim'):
+        kwargs, _, goals, _ = fixture()
+        if case == 'rim' and floor_z is not None:
+            kwargs['contract'].update(destination_floor_z=floor_z, destination_rim_z=rim_z)
+        elif floor_z is not None:
+            kwargs['contract']['destination_floor_z'] = floor_z
+        result = preplan_full_cycle(**kwargs)
+        assert result.success, result.reason
+        z = {g[0]: g[1].pose.position.z for g in goals if g[0] in ('PREPLAN_TRANSFER', 'PREPLAN_PLACE', 'PREPLAN_RETREAT')}
+        heights[case] = (z['PREPLAN_TRANSFER'] - z['PREPLAN_PLACE'], z['PREPLAN_RETREAT'] - z['PREPLAN_PLACE'], result.checks)
+    authored, rim = heights['authored'], heights['rim']
+    check = [c for c in rim[2] if c['code'] == 'DESTINATION_RIM_CLEARANCE']
+    if rim_z is None:
+        assert check == [] and rim[:2] == pytest.approx(authored[:2])              # no bound walls: unchanged
+    elif expected is None:
+        assert rim[:2] == pytest.approx(authored[:2])                              # authored already clears the rim
+        assert check[0]['place_approach_m'] == pytest.approx(authored[0])
+    else:
+        assert rim[:2] == pytest.approx((expected, expected))                      # rim - floor + 15 mm pad allowance
+        assert check[0]['status'] == 'PASS' and check[0]['allowance_m'] == pytest.approx(.015)
+        assert check[0]['authored_place_retreat_m'] == pytest.approx(authored[1])
+
+
+def test_an_invalid_bound_rim_fails_closed():
+    from full_cycle_preplanner import preplan_full_cycle
+    kwargs, _, goals, _ = fixture()
+    kwargs['contract'].update(destination_floor_z=.2, destination_rim_z=.2)
+    result = preplan_full_cycle(**kwargs)
+    assert not result.success and 'invalid bound destination rim' in result.reason
+    assert not [g for g in goals if g[0] in ('PREPLAN_TRANSFER', 'PREPLAN_PLACE', 'PREPLAN_RETREAT')]
+
+
+def test_rim_is_the_highest_bound_wall_top():
+    from destination_binding import rim_z
+    walls = [dict(collision='wall_x_minus', xyz=[.43, .22, .0515], size_m=[.01, .2, .117]),
+             dict(collision='wall_y_plus', xyz=[.59, .32, .0955], size_m=[.3, .01, .205])]
+    assert rim_z(dict(walls=walls)) == pytest.approx(.198)
+    with pytest.raises(ValueError):
+        rim_z(dict(walls=[]))

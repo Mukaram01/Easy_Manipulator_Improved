@@ -510,32 +510,26 @@ def call_service(node, client, request, *, spin, exchanged, attempts=SERVICE_ATT
     raise RuntimeError(f'service timeout: {client.srv_name}' + (f' ({budget} attempts)' if budget > 1 else ''))
 
 
-# Generation-2 threshold during owned execution: the default 10 ran a full pass every ~8 s
-# of Trial 20's execution; 100 leaves one or two per cycle. Generations 0 and 1 keep their
-# running values.
-GC_EXECUTION_GENERATION_2_THRESHOLD = 100
+def freeze_planning_heap(collector=gc):
+    """Move the planning-phase heap out of the cyclic collector, then stop automatic collection, before owned execution.
 
-
-def freeze_planning_heap(collector=gc, generation_2=GC_EXECUTION_GENERATION_2_THRESHOLD):
-    """Move the planning-phase heap out of the cyclic collector before owned execution.
-
-    The executor's own stall watch recorded generation-2 passes of 40-121 ms that collected
-    nothing yet held the GIL while the 1 kHz measurement subscription had to run; one such
-    pass preceded Trial 20's stale measurement in the transfer. One full collection, then
-    freezing the surviving planning objects (~60 ms of each pass), removes that heap from
-    every later pass, and the raised generation-2 threshold makes those passes rare. They
-    are not eliminated: the evidence writer's queued samples are allocated after the freeze
-    and a pass landing on a transfer backlog can still take some tens of milliseconds. No
-    measurement, guard or freshness rule is touched; the evidence is returned for the summary.
+    The executor's own stall watch recorded generation-2 passes that collected nothing yet held the GIL while the
+    measurement subscription had to run; one preceded Trial 20's stale measurement in the transfer. One full collection
+    and freezing the surviving planning objects removed that heap from later passes, but passes over the heap allocated
+    during execution still grew within every executed G4 cycle (q_s1..q_stop2: 18 ms rising to 138-261 ms, each
+    collecting at most 168 objects), and G4-S q_stop2's 261 ms pass in EXECUTE_TRANSFER exceeded the 0.25 s measurement
+    freshness bound (SIMULATOR_TELEMETRY_INVALID). Automatic collection therefore stays off for the rest of this
+    short-lived cycle executor: reference counting still frees every acyclic object, and the few cyclic objects of one
+    cycle are released when it exits. No measurement, guard or freshness rule is touched; the evidence is returned for
+    the summary.
     """
-    before = collector.get_threshold()
     started = time.time_ns()
     collected = collector.collect()
     collect_ns = time.time_ns() - started
     collector.freeze()
-    collector.set_threshold(before[0], before[1], generation_2)
+    collector.disable()
     return dict(start_wall_ns=started, collect_ns=collect_ns, wall_ns=time.time_ns(), collected=collected,
-                frozen=collector.get_freeze_count(), thresholds_before=list(before), thresholds_after=list(collector.get_threshold()))
+                frozen=collector.get_freeze_count(), automatic_collection=collector.isenabled())
 
 
 class PlanningCrossCheckGate:
@@ -1392,23 +1386,47 @@ def observation_geometry_matches(observed, actual):
             and min(math.dist(a[3:], b[3:]), math.dist(a[3:], [-v for v in b[3:]])) <= 1e-7)
 
 
-def observations_to_insert(objects,existing,backend,reconcile=False):
+# G4: between physical cycles of one session the PlanningScene keeps each placed part at the pose the previous executor
+# reconciled, measured a moment before the part's final rest; the runner proves the measured world unchanged to this
+# tolerance (run_g4_sorting.WORLD_TOLERANCE_M) before every cycle. The same bound as the execution-boundary refresh.
+MEASURED_RECONCILE_TOLERANCE = 1e-5
+
+
+def observation_geometry_within(observed, actual, tolerance):
+    """Same object box (dimensions exact), pose within `tolerance` (m and quaternion distance, q == -q)."""
+    if actual is None:
+        return False
+    a, b = observed['pose'], actual['pose']
+    return (all(math.isfinite(v) for v in a + b)
+            and all(abs(x-y) <= 1e-7 for x, y in zip(observed['dimensions'], actual['dimensions']))
+            and math.dist(a[:3], b[:3]) <= tolerance
+            and min(math.dist(a[3:], b[3:]), math.dist(a[3:], [-v for v in b[3:]])) <= tolerance)
+
+
+def observations_to_insert(objects,existing,backend,reconcile=False,measured_tolerance=None):
     """Observations not yet in the live PlanningScene.
 
     A sorting session (`reconcile`) keeps its world between cycles, like the simulator: every runtime object
     already in the scene must be one of these observations with identical geometry, else the session's
-    reconciled world and MoveIt disagree and nothing is planned.
+    reconciled world and MoveIt disagree and nothing is planned. With `measured_tolerance` (a G4 physics cycle), a
+    runtime object whose fresh measurement differs by at most that much is re-inserted at the measured pose; any larger
+    difference still refuses.
     """
     ids={o['id'] for o in objects}
     duplicates=ids.intersection(existing)
     if backend!='simulator' and duplicates and not reconcile:
         raise RuntimeError('runtime IDs already exist; reset the fake scene before replay')
+    updates=[]
     if backend=='simulator' or reconcile:
         if {k for k in existing if k.startswith('runtime::')}-ids:
             raise RuntimeError('unknown prior simulator runtime objects require measured reconciliation')
-        if any(not observation_geometry_matches(o,existing[o['id']]) for o in objects if o['id'] in duplicates):
-            raise RuntimeError('simulator observation geometry changed; refresh and reconcile')
-    return [o for o in objects if o['id'] not in duplicates]
+        for o in objects:
+            if o['id'] not in duplicates or observation_geometry_matches(o,existing[o['id']]):
+                continue
+            if measured_tolerance is None or not observation_geometry_within(o,existing[o['id']],measured_tolerance):
+                raise RuntimeError('simulator observation geometry changed; refresh and reconcile')
+            updates.append(o)
+    return [o for o in objects if o['id'] not in duplicates]+updates
 
 
 def fake_world_refresh(objects, live, clock=time.time):
@@ -1581,6 +1599,13 @@ def main():
                         help='workcell_physics_scope/v1 trial record (qualification runner only): the one destination bin '
                              'a multi-destination full-cycle may place into')
     parser.add_argument('--physics-scope-sha256', help='sha256 of --physics-scope as authorised')
+    parser.add_argument('--g4-session', type=Path, help='G4 trial session record (run_g4_sorting.py --authorise-g4-trial '
+                        'only): with --g4-cycle, execute exactly one authorised cycle of a bounded G4 trial')
+    parser.add_argument('--g4-session-sha256', help='sha256 of --g4-session as issued')
+    parser.add_argument('--g4-cycle', type=Path, help='the G4 per-cycle authorisation record')
+    parser.add_argument('--g4-cycle-sha256', help='sha256 of --g4-cycle as issued')
+    parser.add_argument('--g4-plan', type=Path, help='the plan-only resolve summary the cycle was authorised from; its '
+                        'resolution is consumed unchanged (no new search)')
     parser.add_argument('--retention-policy', choices=('strict', 'record'), default='strict',
                         help='full-cycle only: record keeps the unchanged retention limits but records exceedances as '
                              'task-quality findings instead of aborting (functional validation, never Stage-A acceptance)')
@@ -1606,7 +1631,17 @@ def main():
         parser.error('--sorting-cycle is fake-hardware only and requires --resolve-task and --target-object-id')
     if args.sequence_placements is not None and args.sequence_object_ids is None:
         parser.error('--sequence-placements requires --sequence-object-ids')
-    if args.target_object_id is not None and ((args.start and sorting_cycle is None) or not args.resolve_task):
+    g4_args = (args.g4_session, args.g4_session_sha256, args.g4_cycle, args.g4_cycle_sha256, args.g4_plan)
+    g4_cycle = all(value is not None for value in g4_args)
+    if any(value is not None for value in g4_args) and not g4_cycle:
+        parser.error('a G4 cycle needs --g4-session, --g4-session-sha256, --g4-cycle, --g4-cycle-sha256 and --g4-plan')
+    if g4_cycle and (args.backend != 'simulator' or not args.start or args.simulator_commission != 'full-cycle' or
+                     args.resolve_task or args.replay or args.commission_evidence is None or
+                     args.retention_policy != 'strict' or args.target_object_id is None or args.physics_scope is not None or
+                     sorting_cycle is not None or args.sequence_object_ids is not None):
+        parser.error('a G4 cycle is one strict simulator full-cycle of --target-object-id with --commission-evidence, '
+                     'consuming its authorised plan (no --resolve-task, --replay, --physics-scope or sequence)')
+    if args.target_object_id is not None and not g4_cycle and ((args.start and sorting_cycle is None) or not args.resolve_task):
         parser.error('--target-object-id is plan-only (or a --sorting-cycle) and requires --resolve-task')
     if args.sequence_object_ids is not None and (args.start or not args.resolve_task or args.target_object_id):
         parser.error('--sequence-object-ids is plan-only, requires --resolve-task and excludes --target-object-id')
@@ -2598,7 +2633,7 @@ def main():
         if authored:
             # Freshness follows who produced these observations: the simulator's receipt-bound measurement
             # snapshot (verified against the live receipt below), a replay, or a live sensor.
-            from task_intent_v2 import freshness_source_type, observation_age_cap
+            from task_intent_v2 import EPD_BOUND_SIMULATION_SOURCES, freshness_source_type, observation_age_cap
             producer = ('simulator_measurement' if args.backend == 'simulator' and snapshot.get('simulator_receipt_sha256')
                         else 'replay' if args.replay else inputs.RENDER_PRODUCER if rendered is not None else 'live_sensor')
             age_cap = observation_age_cap(freshness_source_type(intent), producer)
@@ -2608,12 +2643,13 @@ def main():
                 summary['observation_freshness']['rendered_frame'] = {key: rendered.get(key) for key in (
                     'provenance', 'camera_source', 'capture_wall_ns', 'frame_stamp_ns', 'world_revision',
                     'recording_sha256', 'render_world_sha256')}
-            # Stage-B: classes from replayed EPD detections bound to these measured objects. Only a replayed-
-            # perception task takes them, and each binding keeps the replay ceiling on the recording clock.
+            # Stage-B: classes from replayed EPD detections bound to these measured objects (G4: from the cycle's
+            # rendered frame). Only such a task takes them, and each binding keeps the replay ceiling on the
+            # recording clock.
             binding = snapshot.get('perception_binding')
-            if (binding is not None) != (freshness_source_type(intent) == 'replayed_perception_in_simulation'):
-                raise ValueError('PERCEPTION_BINDING_MISMATCH: replayed perception classes require a replayed-perception '
-                                 'task in simulation, and such a task requires them')
+            if (binding is not None) != (freshness_source_type(intent) in EPD_BOUND_SIMULATION_SOURCES):
+                raise ValueError('PERCEPTION_BINDING_MISMATCH: EPD perception classes require an EPD-perception task '
+                                 'in simulation, and such a task requires them')
             if binding is not None:
                 from task_intent_v2 import OBSERVATION_PRODUCER_CEILING_S
                 replay_ceiling = OBSERVATION_PRODUCER_CEILING_S['replay']
@@ -2638,7 +2674,7 @@ def main():
                 summary['batch_target_object_id'] = args.target_object_id
                 if sorting_cycle is not None:
                     summary['sorting_cycle'] = sorting_cycle
-            expected_resolution = None if args.resolve_task else scene_resolution(
+            expected_resolution = None if args.resolve_task or g4_cycle else scene_resolution(
                 package, intent, physical, document, require_ready=True)
             if expected_resolution is not None:
                 from task_intent_resolver import consume_resolution
@@ -2702,7 +2738,9 @@ def main():
             raise RuntimeError('existing attachment requires explicit recovery')
         existing_ids = {o.id for o in initial.world.collision_objects}
         additions=observations_to_insert(objects,{o.id:collision_object_dict(o) for o in initial.world.collision_objects},args.backend,
-                                         reconcile=sorting_cycle is not None)
+                                         reconcile=sorting_cycle is not None,
+                                         measured_tolerance=MEASURED_RECONCILE_TOLERANCE
+                                         if args.backend == 'simulator' and args.target_object_id else None)
         manifest = yaml.safe_load((package/'config/moveit_collision_objects.yaml').read_text())
         if not {o['id'] for o in manifest['objects']}.issubset(existing_ids):
             raise RuntimeError('generated environment collisions missing')
@@ -2712,11 +2750,12 @@ def main():
             # needs one completed PlanningScene exchange before owned execution, so make it with an empty diff.
             apply(PlanningScene(is_diff=True))
         scoped_destination = None       # the one bin a verified physics scope admits in a multi-destination world
+        g4_admission = None             # a G4 trial cycle's admission (physics_scope_qualification.g4_admit_execution)
         physics_pads = None             # the receipt-bound fingertip boxes Gazebo simulates (simulation_collision)
         if args.backend == 'simulator':
             # Certify against the union of the authored bin mesh and the physics walls
             # the simulator enforces; the walls bound a narrower cavity than the mesh.
-            from destination_binding import wall_object_ids, walls_scene_diff
+            from destination_binding import rim_z, wall_object_ids, walls_scene_diff
             from simulator_backend import digest
             receipt_bytes = Path(args.simulator_receipt).read_bytes()
             if digest(receipt_bytes) != summary['backend_identity']['receipt_sha256']:
@@ -2737,8 +2776,53 @@ def main():
                 if destination_binding is not None or intent is None:
                     raise RuntimeError('ambiguous simulator destination binding')
                 from destination_binding import select_destination_binding
-                selected = select_destination_binding(destination_bindings, intent['place']['target']['asset_ref'])
-                if args.start:
+                destination_asset = intent['place']['target']['asset_ref']
+                if args.target_object_id is not None and eligible:
+                    # A targeted cycle (G4) seats, guards and fits on its own routed bin, not the task's primary one.
+                    from task_intent_resolver import class_routes
+                    routes = class_routes(intent, physical)
+                    if routes is not None:
+                        if eligible[0]['class_id'] not in routes:
+                            raise RuntimeError(f"TARGET_NOT_ROUTED: {eligible[0]['class_id']!r} has no enabled route")
+                        destination_asset = routes[eligible[0]['class_id']]['asset_ref']
+                selected = select_destination_binding(destination_bindings, destination_asset)
+                if args.start and g4_cycle:
+                    # G4 bounded trial: exactly the cycle the live CLI runner authorised (physics_scope_qualification
+                    # g4_admit_execution), its binding recomputed now; it consumes the authorised plan unchanged.
+                    import physics_scope_qualification as scope_qualification
+                    from ament_index_python.packages import get_package_prefix
+                    from task_intent_resolver import consume_resolution
+                    workspace = Path(__file__).resolve().parents[3]
+                    if physics_pads is None:
+                        raise RuntimeError('G4_SAFEGUARD_MISSING: a G4 cycle plans with the receipt-bound physics pads')
+
+                    def g4_current():
+                        """The G4 session binding recomputed from the current files (at admission and before motion)."""
+                        return scope_qualification.g4_session_binding(
+                            cell_dir=package, receipt_path=args.simulator_receipt,
+                            native=scope_qualification.native_identity(Path(get_package_prefix('workcell_builder')) /
+                                'share/workcell_builder/commission_execute_build.json'),
+                            runtime=scope_qualification.runtime_identity(workspace),
+                            perception=scope_qualification.g4_perception(workspace, intent),
+                            max_cycles=json.loads(Path(args.g4_session).read_bytes())['binding']['max_cycles'],
+                            commission_evidence_path=args.commission_evidence)
+                    g4_admission = scope_qualification.g4_admit_execution(
+                        session_path=args.g4_session, session_sha256=args.g4_session_sha256, cycle_path=args.g4_cycle,
+                        cycle_sha256=args.g4_cycle_sha256, plan_path=args.g4_plan, observations_path=args.detections,
+                        target_object_id=args.target_object_id, current=g4_current())
+                    g4_record = g4_admission['record']
+                    if (selected['model'] != g4_record['destination']['model'] or
+                            selected['source_item_id'] != g4_record['destination']['asset']):
+                        raise RuntimeError('G4_DESTINATION_MISMATCH: the routed bin is not the authorised bin')
+                    expected_resolution = consume_resolution(g4_admission['resolution'], intent, physical, document)
+                    scoped_destination = selected
+                    summary['physics_scope'] = dict(kind='G4_TRIAL', path=str(Path(args.g4_session).resolve()),
+                        sha256=args.g4_session_sha256, session_sha256=args.g4_session_sha256,
+                        cycle_path=str(Path(args.g4_cycle).resolve()), cycle_sha256=args.g4_cycle_sha256,
+                        cycle=g4_record['cycle'], state=g4_admission['session']['state'],
+                        evidence_scope=scope_qualification.G4_TRIAL_EVIDENCE_SCOPE, destination=g4_record['destination'],
+                        frame_age_at_admission_s=g4_admission['frame_age_s'])
+                elif args.start:
                     if args.physics_scope is None or args.simulator_commission != 'full-cycle':
                         raise RuntimeError('MULTI_DESTINATION_PHYSICS_UNQUALIFIED: the simulator world has '
                                            f'{len(destination_bindings)} physical destination bins; motion is not '
@@ -2764,10 +2848,11 @@ def main():
                         sha256=args.physics_scope_sha256, state=scope_record['state'],
                         evidence_scope=scope_qualification.TRIAL_EVIDENCE_SCOPE,
                         destination=scope_record['binding']['destination'])
-                # Every bin is an obstacle; the task's own bin sets the seating floor.
+                # Every bin is an obstacle; the selected bin (the task's, or a targeted cycle's routed bin) sets the floor.
                 for binding in destination_bindings:
                     apply(walls_scene_diff(binding))
                 contract['destination_floor_z'] = float(selected['floor_z'])
+                contract['destination_rim_z'] = rim_z(selected)          # free stages start and end above it
                 summary['physical_destination_walls'] = dict(
                     object_ids=[i for b in destination_bindings for i in wall_object_ids(b)],
                     walls=[w for b in destination_bindings for w in b['walls']],
@@ -2780,8 +2865,13 @@ def main():
                 apply(walls_scene_diff(destination_binding))
                 # Place seating is planned against the bound physical floor (full_cycle_preplanner.seated_destination).
                 contract['destination_floor_z'] = float(destination_binding['floor_z'])
+                contract['destination_rim_z'] = rim_z(destination_binding)
                 summary['physical_destination_walls'] = dict(object_ids=wall_object_ids(destination_binding),
                     walls=destination_binding['walls'], receipt_sha256=summary['backend_identity']['receipt_sha256'])
+        if g4_cycle and g4_admission is None:
+            # A G4 cycle exists only as an admitted cycle of a multi-destination trial session; anything else refuses.
+            raise RuntimeError('G4_ADMISSION_MISSING: a G4 cycle runs only when its admission ran (a multi-destination '
+                               'simulator world with a verified trial session)')
         initial = scene_now()
         initial.robot_state.is_diff = False
         initial.is_diff = True
@@ -3073,8 +3163,10 @@ def main():
                 retry_candidate_budget=180.,
                 discovery_candidate_budget=60.,
                 reserve_retry_budget=True,
-                # A sorting cycle places among the objects already in the cell (destination occupancy).
-                occupied=None if sorting_cycle is None else [
+                # A sorting cycle places among the objects already in the cell (destination occupancy); so does a
+                # targeted physics resolve (the G4 runner's cycle), where measured objects may already rest in a bin.
+                occupied=None if sorting_cycle is None and not (args.backend == 'simulator' and args.target_object_id)
+                else [
                     dict(id=o['id'], pose=list(o['pose']), dimensions=list(o['dimensions']))
                     for o in objects if o['id'] != args.target_object_id])
             destination = summary['task_intent_resolution']['place_resolution']['destination']
@@ -3088,6 +3180,14 @@ def main():
         summary.update(selected_object_id=selected_id,selected_grasp_index=cycle['grasp_index'],
                        selected_extraction_intent=copy.deepcopy(cycle.get('extraction_intent')),full_cycle_prevalidated=True,
                        full_cycle_plan_success=True,plan_metadata=[s['metadata'] for s in cycle['steps'] if s['kind']=='motion'])
+        if g4_admission is not None:
+            g4_record = g4_admission['record']
+            route = summary['task_intent_resolution']['place_resolution'].get('route') or {}
+            if (selected_id != args.target_object_id or summary['resolution_sha256'] != g4_record['plan']['resolution_sha256']
+                    or (summary.get('selected_extraction_intent') or {}).get('candidate_id') != g4_record['grasp']
+                    or route.get('region_ref') != g4_record['destination']['region']
+                    or route.get('asset_ref') != g4_record['destination']['asset']):
+                raise RuntimeError('G4_PLAN_DIVERGED: the revalidated cycle is not exactly the authorised one')
         stage('VERIFY_PREPLAN_UNCHANGED')
         assert_scene_match(scene_now(),initial)
         summary['prevalidation_left_live_scene_unchanged'] = True
@@ -3189,6 +3289,21 @@ def main():
         fresh = select_observations(intent, physical, objects, time.time(), age_cap) if authored else inputs.filter_targets(objects,task,cell,time.time(),_PLANNER)[0]
         if selected_id not in {o['id'] for o in fresh}:
             raise RuntimeError('selected observation expired before execution')
+        if g4_cycle != (g4_admission is not None):
+            raise RuntimeError('G4_ADMISSION_MISSING at the motion boundary')
+        if g4_admission is not None:
+            # Last point before motion: the session re-verified against its binding recomputed now and its live issuing
+            # runner, the authorised records unchanged, the EPD frame still young, then the cycle consumed (once).
+            scope_qualification._g4_session(args.g4_session, args.g4_session_sha256, current=g4_current(), role='executor')
+            from simulator_backend import digest
+            if (digest(Path(args.g4_session).read_bytes()) != args.g4_session_sha256 or
+                    digest(Path(args.g4_cycle).read_bytes()) != args.g4_cycle_sha256):
+                raise RuntimeError('PHYSICS_SCOPE_RECORD_CHANGED before motion')
+            stale = scope_qualification.g4_frame_age_problem(g4_admission['record'], g4_admission['binding'])
+            if stale:
+                raise RuntimeError(f'G4_OBSERVATION_STALE at the motion boundary: {stale}')
+            scope_qualification.g4_consume_cycle(args.g4_session, args.g4_session_sha256, g4_admission['record']['cycle'])
+            summary['physics_scope']['consumed_wall_ns'] = time.time_ns()
         expected = initial
         if measurements:
             # Planning is over and the telemetry consumer is live: keep collector passes off its path.
@@ -3465,9 +3580,11 @@ def main():
             destination_pose=list(destination["pose_xyz"])+_PLANNER.quaternion_from_rpy(destination["pose_rpy"])
             quaternion_angle=lambda a,b:2*math.acos(min(1.,abs(sum(x*y for x,y in zip(a[3:],b[3:])))))
             if summary.get('physics_scope') is not None:
-                # The authorised record must be unchanged for the whole operation.
+                # The authorised record(s) must be unchanged for the whole operation.
                 from simulator_backend import digest
-                if digest(Path(args.physics_scope).read_bytes()) != args.physics_scope_sha256:
+                bound_records = ([(args.physics_scope, args.physics_scope_sha256)] if g4_admission is None else
+                                 [(args.g4_session, args.g4_session_sha256), (args.g4_cycle, args.g4_cycle_sha256)])
+                if any(digest(Path(path).read_bytes()) != sha for path, sha in bound_records):
                     raise RuntimeError('PHYSICS_SCOPE_RECORD_CHANGED during the operation')
             summary.update(result='PASS' if summary['strict_retention_compliant'] else 'FUNCTIONAL_PASS',
                 full_cycle_execution_success=True,

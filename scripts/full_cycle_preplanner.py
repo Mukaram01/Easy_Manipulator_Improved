@@ -319,6 +319,26 @@ def preplan_full_cycle(*, initial_scene, observation: dict, candidate,
         if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
                for v in (place_approach, place_retreat, clearance)):
             raise RuntimeError('invalid authored placement distances')
+        rim, floor = contract.get('destination_rim_z'), contract.get('destination_floor_z')
+        if rim is not None:
+            # A free-space stage that ends or starts inside a walled destination must thread its cavity: OMPL checks
+            # waypoints while the certified controller spline cuts the rim between them (G4 traces: HOME 67 % and
+            # TRANSFER 82 % of attempts certified, every refused HOME a fingertip pad on the rim in its first 0.65 s;
+            # refused HOME certificates took up to 45 s each, which aged r_stop's frame past its limit, and r_stop2's
+            # revalidation drew three refused HOME paths). The straight PLACE descent and RETREAT therefore span from
+            # the seated placement until everything held at or above the floor, padded by the free stages' allowance,
+            # clears the bound rim. Never lower than authored; no padding, guard or threshold changes.
+            from simulation_collision import PHYSICS_PAD_ALLOWANCE_M
+            if (not isinstance(rim, (int, float)) or not isinstance(floor, (int, float)) or
+                    not math.isfinite(rim) or not math.isfinite(floor) or rim <= floor):
+                raise RuntimeError('invalid bound destination rim')
+            allowance = max(PHYSICS_PAD_ALLOWANCE_M['PREPLAN_TRANSFER'], PHYSICS_PAD_ALLOWANCE_M['PREPLAN_HOME'])
+            container = rim - floor + allowance
+            checks.append(dict(code='DESTINATION_RIM_CLEARANCE', status='PASS', rim_z=rim, floor_z=floor,
+                               allowance_m=allowance, authored_place_approach_m=place_approach,
+                               authored_place_retreat_m=place_retreat, place_approach_m=max(place_approach, container),
+                               place_retreat_m=max(place_retreat, container)))
+            place_approach, place_retreat = max(place_approach, container), max(place_retreat, container)
         home = dict(zip(contract['home_joint_names'], contract['home_joint_positions']))
         approach = operations.pose_message(tool_pose_for_grasp(candidate.approach_pose, contract))
         contact = operations.pose_message(tool_pose_for_grasp(candidate.grasp_pose, contract))

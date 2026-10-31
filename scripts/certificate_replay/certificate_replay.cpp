@@ -5,8 +5,11 @@
 // certificate_*.trajectory.cdr), rebuilds the robot model from the session's
 // qualification URDF/SRDF and runs the same header-only certificate. Optional
 // scene edits (allow one collision pair, drop one world object) isolate which
-// pair makes an interval inconclusive. Diagnostic only: nothing here changes
-// the certificate or any scene policy used by the runtime.
+// pair makes an interval inconclusive. --max-intervals N bounds the work at N
+// inspected intervals: a runtime certificate the planning deadline stopped
+// after inspecting N+1 intervals is reproduced as INTERVAL_LIMIT at that same
+// interval. Diagnostic only: nothing here changes the certificate or any scene
+// policy used by the runtime.
 #include "controller_interval_certificate.hpp"
 #include <moveit/robot_model/robot_model.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
@@ -36,7 +39,7 @@ template<class Message> Message load(const std::string& path) {
 
 int main(int argc, char** argv) {
   if (argc < 6) {
-    std::cerr << "usage: certificate_replay <urdf> <srdf> <group> <trace prefix> <max_depth> [--allow A B]... [--drop OBJECT]... [--distance A B t0 t1 step] [--grid A B jointA jointB lo hi n]\n";
+    std::cerr << "usage: certificate_replay <urdf> <srdf> <group> <trace prefix> <max_depth> [--max-intervals N] [--allow A B]... [--drop OBJECT]... [--distance A B t0 t1 step] [--grid A B jointA jointB lo hi n]\n";
     return 2;
   }
   const std::string urdf_path = argv[1], srdf_path = argv[2], group = argv[3], prefix = argv[4];
@@ -48,7 +51,8 @@ int main(int argc, char** argv) {
   std::string grid_joint_a, grid_joint_b; double grid_lo = 0., grid_hi = 0.; int grid_n = 0;
   for (int i = 6; i < argc; ++i) {
     const std::string flag = argv[i];
-    if (flag == "--allow" && i + 2 < argc) { allow.emplace_back(argv[i + 1], argv[i + 2]); i += 2; }
+    if (flag == "--max-intervals" && i + 1 < argc) { options.max_intervals = std::stoul(argv[++i]); }
+    else if (flag == "--allow" && i + 2 < argc) { allow.emplace_back(argv[i + 1], argv[i + 2]); i += 2; }
     else if (flag == "--drop" && i + 1 < argc) { drop.emplace_back(argv[++i]); }
     else if (flag == "--grid" && i + 7 < argc) {
       sweep_a = argv[i + 1]; sweep_b = argv[i + 2]; grid_joint_a = argv[i + 3]; grid_joint_b = argv[i + 4];
