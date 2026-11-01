@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import hashlib
 import argparse
+import contextlib
 import copy
+import fcntl
 import importlib.util
 import json
 import math
@@ -1752,6 +1754,35 @@ def generate_package(
     authored_model_dir: Path | None = None,
     published_package_dir: Path | None = None,
 ) -> int:
+    # Whatever this run stages (and only that) is removed on every exit, success or failure.
+    with contextlib.ExitStack() as owned:
+        return _generate_package(cell_definition_path, output_dir, package_name, force, dry_run, workspace_root,
+                                 existing_package_dir, authored_model_dir, published_package_dir, owned)
+
+
+def _lock_output_dir(output_dir: Path, owned: contextlib.ExitStack) -> None:
+    """Serialise writers of one output directory; the kernel drops the lock if the process dies."""
+    fd = os.open(output_dir, os.O_RDONLY)
+    owned.callback(os.close, fd)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(f"INFO: waiting for another generation writing to {output_dir}", flush=True)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+
+def _generate_package(
+    cell_definition_path: Path,
+    output_dir: Path,
+    package_name: str,
+    force: bool,
+    dry_run: bool,
+    workspace_root: Path | str | None,
+    existing_package_dir: Path | None,
+    authored_model_dir: Path | None,
+    published_package_dir: Path | None,
+    owned: contextlib.ExitStack,
+) -> int:
     if not VALIDATOR_PATH.is_file():
         print(f"FAIL: Missing required validation tool: {VALIDATOR_PATH}")
         return 2
@@ -1880,12 +1911,16 @@ def generate_package(
         return 0
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    staging_dir = output_dir / f"{package_name}.tmp-generation"
-    if staging_dir.exists():
-        shutil.rmtree(staging_dir)
+    _lock_output_dir(final_package_dir.parent, owned)
+    if final_package_dir.exists() and not force and existing_package_dir is None:
+        print(f"FAIL: Output package already exists: {final_package_dir} (use --force to overwrite)")
+        return 1
+    # A private, uniquely named work directory: never another run's or a user's folder. It is hidden and the
+    # package sits one level down, so even a killed run's leftovers are not listed as a cell.
+    work_dir = Path(tempfile.mkdtemp(prefix=f".{package_name}.generation-", dir=output_dir))
+    owned.callback(shutil.rmtree, work_dir, ignore_errors=True)
+    staging_dir = work_dir / "package"
     package_dir = staging_dir
-    if package_dir.exists():
-        shutil.rmtree(package_dir)
 
     (package_dir / "config").mkdir(parents=True, exist_ok=True)
     (package_dir / "launch").mkdir(parents=True, exist_ok=True)
@@ -2070,22 +2105,19 @@ def generate_package(
             shutil.copy2(staged_path, destination)
         shutil.rmtree(package_dir)
     else:
-        backup_dir = output_dir / f"{package_name}.previous-generation"
-        if backup_dir.exists():
-            shutil.rmtree(backup_dir)
+        # Each rename is atomic. The previous package is restored only if this run moved it aside; the work
+        # directory cleanup discards it after a successful swap.
+        backup_dir = work_dir / "previous"
+        moved_aside = False
         try:
             if final_package_dir.exists():
                 final_package_dir.rename(backup_dir)
+                moved_aside = True
             package_dir.rename(final_package_dir)
         except Exception:
-            if final_package_dir.exists():
-                shutil.rmtree(final_package_dir)
-            if backup_dir.exists():
+            if moved_aside and not final_package_dir.exists():
                 backup_dir.rename(final_package_dir)
             raise
-        else:
-            if backup_dir.exists():
-                shutil.rmtree(backup_dir)
 
     final_contract_files = [final_package_dir / path.relative_to(staging_dir) for path in required_contract_files]
     missing_contract_files = [path for path in final_contract_files if not path.is_file()]

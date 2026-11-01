@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts.generate_workcell_from_cell_definition import generate_package
@@ -713,3 +715,90 @@ def test_generated_inventory_uses_environment_not_editor_only_assets():
     result = _build_contract_layout('cell', {}, source)
     assert [item['id'] for item in result['items']] == ['physical']
     assert result['items'][0]['pose']['xyz'] == [1, 2, 3]
+
+
+
+# The minimal scene above no longer passes cell validation; the staging tests need a cell that generates.
+REFERENCE_SCENE = REPO_ROOT / "scenes" / "ur5_2f_test"
+
+
+def _reference_cell(tmp_path: Path) -> Path:
+    scene = tmp_path / "source" / REFERENCE_SCENE.name
+    shutil.copytree(REFERENCE_SCENE, scene, symlinks=True)
+    return scene / "cell_definition.yaml"
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def _foreign_staging(out_dir: Path, package_name: str) -> tuple[Path, dict[str, bytes]]:
+    # A folder this run did not create, named like the generator's former shared staging directory.
+    foreign = out_dir / f"{package_name}.tmp-generation"
+    (foreign / "generated").mkdir(parents=True)
+    (foreign / "notes.txt").write_bytes(b"user data \x00\xff")
+    (foreign / "generated" / "partial.yaml").write_text("owner: someone-else\n", encoding="utf-8")
+    return foreign, _tree_bytes(foreign)
+
+
+def test_generation_owns_only_its_staging_and_restores_on_failed_publication(tmp_path: Path, monkeypatch) -> None:
+    import scripts.generate_workcell_from_cell_definition as generator
+
+    cell_path = _reference_cell(tmp_path)
+    out_dir = tmp_path / "scenes"
+    foreign, expected = _foreign_staging(out_dir, "owned_scene")
+
+    def entries() -> list[str]:
+        return sorted(p.name for p in out_dir.iterdir())
+
+    # Early failure and dry run touch nothing.
+    assert generate_package(tmp_path / "missing.yaml", out_dir, "owned_scene", force=True, dry_run=False) != 0
+    assert generate_package(cell_path, out_dir, "owned_scene", force=True, dry_run=True) == 0
+    assert entries() == [foreign.name] and _tree_bytes(foreign) == expected
+
+    # A failure after staging removes only this run's own work directory.
+    def fail_after_staging(*_args, **_kwargs):
+        raise RuntimeError("injected failure after staging")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(generator, "_build_environment_objects", fail_after_staging)
+        with pytest.raises(RuntimeError):
+            generate_package(cell_path, out_dir, "owned_scene", force=True, dry_run=False)
+    assert entries() == [foreign.name] and _tree_bytes(foreign) == expected
+
+    assert generate_package(cell_path, out_dir, "owned_scene", force=True, dry_run=False) == 0
+    _assert_generated_contract(out_dir / "owned_scene")
+    assert entries() == sorted([foreign.name, "owned_scene"]) and _tree_bytes(foreign) == expected
+    published = _tree_bytes(out_dir / "owned_scene")
+
+    # A failed swap puts the previous package back unchanged.
+    original_rename = Path.rename
+
+    def fail_publish(self, target):
+        if self.name == "package" and Path(target) == out_dir / "owned_scene":
+            raise OSError("injected publish failure")
+        return original_rename(self, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "rename", fail_publish)
+        with pytest.raises(OSError):
+            generate_package(cell_path, out_dir, "owned_scene", force=True, dry_run=False)
+    assert _tree_bytes(out_dir / "owned_scene") == published
+    assert entries() == sorted([foreign.name, "owned_scene"]) and _tree_bytes(foreign) == expected
+
+
+def test_concurrent_generations_of_one_package_do_not_overwrite_each_other(tmp_path: Path) -> None:
+    cell_path = _reference_cell(tmp_path)
+    out_dir = tmp_path / "scenes"
+    foreign, expected = _foreign_staging(out_dir, "race_scene")
+    command = [sys.executable, str(SCRIPT), str(cell_path), "--output-dir", str(out_dir), "--package-name", "race_scene"]
+    runs = [subprocess.Popen(command, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for _ in range(3)]
+    outputs = [run.communicate(timeout=900)[0] for run in runs]
+
+    # Without --force exactly one run publishes; the others wait for it, then refuse rather than replace it.
+    assert sorted(run.returncode for run in runs) == [0, 1, 1], outputs
+    assert sum("Output package already exists" in text for text in outputs) == 2, outputs
+    _assert_generated_contract(out_dir / "race_scene")
+    assert sorted(p.name for p in out_dir.iterdir()) == sorted([foreign.name, "race_scene"])
+    assert _tree_bytes(foreign) == expected

@@ -642,6 +642,69 @@ TEST(TaskIntentEditor, PerceptionBindingPersistsAndMissingInputBlocksPlanning) {
 }
 
 
+TEST(TaskIntentEditor, ObjectInputOffersExistingInputsAndReportsEligibilityAndNextStep) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  {  // a destination region the recorded cup fits in
+    auto environment = read(dir.path() + "/environment.yaml");
+    environment.replace("dimensions: [0.2, 0.1, 0.1]", "dimensions: [0.25, 0.2, 0.2]");
+    write(dir.path() + "/environment.yaml", environment);
+  }
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  auto * mode = editor.findChild<QComboBox *>("taskPerceptionMode");
+  auto * inputs = editor.findChild<QComboBox *>("taskObservationRecording");
+  auto * status = editor.findChild<QLabel *>("taskInputStatus");
+  ASSERT_NE(mode, nullptr); ASSERT_NE(inputs, nullptr); ASSERT_NE(status, nullptr);
+  editor.findChild<QDoubleSpinBox *>("taskPlaceClearance")->setValue(0.001);  // the seed predates clearance_m
+  edit(editor, "taskTargetClass", "cup");
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  editor.validate_now();
+  EXPECT_TRUE(status->text().contains("TASK_INPUT_UNAVAILABLE")) << status->text().toStdString();
+  EXPECT_TRUE(status->text().contains("Next: choose a recording under Existing input")) << status->text().toStdString();
+  // The repository's reviewed commissioning recording is offered with what it declares; a cell outside the
+  // repository stores its absolute path.
+  const QString replay = QFileInfo(QStringLiteral(WORKCELL_BUILDER_REPO_ROOT) + "/config/runtime/r1_4_replay.yaml").canonicalFilePath();
+  const int index = inputs->findData(replay);
+  ASSERT_GT(index, 0);
+  EXPECT_TRUE(inputs->itemText(index).contains("2 object(s): cup, bottle")) << inputs->itemText(index).toStdString();
+  emit inputs->activated(index);
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(editor.blocker().isEmpty()) << editor.blocker().toStdString();
+  EXPECT_EQ(inputs->currentIndex(), index);
+  EXPECT_TRUE(status->text().contains("Source: replayed_snapshot")) << status->text().toStdString();
+  EXPECT_TRUE(status->text().contains("Plan Only: input ready")) << status->text().toStdString();
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  auto * reopened_status = reopened.findChild<QLabel *>("taskInputStatus");
+  EXPECT_EQ(reopened.findChild<QComboBox *>("taskObservationRecording")->currentData().toString(), replay);
+  EXPECT_TRUE(reopened.blocker().isEmpty()) << reopened.blocker().toStdString();
+  // Live EPD never lists or plans from a recording, and says what to do instead.
+  mode = reopened.findChild<QComboBox *>("taskPerceptionMode");
+  mode->setCurrentIndex(mode->findData("live_epd"));
+  EXPECT_EQ(reopened.findChild<QComboBox *>("taskObservationRecording")->findData(replay), -1);
+  ASSERT_TRUE(reopened.save());
+  EXPECT_TRUE(reopened.blocker().contains("LIVE_INPUT_REQUIRED")) << reopened.blocker().toStdString();
+  EXPECT_TRUE(reopened_status->text().contains("Next: Live EPD never plans from a recording"));
+  // Off (simulator-measured objects) admits no replay on fake hardware: the executor's producer check blocks it here.
+  mode->setCurrentIndex(mode->findData("off"));
+  reopened.findChild<QDoubleSpinBox *>("taskMaximumAge")->setValue(150.0);
+  ASSERT_TRUE(reopened.save());
+  EXPECT_TRUE(reopened.blocker().contains("OBSERVATION_PRODUCER_REJECTED")) << reopened.blocker().toStdString();
+  EXPECT_TRUE(reopened_status->text().contains("set Perception mode to Recorded observations")) << reopened_status->text().toStdString();
+  // Switching to a source with a lower freshness limit lowers a larger maximum age to that limit, never raises it.
+  mode->setCurrentIndex(mode->findData("replayed_snapshot"));
+  reopened.validate_now();
+  EXPECT_DOUBLE_EQ(reopened.findChild<QDoubleSpinBox *>("taskMaximumAge")->value(), 2.0);
+  reopened.validate_now();
+  ASSERT_TRUE(reopened.save());
+  EXPECT_TRUE(reopened.blocker().isEmpty()) << reopened.blocker().toStdString();
+  EXPECT_TRUE(reopened_status->text().contains("s to 2.0 s: the freshness limit for this input (recorded_perception)"))
+    << reopened_status->text().toStdString();
+  // Generate refuses observation input without a pick class: blocked before Generate, naming the recorded classes.
+  edit(reopened, "taskTargetClass", "");
+  reopened.validate_now();
+  EXPECT_TRUE(reopened.blocker(false).contains("OBJECT_CLASS_REQUIRED")) << reopened.blocker(false).toStdString();
+  EXPECT_TRUE(reopened_status->text().contains("this input contains: cup, bottle")) << reopened_status->text().toStdString();
+}
+
 TEST(TaskIntentEditor, ExplicitLiveCameraSourceSurvivesReopenAndClearsOutsideLiveMode) {
   application(); QTemporaryDir dir; seed(dir.path());
   TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));

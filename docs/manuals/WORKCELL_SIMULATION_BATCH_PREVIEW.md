@@ -24,19 +24,32 @@ acceptance, including the still-blocked Stage-A grasp-retention work.
 
 1. Open a saved Workcell Studio cell, select the pick class and zone, physical
    destination, and grasp strategy/policy.
-2. In **Task → Object input**, select **Off — commissioning objects** or
-   **Recorded / replayed observations**. Set **Observation snapshot** to
-   an *existing* `detected_objects/v1` commissioning recording, containing
+2. In **Task → Object input**, choose the Perception mode, then set
+   **Observation snapshot** (or pick it under **Existing input**) to an
+   *existing* `detected_objects/v1` commissioning recording, containing
    explicit world-frame object poses and strictly positive measured/known
    dimensions. The recording must declare `source.mode: replayed_snapshot`.
-   No workpiece box will be generated from a scene asset.
+   No workpiece box will be generated from a scene asset. The modes mean:
+   - **Recorded observations (replay)**: reviewed, recorded input. This is the
+     mode for fake-hardware **Plan Only** (Plan / Simulate › Plan Saved Task):
+     the planner admits a recording only from producer `replay`, re-timed when
+     planning starts, within the 2 s recorded-perception freshness limit.
+   - **Off — simulator-measured objects**: objects measured by the physics
+     simulator (producer `simulator_measurement` only). This preview reads an
+     Off task's commissioning recording for eligibility, but Off is not a
+     recorded fake-hardware input: Plan Saved Task refuses it with
+     `OBSERVATION_PRODUCER_REJECTED`. Switch to Recorded observations to plan.
+   - **Live EPD camera observations**: genuine, fresh camera-derived objects
+     from the selected camera source and its TF. This preview refuses Live
+     (see below), and a recording is never offered or substituted for it.
 3. Click **Save task**. Then click **Preview multi-object task queue (no motion)**.
 4. Review the ordered candidate list, destination region, and reasons other
    objects were excluded. Every observed object remains in the report for
    later collision checks; the preview does not yet apply those objects to
    MoveIt.
 
-A saved task with **Live** perception is refused. A missing recorded input is
+A saved task with **Live** perception is refused here; Live input must come from a
+current EPD capture, never from a replay. A missing recorded input is
 not replaced by the repository's historical fallback fixture. Recording
 observations are restamped only by the existing **explicit replay acquisition**
 function and labelled `explicit_commissioning_replay`; no result is represented

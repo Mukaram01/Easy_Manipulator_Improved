@@ -47,6 +47,27 @@ This manual documents the **current intended flow** for creating/importing/editi
 16. Simulate.
 17. Commission/deploy in later stages.
 
+## Giving a new cell its object input (Plan Only)
+
+A new cell plans only from measured object observations. Configure them in **Scene Builder › Task › Object input**; no YAML editing is needed.
+
+1. **Object class:** under *What / Pick eligibility*, type the class to pick, for example `cup`. Generate refuses observation input without one, and the Object input status says so.
+2. **Perception mode:**
+   - **Recorded observations (replay):** plans from a saved `detected_objects/v1` recording (`source.mode: replayed_snapshot`). No camera is needed. Use this for Plan Only on fake hardware.
+   - **Live EPD camera observations:** plans from a capture of the selected camera (**Capture live EPD objects**). The capture must declare that camera, give world-frame poses and still be fresh when planning starts. A recording is never used instead.
+   - **Off — simulator-measured objects (physics only):** the physics simulator measures the objects. That simulator is locked for new cells, and fake-hardware planning refuses a recording in this mode.
+3. **Existing input:** lists the recordings, or the saved EPD captures in Live mode, found in the cell and in the repository's `config/runtime/`. The reviewed commissioning recording is `config/runtime/r1_4_replay.yaml`: a cup and a bottle in the UR5 + 2F workbench pick zone. **Choose observation file…** selects any other file.
+   - **Stored path:** a file of the same repository is stored relative to the cell.
+4. **Status box:** below the chooser, it shows:
+   - the input's declared source and objects;
+   - its freshness;
+   - whether it passes the planner's input checks: `planning_input`, plus the executor's producer and freshness admission (`task_intent_v2.observation_age_cap`);
+   - the next step.
+5. **Maximum age:** switching to a mode with a lower freshness limit lowers a larger maximum observation age to that limit, and the status says so. A recording's limit is 2 s; it is re-timed when planning starts.
+6. **Save task**, Generate, then Validate. Plan / Simulate › **Plan Saved Task (Fake Hardware)** is enabled only when the saved input passes those checks. Otherwise it shows the reason and what to do.
+
+Objects are never derived from scene assets. The Sorting wizard's simulated test objects are not perception input.
+
 ## Relationship between metadata layers
 
 - `environment_layout/v1`: placement/zones checklist metadata for operators.
