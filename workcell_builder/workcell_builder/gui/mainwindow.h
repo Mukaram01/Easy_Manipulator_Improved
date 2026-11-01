@@ -238,6 +238,9 @@ private:
   void open_selected_scene_artifact(const QString & artifact);
   void delete_selected_scene();
   bool is_safe_scene_path_for_trash_move(const boost::filesystem::path & scene_path, QString * reason = nullptr) const;
+  // Why a cell may not be deleted from Home: a tracked reference scene (the repository's .gitignore allowlist),
+  // a symlink, anything but a cell folder directly under the scenes root. Empty when it is an eligible user cell.
+  QString scene_delete_protection_reason(const boost::filesystem::path & scene_dir) const;
   void refresh_task_intent_panel();
   void refresh_task_intent_summary();
   void refresh_epd_readiness_panel();
@@ -425,7 +428,8 @@ private:
   QJsonArray mounting_items() const;
   bool mounted_pose_unchanged(const QString & id, double x, double y, double z, double roll, double pitch, double yaw) const;
   QJsonObject run_mounting_request(QJsonObject request);
-  bool commit_mounting_request(QJsonObject request);
+  // With error_out the failure is returned instead of shown in a modal dialog.
+  bool commit_mounting_request(QJsonObject request, QString * error_out = nullptr);
   // Why the armed asset cannot be saved mounted to support_id at this world pose (empty when it can):
   // the support must be a mounting parent of the existing contract and the resolver must accept the relation.
   QString armed_asset_support_blocker(const QString & support_id, double x, double y, double z,
@@ -496,8 +500,17 @@ private:
   bool selected_item_can_be_duplicated() const;
   void refresh_duplicate_selected_action();
   bool selected_item_can_be_deleted() const;
+  // Why Delete is unavailable for the current selection (empty when it can be deleted).
+  QString delete_unavailable_reason() const;
+  // Persistent references to a layout item: mounted children, placement regions, support references and the
+  // saved task's bindings. Deleting an item with any of them would leave a dangling reference.
+  QStringList layout_item_dependents(const QString & id) const;
   void refresh_delete_selected_action();
   void delete_selected_item();
+  // Says which saved input Generate is missing (layout or task), why, and opens its editor.
+  void report_generate_prerequisite();
+  void restore_layout_canvas_item(const ScenePreviewWidget::PreviewItem & p, const QMap<int, QVariant> & roles = {});
+  QMap<int, QVariant> canvas_item_roles(const QGraphicsItem * item) const;
   void add_asset_to_canvas_from_catalog(const QString & category, const QString & display_name, const QString & source_path);
   bool place_catalog_asset_at_world_position(
     const QString & asset_id, double world_x_m, double world_y_m, double world_z_m,
@@ -664,6 +677,17 @@ private:
   QLabel * selection_scene_launch_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
   QFrame * task_destination_card_{ nullptr };
+  // Camera Inspector: frames, orientation and the display-only coverage preview (FOV, optical axis, pick zone).
+  QFrame * camera_card_{ nullptr };
+  QLabel * camera_card_frames_{ nullptr };
+  QLabel * camera_card_metrics_{ nullptr };
+  QCheckBox * camera_show_fov_{ nullptr };
+  QCheckBox * camera_show_roi_{ nullptr };
+  QCheckBox * camera_show_axis_{ nullptr };
+  QDoubleSpinBox * camera_display_far_{ nullptr };
+  QTimer * camera_coverage_timer_{ nullptr };
+  void refresh_camera_card();
+  void apply_camera_coverage();
   QLabel * task_destination_label_{ nullptr };
   QPushButton * task_destination_bind_button_{ nullptr };
   QLabel * inspector_mount_relation_label_{ nullptr };
@@ -740,6 +764,7 @@ private:
   QPushButton * scene_move_mode_button_{ nullptr };
   QPushButton * scene_rotate_mode_button_{ nullptr };
   QPushButton * scene_duplicate_context_button_{ nullptr };
+  QPushButton * scene_delete_button_{ nullptr };
   QTreeWidget * asset_catalog_tree_{ nullptr };
   QTreeWidget * scene_files_tree_{ nullptr };
   QComboBox * asset_filter_combo_{ nullptr };
@@ -921,10 +946,17 @@ private:
     bool deleted;
     QVector<ScenePreviewWidget::PreviewItem> preview_items;
     QVector<ScenePreviewWidget::PreviewItem> after_items;
+    // The canvas item's exact data roles (mesh scale, type, mount...) for add/delete, so Undo/Redo restore what
+    // Save serializes rather than a reconstruction.
+    QMap<int, QVariant> canvas_roles;
     ScenePreviewWidget::PreviewItem before_item;
     ScenePreviewWidget::PreviewItem after_item;
   };
   QSet<QString> deleted_layout_item_ids_;
+  // Layout IDs handed out in this cell session; never reissued, even after undo, rollback or delete, so a stale
+  // mesh request or deleted-item marker can never attach to a new asset.
+  QSet<QString> session_issued_layout_ids_;
+  bool workflow_rail_refresh_pending_{ false };
   std::vector<CanvasEditCommand> undo_stack_;
   std::vector<CanvasEditCommand> redo_stack_;
   QSet<QString> pending_native_web_pose_signatures_;

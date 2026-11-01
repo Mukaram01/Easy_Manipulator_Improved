@@ -38276,6 +38276,7 @@ var ColladaLoader2;
 var OBJLoader2;
 var TransformControls2;
 var loadRobotPreview2;
+var normalizeRosColladaScene2;
 var applyRobotJointPreview2;
 var PRODUCT_VIEW_LIGHT_PALETTE = Object.freeze({
   workspaceBackground: 15659508,
@@ -38634,7 +38635,7 @@ function physicalMeshAttempt(item, operation) {
   };
 }
 function physicalMeshAttemptIsCurrent(attempt) {
-  return readinessOperationIsCurrent(attempt?.operation) && attempt.token === physicalLoadToken && attempt.navigationKey === web3dNavigationKey();
+  return readinessOperationIsCurrent(attempt?.operation) && attempt.token === physicalLoadToken && attempt.navigationKey === web3dNavigationKey() && !attempt.rendered?.removedFromScene;
 }
 function completePhysicalMeshAttempt(attempt) {
   if (!physicalMeshAttemptIsCurrent(attempt))
@@ -41089,7 +41090,7 @@ function materialFor(item) {
     return new THREE.MeshStandardMaterial({ color: 9148070, roughness: 0.76, metalness: 0.04 });
   const authoredColor = item?.material?.color || item?.material?.rgba || item?.material_color || item?.color;
   const material = new THREE.MeshStandardMaterial({
-    color: 9085837,
+    color: 11120566,
     roughness: 0.72,
     metalness: 0.02,
     side: isPrimaryAuthoredPhysicalMesh(item) ? THREE.DoubleSide : THREE.FrontSide
@@ -41272,7 +41273,7 @@ function materializeLoadedMesh(item, uri, loaded) {
   if (ext === "stl")
     object = new THREE.Mesh(loaded, materialFor(item));
   else if (ext === "dae")
-    object = loaded.scene;
+    object = normalizeRosColladaScene2 ? normalizeRosColladaScene2(loaded, uri, { robot_collada_mesh_diagnostics: [], robot_collada_summary: [], robot_collada_root_normalization_count: 0 }) : loaded.scene;
   else
     object = loaded;
   applyNeutralFallbackToUnmaterialedMeshes(object, item);
@@ -41385,6 +41386,7 @@ function renderableDescendantCount(object) {
 }
 async function tryLoadMesh(item, rendered, fallback, readinessOperation) {
   const attempt = physicalMeshAttempt(item, readinessOperation);
+  attempt.rendered = rendered;
   const diagnostic = meshUriDiagnostic(item);
   const uri = diagnostic.uri;
   const requestedUri = displayMeshUri(item);
@@ -41999,6 +42001,8 @@ function animate() {
   if (state.mate?.active)
     suppressGizmoForMate();
   controls.update();
+  if (cameraCoverage.visible || cameraCoverage.metrics)
+    updateCameraCoverage();
   renderer.render(scene, camera);
   updateLabels();
 }
@@ -44357,7 +44361,7 @@ async function createPlacementPreview(asset) {
   state.three.scene.add(root);
   const placeholder = new THREE.Mesh(
     new THREE.BoxGeometry(0.08, 0.08, 0.08),
-    new THREE.MeshStandardMaterial({ color: 9085837, transparent: true, opacity: 0.5, depthWrite: false })
+    new THREE.MeshStandardMaterial({ color: 11120566, transparent: true, opacity: 0.5, depthWrite: false })
   );
   root.add(placeholder);
   markPlacementPreviewHelper(placeholder);
@@ -45823,6 +45827,9 @@ function removeItemFromBridge(id) {
   detachTransformGizmo();
   state.three.scene?.remove(rendered.object3d);
   rendered.labelEl?.remove?.();
+  rendered.removedFromScene = true;
+  if (rendered.item)
+    requiredReadinessCompleteForItem(rendered.item);
   state.objects = state.objects.filter((record) => record !== rendered);
   state.pickRecords = state.pickRecords.filter((record) => record !== rendered && record.item?.id !== stableId);
   state.dirtyTransforms.delete(stableId);
@@ -46633,6 +46640,292 @@ function installMatePickListeners() {
   window.addEventListener("keydown", onMateKeyDownCapture, true);
   window.addEventListener("contextmenu", onMateContextMenuCapture, true);
 }
+var COVERAGE_FOV_COLOR = 2275535;
+var COVERAGE_AXIS_COLOR = 16726925;
+var COVERAGE_ROI_COLOR = 16752412;
+var cameraCoverage = { visible: false, showRoi: true, showAxis: true, cameraId: "", farM: null, metrics: null, lastUpdate: 0, roiRoot: null, footprint: null, legend: null };
+function coverageMarkOverlay(object) {
+  object.traverse((node) => {
+    Object.assign(node.userData, {
+      selectable: false,
+      non_selectable: true,
+      exclude_from_fit_bounds: true,
+      exclude_from_physical_bounds: true,
+      camera_coverage_overlay: true
+    });
+    node.raycast = () => {
+    };
+  });
+  return object;
+}
+function coverageRecords() {
+  const seen = /* @__PURE__ */ new Set();
+  return [...state.objects, ...state.pickRecords].filter((record) => {
+    if (!record?.item?.camera_coverage || !record.object3d || seen.has(record.object3d))
+      return false;
+    seen.add(record.object3d);
+    return true;
+  });
+}
+function coverageTarget() {
+  const records = coverageRecords();
+  return records.find((record) => record.item.camera_coverage.camera_id === cameraCoverage.cameraId) || records[0] || null;
+}
+function coverageLine(points, color, opacity = 0.95) {
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest: true }));
+}
+function coverageFrustumGroup(cov) {
+  const tx = Math.tan(THREE.MathUtils.degToRad(cov.horizontal_fov_deg) / 2);
+  const ty = Math.tan(THREE.MathUtils.degToRad(cov.vertical_fov_deg) / 2);
+  const near = Math.max(0.01, Number(cov.display_near_m) || 0.2);
+  const far = Math.max(near + 0.05, Number(cameraCoverage.farM || cov.display_far_m) || 1.5);
+  const rect = (d) => [
+    new THREE.Vector3(-tx * d, -ty * d, d),
+    new THREE.Vector3(tx * d, -ty * d, d),
+    new THREE.Vector3(tx * d, ty * d, d),
+    new THREE.Vector3(-tx * d, ty * d, d)
+  ];
+  const n = rect(near), f = rect(far), o = new THREE.Vector3();
+  const segments = [];
+  for (let i = 0; i < 4; i += 1) {
+    segments.push(o, f[i], n[i], n[(i + 1) % 4], f[i], f[(i + 1) % 4]);
+  }
+  for (let d = 0.5; d < far; d += 0.5) {
+    const r = rect(d);
+    for (let i = 0; i < 4; i += 1)
+      segments.push(r[i], r[(i + 1) % 4]);
+  }
+  const root = new THREE.Group();
+  root.name = "camera_coverage_frustum_root";
+  root.userData.camera_coverage_overlay_root = true;
+  const pose = cov.optical_in_visual || {};
+  root.position.copy(vector3(pose.xyz || [0, 0, 0]));
+  applyRosRpy(root, vector3(pose.rpy || [0, 0, 0]));
+  const frustum = coverageLine(segments, COVERAGE_FOV_COLOR, 0.9);
+  frustum.name = "camera_coverage_frustum";
+  const volume = new THREE.Mesh(
+    new THREE.BufferGeometry().setFromPoints([o, f[0], f[1], o, f[1], f[2], o, f[2], f[3], o, f[3], f[0]]),
+    new THREE.MeshBasicMaterial({ color: COVERAGE_FOV_COLOR, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false })
+  );
+  volume.name = "camera_coverage_frustum_volume";
+  const axis = coverageLine([o, new THREE.Vector3(0, 0, far)], COVERAGE_AXIS_COLOR, 1);
+  axis.name = "camera_coverage_frustum_axis";
+  root.add(frustum, volume, axis);
+  root.userData.coverage = { tx, ty, near, far, key: `${tx}|${ty}|${near}|${far}` };
+  return coverageMarkOverlay(root);
+}
+function coverageRemove(object) {
+  if (!object)
+    return;
+  object.parent?.remove(object);
+  object.traverse?.((node) => {
+    node.geometry?.dispose?.();
+    node.material?.dispose?.();
+  });
+}
+function coverageLegend() {
+  if (cameraCoverage.legend || !el.canvas?.parentElement)
+    return cameraCoverage.legend;
+  const legend = document.createElement("div");
+  legend.id = "camera-coverage-legend";
+  legend.style.cssText = "position:absolute;left:12px;bottom:12px;z-index:5;max-width:340px;padding:8px 10px;border-radius:6px;background:rgba(15,23,32,.82);color:#e6edf3;font:12px/1.45 system-ui,sans-serif;pointer-events:none;";
+  el.canvas.parentElement.appendChild(legend);
+  cameraCoverage.legend = legend;
+  return legend;
+}
+function pickZoneRecords() {
+  return [...state.objects, ...state.pickRecords].filter((record) => {
+    const item = record?.item || {};
+    return String(item.role || item.semantic_role || "").toLowerCase() === "pick_zone" || /(^|_)pick_zone/.test(String(item.id || ""));
+  }).filter((record, index, all) => all.findIndex((other) => other.item.id === record.item.id) === index);
+}
+function pickZoneWorldBox(record) {
+  const item = record.item || {};
+  const dims = item.dimensions || item.size || item.box_size || item.geometry?.size;
+  if (!Array.isArray(dims) || dims.length < 3)
+    return null;
+  record.object3d?.updateWorldMatrix?.(true, false);
+  const matrix = record.object3d ? record.object3d.matrixWorld.clone() : new THREE.Matrix4().compose(
+    vector3(poseOf(item).xyz),
+    new THREE.Quaternion().setFromEuler(rosRpyEuler(poseOf(item).rpy)),
+    new THREE.Vector3(1, 1, 1)
+  );
+  return { dims: dims.map(Number), matrix, id: item.id, label: itemLabel(item) };
+}
+function updateCoverageRoi(opticalInverse, frustum) {
+  if (cameraCoverage.roiRoot) {
+    coverageRemove(cameraCoverage.roiRoot);
+    cameraCoverage.roiRoot = null;
+  }
+  if (!cameraCoverage.showRoi)
+    return null;
+  const root = new THREE.Group();
+  root.name = "camera_coverage_roi_helper";
+  let report = null;
+  for (const record of pickZoneRecords()) {
+    const box = pickZoneWorldBox(record);
+    if (!box)
+      continue;
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(box.dims[0], box.dims[1], box.dims[2])),
+      new THREE.LineBasicMaterial({ color: COVERAGE_ROI_COLOR, linewidth: 2 })
+    );
+    edges.name = "camera_coverage_roi_edges";
+    edges.matrixAutoUpdate = false;
+    edges.matrix.copy(box.matrix);
+    root.add(edges);
+    if (opticalInverse && frustum && !report) {
+      let inside = 0;
+      for (const sx of [-0.5, 0.5])
+        for (const sy of [-0.5, 0.5])
+          for (const sz of [-0.5, 0.5]) {
+            const p = new THREE.Vector3(sx * box.dims[0], sy * box.dims[1], sz * box.dims[2]).applyMatrix4(box.matrix).applyMatrix4(opticalInverse);
+            if (p.z > 0 && Math.abs(p.x / p.z) <= frustum.tx && Math.abs(p.y / p.z) <= frustum.ty)
+              inside += 1;
+          }
+      report = { id: box.id, label: box.label, corners_inside: inside, coverage: inside === 8 ? "inside" : inside > 0 ? "partial" : "outside" };
+    }
+  }
+  state.three.scene.add(coverageMarkOverlay(root));
+  cameraCoverage.roiRoot = root;
+  return report;
+}
+function coverageRaycastHit(origin, direction, ownRoot) {
+  const raycaster = new THREE.Raycaster(origin, direction, 0.01, 20);
+  for (const hit of raycaster.intersectObjects(state.three.scene.children, true)) {
+    const node = hit.object;
+    if (!node?.isMesh || hiddenPickSubtree(node) || excludedPickNode(node))
+      continue;
+    let own = false;
+    for (let p = node; p; p = p.parent)
+      if (p === ownRoot) {
+        own = true;
+        break;
+      }
+    if (own)
+      continue;
+    const item = node.userData?.item || {};
+    if (isZone(item) || item.camera_coverage)
+      continue;
+    return { point: hit.point.clone(), distance: hit.distance, owner: item.ui_selection_ref || item.canonical_scene_item_id || item.id || "", label: itemLabel(item) };
+  }
+  return null;
+}
+function updateCameraCoverage(force = false) {
+  if (!state.three?.scene)
+    return;
+  const now2 = performance.now();
+  if (!force && now2 - cameraCoverage.lastUpdate < 120)
+    return;
+  cameraCoverage.lastUpdate = now2;
+  const records = coverageRecords();
+  const target = cameraCoverage.visible ? coverageTarget() : null;
+  for (const record of records) {
+    const existing = record.object3d.children.find((child) => child.userData?.camera_coverage_overlay_root);
+    if (record !== target) {
+      if (existing)
+        coverageRemove(existing);
+      continue;
+    }
+    const cov2 = record.item.camera_coverage;
+    const wanted = coverageFrustumGroup(cov2);
+    if (existing && existing.userData.coverage.key === wanted.userData.coverage.key)
+      coverageRemove(wanted);
+    else {
+      if (existing)
+        coverageRemove(existing);
+      record.object3d.add(wanted);
+    }
+  }
+  if (cameraCoverage.footprint) {
+    coverageRemove(cameraCoverage.footprint);
+    cameraCoverage.footprint = null;
+  }
+  if (!target) {
+    if (cameraCoverage.roiRoot) {
+      coverageRemove(cameraCoverage.roiRoot);
+      cameraCoverage.roiRoot = null;
+    }
+    if (cameraCoverage.legend)
+      cameraCoverage.legend.style.display = "none";
+    cameraCoverage.metrics = null;
+    return;
+  }
+  const root = target.object3d.children.find((child) => child.userData?.camera_coverage_overlay_root);
+  root.updateWorldMatrix(true, true);
+  root.children.find((child) => child.name === "camera_coverage_frustum_axis").visible = cameraCoverage.showAxis;
+  const cov = target.item.camera_coverage, frustum = root.userData.coverage;
+  const origin = new THREE.Vector3().setFromMatrixPosition(root.matrixWorld);
+  const rotation = new THREE.Matrix4().extractRotation(root.matrixWorld);
+  const ray = (x, y) => new THREE.Vector3(x, y, 1).normalize().applyMatrix4(rotation);
+  const centre = coverageRaycastHit(origin, ray(0, 0), target.object3d);
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => coverageRaycastHit(origin, ray(sx * frustum.tx, sy * frustum.ty), target.object3d));
+  const axisWorld = ray(0, 0);
+  const depth = centre ? centre.distance : null;
+  if (corners.every(Boolean)) {
+    const pts = corners.map((hit) => hit.point);
+    const outline = coverageLine([pts[0], pts[1], pts[1], pts[2], pts[2], pts[3], pts[3], pts[0]], COVERAGE_FOV_COLOR, 1);
+    outline.name = "camera_coverage_footprint_helper";
+    state.three.scene.add(coverageMarkOverlay(outline));
+    cameraCoverage.footprint = outline;
+  }
+  const roi = updateCoverageRoi(root.matrixWorld.clone().invert(), frustum);
+  const opticalRpy = rosRpyFromQuaternion(new THREE.Quaternion().setFromRotationMatrix(rotation));
+  cameraCoverage.metrics = {
+    camera_id: cov.camera_id,
+    optical_frame: cov.optical_frame,
+    body_link: cov.body_link,
+    fov_source: cov.fov_source,
+    calibrated: Boolean(cov.calibrated),
+    horizontal_fov_deg: cov.horizontal_fov_deg,
+    vertical_fov_deg: cov.vertical_fov_deg,
+    display_near_m: frustum.near,
+    display_far_m: frustum.far,
+    optical_origin_m: [origin.x, origin.y, origin.z],
+    optical_rpy_rad: [opticalRpy.x, opticalRpy.y, opticalRpy.z],
+    viewing_direction: [axisWorld.x, axisWorld.y, axisWorld.z],
+    surface: centre ? { owner: centre.owner, label: centre.label, distance_m: depth } : null,
+    footprint_width_m: depth ? 2 * depth * frustum.tx : null,
+    footprint_height_m: depth ? 2 * depth * frustum.ty : null,
+    footprint_complete: corners.every(Boolean),
+    pick_roi: roi
+  };
+  const legend = coverageLegend();
+  if (legend) {
+    const m = cameraCoverage.metrics, fmt = (v) => Number(v).toFixed(2);
+    legend.style.display = "block";
+    legend.innerHTML = `<b style="color:#22b8cf">\u2501 Camera field of view</b> (display only)<br>` + (cameraCoverage.showAxis ? '<b style="color:#ff3b8d">\u2501 Optical axis</b><br>' : "") + (cameraCoverage.showRoi ? '<b style="color:#ff9f1c">\u2501 Pick zone</b>: where the robot may pick<br>' : "") + `FOV ${fmt(m.horizontal_fov_deg)}\xB0 \xD7 ${fmt(m.vertical_fov_deg)}\xB0 \xB7 ${m.calibrated ? "from intrinsics" : "nominal, uncalibrated (approximate)"}<br>` + (m.surface ? `Surface ${m.surface.label}: ${fmt(m.surface.distance_m)} m \xB7 visible ${fmt(m.footprint_width_m)} \xD7 ${fmt(m.footprint_height_m)} m` : "No surface on the optical axis within 20 m") + (m.pick_roi ? `<br>Pick zone ${m.pick_roi.coverage === "inside" ? "fully inside" : m.pick_roi.coverage === "partial" ? `partly inside (${m.pick_roi.corners_inside}/8 corners)` : "outside"} the view` : "") + "<br><i>Coverage is not reachability or graspability.</i>";
+  }
+}
+function setCameraCoverage(options = {}) {
+  for (const key of ["visible", "showRoi", "showAxis"])
+    if (typeof options[key] === "boolean")
+      cameraCoverage[key] = options[key];
+  if (typeof options.cameraId === "string")
+    cameraCoverage.cameraId = options.cameraId;
+  if (options.farM === null || Number.isFinite(Number(options.farM)))
+    cameraCoverage.farM = options.farM === null ? null : Number(options.farM);
+  updateCameraCoverage(true);
+  return getCameraCoverageState();
+}
+function getCameraCoverageState() {
+  return {
+    visible: cameraCoverage.visible,
+    showRoi: cameraCoverage.showRoi,
+    showAxis: cameraCoverage.showAxis,
+    cameraId: cameraCoverage.cameraId,
+    cameraIds: [...new Set(coverageRecords().map((r) => r.item.camera_coverage.camera_id))],
+    metrics: cameraCoverage.metrics
+  };
+}
+function captureSnapshot() {
+  const { renderer, scene, camera } = state.three || {};
+  if (!renderer || !scene || !camera || !el.canvas)
+    return { error: "renderer_unavailable" };
+  renderer.render(scene, camera);
+  return { data_url: el.canvas.toDataURL("image/png"), width: el.canvas.width, height: el.canvas.height };
+}
 window.__WORKCELL_EDITOR_API_V1__ = {
   apiVersion: "1.1.0",
   getCapabilities: () => Object.freeze({
@@ -46737,7 +47030,12 @@ window.__WORKCELL_EDITOR_API_V1__ = {
   setSelectionSet: (selection) => setSelectionSet(selection),
   getSelectionSetState: () => getSelectionSetState(),
   // Diagnostics: where a world point appears on the canvas (page coordinates).
-  projectWorldPoint: (point) => projectWorldPoint(point)
+  projectWorldPoint: (point) => projectWorldPoint(point),
+  // Home preview: render and read back in the same task (the WebGL buffer is not preserved between frames).
+  captureSnapshot: () => captureSnapshot(),
+  // Camera coverage preview (display only; optional, Builder checks before use).
+  setCameraCoverage: (options) => setCameraCoverage(options),
+  getCameraCoverageState: () => getCameraCoverageState()
 };
 var editorApiInstalledAt = (/* @__PURE__ */ new Date()).toISOString();
 var editorRuntimeViewerBuild = new URLSearchParams(window.location.search).get("viewerBuild") || "";
@@ -46782,6 +47080,7 @@ async function boot() {
     ColladaLoader2 = colladaModule.ColladaLoader;
     OBJLoader2 = objModule.OBJLoader;
     loadRobotPreview2 = urdfRobotRendererModule.loadRobotPreview;
+    normalizeRosColladaScene2 = urdfRobotRendererModule.normalizeRosColladaScene;
     applyRobotJointPreview2 = urdfRobotRendererModule.applyRobotJointPreview;
     initThree();
     setLabelsVisible(el.labelsToggle?.checked || false);

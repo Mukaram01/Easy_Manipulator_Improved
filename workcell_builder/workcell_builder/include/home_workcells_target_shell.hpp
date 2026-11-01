@@ -881,12 +881,18 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
       if (action && action->text().contains(text, Qt::CaseInsensitive)) return action;
     return nullptr;
   };
-  const auto add_backed_more_action = [more, more_menu](QAction * backing, const QString & label) {
+  // keep_visible: a disabled entry stays listed with its reason (Delete on a protected scene), instead of vanishing.
+  const auto add_backed_more_action = [more, more_menu](QAction * backing, const QString & label, bool keep_visible = false) {
     if (!backing) return;
     QAction * proxy = more_menu->addAction(label);
     QObject::connect(proxy, &QAction::triggered, backing, &QAction::trigger);
-    const auto sync = [more, more_menu, proxy, backing]() {
-      proxy->setVisible(backing->isEnabled());
+    const auto sync = [more, more_menu, proxy, backing, keep_visible]() {
+      proxy->setVisible(keep_visible || backing->isEnabled());
+      if (keep_visible) {
+        proxy->setEnabled(backing->isEnabled());
+        proxy->setText(backing->text());
+        proxy->setToolTip(backing->toolTip());
+      }
       bool any_visible = false;
       for (QAction * action : more_menu->actions()) any_visible = any_visible || action->isVisible();
       more->setVisible(any_visible);
@@ -902,7 +908,8 @@ inline QFrame * build_inspector(QMainWindow * window, QTableWidget * table, cons
     add_backed_more_action(preview, QStringLiteral("Operator Preview"));
   }
   if (QAction * remove = source_action(QStringLiteral("Delete Scene"))) {
-    add_backed_more_action(remove, remove->text());
+    more_menu->setToolTipsVisible(true);
+    add_backed_more_action(remove, remove->text(), true);
   }
   if (more_menu->actions().isEmpty()) more->hide();
   QObject::connect(view_validation, &QPushButton::clicked, window, [window]() {

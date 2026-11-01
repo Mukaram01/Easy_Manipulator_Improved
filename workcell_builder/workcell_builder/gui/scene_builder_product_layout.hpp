@@ -274,6 +274,8 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   if (rotate) rotate->setObjectName(QStringLiteral("sceneBuilderModeRotate"));
   if (save) save->setObjectName(QStringLiteral("sceneBuilderToolbarSave"));
   QPushButton * mate = scene_page->findChild<QPushButton *>(QStringLiteral("sceneBuilderToolbarMate"));
+  // Visible Delete: the same layout.remove operation as the Delete key; disabled with its reason as tooltip.
+  QPushButton * remove = scene_page->findChild<QPushButton *>(QStringLiteral("sceneBuilderToolbarDelete"));
 
   QPushButton * embedded_add = button_with_text(preview, QStringLiteral("Add object"));
   QPushButton * embedded_fit = preview ? preview->findChild<QPushButton *>(QStringLiteral("embeddedFitButton")) : nullptr;
@@ -333,8 +335,9 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   layout->addWidget(edit_mode_group);
   layout->addSpacing(4);
   if (place) place->hide();
-  for (auto * compact : {fit, mate}) compact_toolbar_button(compact);
+  for (auto * compact : {fit, mate, remove}) compact_toolbar_button(compact);
   add_existing(add_object);
+  add_existing(remove);
   add_existing(fit);
   add_existing(mate);
   layout->addStretch(1);
@@ -360,6 +363,13 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
   give_toolbar_icon(move, QStringLiteral("move"), QStringLiteral("Move"));
   give_toolbar_icon(rotate, QStringLiteral("rotate"), QStringLiteral("Rotate"));
   give_toolbar_icon(add_object, QStringLiteral("add"));
+  if (remove) {
+    // Keep its live blocker tooltip; give_toolbar_icon only fills an empty one.
+    remove->setProperty("fullText", remove->text());
+    remove->setIcon(studioIcon(QStringLiteral("delete")));
+    remove->setIconSize(QSize(16, 16));
+    remove->setAccessibleName(QStringLiteral("Delete selected"));
+  }
   give_toolbar_icon(fit, QStringLiteral("fit"), QStringLiteral("Fit the view to the workcell"));
   give_toolbar_icon(mate, QStringLiteral("mate"));
   give_toolbar_icon(save, QStringLiteral("save"), QStringLiteral("Save Layout (Ctrl+S)"));
@@ -374,7 +384,7 @@ inline void rebuild_single_toolbar(QWidget * scene_page, ScenePreviewWidget * pr
     button->setIcon(studioIcon(button == undo ? QStringLiteral("undo") : QStringLiteral("redo")));
   }
   // Labels collapse to icons as the toolbar narrows (shared component, see workcell_builder_ui_utils).
-  installResponsiveToolbar(host, {select, move, rotate}, {add_object, fit, mate, operator_preview, overflow}, save);
+  installResponsiveToolbar(host, {select, move, rotate}, {add_object, remove, fit, mate, operator_preview, overflow}, save);
 
   if (save) {
     save->setProperty("layoutDirty", false);

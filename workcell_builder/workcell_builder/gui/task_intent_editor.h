@@ -50,6 +50,7 @@ private:
   void refresh_fields();
   QJsonObject request(bool draft);
   void apply_report(const QJsonObject & report);
+  void refresh_review(const QJsonObject & report, const QString & status);
   void text_field(QFormLayout *, const QString &, const QString &, const QString &);
   void number_field(QFormLayout *, const QString &, const QString &, const QString &, const QString &, bool nullable = false);
   QComboBox * choice_field(QFormLayout *, const QString &, const QString &, const QString &, const QStringList &);
@@ -74,6 +75,7 @@ private:
   QMap<QString, std::function<void(const QJsonValue &)>> readers_;
   QMap<QString, QString> input_errors_;
   QLabel * status_;
+  QLabel * review_{nullptr};   // step 5: the task in plain English, what is missing and the next action
   QTimer * validation_timer_;
   QComboBox * strategies_;
   QComboBox * assets_;

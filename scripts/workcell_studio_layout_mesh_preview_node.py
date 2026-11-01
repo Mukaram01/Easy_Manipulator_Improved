@@ -179,8 +179,10 @@ def resolve_mesh_resource(value: Any, owning_package: str | None = None) -> str:
         remainder = parts[3:]
         if _PACKAGE_NAME.fullmatch(package) and remainder:
             return f"package://{package}/{'/'.join(remainder)}"
-    if owning_package is not None and len(parts) > 2 and parts[:2] == ("assets", "imported"):
-        return f"package://{owning_package}/assets/imported/{'/'.join(parts[2:])}"
+    # Cell-local copies: imported CAD (assets/imported) and library meshes placed from the Asset Library
+    # (assets/library). Both are installed with the owning scene package.
+    if owning_package is not None and len(parts) > 2 and parts[:2] in (("assets", "imported"), ("assets", "library")):
+        return f"package://{owning_package}/{'/'.join(parts)}"
     imported_prefix = ("workcell_builder", "workcell_builder", "assets", "imported")
     if len(parts) > len(imported_prefix) and parts[: len(imported_prefix)] == imported_prefix:
         return f"package://workcell_builder/assets/imported/{'/'.join(parts[len(imported_prefix):])}"

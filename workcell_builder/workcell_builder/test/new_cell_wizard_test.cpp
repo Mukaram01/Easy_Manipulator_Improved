@@ -106,6 +106,50 @@ TEST(NewCellWizard, ReviewedPairIsTheDefaultAndItsFramesComeFromItsProfile)
   EXPECT_EQ(wizard.findChild<QTableWidget *>("testObjectsTable")->rowCount(), 3);
 }
 
+TEST(NewCellWizard, MissingNameIsHighlightedExplainedAndClearedWithoutRestart)
+{
+  ensure_application();
+  NewCellWizard wizard(repository_root());
+  auto * name = wizard.findChild<QLineEdit *>("newCellSceneName");
+  auto * steps = wizard.findChild<QListWidget *>("newCellWizardSteps");
+  auto * blocked = wizard.findChild<QLabel *>("newCellCreateBlocked");
+  ASSERT_NE(name, nullptr);
+  ASSERT_NE(steps, nullptr);
+  ASSERT_NE(blocked, nullptr);
+  QPushButton * create = nullptr;
+  for (auto * button : wizard.findChildren<QPushButton *>()) if (button->text() == "Create and Open") create = button;
+  ASSERT_NE(create, nullptr);
+  EXPECT_EQ(wizard.equipment_combination().value("status").toString(), "PLAN_CAPABLE");
+
+  // Equipment is plan-capable, yet creation is blocked by the missing name, and every surface says so.
+  EXPECT_FALSE(create->isEnabled());
+  EXPECT_TRUE(name->styleSheet().contains("border"));
+  EXPECT_TRUE(blocked->text().contains("Scene/package name is required"));
+  EXPECT_TRUE(create->toolTip().contains("Scene/package name is required"));
+  const auto blockers = wizard.creation_blockers();
+  ASSERT_EQ(blockers.size(), 1);
+  EXPECT_EQ(blockers.first().page, 0);
+  EXPECT_EQ(blockers.first().field, "newCellSceneName");
+  steps->setCurrentRow(5);
+  EXPECT_TRUE(wizard.review_text().contains("BLOCKED"));
+  EXPECT_TRUE(wizard.review_text().contains("Basics &gt; Scene/package name"));
+  EXPECT_TRUE(wizard.review_text().contains("goto:0:newCellSceneName"));
+  EXPECT_FALSE(wizard.review_text().contains("READY"));
+
+  // Following the Review link returns to Basics; typing a valid name clears every marker.
+  QMetaObject::invokeMethod(wizard.findChild<QLabel *>("newCellReviewSummary"), "linkActivated",
+    Q_ARG(QString, QString("goto:0:newCellSceneName")));
+  EXPECT_EQ(steps->currentRow(), 0);
+  name->setText("Bad Name");
+  EXPECT_FALSE(create->isEnabled());
+  EXPECT_TRUE(blocked->text().contains("lowercase"));
+  name->setText("beginner_unit_never_created");
+  EXPECT_TRUE(create->isEnabled());
+  EXPECT_TRUE(name->styleSheet().isEmpty());
+  EXPECT_TRUE(blocked->text().isEmpty());
+  EXPECT_TRUE(wizard.review_text().contains("Cell creation:</b> <span style='color:#3fb950'>READY"));
+}
+
 TEST(NewCellWizard, DiscoveredPairsAreClassifiedAndUnsupportedOnesFailClosed)
 {
   ensure_application();
@@ -227,6 +271,9 @@ TEST(NewCellWizard, ScenarioSelectionIsCanonicalAcrossTaskIntentAndReview)
   auto *test_objects = wizard.findChild<QTableWidget *>("testObjectsTable");
   ASSERT_NE(test_objects, nullptr);
   EXPECT_EQ(test_objects->rowCount(), 3);
+  // Without a name the task inputs are complete but the cell cannot be created: never overall READY.
+  EXPECT_TRUE(wizard.review_text().contains("Cell creation:</b> <span style='color:#ff6b6b'>BLOCKED"));
+  wizard.findChild<QLineEdit *>("newCellSceneName")->setText("sorting_unit_never_created");
   EXPECT_TRUE(wizard.review_text().contains("READY"));
 
   EXPECT_EQ(wizard.findChildren<QComboBox *>("taskFamilyCombo").size(), 0);

@@ -60,6 +60,9 @@ public:
   bool select_equipment(const QString &robot_id, const QString &tool_id);
   QJsonObject equipment_combination() const;
   QStringList equipment_blockers() const;
+  // Everything that keeps Create disabled, each with the wizard page that fixes it (Basics, Robot, ...).
+  struct CreationBlocker { int page; QString field; QString text; };
+  QList<CreationBlocker> creation_blockers() const;
   QString selected_object_source_id() const;
   bool select_object_source_by_id(const QString &source_id);
   bool manual_object_geometry_valid() const;
@@ -72,6 +75,7 @@ private:
   void build_ui();
   void refresh_validation();
   void refresh_summary();
+  void go_to_blocker(const QString &link);
   void refresh_environment_parent_options();
   void apply_scenario_defaults();
   void refresh_scenario_ui();
@@ -208,6 +212,8 @@ private:
   QLabel *task_readiness_label_{nullptr};
 
   QLabel *summary_{nullptr};
+  QLabel *create_blocked_{nullptr};
+  bool scene_name_edited_{false};
 
   QPushButton *back_{nullptr};
   QPushButton *next_{nullptr};

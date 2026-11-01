@@ -276,6 +276,9 @@ public:
   // Visual mate picking (R3.2): Builder sends the overlay (datum markers,
   // highlights, ghost); the viewer reports raw picks through the editor poll.
   void set_mate_overlay(const QJsonObject & overlay);
+  // Camera coverage preview (display only): options {visible, showRoi, showAxis, cameraId, farM}; done receives
+  // the viewer's coverage state (metrics: frames, FOV and its source, surface distance, footprint, pick-zone fit).
+  void set_camera_coverage(const QJsonObject & options, std::function<void(const QJsonObject &)> done = {});
   void clear_mate_overlay();
   void set_mate_hover_resolution(const QJsonObject & resolution);
   // Align & Arrange preview: ghost of the planned pose and reference highlight;

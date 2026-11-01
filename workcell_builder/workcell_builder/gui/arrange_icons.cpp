@@ -141,13 +141,15 @@ QIcon arrangeIcon(const QString & name)
   for (const auto mode : {QIcon::Normal, QIcon::Disabled}) {
     const QColor ink(mode == QIcon::Normal ? tokens.text : tokens.textMuted);
     QColor accent(mode == QIcon::Normal ? tokens.accent : tokens.border);
+    // Drawn on the 16-unit grid and rendered at 24 px (and 2x) so the strip reads at a glance.
     for (const int scale : {1, 2}) {
-      QPixmap pixmap(16 * scale, 16 * scale);
+      QPixmap pixmap(24 * scale, 24 * scale);
       pixmap.setDevicePixelRatio(scale);
       pixmap.fill(Qt::transparent);
       QPainter painter(&pixmap);
       painter.setRenderHint(QPainter::Antialiasing);
       painter.setRenderHint(QPainter::TextAntialiasing);
+      painter.scale(1.5, 1.5);
       paint_icon(painter, name, ink, accent);
       painter.end();
       icon.addPixmap(pixmap, mode);

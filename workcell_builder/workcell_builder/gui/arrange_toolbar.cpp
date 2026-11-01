@@ -70,11 +70,12 @@ ArrangeToolbar::ArrangeToolbar(ArrangeController * controller, QWidget * parent)
   tools_host_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);  // the More menu, never a wider view
   auto * tools_layout = new QHBoxLayout(tools_host_);
   tools_layout->setContentsMargins(0, 0, 0, 0);
-  tools_layout->setSpacing(2);
+  tools_layout->setSpacing(4);
   tools_host_->installEventFilter(this);
   // Compact icon buttons (the application sheet sizes text buttons, not a tool strip).
   tools_host_->setStyleSheet(QStringLiteral(
-    "QToolButton { padding: 3px; margin: 0px; }"));
+    "QToolButton { padding: 6px; margin: 0px; border: 1px solid transparent; border-radius: 6px; }"
+    "QToolButton:hover { border-color: palette(mid); }"));
   row->addWidget(tools_host_, 1);
   more_ = new QToolButton(this);
   more_->setObjectName(QStringLiteral("arrangeMore"));
@@ -266,9 +267,9 @@ QAction * ArrangeToolbar::add_tool(const QString & tool, const QString & icon, c
   button->setObjectName(QStringLiteral("arrangeButton_%1").arg(tool));
   button->setAccessibleName(text);
   button->setToolButtonStyle(Qt::ToolButtonIconOnly);
-  button->setIconSize(QSize(16, 16));
+  button->setIconSize(QSize(24, 24));
   button->setAutoRaise(true);
-  button->setFixedSize(28, 28);
+  button->setFixedSize(38, 38);
   button->setFocusPolicy(Qt::TabFocus);
   tools_host_->layout()->addWidget(button);
   tool_widgets_ << button;
