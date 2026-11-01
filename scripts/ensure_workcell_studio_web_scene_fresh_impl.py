@@ -138,6 +138,41 @@ def existing_inputs(scene_dir: Path) -> List[Path]:
     return inputs
 
 
+def missing_equipment_model(scene_dir: Path) -> Optional[str]:
+    """Why a New Cell without its equipment xacro cannot be shown, in terms of its equipment, or None.
+
+    Only cells that record New Cell equipment are explained here; other scenes keep the extractor's own report."""
+    import yaml
+    def load(name: str) -> dict:
+        try:
+            data = yaml.safe_load((scene_dir / name).read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            return {}
+        return data if isinstance(data, dict) else {}
+    model = ((load("scene_manifest.yaml").get("files") or {}).get("urdf_xacro")) or "urdf/scene.urdf.xacro"
+    if (scene_dir / model).is_file():
+        return None
+    studio = load("environment.yaml").get("workcell_studio")
+    equipment = studio.get("equipment") if isinstance(studio, dict) else None
+    if not isinstance(equipment, dict):
+        return None
+    pair = f"{equipment.get('robot_capability')} + {equipment.get('tool_capability')} ({equipment.get('status')})"
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        from instantiate_workcell_studio_profile import equipment as discover_equipment
+        current = next((c for c in discover_equipment()["combinations"] if c["robot"] == equipment.get("robot_capability")
+                        and c["tool"] == equipment.get("tool_capability")), {})
+    except Exception as exc:  # discovery problems are reported, never guessed around
+        current = {"assembly_reason": f"equipment discovery failed ({exc})."}
+    if current.get("assembly"):
+        cause = ("This cell was created before configurable equipment received a 3D model; create it again with "
+                 "New Cell (same robot and tool) to assemble the installed geometry.")
+    else:
+        cause = current.get("assembly_reason") or current.get("reason") or "No 3D equipment model is available."
+    return (f"{pair} has no 3D equipment model, so Product View cannot show this cell. {cause} "
+            "Generate and planning stay blocked for this equipment.")
+
+
 def existing_mesh_index_inputs(scene_dir: Path) -> List[Path]:
     inputs: List[Path] = []
     for rel in MESH_INDEX_SCENE_INPUT_RELS:
@@ -528,6 +563,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         assets_stale, assets_reason = are_staged_assets_stale(asset_dir, web_inputs)
 
     if args.force or mesh_stale:
+        missing = missing_equipment_model(scene_dir)
+        if missing:
+            print(f"error: {missing}", file=sys.stderr)
+            return 2
         reason = "forced" if args.force else mesh_reason
         print(f"Refreshing mesh index for {scene_id}: {reason}", file=sys.stderr)
         command = [sys.executable, repo_relative(extractor_script), "--scene", repo_relative(scene_dir), "--prefer-xacro", "--workspace-root", str(REPO_ROOT.parent.parent)]

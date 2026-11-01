@@ -8,6 +8,12 @@
 # definition into that asset's mounting_anchors in environment.yaml, so a saved
 # scene never depends on this file and later edits here never move it.
 # Datums are offered only while the asset's mesh calibration matches.
+#
+# mounting (optional) is how the Asset Library asset stands in a cell, keyed by its
+# catalog asset id: `floor` (stands on the floor plane: tables, workbenches, pedestals)
+# or `support_surface` (rests on a physical support surface: bins, trays, objects).
+# Undeclared assets rest on a support surface; any other value blocks the asset.
+# Product View places, and Builder admits, an asset only on the support it declares.
 schema_version: workcell_studio_asset_datums/v1
 assets:
   bin_standard:
@@ -35,6 +41,7 @@ assets:
         pose_xyz: [0.0, 0.0, 0.0]
         pose_rpy: [0.0, 0.0, 0.0]
   camera_stand:
+    mounting: floor
     calibration:
       scale: [1.0, 1.0, 1.0]
     review: >-
@@ -56,3 +63,20 @@ assets:
         label: Mast axis
         pose_xyz: [0.0, 0.0, 0.0]
         pose_rpy: [0.0, 0.0, 0.0]
+  # Floor-standing library assets (mounting only; no reviewed datums yet).
+  table_description:
+    mounting: floor
+  workbench_description:
+    mounting: floor
+  workbench:
+    mounting: floor
+  table_large:
+    mounting: floor
+  table_small:
+    mounting: floor
+  pedestal:
+    mounting: floor
+  pallet:
+    mounting: floor
+  safety_fence_panel:
+    mounting: floor

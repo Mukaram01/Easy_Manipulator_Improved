@@ -3,6 +3,9 @@
 #include <boost/filesystem.hpp>
 #include <algorithm>
 #include <fstream>
+#include <cstdlib>
+#include <iostream>
+#include <map>
 #include <utility>
 
 #include "gui/asset_catalog_discovery.h"
@@ -426,4 +429,62 @@ TEST(AssetLibraryModel, LocalLibraryImportsAreListedAsImportedInEveryCell)
   ASSERT_NE(gone, model.assets.end());
   EXPECT_FALSE(gone->can_add_to_scene);
   EXPECT_EQ(gone->blockers.front(), "the imported mesh file is missing");
+}
+
+TEST(AssetCatalogDiscovery, MeshUnitsComeFromThePackagesOwnDescription)
+{
+  const fs::path repo = make_tmp_dir("declared_units");
+  const fs::path ws = make_tmp_dir("declared_units_ws");
+  const auto package = [&repo](const std::string & name, const std::string & mesh_scale) {
+    const fs::path dir = repo / "assets" / "environment" / (name + "_description");
+    write_text(dir / "package.xml", "<package><name>" + name + "_description</name></package>");
+    write_text(dir / "meshes" / "visual" / (name + ".stl"), "solid " + name + "\nendsolid " + name + "\n");
+    if (!mesh_scale.empty()) {
+      write_text(dir / "urdf" / (name + ".urdf.xacro"), "<robot><link name=\"l\"><visual><geometry><mesh filename=\"package://" +
+        name + "_description/meshes/visual/" + name + ".stl\" " + mesh_scale + "/></geometry></visual></link></robot>\n");
+    }
+  };
+  package("bench", "scale=\"0.001 0.001 0.001\"");   // millimetre CAD, declared in its own URDF
+  package("crate", "");                              // no description: URDF default, metres
+  package("plate", "scale=\"0.001 0.002 0.001\"");   // non-uniform: the library cannot place it
+  const auto model = discover_asset_catalog(ws.string(), repo.string());
+  std::map<std::string, AssetCatalogEntry> by_id;
+  for (const auto & entry : model.assets) if (entry.path.find(".stl") != std::string::npos) by_id[entry.id] = entry;
+  ASSERT_EQ(by_id.count("bench_description"), 1u);
+  EXPECT_DOUBLE_EQ(by_id["bench_description"].scale, 0.001);
+  EXPECT_TRUE(by_id["bench_description"].can_add_to_scene);
+  EXPECT_DOUBLE_EQ(by_id["crate_description"].scale, 1.0);
+  EXPECT_FALSE(by_id["plate_description"].can_add_to_scene);
+  ASSERT_FALSE(by_id["plate_description"].blockers.empty());
+  EXPECT_NE(by_id["plate_description"].blockers.front().find("not uniform"), std::string::npos);
+}
+
+TEST(AssetCatalogDiscovery, MountingIsDeclaredByReviewedAssetMetadata)
+{
+  const fs::path repo = make_tmp_dir("declared_mounting");
+  const fs::path ws = make_tmp_dir("declared_mounting_ws");
+  for (const std::string name : {"bench", "crate", "shelf"}) {
+    const fs::path dir = repo / "assets" / "environment" / (name + "_description");
+    write_text(dir / "package.xml", "<package><name>" + name + "_description</name></package>");
+    write_text(dir / "meshes" / "visual" / (name + ".stl"), "solid " + name + "\nendsolid " + name + "\n");
+  }
+  write_text(repo / "catalog" / "workcell_studio_asset_datums.yaml",
+    "assets:\n  bench_description:\n    mounting: floor\n  shelf_description:\n    mounting: wall\n");
+  const auto model = discover_asset_catalog(ws.string(), repo.string());
+  std::map<std::string, AssetCatalogEntry> by_id;
+  for (const auto & entry : model.assets) by_id[entry.id] = entry;
+  EXPECT_EQ(by_id["bench_description"].mounting, "floor");
+  EXPECT_EQ(by_id["crate_description"].mounting, "support_surface");  // the editor's default: rests on a surface
+  EXPECT_FALSE(by_id["shelf_description"].can_add_to_scene);          // ambiguous declarations fail closed
+  EXPECT_NE(by_id["shelf_description"].blockers.front().find("not floor or support_surface"), std::string::npos);
+}
+
+TEST(AssetCatalogDiscovery, RealRepositoryCatalogUnitsAndMounting)
+{
+  const fs::path repo = fs::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
+  const auto model = discover_asset_catalog(std::string(), repo.string());
+  for (const auto & entry : model.assets) {
+    if (std::getenv("WORKCELL_PRINT_CATALOG")) std::cout << entry.id << " | " << entry.display_name << " | " << entry.category
+      << " | scale " << entry.scale << " | " << entry.mounting << " | " << entry.path << "\n";
+  }
 }

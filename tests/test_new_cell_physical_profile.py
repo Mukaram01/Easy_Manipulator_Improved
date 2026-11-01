@@ -81,6 +81,102 @@ def test_export_refuses_equipment_that_is_not_plan_capable(tmp_path):
         export_scene(tmp_path, tmp_path, validate=False)
 
 
+def configurable_input(scene, tcp='suction_tip', tip='tool0'):
+    """What the wizard saves for UR5 + AirPick (CONFIGURABLE): equipment, frames and the prefilled mount."""
+    pair = next(c for c in equipment()['combinations'] if (c['robot'], c['tool']) == ('ur5', 'onrobot_airpick_style'))
+    studio = {'equipment': {'status': 'CONFIGURABLE', 'reason': pair['reason'], 'profile': '',
+                            'robot_capability': 'ur5', 'tool_capability': 'onrobot_airpick_style'},
+              'robot': {'capability': 'ur5', 'base': 'base_link', 'tip': tip, 'planning_group': 'manipulator',
+                        'controller': '', 'readiness': 'CONFIGURABLE'},
+              'tool': {'capability': 'onrobot_airpick_style', 'attach': 'gripper_base_link', 'tcp': tcp,
+                       'readiness': 'CONFIGURABLE'},
+              'frames': {'robot_mount_pose': {'xyz': [0.1, -0.2, 0.0], 'rpy': [0.0, 0.0, 0.5]},
+                         'tool_mount_pose': pair['assembly']['tool_mount']}}
+    scene.mkdir(parents=True)
+    (scene / 'environment.yaml').write_text(yaml.safe_dump({'scene_name': scene.name, 'robot': 'ur5',
+                                                            'end_effector': 'onrobot_airpick_style',
+                                                            'workcell_studio': studio}))
+
+
+def test_configurable_pair_reuses_the_supported_scene_that_assembles_it():
+    """A configurable pair's 3D model comes from an existing supported scene that mounts that installed tool on that
+    robot (its macros and literal mount), never from an invented transform; without one it fails closed."""
+    pairs = {(c['robot'], c['tool']): c for c in equipment()['combinations']}
+    airpick = pairs[('ur5', 'onrobot_airpick_style')]
+    assert airpick['status'] == 'CONFIGURABLE' and airpick['profile'] is None
+    assert airpick['assembly'] == {
+        'scene': 'ur5_airpick4_test', 'source': 'scenes/ur5_airpick4_test/urdf/scene.urdf.xacro',
+        'robot_macro': 'ur_robot', 'tool_macro': 'onrobot_airpick4_gripper', 'tool_parent': 'tool0',
+        'tool_mount': {'xyz': [0.0, 0.0, 0.0324], 'rpy': [-1.5707, 0.0, 0.0]}}
+    # The Robotiq 3F record names no tool model file, so there is no macro to match: no geometry is guessed.
+    three_finger = pairs[('ur5', 'robotiq_3f')]
+    assert three_finger['assembly'] is None and 'no validated tool mount' in three_finger['assembly_reason']
+    assert 'assembly' not in pairs[('ur5', 'robotiq_2f_85')]     # plan-capable cells use their reviewed profile
+    tools = {t['id']: t for t in equipment()['tools']}
+    assert tools['onrobot_airpick_style']['model_links'] == ['gripper_base_link']   # no suction_tip link installed
+
+
+def test_authoring_model_is_only_for_configurable_equipment(tmp_path):
+    from instantiate_workcell_studio_profile import assemble_authoring_model
+    configurable_input(tmp_path / 'wrong_tip', tip='ee_link')
+    with pytest.raises(ValueError, match='relative to tool0'):
+        assemble_authoring_model(tmp_path / 'wrong_tip')
+    configurable_input(tmp_path / 'reviewed')
+    env = yaml.safe_load((tmp_path / 'reviewed' / 'environment.yaml').read_text())
+    env['workcell_studio']['robot']['capability'], env['workcell_studio']['tool']['capability'] = 'ur5', 'robotiq_2f_85'
+    (tmp_path / 'reviewed' / 'environment.yaml').write_text(yaml.safe_dump(env))
+    with pytest.raises(ValueError, match='PLAN_CAPABLE, not CONFIGURABLE'):
+        assemble_authoring_model(tmp_path / 'reviewed')
+
+
+def test_configurable_cell_gets_installed_geometry_but_stays_blocked(tmp_path):
+    if not Path('/opt/ros/humble/bin/xacro').exists():
+        pytest.skip('Real Humble xacro required for the authoring model')
+    from instantiate_workcell_studio_profile import assemble_authoring_model
+    from export_builder_scene_to_cell_definition import export_scene
+    scene = tmp_path / 'airpick_cell'
+    configurable_input(scene)
+    record = assemble_authoring_model(scene)
+    assert record['status'] == 'ASSEMBLED' and record['purpose'] == 'layout_authoring_only'
+    assert record['reference_scene'] == 'ur5_airpick4_test' and record['attach_link'] == 'gripper_base_link'
+    assert record['tcp_defined'] is False and 'no installed model defines it' in record['warnings'][0]
+    model = (scene / 'urdf/scene.urdf.xacro').read_text()
+    # Installed macros only: no table, camera, task or reference environment.
+    assert 'ur_macro.xacro' in model and 'onrobot_airpick4_gripper.urdf.xacro' in model
+    assert 'table' not in model and 'd435i' not in model and 'ur5_airpick4_test' not in model
+    index = json.loads((scene / 'generated/scene_visual_mesh_index.json').read_text())
+    assert index['xacro_real_command_succeeded'] and index['safe_for_preview'] and not index['blockers']
+    poses = {i['link']: i['link_world_pose'] for i in index['visual_items']}
+    assert {'base_link_inertia', 'wrist_3_link', 'gripper_base_link'} <= set(poses)
+    assert poses['base_link_inertia']['xyz'] == pytest.approx([0.1, -0.2, 0.0], abs=1e-6)  # the cell's own mount
+    # The tool sits 32.4 mm out along tool0's z axis: the reference mount, applied in this cell's robot pose.
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+    tool0_z = Rotation.from_euler('xyz', poses['tool0']['rpy']).apply([0, 0, 1])
+    offset = np.array(poses['gripper_base_link']['xyz']) - np.array(poses['tool0']['xyz'])
+    assert offset == pytest.approx(0.0324 * tool0_z, abs=1e-4)
+    saved = yaml.safe_load((scene / 'environment.yaml').read_text())['workcell_studio']
+    assert saved['equipment']['status'] == 'CONFIGURABLE' and saved['authoring_model']['tool_parent'] == 'tool0'
+    with pytest.raises(ValueError, match='EQUIPMENT_NOT_PLAN_CAPABLE'):
+        export_scene(scene, scene, validate=False)
+    # Product View loads it with only its equipment required; workbench and camera are laid out by the user.
+    from export_workcell_studio_web_scene_impl import build_web_scene
+    metadata = build_web_scene(scene)['metadata']
+    assert metadata['required_physical_categories'] == ['robot_arm', 'attached_tool_gripper']
+    assert metadata['authoring_only_equipment']['status'] == 'CONFIGURABLE'
+
+
+def test_product_view_explains_a_cell_without_an_equipment_model(tmp_path):
+    from ensure_workcell_studio_web_scene_fresh_impl import missing_equipment_model
+    configurable_input(tmp_path / 'older_cell')
+    message = missing_equipment_model(tmp_path / 'older_cell')
+    assert message.startswith('ur5 + onrobot_airpick_style (CONFIGURABLE) has no 3D equipment model')
+    assert 'create it again with New Cell' in message and 'Generate and planning stay blocked' in message
+    (tmp_path / 'legacy').mkdir()
+    assert missing_equipment_model(tmp_path / 'legacy') is None      # other scenes keep the extractor's report
+    assert missing_equipment_model(ROOT / 'scenes/ur5_airpick4_test') is None
+
+
 def test_export_verifies_actual_reviewed_pair_not_just_saved_ready_label():
     from export_builder_scene_to_cell_definition import _require_reviewed_new_cell_equipment
     _, reviewed = load_profile('ur5_2f_workbench')

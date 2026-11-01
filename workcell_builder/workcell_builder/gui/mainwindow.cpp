@@ -2778,9 +2778,37 @@ void MainWindow::setup_studio_shell()
       place_catalog_asset_at_world_position(asset_id, x, y, z, configure_transform);
     });
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_asset_placement_requested, this,
-    [this](double x, double y, double z, double roll, double pitch, double yaw, bool repeat_commit) {
+    [this](double x, double y, double z, double roll, double pitch, double yaw, bool repeat_commit,
+           const QString & support_owner_id) {
       if (!place_asset_armed_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
           !std::isfinite(roll) || !std::isfinite(pitch) || !std::isfinite(yaw)) return;
+      // The catalog's declared mounting decides where the asset may stand; the viewer only proposes.
+      if (armed_asset_mounting_ != QStringLiteral("floor") && support_owner_id.isEmpty()) {
+        const QString reason = QStringLiteral("%1 rests on a support surface (mounting: %2); place it on a table or fixture, "
+          "not on the floor.").arg(armed_asset_display_name_, armed_asset_mounting_);
+        append_studio_log(QStringLiteral("Asset placement refused: ") + reason);
+        statusBar()->showMessage(reason, 6000);
+        return;
+      }
+      if (armed_asset_mounting_ == QStringLiteral("floor") && !support_owner_id.isEmpty()) {
+        const QString reason = QStringLiteral("%1 stands on the floor (mounting: floor); it cannot rest on %2.")
+          .arg(armed_asset_display_name_, support_owner_id);
+        append_studio_log(QStringLiteral("Asset placement refused: ") + reason);
+        statusBar()->showMessage(reason, 6000);
+        return;
+      }
+      // A supported asset is saved mounted to its support: refuse here, before anything is committed,
+      // when that relation cannot be represented, rather than leave the asset loose in world coordinates.
+      if (!support_owner_id.isEmpty()) {
+        const QString blocker = armed_asset_support_blocker(support_owner_id, x, y, z, roll, pitch, yaw);
+        if (!blocker.isEmpty()) {
+          append_studio_log(QStringLiteral("Asset placement refused: ") + blocker);
+          statusBar()->showMessage(blocker, 8000);
+          show_workflow_feedback(QStringLiteral("error"), QStringLiteral("Placement refused: ") + blocker);
+          return;
+        }
+      }
+      armed_asset_support_owner_ = support_owner_id;
       armed_asset_x_m_ = x;
       armed_asset_y_m_ = y;
       armed_asset_z_m_ = z;
@@ -4483,6 +4511,11 @@ void MainWindow::generate_or_update_task_intent_for_selected_scene()
 bool MainWindow::generate_yaml_draft_for_selected_scene()
 {
   if (selected_scene_index_ < 0) return false;
+  if (const QString equipment = selected_scene_equipment_blocker(); !equipment.isEmpty()) {
+    append_studio_log("Generate blocked: " + equipment);
+    show_workflow_feedback("error", "Generate blocked: " + equipment);
+    return false;
+  }
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
     if (!environment_task_editor_->blocker(false).isEmpty()) {
@@ -4517,6 +4550,11 @@ bool MainWindow::generate_yaml_draft_for_selected_scene()
 }
 
 void MainWindow::generate_scene_package_for_selected_scene() {
+  if (const QString equipment = selected_scene_equipment_blocker(); !equipment.isEmpty()) {
+    append_studio_log("Generate blocked: " + equipment);
+    show_workflow_feedback("error", "Generate blocked: " + equipment);
+    return;
+  }
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
     if (!environment_task_editor_->blocker(false).isEmpty()) {
@@ -6397,6 +6435,21 @@ QString MainWindow::selected_scene_build_command() const { if (selected_scene_in
 QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
 QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
 
+QString MainWindow::selected_scene_equipment_blocker() const
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return {};
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  // New Cell records how far the cell's robot + tool can go; short of PLAN_CAPABLE it cannot generate or plan
+  // (the exporter re-derives this from the catalog; this is the reason shown first).
+  try {
+    const auto equipment = YAML::LoadFile((scene.scene_dir / "environment.yaml").string())["workcell_studio"]["equipment"];
+    if (equipment && equipment["status"] && equipment["status"].as<std::string>() != "PLAN_CAPABLE")
+      return QString::fromStdString("Equipment " + equipment["status"].as<std::string>() + ": " +
+        equipment["reason"].as<std::string>(""));
+  } catch (const YAML::Exception &) {}
+  return {};
+}
+
 MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness(bool require_task_input) const
 {
   SelectedSceneReadiness result;
@@ -6405,13 +6458,8 @@ MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness(bool req
     result.blockers << environment_task_editor_->blocker(require_task_input);
   if (!has_selected_scene() || selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) { result.blockers << "Select a scene."; return result; }
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  // New Cell records how far the cell's robot + tool can go; short of PLAN_CAPABLE it cannot generate or plan.
-  try {
-    const auto equipment = YAML::LoadFile((scene.scene_dir / "environment.yaml").string())["workcell_studio"]["equipment"];
-    if (equipment && equipment["status"] && equipment["status"].as<std::string>() != "PLAN_CAPABLE")
-      result.blockers.prepend(QString::fromStdString("Equipment " + equipment["status"].as<std::string>() + ": " +
-        equipment["reason"].as<std::string>("")));
-  } catch (const YAML::Exception &) {}
+  const QString equipment = selected_scene_equipment_blocker();
+  if (!equipment.isEmpty()) result.blockers.prepend(equipment);
   const auto content = workcell_builder::scene_content_readiness(scene);
   result.generation_current = content.generation_current && !layout_dirty_;
   result.validation_current = result.generation_current && content.validation_current;
@@ -11021,7 +11069,7 @@ QJsonArray MainWindow::mounting_items() const
 
 QJsonObject MainWindow::run_mounting_request(QJsonObject request)
 {
-  request.insert("items", mounting_items());
+  if (!request.contains("items")) request.insert("items", mounting_items());
   request.insert("scene_dir", selected_scene_state_.path);  // saved mesh calibration for reviewed datums
   const QString root = resolve_workcell_studio_repo_root(fs::path(selected_scene_state_.path.toStdString()));
   QProcess process;
@@ -11120,6 +11168,49 @@ bool MainWindow::commit_mounting_request(QJsonObject request)
   mark_layout_dirty("Asset mounting / hierarchical transform");
   scene_preview_widget_->set_native_authoring_history_available(true, false);
   return true;
+}
+
+QString MainWindow::armed_asset_support_blocker(const QString & support_id, double x, double y, double z,
+  double roll, double pitch, double yaw)
+{
+  const auto support = std::find_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(),
+    [&support_id](const ScenePreviewWidget::PreviewItem & p) { return p.id == support_id; });
+  const QString asset = armed_asset_display_name_;
+  const QString remedy = QStringLiteral(" Place it on an editable support surface of this cell (for example a table "
+    "added from Assets), or add such a support first.");
+  // The mounting contract's parents are this cell's editable layout assets (mounting_items()).
+  if (support == all_scene_preview_items_.cend()) {
+    return QStringLiteral("%1 would rest on %2, which is not a layout asset of this cell; a mounted child "
+      "could not be saved relative to it.").arg(asset, support_id) + remedy;
+  }
+  const QString name = QStringLiteral("%1 [%2]").arg(support->display_name.isEmpty() ? support->id : support->display_name, support->id);
+  if (deleted_layout_item_ids_.contains(support->id))
+    return QStringLiteral("%1 would rest on %2, which is deleted.").arg(asset, name) + remedy;
+  if (support->semantic_task_zone_helper)
+    return QStringLiteral("%1 would rest on %2, a task zone; task zones are not mounting parents.").arg(asset, name) + remedy;
+  if (support->source_layer != QStringLiteral("editable_layout") || !support->editable) {
+    const QString origin = !support->lock_reason.trimmed().isEmpty() ? support->lock_reason.trimmed()
+      : (support->source_layer.isEmpty() ? QStringLiteral("no layout source") : support->source_layer);
+    return QStringLiteral("%1 would rest on %2, which is locked reference geometry of the scene model (%3), not an "
+      "editable layout asset; its pose is not saved in this cell's layout, so a child cannot be mounted to it.")
+      .arg(asset, name, origin) + remedy;
+  }
+  if (support->locked) {
+    return QStringLiteral("%1 would rest on %2, which is locked; locked assets are not mounting parents. "
+      "Unlock it in the Inspector, then place the asset again.").arg(asset, name);
+  }
+  // Ask the existing resolver whether this exact relation is valid (anchors, cycles, offsets, stale poses).
+  QJsonArray items = mounting_items();
+  const QString candidate = QStringLiteral("__placement_candidate__");
+  items.append(QJsonObject{{"id", candidate}, {"role", "asset"}, {"category", armed_asset_category_},
+    {"mounting_yaml", QString()}, {"pose_xyz", QJsonArray{x, y, z}}, {"pose_rpy", QJsonArray{roll, pitch, yaw}}});
+  const auto response = run_mounting_request({{"items", items}, {"id", candidate},
+    {"parent_object", support_id}, {"parent_link", "origin"}});
+  if (!response.value("ok").toBool()) {
+    return QStringLiteral("%1 cannot be mounted on %2: %3").arg(asset, name,
+      response.value("error").toString().replace(candidate, asset));
+  }
+  return {};
 }
 
 void MainWindow::edit_selected_mounting()
@@ -12602,6 +12693,8 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   armed_asset_display_name_ = match->display_name;
   armed_asset_source_path_ = match->source_path;
   armed_asset_scale_ = match->scale;
+  armed_asset_mounting_ = match->mounting;
+  armed_asset_support_owner_.clear();
   reset_armed_asset_transform_to_defaults();
   armed_asset_use_clicked_xy_ = true;
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
@@ -12621,7 +12714,7 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
     }
     scene_preview_widget_->arm_embedded_asset_placement(
       match->asset_id, match->source_path, match->scale,
-      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked(), primitive_geometry);
+      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked(), primitive_geometry, match->mounting);
   }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
     .arg(match->display_name, match->category, armed_asset_id_)
@@ -12781,6 +12874,26 @@ void MainWindow::commit_armed_asset_placement(
     .arg(armed_asset_roll_rad_, 0, 'f', 3).arg(armed_asset_pitch_rad_, 0, 'f', 3).arg(armed_asset_yaw_rad_, 0, 'f', 3)
     .arg(armed_asset_use_clicked_xy_ ? "true" : "false"));
   append_studio_log("ghost placement preview committed");
+  // A supported asset is mounted to the surface it rests on (world pose kept), through the
+  // same mounting resolver as Mount To, so it follows that surface and is saved as its child.
+  // The relation was checked before commit (armed_asset_support_blocker); placement and mount are one edit.
+  const QString support = armed_asset_support_owner_;
+  armed_asset_support_owner_.clear();
+  if (!support.isEmpty()) {
+    const size_t add_index = undo_stack_.size() - 1;
+    if (commit_mounting_request({{"id", new_id}, {"parent_object", support}, {"parent_link", "origin"}})) {
+      // One undo step: the add command re-adds the mounted item, and undo removes it with its relation.
+      if (undo_stack_.size() == add_index + 2) undo_stack_.pop_back();
+      for (const auto & p : all_scene_preview_items_) if (p.id == new_id) undo_stack_[add_index].preview_items = {p};
+      append_studio_log(QStringLiteral("Asset placement: %1 mounted on support surface %2 (world pose kept).").arg(new_id, support));
+    } else {
+      // Never keep an asset that should rest on a support but is not mounted to it.
+      undo_layout_edit();
+      if (!redo_stack_.empty() && redo_stack_.back().item_id == new_id) redo_stack_.pop_back();
+      append_studio_log(QStringLiteral("Asset placement rolled back: %1 could not be mounted on %2.").arg(new_id, support));
+      return;
+    }
+  }
   record_recent_asset(asset_id);
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
   if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
@@ -16595,6 +16708,7 @@ void MainWindow::populate_asset_catalog()
     ui_entry.availability_status = QString::fromStdString(source_entry.readiness.empty() ? "unknown" : source_entry.readiness);
     ui_entry.disabled_reason = source_entry.can_add_to_scene ? QString() : QString::fromStdString(source_entry.blockers.empty() ? source_entry.suggested_action : source_entry.blockers.front());
     ui_entry.scale = source_entry.scale;
+    ui_entry.mounting = QString::fromStdString(source_entry.mounting);
     asset_catalog_entries_.push_back(ui_entry);
   };
 

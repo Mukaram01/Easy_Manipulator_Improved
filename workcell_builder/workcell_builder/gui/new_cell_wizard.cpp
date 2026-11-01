@@ -397,8 +397,16 @@ void NewCellWizard::apply_equipment_selection() {
   fill(ee_type_, {tool.value("type").toString()}, reviewed.value("type").toString(tool.value("type").toString()));
   robot_controller_name_->setText(profile.value("arm_controller").toString());
   robot_controller_name_->setPlaceholderText("No reviewed controller binding for this robot and tool");
-  // The reviewed mount; an unreviewed tool starts unrotated on the flange (review it in Advanced).
-  const auto xyz = reviewed.value("mount_pose_xyz").toArray(), rpy = reviewed.value("mount_pose_rpy").toArray();
+  // The reviewed mount; a configurable tool takes the mount of the supported scene that already assembles it (its
+  // 3D authoring model), otherwise it starts unrotated on the flange (review it in Advanced).
+  const auto combination = equipment_combination();
+  const auto assembly = combination.value("assembly").toObject();
+  auto xyz = reviewed.value("mount_pose_xyz").toArray(), rpy = reviewed.value("mount_pose_rpy").toArray();
+  if (profile.isEmpty() && !assembly.isEmpty()) {
+    xyz = assembly.value("tool_mount").toObject().value("xyz").toArray();
+    rpy = assembly.value("tool_mount").toObject().value("rpy").toArray();
+    robot_tip_link_->setCurrentText(assembly.value("tool_parent").toString());
+  }
   std::array<QDoubleSpinBox*,6> mount{ee_x_,ee_y_,ee_z_,ee_roll_,ee_pitch_,ee_yaw_};
   for (int i = 0; i < 6; ++i) mount[i]->setValue(i < 3 ? xyz.at(i).toDouble() : rpy.at(i - 3).toDouble());
   // Grasp strategies whose catalog record names this tool; AUTO is the reviewed task authoring's own choice.
@@ -406,7 +414,6 @@ void NewCellWizard::apply_equipment_selection() {
   if (!profile.isEmpty()) strategies.prepend("auto");
   fill(grasp_strategy_, strategies, strategies.value(0));
   fill(release_strategy_, {tool.value("release").toString()}, tool.value("release").toString());
-  const auto combination = equipment_combination();
   const QString status = combination.value("status").toString("UNSUPPORTED");
   auto describe = [](const QJsonObject &record) {
     QStringList lines{QString("%1 (%2) — %3").arg(record.value("label").toString(), record.value("id").toString(), record.value("source").toString())};
@@ -417,8 +424,17 @@ void NewCellWizard::apply_equipment_selection() {
       record.value("fake_hardware_status").toString(), record.value("real_hardware_status").toString());
     return lines.join("\n");
   };
-  const QString verdict = status + " - " + combination.value("reason").toString(equipment_error_.isEmpty()
+  QString verdict = status + " - " + combination.value("reason").toString(equipment_error_.isEmpty()
     ? "Select a robot and a tool." : equipment_error_) + "\nReal hardware: not commissioned (locked).";
+  QString model_line;
+  if (!profile.isEmpty()) model_line = "3D model: reviewed profile " + profile.value("id").toString() + ".";
+  else if (!assembly.isEmpty()) {
+    const auto mount_xyz = assembly.value("tool_mount").toObject().value("xyz").toArray(), mount_rpy = assembly.value("tool_mount").toObject().value("rpy").toArray();
+    auto triple = [](const QJsonArray &v) { return QString("%1, %2, %3").arg(v.at(0).toDouble()).arg(v.at(1).toDouble()).arg(v.at(2).toDouble()); };
+    model_line = QString("3D model (layout authoring only): the installed robot and tool geometry, mounted on %1 as supported scene %2 does (xyz %3 m, rpy %4 rad).")
+      .arg(assembly.value("tool_parent").toString(), assembly.value("scene").toString(), triple(mount_xyz), triple(mount_rpy));
+  } else if (status == "CONFIGURABLE") model_line = "3D model: " + combination.value("assembly_reason").toString();
+  if (!model_line.isEmpty()) verdict += "\n" + model_line;
   robot_readiness_banner_->setText(robot.isEmpty() ? verdict : describe(robot) + "\n" + verdict);
   ee_readiness_banner_->setText(tool.isEmpty() ? verdict : describe(tool) + "\n" + verdict);
   robot_warning_->setText(equipment_.value("notes").toVariant().toStringList().join("\n"));
@@ -543,6 +559,11 @@ QStringList NewCellWizard::equipment_blockers() const{
  check(robot_tip_link_,robot,"tip_frames","Robot tip (tool mount) link","Robot > Advanced Robot Frames");
  check(robot_planning_group_,robot,"planning_groups","Planning group","Robot > Advanced Robot Frames");
  check(ee_attach_link_,tool,"attach_links","Tool attach link","End Effector > Advanced Tool Frames");
+ // The 3D authoring model reuses a reference mount, which is only valid on the robot link it was measured from.
+ const auto assembly=combination.value("assembly").toObject();
+ if(!assembly.isEmpty() && robot_tip_link_->currentText().trimmed()!=assembly.value("tool_parent").toString())
+   blockers<<QString("The 3D model mounts %1 on %2 (as supported scene %3 does); select that robot tip (Robot > Advanced Robot Frames).")
+     .arg(tool.value("label").toString(), assembly.value("tool_parent").toString(), assembly.value("scene").toString());
  static const QRegularExpression frame_re("^[A-Za-z_][A-Za-z0-9_]*$");
  if(!frame_re.match(ee_tcp_link_->currentText().trimmed()).hasMatch())
    blockers<<"Tool TCP link must be a frame name (letters, digits, underscores) (End Effector > Advanced Tool Frames).";
@@ -558,6 +579,8 @@ QStringList NewCellWizard::readiness_warnings() const{
  const QString tcp=ee_tcp_link_->currentText().trimmed();
  if(!tcp.isEmpty() && !tool.value("tcp_frames").toVariant().toStringList().contains(tcp))
    warnings<<QString("TCP frame '%1' is not declared by %2; the cell defines it at the tool's TCP.").arg(tcp,tool.value("label").toString());
+ else if(!tcp.isEmpty() && combination.value("profile").toString().isEmpty() && !tool.value("model_links").toVariant().toStringList().contains(tcp))
+   warnings<<QString("TCP '%1' is declared by %2 but its installed model does not define it, so the 3D view cannot place it; it stays unmeasured.").arg(tcp,tool.value("label").toString());
  const bool unknown=robot_tip_link_->currentText().trimmed().isEmpty()||ee_attach_link_->currentText().trimmed().isEmpty()||ee_tcp_link_->currentText().trimmed().isEmpty();
  if(unknown) warnings<<"Unknown robot/tool links still editable placeholders.";
  if(pick_camera_->currentText().isEmpty() && pick_zone_source_->currentText()=="Camera view zone") warnings<<"Camera view zone selected but no enabled camera asset.";
@@ -849,6 +872,14 @@ out<<"workcell_studio:\n";
  };
  QString error;
  if(!save(scene_dir/"environment.yaml", QByteArray::fromStdString(out.str()), &error)) return fail(error);
+ if(equipment_status=="CONFIGURABLE" && !combination.value("assembly").toObject().isEmpty()) {
+   // Authoring-only 3D model of the installed robot and tool (no MoveIt, controller or task binding).
+   QProcess assemble;
+   assemble.start("python3", {profile_helper_path(), "--authoring-model", "--scene", QString::fromStdString(scene_dir.string())});
+   if(!assemble.waitForFinished(180000)) { assemble.kill(); assemble.waitForFinished(); return fail("3D equipment model assembly did not finish"); }
+   if(assemble.exitStatus()!=QProcess::NormalExit || assemble.exitCode()!=0)
+     return fail("3D equipment model could not be assembled: " + QString::fromUtf8(assemble.readAllStandardError()).trimmed());
+ }
  if(pick_place_scenario && !recommended_profile_.isEmpty()) {
    QProcess materialize;
    materialize.start("python3", {profile_helper_path(), "--profile", recommended_profile_,

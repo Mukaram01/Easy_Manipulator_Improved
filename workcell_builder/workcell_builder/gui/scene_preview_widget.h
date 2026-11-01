@@ -285,9 +285,11 @@ public:
   // Multi-selection highlights (members outlined, reference in its own colour).
   void set_selection_set(const QStringList & members, const QString & reference);
   void request_authoring_save();
+  // mounting is the catalog asset's declared stance: "floor" or "support_surface".
   void arm_embedded_asset_placement(
     const QString & asset_id, const QString & mesh_uri, double mesh_scale,
-    bool persistent = false, const QJsonObject & primitive = QJsonObject());
+    bool persistent = false, const QJsonObject & primitive = QJsonObject(),
+    const QString & mounting = QStringLiteral("support_surface"));
   void cancel_embedded_asset_placement();
   // Native drag/drop is only a lifecycle adapter. MainWindow resolves the
   // catalog identity and arms/cancels the same placement session as the button.
@@ -375,9 +377,11 @@ signals:
     bool configure_transform);
   // Browser placement events carry spatial data only. MainWindow remains the
   // authority for the catalog asset currently armed for placement.
+  // support_owner_id is the physical support surface the asset rests on (empty on the floor).
   void embedded_asset_placement_requested(
     double world_x_m, double world_y_m, double world_z_m,
-    double roll_rad, double pitch_rad, double yaw_rad, bool repeat_commit);
+    double roll_rad, double pitch_rad, double yaw_rad, bool repeat_commit,
+    const QString & support_owner_id);
   void embedded_authoring_context_menu_requested(const QPoint & global_position);
   // Mate picking state from the embedded viewer: {active, seq, pick, hoverSeq, hover, cancelSeq};
   // empty when the loaded viewer has no mate support.

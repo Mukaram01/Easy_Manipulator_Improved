@@ -21,7 +21,9 @@ struct AssetCatalogEntry
   std::string icon_key;
   std::vector<std::string> discovered_files;
   std::string suggested_action;
-  double scale{1.0};
+  double scale{1.0};  // metres per mesh unit, as the asset's own description declares
+  // "floor" (stands on the floor) or "support_surface" (rests on a physical support surface).
+  std::string mounting{"support_surface"};
   bool can_add_to_scene = false;
 };
 

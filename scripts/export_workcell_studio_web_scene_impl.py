@@ -3585,6 +3585,15 @@ def build_web_scene(
         "mesh_contract": _populate_mesh_contract_fields(output, staged=stage_assets),
         "visual_bounds_contract": _visual_bounds_contract(output, data),
     })
+    # An authoring-only New Cell (equipment not plan-capable) starts with only its equipment: the workbench and
+    # camera are what the user lays out in Product View, so they are not required for the scene to load.
+    studio = _as_map(_as_map(data.get("environment")).get("workcell_studio"))
+    equipment = _as_map(studio.get("equipment"))
+    if equipment and equipment.get("status") != "PLAN_CAPABLE":
+        metadata["required_physical_categories"] = ["robot_arm", "attached_tool_gripper"]
+        metadata["authoring_only_equipment"] = {
+            "status": equipment.get("status"), "robot_capability": equipment.get("robot_capability"),
+            "tool_capability": equipment.get("tool_capability")}
     output["metadata"] = metadata
     output["viewer_summary"] = _viewer_summary(output)
     return output

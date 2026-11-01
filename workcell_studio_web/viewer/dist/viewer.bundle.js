@@ -38560,8 +38560,12 @@ function structuredWeb3dReadinessFields(lifecycleState) {
     finalLifecycleState: finalState
   };
 }
+function web3dRequiredCategories() {
+  const declared = asArray(state.sceneJson?.metadata?.required_physical_categories).filter((category) => WEB3D_REQUIRED_CATEGORIES.includes(category));
+  return declared.length ? declared : WEB3D_REQUIRED_CATEGORIES;
+}
 function beginWeb3dSceneReadiness(items) {
-  const required = Object.fromEntries(WEB3D_REQUIRED_CATEGORIES.map((category) => [category, false]));
+  const required = Object.fromEntries(web3dRequiredCategories().map((category) => [category, false]));
   for (const item of items || []) {
     const category = readinessCategoryForItem(item);
     if (category)
@@ -38799,7 +38803,7 @@ function maybeEmitSceneReady() {
   const readiness = state.web3dReadiness;
   if (!readiness || readiness.failed || readiness.state === "scene_failed")
     return;
-  const missing = WEB3D_REQUIRED_CATEGORIES.filter((category) => !readiness.required?.[category]);
+  const missing = web3dRequiredCategories().filter((category) => !readiness.required?.[category]);
   if (missing.length) {
     emitWeb3dReadinessState("scene_failed", { reason: `missing required physical categories: ${missing.join(", ")}`, missing_required_categories: missing });
     return;
@@ -43967,6 +43971,23 @@ function upwardPlacementSurfaceHit(hit) {
   const world = normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
   return world.z >= PLACEMENT_SUPPORT_MIN_NORMAL_Z;
 }
+function placementHitIsHiddenFallback(hit) {
+  const fallback = placementHitRendered(hit)?.fallback;
+  if (!fallback)
+    return false;
+  let inFallback = false;
+  for (let node = hit.object; node; node = node.parent)
+    if (node === fallback) {
+      inFallback = true;
+      break;
+    }
+  if (!inFallback)
+    return false;
+  for (let node = fallback; node; node = node.parent)
+    if (node.visible === false)
+      return true;
+  return false;
+}
 function isEligiblePlacementSurfaceHit(hit) {
   const rendered = placementHitRendered(hit);
   const item = rendered?.item;
@@ -44060,8 +44081,10 @@ function placementPointFromViewport(position, options = {}) {
   pointer.x = (clientX - rect.left) / rect.width * 2 - 1;
   pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const roots = [...state.objects.map((record) => record.object3d), ...state.pickRecords.map((record) => record.pickRoot || record.object3d)].filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
+  const roots = options.groundOnly ? [] : [...state.objects.map((record) => record.object3d), ...state.pickRecords.map((record) => record.pickRoot || record.object3d)].filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
+    if (placementHitIsHiddenFallback(hit))
+      continue;
     if (!isEligiblePlacementSurfaceHit(hit))
       continue;
     if (!upwardPlacementSurfaceHit(hit))
@@ -44072,7 +44095,7 @@ function placementPointFromViewport(position, options = {}) {
       state.placement.supportOwnerId = String(explicitUiSelectionItemId(rendered) || rendered?.item?.support_surface_ref || rendered?.item?.id || "").trim();
     return resolvedPoint;
   }
-  const supportSurfacePoint = placementPointOnAuthoredSupportSurface(raycaster);
+  const supportSurfacePoint = options.groundOnly ? null : placementPointOnAuthoredSupportSurface(raycaster);
   if (supportSurfacePoint) {
     return supportSurfacePoint;
   }
@@ -44206,6 +44229,13 @@ function evaluatePlacementCollision() {
   placement.collidingOwnerIds.sort();
   placement.collision = placement.collidingOwnerIds.length > 0;
   placement.valid = placement.supportValid && Boolean(ghostBounds) && !placement.collision;
+  if (placement.valid && !placementStandsOnFloor()) {
+    const support = renderedById(placement.supportOwnerId)?.item;
+    if (!support || !canEditItem(support)) {
+      placement.valid = false;
+      placement.invalidReason = `Support ${placement.supportOwnerId || "surface"} is reference geometry, not an editable layout asset; it cannot carry a mounted asset`;
+    }
+  }
   setPlacementCollisionStyle(placement.collision);
   return placement.valid;
 }
@@ -44251,7 +44281,7 @@ function placementCanonicalRpy() {
   return { roll: rpy.x, pitch: rpy.y, yaw: rpy.z };
 }
 function placementRequest(point, repeat) {
-  return { ...point, ...placementCanonicalRpy(), repeat };
+  return { ...point, ...placementCanonicalRpy(), repeat, support_owner_id: placementStandsOnFloor() ? "" : String(state.placement.supportOwnerId || "") };
 }
 function contactCorrectPlacementPoint(supportPoint) {
   const placement = state.placement;
@@ -44292,7 +44322,7 @@ function updatePlacementStatus() {
   const collisions = state.placement.collidingOwnerIds || [];
   const orientation = placementPresetDefinition().label;
   status.title = collisions.join(", ");
-  status.innerHTML = point ? state.placement.collision ? `<strong>COLLISION</strong> \xB7 ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ""}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>VALID</strong> \xB7 X ${point.x.toFixed(3)} \xB7 Y ${point.y.toFixed(3)} \xB7 Z ${point.z.toFixed(3)} m${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>INVALID</strong> \xB7 ${state.placement.supportValid ? state.placement.invalidReason || "Placement preview unavailable" : "No valid placement surface"}${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>${state.placement.supportValid ? "Wait for physical geometry \xB7 Esc cancel" : "Move over a physical support surface \xB7 Esc cancel"}`;
+  status.innerHTML = point ? state.placement.collision ? `<strong>COLLISION</strong> \xB7 ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ""}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : state.placement.invalidReason ? `<strong>INVALID</strong> \xB7 ${state.placement.invalidReason}<br>Place it on an editable support of this cell \xB7 Esc cancel` : `<strong>VALID</strong> \xB7 X ${point.x.toFixed(3)} \xB7 Y ${point.y.toFixed(3)} \xB7 Z ${point.z.toFixed(3)} m${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>INVALID</strong> \xB7 ${state.placement.supportValid ? state.placement.invalidReason || "Placement preview unavailable" : "No valid placement surface"}${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>${state.placement.supportValid ? "Wait for physical geometry \xB7 Esc cancel" : placementStandsOnFloor() ? "Move over the floor \xB7 Esc cancel" : "Needs a support surface (table, fixture) \xB7 not the floor \xB7 Esc cancel"}`;
   const healthSignature = `${Boolean(state.placement.armed)}|${Boolean(state.placement.collision)}|${asArray(state.placement.collidingOwnerIds).join("|")}`;
   if (state.lastPlacementHealthSignature !== healthSignature) {
     state.lastPlacementHealthSignature = healthSignature;
@@ -44371,10 +44401,13 @@ async function createPlacementPreview(asset) {
   }
   return root;
 }
+function placementStandsOnFloor() {
+  return String(state.placement.asset?.mounting || "") === "floor";
+}
 function updatePlacementPreview(position) {
   if (!state.placement.armed)
     return null;
-  return setPlacementPoint(placementPointFromViewport(position, { allowGround: false }));
+  return setPlacementPoint(placementPointFromViewport(position, placementStandsOnFloor() ? { groundOnly: true } : { allowGround: false }));
 }
 function updatePlacementPointer(clientX, clientY) {
   if (!Number.isFinite(clientX) || !Number.isFinite(clientY))

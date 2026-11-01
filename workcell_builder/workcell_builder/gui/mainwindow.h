@@ -386,6 +386,8 @@ private:
   // require_task_input: the saved commissioning replay / live snapshot (fake-hardware planning). The
   // qualified physics cycle measures its objects in the simulator; physics_cycle_preflight owns its input.
   SelectedSceneReadiness selected_scene_readiness(bool require_task_input = true) const;
+  // "Equipment STATUS: reason" when the selected New Cell's robot + tool is not plan-capable, else empty.
+  QString selected_scene_equipment_blocker() const;
   bool selected_scene_preview_ready(QStringList * blockers = nullptr) const;
   bool preview_command_is_safe(const QString & command, QStringList * blockers = nullptr) const;
   void refresh_preview_launch_ui();
@@ -424,6 +426,10 @@ private:
   bool mounted_pose_unchanged(const QString & id, double x, double y, double z, double roll, double pitch, double yaw) const;
   QJsonObject run_mounting_request(QJsonObject request);
   bool commit_mounting_request(QJsonObject request);
+  // Why the armed asset cannot be saved mounted to support_id at this world pose (empty when it can):
+  // the support must be a mounting parent of the existing contract and the resolver must accept the relation.
+  QString armed_asset_support_blocker(const QString & support_id, double x, double y, double z,
+    double roll, double pitch, double yaw);
   void apply_mounting_snapshot(const QVector<ScenePreviewWidget::PreviewItem> & snapshot);
   void edit_selected_mounting();
   // Visual Mate tool (R3.2): pick faces in 3D, preview, apply via the mounting resolver.
@@ -535,6 +541,7 @@ private:
     QString package_hint;
     QString format_label;
     double scale{ 1.0 };
+    QString mounting{ QStringLiteral("support_surface") };  // "floor" or "support_surface"
   };
 
   void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
@@ -844,6 +851,8 @@ private:
   QString armed_asset_display_name_;
   QString armed_asset_source_path_;
   double armed_asset_scale_{ 1.0 };
+  QString armed_asset_mounting_{ QStringLiteral("support_surface") };
+  QString armed_asset_support_owner_;  // the support surface the Product View placed the asset on
   bool armed_asset_use_clicked_xy_{ true };
   QPointF armed_asset_default_xy_px_{ 0.0, 0.0 };
   bool armed_asset_transform_valid_{ true };

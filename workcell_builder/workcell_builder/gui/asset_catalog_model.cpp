@@ -2,6 +2,7 @@
 #include "gui/asset_catalog_discovery.h"
 
 #include <boost/filesystem.hpp>
+#include <yaml-cpp/yaml.h>
 
 #include <algorithm>
 #include <cctype>
@@ -9,8 +10,11 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <cmath>
 #include <map>
+#include <regex>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -69,6 +73,137 @@ bool has_path_component(const fs::path & path, const std::string & component)
     if (lower_copy(part.string()) == expected) return true;
   }
   return false;
+}
+
+// The unit scale an asset package's own description declares for one of its meshes, in its URDF/xacro
+//   <mesh filename="package://<pkg>/meshes/visual/table.stl" scale="0.001 0.001 0.001"/>
+// or its description YAML (geometry: {filepath: package://..., scale: {scale_x, scale_y, scale_z}}).
+// URDF meshes are metres unless a scale is declared, so an unreferenced mesh keeps 1.
+// The library places uniformly scaled meshes only; any other declaration is a blocker.
+struct DeclaredMeshScale
+{
+  double scale{1.0};
+  std::string source;
+  std::string problem;
+};
+
+DeclaredMeshScale declared_mesh_scale(const fs::path & mesh, const fs::path & package_dir)
+{
+  DeclaredMeshScale result;
+  if (package_dir.empty()) return result;
+  boost::system::error_code ec;
+  const fs::path mesh_file = fs::exists(mesh, ec) && !ec ? fs::canonical(mesh, ec) : mesh.lexically_normal();
+  const std::string mesh_text = mesh_file.generic_string();
+  static const std::regex element(R"(<mesh\b[^>]*>)");
+  static const std::regex filename_attr(R"re(\bfilename\s*=\s*"([^"]*)")re");
+  static const std::regex scale_attr(R"re(\bscale\s*=\s*"([^"]*)")re");
+  bool found = false;
+  const auto references_mesh = [&mesh_text, &mesh_file](std::string reference, const fs::path & from) {
+    if (reference.rfind("package://", 0) == 0) {
+      // package://<pkg>/<relative>: the mesh path ends with <pkg>/<relative>.
+      const std::string suffix = "/" + reference.substr(10);
+      return mesh_text.size() >= suffix.size() &&
+        mesh_text.compare(mesh_text.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+    boost::system::error_code ref_ec;
+    const bool same = fs::equivalent((from.parent_path() / reference).lexically_normal(), mesh_file, ref_ec);
+    return same && !ref_ec;
+  };
+  // Every declaration of this mesh must agree on one uniform, positive scale.
+  const auto accept = [&](std::vector<double> axes, const std::string & text, const std::string & where) {
+    if ((axes.size() != 1 && axes.size() != 3) ||
+        std::any_of(axes.begin(), axes.end(), [](double a) { return !std::isfinite(a) || a <= 0.0; })) {
+      result.problem = "mesh scale \"" + text + "\" in " + where +
+        " is not a positive number or x y z triple; declare its units in metres per mesh unit";
+      return false;
+    }
+    const double value = axes.front();
+    if (std::any_of(axes.begin(), axes.end(), [value](double a) { return std::abs(a - value) > 1e-6 * value; })) {
+      result.problem = "mesh scale \"" + text + "\" in " + where +
+        " is not uniform; the Asset Library places uniformly scaled meshes only";
+      return false;
+    }
+    if (found && std::abs(value - result.scale) > 1e-6 * result.scale) {
+      result.problem = "the package declares conflicting scales for this mesh (" + result.source + ": " +
+        std::to_string(result.scale) + ", " + where + ": " + std::to_string(value) +
+        "); fix the description so the mesh has one unit";
+      return false;
+    }
+    if (!found) { result.scale = value; result.source = where; }
+    found = true;
+    return true;
+  };
+  for (fs::recursive_directory_iterator it(package_dir, ec), end; it != end && !ec; it.increment(ec)) {
+    const std::string ext = lower_copy(it->path().extension().string());
+    if (ext == ".yaml" || ext == ".yml") {
+      YAML::Node root;
+      try { root = YAML::LoadFile(it->path().string()); } catch (const YAML::Exception &) { continue; }
+      std::vector<YAML::Node> pending{root};
+      while (!pending.empty()) {
+        const YAML::Node node = pending.back(); pending.pop_back();
+        if (node.IsSequence()) { for (const auto & child : node) pending.push_back(child); continue; }
+        if (!node.IsMap()) continue;
+        for (const auto & child : node) pending.push_back(child.second);
+        if (!node["filepath"] || !node["filepath"].IsScalar() || !node["scale"]) continue;
+        if (!references_mesh(node["filepath"].as<std::string>(), it->path())) continue;
+        const YAML::Node scale = node["scale"];
+        std::vector<double> axes; std::string text;
+        try {
+          if (scale.IsMap()) for (const char * key : {"scale_x", "scale_y", "scale_z"}) {
+            axes.push_back(scale[key].as<double>()); text += (text.empty() ? "" : " ") + scale[key].as<std::string>();
+          } else { axes.push_back(scale.as<double>()); text = scale.as<std::string>(); }
+        } catch (const YAML::Exception &) { axes.clear(); text = "unreadable"; }
+        if (!accept(axes, text, it->path().filename().string())) return result;
+      }
+      continue;
+    }
+    if (ext != ".urdf" && ext != ".xacro") continue;
+    std::ifstream in(it->path().string());
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    for (std::sregex_iterator m(text.begin(), text.end(), element), done; m != done; ++m) {
+      const std::string tag = m->str();
+      std::smatch name;
+      if (!std::regex_search(tag, name, filename_attr)) continue;
+      if (!references_mesh(name[1].str(), it->path())) continue;
+      std::vector<double> axes{1.0};
+      std::string declared_text = "1";
+      std::smatch declared;
+      if (std::regex_search(tag, declared, scale_attr)) {
+        declared_text = declared[1].str();
+        std::istringstream numbers(declared_text);
+        axes.clear(); std::string token;
+        while (numbers >> token) {
+          try { size_t used = 0; axes.push_back(std::stod(token, &used)); if (used != token.size()) { axes.clear(); break; } }
+          catch (const std::exception &) { axes.clear(); break; }
+        }
+      }
+      if (!accept(axes, declared_text, it->path().filename().string())) return result;
+    }
+  }
+  return result;
+}
+
+// How a library asset stands in the cell, from the reviewed asset metadata
+// (catalog/workcell_studio_asset_datums.yaml, keyed by catalog asset id):
+//   mounting: floor            stands on the floor (tables, workbenches, pedestals)
+//   mounting: support_surface  rests on a physical support surface (the default)
+// Any other value is ambiguous and blocks the asset.
+std::map<std::string, std::string> declared_asset_mounting(const std::string & repo_root, std::string * problem)
+{
+  std::map<std::string, std::string> mounting;
+  const fs::path file = fs::path(repo_root) / "catalog" / "workcell_studio_asset_datums.yaml";
+  boost::system::error_code ec;
+  if (repo_root.empty() || !fs::exists(file, ec) || ec) return mounting;
+  try {
+    const YAML::Node assets = YAML::LoadFile(file.string())["assets"];
+    if (!assets || !assets.IsMap()) return mounting;
+    for (const auto & asset : assets) {
+      if (asset.second.IsMap() && asset.second["mounting"]) mounting[asset.first.as<std::string>()] = asset.second["mounting"].as<std::string>();
+    }
+  } catch (const YAML::Exception & error) {
+    if (problem) *problem = std::string("catalog/workcell_studio_asset_datums.yaml is unreadable: ") + error.what();
+  }
+  return mounting;
 }
 
 bool is_supported_visual_mesh(const fs::path & path)
@@ -564,6 +699,17 @@ AssetCatalogModel discover_asset_catalog(
       }
       candidate.entry.display_name = product_name.empty()
         ? asset_display_name(candidate.entry) : humanize_asset_identifier(product_name);
+      if (is_supported_visual_mesh(path)) {
+        // The package's own description declares the mesh units; placement, collision and the
+        // saved layout all use this scale, so it is resolved once, here.
+        const auto declared = declared_mesh_scale(path, group_dir);
+        candidate.entry.scale = declared.scale;
+        if (!declared.problem.empty()) {
+          candidate.entry.readiness = "INCOMPLETE";
+          candidate.entry.can_add_to_scene = false;
+          candidate.entry.blockers.insert(candidate.entry.blockers.begin(), "Units: " + declared.problem + ".");
+        }
+      }
       candidates.push_back(candidate);
     }
   }
@@ -654,6 +800,20 @@ AssetCatalogModel discover_asset_catalog(
       placed.can_add_to_scene = false;
       placed.blockers.insert(placed.blockers.begin(), "Multi-part tool (" + std::to_string(meshes->second) +
         " meshes): choose it as the cell's end effector in New Cell > End Effector. Placing it here would add one loose part, not the assembled tool.");
+    }
+  }
+
+  std::string mounting_problem;
+  const auto mounting = declared_asset_mounting(repo_root, &mounting_problem);
+  for (auto & asset : model.assets) {
+    if (!mounting_problem.empty()) asset.warnings.push_back(mounting_problem);
+    const auto declared = mounting.find(asset.id);
+    asset.mounting = declared == mounting.end() ? "support_surface" : declared->second;
+    if (asset.mounting != "floor" && asset.mounting != "support_surface") {
+      asset.can_add_to_scene = false;
+      asset.readiness = "INCOMPLETE";
+      asset.blockers.insert(asset.blockers.begin(), "Mounting '" + asset.mounting + "' in catalog/workcell_studio_asset_datums.yaml is "
+        "not floor or support_surface; declare how " + asset.id + " stands in the cell.");
     }
   }
 
