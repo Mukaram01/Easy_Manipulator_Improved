@@ -105,8 +105,11 @@ def test_export_verifies_actual_reviewed_pair_not_just_saved_ready_label():
         ('robot', ('srdf', 'package'), 'ur10_moveit_config'),
         ('robot', ('description', 'package'), 'another_robot_description'),
         ('robot', ('planning_group',), 'unsupported_group'),
+        ('tool', ('model',), 'airpick'),
+        ('tool', ('description', 'xacro'), 'urdf/airpick.xacro'),
         ('end_effector', ('capability',), 'onrobot_airpick_style'),
         ('end_effector', ('model',), 'airpick'),
+        ('end_effector', ('description', 'xacro'), 'urdf/airpick.xacro'),
     ]:
         changed = copy.deepcopy(valid)
         field = changed[section]
