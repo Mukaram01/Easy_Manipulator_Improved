@@ -44,6 +44,15 @@ private:
   void number_field(QFormLayout *, const QString &, const QString &, const QString &, const QString &, bool nullable = false);
   QComboBox * choice_field(QFormLayout *, const QString &, const QString &, const QString &, const QStringList &);
   void vector_field(QFormLayout *, const QString &, const QString &, const QString &, int size = 3);
+  // Object input guidance: existing recordings for the selected mode, and the saved input's identity,
+  // freshness and planning eligibility as the authoring helper (planning_input) reports it.
+  void refresh_recordings();
+  void refresh_input_status();
+  void follow_mode_freshness(const QJsonObject & report);
+  QString stored_input_path(const QString & path) const;
+  QString producer_blocker(const QJsonObject & report) const;
+  bool age_follows_mode_{false}, clamping_age_{false};
+  QString input_note_;
   workcell_builder::TaskIntentModel model_;
   QString scene_, helper_, loaded_bytes_, error_, input_blocker_;
   bool loading_{false}, dirty_{false};

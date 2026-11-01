@@ -2130,15 +2130,22 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    return generate_package(
-        cell_definition_path=args.cell_definition.resolve(),
-        output_dir=args.output_dir.resolve(),
-        package_name=args.package_name.strip(),
-        force=args.force,
-        dry_run=args.dry_run,
-        workspace_root=args.workspace_root.resolve() if args.workspace_root else None,
-        existing_package_dir=args.existing_package_dir.resolve() if args.existing_package_dir else None,
-    )
+    staging_dir = args.output_dir.resolve() / f"{args.package_name.strip()}.tmp-generation"
+    try:
+        return generate_package(
+            cell_definition_path=args.cell_definition.resolve(),
+            output_dir=args.output_dir.resolve(),
+            package_name=args.package_name.strip(),
+            force=args.force,
+            dry_run=args.dry_run,
+            workspace_root=args.workspace_root.resolve() if args.workspace_root else None,
+            existing_package_dir=args.existing_package_dir.resolve() if args.existing_package_dir else None,
+        )
+    finally:
+        # A successful run has already published or removed its staging package; a failed one must not leave a
+        # half-written package beside the cells (Home would list it as another cell).
+        if staging_dir.is_dir() and not staging_dir.is_symlink():
+            shutil.rmtree(staging_dir)
 
 
 if __name__ == "__main__":

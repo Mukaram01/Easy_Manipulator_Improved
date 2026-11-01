@@ -171,6 +171,10 @@ inline FailureDiagnosis diagnose_failure(const QString & text)
           "REPLAY_INPUT_INVALID", "CALIBRATION_INVALID", "CALIBRATION_MISSING"}))
     return {code, "There is no valid observation of an object this task may pick.",
       "Task > Object input: choose a valid observation snapshot; after moving objects or the camera, record and detect the replay again."};
+  if (in({"OBSERVATION_PRODUCER_REJECTED", "LIVE_INPUT_REQUIRED", "CAMERA_SOURCE_REQUIRED", "CAMERA_SOURCE_MISMATCH"}))
+    return {code, "The saved Perception mode does not accept this kind of observation input.",
+      "Task > Object input: to plan from a recording on fake hardware choose Recorded observations (replay); for Live EPD, "
+      "capture objects with the selected camera. Then Save, Generate and Validate."};
   if (in({"NO_FEASIBLE_CYCLE", "SEARCH_BUDGET_EXHAUSTED", "CANDIDATE_SLICE_EXHAUSTED", "RESOLVED_CYCLE_BLOCKED", "NO_VALID_EXTRACTION",
           "TASK_APPROACH_IK_UNBOUND", "TASK_TRANSFER_IK_UNBOUND", "TARGET_NOT_ELIGIBLE"}))
     return {code, "MoveIt found no collision-free, certified pick-and-place cycle for an eligible grasp: the object or destination is unreachable or blocked.",

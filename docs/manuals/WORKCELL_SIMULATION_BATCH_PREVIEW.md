@@ -24,8 +24,8 @@ acceptance, including the still-blocked Stage-A grasp-retention work.
 
 1. Open a saved Workcell Studio cell, select the pick class and zone, physical
    destination, and grasp strategy/policy.
-2. In **Task → Object input**, select **Off — commissioning objects** or
-   **Recorded / replayed observations**. Set **Observation snapshot** to
+2. In **Task → Object input**, select **Off — simulator-measured objects** or
+   **Recorded observations (replay)**. Set **Observation snapshot** (or pick it under **Existing input**) to
    an *existing* `detected_objects/v1` commissioning recording, containing
    explicit world-frame object poses and strictly positive measured/known
    dimensions. The recording must declare `source.mode: replayed_snapshot`.

@@ -3,12 +3,15 @@
 #include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFrame>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -21,6 +24,7 @@
 #include <QProcess>
 #include <QPixmap>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QSpinBox>
@@ -33,6 +37,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <yaml-cpp/yaml.h>
 
 namespace {
 // Pick-sequence list items carry the saved binding of one recorded object and its placement;
@@ -114,6 +119,103 @@ QString json_value(const QJsonValue & value)
   QByteArray data = QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);
   return QString::fromUtf8(data.mid(1, data.size() - 2));
 }
+
+// What an observation file declares about itself, for display only: planning eligibility is always the
+// authoring helper's planning_input verdict.
+struct ObservationFile {
+  bool ok{false};
+  QString problem, mode, camera, description;
+  QStringList classes;
+  int objects{0};
+  double stamp_s{0.0};
+};
+ObservationFile read_observation_file(const QString & path)
+{
+  ObservationFile file;
+  QFile raw(path);
+  if (!raw.open(QIODevice::ReadOnly)) { file.problem = "file not found"; return file; }
+  const QByteArray bytes = raw.readAll();
+  if (!bytes.contains("detected_objects/v1")) { file.problem = "not a detected_objects/v1 observation file"; return file; }
+  try {
+    const YAML::Node root = YAML::Load(bytes.toStdString());
+    if (!root.IsMap() || !root["schema_version"] || root["schema_version"].as<std::string>("") != "detected_objects/v1") {
+      file.problem = "not a detected_objects/v1 observation file"; return file;
+    }
+    const YAML::Node source = root["source"], objects = root["objects"];
+    if (source && source.IsMap()) {
+      file.mode = QString::fromStdString(source["mode"].as<std::string>(""));
+      file.camera = QString::fromStdString(source["camera_source"].as<std::string>(""));
+      file.description = QString::fromStdString(source["description"].as<std::string>(""));
+      if (source["source_stamp_ns"]) file.stamp_s = source["source_stamp_ns"].as<double>(0.0) / 1e9;
+    }
+    if (objects && objects.IsSequence()) {
+      file.objects = static_cast<int>(objects.size());
+      for (const auto & object : objects) {
+        const auto name = object.IsMap() ? QString::fromStdString(object["class_id"].as<std::string>("")) : QString();
+        if (!name.isEmpty() && !file.classes.contains(name)) file.classes << name;
+      }
+    }
+    file.ok = true;
+  } catch (const std::exception &) {
+    file.problem = "the file does not parse";
+  }
+  return file;
+}
+
+// The repository the cell belongs to, as seen from the cell's own path (so stored paths stay in one
+// namespace); a cell saved elsewhere falls back to the repository of the installed authoring helper.
+QString repository_root(const QString & scene, const QString & helper)
+{
+  for (QDir dir(scene); !scene.isEmpty();) {
+    if (QFileInfo::exists(dir.filePath("scripts/task_intent_authoring.py")) && QFileInfo(dir.filePath("config/runtime")).isDir())
+      return dir.absolutePath();
+    if (!dir.cdUp()) break;
+  }
+  QDir scripts = QFileInfo(QFileInfo(helper).canonicalFilePath()).dir();
+  return !helper.isEmpty() && scripts.cdUp() ? scripts.absolutePath() : QString();
+}
+
+QString elapsed_text(double seconds)
+{
+  if (seconds < 120) return QString("%1 s").arg(std::max(0.0, seconds), 0, 'f', 0);
+  if (seconds < 7200) return QString("%1 min").arg(seconds / 60, 0, 'f', 0);
+  return QString("%1 h").arg(seconds / 3600, 0, 'f', 1);
+}
+
+// A class-routed task bound to live EPD on the simulated camera (no saved capture) is observed by its own
+// sorting session every cycle (task_intent_v2.session_rendered_perception).
+bool session_observed(const QJsonObject & report)
+{
+  const auto intent = report["task_intent"].toObject();
+  const auto binding = intent["perception"].toObject();
+  const auto routing = intent["routing"].toObject();
+  return binding["mode"].toString() == "live_epd" && binding["camera_source"].toString() == "simulated_rgbd" &&
+    binding["replay_path"].toString().isEmpty() && routing["mode"].toString() == "class" && !routing["rules"].toArray().isEmpty();
+}
+
+// The next step for a planning_input blocker (its code is the text before the first ':').
+QString next_input_action(const QString & blocker, const QString & mode)
+{
+  const QString code = blocker.section(':', 0, 0).trimmed();
+  const bool live = mode == "live_epd";
+  if (code == "TASK_INPUT_UNAVAILABLE")
+    return live ? "start EPD for the selected camera, then press Capture live EPD objects."
+         : mode == "off" ? "to plan on fake hardware, set Perception mode to Recorded observations (replay) and choose a recording."
+         : "choose a recording under Existing input (the reviewed commissioning recording is config/runtime/r1_4_replay.yaml), or Choose observation file….";
+  if (code == "TASK_INPUT_INVALID") return "this file is not a detected_objects/v1 file with measured objects; choose another input.";
+  if (code == "REPLAY_INPUT_REQUIRED") return "this file is a live capture, not a recording: choose a recording, or set Perception mode to Live EPD.";
+  if (code == "LIVE_INPUT_REQUIRED") return "Live EPD never plans from a recording: capture live EPD objects, or set Perception mode to a recording.";
+  if (code == "CAMERA_SOURCE_REQUIRED") return "choose the Live camera source.";
+  if (code == "CAMERA_SOURCE_MISMATCH") return "capture again with the selected camera, or select the camera the capture came from.";
+  if (code == "OBSERVATION_UNAVAILABLE")
+    return live ? "the capture is too old or has no matching object: capture again just before planning."
+                : "no object in this input matches the object class, confidence and search region: check What / Pick eligibility, or choose another input.";
+  if (code == "OBSERVATION_PRODUCER_REJECTED")
+    return live ? "this source does not accept a live capture: check Perception mode and the camera source."
+                : "this Perception mode does not plan from a recording on fake hardware: set Perception mode to Recorded observations (replay).";
+  if (blocker.contains("Edit the placement")) return "edit the placement, or choose another input.";
+  return "resolve the reason above, then Save task.";
+}
 }
 
 TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring — Pick && Place", parent)  // "&&": literal "&", not a mnemonic
@@ -144,10 +246,12 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   pick_zones_ = choice_field(what, "taskPickZone", "Search region", "pick/selection/zone_ref", {});
   auto * perception = section("Object input");
   auto * mode = new QComboBox(this); mode->setObjectName("taskPerceptionMode");
-  mode->addItem("Off — commissioning objects", "off");
-  mode->addItem("Recorded / replayed observations", "replayed_snapshot");
-  mode->addItem("Live — normalized adapter snapshot", "live_epd");
+  mode->addItem("Off — simulator-measured objects (physics only)", "off");
+  mode->addItem("Recorded observations (replay)", "replayed_snapshot");
+  mode->addItem("Live EPD camera observations", "live_epd");
   perception->addRow("Perception mode", mode);
+  auto * mode_help = new QLabel(this); mode_help->setObjectName("taskInputModeHelp");
+  mode_help->setWordWrap(true); perception->addRow(mode_help);
   auto * camera = new QComboBox(this); camera->setObjectName("taskCameraSource");
   camera->addItem("Choose camera source…", "");
   camera->addItem("Simulated RGB-D (Gazebo + EPD)", "simulated_rgbd");
@@ -173,18 +277,31 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     set_field("pick/selection/source_type", value == "off" ? "manual_simulated" : "perception");
     set_field("pick/selection/source_ref", value == "off" ? QString::fromStdString(model_.pick_selection.zone_ref) : "detected_objects/v1");
     if (value != "live_epd") set_field("perception/camera_source", QJsonValue(QJsonValue::Null));
+    // The chosen file is kept; planning_input refuses a recording as live input (and a capture as a recording).
+    age_follows_mode_ = true;  // the next check caps the maximum age at the new source's limit
     refresh_fields();
+    refresh_recordings();
     camera->setEnabled(value == "live_epd");
+  });
+  auto * recordings = new QComboBox(this); recordings->setObjectName("taskObservationRecording");
+  perception->addRow("Existing input", recordings);
+  connect(recordings, qOverload<int>(&QComboBox::activated), this, [this, recordings](int index) {
+    const auto path = recordings->itemData(index).toString();
+    if (!path.isEmpty()) { set_field("perception/replay_path", path); refresh_fields(); }
   });
   text_field(perception, "taskReplayPath", "Observation snapshot", "perception/replay_path");
   auto * choose = new QPushButton("Choose observation file…", this); choose->setObjectName("taskChooseObservations");
   perception->addRow(choose);
   connect(choose, &QPushButton::clicked, this, [this] {
     const auto path = QFileDialog::getOpenFileName(this, "Choose existing detected_objects/v1 observations", scene_, "Observations (*.yaml *.yml *.json)");
-    if (!path.isEmpty()) { set_field("perception/replay_path", path); refresh_fields(); }
+    if (!path.isEmpty()) { set_field("perception/replay_path", stored_input_path(path)); refresh_fields(); }
   });
-  auto * input_help = new QLabel("Select Simulated RGB-D or RealSense D435i for live EPD input. This setting does not start a camera. Live observations must declare the selected source and provide measured geometry, valid frames and freshness; no automatic replay or invented geometry.", this);
-  input_help->setWordWrap(true); perception->addRow(input_help);
+  auto * input_status = new QLabel(this); input_status->setObjectName("taskInputStatus");
+  input_status->setWordWrap(true); input_status->setFrameShape(QFrame::StyledPanel);
+  input_status->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  input_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  input_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);  // long paths must not widen the inspector
+  perception->addRow(input_status);
   auto * probe_button = new QPushButton("Capture RGB-D preview (read-only)", this);
   probe_button->setObjectName("taskCameraCapture");
   probe_button->setEnabled(false);
@@ -754,6 +871,7 @@ void TaskIntentEditor::vector_field(QFormLayout * form, const QString & name, co
 void TaskIntentEditor::set_field(const QString & path, const QJsonValue & value)
 {
   if (loading_ || model_.authored_yaml.empty()) return;
+  if (path == "pick/selection/object_filter/max_age_seconds" && !clamping_age_) { age_follows_mode_ = false; input_note_.clear(); }
   std::vector<std::string> keys; for (const auto & key : path.split('/')) keys.push_back(key.toStdString());
   try { model_.set_field(keys, json_value(value).toStdString()); }
   catch (const std::exception & exc) { error_ = QString::fromUtf8(exc.what()); status_->setText("BLOCKED — " + error_); return; }
@@ -791,6 +909,198 @@ void TaskIntentEditor::refresh_fields()
   findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(batch_ready && !plan_check_);
   findChild<QPushButton *>("taskSimulationSequenceCheck")->setEnabled(batch_ready && !plan_check_);
   loading_ = false;
+  refresh_input_status();
+}
+QString TaskIntentEditor::stored_input_path(const QString & path) const
+{
+  // For a cell inside this repository, a file of the same repository is saved relative to the cell, so the task
+  // names the same file in every checkout and runtime view; any other file keeps its absolute path.
+  const QString root = repository_root(scene_, helper_);
+  const QString file = QFileInfo(path).absoluteFilePath();
+  const bool same_repository = !root.isEmpty() && file.startsWith(root + "/") &&
+    QDir(scene_).absolutePath().startsWith(root + "/");
+  return same_repository ? QDir(scene_).relativeFilePath(file) : file;
+}
+void TaskIntentEditor::refresh_recordings()
+{
+  auto * combo = findChild<QComboBox *>("taskObservationRecording");
+  const bool live = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString() == "live_epd";
+  const QString root = repository_root(scene_, helper_);
+  // The cell's own recordings and saved EPD captures first, then the repository's reviewed commissioning
+  // recordings. A mode lists only its own kind: a recording is never offered as live input, nor a capture as a recording.
+  QStringList files;
+  if (!scene_.isEmpty()) {
+    QDirIterator cell(scene_, {"*.yaml", "*.yml", "*.json"}, QDir::Files, QDirIterator::Subdirectories);
+    while (cell.hasNext()) {
+      const QString file = cell.next(), relative = QDir(scene_).relativeFilePath(file);
+      // Of an EPD capture, only its qualified result is task input (the raw ROS capture is kept for diagnosis).
+      if (relative.startsWith("generated/") || relative.startsWith("assets/") || relative.startsWith("launch/") ||
+          (relative.startsWith("captures/") && QFileInfo(file).fileName() != "qualified_detected_objects.yaml")) continue;
+      files << file;
+    }
+  }
+  if (!root.isEmpty())
+    for (const auto & info : QDir(root + "/config/runtime").entryInfoList({"*.yaml", "*.yml", "*.json"}, QDir::Files, QDir::Name))
+      files << info.absoluteFilePath();
+  struct Entry { QString stored, label, tip; double stamp; };
+  QList<Entry> entries;
+  for (const auto & file : files) {
+    const auto observed = read_observation_file(file);
+    if (!observed.ok || observed.objects == 0 || (observed.mode == "live_epd") != live ||
+        (!live && observed.mode != "replayed_snapshot"))
+      continue;
+    const QString stored = stored_input_path(file);
+    const QString shown = !root.isEmpty() && file.startsWith(root + "/") && !file.startsWith(QDir(scene_).absolutePath() + "/")
+      ? QDir(root).relativeFilePath(file) : QDir(scene_).relativeFilePath(file);
+    QString label = QString("%1 — %2 object(s)%3").arg(shown).arg(observed.objects)
+      .arg(observed.classes.isEmpty() ? QString() : ": " + observed.classes.join(", "));
+    if (live && observed.stamp_s > 0)
+      label += ", captured " + elapsed_text(QDateTime::currentMSecsSinceEpoch() / 1000.0 - observed.stamp_s) + " ago";
+    entries.append({stored, label, file + (observed.description.isEmpty() ? QString() : "\n" + observed.description), observed.stamp_s});
+  }
+  if (live) std::stable_sort(entries.begin(), entries.end(), [](const Entry & a, const Entry & b) { return a.stamp > b.stamp; });
+  const QSignalBlocker blocker(combo);
+  combo->clear();
+  combo->addItem(entries.isEmpty()
+    ? (live ? "No saved EPD capture — use Capture live EPD objects" : "No recording found — use Choose observation file…")
+    : (live ? "Choose a saved EPD capture…" : "Choose a recording…"), QString());
+  for (const auto & entry : entries) {
+    combo->addItem(entry.label, entry.stored);
+    combo->setItemData(combo->count() - 1, entry.tip, Qt::ToolTipRole);
+  }
+  refresh_input_status();
+}
+void TaskIntentEditor::follow_mode_freshness(const QJsonObject & report)
+{
+  // After a mode change, an age above the new source's freshness limit is lowered to that limit (as the
+  // validator states it); an explicit age edit, or an age already within the limit, is never changed.
+  if (!age_follows_mode_) return;
+  age_follows_mode_ = false;
+  static const QRegularExpression limit(
+    R"(^OBSERVATION_FRESHNESS_POLICY: object_filter\.max_age_seconds (\S+) must be in \(0, ([0-9.]+)\] s for (\S+) observations)");
+  for (const auto & value : report["errors"].toArray()) {
+    const auto match = limit.match(value.toString());
+    bool current_ok = false, limit_ok = false;
+    const double current = match.captured(1).toDouble(&current_ok), ceiling = match.captured(2).toDouble(&limit_ok);
+    if (!match.hasMatch() || !current_ok || !limit_ok || !(current > ceiling) || !(ceiling > 0)) continue;
+    clamping_age_ = true;
+    set_field("pick/selection/object_filter/max_age_seconds", ceiling);
+    clamping_age_ = false;
+    refresh_fields();
+    input_note_ = QString("Maximum observation age lowered from %1 s to %2 s: the freshness limit for this input "
+                          "(%3). Advanced task settings can lower it further.").arg(match.captured(1), match.captured(2), match.captured(3));
+    refresh_input_status();
+    return;
+  }
+}
+void TaskIntentEditor::refresh_input_status()
+{
+  auto * label = findChild<QLabel *>("taskInputStatus");
+  auto * help = findChild<QLabel *>("taskInputModeHelp");
+  auto * combo = findChild<QComboBox *>("taskObservationRecording");
+  if (!label || !help || !combo) return;
+  const QString mode = findChild<QComboBox *>("taskPerceptionMode")->currentData().toString();
+  const bool live = mode == "live_epd";
+  help->setText(
+    mode == "off" ? "Off: the task's objects are measured by the physics simulator, which is locked for new cells. "
+                    "To plan on fake hardware (Plan Only), choose Recorded observations and a commissioning recording."
+    : mode == "replayed_snapshot" ? "Recorded observations: plan from a saved recording of measured objects "
+                    "(detected_objects/v1, source replayed_snapshot), such as the reviewed commissioning recording. No "
+                    "camera is needed. Planning re-times the recording when it starts; it never counts as a live observation."
+    : live ? "Live EPD: plan from current EPD observations of the selected camera. Start EPD, then press Capture live "
+             "EPD objects. The capture must declare that camera, give world-frame poses (TF) and still be fresh when "
+             "planning starts; a recording is never used instead. This setting does not start a camera."
+    : "Choose how the task receives its objects.");
+  const QString stored = findChild<QLineEdit *>("taskReplayPath")->text().trimmed();
+  {
+    const QSignalBlocker blocker(combo);
+    const int index = stored.isEmpty() ? 0 : combo->findData(stored);
+    combo->setCurrentIndex(index >= 0 ? index : 0);
+  }
+  QStringList lines, input_classes;
+  if (stored.isEmpty()) {
+    lines << "Input: none selected.";
+  } else {
+    const QString file = QDir(scene_).absoluteFilePath(QDir::fromNativeSeparators(stored));
+    const auto observed = read_observation_file(file);
+    if (!observed.ok) {
+      lines << "Input: " + stored + " — " + observed.problem + ".";
+    } else {
+      lines << "Input: " + stored;
+      QString source = "Source: " + (observed.mode.isEmpty() ? QString("undeclared") : observed.mode);
+      if (!observed.camera.isEmpty()) source += " · camera " + observed.camera;
+      source += QString(" · %1 object(s)").arg(observed.objects);
+      input_classes = observed.classes;
+      if (!observed.classes.isEmpty()) source += ": " + observed.classes.join(", ");
+      lines << source;
+      if (!observed.description.isEmpty()) lines << observed.description;
+      if (observed.mode == "replayed_snapshot") {
+        lines << "Freshness: a recording is re-timed when planning starts.";
+      } else if (observed.stamp_s > 0) {
+        const auto age = value_at(QJsonDocument::fromJson(QByteArray::fromStdString(
+          workcell_builder::canonical_task_intent_json_for_testing(model_.to_yaml()))).object(),
+          "pick/selection/object_filter/max_age_seconds");
+        lines << QString("Freshness: captured %1 (%2 ago); planning accepts observations at most %3 s old.")
+          .arg(QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(observed.stamp_s * 1000)).toString("yyyy-MM-dd HH:mm:ss"),
+               elapsed_text(QDateTime::currentMSecsSinceEpoch() / 1000.0 - observed.stamp_s),
+               age.isDouble() ? QString::number(age.toDouble()) : QString("—"));
+      }
+    }
+  }
+  const bool checking = validation_timer_ && validation_timer_->isActive();
+  if (checking) {
+    lines << "Plan Only: checking the input…";
+  } else if (!input_errors_.isEmpty() || !error_.isEmpty()) {
+    const QString first = !input_errors_.isEmpty() ? input_errors_.first() : error_.section('\n', 0, 0);
+    lines << "Plan Only: blocked — " + first;
+    if (first.startsWith("OBJECT_CLASS_REQUIRED"))
+      lines << "Next: type the Object class to pick" +
+               (input_classes.isEmpty() ? QString(".") : " (this input contains: " + input_classes.join(", ") + ").");
+    else
+      lines << "Next: fix the errors listed in the task status below, then Save task.";
+  } else if (!input_blocker_.isEmpty()) {
+    lines << "Plan Only: blocked — " + input_blocker_;
+    if (session_observed(report_))
+      lines << "Next: run Plan / Simulate › Start Sorting (each cycle observes the cell), or save a capture for Plan Saved Task.";
+    else
+      lines << "Next: " + next_input_action(input_blocker_, mode);
+  } else if (report_.contains("planning_input")) {
+    lines << (dirty_ ? "Plan Only: this input passes the planner's input check — Save task to use it."
+                     : "Plan Only: input ready — the saved input passes the planner's input check.")
+          << (dirty_ ? "Next: Save task." : "Next: Generate and Validate the cell, then Plan / Simulate › Plan Saved Task.");
+  }
+  if (!input_note_.isEmpty()) lines << input_note_;
+  label->setText(lines.join("\n"));
+}
+QString TaskIntentEditor::producer_blocker(const QJsonObject & report) const
+{
+  // planning_input does not check which producer may feed the task's source; the executor does at
+  // FILTER_TARGETS (task_intent_v2.observation_age_cap). On fake hardware a saved recording is replayed and
+  // anything else is a live sensor, so the same check runs here on the same function.
+  const auto input = report["planning_input"].toObject();
+  const auto intent = report["task_intent"].toObject();
+  if (input.isEmpty() || intent.isEmpty() ||
+      intent["safety"].toObject()["execution_backend"].toString("fake") != "fake") return QString();
+  const QString scripts = QFileInfo(QFileInfo(helper_).canonicalFilePath()).absolutePath();
+  QProcess process;
+  process.start("python3", {"-c",
+    "import json, sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from task_intent_v2 import freshness_source_type, observation_age_cap\n"
+    "request = json.load(sys.stdin)\n"
+    "try:\n"
+    "    observation_age_cap(freshness_source_type(request['intent']), request['producer'])\n"
+    "except ValueError as exc:\n"
+    "    print(exc)\n", scripts});
+  if (!process.waitForStarted(3000)) return "OBSERVATION_PRODUCER_UNCHECKED: the producer check could not start.";
+  process.write(QJsonDocument(QJsonObject{{"intent", intent},
+    {"producer", input["replay"].toBool() ? "replay" : "live_sensor"}}).toJson(QJsonDocument::Compact));
+  process.closeWriteChannel();
+  if (!process.waitForFinished(10000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    process.kill(); process.waitForFinished(1000);
+    return "OBSERVATION_PRODUCER_UNCHECKED: " + QString::fromUtf8(process.readAllStandardError()).trimmed().right(300);
+  }
+  return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
 }
 QJsonObject TaskIntentEditor::request(bool draft)
 {
@@ -827,6 +1137,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
   }
   if (scene != scene_) stop_plan_check(90000);
   scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_blocker_.clear(); input_errors_.clear();
+  age_follows_mode_ = false; input_note_.clear();
   findChild<QLabel *>("taskCameraRgbPreview")->setPixmap(QPixmap());
   findChild<QLabel *>("taskCameraRgbPreview")->setText("RGB — no capture");
   findChild<QLabel *>("taskCameraDepthPreview")->setPixmap(QPixmap());
@@ -856,7 +1167,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     vocabulary_.clear();
     for (const auto & value : report["class_vocabulary"].toObject()["classes"].toArray()) vocabulary_ << value.toString();
     strategies_->setEditable(false);
-    refresh_fields(); setEnabled(true); apply_report(report); rebuild_sequence(report); update_dirty_ui(); return true;
+    refresh_fields(); refresh_recordings(); setEnabled(true); apply_report(report); rebuild_sequence(report); update_dirty_ui(); return true;
   } catch (const std::exception & exc) {
     error_ = QString::fromUtf8(exc.what()); status_->setText("BLOCKED — " + error_); return false;
   }
@@ -865,17 +1176,26 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
 {
   report_ = report;
   QStringList messages; for (const auto & value : report["errors"].toArray()) messages << value.toString();
+  {
+    // Generate exports the pick class as the perception input's required class and refuses observation input
+    // without one (export_builder_scene_to_cell_definition, generate_workcell_from_cell_definition).
+    const auto intent = report["task_intent"].toObject();
+    const QString perception = intent["perception"].toObject()["mode"].toString();
+    const auto routing = intent["routing"].toObject();
+    const bool routed = routing["mode"].toString() == "class" && !routing["rules"].toArray().isEmpty();
+    const QString pick_class = intent["pick"].toObject()["selection"].toObject()["object_filter"].toObject()["class_id"].toString();
+    if ((perception == "replayed_snapshot" || perception == "live_epd") && !routed && pick_class.trimmed().isEmpty())
+      messages.prepend("OBJECT_CLASS_REQUIRED: enter the Object class to pick (What / Pick eligibility); Generate needs "
+                       "it for observation input.");
+  }
   error_ = messages.join("\n");
   input_blocker_ = report["planning_input_blocker"].toString();
+  if (input_blocker_.isEmpty()) input_blocker_ = producer_blocker(report);
   // A class-routed task bound to live EPD on the simulated camera (no saved capture) is observed by its own sorting
   // session every cycle: the missing saved input blocks Plan Saved Task only (blocker(true) keeps it), not the task.
-  const auto intent = report["task_intent"].toObject();
-  const auto binding = intent["perception"].toObject();
-  const auto routing = intent["routing"].toObject();
-  const bool session_observed = binding["mode"].toString() == "live_epd" && binding["camera_source"].toString() == "simulated_rgbd" &&
-    binding["replay_path"].toString().isEmpty() && routing["mode"].toString() == "class" && !routing["rules"].toArray().isEmpty();
+  const bool session = session_observed(report);
   if (!input_blocker_.isEmpty())
-    messages << (session_observed ? "Input: each sorting cycle renders the cell with its camera and classifies the frame with "
+    messages << (session ? "Input: each sorting cycle renders the cell with its camera and classifies the frame with "
                                     "EPD (Plan / Simulate > Start Sorting). Plan Saved Task needs a recorded input: " + input_blocker_
                                   : input_blocker_);
   for (const auto & value : report["warnings"].toArray()) messages << value.toString();
@@ -883,7 +1203,7 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
   if (!destination.isEmpty()) {
     messages << "Resolved destination in world (m): " + json_value(destination["pose_xyz"]);
   }
-  const auto status = (error_.isEmpty() && (input_blocker_.isEmpty() || session_observed))
+  const auto status = (error_.isEmpty() && (input_blocker_.isEmpty() || session))
     ? (report["warnings"].toArray().isEmpty() ? "Authoring valid" : "WARNING") : "BLOCKED";
   status_->setText(QString("%1%2\n%3\nIntent hash: %4\nPlanning still requires complete-cycle validation.")
     .arg(status, dirty_ ? " — unsaved" : "", messages.join("\n"), report["normalized_intent_sha256"].toString("unavailable")));
@@ -891,7 +1211,7 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
   else if (auto * summary = findChild<QLabel *>("taskSequenceSummary"); summary && dirty_ &&
            summary->text().startsWith("Unsaved changes — checking"))
     summary->setText("Unsaved changes — no sequence: the check will use the whole queue, all automatic.");
-  update_dirty_ui();
+  update_dirty_ui();  refresh_input_status();
 }
 void TaskIntentEditor::validate_now()
 {
@@ -902,7 +1222,9 @@ void TaskIntentEditor::validate_now()
     const auto current = file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
     if (current != loaded_bytes_) throw std::runtime_error(
       "Task changed on disk. Reopen before validating; unsaved edits are preserved.");
-    apply_report(request(true));
+    const auto report = request(true);
+    apply_report(report);
+    follow_mode_freshness(report);
   }
   catch (const std::exception & exc) { error_ = QString::fromUtf8(exc.what()); status_->setText("BLOCKED — " + error_); }
 }
@@ -919,6 +1241,7 @@ bool TaskIntentEditor::save(QString * error)
     if (model_.authored_yaml.empty()) throw std::runtime_error("No task loaded. Configure or reopen the task.");
     if (sequence_rebind_pending_) write_sequence();  // Explicit Save after the changed-recording warning.
     auto report = request(true);
+    validation_timer_->stop();  // this check is of the draft being saved; a pending one would repeat it
     const auto normalized = report["task_intent"].toObject();
     const QByteArray bytes = QJsonDocument(normalized).toJson(QJsonDocument::Indented);
     // Invalid EXACT is a savable draft, never a reason to normalize a different pose.

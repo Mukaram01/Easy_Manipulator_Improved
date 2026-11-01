@@ -3,8 +3,8 @@
 ## Product behaviour
 
 Use the existing Workcell Builder **Task → Object input** controls. The
-**Perception mode** remains Off (commissioning objects), Replayed observations,
-or Live (normalized EPD adapter snapshot). When Live is selected, **Live camera
+**Perception mode** is **Off — simulator-measured objects (physics only)**,
+**Recorded observations (replay)** or **Live EPD camera observations**. When Live is selected, **Live camera
 source** offers:
 
 - **Simulated RGB-D (Gazebo + EPD)**: `simulated_rgbd`
