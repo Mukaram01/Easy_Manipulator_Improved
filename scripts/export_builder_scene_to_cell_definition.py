@@ -306,15 +306,77 @@ def _task_type_from_meta(meta: dict[str, Any]) -> str:
     mapping={"pick_place":"pick_place","sorting":"sorting","inspection":"inspection","machine_tending":"machine_tending","conveyor_picking":"conveyor_picking","palletising":"palletising","bin_picking":"bin_picking"}
     return mapping.get(selected, "pick_place")
 
+def _require_reviewed_new_cell_equipment(env: dict[str, Any]) -> None:
+    """Fail closed for New Cell equipment without trusting its saved readiness label.
+
+    Legacy scenes without the New Cell equipment contract retain their existing
+    validation path. A New Cell's independently reviewed robot/tool/profile
+    binding must still agree with the actual authored equipment.
+    """
+    studio = env.get("workcell_studio")
+    if not isinstance(studio, dict):
+        return
+    if "equipment" not in studio:
+        # A new-wizard cell cannot evade the gate by deleting only its equipment
+        # block; older authoring metadata used READY/SCAFFOLD, not these statuses.
+        if (studio.get("robot") or {}).get("readiness") in ("PLAN_CAPABLE", "CONFIGURABLE", "UNCOMMISSIONED", "UNSUPPORTED"):
+            raise ValueError("EQUIPMENT_NOT_PLAN_CAPABLE: new-cell equipment binding is missing.")
+        return
+    saved = studio["equipment"]
+    if not isinstance(saved, dict):
+        raise ValueError("EQUIPMENT_NOT_PLAN_CAPABLE: new-cell equipment binding is malformed.")
+
+    robot_id = (studio.get("robot") or {}).get("capability")
+    tool_id = (studio.get("tool") or {}).get("capability")
+    profile_id = saved.get("profile")
+    if (saved.get("status") != "PLAN_CAPABLE" or not robot_id or not tool_id or not profile_id or
+            saved.get("robot_capability") != robot_id or saved.get("tool_capability") != tool_id):
+        raise ValueError("EQUIPMENT_NOT_PLAN_CAPABLE: saved equipment identities or readiness are inconsistent.")
+
+    # Reuse the wizard's catalog/installed-model/profile assessment, not the
+    # editable status/reason embedded in environment.yaml.
+    from instantiate_workcell_studio_profile import equipment as discover_equipment, load_profile
+    current = discover_equipment()
+    matching = [pair for pair in current["combinations"] if
+                pair["robot"] == robot_id and pair["tool"] == tool_id and
+                pair["profile"] == profile_id and pair["status"] == "PLAN_CAPABLE"]
+    if len(matching) != 1:
+        raise ValueError("EQUIPMENT_NOT_PLAN_CAPABLE: robot/tool pair has no matching reviewed, installed profile.")
+    profile, reviewed = load_profile(profile_id)
+    if (profile["robot_capability"], profile["tool_capability"]) != (robot_id, tool_id):
+        raise ValueError("EQUIPMENT_NOT_PLAN_CAPABLE: selected profile reviews different equipment.")
+
+    # A forged capability ID must not bless a scene that actually references
+    # another robot model, MoveIt configuration, or end effector.
+    robot = env.get("robot") or {}
+    tool = env.get("end_effector") or {}
+    ref_robot = reviewed["robot"]
+    ref_tool = reviewed["end_effector"]
+    checks = (
+        ("robot MoveIt package", (robot.get("srdf") or {}).get("package"),
+         (ref_robot.get("srdf") or {}).get("package")),
+        ("robot SRDF", (robot.get("srdf") or {}).get("xacro"),
+         (ref_robot.get("srdf") or {}).get("xacro")),
+        ("robot model package", (robot.get("description") or {}).get("package"),
+         (ref_robot.get("description") or {}).get("package")),
+        ("robot model macro", (robot.get("description") or {}).get("macro"),
+         (ref_robot.get("description") or {}).get("macro")),
+        ("planning group", robot.get("planning_group"), ref_robot.get("planning_group")),
+        ("end-effector capability", tool.get("capability"), ref_tool.get("capability")),
+        ("end-effector model", tool.get("model"), ref_tool.get("model")),
+        ("end-effector type", tool.get("type"), ref_tool.get("type")),
+        ("arm controller", (studio.get("robot") or {}).get("controller"),
+         (profile.get("runtime") or {}).get("arm_controller")),
+    )
+    for name, actual, expected in checks:
+        if not expected or actual != expected:
+            raise ValueError(f"EQUIPMENT_NOT_PLAN_CAPABLE: authored {name} does not match reviewed profile {profile_id}.")
+
+
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
-    # New Cell records how far its equipment can go (instantiate_workcell_studio_profile.equipment); only a
-    # reviewed robot + tool binding generates a runnable package. Cells without the record keep their behaviour.
-    equipment = (env.get("workcell_studio") or {}).get("equipment")
-    if isinstance(equipment, dict) and equipment.get("status") != "PLAN_CAPABLE":
-        raise ValueError(f"EQUIPMENT_NOT_PLAN_CAPABLE ({equipment.get('status')}): {equipment.get('reason')} "
-                         "Create a cell with a plan-capable robot and tool to generate it.")
+    _require_reviewed_new_cell_equipment(env)
     from physical_destination import resolve_destination, destination_ids
     physical = env.get("environment") or {}
     from asset_mounting import validate_physical
