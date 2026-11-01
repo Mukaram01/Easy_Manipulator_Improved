@@ -9,6 +9,7 @@ import argparse
 import copy
 import json
 from pathlib import Path
+import re
 import sys
 import shutil
 import tempfile
@@ -18,16 +19,217 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 XACRO = '{http://www.ros.org/wiki/xacro}'
+PROFILES = ROOT / 'catalog/workcell_studio_profiles'
 
 
 def load_profile(profile_id):
     if Path(profile_id).name != profile_id:
         raise ValueError('Invalid recommended profile ID')
-    profile = yaml.safe_load((ROOT / 'catalog/workcell_studio_profiles' / (profile_id + '.yaml')).read_text())
+    profile = yaml.safe_load((PROFILES / (profile_id + '.yaml')).read_text())
     source = yaml.safe_load((ROOT / profile['environment_source']).read_text())
     from physical_destination import resolve_destination
     resolve_destination(source['environment'], profile['place_region'])
+    _verify_profile_equipment(profile, source)
     return profile, source
+
+
+def _capabilities():
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    from capability_registry import load_capability_registry
+    registry = load_capability_registry()
+    records = {kind: {} for kind in ('robot', 'end_effector')}
+    for capability_id in registry.ids():
+        record = registry.get(capability_id)
+        kind = record.schema_version.split('_capability/', 1)[0]
+        if kind in records:
+            records[kind][capability_id] = record
+    return records
+
+
+def _verify_profile_equipment(profile, source):
+    """A profile reviews the equipment its source launches; a mislabelled profile never reaches a cell."""
+    records = _capabilities()
+    robot, tool = records['robot'].get(profile['robot_capability']), records['end_effector'].get(profile['tool_capability'])
+    if robot is None or tool is None:
+        raise ValueError(f"Profile {profile['id']}: unknown capability {profile['robot_capability']!r} or "
+                         f"{profile['tool_capability']!r} (catalog/capabilities)")
+    launched = (source['robot'].get('srdf') or {}).get('package')
+    if launched != robot.payload.get('moveit_config_package'):
+        raise ValueError(f"Profile {profile['id']}: its source launches {launched!r}, not the MoveIt config of "
+                         f"{profile['robot_capability']!r}")
+    if source['end_effector'].get('capability') != profile['tool_capability']:
+        raise ValueError(f"Profile {profile['id']}: its source binds tool {source['end_effector'].get('capability')!r}, "
+                         f"not {profile['tool_capability']!r}")
+
+
+def _package(name):
+    """An installed model package (assets/<robots|end_effectors>/<vendor>/<package>), or None."""
+    hits = sorted(ROOT.glob(f'assets/*/*/{name}/package.xml')) if name else []
+    return hits[0].parent if hits else None
+
+
+def _unprefixed(name):
+    return re.sub(r'\$\{[^}]*\}', '', name or '')
+
+
+def _srdf_groups(package):
+    """Planning groups (and chain base/tip links) of an installed MoveIt config."""
+    groups = {}
+    for path in sorted((package / 'config').glob('*.srdf*')) if package else []:
+        for group in ET.fromstring(path.read_text()).iter('group'):
+            chain = group.find('chain')
+            groups.setdefault(group.get('name'), {
+                'base': _unprefixed(chain.get('base_link')) if chain is not None else None,
+                'tip': _unprefixed(chain.get('tip_link')) if chain is not None else None})
+    return groups
+
+
+def _tool_root_link(model):
+    """The link a tool macro attaches to its parent (the child of its ``${parent}`` joint)."""
+    if model is None or not model.is_file():
+        return None
+    for joint in ET.fromstring(model.read_text()).iter('joint'):
+        parent, child = joint.find('parent'), joint.find('child')
+        if parent is not None and child is not None and parent.get('link') == '${parent}':
+            return _unprefixed(child.get('link'))
+    return None
+
+
+def _unique(*values):
+    out = []
+    for value in values:
+        for item in value if isinstance(value, (list, tuple)) else [value]:
+            if item and item not in out:
+                out.append(item)
+    return out
+
+
+def _status(payload):
+    return {key: payload.get(key) or 'unknown' for key in
+            ('support_status', 'runtime_status', 'fake_hardware_status', 'real_hardware_status')}
+
+
+def _robot(capability_id, record):
+    p = record.payload
+    model = ROOT / p['urdf_or_xacro'] if p.get('urdf_or_xacro') else None
+    moveit = _package(p.get('moveit_config_package'))
+    groups = _srdf_groups(moveit)
+    preview = 'preview_only' in (p.get('support_status'), p.get('runtime_status'))
+    missing = ([] if model is not None and model.is_file() else ['robot model (urdf_or_xacro)']) + (
+        [] if moveit else ['MoveIt config (moveit_config_package)'])
+    group = p.get('default_planning_group') or p.get('planning_group') or next(iter(groups), None)
+    return {
+        'id': capability_id, 'label': p.get('display_name') or p.get('label') or capability_id,
+        'family': p.get('family') or 'unknown', 'brand': p.get('brand') or '', 'source': str(record.path.relative_to(ROOT)),
+        'installed': not missing, 'missing': missing, 'preview_only': preview, **_status(p),
+        'model': str(model.relative_to(ROOT)) if model is not None and model.is_file() else None,
+        'moveit_config': str(moveit.relative_to(ROOT)) if moveit else None,
+        # Installed MoveIt groups first; catalog-only names are listed but never invented as defaults.
+        'planning_groups': _unique(list(groups), p.get('planning_groups') or []),
+        'base_frames': _unique(p.get('base_frame'), [g['base'] for g in groups.values()]),
+        'tip_frames': _unique(p.get('flange_frame'), p.get('default_tool_frame'), p.get('tool_frames') or [],
+                              (groups.get(group) or {}).get('tip')),
+        'default_planning_group': group, 'default_base': p.get('base_frame'),
+        'default_tip': p.get('flange_frame') or p.get('default_tool_frame')}
+
+
+def _tool(capability_id, record, strategies):
+    p = record.payload
+    interface = p.get('interface') or {}
+    model = ROOT / p['urdf_or_xacro'] if p.get('urdf_or_xacro') else None
+    package = _package(p.get('asset_package'))
+    installed = (model is not None and model.is_file()) or package is not None
+    preview = 'preview_only' in (p.get('support_status'), p.get('runtime_status'))
+    attach = _tool_root_link(model)
+    return {
+        'id': capability_id, 'label': p.get('display_name') or p.get('label') or capability_id,
+        'family': p.get('family') or 'unknown', 'source': str(record.path.relative_to(ROOT)),
+        'installed': installed, 'missing': [] if installed else ['tool model (urdf_or_xacro / asset_package)'],
+        'preview_only': preview, **_status(p),
+        'model': str(model.relative_to(ROOT)) if model is not None and model.is_file() else
+                 (str(package.relative_to(ROOT)) if package else None),
+        'compatible_robot_families': p.get('compatible_robot_families') or [],
+        'grasp_capabilities': interface.get('grasp_capabilities') or [], 'interface': interface.get('kind'),
+        'attach_links': _unique(attach), 'default_attach': attach,
+        'tcp_frames': _unique(interface.get('tcp_link'), p.get('tcp_frame'), p.get('grasp_frames') or []),
+        'default_tcp': interface.get('tcp_link') or p.get('tcp_frame'),
+        'type': p.get('family') or 'unknown',
+        'release': {'joint_position': 'open_gripper', 'io_signal': 'vacuum_off'}.get(interface.get('kind')),
+        'grasp_strategies': [s for s, tools in strategies.items() if capability_id in tools]}
+
+
+def _profile_equipment(profile_path):
+    profile_id = profile_path.stem
+    profile, source = load_profile(profile_id)
+    robot, tool, runtime = source['robot'], source['end_effector'], profile.get('runtime') or {}
+    return {'id': profile_id, 'label': profile.get('label') or profile_id, 'robot': profile['robot_capability'],
+            'tool': profile['tool_capability'], 'source': str(profile_path.relative_to(ROOT)),
+            'scenarios': ['static_table_pick_place', *(profile.get('scenarios') or {})],
+            'runtime': bool(runtime), 'arm_controller': runtime.get('arm_controller'),
+            'tool_controller': runtime.get('tool_controller'),
+            'defaults': {'base': robot.get('base_frame'), 'tip': robot.get('tool_mount_link'),
+                         'planning_group': robot.get('planning_group'), 'tcp': tool.get('grasp_frame'),
+                         'type': tool.get('type'), 'mount_pose_xyz': tool.get('mount_pose_xyz'),
+                         'mount_pose_rpy': tool.get('mount_pose_rpy')}}
+
+
+def _combination(robot, tool, profiles):
+    """How far a robot + tool pair can go in this workspace. Catalog presence never implies runtime readiness:
+    only a reviewed New Cell profile with MoveIt/controller bindings makes a pair plan-capable (fake hardware)."""
+    pair = f"{robot['label']} + {tool['label']}"
+    for item in (robot, tool):
+        if item['preview_only']:
+            return 'UNSUPPORTED', f"{item['label']} is preview-only in its capability record ({item['source']})."
+    if robot['family'] not in tool['compatible_robot_families']:
+        declared = ', '.join(tool['compatible_robot_families']) or 'none'
+        return 'UNSUPPORTED', (f"{tool['label']} does not declare {robot['family']} robots compatible "
+                               f"(compatible_robot_families: {declared}; {tool['source']}).")
+    for item in (robot, tool):
+        if not item['installed']:
+            return 'UNCOMMISSIONED', (f"{item['label']} is in the catalog but not installed in this workspace: "
+                                      f"missing {', '.join(item['missing'])}.")
+    reviewed = [p for p in profiles if p['robot'] == robot['id'] and p['tool'] == tool['id'] and p['runtime']]
+    if reviewed:
+        return 'PLAN_CAPABLE', (f"{pair}: reviewed profile {reviewed[0]['id']} binds its MoveIt and controller "
+                                f"configuration. Generate, Validate and fake-hardware Plan Only are available.")
+    return 'CONFIGURABLE', (f"{pair}: both models are installed and compatible, but no reviewed New Cell profile "
+                            f"(catalog/workcell_studio_profiles) binds their MoveIt and controller configuration. "
+                            f"The cell records this equipment for authoring only; Generate and planning stay blocked.")
+
+
+def equipment():
+    """The New Cell equipment choices: capability records joined with the installed models and reviewed profiles."""
+    records = _capabilities()
+    strategies = {}
+    for path in sorted((ROOT / 'catalog/grasp_strategies').glob('*.yaml')):
+        strategy = (yaml.safe_load(path.read_text()) or {}).get('grasp_strategy') or {}
+        strategies[strategy.get('id') or path.stem] = strategy.get('compatible_end_effector_capabilities') or []
+    robots = [_robot(cid, record) for cid, record in records['robot'].items()]
+    tools = [_tool(cid, record, strategies) for cid, record in records['end_effector'].items()]
+    profiles, notes = [], []
+    for path in sorted(PROFILES.glob('*.yaml')):
+        try:
+            profiles.append(_profile_equipment(path))
+        except (ValueError, KeyError, OSError, yaml.YAMLError) as exc:
+            notes.append(f'{path.name}: not loaded ({exc})')
+    # Installed model packages no capability record describes: shown, never selectable as supported.
+    described = {r.get('moveit_config') for r in robots} | {t.get('model') for t in tools}
+    described |= {str(Path(t['model']).parent) for t in tools if t.get('model')}
+    for kind, pattern in (('robot', 'assets/robots/*/*_moveit_config'), ('tool', 'assets/end_effectors/*/*_description')):
+        for package in sorted(ROOT.glob(pattern)):
+            rel = str(package.relative_to(ROOT))
+            if (package / 'package.xml').is_file() and not any(d and (d == rel or d.startswith(rel + '/')) for d in described):
+                notes.append(f'{kind} model {rel} has no capability record (catalog/capabilities); it cannot be selected.')
+    combinations = []
+    for robot in robots:
+        for tool in tools:
+            status, reason = _combination(robot, tool, profiles)
+            profile = next((p for p in profiles if p['robot'] == robot['id'] and p['tool'] == tool['id']
+                            and status == 'PLAN_CAPABLE'), None)
+            combinations.append({'robot': robot['id'], 'tool': tool['id'], 'status': status, 'reason': reason,
+                                 'profile': profile['id'] if profile else None})
+    return {'schema': 'new_cell_equipment/v1', 'robots': robots, 'tools': tools, 'profiles': profiles,
+            'combinations': combinations, 'notes': notes, 'grasp_strategies': list(strategies)}
 
 
 def describe(profile_id, scenario=None):
@@ -148,8 +350,8 @@ def materialize(scene, profile_id, destination):
     authored = yaml.safe_load((scene / 'environment.yaml').read_text())
     studio = authored['workcell_studio']
     studio['recommended_profile'] = profile_id
-    if (studio['robot']['model'] != profile['robot_model'] or
-            studio['tool']['model'] != profile['tool_model']):
+    if (studio['robot'].get('capability') != profile['robot_capability'] or
+            studio['tool'].get('capability') != profile['tool_capability']):
         raise ValueError('Recommended physical profile does not match selected robot/tool')
     scenario_id = studio.get('scenario', {}).get('id')
     layout = (profile.get('scenarios') or {}).get(scenario_id) or {}
@@ -290,14 +492,18 @@ def materialize(scene, profile_id, destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', required=True)
+    parser.add_argument('--profile')
+    parser.add_argument('--equipment', action='store_true',
+                        help='the New Cell robot/tool choices, their frames and readiness (JSON)')
     parser.add_argument('--describe', action='store_true')
     parser.add_argument('--scenario', help='with --describe: the New Cell scenario whose reviewed layout applies')
     parser.add_argument('--scene', type=Path)
     parser.add_argument('--destination', type=Path)
     args = parser.parse_args()
     try:
-        if args.describe:
+        if args.equipment:
+            print(json.dumps(equipment()))
+        elif args.describe:
             print(json.dumps(describe(args.profile, args.scenario)))
         else:
             materialize(args.scene, args.profile, args.destination)

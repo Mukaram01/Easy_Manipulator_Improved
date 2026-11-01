@@ -3,13 +3,12 @@ from pathlib import Path
 CPP=Path('workcell_builder/workcell_builder/gui/new_cell_wizard.cpp').read_text(encoding='utf-8')
 H=Path('workcell_builder/workcell_builder/gui/new_cell_wizard.h').read_text(encoding='utf-8')
 
-def test_robot_link_defaults_present():
-    for t in ['default_robot_base_link','default_robot_tip_link','UR5','UR10','UR3','manipulator']:
-        assert t in CPP or t in H
-
-def test_gripper_defaults_present():
-    for t in ['default_gripper_rpy_text','-1.5708, -1.5708, 0','default_end_effector_attach_link']:
-        assert t in CPP
+def test_robot_and_tool_choices_are_discovered_not_embedded():
+    # Equipment, frames and defaults come from instantiate_workcell_studio_profile.py --equipment.
+    assert '"--equipment"' in CPP and 'equipment_combination' in H
+    for vendor in ['"UR5"', '"UR10"', '"robotiq_85"', '"Franka / Panda"', '"Robotiq"', '"ee_palm"', '"manipulator"',
+                   '"scaled_joint_trajectory_controller"', '-1.5708', '"ur5_2f_workbench"']:
+        assert vendor not in CPP, vendor
 
 def test_environment_table_parent_child_and_roles():
     for t in ['Parent Object','Parent Link','Child Link','Joint Type','Semantic Role','workbench_01','source_bin_01','place_fixture_01','camera_01']:

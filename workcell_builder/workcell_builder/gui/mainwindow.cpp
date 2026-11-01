@@ -6405,6 +6405,13 @@ MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness(bool req
     result.blockers << environment_task_editor_->blocker(require_task_input);
   if (!has_selected_scene() || selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) { result.blockers << "Select a scene."; return result; }
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  // New Cell records how far the cell's robot + tool can go; short of PLAN_CAPABLE it cannot generate or plan.
+  try {
+    const auto equipment = YAML::LoadFile((scene.scene_dir / "environment.yaml").string())["workcell_studio"]["equipment"];
+    if (equipment && equipment["status"] && equipment["status"].as<std::string>() != "PLAN_CAPABLE")
+      result.blockers.prepend(QString::fromStdString("Equipment " + equipment["status"].as<std::string>() + ": " +
+        equipment["reason"].as<std::string>("")));
+  } catch (const YAML::Exception &) {}
   const auto content = workcell_builder::scene_content_readiness(scene);
   result.generation_current = content.generation_current && !layout_dirty_;
   result.validation_current = result.generation_current && content.validation_current;

@@ -309,6 +309,12 @@ def _task_type_from_meta(meta: dict[str, Any]) -> str:
 def export_scene(scene_path: Path, output_dir: Path, validate: bool) -> dict[str, Any]:
     env = _load_optional(scene_path / "environment.yaml")
     meta = _load_optional(scene_path / "workcell_builder_metadata.yaml")
+    # New Cell records how far its equipment can go (instantiate_workcell_studio_profile.equipment); only a
+    # reviewed robot + tool binding generates a runnable package. Cells without the record keep their behaviour.
+    equipment = (env.get("workcell_studio") or {}).get("equipment")
+    if isinstance(equipment, dict) and equipment.get("status") != "PLAN_CAPABLE":
+        raise ValueError(f"EQUIPMENT_NOT_PLAN_CAPABLE ({equipment.get('status')}): {equipment.get('reason')} "
+                         "Create a cell with a plan-capable robot and tool to generate it.")
     from physical_destination import resolve_destination, destination_ids
     physical = env.get("environment") or {}
     from asset_mounting import validate_physical

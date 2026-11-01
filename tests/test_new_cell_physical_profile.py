@@ -9,7 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from instantiate_workcell_studio_profile import describe, materialize, load_profile
+from instantiate_workcell_studio_profile import describe, equipment, materialize, load_profile
 from task_intent_authoring import load_authoring
 from task_intent_v2 import normalized_intent_hash
 from physical_destination import resolve_destination
@@ -20,9 +20,9 @@ def wizard_input(scene, scenario='static_table_pick_place', objects=None):
     robot, tool = profile['robot'], profile['tool']
     studio = {
         'scenario': {'id': scenario},
-        'robot': {'model': profile['robot_model'], 'base': robot['base_frame'],
+        'robot': {'capability': profile['robot_capability'], 'base': robot['base_frame'],
                   'tip': robot['tool_mount_link'], 'planning_group': robot['planning_group']},
-        'tool': {'model': profile['tool_model'], 'tcp': tool['grasp_frame']},
+        'tool': {'capability': profile['tool_capability'], 'tcp': tool['grasp_frame']},
         'frames': {'robot_mount_pose': {'xyz': robot['pose_xyz'], 'rpy': robot['pose_rpy']},
                    'tool_mount_pose': {'xyz': tool['mount_pose_xyz'], 'rpy': tool['mount_pose_rpy']}},
         'environment_objects': [dict(row, parent_object='world', parent_link='world', child_link=row['id'], joint_type='fixed', semantic_role=row['role']) for row in profile['rows']],
@@ -43,6 +43,42 @@ def test_reviewed_profile_uses_physical_definitions_not_reference_task():
     assert any(row['id'] == profile['place_asset'] for row in ui['rows'])
     assert resolve_destination(source['environment'], profile['place_region'])['target_id'] == profile['place_asset']
     assert 'task' not in ui
+
+
+def test_equipment_choices_join_catalog_installed_models_and_reviewed_profiles():
+    """New Cell robot/tool choices: catalog presence never implies runtime readiness."""
+    found = equipment()
+    status = {(c['robot'], c['tool']): c['status'] for c in found['combinations']}
+    assert status[('ur5', 'robotiq_2f_85')] == 'PLAN_CAPABLE'                 # reviewed profile ur5_2f_workbench
+    assert status[('ur5', 'onrobot_airpick_style')] == 'CONFIGURABLE'         # installed, no reviewed runtime binding
+    assert status[('ur5', 'suction_basic')] == 'UNSUPPORTED'                  # declares no compatible robot family
+    assert status[('generic_scara_600', 'robotiq_2f_85')] == 'UNCOMMISSIONED'  # catalog record, no installed model
+    ur5 = next(r for r in found['robots'] if r['id'] == 'ur5')
+    # Frames and groups from the installed MoveIt config (SRDF) and the record.
+    assert ur5['installed'] and 'manipulator' in ur5['planning_groups'] and ur5['tip_frames'][0] == 'tool0'
+    airpick = next(t for t in found['tools'] if t['id'] == 'onrobot_airpick_style')
+    assert airpick['default_attach'] == 'gripper_base_link'                    # the installed macro's root link
+    assert airpick['grasp_strategies'] == ['suction_top_basic'] and airpick['release'] == 'vacuum_off'
+    profile = next(p for p in found['profiles'] if p['id'] == 'ur5_2f_workbench')
+    assert profile['arm_controller'] == 'ur5_arm_controller' and profile['defaults']['tcp'] == 'ee_palm'
+    assert any('ur10_moveit_config has no capability record' in note for note in found['notes'])
+
+
+def test_profile_must_launch_the_equipment_it_names(tmp_path, monkeypatch):
+    import instantiate_workcell_studio_profile as helper
+    profile = yaml.safe_load((helper.PROFILES / 'ur5_2f_workbench.yaml').read_text())
+    (tmp_path / 'mislabelled.yaml').write_text(yaml.safe_dump(dict(profile, tool_capability='onrobot_airpick_style')))
+    monkeypatch.setattr(helper, 'PROFILES', tmp_path)
+    with pytest.raises(ValueError, match='binds tool'):
+        load_profile('mislabelled')
+
+
+def test_export_refuses_equipment_that_is_not_plan_capable(tmp_path):
+    from export_builder_scene_to_cell_definition import export_scene
+    (tmp_path / 'environment.yaml').write_text(yaml.safe_dump({'workcell_studio': {'equipment': {
+        'status': 'CONFIGURABLE', 'reason': 'UR5 + AirPick: no reviewed New Cell profile.'}}}))
+    with pytest.raises(ValueError, match='EQUIPMENT_NOT_PLAN_CAPABLE'):
+        export_scene(tmp_path, tmp_path, validate=False)
 
 
 def test_sorting_cell_has_two_bins_camera_and_camera_visible_test_objects(tmp_path):

@@ -9,6 +9,8 @@
 #include <QDoubleSpinBox>
 #include <QGroupBox>
 #include <QLineEdit>
+#include <QFormLayout>
+#include <QPushButton>
 
 #include "gui/new_cell_wizard.h"
 
@@ -42,11 +44,6 @@ TEST(NewCellWizard, ScenePackageNameValidation)
   EXPECT_FALSE(NewCellWizard::is_valid_package_name("1bad"));
 }
 
-TEST(NewCellWizard, DefaultGripperRpy)
-{
-  EXPECT_EQ(NewCellWizard::default_gripper_rpy_text().toStdString(), "-1.5708, -1.5708, 0");
-}
-
 TEST(NewCellWizard, RecommendedLayoutDefaults)
 {
   const auto items = NewCellWizard::recommended_environment_assets();
@@ -57,76 +54,101 @@ TEST(NewCellWizard, RecommendedLayoutDefaults)
   EXPECT_TRUE(items.contains("safety_zone_01"));
 }
 
-TEST(NewCellWizard, UrDefaults)
+namespace {
+QStringList combo_items(QComboBox * combo)
 {
-  const QString family = "Universal Robots / UR";
+  QStringList items;
+  for (int i = 0; i < combo->count(); ++i) items << combo->itemText(i);
+  return items;
+}
+QComboBox * advanced(NewCellWizard & wizard, const QString & group, const QString & row)
+{
+  for (auto * box : wizard.findChildren<QGroupBox *>()) {
+    if (box->title() != group) continue;
+    auto * form = box->findChild<QFormLayout *>();
+    for (int r = 0; form && r < form->rowCount(); ++r) {
+      auto * label = qobject_cast<QLabel *>(form->itemAt(r, QFormLayout::LabelRole)->widget());
+      if (label && label->text() == row) return qobject_cast<QComboBox *>(form->itemAt(r, QFormLayout::FieldRole)->widget());
+    }
+  }
+  return nullptr;
+}
+}  // namespace
 
-  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "UR5").toStdString(), "base_link");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "UR5").toStdString(), "ee_link");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "UR5").toStdString(), "manipulator");
-
-  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "UR3").toStdString(), "base_link");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "UR3").toStdString(), "ee_link");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "UR3").toStdString(), "manipulator");
-
-  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "UR10").toStdString(), "base_link");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "UR10").toStdString(), "ee_link");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "UR10").toStdString(), "manipulator");
+TEST(NewCellWizard, ReviewedPairIsTheDefaultAndItsFramesComeFromItsProfile)
+{
+  ensure_application();
+  NewCellWizard wizard(repository_root());
+  // The only reviewed New Cell profile (catalog/workcell_studio_profiles/ur5_2f_workbench.yaml) is the default.
+  EXPECT_EQ(wizard.selected_robot_id(), "ur5");
+  EXPECT_EQ(wizard.selected_tool_id(), "robotiq_2f_85");
+  EXPECT_EQ(wizard.equipment_combination().value("status").toString(), "PLAN_CAPABLE");
+  EXPECT_EQ(wizard.equipment_combination().value("profile").toString(), "ur5_2f_workbench");
+  EXPECT_TRUE(wizard.equipment_blockers().isEmpty()) << wizard.equipment_blockers().join("\n").toStdString();
+  EXPECT_EQ(advanced(wizard, "Advanced Robot Frames", "Robot base link")->currentText(), "base_link");
+  EXPECT_EQ(advanced(wizard, "Advanced Robot Frames", "Robot end-effector/tip link")->currentText(), "tool0");
+  EXPECT_EQ(advanced(wizard, "Advanced Robot Frames", "Planning group")->currentText(), "manipulator");
+  EXPECT_EQ(advanced(wizard, "Advanced Tool Frames", "End-effector attach/base link")->currentText(), "gripper_base_link");
+  EXPECT_EQ(advanced(wizard, "Advanced Tool Frames", "End-effector TCP/tool link")->currentText(), "ee_palm");
+  EXPECT_EQ(advanced(wizard, "Advanced Tool Frames", "End-effector type")->currentText(), "finger");
+  // The tool's catalog grasp strategies; AUTO only through the reviewed task authoring.
+  const auto strategies = combo_items(wizard.findChild<QComboBox *>("graspStrategyCombo"));
+  EXPECT_EQ(strategies.value(0), "auto");
+  EXPECT_TRUE(strategies.contains("top_2f"));
+  EXPECT_FALSE(strategies.contains("suction_top_basic"));
+  // No embedded vendor list: models are the catalog's, families its robot families.
+  const auto models = combo_items(wizard.findChild<QComboBox *>("newCellRobotModel"));
+  EXPECT_TRUE(models.contains("Universal Robots UR5"));
+  EXPECT_FALSE(models.contains("UR10"));
+  EXPECT_TRUE(wizard.review_text().contains("PLAN_CAPABLE"));
+  // Physical layout of the reviewed profile, with its test objects for sorting.
+  ASSERT_TRUE(wizard.select_scenario_by_id("multi_bin_sorting_cell"));
+  EXPECT_EQ(wizard.findChild<QTableWidget *>("testObjectsTable")->rowCount(), 3);
 }
 
-TEST(NewCellWizard, FrankaDefaults)
+TEST(NewCellWizard, DiscoveredPairsAreClassifiedAndUnsupportedOnesFailClosed)
 {
-  const QString family = "Franka / Panda";
+  ensure_application();
+  NewCellWizard wizard(repository_root());
+  auto * name = wizard.findChild<QLineEdit *>("newCellSceneName");
+  ASSERT_NE(name, nullptr);
+  name->setText("dynamic_wizard_unit_never_created");
+  QPushButton * create = nullptr;
+  for (auto * button : wizard.findChildren<QPushButton *>()) if (button->text() == "Create Cell") create = button;
+  ASSERT_NE(create, nullptr);
+  EXPECT_TRUE(create->isEnabled());
 
-  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, "Panda").toStdString(), "panda_link0");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, "Panda").toStdString(), "panda_hand");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, "Panda").toStdString(), "panda_arm");
-}
+  // Installed and compatible, but no reviewed runtime binding: authoring only, with the tool's own frames.
+  ASSERT_TRUE(wizard.select_equipment("ur5", "onrobot_airpick_style"));
+  EXPECT_EQ(wizard.equipment_combination().value("status").toString(), "CONFIGURABLE");
+  EXPECT_TRUE(wizard.equipment_blockers().isEmpty());
+  EXPECT_TRUE(create->isEnabled());
+  EXPECT_EQ(advanced(wizard, "Advanced Tool Frames", "End-effector TCP/tool link")->currentText(), "gripper_base_link");
+  EXPECT_EQ(combo_items(wizard.findChild<QComboBox *>("graspStrategyCombo")), QStringList{"suction_top_basic"});
+  EXPECT_TRUE(wizard.review_text().contains("Authoring only"));
 
-TEST(NewCellWizard, PlaceholderDefaults)
-{
-  const QString family = "Delta";
-  const QString model = "delta_placeholder";
+  // Not compatible by its capability record: fails closed with the reason.
+  ASSERT_TRUE(wizard.select_equipment("ur5", "suction_basic"));
+  EXPECT_EQ(wizard.equipment_combination().value("status").toString(), "UNSUPPORTED");
+  ASSERT_FALSE(wizard.equipment_blockers().isEmpty());
+  EXPECT_TRUE(wizard.equipment_blockers().join(" ").contains("compatible_robot_families"));
+  EXPECT_FALSE(create->isEnabled());
 
-  EXPECT_EQ(NewCellWizard::default_robot_base_link(family, model).toStdString(), "base_link");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link(family, model).toStdString(), "tool0_placeholder");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group(family, model).toStdString(), "preview_group");
-}
+  // In the catalog but not installed here.
+  ASSERT_TRUE(wizard.select_equipment("generic_scara_600", "robotiq_2f_85"));
+  EXPECT_EQ(wizard.equipment_combination().value("status").toString(), "UNCOMMISSIONED");
+  EXPECT_TRUE(wizard.equipment_blockers().join(" ").contains("not installed"));
+  EXPECT_FALSE(create->isEnabled());
 
-TEST(NewCellWizard, RobotFamilyModelMappingsAreDeterministic)
-{
-  const QString ur_family = "Universal Robots / UR";
-  const QString panda_family = "Franka / Panda";
-
-  EXPECT_EQ(NewCellWizard::default_robot_base_link(ur_family, "UR10").toStdString(), "base_link");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link(ur_family, "UR10").toStdString(), "ee_link");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group(ur_family, "UR10").toStdString(), "manipulator");
-
-  EXPECT_EQ(NewCellWizard::default_robot_base_link(panda_family, "FR3").toStdString(), "panda_link0");
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link(panda_family, "FR3").toStdString(), "panda_hand");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group(panda_family, "FR3").toStdString(), "panda_arm");
-
-  EXPECT_EQ(NewCellWizard::default_robot_tip_link("Custom / Placeholder", "my_placeholder_robot").toStdString(), "tool0_placeholder");
-  EXPECT_EQ(NewCellWizard::default_robot_planning_group("Custom / Placeholder", "my_placeholder_robot").toStdString(), "preview_group");
-}
-
-TEST(NewCellWizard, RobotiqDefaults)
-{
-  EXPECT_EQ(NewCellWizard::default_end_effector_attach_link("robotiq_85").toStdString(), "gripper_base_link");
-  EXPECT_EQ(NewCellWizard::default_end_effector_tcp_link("robotiq_85").toStdString(), "ee_palm");
-}
-
-TEST(NewCellWizard, SuctionDefaults)
-{
-  EXPECT_EQ(NewCellWizard::default_end_effector_attach_link("single_suction").toStdString(), "tool_mount_link");
-  EXPECT_EQ(NewCellWizard::default_end_effector_tcp_link("single_suction").toStdString(), "tcp_link");
-  EXPECT_EQ(NewCellWizard::default_end_effector_type("single_suction").toStdString(), "suction");
-}
-
-TEST(NewCellWizard, ScaffoldReadinessClassification)
-{
-  EXPECT_EQ(NewCellWizard::default_end_effector_family_readiness("Custom / Placeholder").toStdString(), "SCAFFOLD");
-  EXPECT_EQ(NewCellWizard::default_end_effector_family_readiness("Robotiq").toStdString(), "READY");
+  // Advanced overrides are checked against the installed model and its record.
+  ASSERT_TRUE(wizard.select_equipment("ur5", "robotiq_2f_85"));
+  auto * tip = advanced(wizard, "Advanced Robot Frames", "Robot end-effector/tip link");
+  tip->setCurrentText("flange_typo");
+  EXPECT_TRUE(wizard.equipment_blockers().join(" ").contains("'flange_typo' is not declared by Universal Robots UR5"));
+  EXPECT_FALSE(create->isEnabled());
+  tip->setCurrentText("ee_link");
+  EXPECT_TRUE(wizard.equipment_blockers().isEmpty());
+  EXPECT_TRUE(create->isEnabled());
 }
 
 TEST(NewCellWizard, IndustrialScenarioCatalogDrivesCanonicalChoices)

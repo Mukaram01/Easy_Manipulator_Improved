@@ -2,8 +2,10 @@
 # New cells receive independent authored values, never the reference scene's task.
 id: ur5_2f_workbench
 label: Reviewed UR5 + Robotiq 85 workbench / destination bin / camera
-robot_model: UR5
-tool_model: robotiq_85
+# The equipment this profile reviews, by capability id (catalog/capabilities); the reviewed source must launch
+# exactly these (its robot SRDF package and its end_effector.capability), or the profile does not load.
+robot_capability: ur5
+tool_capability: robotiq_2f_85
 environment_source: scenes/ur5_2f_test/environment.yaml
 model_source: scenes/ur5_2f_test/urdf/scene.urdf.xacro
 pick_zone: pick_zone_main

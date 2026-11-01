@@ -47,6 +47,28 @@ This manual documents the **current intended flow** for creating/importing/editi
 16. Simulate.
 17. Commission/deploy in later stages.
 
+## Choosing the robot and tool (New Cell)
+
+New Cell lists the robots and tools of the capability catalog (`catalog/capabilities/robots`, `end_effectors`) and checks each against the models installed under `assets/`. The wizard runs `scripts/instantiate_workcell_studio_profile.py --equipment` and shows the result.
+
+**Readiness of a robot + tool pair.** The tool list names it, and the Robot and End Effector pages explain it:
+
+| Status | Meaning | New Cell |
+|---|---|---|
+| **PLAN_CAPABLE** | A reviewed New Cell profile (`catalog/workcell_studio_profiles/*.yaml`) binds this exact pair to its MoveIt and controller configuration. | Creates the cell from the profile. Generate, Validate and fake-hardware Plan Only are available. |
+| **CONFIGURABLE** | Both models are installed and the tool declares the robot's family compatible, but no reviewed profile binds them. | Creates an authoring-only cell: equipment identities and frames, no task. Generate and Plan / Simulate are blocked with this reason (`EQUIPMENT_NOT_PLAN_CAPABLE`). |
+| **UNCOMMISSIONED** | The catalog lists the equipment, but its model is not installed in this workspace. | Create is disabled; the reason names what is missing. |
+| **UNSUPPORTED** | The tool does not declare the robot's family compatible, or the record is preview-only. | Create is disabled; the reason names the capability record. |
+
+Catalog presence never implies runtime readiness, and real hardware stays locked for every pair. A new pair never inherits G4/G6 qualification.
+
+**Frames and Advanced overrides.**
+- **Defaults:** frames, planning group and controller come from the reviewed profile when the pair has one. Otherwise they come from the capability records and the installed model: SRDF groups and chains, and the tool macro's root link.
+- **Advanced overrides:** Advanced Robot/Tool Frames accepts only values the record or the installed model declares. A typo blocks Create and names the valid choices.
+- **Saved:** the cell stores the capability ids (`workcell_studio.robot.capability`, `workcell_studio.tool.capability`) and `workcell_studio.equipment` (status, reason, profile).
+
+A new installed model without a capability record is listed as not selectable.
+
 ## Giving a new cell its object input (Plan Only)
 
 A new cell plans only from measured object observations. Configure them in **Scene Builder › Task › Object input**; no YAML editing is needed.
