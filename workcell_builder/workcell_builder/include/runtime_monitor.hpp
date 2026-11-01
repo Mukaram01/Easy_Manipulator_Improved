@@ -147,6 +147,10 @@ inline FailureDiagnosis diagnose_failure(const QString & text)
   if (in({"PLACE_OBJECT_DOES_NOT_FIT", "DESTINATION_CONTAINMENT", "PLACE_LOCAL_POSE_OUTSIDE_REGION", "PHYSICAL_DESTINATION_INVALID"}))
     return {code, "The selected object cannot be placed inside the configured destination with this clearance and the planner's placement tolerance.",
       "Task > How to place: reduce the placement clearance (the message names the largest that fits) or choose another destination, then Save, Generate and Validate."};
+  if (in({"TARGET_ASSET_NOT_FOUND", "PLACE_REGION_NOT_FOUND", "PLACE_REGION_TARGET_MISMATCH", "R19_DESTINATION_INVALID"}))
+    return {code, "The task's destination is not a placement region of its physical target, or its saved geometry is stale.",
+      "Scene Builder: select the destination bin in the 3D view and use Inspector > Use Selected as Task Destination "
+      "(or Task > Where), then Save, Generate and Validate."};
   if (in({"TASK_ROUTE_DESTINATION_INVALID"}))
     return {code, "A class routing rule names a placement region that is missing, not inside its target, or on a target without collision geometry.",
       "Task > Where > Route by class: name an existing placement region of a collision-modelled bin for every class, then Save, Generate and Validate."};

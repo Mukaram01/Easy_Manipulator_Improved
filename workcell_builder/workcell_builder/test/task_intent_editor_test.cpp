@@ -700,7 +700,7 @@ TEST(TaskIntentEditor, ObjectInputOffersExistingInputsAndReportsEligibilityAndNe
     << reopened_status->text().toStdString();
   // Generate refuses observation input without a pick class: blocked before Generate, naming the recorded classes.
   edit(reopened, "taskTargetClass", "");
-  reopened.validate_now();
+  ASSERT_TRUE(reopened.save());  // saving is allowed; the saved task is then blocked (an unsaved draft reports "Save" first)
   EXPECT_TRUE(reopened.blocker(false).contains("OBJECT_CLASS_REQUIRED")) << reopened.blocker(false).toStdString();
   EXPECT_TRUE(reopened_status->text().contains("this input contains: cup, bottle")) << reopened_status->text().toStdString();
 }
@@ -863,4 +863,68 @@ TEST(TaskIntentEditor, RoutingTableAuthorsManyClassesToManyRegionsAndSurvivesReo
   const auto direct = QJsonDocument::fromJson(QByteArray::fromStdString(
       workcell_builder::canonical_task_intent_json_for_testing(reopened.model().to_yaml()))).object();
   EXPECT_EQ(direct["routing"].toObject()["mode"].toString(), "direct");                   // no rows: direct pick/place
+}
+
+TEST(TaskIntentEditor, PhysicalDestinationBindingShowsTargetRegionAndPlacePoseAndFollowsSavedMoves) {
+  application(); QTemporaryDir dir; seed(dir.path());
+  const QByteArray second_bin =
+      "- {id: bin2, layout_item_ref: bin2_layout, frame: world, pose_xyz: [0.5, -0.2, 0.1], pose_rpy: [0, 0, 0], collision: {enabled: true}, usable_placement: {pose_xyz: [0, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.4, 0.3, 0.2]}}\n";
+  const QByteArray second_region =
+      "- {id: drop2, layout_item_ref: drop2_layout, target_ref: bin2, frame: world, pose_xyz: [0.55, -0.2, 0.2], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1], placement_local: {pose_xyz: [0.05, 0, 0.1], pose_rpy: [0, 0, 0], dimensions: [0.2, 0.1, 0.1]}}\n";
+  auto environment = read(dir.path() + "/environment.yaml");
+  environment.replace("task_zones:\n", second_bin + "task_zones:\n");
+  environment.append(second_region);
+  write(dir.path() + "/environment.yaml", environment);
+  TaskIntentEditor editor; ASSERT_TRUE(editor.load_scene(dir.path(), helper()));
+  editor.findChild<QDoubleSpinBox *>("taskPlaceClearance")->setValue(0.001);  // the seed predates clearance_m
+  ASSERT_TRUE(editor.save());
+
+  // Roles come from the saved physical model, by semantic or layout ID; a pick zone is not a destination.
+  const auto bin2 = editor.physical_destination("bin2_layout");
+  EXPECT_EQ(bin2["kind"].toString(), "target");
+  EXPECT_EQ(bin2["target"].toString(), "bin2");
+  EXPECT_EQ(bin2["regions"].toArray(), QJsonArray{"drop2"});
+  const auto region = editor.physical_destination("drop2_layout");
+  EXPECT_EQ(region["kind"].toString(), "region");
+  EXPECT_EQ(region["target"].toString(), "bin2");
+  EXPECT_EQ(region["target_layout"].toString(), "bin2_layout");
+  EXPECT_TRUE(editor.physical_destination("pick").isEmpty());
+
+  auto * summary = editor.findChild<QLabel *>("taskDestinationSummary"); ASSERT_NE(summary, nullptr);
+  EXPECT_TRUE(summary->text().contains("Physical target: bin — world (1.000, 2.000, 3.000) m")) << summary->text().toStdString();
+  EXPECT_TRUE(summary->text().contains("Placement region: drop — target-local offset (0.050, 0.000, 0.100) m"))
+      << summary->text().toStdString();
+  EXPECT_TRUE(summary->text().contains("Place pose (EXACT): target-local (0.050, 0.000, 0.100) m → world (1.050, 2.000, 3.100) m"))
+      << summary->text().toStdString();
+
+  // Binding the selected physical target updates the draft (asset and its only region); generated files are untouched.
+  editor.bind_destination("bin2");
+  EXPECT_EQ(editor.model().place.asset_ref, "bin2");
+  EXPECT_EQ(editor.model().place.region_ref, "drop2");
+  ASSERT_TRUE(editor.save());
+  EXPECT_TRUE(summary->text().contains("Physical target: bin2 — world (0.500, -0.200, 0.100) m")) << summary->text().toStdString();
+  EXPECT_TRUE(summary->text().contains("→ world (0.550, -0.200, 0.200) m")) << summary->text().toStdString();
+  EXPECT_FALSE(QFileInfo::exists(dir.path() + "/generated"));
+
+  editor.set_geometry_unsaved(true);
+  EXPECT_TRUE(summary->text().contains("Unsaved 3D edits")) << summary->text().toStdString();
+  editor.set_geometry_unsaved(false);
+
+  // A moved target whose region was not re-projected is stale: blocked, never resolved at the old place.
+  environment = read(dir.path() + "/environment.yaml");
+  environment.replace("pose_xyz: [0.5, -0.2, 0.1]", "pose_xyz: [0.53, -0.2, 0.1]");
+  write(dir.path() + "/environment.yaml", environment);
+  editor.validate_now();
+  EXPECT_TRUE(summary->text().contains("Place pose: BLOCKED — R19_DESTINATION_INVALID")) << summary->text().toStdString();
+  EXPECT_FALSE(editor.blocker(false).isEmpty());
+  // Saved as the layout projection does (region follows its target): the place moves by the same 30 mm.
+  environment.replace("pose_xyz: [0.55, -0.2, 0.2]", "pose_xyz: [0.58, -0.2, 0.2]");
+  write(dir.path() + "/environment.yaml", environment);
+  editor.validate_now();
+  EXPECT_TRUE(summary->text().contains("Physical target: bin2 — world (0.530, -0.200, 0.100) m")) << summary->text().toStdString();
+  EXPECT_TRUE(summary->text().contains("target-local (0.050, 0.000, 0.100) m → world (0.580, -0.200, 0.200) m"))
+      << summary->text().toStdString();
+  TaskIntentEditor reopened; ASSERT_TRUE(reopened.load_scene(dir.path(), helper()));
+  EXPECT_EQ(reopened.model().place.asset_ref, "bin2");
+  EXPECT_NEAR(reopened.resolved_destination()["pose_xyz"].toArray()[0].toDouble(), 0.58, 1e-9);
 }

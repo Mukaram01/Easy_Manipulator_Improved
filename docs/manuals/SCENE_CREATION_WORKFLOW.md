@@ -68,6 +68,36 @@ A new cell plans only from measured object observations. Configure them in **Sce
 
 Objects are never derived from scene assets. The Sorting wizard's simulated test objects are not perception input.
 
+## Choosing where the robot places (visual destination binding)
+
+A task's destination is a **physical target** (a bin or other collision-modelled asset) together with one of
+its **placement regions**. A region is reviewed free space in the target's own frame (`placement_local`), so it moves
+and rotates with its target; it is never a separately movable bin. The **place pose** is where the planner puts the
+object inside that region (AUTO: the region centre, or a free place per object in a sequence; PREFERRED/EXACT: the
+requested target-local pose).
+
+1. **Select the bin** in the 3D view. **Inspector › Task destination** shows:
+   - its name, ID and world pose;
+   - its placement regions;
+   - whether the task places there, with the resolved place pose in world.
+2. **Use Selected as Task Destination** sets the task's physical target, and its region when the target has exactly
+   one, in the TaskIntent draft. Nothing generated is written. **Save task**.
+3. **Task › Where** shows the destination as the validator resolves it:
+   - the physical target's world pose;
+   - the region's target-local offset and size;
+   - the place pose, in target-local and world coordinates.
+
+   **Show physical target in 3D** selects the target in Product View.
+4. **Moving the bin:** move or rotate it in the 3D view and **Save**. The region follows the target. The task's
+   resolved place pose updates at once, and Generate/Validate become stale. Before Save, both panels say the
+   coordinates are the saved ones.
+5. **Generate, Validate, then Plan / Simulate › Plan Saved Task.** MoveIt plans to the new place pose with the moved
+   bin in its collision scene.
+
+A target without a placement region, a region of another target, or stale geometry blocks the task. The block names
+the code (`PLACE_REGION_TARGET_MISMATCH`, `R19_DESTINATION_INVALID`, ...) and the next step. Nothing is moved or
+substituted to make a plan pass, and an unreachable place fails in the collision-aware MoveIt plan.
+
 ## Relationship between metadata layers
 
 - `environment_layout/v1`: placement/zones checklist metadata for operators.

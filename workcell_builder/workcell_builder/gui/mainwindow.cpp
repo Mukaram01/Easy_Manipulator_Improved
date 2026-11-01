@@ -3254,6 +3254,16 @@ void MainWindow::setup_studio_shell()
       refresh_scene_workflow_rail();
     });
   });
+  connect(environment_task_editor_, &TaskIntentEditor::destination_changed, this, &MainWindow::refresh_task_destination_card);
+  connect(environment_task_editor_, &TaskIntentEditor::show_target_requested, this, [this](const QString & layout_id) {
+    // The existing selection highlights the physical target in Product View, the hierarchy and the Inspector.
+    apply_scene_selection(layout_id, QString(), false, true);
+    append_studio_log(QStringLiteral("Showing the task's physical target %1 in 3D.").arg(layout_id));
+    QTimer::singleShot(0, this, [this] {  // the selection opens the Inspector: bring its Task destination card into view
+      for (QWidget * parent = task_destination_card_ ? task_destination_card_->parentWidget() : nullptr; parent; parent = parent->parentWidget())
+        if (auto * area = qobject_cast<QScrollArea *>(parent)) { area->ensureWidgetVisible(task_destination_card_, 0, 160); break; }
+    });
+  });
   workflow_tab_layout->addWidget(environment_task_editor_);
 
   auto * setup_checklist_group = new QGroupBox("Advanced diagnostics", readiness_tab);
@@ -3395,6 +3405,23 @@ void MainWindow::setup_studio_shell()
   workflow_tab_layout->addWidget(ar_card);
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("", scene_builder); live_coordinate_label_->hide(); selected_item_card_layout->addWidget(live_coordinate_label_);
+  task_destination_card_ = new QFrame(selection_tab);
+  task_destination_card_->setObjectName("studioCard");
+  auto * task_destination_layout = new QVBoxLayout(task_destination_card_);
+  task_destination_layout->addWidget(new QLabel("<b>Task destination</b>", task_destination_card_));
+  task_destination_label_ = new QLabel(task_destination_card_);
+  task_destination_label_->setObjectName("sceneBuilderTaskDestinationText");
+  task_destination_label_->setWordWrap(true);
+  task_destination_label_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  task_destination_label_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  task_destination_layout->addWidget(task_destination_label_);
+  task_destination_bind_button_ = new QPushButton("Use Selected as Task Destination", task_destination_card_);
+  task_destination_bind_button_->setObjectName("sceneBuilderUseAsTaskDestination");
+  task_destination_layout->addWidget(task_destination_bind_button_);
+  connect(task_destination_bind_button_, &QPushButton::clicked, this, &MainWindow::use_selected_as_task_destination);
+  task_destination_card_->hide();
+  // Its own card below Selected Item: the product layout caps that card's height (scene_builder_product_layout).
+  selection_tab_layout->insertWidget(selection_tab_layout->indexOf(selected_item_card_layout->parentWidget()) + 1, task_destination_card_);
   auto * metadata_form = new QFormLayout();
   metadata_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
   inspector_display_name_ = new QLineEdit(scene_builder);
@@ -5025,6 +5052,7 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
 {
   if (!inspector_label_ || !live_coordinate_label_) return;
   refresh_selection_binding_actions(state);
+  refresh_task_destination_card();
   QStringList advanced_lines;
   advanced_lines << QString("Scene: %1").arg(selected_scene_state_.valid ? selected_scene_state_.name : QStringLiteral("none"));
   advanced_lines << QString("Scene path: %1").arg(selected_scene_state_.valid ? selected_scene_state_.path : QStringLiteral("(none)"));
@@ -5103,6 +5131,87 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   }
   live_coordinate_label_->clear();
   live_coordinate_label_->setVisible(false);
+}
+
+void MainWindow::refresh_task_destination_card()
+{
+  if (!task_destination_card_ || !task_destination_label_) return;
+  const auto state = current_selected_scene_item();
+  QJsonObject role;
+  if (state.valid && environment_task_editor_ && has_selected_scene() &&
+      environment_task_editor_->scene() == selected_scene_path())
+    role = environment_task_editor_->physical_destination(state.id.trimmed());
+  task_destination_card_->setVisible(!role.isEmpty());
+  if (role.isEmpty()) return;
+  const auto & place = environment_task_editor_->model().place;
+  const QString target = role.value("target").toString(), region = role.value("region").toString();
+  const QString task_asset = QString::fromStdString(place.asset_ref), task_region = QString::fromStdString(place.region_ref);
+  QStringList regions;
+  for (const auto & value : role.value("regions").toArray()) regions << value.toString();
+  const QString name = state.display_name.isEmpty() ? state.id : state.display_name;
+  QStringList lines;
+  if (role.value("kind").toString() == "region") {
+    lines << QString("Placement region %1 (ID %2) of physical target %3.").arg(name, region, target);
+    lines << "It is target-local: it moves and rotates with its target. Move the target, not the region.";
+  } else {
+    lines << QString("Physical target %1 (ID %2).").arg(name, target);
+    lines << QString("Placement region%1: %2 (target-local; follows this target).").arg(regions.size() == 1 ? "" : "s", regions.join(", "));
+  }
+  if (state.pose_available)
+    lines << QString("Pose in world: (%1, %2, %3) m, RPY (%4°, %5°, %6°).")
+               .arg(state.pose_x, 0, 'f', 3).arg(state.pose_y, 0, 'f', 3).arg(state.pose_z, 0, 'f', 3)
+               .arg(qRadiansToDegrees(state.roll), 0, 'f', 1).arg(qRadiansToDegrees(state.pitch), 0, 'f', 1)
+               .arg(qRadiansToDegrees(state.yaw), 0, 'f', 1);
+  const bool used = task_asset == target && (region.isEmpty() ? regions.contains(task_region) : task_region == region);
+  if (used) {
+    lines << QString("Task destination: YES — the task places objects in %1.").arg(task_region);
+    const auto resolved = environment_task_editor_->resolved_destination();
+    if (resolved.value("target_id").toString() == target && resolved.value("id").toString() == task_region) {
+      const auto xyz = resolved.value("pose_xyz").toArray();
+      lines << QString("Place pose in world: (%1, %2, %3) m (Task › Where shows the target-local offsets).")
+                 .arg(xyz[0].toDouble(), 0, 'f', 3).arg(xyz[1].toDouble(), 0, 'f', 3).arg(xyz[2].toDouble(), 0, 'f', 3);
+    } else {
+      lines << "Place pose: not resolved — see Task › Where for the blocker.";
+    }
+  } else {
+    lines << QString("Task destination: no — the task places in %1 / %2.")
+               .arg(task_asset.isEmpty() ? QStringLiteral("(none)") : task_asset, task_region.isEmpty() ? QStringLiteral("(none)") : task_region);
+    if (role.value("kind").toString() == "target" && regions.size() > 1)
+      lines << "This target has several regions: after using it, choose one under Task › Placement region.";
+  }
+  if (layout_dirty_) lines << "Unsaved 3D edits: Save to update the task's resolved place and planning inputs.";
+  task_destination_label_->setText(lines.join("\n"));
+  const bool editable = environment_task_editor_->model().schema == "workcell_builder_task_intent/v2";
+  task_destination_bind_button_->setEnabled(!used && editable && !read_only_preview_active());
+  task_destination_bind_button_->setToolTip(used ? QStringLiteral("Already the task's destination.")
+    : !editable ? QStringLiteral("This cell has no editable task (TaskIntent v2) to bind.")
+    : read_only_preview_active() ? QStringLiteral("Read-only preview: open the cell for editing first.")
+    : QStringLiteral("Set the task's place target to this item (unsaved until Save task)."));
+}
+
+void MainWindow::use_selected_as_task_destination()
+{
+  const auto state = current_selected_scene_item();
+  const auto role = environment_task_editor_ && state.valid
+    ? environment_task_editor_->physical_destination(state.id.trimmed()) : QJsonObject();
+  if (role.isEmpty()) {
+    append_studio_log("Use Selected as Task Destination blocked: the selection is not a physical target or placement region.");
+    return;
+  }
+  const QString id = role.value("kind").toString() == "region" ? role.value("region").toString() : role.value("target").toString();
+  // The existing Task editor binding: it updates the TaskIntent draft (place target and region), never generated files.
+  if (!update_selected_scene_task_intent_binding("Task destination", {"place", "target", "id"}, id)) {
+    append_studio_log("Use Selected as Task Destination blocked: this cell has no editable task (TaskIntent v2).");
+    return;
+  }
+  append_studio_log(QStringLiteral("Task destination set to %1 (unsaved): Save task to use it.").arg(id));
+  if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(1);   // Task › Where shows the result
+  QTimer::singleShot(0, this, [this] {
+    auto * summary = environment_task_editor_ ? environment_task_editor_->findChild<QLabel *>("taskDestinationSummary") : nullptr;
+    for (QWidget * parent = summary ? summary->parentWidget() : nullptr; parent; parent = parent->parentWidget())
+      if (auto * area = qobject_cast<QScrollArea *>(parent)) { area->ensureWidgetVisible(summary, 0, 160); break; }
+  });
+  refresh_task_destination_card();
 }
 
 bool MainWindow::is_pick_source_candidate(const SelectedSceneItemState & state) const
@@ -9370,6 +9479,8 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   // before serialization.
   if (!layout_dirty_) capture_active_editable_layout_session();
   layout_dirty_ = true;
+  if (environment_task_editor_) environment_task_editor_->set_geometry_unsaved(true);
+  refresh_task_destination_card();
   schedule_operator_preview_update();
   layout_saved_ = false;
   notify_mate_scene_changed();
@@ -10387,6 +10498,11 @@ bool MainWindow::save_native_layout_changes(const QJsonObject & web_patch, QStri
     canvas->setData(RoleMetadataExplicitlyEdited, false);
   }
   layout_dirty_ = false;
+  // The saved geometry moved the physical destination: re-resolve it now (the task file itself is unchanged).
+  if (environment_task_editor_) {
+    environment_task_editor_->set_geometry_unsaved(false);
+    if (environment_task_editor_->scene() == selected_scene_path()) environment_task_editor_->validate_now();
+  }
   schedule_operator_preview_update();
   if (save_layout_button_) {
     save_layout_button_->setProperty("layoutDirty", false);
@@ -10613,6 +10729,7 @@ void MainWindow::create_starter_layout_from_preview()
 void MainWindow::revert_layout_changes()
 {
   refresh_environment_task_editor();
+  if (environment_task_editor_) environment_task_editor_->set_geometry_unsaved(false);
   rebuild_digital_twin_canvas();
   layout_dirty_ = false;
   schedule_operator_preview_update();
