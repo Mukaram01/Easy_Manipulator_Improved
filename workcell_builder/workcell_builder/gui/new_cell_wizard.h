@@ -41,15 +41,7 @@ public:
   NewCellWizardResult result() const { return result_; }
 
   static bool is_valid_package_name(const QString &name);
-  static QString default_gripper_rpy_text();
   static QStringList recommended_environment_assets();
-  static QString default_robot_base_link(const QString &robot_family, const QString &robot_model);
-  static QString default_robot_tip_link(const QString &robot_family, const QString &robot_model);
-  static QString default_robot_planning_group(const QString &robot_family, const QString &robot_model);
-  static QString default_end_effector_attach_link(const QString &model);
-  static QString default_end_effector_tcp_link(const QString &model);
-  static QString default_end_effector_type(const QString &model);
-  static QString default_end_effector_family_readiness(const QString &family);
   static QList<NewCellScenarioChoice> load_industrial_scenario_choices(const QString &catalog_path);
   // Object materials qualified for the physics simulator (catalog/simulation/qualified_physics.yaml).
   static QStringList load_qualified_physics_materials(const QString &catalog_path);
@@ -60,6 +52,14 @@ public:
   bool sorting_scenario() const;
   QString review_text() const;
   bool pick_place_configuration_available() const;
+  // Robot and tool choices come from the capability catalog joined with the installed models and the reviewed
+  // New Cell profiles (instantiate_workcell_studio_profile.py --equipment); a combination's status is
+  // PLAN_CAPABLE, CONFIGURABLE, UNCOMMISSIONED or UNSUPPORTED, with its reason.
+  QString selected_robot_id() const;
+  QString selected_tool_id() const;
+  bool select_equipment(const QString &robot_id, const QString &tool_id);
+  QJsonObject equipment_combination() const;
+  QStringList equipment_blockers() const;
   QString selected_object_source_id() const;
   bool select_object_source_by_id(const QString &source_id);
   bool manual_object_geometry_valid() const;
@@ -69,20 +69,6 @@ protected:
 
 private:
   void fit_available_screen();
-  struct ToolSelectionReadiness { QString status; QString reason; };
-  struct ToolModelProfile {
-    QString family;
-    QString model;
-    QString ee_type;
-    QString attach_link;
-    QString tcp_link;
-    double roll{-1.5708};
-    double pitch{-1.5708};
-    double yaw{0.0};
-    QString readiness{"READY"};
-    QString reason{"Built-in tool profile defaults applied."};
-  };
-
   void build_ui();
   void refresh_validation();
   void refresh_summary();
@@ -103,19 +89,13 @@ private:
   void add_environment_asset_row(const QString &id, const QString &asset, const QString &parent, const QString &parent_link, const QString &child_link, const QString &role);
   void select_environment_substep(int index);
   QStringList discover_environment_asset_catalog() const;
-  QStringList discover_robot_models_for_family(const QString &robot_family) const;
-  QStringList discover_robot_models_from_assets(const QString &robot_family) const;
-  QStringList discover_robot_models_from_catalog(const QString &robot_family) const;
-  QStringList discover_tool_models_from_catalog(const QString &tool_family) const;
-  QString normalize_tool_family(const QString &raw_family) const;
-  QStringList builtin_tool_models_for_family(const QString &tool_family) const;
-  ToolModelProfile tool_profile_for_selection(const QString &tool_family, const QString &tool_model) const;
-  void refresh_tool_model_options(const QString &tool_family);
-  void apply_tool_profile_selection();
-  ToolSelectionReadiness evaluate_tool_readiness() const;
-  QString normalize_robot_family(const QString &raw_family) const;
+  void load_equipment();
+  QJsonObject equipment_record(const char *kind, const QString &id) const;
+  QJsonObject equipment_profile() const;
   void refresh_robot_model_options(const QString &robot_family);
-  void refresh_robot_links_for_selection();
+  void refresh_tool_model_options(const QString &tool_family);
+  // Frames, planning group, controller, tool type, release and grasp strategies of the selected pair.
+  void apply_equipment_selection();
   bool create_scene_scaffold(bool open_in_builder);
   QString scene_name_error() const;
   QString scene_name_warning() const;
@@ -127,6 +107,8 @@ private:
   QString workspace_root_;
   QString recommended_profile_;
   QString recommended_profile_error_;
+  QJsonObject equipment_;
+  QString equipment_error_;
   QString profile_helper_path() const;
 
   QListWidget *steps_{nullptr};
