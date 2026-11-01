@@ -216,3 +216,21 @@ def test_selected_cell_is_one_identity_scoped_per_cell_and_remembered():
     assert "validation_state_.clear();" in record and "scene_content_readiness" in record
     assert "scene_builder_editor_scene_path_ != selected_scene_path()" in SETUP
     assert "home/last_selected_scene_path" in TARGET
+
+
+def test_home_follows_every_table_repopulation_and_the_selected_cell_identity():
+    # New Cell, Delete and generation repopulate the table: the shell re-sorts, recounts and
+    # refreshes its details at once (counts before the footer reads the total).
+    assert 'findChild<QAction *>(QStringLiteral("studioTargetRefreshHome"))' in HOME_POPULATION
+    assert 'refresh_action->setObjectName(QStringLiteral("studioTargetRefreshHome"))' in TARGET
+    refresh = section(TARGET, "const auto refresh_home = [", "const auto apply_filters")
+    assert refresh.index("refresh_metrics(") < refresh.index("apply_composed_filters(")
+    # Sort and filters keep the selected cell by its canonical directory, never by a row index.
+    assert "studioSelectedScenePath" in MAINWINDOW and "selected_scene_dir(table)" in TARGET
+    sort = section(TARGET, "inline void sort_target_rows", "inline void refresh_target_details")
+    assert "scene_dir_at(table, new_row) == selected_dir" in sort and "scene_id_at(table, new_row) ==" not in sort
+    # Create Cell selects the new cell; Delete drops the deleted cell's session and remembered selection.
+    create = section(MAINWINDOW, "void MainWindow::open_new_scene_creation_flow", "void MainWindow::setup_studio_shell()")
+    assert "select_scene_index(index)" in create
+    delete = section(MAINWINDOW, "void MainWindow::delete_selected_scene()", "bool MainWindow::select_scene_index")
+    assert "leave_cell_session_for(-1);" in delete and 'remove(QStringLiteral("home/last_selected_scene_path"))' in delete

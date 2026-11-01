@@ -2091,7 +2091,8 @@ void MainWindow::open_new_scene_creation_flow()
     .arg(created.scene_name));
   refresh_scene_browser_ui();
   const int index = workcell_builder::find_scene_by_identity(scene_browser_result_, created.scene_dir);
-  if (index < 0 || (created.open_in_scene_builder && !open_scene_builder_for_scene_index(index, "New Cell Wizard"))) {
+  if (index < 0 || (created.open_in_scene_builder ? !open_scene_builder_for_scene_index(index, "New Cell Wizard")
+                                                  : !select_scene_index(index))) {
     QMessageBox::warning(this, "Cell saved; open failed",
       "The cell was saved at " + QString::fromStdString(created.scene_dir.string()) +
       ". Refresh Home and open that path. Do not create it again.");
@@ -5429,6 +5430,9 @@ void MainWindow::refresh_studio_home_scene_table()
   }
   if (dashboard_empty_state_card_) dashboard_empty_state_card_->setVisible(dashboard_scene_table_->rowCount() == 0);
   if (dashboard_open_scene_action_) dashboard_open_scene_action_->setEnabled(restored_home_selection);
+  // The Home shell re-sorts, recounts and refreshes its details for the new rows now.
+  if (auto * refresh_home = dashboard_scene_table_->findChild<QAction *>(QStringLiteral("studioTargetRefreshHome")))
+    refresh_home->trigger();
 }
 
 QString MainWindow::home_scene_id_at_row(int row) const
@@ -5542,8 +5546,15 @@ void MainWindow::delete_selected_scene()
     return;
   }
   append_studio_log("Delete Scene moved to trash: " + QString::fromStdString(trash_target.string()));
+  // The confirmed delete discarded the cell with its unsaved edits, undo history and results.
+  layout_dirty_ = false;
+  leave_cell_session_for(-1);
   selected_scene_index_ = -1;
+  sync_selected_scene_state();
+  show_selected_scene_validation_record();
+  QSettings().remove(QStringLiteral("home/last_selected_scene_path"));
   refresh_scene_browser_ui();
+  refresh_preview_launch_ui();
 }
 
 // The one way a cell becomes the selected cell, from Home or a scene list. Generate,
@@ -8332,6 +8343,7 @@ void MainWindow::sync_selected_scene_state()
 {
   schedule_operator_preview_update();
   selected_scene_state_ = {};
+  if (dashboard_scene_table_) dashboard_scene_table_->setProperty("studioSelectedScenePath", QString());
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return;
   const auto & s = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
   selected_scene_state_.valid = true;
@@ -8347,6 +8359,7 @@ void MainWindow::sync_selected_scene_state()
   selected_scene_state_.launchable = s.has_launch_demo;
   // The context header names the open cell from this, not from the Home table selection.
   setProperty("studioOpenedSceneId", selected_scene_state_.name);
+  if (dashboard_scene_table_) dashboard_scene_table_->setProperty("studioSelectedScenePath", selected_scene_home_identity());
 }
 
 void MainWindow::sync_selected_item_state()
