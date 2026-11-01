@@ -97,6 +97,13 @@ inline QString scene_dir_at(QTableWidget * table, int row)
   return QDir::cleanPath(table->item(row, 0)->data(kCanonicalScenePathRole).toString().trimmed());
 }
 
+// MainWindow publishes the selected cell's canonical directory here; Home keeps that
+// cell selected across sort and filter changes instead of a stale row index.
+inline QString selected_scene_dir(QTableWidget * table)
+{
+  return table ? QDir::cleanPath(table->property("studioSelectedScenePath").toString()) : QString();
+}
+
 inline QString scene_dir_for_row(QTableWidget * table, int row, const QString & workspace_root)
 {
   const QString stored = scene_dir_at(table, row);
@@ -595,6 +602,10 @@ inline void apply_composed_filters(QTableWidget * table, QLineEdit * search, QCo
     table->clearSelection();
     table->setCurrentCell(-1, -1);
   }
+  const QString selected_dir = selected_scene_dir(table);
+  if (table->currentRow() < 0 && !selected_dir.isEmpty() && selected_dir != QStringLiteral("."))
+    for (int row = 0; row < table->rowCount(); ++row)
+      if (!table->isRowHidden(row) && scene_dir_at(table, row) == selected_dir) { table->setCurrentCell(row, 0); break; }
   if (footer) {
     const int total = table->property("studioTargetTotalWorkcells").toInt();
     footer->setText(QStringLiteral("Showing %1 of %2 workcells").arg(visible).arg(total > 0 ? total : table->rowCount()));
@@ -646,7 +657,9 @@ inline void refresh_metrics(QMainWindow * window, QTableWidget * table)
 inline void sort_target_rows(QTableWidget * table, QComboBox * sort)
 {
   if (!table || !sort || table->rowCount() < 2) return;
-  const QString selected_id = scene_id_at(table, table->currentRow());
+  const QString published = selected_scene_dir(table);
+  const QString selected_dir = published.isEmpty() || published == QStringLiteral(".")
+    ? scene_dir_at(table, table->currentRow()) : published;
   std::vector<int> order(static_cast<std::size_t>(table->rowCount()));
   for (int row = 0; row < table->rowCount(); ++row) {
     order[static_cast<std::size_t>(row)] = row;
@@ -686,7 +699,7 @@ inline void sort_target_rows(QTableWidget * table, QComboBox * sort)
     const int old_row = order[static_cast<std::size_t>(new_row)];
     for (int column = 0; column < 6; ++column)
       table->setItem(new_row, column, rows[static_cast<std::size_t>(old_row)][static_cast<std::size_t>(column)]);
-    if (scene_id_at(table, new_row) == selected_id) table->setCurrentCell(new_row, 0);
+    if (!selected_dir.isEmpty() && scene_dir_at(table, new_row) == selected_dir) table->setCurrentCell(new_row, 0);
   }
 }
 
@@ -1002,8 +1015,8 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
     restore_pinned_state(table);
     refresh_filter_options(table, robot, tool);
     sort_target_rows(table, sort);
-    apply_composed_filters(table, search, status, robot, tool, pinned, footer);
     refresh_metrics(window, table);
+    apply_composed_filters(table, search, status, robot, tool, pinned, footer);
     refresh_target_details(window, table, workspace_root);
     table->viewport()->update();
   };
@@ -1016,6 +1029,11 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
   if (search) QObject::connect(search, &QLineEdit::textChanged, table, [apply_filters](const QString &) { apply_filters(); });
   if (status) QObject::connect(status, qOverload<int>(&QComboBox::currentIndexChanged), table, [apply_filters](int) { apply_filters(); });
   QObject::connect(sort, qOverload<int>(&QComboBox::currentIndexChanged), table, [refresh_home](int) { refresh_home(); });
+  // MainWindow repopulates the table after New Cell, Delete and generation: it triggers
+  // this so order, counts, footer and details follow at once, not on the next visit.
+  auto * refresh_action = new QAction(table);
+  refresh_action->setObjectName(QStringLiteral("studioTargetRefreshHome"));
+  QObject::connect(refresh_action, &QAction::triggered, table, [refresh_home](bool) { refresh_home(); });
   if (auto * pages = qobject_cast<QStackedWidget *>(dashboard->parentWidget())) {
     QObject::connect(pages, &QStackedWidget::currentChanged, home,
       [refresh_home](int index) { if (index == 0) refresh_home(); });
