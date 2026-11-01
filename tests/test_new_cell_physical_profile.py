@@ -81,6 +81,51 @@ def test_export_refuses_equipment_that_is_not_plan_capable(tmp_path):
         export_scene(tmp_path, tmp_path, validate=False)
 
 
+def test_export_verifies_actual_reviewed_pair_not_just_saved_ready_label():
+    from export_builder_scene_to_cell_definition import _require_reviewed_new_cell_equipment
+    _, reviewed = load_profile('ur5_2f_workbench')
+    valid = copy.deepcopy(reviewed)
+    valid['workcell_studio'] = {
+        'equipment': {'status': 'PLAN_CAPABLE', 'profile': 'ur5_2f_workbench',
+                      'robot_capability': 'ur5', 'tool_capability': 'robotiq_2f_85'},
+        'robot': {'capability': 'ur5', 'controller': 'ur5_arm_controller', 'readiness': 'PLAN_CAPABLE'},
+        'tool': {'capability': 'robotiq_2f_85'},
+    }
+    _require_reviewed_new_cell_equipment(valid)
+
+    # An authoring-only pair cannot become plan-capable by changing YAML's
+    # status or forging the reviewed profile name.
+    wrong_pair = copy.deepcopy(valid)
+    wrong_pair['workcell_studio']['tool']['capability'] = 'onrobot_airpick_style'
+    wrong_pair['workcell_studio']['equipment']['tool_capability'] = 'onrobot_airpick_style'
+    with pytest.raises(ValueError, match='EQUIPMENT_NOT_PLAN_CAPABLE'):
+        _require_reviewed_new_cell_equipment(wrong_pair)
+
+    for section, path, value in [
+        ('robot', ('srdf', 'package'), 'ur10_moveit_config'),
+        ('robot', ('description', 'package'), 'another_robot_description'),
+        ('robot', ('planning_group',), 'unsupported_group'),
+        ('end_effector', ('capability',), 'onrobot_airpick_style'),
+        ('end_effector', ('model',), 'airpick'),
+    ]:
+        changed = copy.deepcopy(valid)
+        field = changed[section]
+        for key in path[:-1]:
+            field = field[key]
+        field[path[-1]] = value
+        with pytest.raises(ValueError, match='EQUIPMENT_NOT_PLAN_CAPABLE'):
+            _require_reviewed_new_cell_equipment(changed)
+
+    removed = copy.deepcopy(valid)
+    del removed['workcell_studio']['equipment']
+    with pytest.raises(ValueError, match='EQUIPMENT_NOT_PLAN_CAPABLE'):
+        _require_reviewed_new_cell_equipment(removed)
+
+    # Older scenes without a new-wizard equipment binding retain their
+    # established export/validation behaviour.
+    _require_reviewed_new_cell_equipment({'robot': {'model': 'legacy'}})
+
+
 def test_sorting_cell_has_two_bins_camera_and_camera_visible_test_objects(tmp_path):
     """New Cell > Sorting: the reviewed two-bin layout, the test objects the camera can classify, and a cycle task."""
     from simulator_world import derive_world
