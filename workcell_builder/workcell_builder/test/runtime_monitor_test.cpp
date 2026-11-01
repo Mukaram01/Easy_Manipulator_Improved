@@ -95,6 +95,9 @@ TEST(RuntimeMonitor, RuntimeFailureCodesAreExplainedWithAnAction)
   d = diagnose_failure("OBSERVATION_PRODUCER_REJECTED: 'manual_simulated' observations may not come from 'replay'");
   EXPECT_EQ(d.code, "OBSERVATION_PRODUCER_REJECTED");
   EXPECT_TRUE(d.action.contains("Recorded observations (replay)"));
+  d = diagnose_failure("PLACE_REGION_TARGET_MISMATCH: place region is bound to a different physical target asset");
+  EXPECT_EQ(d.code, "PLACE_REGION_TARGET_MISMATCH");
+  EXPECT_TRUE(d.action.contains("Use Selected as Task Destination"));
   EXPECT_EQ(diagnose_failure("launch/planning deadline exceeded").code, "EXECUTION_TIMEOUT");
   EXPECT_EQ(diagnose_failure("SHUTDOWN_UNCLEAN: move_group exit -11 after the owned stop").code, "SHUTDOWN_UNCLEAN");
   // R2.4A class routing: a wrong route, a substituted bin, and physics outside its one-destination qualification.

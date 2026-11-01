@@ -687,6 +687,23 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   assets_ = choice_field(where, "taskPlaceAsset", "Physical target", "place/target/asset_ref", {});
   regions_ = choice_field(where, "taskPlaceRegion", "Placement region", "place/target/region_ref", {});
   {
+    // Where the robot places, as the validator resolves it (physical_destination): the physical target, its
+    // target-local placement region (which moves with the target) and the resulting place pose in world.
+    auto * summary = new QLabel(this); summary->setObjectName("taskDestinationSummary");
+    summary->setWordWrap(true); summary->setFrameShape(QFrame::StyledPanel);
+    summary->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);  // wraps, never widens the panel
+    where->addRow(summary);
+    auto * show = new QPushButton("Show physical target in 3D", this); show->setObjectName("taskShowDestination");
+    show->setToolTip("Select the task's physical target in Product View and the Inspector.");
+    where->addRow(show);
+    connect(show, &QPushButton::clicked, this, [this] {
+      const auto target = physical_destination(QString::fromStdString(model_.place.asset_ref));
+      if (!target.isEmpty()) emit show_target_requested(target["target_layout"].toString());
+    });
+  }
+  {
     // Class routing (routing.mode class): a rule table sending each detected class to an authored placement
     // region. Many classes may share a region; a class without an enabled rule follows the unrouted policy.
     // No rows = direct pick/place into the placement region above.
@@ -909,7 +926,7 @@ void TaskIntentEditor::refresh_fields()
   findChild<QPushButton *>("taskSimulationBatchPlanCheck")->setEnabled(batch_ready && !plan_check_);
   findChild<QPushButton *>("taskSimulationSequenceCheck")->setEnabled(batch_ready && !plan_check_);
   loading_ = false;
-  refresh_input_status();
+  refresh_input_status(); refresh_destination_summary();
 }
 QString TaskIntentEditor::stored_input_path(const QString & path) const
 {
@@ -1135,7 +1152,7 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     const auto current = file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
     if (current == loaded_bytes_) { setEnabled(true); return true; }
   }
-  if (scene != scene_) stop_plan_check(90000);
+  if (scene != scene_) { stop_plan_check(90000); geometry_unsaved_ = false; }
   scene_ = scene; helper_ = helper; dirty_ = false; error_.clear(); input_blocker_.clear(); input_errors_.clear();
   age_follows_mode_ = false; input_note_.clear();
   findChild<QLabel *>("taskCameraRgbPreview")->setPixmap(QPixmap());
@@ -1211,7 +1228,7 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
   else if (auto * summary = findChild<QLabel *>("taskSequenceSummary"); summary && dirty_ &&
            summary->text().startsWith("Unsaved changes — checking"))
     summary->setText("Unsaved changes — no sequence: the check will use the whole queue, all automatic.");
-  update_dirty_ui();  refresh_input_status();
+  update_dirty_ui();  refresh_input_status();  refresh_destination_summary();
 }
 void TaskIntentEditor::validate_now()
 {
@@ -1275,6 +1292,110 @@ void TaskIntentEditor::bind_destination(const QString & id)
     if (matches.size() == 1) set_field("place/target/region_ref", matches.first());
   }
   refresh_fields();
+}
+
+QJsonObject TaskIntentEditor::physical_destination(const QString & id) const
+{
+  // Roles come from the saved physical model only: an asset is a physical target when a placement region
+  // names it (target_ref); a region is target-local and never an independent destination.
+  if (id.trimmed().isEmpty() || scene_.isEmpty()) return {};
+  const QFileInfo environment(scene_ + "/environment.yaml");
+  const QString key = environment.absoluteFilePath() + "@" + QString::number(environment.lastModified().toMSecsSinceEpoch()) +
+                      ":" + QString::number(environment.size());
+  if (key != destinations_key_) {
+    destinations_key_ = key; destinations_.clear();
+    try {
+      const auto root = YAML::LoadFile(environment.absoluteFilePath().toStdString());
+      const auto env = root["environment"] ? root["environment"] : root;
+      const auto text = [](const YAML::Node & node, const char * name) {
+        return node[name] && node[name].IsScalar() ? QString::fromStdString(node[name].as<std::string>()) : QString();
+      };
+      QMap<QString, QStringList> regions;   // target -> its placement regions
+      for (const auto & zone : env["task_zones"])
+        if (!text(zone, "target_ref").isEmpty()) regions[text(zone, "target_ref")] << text(zone, "id");
+      for (const auto & asset : env["assets"]) {
+        const QString target = text(asset, "id");
+        if (!regions.contains(target)) continue;
+        const QString layout = text(asset, "layout_item_ref").isEmpty() ? target : text(asset, "layout_item_ref");
+        const QJsonObject entry{{"kind", "target"}, {"target", target}, {"target_layout", layout},
+                                {"regions", QJsonArray::fromStringList(regions[target])}};
+        destinations_[target] = entry; destinations_[layout] = entry;
+      }
+      for (const auto & zone : env["task_zones"]) {
+        const QString target = text(zone, "target_ref");
+        if (target.isEmpty() || !destinations_.contains(target)) continue;
+        auto entry = destinations_[target];
+        entry["kind"] = "region"; entry["region"] = text(zone, "id");
+        destinations_[text(zone, "id")] = entry;
+        if (!text(zone, "layout_item_ref").isEmpty()) destinations_[text(zone, "layout_item_ref")] = entry;
+      }
+    } catch (const std::exception &) { destinations_.clear(); }
+  }
+  return destinations_.value(id.trimmed());
+}
+
+void TaskIntentEditor::set_geometry_unsaved(bool unsaved)
+{
+  if (geometry_unsaved_ == unsaved) return;
+  geometry_unsaved_ = unsaved; refresh_destination_summary();
+}
+
+QString TaskIntentEditor::destination_summary() const
+{
+  const auto asset = QString::fromStdString(model_.place.asset_ref);
+  const auto region = QString::fromStdString(model_.place.region_ref);
+  if (asset.isEmpty() && region.isEmpty())
+    return "Destination: none. Choose a Physical target, or select a bin in the 3D view and use "
+           "Inspector › Use Selected as Task Destination.";
+  const auto xyz = [](const QJsonValue & value) {
+    const auto a = value.toArray();
+    return QString("(%1, %2, %3)").arg(a[0].toDouble(), 0, 'f', 3).arg(a[1].toDouble(), 0, 'f', 3).arg(a[2].toDouble(), 0, 'f', 3);
+  };
+  const auto degrees = [](const QJsonValue & value) {
+    const auto a = value.toArray(); const double k = 180.0 / M_PI;
+    return QString("(%1°, %2°, %3°)").arg(a[0].toDouble() * k, 0, 'f', 1).arg(a[1].toDouble() * k, 0, 'f', 1).arg(a[2].toDouble() * k, 0, 'f', 1);
+  };
+  QStringList lines;
+  const auto d = resolved_destination();
+  if (d.isEmpty() || d["target_id"].toString() != asset || d["id"].toString() != region) {
+    lines << QString("Physical target: %1 · Placement region: %2").arg(asset.isEmpty() ? "none" : asset, region.isEmpty() ? "none" : region);
+    QString reason;
+    for (const auto & value : report_["errors"].toArray()) {
+      const auto error = value.toString();
+      if (error.startsWith("PLACE_") || error.startsWith("R19_DESTINATION") || error.startsWith("TASK_ROUTE")) { reason = error; break; }
+    }
+    lines << (!reason.isEmpty() ? "Place pose: BLOCKED — " + reason
+              : dirty_ ? QString("Place pose: checking the unsaved change…")
+                       : QString("Place pose: not resolved — the task has errors (see below); planning stays blocked."));
+    if (!reason.isEmpty())
+      lines << "Next: select the destination bin in the 3D view and use Inspector › Use Selected as Task Destination, "
+               "or choose a physical target and one of its placement regions above.";
+  } else {
+    lines << QString("Physical target: %1 — world %2 m, RPY %3").arg(asset, xyz(d["target_pose_xyz"]), degrees(d["target_pose_rpy"]));
+    const auto local = d.contains("region_local") ? d["region_local"].toObject() : d["placement_local"].toObject();
+    const auto size = local["dimensions"].toArray();
+    lines << QString("Placement region: %1 — target-local offset %2 m, size %3 × %4 × %5 m; it moves with its target.")
+               .arg(region, xyz(local["pose_xyz"])).arg(size[0].toDouble(), 0, 'f', 3).arg(size[1].toDouble(), 0, 'f', 3)
+               .arg(size[2].toDouble(), 0, 'f', 3);
+    const auto policy = QString::fromStdString(model_.place.policy);
+    if (d.contains("region_local"))
+      lines << QString("Place pose (%1): target-local %2 m → world %3 m.").arg(policy, xyz(d["placement_local"].toObject()["pose_xyz"]), xyz(d["pose_xyz"]));
+    else
+      lines << QString("Place pose (%1): region centre, world %2 m. With several objects the planner gives each a "
+                       "free place inside the region.").arg(policy, xyz(d["pose_xyz"]));
+    lines << "Every place is still checked by the collision-aware MoveIt plan.";
+  }
+  if (geometry_unsaved_)
+    lines << "Unsaved 3D edits: these coordinates are from the saved layout. Save to update them.";
+  return lines.join("\n");
+}
+
+void TaskIntentEditor::refresh_destination_summary()
+{
+  if (auto * label = findChild<QLabel *>("taskDestinationSummary")) label->setText(destination_summary());
+  if (auto * show = findChild<QPushButton *>("taskShowDestination"))
+    show->setEnabled(!physical_destination(QString::fromStdString(model_.place.asset_ref)).isEmpty());
+  emit destination_changed();
 }
 
 TaskIntentEditor::~TaskIntentEditor()

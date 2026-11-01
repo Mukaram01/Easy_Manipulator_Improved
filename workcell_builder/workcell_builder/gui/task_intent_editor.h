@@ -28,9 +28,19 @@ public:
   QString scene() const { return scene_; }
   QString blocker(bool require_input = true) const;
   const workcell_builder::TaskIntentModel & model() const { return model_; }
+  // The validator's resolved destination for the saved environment and current draft (empty when blocked).
+  QJsonObject resolved_destination() const { return report_["resolved_destination"].toObject(); }
+  // Physical-destination role of a scene item (semantic or layout ID) from the saved environment.yaml:
+  // {kind: target|region, target, target_layout, regions[]}; empty when the item is neither.
+  QJsonObject physical_destination(const QString & id) const;
+  QString destination_summary() const;
+  // Product View has moved geometry that is not saved yet: the resolved destination is the saved one.
+  void set_geometry_unsaved(bool unsaved);
 signals:
   void edited();
   void saved();
+  void destination_changed();
+  void show_target_requested(const QString & target_layout_id);
 private:
   void start_plan_check(bool sequence = false);
   void on_plan_check_output();
@@ -48,10 +58,14 @@ private:
   // freshness and planning eligibility as the authoring helper (planning_input) reports it.
   void refresh_recordings();
   void refresh_input_status();
+  void refresh_destination_summary();
   void follow_mode_freshness(const QJsonObject & report);
   QString stored_input_path(const QString & path) const;
   QString producer_blocker(const QJsonObject & report) const;
-  bool age_follows_mode_{false}, clamping_age_{false};
+  bool age_follows_mode_{false}, clamping_age_{false}, geometry_unsaved_{false};
+  // physical_destination() index of the saved environment.yaml, rebuilt when the file changes.
+  mutable QString destinations_key_;
+  mutable QMap<QString, QJsonObject> destinations_;
   QString input_note_;
   workcell_builder::TaskIntentModel model_;
   QString scene_, helper_, loaded_bytes_, error_, input_blocker_;

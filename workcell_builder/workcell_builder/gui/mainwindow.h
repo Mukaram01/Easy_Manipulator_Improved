@@ -360,6 +360,9 @@ private:
   void refresh_selection_binding_actions(const SelectedSceneItemState & state);
   SelectedSceneItemState current_selected_scene_item() const;
   void refresh_selected_scene_item_labels(const SelectedSceneItemState & state);
+  // Inspector: the selected physical target / placement region and whether the task places there.
+  void refresh_task_destination_card();
+  void use_selected_as_task_destination();
   QString selected_scene_binding_id() const;
   bool update_selected_scene_task_intent_binding(
     const QString & binding_label,
@@ -653,6 +656,9 @@ private:
   QLabel * selection_scene_end_effector_label_{ nullptr };
   QLabel * selection_scene_launch_label_{ nullptr };
   QLabel * inspector_label_{ nullptr };
+  QFrame * task_destination_card_{ nullptr };
+  QLabel * task_destination_label_{ nullptr };
+  QPushButton * task_destination_bind_button_{ nullptr };
   QLabel * inspector_mount_relation_label_{ nullptr };
   QDoubleSpinBox * inspector_x_{ nullptr };
   QDoubleSpinBox * inspector_y_{ nullptr };
