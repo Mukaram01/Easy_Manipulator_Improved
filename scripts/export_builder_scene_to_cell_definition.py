@@ -349,9 +349,11 @@ def _require_reviewed_new_cell_equipment(env: dict[str, Any]) -> None:
     # A forged capability ID must not bless a scene that actually references
     # another robot model, MoveIt configuration, or end effector.
     robot = env.get("robot") or {}
-    tool = env.get("end_effector") or {}
+    authored_tool = env.get("tool") or {}
+    end_effector = env.get("end_effector") or {}
     ref_robot = reviewed["robot"]
-    ref_tool = reviewed["end_effector"]
+    ref_tool = reviewed["tool"]
+    ref_ee = reviewed["end_effector"]
     checks = (
         ("robot MoveIt package", (robot.get("srdf") or {}).get("package"),
          (ref_robot.get("srdf") or {}).get("package")),
@@ -359,12 +361,20 @@ def _require_reviewed_new_cell_equipment(env: dict[str, Any]) -> None:
          (ref_robot.get("srdf") or {}).get("xacro")),
         ("robot model package", (robot.get("description") or {}).get("package"),
          (ref_robot.get("description") or {}).get("package")),
+        ("robot model xacro", (robot.get("description") or {}).get("xacro"),
+         (ref_robot.get("description") or {}).get("xacro")),
         ("robot model macro", (robot.get("description") or {}).get("macro"),
          (ref_robot.get("description") or {}).get("macro")),
         ("planning group", robot.get("planning_group"), ref_robot.get("planning_group")),
-        ("end-effector capability", tool.get("capability"), ref_tool.get("capability")),
-        ("end-effector model", tool.get("model"), ref_tool.get("model")),
-        ("end-effector type", tool.get("type"), ref_tool.get("type")),
+        ("tool model", authored_tool.get("model"), ref_tool.get("model")),
+        ("tool type", authored_tool.get("type"), ref_tool.get("type")),
+        ("tool description", (authored_tool.get("description") or {}).get("xacro"),
+         (ref_tool.get("description") or {}).get("xacro")),
+        ("end-effector capability", end_effector.get("capability"), ref_ee.get("capability")),
+        ("end-effector model", end_effector.get("model"), ref_ee.get("model")),
+        ("end-effector type", end_effector.get("type"), ref_ee.get("type")),
+        ("end-effector description", (end_effector.get("description") or {}).get("xacro"),
+         (ref_ee.get("description") or {}).get("xacro")),
         ("arm controller", (studio.get("robot") or {}).get("controller"),
          (profile.get("runtime") or {}).get("arm_controller")),
     )
