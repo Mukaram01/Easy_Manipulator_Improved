@@ -3493,15 +3493,17 @@ assert.strictEqual(status.readiness_failure.url, status.final_failed_url);
     )
     assert result.stderr == ""
 
-def test_authoring_only_cell_requires_its_equipment_and_may_place_its_first_support_on_the_floor():
+def test_authoring_only_cell_requires_its_equipment_and_placement_follows_declared_mounting():
     js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
     # A scene may only narrow the required set to known categories; reviewed scenes keep all four.
     assert "state.sceneJson?.metadata?.required_physical_categories).filter(category => WEB3D_REQUIRED_CATEGORIES.includes(category))" in js
     assert "return declared.length ? declared : WEB3D_REQUIRED_CATEGORIES;" in js
     assert "const missing = web3dRequiredCategories().filter(" in js
-    # The floor is a placement support only while the scene has no support surface.
-    assert "placementPointFromViewport(position, { allowGround: !sceneHasSupportSurface() })" in js
-    assert "readinessCategoryForItem(record?.item) === 'workbench_support_surface'" in js
+    # The armed asset's declared mounting decides its support: floor-standing assets use the floor plane only,
+    # every other asset a physical support surface only; the support it rests on goes back to Builder.
+    assert "return String(state.placement.asset?.mounting || '') === 'floor';" in js
+    assert "placementStandsOnFloor() ? { groundOnly: true } : { allowGround: false }" in js
+    assert "support_owner_id: placementStandsOnFloor() ? '' : String(state.placement.supportOwnerId || '')" in js
 
 
 def test_viewer_emits_explicit_web3d_readiness_states_and_required_categories():

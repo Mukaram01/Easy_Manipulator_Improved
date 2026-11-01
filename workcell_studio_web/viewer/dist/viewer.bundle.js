@@ -44064,7 +44064,7 @@ function placementPointFromViewport(position, options = {}) {
   pointer.x = (clientX - rect.left) / rect.width * 2 - 1;
   pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const roots = [...state.objects.map((record) => record.object3d), ...state.pickRecords.map((record) => record.pickRoot || record.object3d)].filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
+  const roots = options.groundOnly ? [] : [...state.objects.map((record) => record.object3d), ...state.pickRecords.map((record) => record.pickRoot || record.object3d)].filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
     if (!isEligiblePlacementSurfaceHit(hit))
       continue;
@@ -44076,7 +44076,7 @@ function placementPointFromViewport(position, options = {}) {
       state.placement.supportOwnerId = String(explicitUiSelectionItemId(rendered) || rendered?.item?.support_surface_ref || rendered?.item?.id || "").trim();
     return resolvedPoint;
   }
-  const supportSurfacePoint = placementPointOnAuthoredSupportSurface(raycaster);
+  const supportSurfacePoint = options.groundOnly ? null : placementPointOnAuthoredSupportSurface(raycaster);
   if (supportSurfacePoint) {
     return supportSurfacePoint;
   }
@@ -44255,7 +44255,7 @@ function placementCanonicalRpy() {
   return { roll: rpy.x, pitch: rpy.y, yaw: rpy.z };
 }
 function placementRequest(point, repeat) {
-  return { ...point, ...placementCanonicalRpy(), repeat };
+  return { ...point, ...placementCanonicalRpy(), repeat, support_owner_id: placementStandsOnFloor() ? "" : String(state.placement.supportOwnerId || "") };
 }
 function contactCorrectPlacementPoint(supportPoint) {
   const placement = state.placement;
@@ -44296,7 +44296,7 @@ function updatePlacementStatus() {
   const collisions = state.placement.collidingOwnerIds || [];
   const orientation = placementPresetDefinition().label;
   status.title = collisions.join(", ");
-  status.innerHTML = point ? state.placement.collision ? `<strong>COLLISION</strong> \xB7 ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ""}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>VALID</strong> \xB7 X ${point.x.toFixed(3)} \xB7 Y ${point.y.toFixed(3)} \xB7 Z ${point.z.toFixed(3)} m${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>INVALID</strong> \xB7 ${state.placement.supportValid ? state.placement.invalidReason || "Placement preview unavailable" : "No valid placement surface"}${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>${state.placement.supportValid ? "Wait for physical geometry \xB7 Esc cancel" : "Move over a physical support surface \xB7 Esc cancel"}`;
+  status.innerHTML = point ? state.placement.collision ? `<strong>COLLISION</strong> \xB7 ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ""}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>VALID</strong> \xB7 X ${point.x.toFixed(3)} \xB7 Y ${point.y.toFixed(3)} \xB7 Z ${point.z.toFixed(3)} m${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>INVALID</strong> \xB7 ${state.placement.supportValid ? state.placement.invalidReason || "Placement preview unavailable" : "No valid placement surface"}${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>${state.placement.supportValid ? "Wait for physical geometry \xB7 Esc cancel" : placementStandsOnFloor() ? "Move over the floor \xB7 Esc cancel" : "Needs a support surface (table, fixture) \xB7 not the floor \xB7 Esc cancel"}`;
   const healthSignature = `${Boolean(state.placement.armed)}|${Boolean(state.placement.collision)}|${asArray(state.placement.collidingOwnerIds).join("|")}`;
   if (state.lastPlacementHealthSignature !== healthSignature) {
     state.lastPlacementHealthSignature = healthSignature;
@@ -44375,13 +44375,13 @@ async function createPlacementPreview(asset) {
   }
   return root;
 }
-function sceneHasSupportSurface() {
-  return state.objects.some((record) => readinessCategoryForItem(record?.item) === "workbench_support_surface");
+function placementStandsOnFloor() {
+  return String(state.placement.asset?.mounting || "") === "floor";
 }
 function updatePlacementPreview(position) {
   if (!state.placement.armed)
     return null;
-  return setPlacementPoint(placementPointFromViewport(position, { allowGround: !sceneHasSupportSurface() }));
+  return setPlacementPoint(placementPointFromViewport(position, placementStandsOnFloor() ? { groundOnly: true } : { allowGround: false }));
 }
 function updatePlacementPointer(clientX, clientY) {
   if (!Number.isFinite(clientX) || !Number.isFinite(clientY))

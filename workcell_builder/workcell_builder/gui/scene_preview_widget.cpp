@@ -2775,10 +2775,11 @@ void ScenePreviewWidget::poll_embedded_editor_events()
         const double pitch = event.value(QStringLiteral("pitch")).toDouble(&pitch_ok);
         const double yaw = event.value(QStringLiteral("yaw")).toDouble(&yaw_ok);
         const bool repeat_commit = event.value(QStringLiteral("repeat")).toBool();
+        const QString support_owner_id = event.value(QStringLiteral("support_owner_id")).toString().trimmed();
         if (x_ok && y_ok && z_ok && roll_ok && pitch_ok && yaw_ok &&
             std::isfinite(x) && std::isfinite(y) && std::isfinite(z) &&
             std::isfinite(roll) && std::isfinite(pitch) && std::isfinite(yaw)) {
-          emit embedded_asset_placement_requested(x, y, z, roll, pitch, yaw, repeat_commit);
+          emit embedded_asset_placement_requested(x, y, z, roll, pitch, yaw, repeat_commit, support_owner_id);
         } else {
           emit studio_log_requested(QStringLiteral(
             "Embedded Product View placement rejected: placement_requested requires finite x/y/z/roll/pitch/yaw."));
@@ -2869,7 +2870,7 @@ void ScenePreviewWidget::poll_embedded_editor_events()
 
 void ScenePreviewWidget::arm_embedded_asset_placement(
   const QString & asset_id, const QString & mesh_uri, double mesh_scale, bool persistent,
-  const QJsonObject & primitive)
+  const QJsonObject & primitive, const QString & mounting)
 {
   if (product_view_backend_ != ProductViewBackend::EmbeddedWeb3D) return;
   QJsonObject asset{
@@ -2879,6 +2880,7 @@ void ScenePreviewWidget::arm_embedded_asset_placement(
     {QStringLiteral("source_kind"), QStringLiteral("user_authored")},
     {QStringLiteral("source_layer"), QStringLiteral("placement_preview")},
     {QStringLiteral("mesh_scale"), QJsonArray{mesh_scale, mesh_scale, mesh_scale}},
+    {QStringLiteral("mounting"), mounting},
   };
   if (!primitive.isEmpty()) {
     // A primitive's ghost is its real-size solid (geometry_type + size), not a mesh.

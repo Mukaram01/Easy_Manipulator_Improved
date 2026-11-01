@@ -2778,9 +2778,26 @@ void MainWindow::setup_studio_shell()
       place_catalog_asset_at_world_position(asset_id, x, y, z, configure_transform);
     });
   connect(scene_preview_widget_, &ScenePreviewWidget::embedded_asset_placement_requested, this,
-    [this](double x, double y, double z, double roll, double pitch, double yaw, bool repeat_commit) {
+    [this](double x, double y, double z, double roll, double pitch, double yaw, bool repeat_commit,
+           const QString & support_owner_id) {
       if (!place_asset_armed_ || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
           !std::isfinite(roll) || !std::isfinite(pitch) || !std::isfinite(yaw)) return;
+      // The catalog's declared mounting decides where the asset may stand; the viewer only proposes.
+      if (armed_asset_mounting_ != QStringLiteral("floor") && support_owner_id.isEmpty()) {
+        const QString reason = QStringLiteral("%1 rests on a support surface (mounting: %2); place it on a table or fixture, "
+          "not on the floor.").arg(armed_asset_display_name_, armed_asset_mounting_);
+        append_studio_log(QStringLiteral("Asset placement refused: ") + reason);
+        statusBar()->showMessage(reason, 6000);
+        return;
+      }
+      if (armed_asset_mounting_ == QStringLiteral("floor") && !support_owner_id.isEmpty()) {
+        const QString reason = QStringLiteral("%1 stands on the floor (mounting: floor); it cannot rest on %2.")
+          .arg(armed_asset_display_name_, support_owner_id);
+        append_studio_log(QStringLiteral("Asset placement refused: ") + reason);
+        statusBar()->showMessage(reason, 6000);
+        return;
+      }
+      armed_asset_support_owner_ = support_owner_id;
       armed_asset_x_m_ = x;
       armed_asset_y_m_ = y;
       armed_asset_z_m_ = z;
@@ -12622,6 +12639,8 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   armed_asset_display_name_ = match->display_name;
   armed_asset_source_path_ = match->source_path;
   armed_asset_scale_ = match->scale;
+  armed_asset_mounting_ = match->mounting;
+  armed_asset_support_owner_.clear();
   reset_armed_asset_transform_to_defaults();
   armed_asset_use_clicked_xy_ = true;
   set_canvas_interaction_mode(CanvasInteractionMode::Place);
@@ -12641,7 +12660,7 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
     }
     scene_preview_widget_->arm_embedded_asset_placement(
       match->asset_id, match->source_path, match->scale,
-      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked(), primitive_geometry);
+      place_mode_persistent_box_ && place_mode_persistent_box_->isChecked(), primitive_geometry, match->mounting);
   }
   append_studio_log(QString("Place Asset Mode armed: %1 (%2) asset_id=%3. Click canvas to commit. Use clicked XY: %4 | xyzrpy=[%5, %6, %7, %8, %9, %10].")
     .arg(match->display_name, match->category, armed_asset_id_)
@@ -12801,6 +12820,21 @@ void MainWindow::commit_armed_asset_placement(
     .arg(armed_asset_roll_rad_, 0, 'f', 3).arg(armed_asset_pitch_rad_, 0, 'f', 3).arg(armed_asset_yaw_rad_, 0, 'f', 3)
     .arg(armed_asset_use_clicked_xy_ ? "true" : "false"));
   append_studio_log("ghost placement preview committed");
+  // A supported asset is mounted to the surface it rests on (world pose kept), through the
+  // same mounting resolver as Mount To, so it follows that surface and is saved as its child.
+  const QString support = armed_asset_support_owner_;
+  armed_asset_support_owner_.clear();
+  if (!support.isEmpty()) {
+    const bool support_editable = std::any_of(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(),
+      [&support](const ScenePreviewWidget::PreviewItem & p) {
+        return p.id == support && p.editable && !p.locked && p.source_layer == QStringLiteral("editable_layout"); });
+    if (!support_editable) {
+      append_studio_log(QStringLiteral("Asset placement: %1 rests on %2, which is not an editable layout item; "
+        "it stays in world coordinates (use Mount To to attach it).").arg(new_id, support));
+    } else if (commit_mounting_request({{"id", new_id}, {"parent_object", support}, {"parent_link", "origin"}})) {
+      append_studio_log(QStringLiteral("Asset placement: %1 mounted on support surface %2 (world pose kept).").arg(new_id, support));
+    }
+  }
   record_recent_asset(asset_id);
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
   if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
@@ -16615,6 +16649,7 @@ void MainWindow::populate_asset_catalog()
     ui_entry.availability_status = QString::fromStdString(source_entry.readiness.empty() ? "unknown" : source_entry.readiness);
     ui_entry.disabled_reason = source_entry.can_add_to_scene ? QString() : QString::fromStdString(source_entry.blockers.empty() ? source_entry.suggested_action : source_entry.blockers.front());
     ui_entry.scale = source_entry.scale;
+    ui_entry.mounting = QString::fromStdString(source_entry.mounting);
     asset_catalog_entries_.push_back(ui_entry);
   };
 

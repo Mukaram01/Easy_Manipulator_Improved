@@ -537,6 +537,7 @@ private:
     QString package_hint;
     QString format_label;
     double scale{ 1.0 };
+    QString mounting{ QStringLiteral("support_surface") };  // "floor" or "support_surface"
   };
 
   void run_layout_merge_for_selected_scene(bool from_generate_scene = false);
@@ -846,6 +847,8 @@ private:
   QString armed_asset_display_name_;
   QString armed_asset_source_path_;
   double armed_asset_scale_{ 1.0 };
+  QString armed_asset_mounting_{ QStringLiteral("support_surface") };
+  QString armed_asset_support_owner_;  // the support surface the Product View placed the asset on
   bool armed_asset_use_clicked_xy_{ true };
   QPointF armed_asset_default_xy_px_{ 0.0, 0.0 };
   bool armed_asset_transform_valid_{ true };

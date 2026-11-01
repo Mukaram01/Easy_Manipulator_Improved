@@ -1112,7 +1112,7 @@ def test_polled_browser_placement_is_typed_finite_and_identity_free():
     assert 'event_type == QStringLiteral("placement_requested")' in poll
     assert "std::isfinite(x) && std::isfinite(y)" in poll
     assert "std::isfinite(roll) && std::isfinite(pitch) && std::isfinite(yaw)" in poll
-    assert "emit embedded_asset_placement_requested(x, y, z, roll, pitch, yaw, repeat_commit);" in poll
+    assert "emit embedded_asset_placement_requested(x, y, z, roll, pitch, yaw, repeat_commit, support_owner_id);" in poll
     assert "asset_id" not in poll.split('event_type == QStringLiteral("placement_requested")', 1)[1].split(
         '} else if (event_type == QStringLiteral("selection_changed"))', 1
     )[0]

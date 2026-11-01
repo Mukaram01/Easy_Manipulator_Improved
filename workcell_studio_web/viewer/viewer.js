@@ -5531,7 +5531,7 @@ function placementPointFromViewport(position, options = {}) {
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const roots = [...state.objects.map(record => record.object3d), ...state.pickRecords.map(record => record.pickRoot || record.object3d)]
+  const roots = options.groundOnly ? [] : [...state.objects.map(record => record.object3d), ...state.pickRecords.map(record => record.pickRoot || record.object3d)]
     .filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
     if (!isEligiblePlacementSurfaceHit(hit)) continue;
@@ -5542,7 +5542,7 @@ function placementPointFromViewport(position, options = {}) {
     return resolvedPoint;
   }
 
-  const supportSurfacePoint = placementPointOnAuthoredSupportSurface(raycaster);
+  const supportSurfacePoint = options.groundOnly ? null : placementPointOnAuthoredSupportSurface(raycaster);
   if (supportSurfacePoint) {
     return supportSurfacePoint;
   }
@@ -5703,7 +5703,8 @@ function placementCanonicalRpy() {
   return { roll: rpy.x, pitch: rpy.y, yaw: rpy.z };
 }
 function placementRequest(point, repeat) {
-  return { ...point, ...placementCanonicalRpy(), repeat };
+  // The support it rests on (empty on the floor): Builder mounts the new asset to it.
+  return { ...point, ...placementCanonicalRpy(), repeat, support_owner_id: placementStandsOnFloor() ? '' : String(state.placement.supportOwnerId || '') };
 }
 function contactCorrectPlacementPoint(supportPoint) {
   const placement = state.placement;
@@ -5746,7 +5747,7 @@ function updatePlacementStatus() {
     ? state.placement.collision
       ? `<strong>COLLISION</strong> · ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ''}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
       : `<strong>VALID</strong> · X ${point.x.toFixed(3)} · Y ${point.y.toFixed(3)} · Z ${point.z.toFixed(3)} m${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
-    : `<strong>INVALID</strong> · ${state.placement.supportValid ? (state.placement.invalidReason || 'Placement preview unavailable') : 'No valid placement surface'}${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>${state.placement.supportValid ? 'Wait for physical geometry · Esc cancel' : 'Move over a physical support surface · Esc cancel'}`;
+    : `<strong>INVALID</strong> · ${state.placement.supportValid ? (state.placement.invalidReason || 'Placement preview unavailable') : 'No valid placement surface'}${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>${state.placement.supportValid ? 'Wait for physical geometry · Esc cancel' : (placementStandsOnFloor() ? 'Move over the floor · Esc cancel' : 'Needs a support surface (table, fixture) · not the floor · Esc cancel')}`;
   const healthSignature = `${Boolean(state.placement.armed)}|${Boolean(state.placement.collision)}|${asArray(state.placement.collidingOwnerIds).join('|')}`;
   if (state.lastPlacementHealthSignature !== healthSignature) {
     state.lastPlacementHealthSignature = healthSignature;
@@ -5823,14 +5824,14 @@ async function createPlacementPreview(asset) {
   }
   return root;
 }
-// Assets go on a physical support surface. A cell that has none yet (a new authoring-only cell) may place its
-// first asset, such as the workbench, on the floor; once a support surface exists the floor is refused again.
-function sceneHasSupportSurface() {
-  return state.objects.some(record => readinessCategoryForItem(record?.item) === 'workbench_support_surface');
+// The armed catalog asset's declared mounting decides its support: a floor-standing asset (mounting: floor)
+// stands on the floor plane only; every other asset rests on a physical support surface only.
+function placementStandsOnFloor() {
+  return String(state.placement.asset?.mounting || '') === 'floor';
 }
 function updatePlacementPreview(position) {
   if (!state.placement.armed) return null;
-  return setPlacementPoint(placementPointFromViewport(position, { allowGround: !sceneHasSupportSurface() }));
+  return setPlacementPoint(placementPointFromViewport(position, placementStandsOnFloor() ? { groundOnly: true } : { allowGround: false }));
 }
 function updatePlacementPointer(clientX, clientY) {
   if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
