@@ -206,7 +206,7 @@ void NewCellWizard::build_ui(){
  auto *s1=new QWidget(this); auto *f1=new QFormLayout(s1); display_name_=new QLineEdit(); scene_name_=new QLineEdit(); display_name_->setObjectName("newCellDisplayName"); scene_name_->setObjectName("newCellSceneName"); description_=new QTextEdit(); application_scenario_=new QComboBox(); application_scenario_->setObjectName("applicationScenarioCombo");
  const auto scenario_choices = load_industrial_scenario_choices(scenario_catalog_path());
  for (const auto &choice : scenario_choices) { application_scenario_->addItem(choice.label, choice.id); application_scenario_->setItemData(application_scenario_->count()-1, choice.category, Qt::UserRole+1); }
- output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Application / Scenario",application_scenario_); f1->addRow("Output scenes path",output_path_);
+ output_path_=new QLineEdit(QString::fromStdString(scenes_root_path().string())); scene_error_=new QLabel(); scene_warning_=new QLabel(); scene_name_->setPlaceholderText("e.g. my_pick_cell (lowercase letters, numbers, _)"); scene_error_->setObjectName("newCellSceneNameError"); f1->addRow(new QLabel("Fields marked <b>*</b> are required.")); f1->addRow("Cell display name",display_name_); f1->addRow("Scene/package name *",scene_name_); f1->addRow("",scene_error_); f1->addRow("",scene_warning_); f1->addRow("Description",description_); f1->addRow("Application / Scenario",application_scenario_); f1->addRow("Output scenes path",output_path_);
  // The only supported location; a cell kept elsewhere would not be discovered or editable in the 3D Scene Builder.
  output_path_->setReadOnly(true);
  auto *local_note=new QLabel("The cell is saved on this PC in the Workcell Studio scenes folder. New cells are not tracked by "
@@ -269,9 +269,21 @@ void NewCellWizard::build_ui(){
 
  auto *s6=new QWidget(this); auto *v6=new QVBoxLayout(s6); summary_=new QLabel(); summary_->setWordWrap(true); summary_->setFrameShape(QFrame::StyledPanel); v6->addWidget(summary_); mk_page(s6);
 
- auto*nav=new QHBoxLayout(); back_=new QPushButton("Back"); next_=new QPushButton("Next"); create_=new QPushButton("Create Cell"); create_open_=new QPushButton("Create and Open"); auto*cancel=new QPushButton("Cancel"); nav->addWidget(back_); nav->addWidget(next_); nav->addStretch(1); nav->addWidget(create_); nav->addWidget(create_open_); nav->addWidget(cancel); root->addLayout(nav);
+ auto*nav=new QHBoxLayout(); back_=new QPushButton("Back"); next_=new QPushButton("Next"); create_=new QPushButton("Create Cell"); create_open_=new QPushButton("Create and Open"); auto*cancel=new QPushButton("Cancel"); create_blocked_=new QLabel(); create_blocked_->setObjectName("newCellCreateBlocked"); create_blocked_->setWordWrap(true); create_blocked_->setTextFormat(Qt::RichText); nav->addWidget(back_); nav->addWidget(next_); nav->addWidget(create_blocked_,1); nav->addWidget(create_); nav->addWidget(create_open_); nav->addWidget(cancel); root->addLayout(nav);
  connect(steps_,&QListWidget::currentRowChanged,stack_,&QStackedWidget::setCurrentIndex); connect(steps_,&QListWidget::currentRowChanged,this,&NewCellWizard::refresh_validation); steps_->setCurrentRow(0);
  connect(scene_name_, &QLineEdit::textChanged, this, [this](const QString &) { refresh_validation(); });
+ // Until the package name is typed, propose one from the display name.
+ connect(scene_name_, &QLineEdit::textEdited, this, [this](const QString &) { scene_name_edited_ = true; });
+ connect(display_name_, &QLineEdit::textEdited, this, [this](const QString &text) {
+   if (scene_name_edited_) return;
+   QString slug = text.trimmed().toLower();
+   slug.replace(QRegularExpression("[^a-z0-9]+"), "_");
+   slug.remove(QRegularExpression("^[^a-z]+|_+$"));
+   scene_name_->setText(slug);
+ });
+ summary_->setTextFormat(Qt::RichText); summary_->setObjectName("newCellReviewSummary");
+ connect(summary_, &QLabel::linkActivated, this, &NewCellWizard::go_to_blocker);
+ connect(create_blocked_, &QLabel::linkActivated, this, &NewCellWizard::go_to_blocker);
  connect(output_path_, &QLineEdit::textChanged, this, [this](const QString &) { refresh_validation(); });
  connect(back_,&QPushButton::clicked,this,[this]{steps_->setCurrentRow(std::max(0,steps_->currentRow()-1));}); connect(next_,&QPushButton::clicked,this,[this]{steps_->setCurrentRow(std::min(5,steps_->currentRow()+1));}); connect(cancel,&QPushButton::clicked,this,&QDialog::reject);
  connect(create_,&QPushButton::clicked,this,[this]{if(create_scene_scaffold(false))accept();}); connect(create_open_,&QPushButton::clicked,this,[this]{if(create_scene_scaffold(true))accept();});
@@ -636,16 +648,53 @@ void NewCellWizard::refresh_validation(){
  QString readiness=configured_scenario()?"READY":"AUTHORING ONLY"; if(!blockers.isEmpty()) readiness="BLOCKED"; else if(!warnings.isEmpty() && configured_scenario()) readiness="WARNINGS";
  task_readiness_label_->setText(readiness);
  task_warning_->setText((blockers+warnings).join("\n"));
- const bool creatable=name_valid && recommended_profile_error_.isEmpty() && equipment_blockers().isEmpty();
+ const auto creation=creation_blockers(); const bool creatable=creation.isEmpty();
+ // The name field is the one required free-text input: mark it until it is valid.
+ scene_name_->setStyleSheet(name_valid ? QString() : QString("QLineEdit { border: 2px solid #e5484d; border-radius: 4px; }"));
+ for (auto *label : {scene_error_, scene_warning_}) { label->setStyleSheet(label->text().isEmpty() ? QString() : QString("color: #ff6b6b; font-weight: 600;")); label->setVisible(!label->text().isEmpty()); }
  create_->setEnabled(creatable); create_open_->setEnabled(creatable);
- const QString blocked=equipment_blockers().join("\n");
+ QStringList reasons; for (const auto &b : creation) reasons << b.text;
+ const QString blocked=creatable ? QString() : "Create is disabled until these are fixed:\n" + reasons.join("\n");
  create_->setToolTip(blocked); create_open_->setToolTip(blocked);
+ create_blocked_->setText(creatable ? QString() : QString("<span style='color:#ff6b6b'>Create disabled: %1</span> <a href='%2'>Fix</a>")
+   .arg(creation.size()==1 ? creation.first().text.toHtmlEscaped() : QString("%1 items to fix (see Review)").arg(creation.size()),
+        QString("goto:%1:%2").arg(creation.isEmpty() ? 0 : creation.first().page).arg(creation.isEmpty() ? QString() : creation.first().field)));
  refresh_summary();
+}
+
+QList<NewCellWizard::CreationBlocker> NewCellWizard::creation_blockers() const{
+ QList<CreationBlocker> out;
+ if(const QString e=scene_name_error(); !e.isEmpty()) out << CreationBlocker{0, "newCellSceneName", "Basics > Scene/package name: " + e};
+ if(const QString w=scene_name_warning(); !w.isEmpty()) out << CreationBlocker{0, "newCellSceneName", "Basics > Scene/package name: " + w};
+ for(const QString &b : equipment_blockers()) {
+   const bool tool=b.contains("End Effector") || b.contains("tool", Qt::CaseInsensitive);
+   out << CreationBlocker{tool && !b.contains("Robot >") ? 2 : 1, tool ? "newCellToolModel" : "newCellRobotModel", b};
+ }
+ if(!recommended_profile_error_.isEmpty()) out << CreationBlocker{3, QString(), "Environment: " + recommended_profile_error_};
+ return out;
+}
+
+void NewCellWizard::go_to_blocker(const QString &link){
+ const QStringList parts=link.split(':');
+ if(parts.size()<2 || parts.first()!="goto") return;
+ steps_->setCurrentRow(std::clamp(parts.at(1).toInt(), 0, 5));
+ if(parts.size()>2 && !parts.at(2).isEmpty())
+   if(auto *field=findChild<QWidget *>(parts.at(2))) field->setFocus(Qt::OtherFocusReason);
 }
 
 void NewCellWizard::refresh_summary(){
  QString readiness=task_readiness_label_?task_readiness_label_->text():"READY";
- summary_->setText(QString("<b>Application / Scenario:</b> %1 (%2)<br/><b>Object source:</b> %3 (%4)<br/><b>Robot:</b> family=%5 model=%6 | base=%7 tip=%8 planning=%9<br/><b>Tool:</b> family=%10 model=%11 | attach=%12 | tcp=%13 | type=%14 | mount rpy=%15,%16,%17 <br/><b>Equipment readiness:</b> %18<br/><b>Authoring status:</b> %19<br/><b>Warnings/Blockers:</b><br/>%20").arg(selected_scenario_label(),selected_scenario_id(),object_source_mode_->currentText(),selected_object_source_id(),robot_family_->currentText(),robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_family_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),(equipment_combination().value("status").toString()+" - "+equipment_combination().value("reason").toString()).toHtmlEscaped(),readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
+ const auto creation=creation_blockers();
+ // Overall creation readiness comes first and is never READY while Create is disabled.
+ QString creation_html;
+ if(creation.isEmpty()) creation_html="<p><b>Cell creation:</b> <span style='color:#3fb950'>READY</span> &mdash; Create Cell and Create and Open are enabled.</p>";
+ else {
+   creation_html=QString("<p><b>Cell creation:</b> <span style='color:#ff6b6b'>BLOCKED</span> &mdash; fix %1 item(s) to enable Create:</p><ul>").arg(creation.size());
+   for(const auto &b : creation) creation_html+=QString("<li>%1 <a href='goto:%2:%3'>Go to field</a></li>").arg(b.text.toHtmlEscaped()).arg(b.page).arg(b.field);
+   creation_html+="</ul>";
+   if(readiness=="READY") readiness="Task inputs complete; the cell is not created until the items above are fixed";
+ }
+ summary_->setText(creation_html + QString("<b>Application / Scenario:</b> %1 (%2)<br/><b>Object source:</b> %3 (%4)<br/><b>Robot:</b> family=%5 model=%6 | base=%7 tip=%8 planning=%9<br/><b>Tool:</b> family=%10 model=%11 | attach=%12 | tcp=%13 | type=%14 | mount rpy=%15,%16,%17 <br/><b>Equipment readiness:</b> %18<br/><b>Task authoring:</b> %19<br/><b>Warnings/Blockers:</b><br/>%20").arg(selected_scenario_label(),selected_scenario_id(),object_source_mode_->currentText(),selected_object_source_id(),robot_family_->currentText(),robot_->currentText(),robot_base_link_->currentText(),robot_tip_link_->currentText(),robot_planning_group_->currentText(),ee_family_->currentText(),ee_->currentText(),ee_attach_link_->currentText(),ee_tcp_link_->currentText(),ee_type_->currentText(),ee_roll_->text(),ee_pitch_->text(),ee_yaw_->text(),(equipment_combination().value("status").toString()+" - "+equipment_combination().value("reason").toString()).toHtmlEscaped(),readiness,task_warning_->text().toHtmlEscaped().replace("\n","<br/>")));
 }
 
 bool NewCellWizard::create_scene_scaffold(bool open_in_builder){

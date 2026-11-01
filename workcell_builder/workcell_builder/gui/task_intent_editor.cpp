@@ -28,6 +28,7 @@
 #include <QSaveFile>
 #include <QSet>
 #include <QSpinBox>
+#include <QToolButton>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QSignalBlocker>
@@ -222,11 +223,47 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
 {
   setObjectName("environmentTaskEditor");
   auto * layout = new QVBoxLayout(this);
-  auto section = [&](const QString & label) {
-    auto * group = new QGroupBox(label, this); layout->addWidget(group);
-    return new QFormLayout(group);
+  // A guided presentation of the same TaskIntent v2 fields: five steps, each with one plain-language purpose;
+  // expert controls stay available in collapsed sections.
+  auto * intro = new QLabel("Set up the task in five steps, then <b>Save task</b>. Engineering camera settings live on "
+                            "the camera's Inspector.", this);
+  intro->setWordWrap(true); layout->addWidget(intro);
+  auto step = [&](const QString & title, const QString & help, const QString & name) {
+    auto * group = new QGroupBox(title, this); group->setObjectName(name); layout->addWidget(group);
+    auto * form = new QFormLayout(group);
+    if (!help.isEmpty()) {
+      auto * label = new QLabel(help, group); label->setWordWrap(true);
+      label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+      form->addRow(label);
+    }
+    return form;
   };
-  auto * what = section("What / Pick eligibility");
+  auto collapsible = [this](QFormLayout * parent, const QString & title, const QString & name) {
+    auto * toggle = new QToolButton(this); toggle->setObjectName(name);
+    toggle->setText(title); toggle->setCheckable(true); toggle->setAutoRaise(true);
+    toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon); toggle->setArrowType(Qt::RightArrow);
+    auto * body = new QWidget(this); auto * form = new QFormLayout(body);
+    form->setContentsMargins(12, 0, 0, 0); body->hide();
+    connect(toggle, &QToolButton::toggled, body, [toggle, body](bool open) {
+      body->setVisible(open); toggle->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+    });
+    parent->addRow(toggle); parent->addRow(body);
+    return form;
+  };
+  auto * what = step("1  What to pick?", "The object class the robot picks, as perception reports it (for example "
+    "<i>cup</i>). Objects of other classes are left where they are.", "taskStepWhat");
+  auto * from = step("2  Where from?", "The pick zone where the robot looks, and how it learns object positions: "
+    "<b>Recorded observations</b> (a saved camera snapshot, for planning without a camera), <b>Live EPD</b> camera "
+    "detections, or simulator-measured objects (physics only).", "taskStepFrom");
+  auto * to = step("3  Where to place?", "The physical bin or fixture and its placement region. Tip: select the bin in "
+    "the 3D view, then Inspector › <b>Use Selected as Task Destination</b>.", "taskStepTo");
+  auto * how = step("4  How to pick?", "The grasp for the installed tool. AUTO chooses a valid strategy for you.",
+    "taskStepHow");
+  auto * review = step("5  Review and save", QString(), "taskStepReview");
+  review_ = new QLabel(this); review_->setObjectName("taskReviewSummary"); review_->setWordWrap(true);
+  review_->setTextFormat(Qt::RichText); review_->setFrameShape(QFrame::StyledPanel);
+  review_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  review->addRow(review_);
   text_field(what, "taskTargetClass", "Object class", "pick/selection/object_filter/class_id");
   {
     // Classes that must never become pick targets (e.g. pick cups, ignore bottles).
@@ -243,8 +280,8 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
       set_field(path, names);
     });
   }
-  pick_zones_ = choice_field(what, "taskPickZone", "Search region", "pick/selection/zone_ref", {});
-  auto * perception = section("Object input");
+  pick_zones_ = choice_field(from, "taskPickZone", "Pick zone", "pick/selection/zone_ref", {});
+  auto * perception = from;
   auto * mode = new QComboBox(this); mode->setObjectName("taskPerceptionMode");
   mode->addItem("Off — simulator-measured objects (physics only)", "off");
   mode->addItem("Recorded observations (replay)", "replayed_snapshot");
@@ -289,9 +326,10 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     const auto path = recordings->itemData(index).toString();
     if (!path.isEmpty()) { set_field("perception/replay_path", path); refresh_fields(); }
   });
-  text_field(perception, "taskReplayPath", "Observation snapshot", "perception/replay_path");
+  auto * more_input = collapsible(perception, "Use another observation file…", "taskMoreInput");
+  text_field(more_input, "taskReplayPath", "Observation snapshot", "perception/replay_path");
   auto * choose = new QPushButton("Choose observation file…", this); choose->setObjectName("taskChooseObservations");
-  perception->addRow(choose);
+  more_input->addRow(choose);
   connect(choose, &QPushButton::clicked, this, [this] {
     const auto path = QFileDialog::getOpenFileName(this, "Choose existing detected_objects/v1 observations", scene_, "Observations (*.yaml *.yml *.json)");
     if (!path.isEmpty()) { set_field("perception/replay_path", stored_input_path(path)); refresh_fields(); }
@@ -302,14 +340,15 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   input_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
   input_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);  // long paths must not widen the inspector
   perception->addRow(input_status);
+  auto * checks = collapsible(perception, "Camera captures and plan checks (no robot motion)", "taskAdvancedChecks");
   auto * probe_button = new QPushButton("Capture RGB-D preview (read-only)", this);
   probe_button->setObjectName("taskCameraCapture");
   probe_button->setEnabled(false);
-  perception->addRow(probe_button);
+  checks->addRow(probe_button);
   auto * preview_status = new QLabel("Save and select a live camera to inspect existing ROS streams.", this);
   preview_status->setObjectName("taskCameraCaptureStatus");
   preview_status->setWordWrap(true);
-  perception->addRow(preview_status);
+  checks->addRow(preview_status);
   auto * preview_row = new QHBoxLayout;
   auto * rgb_preview = new QLabel("RGB — no capture", this);
   auto * depth_preview = new QLabel("Depth — no capture", this);
@@ -322,7 +361,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     preview->setScaledContents(false);
     preview_row->addWidget(preview);
   }
-  perception->addRow(preview_row);
+  checks->addRow(preview_row);
   connect(probe_button, &QPushButton::clicked, this,
           [this, probe_button, preview_status, rgb_preview, depth_preview] {
     const auto * selected = findChild<QComboBox *>("taskCameraSource");
@@ -389,10 +428,10 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   auto * epd_button = new QPushButton("Capture live EPD objects (no robot motion)", this);
   epd_button->setObjectName("taskCaptureLiveEpd");
   epd_button->setEnabled(false);
-  perception->addRow(epd_button);
+  checks->addRow(epd_button);
   auto * epd_status = new QLabel("A saved live task and a running EPD localization/tracking topic are required.", this);
   epd_status->setObjectName("taskCaptureLiveEpdStatus");
-  epd_status->setWordWrap(true); perception->addRow(epd_status);
+  epd_status->setWordWrap(true); checks->addRow(epd_status);
   connect(epd_button, &QPushButton::clicked, this, [this, epd_button, epd_status] {
     const auto * mode = findChild<QComboBox *>("taskPerceptionMode");
     const auto * source = findChild<QComboBox *>("taskCameraSource");
@@ -452,11 +491,11 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   auto * scene_preflight = new QPushButton("Check live PlanningScene binding (no ROS start)", this);
   scene_preflight->setObjectName("taskLiveScenePreflight");
   scene_preflight->setEnabled(false);
-  perception->addRow(scene_preflight);
+  checks->addRow(scene_preflight);
   auto * preflight_status = new QLabel("Check after saving and generating your live task.", this);
   preflight_status->setObjectName("taskLiveScenePreflightStatus");
   preflight_status->setWordWrap(true);
-  perception->addRow(preflight_status);
+  checks->addRow(preflight_status);
   connect(scene_preflight, &QPushButton::clicked, this, [this, scene_preflight, preflight_status] {
     const QString source = findChild<QComboBox *>("taskCameraSource")->currentData().toString();
     if (dirty_ || scene_.isEmpty() || source.isEmpty() ||
@@ -507,18 +546,18 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   auto * batch_button = new QPushButton("Preview multi-object task queue (no motion)", this);
   batch_button->setObjectName("taskSimulationBatchPreview");
   batch_button->setEnabled(false);
-  perception->addRow(batch_button);
+  checks->addRow(batch_button);
   auto * batch_status = new QLabel("Select an explicit commissioning recording and Save Task to preview the queue.", this);
   batch_status->setObjectName("taskSimulationBatchStatus");
   batch_status->setWordWrap(true);
-  perception->addRow(batch_status);
+  checks->addRow(batch_status);
   auto * batch_details = new QPlainTextEdit(this);
   batch_details->setObjectName("taskSimulationBatchDetails");
   batch_details->setReadOnly(true);
   batch_details->setMinimumHeight(135);
   batch_details->setMaximumHeight(205);
   batch_details->setPlainText("No batch preview has been run.");
-  perception->addRow(batch_details);
+  checks->addRow(batch_details);
   connect(batch_button, &QPushButton::clicked, this,
           [this, batch_button, batch_status, batch_details] {
     const auto * mode = findChild<QComboBox *>("taskPerceptionMode");
@@ -608,39 +647,39 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   cancel_button->setEnabled(false);
   check_row->addWidget(check_button);
   check_row->addWidget(cancel_button);
-  perception->addRow(check_row);
+  checks->addRow(check_row);
   auto * check_help = new QLabel("Check plans starts a private fake-hardware MoveIt scene for each queued object "
     "(about half a minute each) with every recorded object in place as an obstacle. It plans only: the robot is "
     "never moved and results are not saved into the task.", this);
   check_help->setWordWrap(true);
-  perception->addRow(check_help);
+  checks->addRow(check_help);
   connect(check_button, &QPushButton::clicked, this, [this] { start_plan_check(false); });
   auto * order_label = new QLabel("Pick sequence — tick the objects to pick, drag to set the order, and choose "
                                   "where each one goes. Saved with the task.", this);
   order_label->setWordWrap(true);
-  perception->addRow(order_label);
+  checks->addRow(order_label);
   auto * order = new QListWidget(this);
   order->setObjectName("taskSequenceOrder");
   order->setDragDropMode(QAbstractItemView::InternalMove);
   order->setDefaultDropAction(Qt::MoveAction);
   order->setMaximumHeight(130);
-  perception->addRow(order);
+  checks->addRow(order);
   auto * sequence_place = new QComboBox(this);
   sequence_place->setObjectName("taskSequencePlace");
   sequence_place->setEnabled(false);
   sequence_place->setToolTip("Automatic gives the object the next free place when the sequence is checked, after "
                              "places chosen for other objects are reserved. A numbered place is a fixed spot in the "
                              "destination with room for this object, its clearance and the planner's placement tolerance.");
-  perception->addRow("Place for selected object:", sequence_place);
+  checks->addRow("Place for selected object:", sequence_place);
   auto * place_detail = new QLabel(this);
   place_detail->setObjectName("taskSequencePlaceDetail");
   place_detail->setWordWrap(true);
   place_detail->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  perception->addRow(place_detail);
+  checks->addRow(place_detail);
   auto * summary = new QLabel("Preview the queue to build a pick sequence.", this);
   summary->setObjectName("taskSequenceSummary");
   summary->setWordWrap(true);
-  perception->addRow(summary);
+  checks->addRow(summary);
   connect(order, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *) { show_selected_place(); });
   connect(sequence_place, qOverload<int>(&QComboBox::activated), this, [this, order, sequence_place](int) {
     auto * item = order->currentItem();
@@ -668,7 +707,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   sequence_button->setEnabled(false);
   sequence_button->setToolTip("Plans the saved sequence in order. Each complete plan virtually places the object "
                               "before the next one is planned. PLANNED — NOT EXECUTED.");
-  perception->addRow(sequence_button);
+  checks->addRow(sequence_button);
   connect(sequence_button, &QPushButton::clicked, this, [this] { start_plan_check(true); });
   connect(order->model(), &QAbstractItemModel::rowsMoved, this, [this] { write_sequence(); });
   connect(cancel_button, &QPushButton::clicked, this, [this, cancel_button] {
@@ -678,12 +717,12 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
       "Cancelling — stopping the private planning scene cleanly. No motion was performed.");
     plan_check_->terminate();  // SIGTERM: the checker stops its owned launch before exiting.
   });
-  auto * grasp = section("How to grasp");
+  auto * grasp = how;
   choice_field(grasp, "taskGraspPolicy", "Grasp policy", "pick/grasp/policy", {"AUTO", "PREFERRED", "EXACT"});
   strategies_ = choice_field(grasp, "taskGraspIntent", "Grasp strategy", "pick/grasp/strategy_ref", {});
   number_field(grasp, "taskApproachDistance", "Approach distance", "pick/grasp/approach/distance_m", " m");
   number_field(grasp, "taskRetreatDistance", "Lift / retreat distance", "pick/grasp/lift/distance_m", " m");
-  auto * where = section("Where");
+  auto * where = to;
   assets_ = choice_field(where, "taskPlaceAsset", "Physical target", "place/target/asset_ref", {});
   regions_ = choice_field(where, "taskPlaceRegion", "Placement region", "place/target/region_ref", {});
   {
@@ -729,15 +768,16 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     buttons->addWidget(add); buttons->addWidget(remove); buttons->addStretch(1);
     column->addLayout(buttons);
     // Full width: class and region names must stay readable in the narrow task panel.
-    where->addRow(new QLabel("Route by class", this));
-    where->addRow(box);
+    auto * routing = collapsible(where, "Sort by class into several regions (optional)", "taskRoutingSection");
+    routing->addRow(new QLabel("Route by class", this));
+    routing->addRow(box);
     unrouted_policy_ = new QComboBox(this); unrouted_policy_->setObjectName("taskUnroutedPolicy");
     unrouted_policy_->addItem("Leave in place (not picked)", "leave_in_place");
     unrouted_policy_->addItem("Stop the sorting session", "stop_session");
-    where->addRow("Unrouted objects", unrouted_policy_);
+    routing->addRow("Unrouted objects", unrouted_policy_);
     max_attempts_ = new QSpinBox(this); max_attempts_->setObjectName("taskMaxAttempts");
     max_attempts_->setRange(1, 5); max_attempts_->setValue(2);
-    where->addRow("Attempts per object", max_attempts_);
+    routing->addRow("Attempts per object", max_attempts_);
     readers_["routing"] = [this](const QJsonValue & v) { fill_routing(v.toObject()); };
     connect(add, &QPushButton::clicked, this, [this] {
       add_routing_row(QJsonObject{{"when", QJsonObject{{"attribute", "class"}, {"equals", QString()}}},
@@ -753,7 +793,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
     connect(unrouted_policy_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] { write_routing(); });
     connect(max_attempts_, qOverload<int>(&QSpinBox::valueChanged), this, [this] { write_routing(); });
   }
-  auto * place = section("How to place");
+  auto * place = collapsible(where, "Placement pose and clearances (advanced)", "taskPlacementSection");
   choice_field(place, "taskPlacePolicy", "Placement policy", "place/placement/policy", {"AUTO", "PREFERRED", "EXACT"});
   vector_field(place, "taskLocalXYZ", "Requested local XYZ (m)", "place/placement/requested_local_pose/xyz_m");
   vector_field(place, "taskLocalRPY", "Requested local RPY (rad)", "place/placement/requested_local_pose/rpy_rad");
@@ -761,7 +801,7 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   number_field(place, "taskPlaceApproach", "Place approach", "place/placement/approach/distance_m", " m");
   number_field(place, "taskPlaceRetreat", "Place retreat", "place/placement/retreat/distance_m", " m");
   // Explicit consent for the qualified physics simulator; the executor refuses a backend the saved task does not name.
-  auto * run = section("Run");
+  auto * run = review;
   auto * backend = new QComboBox(this); backend->setObjectName("taskExecutionBackend");
   backend->addItem("MoveIt fake hardware (plan / preview)", "fake");
   backend->addItem("Qualified physics simulation (Gazebo)", "simulator");
@@ -781,9 +821,12 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   physics_note->setWordWrap(true);
   run->addRow(physics_note);
   auto * help = new QLabel("AUTO chooses a valid strategy / the region's authored placement. PREFERRED tries your request first and reports any fallback. EXACT keeps your request and blocks planning if it cannot be satisfied. In a full-sequence check, AUTO and PREFERRED give each object its own free place in the region; EXACT sends every object to the same place. You can also choose a place for each object under Pick sequence. Local poses use the physical target's frame; values are never clamped.", this);
-  help->setWordWrap(true); layout->addWidget(help);
+  help->setWordWrap(true);
+  collapsible(how, "What AUTO, PREFERRED and EXACT mean", "taskPolicyHelp")->addRow(help);
   auto * advanced = new QGroupBox("Advanced task settings", this);
-  advanced->setCheckable(true); advanced->setChecked(false); layout->addWidget(advanced);
+  advanced->setCheckable(true); advanced->setChecked(false);
+  // Expert fields sit above the final step, so Review and Save stay last.
+  layout->insertWidget(layout->indexOf(findChild<QGroupBox *>("taskStepReview")), advanced);
   auto * advanced_layout = new QVBoxLayout(advanced);
   auto * fields = new QWidget(advanced); auto * form = new QFormLayout(fields);
   advanced_layout->addWidget(fields); fields->hide();
@@ -819,6 +862,8 @@ TaskIntentEditor::TaskIntentEditor(QWidget * parent) : QGroupBox("Task Authoring
   layout->addWidget(status_);
   auto * buttons = new QHBoxLayout;
   auto * save_button = new QPushButton("Save task", this); save_button->setObjectName("taskSave");
+  save_button->setDefault(true);
+  save_button->setToolTip("Save the task to config/workcell_builder_task_intent.yaml. Then Checks › Generate › Validate › Plan Only.");
   auto * validate_button = new QPushButton("Validate task", this); validate_button->setObjectName("taskValidate");
   auto * revert_button = new QPushButton("Revert", this); revert_button->setObjectName("taskRevert");
   revert_button->setToolTip("Discard unsaved task changes and reload the saved task.");
@@ -1178,6 +1223,20 @@ bool TaskIntentEditor::load_scene(const QString & scene, const QString & helper)
     for (auto pair : {qMakePair(strategies_, QString("strategies")), qMakePair(assets_, QString("assets")), qMakePair(pick_zones_, QString("pick_zones"))}) {
       pair.first->clear(); for (const auto & value : report[pair.second].toArray()) pair.first->addItem(value.toString());
     }
+    {
+      // A physical target is an asset that owns a placement region (a bin, fixture...). A camera, a table or the
+      // robot can never be a destination, so they are not offered. An authored value outside the list stays
+      // visible so its validation error can be read and fixed.
+      QSet<QString> owners;
+      for (const auto & owner : report["regions"].toObject()) owners.insert(owner.toString());
+      assets_->clear();
+      for (const auto & value : report["assets"].toArray()) if (owners.contains(value.toString())) assets_->addItem(value.toString());
+      const QString authored = QString::fromStdString(model_.place.asset_ref);
+      if (!authored.isEmpty() && assets_->findText(authored) < 0) {
+        assets_->addItem(authored);
+        assets_->setItemData(assets_->count() - 1, "Not a destination: it owns no placement region.", Qt::ToolTipRole);
+      }
+    }
     regions_->clear(); regions_->addItems(report["regions"].toObject().keys());
     region_ids_ = report["regions"].toObject().keys();
     report_ = report;                      // routing rows read the region -> target map while the fields load
@@ -1202,7 +1261,7 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
     const bool routed = routing["mode"].toString() == "class" && !routing["rules"].toArray().isEmpty();
     const QString pick_class = intent["pick"].toObject()["selection"].toObject()["object_filter"].toObject()["class_id"].toString();
     if ((perception == "replayed_snapshot" || perception == "live_epd") && !routed && pick_class.trimmed().isEmpty())
-      messages.prepend("OBJECT_CLASS_REQUIRED: enter the Object class to pick (What / Pick eligibility); Generate needs "
+      messages.prepend("OBJECT_CLASS_REQUIRED: enter the Object class to pick (step 1, What to pick?); Generate needs "
                        "it for observation input.");
   }
   error_ = messages.join("\n");
@@ -1229,6 +1288,45 @@ void TaskIntentEditor::apply_report(const QJsonObject & report)
            summary->text().startsWith("Unsaved changes — checking"))
     summary->setText("Unsaved changes — no sequence: the check will use the whole queue, all automatic.");
   update_dirty_ui();  refresh_input_status();  refresh_destination_summary();
+  refresh_review(report, status);
+}
+
+void TaskIntentEditor::refresh_review(const QJsonObject & report, const QString & status)
+{
+  if (!review_) return;
+  // The saved/validated task in one paragraph, built from the validator's normalized intent (never re-derived).
+  const auto intent = report["task_intent"].toObject();
+  const auto selection = intent["pick"].toObject()["selection"].toObject();
+  const auto grasp = intent["pick"].toObject()["grasp"].toObject();
+  const auto target = intent["place"].toObject()["target"].toObject();
+  const auto perception = intent["perception"].toObject();
+  const QString cls = selection["object_filter"].toObject()["class_id"].toString().trimmed();
+  const QString mode = perception["mode"].toString();
+  const QString input = mode == "replayed_snapshot"
+    ? QString("recorded observations <i>%1</i>").arg(perception["replay_path"].toString().toHtmlEscaped().isEmpty()
+        ? QString("(none chosen)") : QFileInfo(perception["replay_path"].toString()).fileName().toHtmlEscaped())
+    : mode == "live_epd" ? QString("live EPD camera detections") : QString("simulator-measured objects (physics only)");
+  const auto destination = report["resolved_destination"].toObject();
+  const QString world = destination.isEmpty() ? QString() : " at world " + json_value(destination["pose_xyz"]).toHtmlEscaped() + " m";
+  QString text = QString("Pick <b>%1</b> from <b>%2</b>, using %3.<br/>Place it in <b>%4</b> of <b>%5</b>%6.<br/>"
+                         "Grasp: %7 (%8). Robot motion: %9.")
+    .arg(cls.isEmpty() ? QString("any object") : cls.toHtmlEscaped(),
+         selection["zone_ref"].toString("—").toHtmlEscaped(), input,
+         target["region_ref"].toString("—").toHtmlEscaped(), target["asset_ref"].toString("—").toHtmlEscaped(), world,
+         grasp["policy"].toString("AUTO"), grasp["strategy_ref"].toString().isEmpty() ? QString("automatic strategy")
+           : grasp["strategy_ref"].toString().toHtmlEscaped(),
+         intent["safety"].toObject()["execution_backend"].toString("fake") == "fake"
+           ? QString("MoveIt fake hardware only; real robot locked") : QString("qualified physics simulation (explicit run only)"));
+  QString missing;
+  if (!error_.isEmpty()) missing = error_.section('\n', 0, 0);
+  else if (!input_blocker_.isEmpty() && !session_observed(report)) missing = input_blocker_;
+  const QString next = !missing.isEmpty() ? QString("Fix the item above, then Save task.")
+    : dirty_ ? QString("Save task.")
+    : QString("Checks › <b>Generate scene package</b> (it validates) › Plan / Simulate › <b>Plan Saved Task (Fake Hardware)</b>.");
+  if (!missing.isEmpty())
+    text.prepend(QString("<span style='color:#ff6b6b'><b>Missing:</b> %1</span><br/>").arg(missing.toHtmlEscaped()));
+  text += QString("<br/><b>Status:</b> %1%2<br/><b>Next:</b> %3").arg(status.toHtmlEscaped(), dirty_ ? " — unsaved changes" : "", next);
+  review_->setText(text);
 }
 void TaskIntentEditor::validate_now()
 {

@@ -195,7 +195,8 @@ inline void show_fast_home_preview(
 
   const QString stale = newest_home_preview_cache_path(scene_id);
   if (!stale.isEmpty() && show_preview_file(
-      label, stale, QStringLiteral("Cached Product View snapshot · refreshing in background"))) {
+      label, stale, QStringLiteral("Outdated snapshot: the cell was saved or regenerated since. It refreshes when the "
+                                   "cell is shown in Product View (Open in Scene Builder)."))) {
     // Selection handling immediately asks the existing canonical Product View
     // capture path for this revision; the old image is only a while-refreshing fallback.
     label->setProperty("homeSnapshotState", QStringLiteral("refreshing"));
@@ -205,11 +206,13 @@ inline void show_fast_home_preview(
     return;
   }
 
-  label->setText(QStringLiteral("Preparing scene preview…"));
-  label->setToolTip(QStringLiteral("A canonical Product View snapshot is not cached yet."));
-  label->setProperty("homeSnapshotState", QStringLiteral("generating"));
+  // Home never starts a second 3D view; the snapshot is taken from Product View when this cell is shown there.
+  label->setText(QStringLiteral("No preview yet\n\nOpen in Scene Builder once: the 3D view is\nsaved here as this "
+                                "cell's preview."));
+  label->setToolTip(QStringLiteral("No Product View snapshot is cached for this cell revision."));
+  label->setProperty("homeSnapshotState", QStringLiteral("missing"));
   log_home_preview_event_once(label, scene_id + QStringLiteral("|miss|") + fingerprint,
-    QStringLiteral("Home preview: scene=%1 source=canonical-product-view cache=miss revision=%2 state=generating")
+    QStringLiteral("Home preview: scene=%1 source=canonical-product-view cache=miss revision=%2 state=missing")
       .arg(scene_id, fingerprint));
 }
 
@@ -257,8 +260,11 @@ inline void capture_canonical_product_view_snapshot(
   const canvas = document.getElementById('scene-canvas');
   if (!canvas || canvas.width < 64 || canvas.height < 48) return {};
   try {
+    // A WebGL canvas is cleared after each frame: render and read back in one task when the viewer offers it.
+    const api = window.__WORKCELL_EDITOR_API_V1__;
+    const snap = api && typeof api.captureSnapshot === 'function' ? api.captureSnapshot() : null;
     return {
-      data_url: canvas.toDataURL('image/png'),
+      data_url: snap && snap.data_url ? snap.data_url : canvas.toDataURL('image/png'),
       scene_id: String(status.scene_id || status.sceneId || ''),
       lifecycle_state: String(status.lifecycle_state || status.lifecycleState || ''),
       terminal: Boolean(status.terminal),
@@ -359,6 +365,14 @@ inline void install_home_snapshot_preview(
     });
 
 #ifdef WORKCELL_BUILDER_HAS_WEBENGINE
+  // Save Layout and returning Home trigger this: the canvas then shows exactly the saved revision.
+  auto * capture_action = new QAction(window);
+  capture_action->setObjectName(QStringLiteral("studioHomeCaptureProductView"));
+  QObject::connect(capture_action, &QAction::triggered, preview_label, [safe_window, safe_label, table, workspace_root]() {
+    if (!safe_window || !safe_label) return;
+    show_fast_home_preview(table, safe_label, workspace_root);
+    capture_canonical_product_view_snapshot(safe_window, table, safe_label, workspace_root);
+  });
   if (ScenePreviewWidget * source_preview = canonical_product_view(window)) {
     QObject::connect(source_preview, &ScenePreviewWidget::embedded_product_view_runtime_state_changed,
       preview_label, [safe_window, safe_label, table, workspace_root](const QString &, bool usable) {

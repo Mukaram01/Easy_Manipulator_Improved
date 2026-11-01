@@ -3326,6 +3326,96 @@ def _destination_blocker(exc: BlockingExportError) -> Json:
     }
 
 
+def _camera_intrinsics(data: Mapping[str, Any], camera_id: str) -> Optional[Json]:
+    """Measured intrinsics authored for a scene camera (fx, fy, width, height), if any."""
+    env = _as_map(_as_map(data.get("environment")).get("environment") or data.get("environment"))
+    for row in list(env.get("cameras") or []) + list(env.get("assets") or []):
+        row = _as_map(row)
+        if str(row.get("id") or row.get("camera_id") or "") != camera_id:
+            continue
+        intr = _as_map(row.get("intrinsics"))
+        try:
+            fx, fy, w, h = (float(intr[k]) for k in ("fx", "fy", "width", "height"))
+        except (KeyError, TypeError, ValueError):
+            return None
+        if min(fx, fy, w, h) > 0:
+            return {"fx": fx, "fy": fy, "width": w, "height": h}
+    return None
+
+
+def _annotate_camera_coverage(output: Json, scene_dir: Path, data: Mapping[str, Any],
+                              catalog: Mapping[str, Any]) -> None:
+    """Attach a display-only field-of-view description to each rendered camera body.
+
+    The optical frame is found in the expanded scene URDF below the visual's link, and expressed in the visual's
+    own frame, so a viewer frustum parented to the camera body follows every edit of the camera pose. FOV comes
+    from authored intrinsics when present, otherwise from the catalog's nominal value, labelled uncalibrated.
+    """
+    import math
+    nominal = _as_map(_as_map(catalog.get("camera_realsense")).get("nominal_field_of_view"))
+    urdf = scene_dir / "generated" / "expanded_scene_preview.urdf"
+    if not nominal or not urdf.is_file():
+        return
+    try:
+        root = ET.parse(urdf).getroot()
+    except ET.ParseError:
+        return
+    joints: Dict[str, Tuple[str, List[float], List[float]]] = {}
+    for joint in root.iter("joint"):
+        parent, child, origin = joint.find("parent"), joint.find("child"), joint.find("origin")
+        if parent is None or child is None:
+            continue
+        xyz = [float(v) for v in (origin.get("xyz", "0 0 0") if origin is not None else "0 0 0").split()]
+        rpy = [float(v) for v in (origin.get("rpy", "0 0 0") if origin is not None else "0 0 0").split()]
+        joints[child.get("link", "")] = (parent.get("link", ""), xyz, rpy)
+
+    def chain(frame: str, ancestor: str) -> Optional[Tuple[List[List[float]], List[float]]]:
+        rot, pos = [[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]], [0.0, 0.0, 0.0]
+        while frame != ancestor:
+            if frame not in joints:
+                return None
+            parent, xyz, rpy = joints[frame]
+            jr = _ros_rpy_matrix(rpy)
+            pos = [a + b for a, b in zip(_matrix_vec_multiply(jr, pos), xyz)]
+            rot = _matrix_multiply(jr, rot)
+            frame = parent
+        return rot, pos
+
+    suffix = str(nominal.get("optical_frame_suffix") or "color_optical_frame")
+    for item in output.get("sensors", []):
+        link = str(item.get("link") or "")
+        camera_id = str(item.get("camera_id") or "")
+        if not link or not camera_id or item.get("render_policy") == "diagnostic_only":
+            continue
+        candidates = sorted(name for name in joints if name.endswith(suffix) and chain(name, link) is not None)
+        if not candidates:
+            continue
+        optical = candidates[0]
+        link_rot, link_pos = chain(optical, link)
+        origin = _as_map(item.get("urdf_visual_origin") or item.get("visual_origin"))
+        vr = _ros_rpy_matrix(list(origin.get("rpy") or [0, 0, 0]))
+        vt = [float(v) for v in (origin.get("xyz") or [0, 0, 0])]
+        inv = _matrix_transpose(vr)
+        rel_pos = _matrix_vec_multiply(inv, [a - b for a, b in zip(link_pos, vt)])
+        rel_rot = _matrix_multiply(inv, link_rot)
+        intr = _camera_intrinsics(data, camera_id)
+        if intr:
+            hfov = math.degrees(2 * math.atan(intr["width"] / (2 * intr["fx"])))
+            vfov = math.degrees(2 * math.atan(intr["height"] / (2 * intr["fy"])))
+            source, calibrated = "authored camera intrinsics (fx, fy, width, height)", True
+        else:
+            hfov, vfov = float(nominal.get("horizontal_deg")), float(nominal.get("vertical_deg"))
+            source, calibrated = str(nominal.get("source") or "nominal field of view"), False
+        item["camera_coverage"] = {
+            "camera_id": camera_id, "body_link": link, "optical_frame": optical,
+            "optical_in_visual": {"xyz": rel_pos, "rpy": _ros_rpy_from_matrix(rel_rot)},
+            "horizontal_fov_deg": hfov, "vertical_fov_deg": vfov,
+            "display_near_m": float(nominal.get("display_near_m") or 0.2),
+            "display_far_m": float(nominal.get("display_far_m") or 1.5),
+            "fov_source": source, "calibrated": calibrated, "display_only": True,
+        }
+
+
 def _load_authoring_session_overlay(path: Optional[Path], scene_dir: Path) -> List[Json]:
     """Read a request-scoped UI overlay; it is never an authored scene input."""
     if path is None:
@@ -3414,6 +3504,7 @@ def build_web_scene(
     data = _load_inputs(scene_dir, warnings)
     authoring_blockers: List[Json] = []
     task_resolution = None
+    task_binding_error: Optional[str] = None
     try:
         if (scene_dir / 'config/workcell_builder_task_intent.yaml').is_file():
             from task_intent_resolver import read_scene_task, scene_resolution
@@ -3421,10 +3512,14 @@ def build_web_scene(
                 intent, physical, document = read_scene_task(scene_dir)
                 task_resolution = scene_resolution(scene_dir, intent, physical, document)
             except ValueError as exc:
-                raise BlockingExportError("task/physical destination: " + str(exc)) from exc
-            # Derived view only: the active binding comes from the authored model.
-            data['environment']['task'] = {
-                'place': {'target_ref': intent['place']['target']['region_ref']}}
+                # The saved task names a destination the layout does not provide. That is a task
+                # blocker, not a broken physical layout: the layout stays editable (so the user can
+                # fix either side) and execution stays disabled until the task resolves.
+                task_binding_error = str(exc)
+            else:
+                # Derived view only: the active binding comes from the authored model.
+                data['environment']['task'] = {
+                    'place': {'target_ref': intent['place']['target']['region_ref']}}
         _normalise_active_place_zone(data)
     except BlockingExportError as exc:
         if not allow_incomplete_preview:
@@ -3474,6 +3569,11 @@ def build_web_scene(
     tools = _drop_shadowed_metadata_primitives(top_tools + generated["tools"], generated["tools"], ("tool", "gripper", "robotiq", "end_effector"))
     sensors = _drop_shadowed_metadata_primitives(top_sensors + authored["sensors"] + generated["sensors"], generated["sensors"], ("camera", "realsense", "sensor"))
     transient_assets = _load_authoring_session_overlay(authoring_session_overlay, scene_dir)
+    # A camera is rendered once, from the sensors section (its URDF visual carries the mesh origin). Its raw
+    # layout mesh must not come back as a second, untransformed asset through the session overlay.
+    sensor_ids = {str(item.get("id") or "") for item in sensors} | {
+        str(item.get("ui_selection_ref") or item.get("selection_owner_id") or "") for item in sensors}
+    transient_assets = [item for item in transient_assets if str(item["id"]) not in sensor_ids]
     transient_ids = {str(item["id"]) for item in transient_assets}
     session_assets = _merge_authoring_session_assets(authored["assets"], transient_assets)
     normal_generated_assets = [item for item in generated["assets"] if str(item.get("id") or "") not in transient_ids]
@@ -3546,6 +3646,18 @@ def build_web_scene(
         output['task_readiness'] = task_resolution['readiness_status']
         if task_resolution['readiness_status'] == 'BLOCKED':
             output['task_blocker'] = task_resolution['readiness']
+    if task_binding_error is not None:
+        code, sep, reason = task_binding_error.partition(': ')
+        if not (sep and re.fullmatch(r'[A-Z][A-Z0-9_]+', code)):
+            code, reason = 'TASK_DESTINATION_UNRESOLVED', task_binding_error
+        output['task_readiness'] = 'BLOCKED'
+        output['task_blocker'] = {
+            'primary_code': code, 'reason': reason, 'scope': 'task_binding',
+            'next_action': 'Task tab: choose the physical destination and its placement region, then Save task.'}
+        for action in output["backend_actions"]:
+            if action.get("id") != "validate":
+                action["enabled"] = False
+                action["disabled_reason"] = f"Task blocked ({code}): fix the task destination on the Task tab before generation or execution."
     if authoring_blockers:
         output.update({
             "authoring_status": "blocked",
@@ -3576,6 +3688,7 @@ def build_web_scene(
                 "selection_robot_owner_id": robot_owner_id,
                 "selection_tool_owner_id": tool_owner_id,
             })
+    _annotate_camera_coverage(output, scene_dir, data, _load_visual_asset_catalog(scene_dir, []))
     _validate_selection_owner_contract(output)
     _apply_render_ownership_contract(output, expanded_urdf_active=_as_map(output.get("robot_preview")).get("mode") == "expanded_urdf_loader")
     output.pop("_visual_mesh_index_source", None)

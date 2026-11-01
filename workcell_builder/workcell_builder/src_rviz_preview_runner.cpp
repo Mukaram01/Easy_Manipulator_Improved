@@ -112,12 +112,17 @@ QString build_selected_package_command(
   // existing install as the dependency underlay, and override only the selected
   // generated package.  This avoids rebuilding unrelated dependency packages
   // and removes the noisy/unsafe self-overlay warning for every dependency.
+  // Discover packages only in the workspace's src/ (the colcon layout). A workspace root can also hold other
+  // workspaces or runtime mounts (e.g. a deployment view of the same source); scanning them finds the selected
+  // scene twice and colcon refuses the build ("Duplicate package names").
+  boost::system::error_code ec;
+  const QString base_paths = boost::filesystem::is_directory(workspace_root / "src", ec) ? QStringLiteral("--base-paths src ") : QString();
   return QString(
     "env -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH -u COLCON_PREFIX_PATH "
     "bash --noprofile --norc -c \"source /opt/ros/humble/setup.bash && "
     "source '%1' && cd '%2' && "
-    "colcon build --symlink-install --packages-select '%3' --allow-overriding '%3'\"")
-    .arg(setup, workspace, package);
+    "colcon build %4--symlink-install --packages-select '%3' --allow-overriding '%3'\"")
+    .arg(setup, workspace, package, base_paths);
 }
 
 QString package_prefix_check_command(

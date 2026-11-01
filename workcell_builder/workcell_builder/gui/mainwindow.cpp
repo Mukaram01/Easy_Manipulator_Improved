@@ -45,6 +45,7 @@
 #include <QWidgetAction>
 #include <QCoreApplication>
 #include <QFile>
+#include <QStandardPaths>
 #include <QCryptographicHash>
 #include <signal.h>
 #include <QSaveFile>
@@ -2889,6 +2890,11 @@ void MainWindow::setup_studio_shell()
   scene_duplicate_context_button_->setToolTip(QStringLiteral("Duplicate selected editable item  Ctrl+D"));
   scene_duplicate_context_button_->setEnabled(false);
   primary_controls->addWidget(scene_duplicate_context_button_);
+  // The same operation as the Delete key (layout.remove); its tooltip names the blocker when unavailable.
+  scene_delete_button_ = make_primary_button("Delete");
+  scene_delete_button_->setObjectName("sceneBuilderToolbarDelete");
+  scene_delete_button_->setEnabled(false);
+  primary_controls->addWidget(scene_delete_button_);
   auto * place_mode_button = make_primary_button("Place"); primary_controls->addWidget(place_mode_button);
   scene_move_mode_button_ = move_mode_button;
   scene_rotate_mode_button_ = rotate_mode_button;
@@ -3431,6 +3437,25 @@ void MainWindow::setup_studio_shell()
     append_studio_log("Live perception stopped; EPD processes shut down by the session.");
   });
   workflow_tab_layout->addWidget(ar_card);
+  {
+    // The guided task editor (steps 1-5) is the Task tab. The older summary card repeats its step 5; the binding,
+    // grasp, perception and live-camera cards are expert diagnostics, kept intact under one collapsed section.
+    task_intent->hide();
+    auto * advanced = new QGroupBox("Perception, live camera and task diagnostics (advanced)", workflow_tab);
+    advanced->setObjectName("taskAdvancedDiagnosticsSection");
+    advanced->setCheckable(true); advanced->setChecked(false);
+    auto * advanced_layout = new QVBoxLayout(advanced);
+    auto * advanced_body = new QWidget(advanced);
+    auto * body_layout = new QVBoxLayout(advanced_body); body_layout->setContentsMargins(0, 0, 0, 0);
+    for (QWidget * card : std::initializer_list<QWidget *>{pick_place, grasp_card, task_diagnostics, ar_card}) {
+      workflow_tab_layout->removeWidget(card);
+      body_layout->addWidget(card);
+    }
+    advanced_layout->addWidget(advanced_body);
+    advanced_body->hide();
+    connect(advanced, &QGroupBox::toggled, advanced_body, &QWidget::setVisible);
+    workflow_tab_layout->addWidget(advanced);
+  }
   inspector_label_=new QLabel("No item selected"); inspector_label_->setObjectName("sceneBuilderInspectorLabel"); inspector_label_->setWordWrap(true); selected_item_card_layout->addWidget(inspector_label_);
   live_coordinate_label_ = new QLabel("", scene_builder); live_coordinate_label_->hide(); selected_item_card_layout->addWidget(live_coordinate_label_);
   task_destination_card_ = new QFrame(selection_tab);
@@ -3450,6 +3475,55 @@ void MainWindow::setup_studio_shell()
   task_destination_card_->hide();
   // Its own card below Selected Item: the product layout caps that card's height (scene_builder_product_layout).
   selection_tab_layout->insertWidget(selection_tab_layout->indexOf(selected_item_card_layout->parentWidget()) + 1, task_destination_card_);
+  camera_card_ = new QFrame(selection_tab);
+  camera_card_->setObjectName("studioCard");
+  camera_card_->setProperty("cameraInspector", true);
+  {
+    auto * camera_layout = new QVBoxLayout(camera_card_);
+    camera_layout->addWidget(new QLabel("<b>Camera</b>", camera_card_));
+    camera_card_frames_ = new QLabel(camera_card_);
+    camera_card_frames_->setObjectName("sceneBuilderCameraFrames");
+    camera_card_frames_->setWordWrap(true); camera_card_frames_->setTextFormat(Qt::RichText);
+    camera_card_frames_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    camera_card_frames_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    camera_layout->addWidget(camera_card_frames_);
+    camera_show_fov_ = new QCheckBox("Show Camera FOV", camera_card_); camera_show_fov_->setObjectName("cameraShowFov");
+    camera_show_roi_ = new QCheckBox("Show Pick zone (ROI)", camera_card_); camera_show_roi_->setObjectName("cameraShowRoi");
+    camera_show_axis_ = new QCheckBox("Show optical axis", camera_card_); camera_show_axis_->setObjectName("cameraShowAxis");
+    camera_show_roi_->setChecked(true); camera_show_axis_->setChecked(true);
+    camera_show_roi_->setEnabled(false); camera_show_axis_->setEnabled(false);
+    auto * range_row = new QHBoxLayout;
+    range_row->addWidget(new QLabel("Display range", camera_card_));
+    camera_display_far_ = new QDoubleSpinBox(camera_card_); camera_display_far_->setObjectName("cameraDisplayFar");
+    camera_display_far_->setRange(0.3, 6.0); camera_display_far_->setSingleStep(0.1); camera_display_far_->setValue(1.5);
+    camera_display_far_->setSuffix(" m"); camera_display_far_->setEnabled(false);
+    camera_display_far_->setToolTip("How far the drawn frustum reaches. Display only.");
+    range_row->addWidget(camera_display_far_, 1);
+    for (auto * box : {camera_show_fov_, camera_show_roi_, camera_show_axis_}) camera_layout->addWidget(box);
+    camera_layout->addLayout(range_row);
+    camera_card_metrics_ = new QLabel(camera_card_);
+    camera_card_metrics_->setObjectName("sceneBuilderCameraCoverage");
+    camera_card_metrics_->setWordWrap(true); camera_card_metrics_->setTextFormat(Qt::RichText);
+    camera_card_metrics_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    camera_card_metrics_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    camera_layout->addWidget(camera_card_metrics_);
+    auto * note = new QLabel("Display only: the preview never changes the camera's calibration, extrinsics or "
+                             "runtime admission. Coverage is not robot reachability.", camera_card_);
+    note->setWordWrap(true); note->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    camera_layout->addWidget(note);
+    connect(camera_show_fov_, &QCheckBox::toggled, this, [this](bool on) {
+      camera_show_roi_->setEnabled(on); camera_show_axis_->setEnabled(on); camera_display_far_->setEnabled(on);
+      apply_camera_coverage();
+    });
+    for (auto * box : {camera_show_roi_, camera_show_axis_}) connect(box, &QCheckBox::toggled, this, [this](bool) { apply_camera_coverage(); });
+    connect(camera_display_far_, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) { apply_camera_coverage(); });
+    // While the preview is on, the numbers follow camera moves (the 3D overlay itself follows every frame).
+    camera_coverage_timer_ = new QTimer(this);
+    camera_coverage_timer_->setInterval(700);
+    connect(camera_coverage_timer_, &QTimer::timeout, this, [this]() { if (camera_card_->isVisible()) apply_camera_coverage(); });
+  }
+  camera_card_->hide();
+  selection_tab_layout->insertWidget(selection_tab_layout->indexOf(task_destination_card_) + 1, camera_card_);
   auto * metadata_form = new QFormLayout();
   metadata_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
   inspector_display_name_ = new QLineEdit(scene_builder);
@@ -3575,6 +3649,21 @@ void MainWindow::setup_studio_shell()
   scene_builder_inspector_tabs_->addTab(selection_tab, "Inspector");
   scene_builder_inspector_tabs_->addTab(workflow_tab, "Task");
   scene_builder_inspector_tabs_->addTab(readiness_tab, "Checks");
+  // One row rhythm for every side-panel form: labels centred on their field (the style default top-aligns
+  // them, so a taller combo looked misaligned) and an even gap between rows.
+  for (auto * form : scene_builder_inspector_tabs_->findChildren<QFormLayout *>()) {
+    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    form->setVerticalSpacing(std::max(form->verticalSpacing(), 8));
+    // QFormLayout honours only the horizontal part of the label alignment: give each label its field's height
+    // and centre the text in it, so label and value share one baseline at any DPI.
+    for (int row = 0; row < form->rowCount(); ++row) {
+      auto * label = form->itemAt(row, QFormLayout::LabelRole) ? qobject_cast<QLabel *>(form->itemAt(row, QFormLayout::LabelRole)->widget()) : nullptr;
+      auto * field = form->itemAt(row, QFormLayout::FieldRole) ? form->itemAt(row, QFormLayout::FieldRole)->widget() : nullptr;
+      if (!label || !field || qobject_cast<QLabel *>(field)) continue;
+      label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+      label->setMinimumHeight(field->sizeHint().height());
+    }
+  }
   readiness_tab_layout->addStretch(1);
   {
     auto * tabs = scene_builder_inspector_tabs_;
@@ -3906,7 +3995,15 @@ void MainWindow::setup_studio_shell()
     // A page handoff clears selection through the same owner as hierarchy,
     // Inspector and both renderers, including a retained Product View page.
     apply_scene_selection(QString(), QStringLiteral("page_handoff"), true, false);
-    if (idx == static_cast<int>(StudioPage::DashboardPage)) refresh_scene_browser_ui();
+    if (idx == static_cast<int>(StudioPage::DashboardPage)) {
+      refresh_scene_browser_ui();
+      // Back on Home, the open cell's Product View shows its saved revision (selection just cleared): take its
+      // Home preview now. Unsaved edits would not match the saved files, so they never become the preview.
+      if (!layout_dirty_)
+        QTimer::singleShot(300, this, [this]() {
+          if (auto * capture = findChild<QAction *>(QStringLiteral("studioHomeCaptureProductView"))) capture->trigger();
+        });
+    }
     // Reached from the sidebar after Home selected another cell: never show or save
     // the previous cell's canvas under the selected cell's name.
     if (idx == static_cast<int>(StudioPage::SceneBuilderPage) && !opening_scene_builder_ &&
@@ -4054,6 +4151,7 @@ void MainWindow::setup_studio_shell()
   connect_button(duplicate_layout_button_, &MainWindow::duplicate_selected_item);
   connect_button(delete_layout_button_, &MainWindow::delete_selected_item);
   connect_button(scene_duplicate_context_button_, &MainWindow::duplicate_selected_item);
+  connect_button(scene_delete_button_, &MainWindow::delete_selected_item);
   for (auto *sb : {inspector_x_, inspector_y_, inspector_z_, inspector_roll_, inspector_pitch_, inspector_yaw_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ if (inspector_live_update_box_ && inspector_live_update_box_->isChecked()) apply_selection_transform_from_editor(); });
   for (auto *sb : {inspector_dim_x_, inspector_dim_y_, inspector_dim_z_}) connect(sb, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double){ if (inspector_live_update_box_ && inspector_live_update_box_->isChecked()) apply_selection_transform_from_editor(); });
   connect_button(inspector_apply_button_, &MainWindow::apply_selection_transform_from_editor);
@@ -4516,11 +4614,10 @@ bool MainWindow::generate_yaml_draft_for_selected_scene()
     show_workflow_feedback("error", "Generate blocked: " + equipment);
     return false;
   }
+  if (layout_dirty_) { report_generate_prerequisite(); return false; }
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
-    if (!environment_task_editor_->blocker(false).isEmpty()) {
-      append_studio_log("Generate blocked: " + environment_task_editor_->blocker(false)); return false;
-    }
+    if (!environment_task_editor_->blocker(false).isEmpty()) { report_generate_prerequisite(); return false; }
   }
   const auto selected = scene_browser_result_.scenes[(size_t)selected_scene_index_];
   const fs::path scene_dir = workcell_builder::canonical_scene_identity(
@@ -4549,17 +4646,39 @@ bool MainWindow::generate_yaml_draft_for_selected_scene()
   return true;
 }
 
+void MainWindow::report_generate_prerequisite()
+{
+  // One plain next step, and the editor that fixes it: Generate reads the saved files only.
+  QString message;
+  int tab = -1;
+  if (layout_dirty_) {
+    message = QStringLiteral("Generate blocked: the 3D layout has unsaved edits. Click Save Layout (toolbar), then Generate again.");
+    tab = 0;
+  } else if (environment_task_editor_) {
+    const QString blocker = environment_task_editor_->blocker(false);
+    if (blocker.isEmpty()) return;
+    message = environment_task_editor_->dirty()
+      ? QStringLiteral("Generate blocked: the task has unsaved changes. Task tab > 5 Review and save > Save task, then Generate again.")
+      : QStringLiteral("Generate blocked by the task: %1 Fix it on the Task tab (step 5 shows what is missing), Save task, then Generate.")
+          .arg(blocker);
+    tab = 1;
+  }
+  append_studio_log(message);
+  show_workflow_feedback("error", message);
+  if (statusBar()) statusBar()->showMessage(message, 10000);
+  if (tab >= 0 && scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(tab);
+}
+
 void MainWindow::generate_scene_package_for_selected_scene() {
   if (const QString equipment = selected_scene_equipment_blocker(); !equipment.isEmpty()) {
     append_studio_log("Generate blocked: " + equipment);
     show_workflow_feedback("error", "Generate blocked: " + equipment);
     return;
   }
+  if (layout_dirty_) { report_generate_prerequisite(); return; }
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
-    if (!environment_task_editor_->blocker(false).isEmpty()) {
-      append_studio_log("Generate blocked: " + environment_task_editor_->blocker(false)); return;
-    }
+    if (!environment_task_editor_->blocker(false).isEmpty()) { report_generate_prerequisite(); return; }
   }
   if (selected_scene_index_ < 0) {
     append_studio_log(QStringLiteral("Generate Scene Package blocked: no cell is selected."));
@@ -5171,8 +5290,82 @@ void MainWindow::refresh_selected_scene_item_labels(const SelectedSceneItemState
   live_coordinate_label_->setVisible(false);
 }
 
+void MainWindow::refresh_camera_card()
+{
+  if (!camera_card_) return;
+  const auto state = current_selected_scene_item();
+  const bool camera = state.valid && (state.role.contains("camera", Qt::CaseInsensitive) ||
+    state.type.contains("realsense", Qt::CaseInsensitive) || state.type.contains("camera", Qt::CaseInsensitive));
+  camera_card_->setVisible(camera);
+  if (!camera) return;
+  camera_card_->setProperty("cameraId", state.id.trimmed());
+  apply_camera_coverage();
+}
+
+void MainWindow::apply_camera_coverage()
+{
+  if (!scene_preview_widget_ || !camera_card_) return;
+  const QString camera_id = camera_card_->property("cameraId").toString();
+  const bool visible = camera_show_fov_ && camera_show_fov_->isChecked();
+  if (camera_coverage_timer_) { if (visible) camera_coverage_timer_->start(); else camera_coverage_timer_->stop(); }
+  const QJsonObject options{{"visible", visible}, {"cameraId", camera_id}, {"showRoi", camera_show_roi_->isChecked()},
+    {"showAxis", camera_show_axis_->isChecked()}, {"farM", camera_display_far_->value()}};
+  scene_preview_widget_->set_camera_coverage(options, [this, guard = QPointer<MainWindow>(this), camera_id](const QJsonObject & reply) {
+    if (!guard || !camera_card_frames_) return;
+    const auto m = reply.value("metrics").toObject();
+    if (reply.contains("error")) {
+      camera_card_frames_->setText(QString("Camera <b>%1</b>. The 3D view is not ready: %2.").arg(camera_id.toHtmlEscaped(),
+        reply.value("error").toString().toHtmlEscaped()));
+      camera_card_metrics_->clear();
+      return;
+    }
+    if (m.isEmpty()) {
+      const bool known = reply.value("cameraIds").toArray().contains(camera_id);
+      camera_card_frames_->setText(known
+        ? QString("Camera <b>%1</b>. Turn on <b>Show Camera FOV</b> to see where it looks.").arg(camera_id.toHtmlEscaped())
+        : QString("Camera <b>%1</b>: no field of view is known for this camera model, so coverage cannot be shown "
+                  "(no fabricated values).").arg(camera_id.toHtmlEscaped()));
+      camera_card_metrics_->clear();
+      return;
+    }
+    const auto dir = m.value("viewing_direction").toArray();
+    const double dx = dir.at(0).toDouble(), dy = dir.at(1).toDouble(), dz = dir.at(2).toDouble();
+    const QString horizontal = std::abs(dx) > std::abs(dy) ? (dx > 0 ? "+X" : "−X") : (dy > 0 ? "+Y" : "−Y");
+    const QString facing = dz < -0.9 ? QString("looking down (−Z)") : dz > 0.9 ? QString("looking up (+Z)")
+      : dz < -0.3 ? QString("looking down, tilted toward %1 (%2° below horizontal)").arg(horizontal).arg(qRadiansToDegrees(std::asin(-dz)), 0, 'f', 0)
+      : dz > 0.3 ? QString("looking up, tilted toward %1").arg(horizontal) : QString("looking along %1").arg(horizontal);
+    const auto origin = m.value("optical_origin_m").toArray(), rpy = m.value("optical_rpy_rad").toArray();
+    camera_card_frames_->setText(QString(
+      "<b>%1</b> &mdash; %2<br/>Body frame <code>%3</code>; optical frame <code>%4</code> (+Z forward, +X right, +Y down)<br/>"
+      "Optical origin X %5 · Y %6 · Z %7 m; RPY %8° · %9° · %10°<br/>"
+      "Viewing direction [%11, %12, %13]<br/>FOV %14° × %15° &mdash; %16")
+      .arg(camera_id.toHtmlEscaped(), facing, m.value("body_link").toString().toHtmlEscaped(), m.value("optical_frame").toString().toHtmlEscaped())
+      .arg(origin.at(0).toDouble(), 0, 'f', 3).arg(origin.at(1).toDouble(), 0, 'f', 3).arg(origin.at(2).toDouble(), 0, 'f', 3)
+      .arg(qRadiansToDegrees(rpy.at(0).toDouble()), 0, 'f', 1).arg(qRadiansToDegrees(rpy.at(1).toDouble()), 0, 'f', 1)
+      .arg(qRadiansToDegrees(rpy.at(2).toDouble()), 0, 'f', 1)
+      .arg(dx, 0, 'f', 2).arg(dy, 0, 'f', 2).arg(dz, 0, 'f', 2)
+      .arg(m.value("horizontal_fov_deg").toDouble(), 0, 'f', 1).arg(m.value("vertical_fov_deg").toDouble(), 0, 'f', 1)
+      .arg(m.value("calibrated").toBool() ? QString("from authored intrinsics")
+           : QString("<span style='color:#f0b429'>approximate: %1</span>").arg(m.value("fov_source").toString().toHtmlEscaped())));
+    QStringList lines;
+    const auto surface = m.value("surface").toObject();
+    if (surface.isEmpty()) lines << "No physical surface on the optical axis within 20 m.";
+    else lines << QString("Looks at <b>%1</b> at %2 m along the optical axis; visible area there %3 × %4 m%5.")
+      .arg(surface.value("label").toString().toHtmlEscaped()).arg(surface.value("distance_m").toDouble(), 0, 'f', 3)
+      .arg(m.value("footprint_width_m").toDouble(), 0, 'f', 2).arg(m.value("footprint_height_m").toDouble(), 0, 'f', 2)
+      .arg(m.value("footprint_complete").toBool() ? QString() : QString(" (part of the view hits no surface)"));
+    const auto roi = m.value("pick_roi").toObject();
+    if (!roi.isEmpty()) lines << QString("Pick zone %1: %2.").arg(roi.value("label").toString().toHtmlEscaped(),
+      roi.value("coverage").toString() == "inside" ? QString("fully inside the camera view")
+        : roi.value("coverage").toString() == "partial" ? QString("only partly inside (%1 of 8 corners)").arg(roi.value("corners_inside").toInt())
+        : QString("outside the camera view"));
+    camera_card_metrics_->setText(lines.join("<br/>"));
+  });
+}
+
 void MainWindow::refresh_task_destination_card()
 {
+  refresh_camera_card();
   if (!task_destination_card_ || !task_destination_label_) return;
   const auto state = current_selected_scene_item();
   QJsonObject role;
@@ -5654,6 +5847,30 @@ bool MainWindow::is_safe_scene_path_for_trash_move(const fs::path & scene_path, 
   return true;
 }
 
+QString MainWindow::scene_delete_protection_reason(const fs::path & scene_dir) const
+{
+  boost::system::error_code ec;
+  if (fs::is_symlink(scene_dir, ec)) return QStringLiteral("it is a symbolic link; delete its target folder outside Workcell Builder.");
+  fs::path root = scene_browser_result_.scene_root.empty() ? scene_dir.parent_path() : scene_browser_result_.scene_root;
+  const fs::path canonical_scene = fs::weakly_canonical(scene_dir, ec);
+  const fs::path canonical_root = fs::weakly_canonical(root, ec);
+  if (ec || canonical_scene.parent_path() != canonical_root)
+    return QStringLiteral("it is not a cell folder directly inside the scenes folder %1.").arg(QString::fromStdString(canonical_root.string()));
+  if (!fs::is_regular_file(canonical_scene / "environment.yaml", ec)) return QStringLiteral("the folder is not a Workcell Studio cell (no environment.yaml).");
+  // Reference scenes are the repository's tracked library: .gitignore ignores scenes/* and allowlists them.
+  const QString name = QString::fromStdString(canonical_scene.filename().string());
+  QFile ignore(QString::fromStdString((canonical_root.parent_path() / ".gitignore").string()));
+  if (ignore.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    for (const QString & raw : QString::fromUtf8(ignore.readAll()).split('\n')) {
+      const QString line = raw.trimmed();
+      if (line == QStringLiteral("!scenes/%1/").arg(name) || line == QStringLiteral("!scenes/%1").arg(name) ||
+          line == QStringLiteral("!/scenes/%1/").arg(name))
+        return QStringLiteral("%1 is a protected reference scene tracked by the repository; it cannot be deleted from Home.").arg(name);
+    }
+  }
+  return QString();
+}
+
 void MainWindow::delete_selected_scene()
 {
   if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) {
@@ -5668,12 +5885,38 @@ void MainWindow::delete_selected_scene()
     append_studio_log("Delete Scene blocked: " + safety_error);
     return;
   }
-  const auto confirm = QMessageBox::question(
-    this, "Delete Scene",
-    QString("Move scene '%1' to Workcell Studio trash?").arg(QString::fromStdString(scene.scene_name)),
-    QMessageBox::Yes | QMessageBox::No,
-    QMessageBox::No);
-  if (confirm != QMessageBox::Yes) {
+  if (const QString protection = scene_delete_protection_reason(scene_path); !protection.isEmpty()) {
+    QMessageBox::information(this, "Delete Scene", "Delete is unavailable: " + protection);
+    append_studio_log("Delete Scene blocked: " + protection);
+    return;
+  }
+  const bool open_cell = selected_scene_state_.valid && fs::path(selected_scene_state_.path.toStdString()) == scene_path;
+  if (open_cell && preview_process_ && preview_process_->state() != QProcess::NotRunning) {
+    QMessageBox::information(this, "Delete Scene", "A plan or simulation of this cell is still running. Stop it "
+      "(Plan / Simulate > Stop) and then delete the cell.");
+    return;
+  }
+  fs::path trash_scenes_root = scene_browser_result_.scene_root.empty() ? scene_path.parent_path() : scene_browser_result_.scene_root;
+  const QString name = QString::fromStdString(scene.scene_name);
+  QMessageBox confirm_box(QMessageBox::Warning, "Delete Scene",
+    QString("Delete the cell <b>%1</b>?").arg(name.toHtmlEscaped()), QMessageBox::NoButton, this);
+  confirm_box.setInformativeText(QString(
+    "<b>Location:</b> %1<br/><br/>"
+    "<b>What happens:</b> the whole cell folder (layout, task, generated package files and its own imported CAD "
+    "copies) is moved out of the scene list into <i>%2</i>. Nothing is erased: to restore it, move the folder back "
+    "into the scenes folder and remove the date suffix.<br/><br/>"
+    "<b>Not affected:</b> other cells, reference scenes, the shared asset and CAD library, qualified evidence, and "
+    "workspace build/install trees.%3")
+    .arg(QString::fromStdString(scene_path.string()).toHtmlEscaped(),
+         QString::fromStdString((trash_scenes_root / ".workcell_studio_trash").string()).toHtmlEscaped(),
+         open_cell && layout_dirty_ ? QString("<br/><br/><b>This cell is open with unsaved edits; they are discarded.</b>") : QString()));
+  auto * confirm_button = confirm_box.addButton(QString("Delete '%1'").arg(name), QMessageBox::DestructiveRole);
+  confirm_button->setObjectName("deleteSceneConfirm");
+  auto * cancel_button = confirm_box.addButton(QMessageBox::Cancel);
+  confirm_box.setDefaultButton(cancel_button);
+  confirm_box.setEscapeButton(cancel_button);
+  confirm_box.exec();
+  if (confirm_box.clickedButton() != confirm_button) {
     append_studio_log(QString("Delete Scene cancelled for '%1'.").arg(QString::fromStdString(scene.scene_name)));
     return;
   }
@@ -5693,6 +5936,14 @@ void MainWindow::delete_selected_scene()
     return;
   }
   append_studio_log("Delete Scene moved to trash: " + QString::fromStdString(trash_target.string()));
+  // Only this cell's disposable Home previews (<id>-<fingerprint>.png/.json); ids contain no '-'.
+  {
+    QString cache_root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (cache_root.trimmed().isEmpty()) cache_root = QDir(QDir::tempPath()).filePath(QStringLiteral("workcell_studio"));
+    QDir previews(QDir(cache_root).filePath(QStringLiteral("home_previews")));
+    for (const QString & file : previews.entryList({name + "-*.png", name + "-*.json"}, QDir::Files))
+      previews.remove(file);
+  }
   // The confirmed delete discarded the cell with its unsaved edits, undo history and results.
   layout_dirty_ = false;
   leave_cell_session_for(-1);
@@ -5815,7 +6066,14 @@ void MainWindow::refresh_selected_scene_details_card()
   if (dashboard_plan_action_) dashboard_plan_action_->setToolTip(plan_gate.tooltip);
   if (dashboard_export_action_) dashboard_export_action_->setEnabled(export_gate.enabled);
   if (dashboard_export_action_) dashboard_export_action_->setToolTip(export_gate.tooltip);
-  if (dashboard_delete_action_) dashboard_delete_action_->setEnabled(true);
+  if (dashboard_delete_action_) {
+    const QString protection = scene_delete_protection_reason(s.scene_dir);
+    dashboard_delete_action_->setEnabled(protection.isEmpty());
+    dashboard_delete_action_->setText(protection.isEmpty() ? QStringLiteral("Delete Scene…") : QStringLiteral("Delete Scene (protected)"));
+    dashboard_delete_action_->setToolTip(protection.isEmpty()
+      ? QStringLiteral("Move this cell's folder to the scenes trash (restorable). Asks for confirmation.")
+      : QStringLiteral("Delete is unavailable: ") + protection);
+  }
 }
 
 
@@ -9553,6 +9811,11 @@ void MainWindow::mark_layout_dirty(const QString & reason)
   if (layout_state_label_) {
     layout_state_label_->setText(QString("Unsaved Layout Edits: %1").arg(reason));
   }
+  // Checks must show the unsaved layout at once (Save Layout before Generate), never a stale "Done".
+  if (!workflow_rail_refresh_pending_) {
+    workflow_rail_refresh_pending_ = true;
+    QTimer::singleShot(400, this, [this]() { workflow_rail_refresh_pending_ = false; refresh_scene_workflow_rail(); });
+  }
 }
 
 void MainWindow::capture_active_editable_layout_session()
@@ -11115,12 +11378,13 @@ void MainWindow::apply_mounting_snapshot(const QVector<ScenePreviewWidget::Previ
   notify_mate_scene_changed();
 }
 
-bool MainWindow::commit_mounting_request(QJsonObject request)
+bool MainWindow::commit_mounting_request(QJsonObject request, QString * error_out)
 {
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Asset mounting"))) return false;
   const auto response = run_mounting_request(request);
   if (!response.value("ok").toBool()) {
-    QMessageBox::warning(this, "Asset mounting", response.value("error").toString());
+    if (error_out) *error_out = response.value("error").toString();
+    else QMessageBox::warning(this, "Asset mounting", response.value("error").toString());
     return false;
   }
   QVector<ScenePreviewWidget::PreviewItem> before, after;
@@ -11223,8 +11487,23 @@ void MainWindow::edit_selected_mounting()
   QDialog dialog(this); dialog.setWindowTitle("Mount asset — " + target.state.display_name);
   dialog.setObjectName("assetMountingDialog");
   auto * form = new QFormLayout(&dialog);
-  auto * intro = new QLabel("Attach this asset to a parent. Choose a datum on each: the child datum is aligned to the "
-    "parent datum. A plane's normal points outward (+Z).", &dialog);
+  const auto current_relation = [this, &target]() {
+    for (const auto & p : all_scene_preview_items_) if (p.id == target.state.id) return workcell_builder::parse_mount_relation(p.mounting_yaml);
+    return workcell_builder::MountRelation{};
+  }();
+  QString current_parent = current_relation.parent_id;
+  for (const auto & p : all_scene_preview_items_) if (p.id == current_relation.parent_id && !p.display_name.isEmpty()) current_parent = p.display_name;
+  auto * intro = new QLabel(QString(
+    "<b>Selected:</b> %1 &mdash; %2<br/>"
+    "<b>Mount To:</b> attach this object to another asset or frame so it follows that parent.<br/>"
+    "<b>Relative pose:</b> position and rotation relative to the selected parent.<br/>"
+    "<b>World pose:</b> actual position and rotation in the workcell.<br/>"
+    "<b>Mate</b> (toolbar): align compatible physical faces or datums, when the asset declares them.<br/>"
+    "The child datum is aligned to the parent datum; a plane's normal points outward (+Z).")
+    .arg(target.state.display_name.toHtmlEscaped(),
+         current_relation.mounted ? QString("mounted to <b>%1</b>; moving it also moves this object.").arg(current_parent.toHtmlEscaped())
+                                  : QString("not mounted (stands in world coordinates).")), &dialog);
+  intro->setObjectName("mountExplanation");
   intro->setWordWrap(true); form->addRow(intro);
   auto * parent = new QComboBox(&dialog); parent->setObjectName("mountTo"); parent->addItem("World", "world");
   for (const auto & p : all_scene_preview_items_) if (named.contains(p.id) && p.id != target.state.id && !p.semantic_task_zone_helper)
@@ -11254,9 +11533,9 @@ void MainWindow::edit_selected_mounting()
     else add_datums(anchor, named.value(id).toObject());
   };
   add_datums(child_datum, named.value(target.state.id).toObject());
-  form->addRow("Mount To", parent); form->addRow("Parent datum", anchor);
+  form->addRow("Mount To (parent)", parent); form->addRow("Parent datum", anchor);
   form->addRow("Child datum", child_datum); form->addRow("Alignment", alignment);
-  auto * relative = new QCheckBox("Move the asset: align the datums with this offset", &dialog); relative->setObjectName("applyRelativePose");
+  auto * relative = new QCheckBox("Set the relative pose: move the asset to this offset from the parent datum", &dialog); relative->setObjectName("applyRelativePose");
   form->addRow(relative);
   std::array<QDoubleSpinBox *, 6> values;
   const std::array<const char *, 6> keys{{"x", "y", "z", "roll", "pitch", "yaw"}};
@@ -11324,12 +11603,17 @@ void MainWindow::edit_selected_mounting()
         const double moved = std::hypot(xyz[0].toDouble() - p.x, xyz[1].toDouble() - p.y, xyz[2].toDouble() - p.z);
         const double turned = std::max({std::abs(rpy[0].toDouble() - p.roll), std::abs(rpy[1].toDouble() - p.pitch), std::abs(rpy[2].toDouble() - p.yaw)});
         if (p.id == target.state.id) {
-          line = QString("%1 at X %2 · Y %3 · Z %4 m, roll %5° · pitch %6° · yaw %7° (moves %8 mm)")
+          line = QString("World pose of %1: X %2 · Y %3 · Z %4 m, roll %5° · pitch %6° · yaw %7° (moves %8 mm)")
             .arg(p.display_name).arg(xyz[0].toDouble(), 0, 'f', 4).arg(xyz[1].toDouble(), 0, 'f', 4).arg(xyz[2].toDouble(), 0, 'f', 4)
             .arg(qRadiansToDegrees(rpy[0].toDouble()), 0, 'f', 1).arg(qRadiansToDegrees(rpy[1].toDouble()), 0, 'f', 1)
             .arg(qRadiansToDegrees(rpy[2].toDouble()), 0, 'f', 1).arg(moved * 1000., 0, 'f', 1);
           const auto resulting = workcell_builder::parse_mount_relation(row.value("mounting_yaml").toString());
-          if (resulting.mounted) line += "\n" + workcell_builder::mount_offset_text(resulting);
+          if (resulting.mounted) {
+            line += "\nRelative pose: " + workcell_builder::mount_offset_text(resulting);
+            line += QString("\n%1 mounted to %2. Moving %2 also moves %1.").arg(p.display_name, parent->currentText());
+          } else {
+            line += QString("\n%1 is not mounted: it stays in world coordinates.").arg(p.display_name);
+          }
         } else if (moved > 1e-9 || turned > 1e-9) {
           followers << p.display_name;
         }
@@ -11475,6 +11759,7 @@ bool MainWindow::leave_cell_session_for(int scene_index)
   undo_stack_.clear();
   redo_stack_.clear();
   deleted_layout_item_ids_.clear();
+  session_issued_layout_ids_.clear();
   selection_set_.clear();
   layout_dirty_ = false;
   validation_stale_ = false;  // in-session edits since the last validation belong to the old cell
@@ -12087,6 +12372,7 @@ void MainWindow::undo_layout_edit(){
       bool exists = false;
       for (const auto & existing : all_scene_preview_items_) if (existing.id == p.id) { exists = true; break; }
       if (!exists) all_scene_preview_items_.push_back(p);
+      if (p.id == c.item_id) restore_layout_canvas_item(p, c.canvas_roles);
     }
     if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active() &&
         !c.preview_items.isEmpty()) {
@@ -12122,6 +12408,37 @@ void MainWindow::undo_layout_edit(){
   scene_preview_widget_->set_native_authoring_history_available(!undo_stack_.empty(), true);
   mark_layout_dirty("Undo"); refresh_scene_hierarchy_tree_from_current_items(); refresh_minimap_card(); refresh_delete_selected_action(); refresh_duplicate_selected_action();
 }
+QMap<int, QVariant> MainWindow::canvas_item_roles(const QGraphicsItem * item) const
+{
+  QMap<int, QVariant> roles;
+  if (item) for (int role = RoleId; role <= RoleGeometryType; ++role) if (item->data(role).isValid()) roles.insert(role, item->data(role));
+  return roles;
+}
+
+void MainWindow::restore_layout_canvas_item(const ScenePreviewWidget::PreviewItem & p, const QMap<int, QVariant> & roles)
+{
+  // Undo of a delete and redo of an add bring the item back everywhere Save reads it from: the session record
+  // and the canvas item (with its mount), not only the 3D view.
+  upsert_session_item(editable_layout_session_items_, p);
+  if (find_canvas_item_by_stable_id(p.id) || !digital_twin_scene_) return;
+  auto * item = new DraggableCanvasItem(QRectF(0, 0, qMax(10.0, p.sx * 35.0), qMax(10.0, p.sy * 35.0)));
+  item->setPos(p.x * 100.0, p.y * 100.0);
+  item->setData(RoleId, p.id); item->setData(RoleDisplayName, p.display_name); item->setData(RoleCategory, p.category); item->setData(RoleRole, p.role);
+  item->setData(RoleSource, p.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder")); item->setData(RoleSourceLayer, QStringLiteral("editable_layout")); item->setData(RoleLocked, false);
+  item->setData(RolePoseZ, p.z); item->setData(RoleRoll, p.roll); item->setData(RolePitch, p.pitch); item->setData(RoleYaw, p.yaw);
+  item->setData(RoleWidth, p.sx); item->setData(RoleDepth, p.sy); item->setData(RoleHeight, p.sz);
+  item->setData(RoleCatalogAssetId, p.catalog_asset_id); item->setData(RoleGeometryType, p.primitive_geometry_type);
+  item->setData(RoleMountingYaml, p.mounting_yaml);
+  if (p.has_mesh_metadata) { item->setData(RoleMeshScaleX, p.mesh_scale_x); item->setData(RoleMeshScaleY, p.mesh_scale_y); item->setData(RoleMeshScaleZ, p.mesh_scale_z); }
+  for (auto it = roles.cbegin(); it != roles.cend(); ++it) item->setData(it.key(), it.value());  // exact original roles win
+  item->setPos(p.x * 100.0, p.y * 100.0);
+  item->setData(RolePoseZ, p.z); item->setData(RoleRoll, p.roll); item->setData(RolePitch, p.pitch); item->setData(RoleYaw, p.yaw);
+  item->setData(RoleMountingYaml, p.mounting_yaml);
+  item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
+  item->position_filter = [this](const QPointF & pos){ return snap_canvas_position(pos); };
+  digital_twin_scene_->addItem(item);
+}
+
 void MainWindow::redo_layout_edit(){
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Redo"))) return;
   if (redo_stack_.empty() && scene_preview_widget_ &&
@@ -12169,19 +12486,7 @@ void MainWindow::redo_layout_edit(){
     bool exists = false;
     for (const auto & existing : all_scene_preview_items_) if (existing.id == p.id) { exists = true; break; }
     if (!exists) all_scene_preview_items_.push_back(p);
-    upsert_session_item(editable_layout_session_items_, p);
-    if (!find_canvas_item_by_stable_id(p.id)) {
-      auto * item = new DraggableCanvasItem(QRectF(0, 0, qMax(10.0, p.sx * 35.0), qMax(10.0, p.sy * 35.0)));
-      item->setPos(p.x * 100.0, p.y * 100.0);
-      item->setData(RoleId, p.id); item->setData(RoleDisplayName, p.display_name); item->setData(RoleCategory, p.category); item->setData(RoleRole, p.role);
-      item->setData(RoleSource, p.source_path); item->setData(RoleSourcePackage, QStringLiteral("asset_folder")); item->setData(RoleSourceLayer, QStringLiteral("editable_layout")); item->setData(RoleLocked, false);
-      item->setData(RolePoseZ, p.z); item->setData(RoleRoll, p.roll); item->setData(RolePitch, p.pitch); item->setData(RoleYaw, p.yaw);
-      item->setData(RoleWidth, p.sx); item->setData(RoleDepth, p.sy); item->setData(RoleHeight, p.sz);
-      item->setData(RoleCatalogAssetId, p.catalog_asset_id); item->setData(RoleGeometryType, p.primitive_geometry_type);
-      item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsMovable);
-      item->position_filter = [this](const QPointF & pos){ return snap_canvas_position(pos); };
-      digital_twin_scene_->addItem(item);
-    }
+    restore_layout_canvas_item(p, c.canvas_roles);
     if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
       scene_preview_widget_->add_authoring_item(p);
     else apply_scene3d_preview_layer_filters(false);
@@ -12248,6 +12553,8 @@ void MainWindow::duplicate_selected_item()
     if (!id.isEmpty()) reserved_ids.insert(id.toStdString());
     if (!p.display_name.trimmed().isEmpty()) reserved_names.insert(p.display_name.trimmed().toLower());
   }
+  for (const auto & id : deleted_layout_item_ids_) reserved_ids.insert(id.toStdString());
+  for (const auto & id : session_issued_layout_ids_) reserved_ids.insert(id.toStdString());
   auto normalize_id = [](QString text) {
     text = text.trimmed().toLower();
     QString out;
@@ -12276,6 +12583,7 @@ void MainWindow::duplicate_selected_item()
   QString new_name = base_name + QStringLiteral(" copy");
   for (int n = 2; reserved_names.contains(new_name.toLower()) && n < 1000; ++n) new_name = QStringLiteral("%1 copy %2").arg(base_name).arg(n);
 
+  session_issued_layout_ids_.insert(new_id);
   copy.id = new_id;
   copy.display_name = new_name;
   if (!copy.mounting_yaml.isEmpty()) {
@@ -12336,13 +12644,80 @@ bool MainWindow::selected_item_can_be_deleted() const
   return resolve_selected_editable_layout_target().ok;
 }
 
+QString MainWindow::delete_unavailable_reason() const
+{
+  if (selection_set_.size() >= 2)
+    return QStringLiteral("Delete removes one part at a time; %1 parts are selected.").arg(selection_set_.size());
+  if (!selected_scene_state_.valid) return QStringLiteral("Open a cell first.");
+  if (place_asset_armed_) return QStringLiteral("Finish or cancel placing the asset first (Esc).");
+  if (scene_preview_widget_ && !scene_preview_widget_->embedded_web_authoring_active())
+    return QStringLiteral("The 3D view is not ready for editing yet.");
+  if (current_selected_scene_item_id_.trimmed().isEmpty()) return QStringLiteral("Select a part in the 3D view or the hierarchy.");
+  const auto target = resolve_selected_editable_layout_target();
+  if (target.ok) return QString();
+  const auto state = current_selected_scene_item();
+  if (state.valid && (state.locked || !state.editable))
+    return QStringLiteral("%1 is locked equipment geometry (%2); it is part of the robot/tool model, not a layout asset.")
+      .arg(state.display_name.isEmpty() ? state.id : state.display_name,
+           state.lock_reason.isEmpty() ? QStringLiteral("generated from the cell's robot and tool") : state.lock_reason);
+  return target.blocker.isEmpty() ? QStringLiteral("The selection is not an editable layout asset.") : target.blocker;
+}
+
+QStringList MainWindow::layout_item_dependents(const QString & id) const
+{
+  QStringList out;
+  QSet<QString> live;
+  for (const auto & p : all_scene_preview_items_) if (!deleted_layout_item_ids_.contains(p.id)) live.insert(p.id);
+  auto name_of = [&](const QString & other) {
+    for (const auto & p : all_scene_preview_items_) if (p.id == other && !p.display_name.isEmpty()) return QStringLiteral("%1 (%2)").arg(p.display_name, other);
+    return other;
+  };
+  QSet<QString> named;  // one line per dependent object (session relation first, then saved references)
+  auto add = [&](const QString & line) { if (!out.contains(line)) out << line; };
+  // In-session relations first: they include unsaved mounts.
+  for (const auto & p : all_scene_preview_items_) {
+    if (p.id == id || !live.contains(p.id)) continue;
+    const auto meta = YAML::Load(p.mounting_yaml.toStdString());
+    if (meta && meta["parent_object"] && QString::fromStdString(meta["parent_object"].as<std::string>()) == id)
+    { add(QStringLiteral("%1 is mounted on it").arg(name_of(p.id))); named.insert(p.id); }
+    if (p.target_ref == id) { add(QStringLiteral("%1 is its placement region").arg(name_of(p.id))); named.insert(p.id); }
+  }
+  // Saved references that the session does not project (support surface, destination zone).
+  const fs::path scene_dir(selected_scene_state_.path.toStdString());
+  try {
+    const auto layout = YAML::LoadFile((scene_dir / "layout" / "workcell_studio_layout.yaml").string());
+    for (const auto & item : layout["items"]) {
+      const QString other = QString::fromStdString(item["id"].as<std::string>(""));
+      if (other == id || !live.contains(other) || named.contains(other)) continue;
+      for (const char * key : {"support_surface_ref", "target_ref", "parent_object"})
+        if (item[key] && QString::fromStdString(item[key].as<std::string>("")) == id)
+          add(QStringLiteral("%1 references it (%2)").arg(name_of(other), QString::fromLatin1(key)));
+    }
+  } catch (const std::exception &) {}
+  // The saved task: any binding that names this item (pick source/zone, destination, route).
+  try {
+    std::function<void(const YAML::Node &, const QString &)> walk = [&](const YAML::Node & node, const QString & path) {
+      if (node.IsScalar()) { if (QString::fromStdString(node.as<std::string>("")) == id) add(QStringLiteral("the saved task uses it as %1").arg(path)); }
+      else if (node.IsMap()) for (const auto & kv : node) walk(kv.second, path.isEmpty() ? QString::fromStdString(kv.first.as<std::string>()) : path + "." + QString::fromStdString(kv.first.as<std::string>()));
+      else if (node.IsSequence()) for (std::size_t i = 0; i < node.size(); ++i) walk(node[i], path + QStringLiteral("[%1]").arg(i));
+    };
+    walk(YAML::LoadFile((scene_dir / "config" / "workcell_builder_task_intent.yaml").string()), QString());
+  } catch (const std::exception &) {}
+  return out;
+}
+
 void MainWindow::refresh_delete_selected_action()
 {
+  const QString reason = delete_unavailable_reason();
+  const QString tip = reason.isEmpty() ? QStringLiteral("Delete the selected part (Delete key; undo with Ctrl+Z).")
+                                       : QStringLiteral("Delete unavailable: ") + reason;
   if (auto * action = scene_builder_action(QStringLiteral("layout.remove"))) {
-    const bool multi = selection_set_.size() >= 2;
-    action->setEnabled(!multi && selected_item_can_be_deleted());
-    action->setToolTip(multi ? QStringLiteral("Delete removes one part at a time; %1 parts are selected.").arg(selection_set_.size())
-                             : QStringLiteral("Delete the selected part (undoable)."));
+    action->setEnabled(reason.isEmpty());
+    action->setToolTip(tip);
+  }
+  if (scene_delete_button_) {
+    scene_delete_button_->setEnabled(reason.isEmpty());
+    scene_delete_button_->setToolTip(tip);
   }
 }
 
@@ -12363,13 +12738,24 @@ void MainWindow::delete_selected_item(){
   }
   if (!ensure_live_authoring_mutation_available(QStringLiteral("Delete"))) return;
   const QString id = target.state.id.trimmed();
-  for (const auto & p : all_scene_preview_items_) {
-    const auto meta = YAML::Load(p.mounting_yaml.toStdString());
-    if (meta && meta["parent_object"] && meta["parent_object"].as<std::string>() == id.toStdString()) {
-      QMessageBox::warning(this, "Remove asset", "Detach or reparent the mounted children before removing their parent.");
-      return;
-    }
+  const QString label = target.state.display_name.isEmpty() ? id : target.state.display_name;
+  // Never orphan a mounted child, a placement region or a task binding: refuse and name what to change first.
+  if (const QStringList dependents = layout_item_dependents(id); !dependents.isEmpty()) {
+    QMessageBox::warning(this, QStringLiteral("Delete %1").arg(label),
+      QStringLiteral("%1 cannot be deleted because other parts of the cell depend on it:\n\n- %2\n\n"
+        "Next: detach or delete the mounted parts first (Mount To / Relative Pose > Detach), and bind the task to "
+        "another destination or source on the Task tab and Save task. Nothing was changed.")
+        .arg(label, dependents.join(QStringLiteral("\n- "))));
+    append_studio_log(QStringLiteral("Delete refused: %1 has dependents: %2").arg(id, dependents.join("; ")));
+    return;
   }
+  const bool camera = target.state.role.contains(QStringLiteral("camera"), Qt::CaseInsensitive) ||
+    target.state.type.contains(QStringLiteral("realsense"), Qt::CaseInsensitive) ||
+    target.state.type.contains(QStringLiteral("camera"), Qt::CaseInsensitive);
+  if (camera && QMessageBox::question(this, QStringLiteral("Delete camera"),
+        QStringLiteral("%1 is a camera. Live perception and its camera frames come from it; without a camera the cell "
+          "can only use recorded or simulated observations. Delete it? (Undo restores it.)").arg(label),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) return;
   QVector<ScenePreviewWidget::PreviewItem> deleted_preview_items;
   for (const auto & p : all_scene_preview_items_) if (p.id == id) deleted_preview_items.push_back(p);
   if (deleted_preview_items.isEmpty()) {
@@ -12381,6 +12767,7 @@ void MainWindow::delete_selected_item(){
   const QPointF item_position = target.fallback_item ? target.fallback_item->pos() : QPointF();
   CanvasEditCommand command{
     "delete", id, item_position, item_position, false, true, deleted_preview_items};
+  command.canvas_roles = canvas_item_roles(target.fallback_item);
   deleted_layout_item_ids_.insert(id);
   for (int i = all_scene_preview_items_.size() - 1; i >= 0; --i) if (all_scene_preview_items_[i].id == id) all_scene_preview_items_.removeAt(i);
   if (target.fallback_item) delete target.fallback_item;
@@ -12687,6 +13074,9 @@ bool MainWindow::arm_place_asset_mode(const QString & requested_asset_id)
   }
   if (!digital_twin_scene_) { rebuild_digital_twin_canvas(); }
   if (!digital_twin_scene_) return false;
+  // Placing starts from an empty selection: the new asset becomes the selection on commit, and a late viewer
+  // report of the previous selection can never re-select (and expose to Delete) an unrelated part.
+  if (!current_selected_scene_item_id_.isEmpty()) apply_scene_selection(QString(), QStringLiteral("placement_armed"), true, false);
   place_asset_armed_ = true;
   armed_asset_id_ = match->asset_id;
   armed_asset_category_ = match->category;
@@ -12743,6 +13133,8 @@ void MainWindow::commit_armed_asset_placement(
     const auto layout_ids = workcell_builder::workcell_studio_collect_layout_ids(layout_path);
     reserved_ids.insert(layout_ids.begin(), layout_ids.end());
   }
+  for (const auto & id : deleted_layout_item_ids_) reserved_ids.insert(id.toStdString());
+  for (const auto & id : session_issued_layout_ids_) reserved_ids.insert(id.toStdString());
   const QString new_id = QString::fromStdString(
     workcell_builder::workcell_studio_next_id(category.toStdString(), reserved_ids));
   const QString role_type = QString::fromStdString(
@@ -12852,6 +13244,7 @@ void MainWindow::commit_armed_asset_placement(
   for (int i = 0; i < all_scene_preview_items_.size(); ++i) {
     if (all_scene_preview_items_[i].id == new_id) { all_scene_preview_items_.removeAt(i); break; }
   }
+  session_issued_layout_ids_.insert(new_id);
   all_scene_preview_items_.push_back(preview_item);
   upsert_session_item(editable_layout_session_items_, preview_item);
   if (scene_preview_widget_ && scene_preview_widget_->embedded_web_authoring_active())
@@ -12881,7 +13274,8 @@ void MainWindow::commit_armed_asset_placement(
   armed_asset_support_owner_.clear();
   if (!support.isEmpty()) {
     const size_t add_index = undo_stack_.size() - 1;
-    if (commit_mounting_request({{"id", new_id}, {"parent_object", support}, {"parent_link", "origin"}})) {
+    QString mount_error;
+    if (commit_mounting_request({{"id", new_id}, {"parent_object", support}, {"parent_link", "origin"}}, &mount_error)) {
       // One undo step: the add command re-adds the mounted item, and undo removes it with its relation.
       if (undo_stack_.size() == add_index + 2) undo_stack_.pop_back();
       for (const auto & p : all_scene_preview_items_) if (p.id == new_id) undo_stack_[add_index].preview_items = {p};
@@ -12890,12 +13284,25 @@ void MainWindow::commit_armed_asset_placement(
       // Never keep an asset that should rest on a support but is not mounted to it.
       undo_layout_edit();
       if (!redo_stack_.empty() && redo_stack_.back().item_id == new_id) redo_stack_.pop_back();
-      append_studio_log(QStringLiteral("Asset placement rolled back: %1 could not be mounted on %2.").arg(new_id, support));
+      const QString reason = QStringLiteral("%1 could not be mounted on %2 (%3); nothing was added.")
+        .arg(display_name, support, mount_error);
+      append_studio_log(QStringLiteral("Asset placement rolled back: ") + reason);
+      statusBar()->showMessage(QStringLiteral("Placement rolled back: ") + reason, 8000);
+      show_workflow_feedback(QStringLiteral("error"), QStringLiteral("Placement rolled back: ") + reason);
       return;
     }
   }
+  if (!undo_stack_.empty() && undo_stack_.back().kind == QStringLiteral("add") && undo_stack_.back().item_id == new_id)
+    undo_stack_.back().canvas_roles = canvas_item_roles(find_canvas_item_by_stable_id(new_id));
   record_recent_asset(asset_id);
   if (scene_preview_widget_) scene_preview_widget_->select_preview_item(new_id);
+  // The viewer registers the new item asynchronously; select it again once it exists there, unless the user has
+  // selected something else meanwhile, so the asset just placed is what the Inspector and Delete act on.
+  QTimer::singleShot(600, this, [this, new_id]() {
+    if (!current_selected_scene_item_id_.isEmpty() || deleted_layout_item_ids_.contains(new_id) ||
+        !find_canvas_item_by_stable_id(new_id)) return;
+    apply_scene_selection(new_id, QStringLiteral("asset"), false, false);
+  });
   if (scene_builder_inspector_tabs_) scene_builder_inspector_tabs_->setCurrentIndex(0);
   refresh_diagnostics_quick_status();
   const bool persist = preserve_placement_session ||
@@ -17173,6 +17580,11 @@ std::vector<MainWindow::SceneWorkflowStep> MainWindow::scene_workflow_steps() co
     layout_ready_detail,
     layout_missing_detail,
     {}, gates, layout_status));
+  if (layout_dirty_ && steps.back().status == SceneWorkflowStepStatus::Done) {
+    // The file exists, but the 3D view holds edits that are not in it: everything downstream reads the file.
+    steps.back().status = SceneWorkflowStepStatus::NeedsAction;
+    steps.back().detail = QStringLiteral("Unsaved: the 3D layout has edits that are not saved yet; click Save Layout.");
+  }
   // Present files are not current files: after a layout or task change the generated
   // handoff is Stale until Generate runs again.
   const bool yaml_present = yaml_ready && scene_manifest_ready;

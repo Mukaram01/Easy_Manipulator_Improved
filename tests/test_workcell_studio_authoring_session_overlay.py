@@ -100,3 +100,48 @@ def test_overlay_rejects_unresolvable_imported_source_with_item_diagnostic(tmp_p
     _write_overlay(overlay, [bad])
     with pytest.raises(exporter.BlockingExportError, match=r"object_01.*missing/imported_test_asset\.stl"):
         exporter.build_web_scene(SCENE, authoring_session_overlay=overlay)
+
+
+def test_overlay_never_duplicates_a_camera_rendered_from_its_urdf(tmp_path):
+    # Builder's session overlay includes every editable mesh item, the camera too. Its raw DAE at the layout pose
+    # (without the URDF visual origin) must not come back as a second, mis-oriented asset.
+    overlay = tmp_path / "camera-overlay.json"
+    canonical = exporter.build_web_scene(SCENE)
+    camera = next(row for row in canonical["sensors"] if row.get("id") == "realsense_overhead")
+    item = _item("realsense_overhead", 0.4)
+    item.update(type="realsense", category="realsense", role="camera")
+    _write_overlay(overlay, [item])
+    payload = exporter.build_web_scene(SCENE, authoring_session_overlay=overlay)
+    assert camera
+    assert not [row for row in payload["assets"] if row.get("id") == "realsense_overhead"]
+
+
+def test_camera_coverage_is_display_only_and_names_its_optical_frame():
+    if not (SCENE / "generated" / "expanded_scene_preview.urdf").is_file():
+        pytest.skip("ur5_2f_test has not been generated on this machine")
+    payload = exporter.build_web_scene(SCENE)
+    covered = [row for row in payload["sensors"] if row.get("camera_coverage")]
+    assert covered, "the rendered D435 body carries its coverage description"
+    coverage = covered[0]["camera_coverage"]
+    assert coverage["optical_frame"].endswith("color_optical_frame")
+    assert coverage["display_only"] is True
+    # No intrinsics are authored for this camera: the FOV is nominal and labelled uncalibrated, never measured.
+    assert coverage["calibrated"] is False and "uncalibrated" in coverage["fov_source"]
+    assert 0 < coverage["horizontal_fov_deg"] < 180 and 0 < coverage["vertical_fov_deg"] < 180
+
+
+def test_task_destination_error_keeps_the_layout_editable_and_execution_disabled(monkeypatch):
+    # A task naming a destination the layout does not provide is a task blocker: the physical layout stays
+    # editable so either side can be fixed, and every execution action stays disabled.
+    import task_intent_resolver
+
+    def mismatch(*_args, **_kwargs):
+        raise ValueError("PLACE_REGION_TARGET_MISMATCH: place region is bound to a different physical target asset")
+
+    monkeypatch.setattr(task_intent_resolver, "scene_resolution", mismatch)
+    payload = exporter.build_web_scene(SCENE)
+    assert "preview_mode" not in payload and "authoring_status" not in payload
+    assert payload["task_readiness"] == "BLOCKED"
+    assert payload["task_blocker"]["primary_code"] == "PLACE_REGION_TARGET_MISMATCH"
+    assert any(item.get("editable") for item in payload["assets"])
+    assert all(not action.get("enabled") for action in payload["backend_actions"] if action.get("id") != "validate")

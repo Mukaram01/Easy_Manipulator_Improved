@@ -951,6 +951,10 @@ QIcon studioIcon(const QString & name, const QString & colour)
     } else if (name == QLatin1String("more")) {
       p.setBrush(ink); p.setPen(Qt::NoPen);
       for (const double x : {3.5, 8.0, 12.5}) p.drawEllipse(QPointF(x, 8), 1.4, 1.4);
+    } else if (name == QLatin1String("delete")) {
+      path.moveTo(2.5, 4.5); path.lineTo(13.5, 4.5); path.moveTo(6, 4.5); path.lineTo(6.5, 2.5); path.lineTo(9.5, 2.5);
+      path.lineTo(10, 4.5); path.moveTo(4, 4.5); path.lineTo(5, 13.5); path.lineTo(11, 13.5); path.lineTo(12, 4.5);
+      path.moveTo(7, 7); path.lineTo(7, 11); path.moveTo(9, 7); path.lineTo(9, 11);
     } else if (name == QLatin1String("reset")) {
       path.arcMoveTo(2.5, 2.5, 11, 11, 100); path.arcTo(2.5, 2.5, 11, 11, 100, 300);
       path.moveTo(2.2, 1.8); path.lineTo(3.3, 5.2); path.lineTo(6.6, 4.2);

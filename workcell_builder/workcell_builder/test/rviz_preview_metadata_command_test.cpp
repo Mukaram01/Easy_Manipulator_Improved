@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <QDir>
+#include <QTemporaryDir>
 
 #include <boost/filesystem.hpp>
 
@@ -117,6 +119,18 @@ TEST(RvizPreviewMetadataCommandTest, RebuildsOnlySelectedGeneratedPackageInClean
   EXPECT_NE(command.indexOf("--allow-overriding 'metadata_selected_scene'"), -1);
   EXPECT_EQ(command.indexOf("--packages-up-to"), -1);
   EXPECT_EQ(command.indexOf("ur5_2f_test"), -1);
+}
+
+TEST(RvizPreviewMetadataCommandTest, PackageDiscoveryStaysInsideTheWorkspaceSource)
+{
+  // A workspace root that also holds another view of the same source must not find the scene twice.
+  QTemporaryDir workspace;
+  ASSERT_TRUE(workspace.isValid());
+  ASSERT_TRUE(QDir(workspace.path()).mkpath("src"));
+  auto scene = runnable_scene();
+  scene.launch_package = "metadata_selected_scene";
+  const QString command = workcell_builder::build_selected_package_command(scene, workspace.path().toStdString());
+  EXPECT_NE(command.indexOf("colcon build --base-paths src --symlink-install --packages-select 'metadata_selected_scene'"), -1);
 }
 
 TEST(RvizPreviewMetadataCommandTest, DiscoveryAndLaunchSourceBuiltOverlay)

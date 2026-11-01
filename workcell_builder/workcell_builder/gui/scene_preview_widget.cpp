@@ -1426,7 +1426,8 @@ bool is_destination_authoring_blocker(const QString & stderr_tail)
   // destination zone is missing or ambiguous ("task/physical destination: ...").
   const bool relationship = stderr_tail.contains("environment.yaml:") && stderr_tail.contains("relationship") &&
     (stderr_tail.contains("unresolved ID") || stderr_tail.contains("ambiguous applicable destinations"));
-  return relationship || stderr_tail.contains("error: task/physical destination: ");
+  return relationship || stderr_tail.contains("error: task/physical destination: ") ||
+    stderr_tail.contains("error: environment.yaml: physical destination: ");
 }
 
 QString concise_preparation_error(const QString & detail)
@@ -3153,6 +3154,21 @@ void ScenePreviewWidget::set_mate_overlay(const QJsonObject & overlay)
   run_embedded_editor_command(QStringLiteral(
     "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
     "return a&&typeof a.setMateMode==='function'?a.setMateMode(%1):{error:'missing_setMateMode'};})()").arg(payload));
+}
+
+void ScenePreviewWidget::set_camera_coverage(const QJsonObject & options, std::function<void(const QJsonObject &)> done)
+{
+  if (!embedded_web_view_ || !embedded_web_authoring_active()) { if (done) done({{"error", "Product View is not ready"}}); return; }
+  const QString payload = QString::fromUtf8(QJsonDocument(options).toJson(QJsonDocument::Compact));
+  const EmbeddedWebRequestIdentity identity = embedded_web_active_identity_;
+  embedded_web_view_->page()->runJavaScript(QStringLiteral(
+    "(()=>{const a=window.__WORKCELL_EDITOR_API_V1__;"
+    "return JSON.stringify(a&&typeof a.setCameraCoverage==='function'?a.setCameraCoverage(%1):{error:'missing_setCameraCoverage'});})()")
+      .arg(payload),
+    [guard = QPointer<ScenePreviewWidget>(this), identity, done](const QVariant & value) {
+      if (!guard || guard->embedded_web_destroying_ || !guard->embedded_web_identity_is_current(identity) || !done) return;
+      done(QJsonDocument::fromJson(value.toString().toUtf8()).object());
+    });
 }
 
 void ScenePreviewWidget::clear_mate_overlay()

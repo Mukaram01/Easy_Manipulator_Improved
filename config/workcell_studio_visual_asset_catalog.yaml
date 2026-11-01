@@ -70,6 +70,16 @@ categories:
       rpy: [1.5707963267948966, 0.0, 1.5707963267948966]
       scale: [1.0, 1.0, 1.0]
     primitive_fallback_dimensions: [0.08,0.08,0.08]
+    # Display-only coverage preview (Camera Inspector > Show Camera FOV). Nominal colour-stream FOV, the same
+    # value perception_replay.py uses (D435_COLOR_HFOV_RAD); not a calibration. A scene camera with measured
+    # intrinsics (fx, fy, width, height) overrides it. Never used for calibration, planning or admission.
+    nominal_field_of_view:
+      optical_frame_suffix: color_optical_frame
+      horizontal_deg: 69.0
+      vertical_deg: 42.0
+      display_near_m: 0.2
+      display_far_m: 1.5
+      source: nominal D435/D435i colour sensor field of view (uncalibrated)
     preview_label: Camera
     required_for_new_cell_preview: false
     quality_tier: canonical

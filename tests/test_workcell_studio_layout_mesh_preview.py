@@ -47,6 +47,16 @@ def test_owning_package_maps_generated_imported_asset():
     assert marker.mesh_resource == "package://example_scene/assets/imported/nested/example.stl"
 
 
+def test_owning_package_maps_asset_library_copy():
+    # Asset Library placements are saved as cell-local copies under assets/library and installed with the scene.
+    resource = "assets/library/ccdb17f39cabfbd7.stl"
+    assert preview.resolve_mesh_resource(resource, "example_scene") == (
+        "package://example_scene/assets/library/ccdb17f39cabfbd7.stl"
+    )
+    with pytest.raises(preview.LayoutMeshError):
+        preview.resolve_mesh_resource(resource)
+
+
 def test_mesh_resource_infers_mesh_geometry_when_type_is_missing():
     item = {
         "id": "imported_part",
