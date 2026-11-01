@@ -69,6 +69,14 @@ Catalog presence never implies runtime readiness, and real hardware stays locked
 
 A new installed model without a capability record is listed as not selectable.
 
+**3D authoring of a CONFIGURABLE cell.** The cell gets a 3D model for layout authoring only.
+- **Reference assembly:** discovery looks for an enabled scene in `workcell_studio_supported_scenes.yaml` that already mounts this installed tool on this robot. That scene's SRDF must include the robot's MoveIt config, and its xacro must call the tool record's macro on a robot tip frame. The wizard pre-fills the tool mount from that scene and names it on the End Effector page; UR5 + AirPick uses `ur5_airpick4_test`.
+- **Create:** `instantiate_workcell_studio_profile.py --authoring-model` writes `urdf/scene.urdf.xacro`. It uses only the installed robot and tool macro calls; their mounts read this cell's `environment.yaml`. It then expands the model with real xacro and records `workcell_studio.authoring_model`.
+- **Frame checks:** the robot base, robot tip and tool attach link must exist in the expanded model, or Create fails with the reason. A TCP that no installed model defines, such as the AirPick's `suction_tip`, is recorded as a warning (`tcp_defined: false`) and is not placed.
+- **Product View:** it requires only the robot and the tool for such a cell. Place the first support surface from **Assets** (it may stand on the floor while the cell has none), then add and move assets as usual and **Save Layout**.
+- **No reference assembly:** the wizard says so, and Product View explains that the cell has no equipment model; no mount is guessed.
+- **Still blocked:** Generate, Plan / Simulate, Gazebo motion and real hardware stay blocked with the equipment reason. The model never binds MoveIt, controllers or a task.
+
 ## Giving a new cell its object input (Plan Only)
 
 A new cell plans only from measured object observations. Configure them in **Scene Builder › Task › Object input**; no YAML editing is needed.

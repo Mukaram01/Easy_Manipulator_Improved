@@ -259,8 +259,13 @@ function structuredWeb3dReadinessFields(lifecycleState) {
     finalLifecycleState: finalState,
   };
 }
+// A scene may narrow the required set to known categories (an authoring-only New Cell requires only its equipment).
+function web3dRequiredCategories() {
+  const declared = asArray(state.sceneJson?.metadata?.required_physical_categories).filter(category => WEB3D_REQUIRED_CATEGORIES.includes(category));
+  return declared.length ? declared : WEB3D_REQUIRED_CATEGORIES;
+}
 function beginWeb3dSceneReadiness(items) {
-  const required = Object.fromEntries(WEB3D_REQUIRED_CATEGORIES.map(category => [category, false]));
+  const required = Object.fromEntries(web3dRequiredCategories().map(category => [category, false]));
   for (const item of items || []) {
     const category = readinessCategoryForItem(item);
     if (category) required[category] = true;
@@ -492,7 +497,7 @@ function maybeEmitSceneReady() {
   if (failIfExpandedUrdfExpectedVisualSetInvalid()) return;
   const readiness = state.web3dReadiness;
   if (!readiness || readiness.failed || readiness.state === 'scene_failed') return;
-  const missing = WEB3D_REQUIRED_CATEGORIES.filter(category => !readiness.required?.[category]);
+  const missing = web3dRequiredCategories().filter(category => !readiness.required?.[category]);
   if (missing.length) {
     emitWeb3dReadinessState('scene_failed', { reason: `missing required physical categories: ${missing.join(', ')}`, missing_required_categories: missing });
     return;
@@ -5818,9 +5823,14 @@ async function createPlacementPreview(asset) {
   }
   return root;
 }
+// Assets go on a physical support surface. A cell that has none yet (a new authoring-only cell) may place its
+// first asset, such as the workbench, on the floor; once a support surface exists the floor is refused again.
+function sceneHasSupportSurface() {
+  return state.objects.some(record => readinessCategoryForItem(record?.item) === 'workbench_support_surface');
+}
 function updatePlacementPreview(position) {
   if (!state.placement.armed) return null;
-  return setPlacementPoint(placementPointFromViewport(position, { allowGround: false }));
+  return setPlacementPoint(placementPointFromViewport(position, { allowGround: !sceneHasSupportSurface() }));
 }
 function updatePlacementPointer(clientX, clientY) {
   if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;

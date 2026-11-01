@@ -386,6 +386,8 @@ private:
   // require_task_input: the saved commissioning replay / live snapshot (fake-hardware planning). The
   // qualified physics cycle measures its objects in the simulator; physics_cycle_preflight owns its input.
   SelectedSceneReadiness selected_scene_readiness(bool require_task_input = true) const;
+  // "Equipment STATUS: reason" when the selected New Cell's robot + tool is not plan-capable, else empty.
+  QString selected_scene_equipment_blocker() const;
   bool selected_scene_preview_ready(QStringList * blockers = nullptr) const;
   bool preview_command_is_safe(const QString & command, QStringList * blockers = nullptr) const;
   void refresh_preview_launch_ui();

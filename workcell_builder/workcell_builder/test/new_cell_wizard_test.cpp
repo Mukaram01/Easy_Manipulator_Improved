@@ -126,6 +126,23 @@ TEST(NewCellWizard, DiscoveredPairsAreClassifiedAndUnsupportedOnesFailClosed)
   EXPECT_EQ(advanced(wizard, "Advanced Tool Frames", "End-effector TCP/tool link")->currentText(), "gripper_base_link");
   EXPECT_EQ(combo_items(wizard.findChild<QComboBox *>("graspStrategyCombo")), QStringList{"suction_top_basic"});
   EXPECT_TRUE(wizard.review_text().contains("Authoring only"));
+  // Its 3D authoring model mounts the tool as the supported scene that already assembles this pair does.
+  const auto assembly = wizard.equipment_combination().value("assembly").toObject();
+  EXPECT_EQ(assembly.value("scene").toString(), "ur5_airpick4_test");
+  auto * tool_banner = wizard.findChild<QLabel *>("newCellToolReadiness");
+  ASSERT_NE(tool_banner, nullptr);
+  EXPECT_TRUE(tool_banner->text().contains("3D model (layout authoring only)"));
+  EXPECT_TRUE(tool_banner->text().contains("xyz 0, 0, 0.0324 m, rpy -1.5707, 0, 0 rad"));
+  EXPECT_FALSE(wizard.review_text().contains("installed model does not define it"));
+  advanced(wizard, "Advanced Tool Frames", "End-effector TCP/tool link")->setCurrentText("suction_tip");
+  EXPECT_TRUE(wizard.review_text().contains("TCP 'suction_tip' is declared by"));
+  // The reference mount is only valid on the link it was measured from.
+  auto * airpick_tip = advanced(wizard, "Advanced Robot Frames", "Robot end-effector/tip link");
+  airpick_tip->setCurrentText("ee_link");
+  EXPECT_TRUE(wizard.equipment_blockers().join(" ").contains("mounts OnRobot AirPick/AirPick4 on tool0"));
+  EXPECT_FALSE(create->isEnabled());
+  airpick_tip->setCurrentText("tool0");
+  EXPECT_TRUE(create->isEnabled());
 
   // Not compatible by its capability record: fails closed with the reason.
   ASSERT_TRUE(wizard.select_equipment("ur5", "suction_basic"));

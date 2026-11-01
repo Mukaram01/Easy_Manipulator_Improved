@@ -4483,6 +4483,11 @@ void MainWindow::generate_or_update_task_intent_for_selected_scene()
 bool MainWindow::generate_yaml_draft_for_selected_scene()
 {
   if (selected_scene_index_ < 0) return false;
+  if (const QString equipment = selected_scene_equipment_blocker(); !equipment.isEmpty()) {
+    append_studio_log("Generate blocked: " + equipment);
+    show_workflow_feedback("error", "Generate blocked: " + equipment);
+    return false;
+  }
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
     if (!environment_task_editor_->blocker(false).isEmpty()) {
@@ -4517,6 +4522,11 @@ bool MainWindow::generate_yaml_draft_for_selected_scene()
 }
 
 void MainWindow::generate_scene_package_for_selected_scene() {
+  if (const QString equipment = selected_scene_equipment_blocker(); !equipment.isEmpty()) {
+    append_studio_log("Generate blocked: " + equipment);
+    show_workflow_feedback("error", "Generate blocked: " + equipment);
+    return;
+  }
   if (environment_task_editor_) {
     environment_task_editor_->validate_now();
     if (!environment_task_editor_->blocker(false).isEmpty()) {
@@ -6397,6 +6407,21 @@ QString MainWindow::selected_scene_build_command() const { if (selected_scene_in
 QString MainWindow::selected_scene_source_command() const { return QString("cd %1 && source install/setup.bash").arg(detect_workspace_root()); }
 QString MainWindow::selected_scene_preview_command_block() const { return selected_scene_build_command()+"\n"+selected_scene_source_command()+"\ncd "+detect_workspace_root()+" && "+selected_scene_launch_command(); }
 
+QString MainWindow::selected_scene_equipment_blocker() const
+{
+  if (selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) return {};
+  const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
+  // New Cell records how far the cell's robot + tool can go; short of PLAN_CAPABLE it cannot generate or plan
+  // (the exporter re-derives this from the catalog; this is the reason shown first).
+  try {
+    const auto equipment = YAML::LoadFile((scene.scene_dir / "environment.yaml").string())["workcell_studio"]["equipment"];
+    if (equipment && equipment["status"] && equipment["status"].as<std::string>() != "PLAN_CAPABLE")
+      return QString::fromStdString("Equipment " + equipment["status"].as<std::string>() + ": " +
+        equipment["reason"].as<std::string>(""));
+  } catch (const YAML::Exception &) {}
+  return {};
+}
+
 MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness(bool require_task_input) const
 {
   SelectedSceneReadiness result;
@@ -6405,13 +6430,8 @@ MainWindow::SelectedSceneReadiness MainWindow::selected_scene_readiness(bool req
     result.blockers << environment_task_editor_->blocker(require_task_input);
   if (!has_selected_scene() || selected_scene_index_ < 0 || selected_scene_index_ >= static_cast<int>(scene_browser_result_.scenes.size())) { result.blockers << "Select a scene."; return result; }
   const auto & scene = scene_browser_result_.scenes[static_cast<size_t>(selected_scene_index_)];
-  // New Cell records how far the cell's robot + tool can go; short of PLAN_CAPABLE it cannot generate or plan.
-  try {
-    const auto equipment = YAML::LoadFile((scene.scene_dir / "environment.yaml").string())["workcell_studio"]["equipment"];
-    if (equipment && equipment["status"] && equipment["status"].as<std::string>() != "PLAN_CAPABLE")
-      result.blockers.prepend(QString::fromStdString("Equipment " + equipment["status"].as<std::string>() + ": " +
-        equipment["reason"].as<std::string>("")));
-  } catch (const YAML::Exception &) {}
+  const QString equipment = selected_scene_equipment_blocker();
+  if (!equipment.isEmpty()) result.blockers.prepend(equipment);
   const auto content = workcell_builder::scene_content_readiness(scene);
   result.generation_current = content.generation_current && !layout_dirty_;
   result.validation_current = result.generation_current && content.validation_current;

@@ -20,6 +20,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 XACRO = '{http://www.ros.org/wiki/xacro}'
 PROFILES = ROOT / 'catalog/workcell_studio_profiles'
+SUPPORTED_SCENES = ROOT / 'workcell_studio_supported_scenes.yaml'
 
 
 def load_profile(profile_id):
@@ -95,6 +96,94 @@ def _tool_root_link(model):
     return None
 
 
+def _model_links(model):
+    """The links an installed model file defines (prefix placeholders removed)."""
+    if model is None or not model.is_file():
+        return []
+    return _unique([_unprefixed(link.get('name')) for link in ET.fromstring(model.read_text()).iter('link')])
+
+
+def _find_path(filename):
+    """An xacro ``$(find package)/relative`` include resolved against the installed model packages."""
+    match = re.fullmatch(r'\$\(find ([\w-]+)\)/(.+)', (filename or '').strip())
+    package = _package(match.group(1)) if match else None
+    return package / match.group(2) if package else None
+
+
+def _xacro_name(element):
+    """The local name of an xacro element. xacro reads the ``xacro:`` prefix, so installed models bind it to
+    several URIs (www.ros.org/wiki/xacro, ros.org/wiki/xacro, wiki.ros.org/xacro)."""
+    namespace, _, name = element.tag.rpartition('}')
+    return name if namespace.rstrip('/').endswith('/xacro') else None
+
+
+def _macro_names(path):
+    return {macro.get('name') for macro in ET.fromstring(path.read_text()).iter() if _xacro_name(macro) == 'macro'}
+
+
+def _literal_origin(call):
+    origins = call.findall('origin')
+    if len(origins) != 1:
+        return None
+    try:
+        pose = {axis: [float(v) for v in (origins[0].get(axis) or '0 0 0').split()] for axis in ('xyz', 'rpy')}
+    except ValueError:
+        return None
+    return pose if all(len(v) == 3 for v in pose.values()) else None
+
+
+def _reference_calls(model_path, robot, tool):
+    """(robot call, tool call, include map) of a scene model that mounts the tool's installed macro on a robot tip."""
+    model = ET.fromstring(model_path.read_text())
+    includes = {}
+    for include in (e for e in model if _xacro_name(e) == 'include'):
+        path = _find_path(include.get('filename'))
+        if path is not None and path.is_file():
+            for name in _macro_names(path):
+                includes[name] = (include, path)
+    calls = [e for e in model if _xacro_name(e) in includes]
+    tool_model = (ROOT / tool['model']).resolve()
+    tool_calls = [e for e in calls if includes[_xacro_name(e)][1].resolve() == tool_model]
+    if len(tool_calls) != 1 or tool_calls[0].get('parent') not in robot['tip_frames']:
+        return None
+    # The robot macro is the one that defines the link the tool is mounted on.
+    defines_parent = re.compile(r'<link\s+name="(?:\$\{[^}]*\})?' + re.escape(tool_calls[0].get('parent')) + '"')
+    robot_calls = [e for e in calls if e is not tool_calls[0] and
+                   defines_parent.search(includes[_xacro_name(e)][1].read_text())]
+    if len(robot_calls) != 1:
+        return None
+    return model, robot_calls[0], tool_calls[0], includes
+
+
+def _reference_assembly(robot, tool):
+    """How an existing supported scene already mounts this installed tool on this robot, or None.
+
+    The 3D authoring model of a configurable pair reuses that scene's robot and tool macro calls and its literal
+    tool mount; it is geometry for layout authoring, never a reviewed runtime binding."""
+    moveit = Path(robot['moveit_config']).name if robot.get('moveit_config') else None
+    if not moveit or not tool.get('model') or not (ROOT / tool['model']).is_file():
+        return None
+    registry = yaml.safe_load(SUPPORTED_SCENES.read_text()) if SUPPORTED_SCENES.is_file() else {}
+    for entry in (registry or {}).get('scenes') or []:
+        urdf = ROOT / (entry.get('scene_path') or '') / 'urdf'
+        model_path = urdf / 'scene.urdf.xacro'
+        if not entry.get('enabled') or not model_path.is_file():
+            continue
+        # The scene launches this robot: its SRDF includes the robot's MoveIt config (as reviewed profiles check).
+        if not any(f'$(find {moveit})/' in path.read_text() for path in urdf.glob('*.srdf.xacro')):
+            continue
+        found = _reference_calls(model_path, robot, tool)
+        mount = _literal_origin(found[2]) if found else None
+        if mount is None:
+            continue
+        _, robot_call, tool_call, _ = found
+        return {'scene': entry.get('scene_name') or model_path.parent.parent.name,
+                'source': str(model_path.relative_to(ROOT)), 'robot_macro': _xacro_name(robot_call),
+                'tool_macro': _xacro_name(tool_call), 'tool_parent': tool_call.get('parent'),
+                'tool_mount': mount}
+    return None
+
+
 def _unique(*values):
     out = []
     for value in values:
@@ -150,7 +239,7 @@ def _tool(capability_id, record, strategies):
                  (str(package.relative_to(ROOT)) if package else None),
         'compatible_robot_families': p.get('compatible_robot_families') or [],
         'grasp_capabilities': interface.get('grasp_capabilities') or [], 'interface': interface.get('kind'),
-        'attach_links': _unique(attach), 'default_attach': attach,
+        'attach_links': _unique(attach), 'default_attach': attach, 'model_links': _model_links(model),
         'tcp_frames': _unique(interface.get('tcp_link'), p.get('tcp_frame'), p.get('grasp_frames') or []),
         'default_tcp': interface.get('tcp_link') or p.get('tcp_frame'),
         'type': p.get('family') or 'unknown',
@@ -226,8 +315,16 @@ def equipment():
             status, reason = _combination(robot, tool, profiles)
             profile = next((p for p in profiles if p['robot'] == robot['id'] and p['tool'] == tool['id']
                             and status == 'PLAN_CAPABLE'), None)
-            combinations.append({'robot': robot['id'], 'tool': tool['id'], 'status': status, 'reason': reason,
-                                 'profile': profile['id'] if profile else None})
+            pair = {'robot': robot['id'], 'tool': tool['id'], 'status': status, 'reason': reason,
+                    'profile': profile['id'] if profile else None}
+            if status == 'CONFIGURABLE':
+                # Authoring-only 3D model: the installed geometry as an existing supported scene mounts it.
+                pair['assembly'] = _reference_assembly(robot, tool)
+                if pair['assembly'] is None:
+                    pair['assembly_reason'] = (
+                        f"No supported scene ({SUPPORTED_SCENES.name}) mounts {tool['label']} on {robot['label']}, so "
+                        f"there is no validated tool mount; the cell opens without equipment geometry.")
+            combinations.append(pair)
     return {'schema': 'new_cell_equipment/v1', 'robots': robots, 'tools': tools, 'profiles': profiles,
             'combinations': combinations, 'notes': notes, 'grasp_strategies': list(strategies)}
 
@@ -490,12 +587,104 @@ def materialize(scene, profile_id, destination):
     (scene / 'config/workcell_builder_task_intent.yaml').write_text(json.dumps(intent, indent=2) + '\n')
 
 
+def assemble_authoring_model(scene):
+    """Give a CONFIGURABLE New Cell its 3D equipment model, for layout authoring only.
+
+    The installed robot and tool macros are instantiated exactly as the discovered reference assembly does; the
+    robot and tool mounts read this cell's environment.yaml. Nothing here binds MoveIt, controllers or a task, and
+    the export gate still refuses the cell. Any frame or expansion problem fails closed with its reason.
+    """
+    from authored_yaml import write_preserving
+    from ensure_workcell_studio_web_scene_fresh_impl import require_real_xacro_mesh_index
+    import subprocess
+
+    authored = yaml.safe_load((scene / 'environment.yaml').read_text())
+    studio = authored['workcell_studio']
+    robot_id, tool_id = studio['robot']['capability'], studio['tool']['capability']
+    current = equipment()
+    pair = next((c for c in current['combinations'] if c['robot'] == robot_id and c['tool'] == tool_id), None)
+    if pair is None or pair['status'] != 'CONFIGURABLE':
+        raise ValueError(f"{robot_id} + {tool_id} is {pair['status'] if pair else 'unknown'}, not CONFIGURABLE; "
+                         f"only configurable equipment receives an authoring-only model.")
+    assembly = pair.get('assembly')
+    if not assembly:
+        raise ValueError(pair['assembly_reason'])
+    if studio['robot']['tip'] != assembly['tool_parent']:
+        raise ValueError(f"The tool mount of {assembly['scene']} is relative to {assembly['tool_parent']}; "
+                         f"select that robot tip (selected: {studio['robot']['tip']}).")
+    tool = next(t for t in current['tools'] if t['id'] == tool_id)
+    robot = next(r for r in current['robots'] if r['id'] == robot_id)
+    found = _reference_calls(ROOT / assembly['source'], robot, tool)
+    if found is None:
+        raise ValueError(f"Reference assembly {assembly['source']} changed; reopen New Cell.")
+    reference, robot_call, tool_call, includes = found
+
+    ns = robot_call.tag.rpartition('}')[0][1:]
+    ET.register_namespace('xacro', ns)
+    tag = lambda name: f'{{{ns}}}{name}'
+    model = ET.Element('robot', {'name': scene.name})
+    calls = [copy.deepcopy(robot_call), copy.deepcopy(tool_call)]
+    # Only the reference's arguments these calls use (transitively); never its environment or task.
+    args = {e.get('name'): e for e in reference if _xacro_name(e) == 'arg'}
+    used, pending = [], ET.tostring(robot_call, encoding='unicode') + ET.tostring(tool_call, encoding='unicode')
+    while True:
+        names = [n for n in re.findall(r'\$\(arg ([\w-]+)\)', pending) if n in args and n not in used]
+        if not names:
+            break
+        used += names
+        pending = ' '.join(args[n].get('default') or '' for n in names)
+    for name in args:
+        if name in used:
+            model.append(copy.deepcopy(args[name]))
+    ET.SubElement(model, tag('property'), {'name': 'workcell_environment',
+                                            'value': "${xacro.load_yaml('../environment.yaml')}"})
+    world = robot_call.get('parent')
+    if not any(e.tag == 'link' and e.get('name') == world for e in reference):
+        raise ValueError(f"Reference assembly {assembly['source']} does not define the robot parent link {world}.")
+    ET.SubElement(model, 'link', {'name': world})
+    frames = "workcell_environment['workcell_studio']['frames']"
+    for call, pose in zip(calls, ('robot_mount_pose', 'tool_mount_pose')):
+        model.append(copy.deepcopy(includes[_xacro_name(call)][0]))
+        origin = call.find('origin')
+        for axis in ('xyz', 'rpy'):
+            origin.set(axis, "${' '.join([str(v) for v in " + f"{frames}['{pose}']['{axis}']" + "])}")
+        model.append(call)
+    (scene / 'urdf').mkdir(exist_ok=True)
+    (scene / 'urdf/scene.urdf.xacro').write_bytes(ET.tostring(model, encoding='utf-8', xml_declaration=True))
+
+    result = subprocess.run([sys.executable, str(ROOT / 'scripts/extract_scene_urdf_visual_mesh_index.py'),
+                             '--scene', str(scene), '--prefer-xacro', '--require-xacro'], capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError(result.stderr or result.stdout or 'Required visual extraction failed')
+    require_real_xacro_mesh_index(scene / 'generated/scene_visual_mesh_index.json')
+    expanded = scene / 'generated/expanded_scene_preview.urdf'
+    links = {link.get('name') for link in ET.parse(expanded).getroot().iter('link')} if expanded.is_file() else set()
+    for role, frame in (('robot base', studio['robot']['base']), ('robot tip', studio['robot']['tip']),
+                        ('tool attach link', studio['tool']['attach'])):
+        if frame not in links:
+            raise ValueError(f"The assembled model has no {role} {frame}; the cell was not given a 3D model.")
+    tcp = studio['tool']['tcp']
+    warnings = [] if tcp in links else [
+        f"TCP {tcp} is declared for {tool['label']} ({tool['source']}) but no installed model defines it, so the 3D "
+        f"view cannot place it. It must be defined and measured before this tool is commissioned."]
+    studio['authoring_model'] = {
+        'status': 'ASSEMBLED', 'purpose': 'layout_authoring_only', 'reference_scene': assembly['scene'],
+        'reference_source': assembly['source'], 'robot_macro': assembly['robot_macro'],
+        'tool_macro': assembly['tool_macro'], 'tool_parent': assembly['tool_parent'],
+        'tool_mount': assembly['tool_mount'], 'attach_link': studio['tool']['attach'], 'tcp': tcp,
+        'tcp_defined': tcp in links, 'warnings': warnings}
+    write_preserving(scene / 'environment.yaml', authored)
+    return studio['authoring_model']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile')
     parser.add_argument('--equipment', action='store_true',
                         help='the New Cell robot/tool choices, their frames and readiness (JSON)')
     parser.add_argument('--describe', action='store_true')
+    parser.add_argument('--authoring-model', action='store_true',
+                        help='with --scene: assemble the 3D model of a CONFIGURABLE cell (authoring only)')
     parser.add_argument('--scenario', help='with --describe: the New Cell scenario whose reviewed layout applies')
     parser.add_argument('--scene', type=Path)
     parser.add_argument('--destination', type=Path)
@@ -503,6 +692,8 @@ def main():
     try:
         if args.equipment:
             print(json.dumps(equipment()))
+        elif args.authoring_model:
+            print(json.dumps(assemble_authoring_model(args.scene)))
         elif args.describe:
             print(json.dumps(describe(args.profile, args.scenario)))
         else:
