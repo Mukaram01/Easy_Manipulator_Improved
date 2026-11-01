@@ -5397,6 +5397,17 @@ function upwardPlacementSurfaceHit(hit) {
   const world = normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
   return world.z >= PLACEMENT_SUPPORT_MIN_NORMAL_Z;
 }
+// Raycasts include hidden objects. A placeholder solid hidden once the real mesh loaded is not physical
+// geometry: a part rests on the mesh, not on the placeholder's (often larger) box.
+function placementHitIsHiddenFallback(hit) {
+  const fallback = placementHitRendered(hit)?.fallback;
+  if (!fallback) return false;
+  let inFallback = false;
+  for (let node = hit.object; node; node = node.parent) if (node === fallback) { inFallback = true; break; }
+  if (!inFallback) return false;
+  for (let node = fallback; node; node = node.parent) if (node.visible === false) return true;
+  return false;
+}
 function isEligiblePlacementSurfaceHit(hit) {
   const rendered = placementHitRendered(hit);
   const item = rendered?.item;
@@ -5534,6 +5545,7 @@ function placementPointFromViewport(position, options = {}) {
   const roots = options.groundOnly ? [] : [...state.objects.map(record => record.object3d), ...state.pickRecords.map(record => record.pickRoot || record.object3d)]
     .filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
+    if (placementHitIsHiddenFallback(hit)) continue;
     if (!isEligiblePlacementSurfaceHit(hit)) continue;
     if (!upwardPlacementSurfaceHit(hit)) return null;
     const rendered = placementHitRendered(hit);
@@ -5661,6 +5673,15 @@ function evaluatePlacementCollision() {
   placement.collidingOwnerIds.sort();
   placement.collision = placement.collidingOwnerIds.length > 0;
   placement.valid = placement.supportValid && Boolean(ghostBounds) && !placement.collision;
+  // A supported asset is saved mounted to its support, which must be an editable layout asset (Builder decides
+  // with the mounting resolver; this only shows it before the click).
+  if (placement.valid && !placementStandsOnFloor()) {
+    const support = renderedById(placement.supportOwnerId)?.item;
+    if (!support || !canEditItem(support)) {
+      placement.valid = false;
+      placement.invalidReason = `Support ${placement.supportOwnerId || 'surface'} is reference geometry, not an editable layout asset; it cannot carry a mounted asset`;
+    }
+  }
   setPlacementCollisionStyle(placement.collision);
   return placement.valid;
 }
@@ -5746,6 +5767,8 @@ function updatePlacementStatus() {
   status.innerHTML = point
     ? state.placement.collision
       ? `<strong>COLLISION</strong> · ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ''}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
+      : state.placement.invalidReason
+        ? `<strong>INVALID</strong> · ${state.placement.invalidReason}<br>Place it on an editable support of this cell · Esc cancel`
       : `<strong>VALID</strong> · X ${point.x.toFixed(3)} · Y ${point.y.toFixed(3)} · Z ${point.z.toFixed(3)} m${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>Orientation: ${orientation} · Q/E yaw · 1–6 preset · Esc cancel`
     : `<strong>INVALID</strong> · ${state.placement.supportValid ? (state.placement.invalidReason || 'Placement preview unavailable') : 'No valid placement surface'}${snap ? ` · SNAP ${snap.toFixed(3)} m` : ' · SNAP OFF'}<br>${state.placement.supportValid ? 'Wait for physical geometry · Esc cancel' : (placementStandsOnFloor() ? 'Move over the floor · Esc cancel' : 'Needs a support surface (table, fixture) · not the floor · Esc cancel')}`;
   const healthSignature = `${Boolean(state.placement.armed)}|${Boolean(state.placement.collision)}|${asArray(state.placement.collidingOwnerIds).join('|')}`;

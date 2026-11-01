@@ -43971,6 +43971,23 @@ function upwardPlacementSurfaceHit(hit) {
   const world = normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
   return world.z >= PLACEMENT_SUPPORT_MIN_NORMAL_Z;
 }
+function placementHitIsHiddenFallback(hit) {
+  const fallback = placementHitRendered(hit)?.fallback;
+  if (!fallback)
+    return false;
+  let inFallback = false;
+  for (let node = hit.object; node; node = node.parent)
+    if (node === fallback) {
+      inFallback = true;
+      break;
+    }
+  if (!inFallback)
+    return false;
+  for (let node = fallback; node; node = node.parent)
+    if (node.visible === false)
+      return true;
+  return false;
+}
 function isEligiblePlacementSurfaceHit(hit) {
   const rendered = placementHitRendered(hit);
   const item = rendered?.item;
@@ -44066,6 +44083,8 @@ function placementPointFromViewport(position, options = {}) {
   raycaster.setFromCamera(pointer, camera);
   const roots = options.groundOnly ? [] : [...state.objects.map((record) => record.object3d), ...state.pickRecords.map((record) => record.pickRoot || record.object3d)].filter((root, index, all) => root?.visible !== false && all.indexOf(root) === index);
   for (const hit of raycaster.intersectObjects(roots, true) || []) {
+    if (placementHitIsHiddenFallback(hit))
+      continue;
     if (!isEligiblePlacementSurfaceHit(hit))
       continue;
     if (!upwardPlacementSurfaceHit(hit))
@@ -44210,6 +44229,13 @@ function evaluatePlacementCollision() {
   placement.collidingOwnerIds.sort();
   placement.collision = placement.collidingOwnerIds.length > 0;
   placement.valid = placement.supportValid && Boolean(ghostBounds) && !placement.collision;
+  if (placement.valid && !placementStandsOnFloor()) {
+    const support = renderedById(placement.supportOwnerId)?.item;
+    if (!support || !canEditItem(support)) {
+      placement.valid = false;
+      placement.invalidReason = `Support ${placement.supportOwnerId || "surface"} is reference geometry, not an editable layout asset; it cannot carry a mounted asset`;
+    }
+  }
   setPlacementCollisionStyle(placement.collision);
   return placement.valid;
 }
@@ -44296,7 +44322,7 @@ function updatePlacementStatus() {
   const collisions = state.placement.collidingOwnerIds || [];
   const orientation = placementPresetDefinition().label;
   status.title = collisions.join(", ");
-  status.innerHTML = point ? state.placement.collision ? `<strong>COLLISION</strong> \xB7 ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ""}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>VALID</strong> \xB7 X ${point.x.toFixed(3)} \xB7 Y ${point.y.toFixed(3)} \xB7 Z ${point.z.toFixed(3)} m${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>INVALID</strong> \xB7 ${state.placement.supportValid ? state.placement.invalidReason || "Placement preview unavailable" : "No valid placement surface"}${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>${state.placement.supportValid ? "Wait for physical geometry \xB7 Esc cancel" : placementStandsOnFloor() ? "Move over the floor \xB7 Esc cancel" : "Needs a support surface (table, fixture) \xB7 not the floor \xB7 Esc cancel"}`;
+  status.innerHTML = point ? state.placement.collision ? `<strong>COLLISION</strong> \xB7 ${collisions[0]}${collisions.length > 1 ? ` + ${collisions.length - 1} more` : ""}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : state.placement.invalidReason ? `<strong>INVALID</strong> \xB7 ${state.placement.invalidReason}<br>Place it on an editable support of this cell \xB7 Esc cancel` : `<strong>VALID</strong> \xB7 X ${point.x.toFixed(3)} \xB7 Y ${point.y.toFixed(3)} \xB7 Z ${point.z.toFixed(3)} m${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>Orientation: ${orientation} \xB7 Q/E yaw \xB7 1\u20136 preset \xB7 Esc cancel` : `<strong>INVALID</strong> \xB7 ${state.placement.supportValid ? state.placement.invalidReason || "Placement preview unavailable" : "No valid placement surface"}${snap ? ` \xB7 SNAP ${snap.toFixed(3)} m` : " \xB7 SNAP OFF"}<br>${state.placement.supportValid ? "Wait for physical geometry \xB7 Esc cancel" : placementStandsOnFloor() ? "Move over the floor \xB7 Esc cancel" : "Needs a support surface (table, fixture) \xB7 not the floor \xB7 Esc cancel"}`;
   const healthSignature = `${Boolean(state.placement.armed)}|${Boolean(state.placement.collision)}|${asArray(state.placement.collidingOwnerIds).join("|")}`;
   if (state.lastPlacementHealthSignature !== healthSignature) {
     state.lastPlacementHealthSignature = healthSignature;

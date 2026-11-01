@@ -4901,3 +4901,21 @@ assert.strictEqual(upwardPlacementSurfaceHit(hit([0,1,0],Math.PI/2)),true);  // 
 `,context);
 """
     subprocess.run(["node", "-e", harness, str(js_path), str(three)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
+def test_supported_placement_is_mounted_or_refused_before_commit():
+    """A supported asset is saved mounted to its support or not placed at all; never left loose in world coordinates."""
+    js = (VIEWER / "viewer.js").read_text(encoding="utf-8")
+    # The ghost shows a non-editable (reference/locked) support as INVALID with its reason before the click.
+    assert "if (!support || !canEditItem(support)) {" in js
+    assert "is reference geometry, not an editable layout asset; it cannot carry a mounted asset" in js
+    # A placeholder solid hidden once the real mesh loaded is not a support.
+    assert "if (placementHitIsHiddenFallback(hit)) continue;" in js
+    cpp = (ROOT / "workcell_builder/workcell_builder/gui/mainwindow.cpp").read_text(encoding="utf-8")
+    # Builder checks the relation with the mounting resolver before committing the placement ...
+    assert "const QString blocker = armed_asset_support_blocker(support_owner_id, x, y, z, roll, pitch, yaw);" in cpp
+    assert '{"parent_object", support_id}, {"parent_link", "origin"}});' in cpp
+    # ... folds the mount into the add (one undo step) and rolls back instead of keeping an unmounted asset.
+    assert "if (undo_stack_.size() == add_index + 2) undo_stack_.pop_back();" in cpp
+    assert "Never keep an asset that should rest on a support but is not mounted to it." in cpp
+    assert "it stays in world coordinates" not in cpp

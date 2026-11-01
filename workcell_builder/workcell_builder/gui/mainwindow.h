@@ -426,6 +426,10 @@ private:
   bool mounted_pose_unchanged(const QString & id, double x, double y, double z, double roll, double pitch, double yaw) const;
   QJsonObject run_mounting_request(QJsonObject request);
   bool commit_mounting_request(QJsonObject request);
+  // Why the armed asset cannot be saved mounted to support_id at this world pose (empty when it can):
+  // the support must be a mounting parent of the existing contract and the resolver must accept the relation.
+  QString armed_asset_support_blocker(const QString & support_id, double x, double y, double z,
+    double roll, double pitch, double yaw);
   void apply_mounting_snapshot(const QVector<ScenePreviewWidget::PreviewItem> & snapshot);
   void edit_selected_mounting();
   // Visual Mate tool (R3.2): pick faces in 3D, preview, apply via the mounting resolver.

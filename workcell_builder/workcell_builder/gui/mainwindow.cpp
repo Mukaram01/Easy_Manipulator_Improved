@@ -2797,6 +2797,17 @@ void MainWindow::setup_studio_shell()
         statusBar()->showMessage(reason, 6000);
         return;
       }
+      // A supported asset is saved mounted to its support: refuse here, before anything is committed,
+      // when that relation cannot be represented, rather than leave the asset loose in world coordinates.
+      if (!support_owner_id.isEmpty()) {
+        const QString blocker = armed_asset_support_blocker(support_owner_id, x, y, z, roll, pitch, yaw);
+        if (!blocker.isEmpty()) {
+          append_studio_log(QStringLiteral("Asset placement refused: ") + blocker);
+          statusBar()->showMessage(blocker, 8000);
+          show_workflow_feedback(QStringLiteral("error"), QStringLiteral("Placement refused: ") + blocker);
+          return;
+        }
+      }
       armed_asset_support_owner_ = support_owner_id;
       armed_asset_x_m_ = x;
       armed_asset_y_m_ = y;
@@ -11058,7 +11069,7 @@ QJsonArray MainWindow::mounting_items() const
 
 QJsonObject MainWindow::run_mounting_request(QJsonObject request)
 {
-  request.insert("items", mounting_items());
+  if (!request.contains("items")) request.insert("items", mounting_items());
   request.insert("scene_dir", selected_scene_state_.path);  // saved mesh calibration for reviewed datums
   const QString root = resolve_workcell_studio_repo_root(fs::path(selected_scene_state_.path.toStdString()));
   QProcess process;
@@ -11157,6 +11168,49 @@ bool MainWindow::commit_mounting_request(QJsonObject request)
   mark_layout_dirty("Asset mounting / hierarchical transform");
   scene_preview_widget_->set_native_authoring_history_available(true, false);
   return true;
+}
+
+QString MainWindow::armed_asset_support_blocker(const QString & support_id, double x, double y, double z,
+  double roll, double pitch, double yaw)
+{
+  const auto support = std::find_if(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(),
+    [&support_id](const ScenePreviewWidget::PreviewItem & p) { return p.id == support_id; });
+  const QString asset = armed_asset_display_name_;
+  const QString remedy = QStringLiteral(" Place it on an editable support surface of this cell (for example a table "
+    "added from Assets), or add such a support first.");
+  // The mounting contract's parents are this cell's editable layout assets (mounting_items()).
+  if (support == all_scene_preview_items_.cend()) {
+    return QStringLiteral("%1 would rest on %2, which is not a layout asset of this cell; a mounted child "
+      "could not be saved relative to it.").arg(asset, support_id) + remedy;
+  }
+  const QString name = QStringLiteral("%1 [%2]").arg(support->display_name.isEmpty() ? support->id : support->display_name, support->id);
+  if (deleted_layout_item_ids_.contains(support->id))
+    return QStringLiteral("%1 would rest on %2, which is deleted.").arg(asset, name) + remedy;
+  if (support->semantic_task_zone_helper)
+    return QStringLiteral("%1 would rest on %2, a task zone; task zones are not mounting parents.").arg(asset, name) + remedy;
+  if (support->source_layer != QStringLiteral("editable_layout") || !support->editable) {
+    const QString origin = !support->lock_reason.trimmed().isEmpty() ? support->lock_reason.trimmed()
+      : (support->source_layer.isEmpty() ? QStringLiteral("no layout source") : support->source_layer);
+    return QStringLiteral("%1 would rest on %2, which is locked reference geometry of the scene model (%3), not an "
+      "editable layout asset; its pose is not saved in this cell's layout, so a child cannot be mounted to it.")
+      .arg(asset, name, origin) + remedy;
+  }
+  if (support->locked) {
+    return QStringLiteral("%1 would rest on %2, which is locked; locked assets are not mounting parents. "
+      "Unlock it in the Inspector, then place the asset again.").arg(asset, name);
+  }
+  // Ask the existing resolver whether this exact relation is valid (anchors, cycles, offsets, stale poses).
+  QJsonArray items = mounting_items();
+  const QString candidate = QStringLiteral("__placement_candidate__");
+  items.append(QJsonObject{{"id", candidate}, {"role", "asset"}, {"category", armed_asset_category_},
+    {"mounting_yaml", QString()}, {"pose_xyz", QJsonArray{x, y, z}}, {"pose_rpy", QJsonArray{roll, pitch, yaw}}});
+  const auto response = run_mounting_request({{"items", items}, {"id", candidate},
+    {"parent_object", support_id}, {"parent_link", "origin"}});
+  if (!response.value("ok").toBool()) {
+    return QStringLiteral("%1 cannot be mounted on %2: %3").arg(asset, name,
+      response.value("error").toString().replace(candidate, asset));
+  }
+  return {};
 }
 
 void MainWindow::edit_selected_mounting()
@@ -12822,17 +12876,22 @@ void MainWindow::commit_armed_asset_placement(
   append_studio_log("ghost placement preview committed");
   // A supported asset is mounted to the surface it rests on (world pose kept), through the
   // same mounting resolver as Mount To, so it follows that surface and is saved as its child.
+  // The relation was checked before commit (armed_asset_support_blocker); placement and mount are one edit.
   const QString support = armed_asset_support_owner_;
   armed_asset_support_owner_.clear();
   if (!support.isEmpty()) {
-    const bool support_editable = std::any_of(all_scene_preview_items_.cbegin(), all_scene_preview_items_.cend(),
-      [&support](const ScenePreviewWidget::PreviewItem & p) {
-        return p.id == support && p.editable && !p.locked && p.source_layer == QStringLiteral("editable_layout"); });
-    if (!support_editable) {
-      append_studio_log(QStringLiteral("Asset placement: %1 rests on %2, which is not an editable layout item; "
-        "it stays in world coordinates (use Mount To to attach it).").arg(new_id, support));
-    } else if (commit_mounting_request({{"id", new_id}, {"parent_object", support}, {"parent_link", "origin"}})) {
+    const size_t add_index = undo_stack_.size() - 1;
+    if (commit_mounting_request({{"id", new_id}, {"parent_object", support}, {"parent_link", "origin"}})) {
+      // One undo step: the add command re-adds the mounted item, and undo removes it with its relation.
+      if (undo_stack_.size() == add_index + 2) undo_stack_.pop_back();
+      for (const auto & p : all_scene_preview_items_) if (p.id == new_id) undo_stack_[add_index].preview_items = {p};
       append_studio_log(QStringLiteral("Asset placement: %1 mounted on support surface %2 (world pose kept).").arg(new_id, support));
+    } else {
+      // Never keep an asset that should rest on a support but is not mounted to it.
+      undo_layout_edit();
+      if (!redo_stack_.empty() && redo_stack_.back().item_id == new_id) redo_stack_.pop_back();
+      append_studio_log(QStringLiteral("Asset placement rolled back: %1 could not be mounted on %2.").arg(new_id, support));
+      return;
     }
   }
   record_recent_asset(asset_id);
