@@ -64,6 +64,28 @@ def test_equipment_choices_join_catalog_installed_models_and_reviewed_profiles()
     assert any('ur10_moveit_config has no capability record' in note for note in found['notes'])
 
 
+def test_configurable_pairs_name_the_planner_prerequisites_they_lack():
+    """The reason is the planner's own admission result, not just 'no profile'."""
+    reasons = {c['tool']: c['reason'] for c in equipment()['combinations'] if c['robot'] == 'ur5'}
+    airpick, three_finger = reasons['onrobot_airpick_style'], reasons['robotiq_3f']
+    assert 'TOOL_ENGAGEMENT_UNSUPPORTED' in airpick and 'GRASP_CAPABILITY_UNSUPPORTED' in airpick
+    assert 'TOOL_MOUNT_UNKNOWN' not in airpick                      # ur5_airpick4_test mounts it
+    assert 'TOOL_CLOSURE_UNCOMMISSIONED' in three_finger and 'TOOL_MOUNT_UNKNOWN' in three_finger
+    assert 'GRASP_STRATEGY_UNAVAILABLE' not in three_finger         # finger_pinch_basic names robotiq_3f
+    assert all('RUNTIME_BINDING_UNREVIEWED' in r for r in (airpick, three_finger))
+
+
+def test_a_reviewed_profile_cannot_make_an_unplannable_tool_plan_capable():
+    import instantiate_workcell_studio_profile as helper
+    found = equipment()
+    ur5 = next(r for r in found['robots'] if r['id'] == 'ur5')
+    airpick = next(t for t in found['tools'] if t['id'] == 'onrobot_airpick_style')
+    profile = {'id': 'hypothetical', 'robot': 'ur5', 'tool': 'onrobot_airpick_style', 'runtime': True}
+    status, reason = helper._combination(ur5, airpick, [profile])
+    assert status == 'CONFIGURABLE' and 'TOOL_ENGAGEMENT_UNSUPPORTED' in reason
+    assert 'RUNTIME_BINDING_UNREVIEWED' not in reason
+
+
 def test_profile_must_launch_the_equipment_it_names(tmp_path, monkeypatch):
     import instantiate_workcell_studio_profile as helper
     profile = yaml.safe_load((helper.PROFILES / 'ur5_2f_workbench.yaml').read_text())
@@ -110,7 +132,7 @@ def test_configurable_pair_reuses_the_supported_scene_that_assembles_it():
         'tool_mount': {'xyz': [0.0, 0.0, 0.0324], 'rpy': [-1.5707, 0.0, 0.0]}}
     # The Robotiq 3F record names no tool model file, so there is no macro to match: no geometry is guessed.
     three_finger = pairs[('ur5', 'robotiq_3f')]
-    assert three_finger['assembly'] is None and 'no validated tool mount' in three_finger['assembly_reason']
+    assert three_finger['assembly'] is None and 'names no model file' in three_finger['assembly_reason']
     assert 'assembly' not in pairs[('ur5', 'robotiq_2f_85')]     # plan-capable cells use their reviewed profile
     tools = {t['id']: t for t in equipment()['tools']}
     assert tools['onrobot_airpick_style']['model_links'] == ['gripper_base_link']   # no suction_tip link installed

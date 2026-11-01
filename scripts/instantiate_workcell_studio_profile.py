@@ -262,9 +262,44 @@ def _profile_equipment(profile_path):
                          'mount_pose_rpy': tool.get('mount_pose_rpy')}}
 
 
-def _combination(robot, tool, profiles):
+def _mount_unknown(robot, tool):
+    """Why no supported scene supplies the tool mount of a pair without a reviewed profile."""
+    if not (ROOT / tool['model']).is_file():
+        return (f"the {tool['label']} capability record names no model file (urdf_or_xacro), so no supported scene's "
+                f"tool mount can be matched to it")
+    return f"no supported scene ({SUPPORTED_SCENES.name}) mounts {tool['label']} on {robot['label']}"
+
+
+def _planner_blockers(tool):
+    """Why the existing planner cannot grasp with this tool, from its own admission rules; [] when it can.
+
+    The tool interface (tool_interface.py) must engage by a commissioned motion, its grasp capability must be one
+    TaskIntent v2 plans, and a catalog grasp strategy the planner implements must name it."""
+    from tool_interface import ToolEngagementUnsupported, ToolInterfaceError, load_tool_interface
+    from task_intent_v2 import STRATEGIES, SUPPORTED_CAPABILITIES
+    blockers = []
+    try:
+        interface = load_tool_interface(tool['id'])
+    except ToolInterfaceError as exc:
+        return [str(exc)]
+    try:
+        interface.closure_positions()
+    except ToolEngagementUnsupported as exc:
+        blockers.append(str(exc))
+    if not set(interface.grasp_capabilities) & SUPPORTED_CAPABILITIES:
+        blockers.append(f"GRASP_CAPABILITY_UNSUPPORTED: {tool['id']} grasps by "
+                        f"{', '.join(interface.grasp_capabilities) or 'nothing'}; the planner plans "
+                        f"{', '.join(sorted(SUPPORTED_CAPABILITIES))} only")
+    if not set(tool['grasp_strategies']) & STRATEGIES:
+        blockers.append(f"GRASP_STRATEGY_UNAVAILABLE: no planner grasp strategy ({', '.join(sorted(STRATEGIES))}) "
+                        f"names {tool['id']} in catalog/grasp_strategies")
+    return blockers
+
+
+def _combination(robot, tool, profiles, assembly=None):
     """How far a robot + tool pair can go in this workspace. Catalog presence never implies runtime readiness:
-    only a reviewed New Cell profile with MoveIt/controller bindings makes a pair plan-capable (fake hardware)."""
+    a pair is plan-capable (fake hardware) only when the planner admits the tool and a reviewed New Cell profile
+    binds its model, MoveIt and controller configuration. Otherwise every missing prerequisite is named."""
     pair = f"{robot['label']} + {tool['label']}"
     for item in (robot, tool):
         if item['preview_only']:
@@ -278,12 +313,17 @@ def _combination(robot, tool, profiles):
             return 'UNCOMMISSIONED', (f"{item['label']} is in the catalog but not installed in this workspace: "
                                       f"missing {', '.join(item['missing'])}.")
     reviewed = [p for p in profiles if p['robot'] == robot['id'] and p['tool'] == tool['id'] and p['runtime']]
-    if reviewed:
+    blockers = _planner_blockers(tool)
+    if reviewed and not blockers:
         return 'PLAN_CAPABLE', (f"{pair}: reviewed profile {reviewed[0]['id']} binds its MoveIt and controller "
                                 f"configuration. Generate, Validate and fake-hardware Plan Only are available.")
-    return 'CONFIGURABLE', (f"{pair}: both models are installed and compatible, but no reviewed New Cell profile "
-                            f"(catalog/workcell_studio_profiles) binds their MoveIt and controller configuration. "
-                            f"The cell records this equipment for authoring only; Generate and planning stay blocked.")
+    if not reviewed:
+        if assembly is None:
+            blockers.append(f"TOOL_MOUNT_UNKNOWN: {_mount_unknown(robot, tool)}")
+        blockers.append(f"RUNTIME_BINDING_UNREVIEWED: no reviewed New Cell profile (catalog/workcell_studio_profiles) "
+                        f"binds this pair's MoveIt groups and fake-hardware controllers, with planning evidence")
+    return 'CONFIGURABLE', (f"{pair}: both models are installed and compatible, so the cell can be laid out, but "
+                            f"Plan Only needs: {'; '.join(blockers)}. Generate and planning stay blocked.")
 
 
 def equipment():
@@ -312,18 +352,19 @@ def equipment():
     combinations = []
     for robot in robots:
         for tool in tools:
-            status, reason = _combination(robot, tool, profiles)
+            # Authoring-only 3D model: the installed geometry as an existing supported scene mounts it.
+            assembly = _reference_assembly(robot, tool) if robot['installed'] and tool['installed'] else None
+            status, reason = _combination(robot, tool, profiles, assembly)
             profile = next((p for p in profiles if p['robot'] == robot['id'] and p['tool'] == tool['id']
                             and status == 'PLAN_CAPABLE'), None)
             pair = {'robot': robot['id'], 'tool': tool['id'], 'status': status, 'reason': reason,
                     'profile': profile['id'] if profile else None}
             if status == 'CONFIGURABLE':
-                # Authoring-only 3D model: the installed geometry as an existing supported scene mounts it.
-                pair['assembly'] = _reference_assembly(robot, tool)
+                pair['assembly'] = assembly
                 if pair['assembly'] is None:
-                    pair['assembly_reason'] = (
-                        f"No supported scene ({SUPPORTED_SCENES.name}) mounts {tool['label']} on {robot['label']}, so "
-                        f"there is no validated tool mount; the cell opens without equipment geometry.")
+                    why = _mount_unknown(robot, tool)
+                    pair['assembly_reason'] = (f"{why[0].upper()}{why[1:]}. Without a validated tool mount the cell "
+                                               f"opens without equipment geometry.")
             combinations.append(pair)
     return {'schema': 'new_cell_equipment/v1', 'robots': robots, 'tools': tools, 'profiles': profiles,
             'combinations': combinations, 'notes': notes, 'grasp_strategies': list(strategies)}
