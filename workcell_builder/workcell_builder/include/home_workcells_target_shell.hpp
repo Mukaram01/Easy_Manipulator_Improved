@@ -766,6 +766,11 @@ inline void refresh_target_details(QMainWindow * window, QTableWidget * table, c
 
   if (auto * pin = window->findChild<QToolButton *>(QStringLiteral("studioTargetInspectorPin")))
     pin->setText(selected && scene_is_pinned(table, row) ? QStringLiteral("★") : QStringLiteral("☆"));
+  // More acts on the selected cell: never offer it while no Home row shows which one.
+  if (auto * more = window->findChild<QToolButton *>(QStringLiteral("studioTargetInspectorMore"))) {
+    more->setEnabled(selected);
+    more->setToolTip(selected ? QString() : QStringLiteral("Select a workcell first."));
+  }
 }
 
 inline QLabel * target_value(QWidget * parent, const QString & object_name)
@@ -1073,7 +1078,12 @@ inline void build_home_page(QMainWindow * window, QWidget * dashboard, QTableWid
 
   refresh_home();
   if (total > 0) {
-    table->setCurrentCell(0, 0);
+    // Reopen on the cell selected last time (MainWindow records it), else the newest one.
+    const QString last = QDir::cleanPath(QSettings().value(QStringLiteral("home/last_selected_scene_path")).toString());
+    int initial = 0;
+    for (int row = 0; row < table->rowCount(); ++row)
+      if (!last.isEmpty() && !table->isRowHidden(row) && scene_dir_at(table, row) == last) { initial = row; break; }
+    table->setCurrentCell(initial, 0);
   }
 }
 

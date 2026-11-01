@@ -865,10 +865,10 @@ def test_qt_mate_rebases_viewer_counters_and_cancels_on_cell_switch():
     poll = mainwindow.split("void MainWindow::handle_embedded_mate_state", 1)[1].split("void MainWindow::notify_mate_scene_changed", 1)[0]
     assert "mate_viewer_counters_rebase(" in poll
     assert poll.index("mate_viewer_counters_rebase(") < poll.index("if (cancel_seq > mate_seen_cancel_seq_)")
-    switch = mainwindow.split("void MainWindow::select_scene_by_row(int row)", 1)[1].split("selected_scene_index_ = row;", 1)[0]
-    assert "cancel_mate_for_other_cell(row);" in switch
-    opened = mainwindow.split("bool MainWindow::open_scene_builder_for_scene_index(", 1)[1].split("selected_scene_index_ = scene_index;", 1)[0]
-    assert "cancel_mate_for_other_cell(scene_index);" in opened
+    switch = mainwindow.split("bool MainWindow::select_scene_index(int scene_index)", 1)[1].split("selected_scene_index_ = scene_index;", 1)[0]
+    assert "cancel_mate_for_other_cell(scene_index);" in switch
+    opened = mainwindow.split("bool MainWindow::open_scene_builder_for_scene_index(", 1)[1].split("bool MainWindow::open_home_scene_in_builder", 1)[0]
+    assert "select_scene_index(scene_index)" in opened
     guard = mainwindow.split("void MainWindow::cancel_mate_for_other_cell(int scene_index)", 1)[1].split("void MainWindow::push_mate_overlay()", 1)[0]
     assert "if (mate_active() && scene_index != selected_scene_index_)" in guard and "mate_controller_->cancel(" in guard
     panel = (ROOT / "workcell_builder/workcell_builder/gui/mate_tool_panel.cpp").read_text(encoding="utf-8")
